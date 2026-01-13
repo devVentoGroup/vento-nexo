@@ -54,10 +54,26 @@ export default async function InventoryLocationsPage({
     if (!site_id) redirect(`/inventory/locations?error=${encodeURIComponent("Falta site_id.")}`);
     if (!code) redirect(`/inventory/locations?error=${encodeURIComponent("Falta code.")}`);
 
-    // Payload mínimo seguro (si tu tabla exige más campos, el error nos dirá cuáles)
+    // Payload mínimo seguro (tu tabla exige zone)
     const payload: Record<string, any> = { site_id, code };
 
-    // Opcionales (solo se insertan si vienen y no están vacíos)
+    // ZONA (requerida). La UI normalmente manda "zone".
+    let zone = String(formData.get("zone") ?? "").trim().toUpperCase();
+
+    // Fallback defensivo: derivar zone desde el code (LOC-SEDE-ZONA-PASILLO-NIVEL)
+    // Ej: LOC-CP-F1FRI-01-N0  => zone = F1FRI
+    if (!zone) {
+      const parts = code.split("-");
+      if (parts.length >= 3) zone = String(parts[2] ?? "").trim().toUpperCase();
+    }
+
+    if (!zone) {
+      redirect(`/inventory/locations?error=${encodeURIComponent("Falta zone (ZONA).")}`);
+    }
+
+    payload.zone = zone;
+
+    // Si en tu esquema también existe zone_id, lo dejamos opcional (no estorba)
     const zone_id = String(formData.get("zone_id") ?? "").trim();
     if (zone_id) payload.zone_id = zone_id;
 

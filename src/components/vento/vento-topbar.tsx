@@ -28,7 +28,7 @@ export function VentoTopbar() {
           <NavItem href="/scanner" label="Scanner" />
           <NavItem href="/inventory/locations" label="LOC" />
           <NavItem href="/inventory/lpns" label="LPN" />
-          <NavItem href="/print-jobs" label="Impresión" />
+          <NavItem href="/printing/jobs" label="Impresión" />
         </nav>
 
         <div className="flex items-center gap-2">
