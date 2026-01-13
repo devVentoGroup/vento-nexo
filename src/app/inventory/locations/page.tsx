@@ -1,10 +1,21 @@
 import Link from "next/link";
+import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
+
 import { createClient } from "@/lib/supabase/server";
+import { LocCreateForm } from "@/features/inventory/locations/loc-create-form";
 
 export const dynamic = "force-dynamic";
 
-export default async function InventoryLocationsPage() {
+export default async function InventoryLocationsPage({
+  searchParams,
+}: {
+  searchParams?: Promise<{ created?: string; error?: string }>;
+}) {
+  const sp = (await searchParams) ?? {};
+  const created = sp.created === "1";
+  const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
+
   const supabase = await createClient();
 
   const { data: userRes } = await supabase.auth.getUser();
@@ -13,6 +24,60 @@ export default async function InventoryLocationsPage() {
   const returnTo = "/inventory/locations";
   if (!user) {
     redirect(`/login?returnTo=${encodeURIComponent(returnTo)}`);
+  }
+
+  // defaultSiteId desde employee_sites (para preselección en el formulario)
+  const { data: sitesRows } = await supabase
+    .from("employee_sites")
+    .select("site_id,is_primary")
+    .eq("employee_id", user.id)
+    .eq("is_active", true)
+    .order("is_primary", { ascending: false })
+    .limit(1);
+
+  const defaultSiteId = sitesRows?.[0]?.site_id ?? "";
+
+  async function createLocAction(formData: FormData) {
+    "use server";
+
+    const supabase = await createClient();
+
+    const { data } = await supabase.auth.getUser();
+    const user = data.user ?? null;
+    if (!user) {
+      redirect(`/inventory/locations?error=${encodeURIComponent("Sesión requerida")}`);
+    }
+
+    const site_id = String(formData.get("site_id") ?? "").trim();
+    const code = String(formData.get("code") ?? "").trim().toUpperCase();
+
+    if (!site_id) redirect(`/inventory/locations?error=${encodeURIComponent("Falta site_id.")}`);
+    if (!code) redirect(`/inventory/locations?error=${encodeURIComponent("Falta code.")}`);
+
+    // Payload mínimo seguro (si tu tabla exige más campos, el error nos dirá cuáles)
+    const payload: Record<string, any> = { site_id, code };
+
+    // Opcionales (solo se insertan si vienen y no están vacíos)
+    const zone_id = String(formData.get("zone_id") ?? "").trim();
+    if (zone_id) payload.zone_id = zone_id;
+
+    const aisleStr = String(formData.get("aisle") ?? "").trim();
+    if (aisleStr) payload.aisle = Number(aisleStr);
+
+    const levelStr = String(formData.get("level") ?? "").trim();
+    if (levelStr) payload.level = Number(levelStr);
+
+    const description = String(formData.get("description") ?? "").trim();
+    if (description) payload.description = description;
+
+    const { error } = await supabase.from("inventory_locations").insert(payload);
+
+    if (error) {
+      redirect(`/inventory/locations?error=${encodeURIComponent(error.message)}`);
+    }
+
+    revalidatePath("/inventory/locations");
+    redirect("/inventory/locations?created=1");
   }
 
   const { data: locations, error } = await supabase
@@ -38,6 +103,22 @@ export default async function InventoryLocationsPage() {
         >
           Ir a Scanner
         </Link>
+      </div>
+
+      {created ? (
+        <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+          LOC creado correctamente.
+        </div>
+      ) : null}
+
+      {errorMsg ? (
+        <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          Error: {errorMsg}
+        </div>
+      ) : null}
+
+      <div className="mt-6">
+        <LocCreateForm defaultSiteId={defaultSiteId} action={createLocAction} />
       </div>
 
       {error ? (
@@ -80,4 +161,3 @@ export default async function InventoryLocationsPage() {
     </div>
   );
 }
-  
