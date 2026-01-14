@@ -41,6 +41,15 @@ type LocRow = {
   created_at?: string | null;
 };
 
+type LpnRow = {
+  id: string;
+  code: string;
+  description?: string | null;
+  loc_code?: string | null;
+  site_id?: string | null;
+  created_at?: string | null;
+};
+
 function mmToDots(mm: number, dpi: number) {
   return Math.round((mm / 25.4) * dpi);
 }
@@ -305,7 +314,10 @@ function normalizeDevices(devsRaw: any): any[] {
 export default function PrintingJobsPage() {
   // Si tus scripts ya están en otro path, ajusta aquí:
   const BROWSERPRINT_CORE = "/zebra/BrowserPrint.min.js";
-  const BROWSERPRINT_ZEBRA = "/zebra/BrowserPrint_Zebra.min.js";
+  const BROWSERPRINT_ZEBRA = "/zebra/BrowserPrint-Zebra.min.js";
+  // Endpoints (ajusta si tus rutas reales son distintas)
+  const LOCS_API = "/api/inventory/locations?limit=500";
+  const LPNS_API = "/api/inventory/lpns?limit=500";
   const presets: Preset[] = useMemo(
     () => [
       {
@@ -374,6 +386,11 @@ export default function PrintingJobsPage() {
   const [locs, setLocs] = useState<LocRow[]>([]);
   const [locSearch, setLocSearch] = useState("");
   const [selectedLocCode, setSelectedLocCode] = useState<string>("");
+
+  // LPN selector
+  const [lpns, setLpns] = useState<LpnRow[]>([]);
+  const [lpnSearch, setLpnSearch] = useState("");
+  const [selectedLpnCode, setSelectedLpnCode] = useState<string>("");
 
   // Mantener defaults al cambiar preset
   useEffect(() => {
@@ -639,7 +656,7 @@ export default function PrintingJobsPage() {
   async function loadLocs() {
     setStatus("");
     try {
-      const url = "/api/inventory/locations?limit=500";
+      const url = LOCS_API;
       const res = await fetch(url, { cache: "no-store" });
 
       // Leemos texto para poder mostrar errores reales (no solo HTTP)
@@ -674,6 +691,44 @@ export default function PrintingJobsPage() {
     }
   }
 
+  async function loadLpns() {
+    setStatus("");
+    try {
+      const url = LPNS_API;
+      const res = await fetch(url, { cache: "no-store" });
+
+      const raw = await res.text();
+      let json: any = null;
+      try {
+        json = raw ? JSON.parse(raw) : null;
+      } catch {
+        // si no es JSON, lo dejamos como texto
+      }
+
+      if (!res.ok) {
+        const msg =
+          json?.error ??
+          json?.message ??
+          (typeof raw === "string" && raw.trim() ? raw : `HTTP ${res.status}`);
+        setStatus(`Error cargando LPNs: ${msg}`);
+        return;
+      }
+
+      const rows: any[] =
+        Array.isArray(json) ? json :
+          Array.isArray(json?.data) ? json.data :
+            Array.isArray(json?.rows) ? json.rows :
+              Array.isArray(json?.lpns) ? json.lpns :
+                Array.isArray(json?.items) ? json.items :
+                  [];
+
+      setLpns(rows as LpnRow[]);
+      setStatus(`LPNs cargados: ${rows.length}`);
+    } catch (e: any) {
+      setStatus(`Error cargando LPNs: ${String(e?.message ?? e)}`);
+    }
+  }
+
   const filteredLocs = useMemo(() => {
     const q = locSearch.trim().toLowerCase();
     if (!q) return locs;
@@ -683,6 +738,17 @@ export default function PrintingJobsPage() {
       return code.includes(q) || desc.includes(q);
     });
   }, [locs, locSearch]);
+
+  const filteredLpns = useMemo(() => {
+    const q = lpnSearch.trim().toLowerCase();
+    if (!q) return lpns;
+    return lpns.filter((l) => {
+      const code = String(l.code ?? "").toLowerCase();
+      const desc = String(l.description ?? "").toLowerCase();
+      const loc = String(l.loc_code ?? "").toLowerCase();
+      return code.includes(q) || desc.includes(q) || loc.includes(q);
+    });
+  }, [lpns, lpnSearch]);
 
   function addSelectedLocToQueue(mode: "replace" | "append") {
     const loc = locs.find((l) => l.code === selectedLocCode);
@@ -699,6 +765,34 @@ export default function PrintingJobsPage() {
     setTitle("VENTO · LOC");
 
     const line = `${loc.code}|${safeText(loc.description ?? "LOC")}`;
+
+    if (mode === "replace") {
+      setQueueText(line);
+    } else {
+      setQueueText((prev) => {
+        const p = prev.trim();
+        if (!p) return line;
+        return p + "\n" + line;
+      });
+    }
+  }
+
+  function addSelectedLpnToQueue(mode: "replace" | "append") {
+    const lpn = lpns.find((l) => l.code === selectedLpnCode);
+    if (!lpn) {
+      setStatus("Selecciona un LPN válido.");
+      return;
+    }
+
+    // Auto (estándar): LPN siempre es 50x25 + Code128
+    if (presetId !== "LPN_50x25") {
+      setPresetId("LPN_50x25");
+    }
+    setBarcodeKind("code128");
+    setTitle("VENTO · LPN");
+
+    const note = lpn.loc_code ? `LOC ${safeText(lpn.loc_code)}` : safeText(lpn.description ?? "LPN");
+    const line = `${safeText(lpn.code)}|${note}`;
 
     if (mode === "replace") {
       setQueueText(line);
@@ -802,6 +896,38 @@ export default function PrintingJobsPage() {
           <div className="mt-4 grid grid-cols-2 gap-4">
             <div>
               <div className="text-xs font-medium text-zinc-600">Preset</div>
+              <div className="col-span-2">
+                <div className="text-xs font-medium text-zinc-600">Tipo rápido</div>
+                <div className="mt-1 inline-flex overflow-hidden rounded-xl border border-zinc-200 bg-white">
+                  <button
+                    type="button"
+                    onClick={() => setPresetId("LOC_50x70")}
+                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "LOC" ? "bg-zinc-900 text-white" : "bg-white text-zinc-900"
+                      }`}
+                  >
+                    LOC
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPresetId("LPN_50x25")}
+                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "LPN" ? "bg-zinc-900 text-white" : "bg-white text-zinc-900"
+                      }`}
+                  >
+                    LPN
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setPresetId("SKU_32x25_3UP")}
+                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "SKU" ? "bg-zinc-900 text-white" : "bg-white text-zinc-900"
+                      }`}
+                  >
+                    SKU
+                  </button>
+                </div>
+                <div className="mt-2 text-xs text-zinc-500">
+                  Esto solo cambia el preset recomendado. La cola es la que define qué se imprime.
+                </div>
+              </div>
               <select
                 className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
                 value={presetId}
@@ -902,73 +1028,159 @@ export default function PrintingJobsPage() {
           </div>
 
           <div className="mt-6">
-            <div className="text-sm font-semibold text-zinc-900">Seleccionar LOC</div>
-            <div className="mt-3 flex items-center gap-3">
-              <button
-                className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
-                onClick={loadLocs}
-                type="button"
-              >
-                Cargar LOCs
-              </button>
+            {preset.defaultType === "LOC" ? (
+              <>
+                <div className="text-sm font-semibold text-zinc-900">Seleccionar LOC</div>
 
-              <input
-                className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
-                placeholder="Buscar por código o descripción..."
-                value={locSearch}
-                onChange={(e) => setLocSearch(e.target.value)}
-              />
-            </div>
+                <div className="mt-3 flex items-center gap-3">
+                  <button
+                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
+                    onClick={loadLocs}
+                    type="button"
+                  >
+                    Cargar LOCs
+                  </button>
 
-            <div className="mt-3 flex items-center gap-3">
-              <select
-                className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
-                value={selectedLocCode}
-                onChange={(e) => setSelectedLocCode(e.target.value)}
-              >
-                <option value="">(Selecciona un LOC)</option>
-                {filteredLocs.map((l) => (
-                  <option key={l.id} value={l.code}>
-                    {l.code} — {String(l.description ?? "").slice(0, 40)}
-                  </option>
-                ))}
-              </select>
+                  <input
+                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
+                    placeholder="Buscar por código o descripción..."
+                    value={locSearch}
+                    onChange={(e) => setLocSearch(e.target.value)}
+                  />
+                </div>
 
-              <button
-                className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
-                onClick={() => addSelectedLocToQueue("replace")}
-                type="button"
-              >
-                Reemplazar
-              </button>
+                <div className="mt-3 flex items-center gap-3">
+                  <select
+                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
+                    value={selectedLocCode}
+                    onChange={(e) => setSelectedLocCode(e.target.value)}
+                  >
+                    <option value="">{locs.length ? "(Selecciona un LOC)" : "(Primero carga LOCs)"}</option>
+                    {filteredLocs.map((l) => (
+                      <option key={l.id} value={l.code}>
+                        {l.code} — {String(l.description ?? "").slice(0, 40)}
+                      </option>
+                    ))}
+                  </select>
 
-              <button
-                className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
-                onClick={() => addSelectedLocToQueue("append")}
-                type="button"
-              >
-                Agregar
-              </button>
-            </div>
+                  <button
+                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
+                    onClick={() => addSelectedLocToQueue("replace")}
+                    type="button"
+                  >
+                    Reemplazar
+                  </button>
 
-            <div className="mt-2 text-xs text-zinc-500">
-              Al escoger un LOC, el preset cambia automáticamente a LOC 50x70 (DataMatrix).
-            </div>
+                  <button
+                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
+                    onClick={() => addSelectedLocToQueue("append")}
+                    type="button"
+                  >
+                    Agregar
+                  </button>
+                </div>
+
+                <div className="mt-2 text-xs text-zinc-500">
+                  Al escoger un LOC, el preset cambia automáticamente a LOC 50x70 (DataMatrix).
+                </div>
+              </>
+            ) : null}
+
+            {preset.defaultType === "LPN" ? (
+              <>
+                <div className="text-sm font-semibold text-zinc-900">Seleccionar LPN</div>
+
+                <div className="mt-3 flex items-center gap-3">
+                  <button
+                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
+                    onClick={loadLpns}
+                    type="button"
+                  >
+                    Cargar LPNs
+                  </button>
+
+                  <input
+                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
+                    placeholder="Buscar por código, LOC o descripción..."
+                    value={lpnSearch}
+                    onChange={(e) => setLpnSearch(e.target.value)}
+                  />
+                </div>
+
+                <div className="mt-3 flex items-center gap-3">
+                  <select
+                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
+                    value={selectedLpnCode}
+                    onChange={(e) => setSelectedLpnCode(e.target.value)}
+                  >
+                    <option value="">{lpns.length ? "(Selecciona un LPN)" : "(Primero carga LPNs)"}</option>
+                    {filteredLpns.map((l) => (
+                      <option key={l.id} value={l.code}>
+                        {l.code}
+                        {l.loc_code ? ` — LOC ${l.loc_code}` : ""}
+                        {l.description ? ` — ${String(l.description).slice(0, 28)}` : ""}
+                      </option>
+                    ))}
+                  </select>
+
+                  <button
+                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
+                    onClick={() => addSelectedLpnToQueue("replace")}
+                    type="button"
+                  >
+                    Reemplazar
+                  </button>
+
+                  <button
+                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
+                    onClick={() => addSelectedLpnToQueue("append")}
+                    type="button"
+                  >
+                    Agregar
+                  </button>
+                </div>
+
+                <div className="mt-2 text-xs text-zinc-500">
+                  Al escoger un LPN, el preset cambia automáticamente a LPN 50x25 (Code128).
+                </div>
+              </>
+            ) : null}
+
+            {preset.defaultType === "SKU" ? (
+              <div className="mt-2 text-xs text-zinc-500">
+                Para SKU/Producto (3-up), pega códigos en la cola. Se imprime en filas de 3.
+              </div>
+            ) : null}
           </div>
         </div>
-
         <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
           <div className="text-sm font-semibold text-zinc-900">Etiquetas</div>
           <textarea
             className="mt-4 h-64 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-mono"
-            placeholder={`Formato: CODE|TEXTO (o solo CODE)\nEj:\nLOC-VGR-OFI-01-N0|TODA LA NAVIDAD`}
+            placeholder={
+              preset.defaultType === "LOC"
+                ? `Formato: LOC|DESCRIPCIÓN (o solo LOC)\nEj:\nLOC-VGR-OFI-01-N0|TODA LA NAVIDAD`
+                : preset.defaultType === "LPN"
+                  ? `Formato: LPN|NOTA (o solo LPN)\nEj:\nLPN-00001234|LOC LOC-VGR-OFI-01-N0`
+                  : `Formato: CODE|NOTA (o solo CODE)\nEj (3-up):\nSKU-0001|PIZZA\nSKU-0002|PIZZA\nSKU-0003|PIZZA`
+            }
             value={queueText}
             onChange={(e) => setQueueText(e.target.value)}
           />
 
-          <div className="mt-2 text-xs text-zinc-500">
-            Total en cola: {parsedQueue.length}.{" "}
-            {preset.columns === 3 ? "Este preset imprime en filas de 3 (3-up)." : "Este preset imprime 1-up."}
+          <div className="mt-3 flex items-center justify-between gap-3">
+            <div className="text-xs text-zinc-500">
+              Total en cola: {parsedQueue.length}.{" "}
+              {preset.columns === 3 ? "Este preset imprime en filas de 3 (3-up)." : "Este preset imprime 1-up."}
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setQueueText("")}
+              className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900"
+            >
+              Limpiar cola
+            </button>
           </div>
 
           {preset.columns === 3 ? (

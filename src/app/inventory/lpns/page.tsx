@@ -19,6 +19,18 @@ type SearchParams = {
 
   meta_saved?: string;
 };
+type InventoryLocationRow = {
+  id: string;
+  code: string;
+};
+
+type InventoryLpnRow = {
+  id: string;
+  code: string;
+  location_id: string | null;
+  label: string | null;
+  notes: string | null;
+};
 type InvProductRow = {
   product_id: string;
   inventory_kind: string | null;
@@ -78,7 +90,15 @@ export default async function InventoryLpnsPage({
   const code = sp.code?.trim() ?? "";
   const lpnIdParam = sp.lpn_id?.trim() ?? "";
 
-  const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
+  let errorMsg = "";
+  if (sp.error) {
+    try {
+      errorMsg = decodeURIComponent(sp.error);
+    } catch {
+      // Si el querystring viene con % inválido, no tumbamos el render.
+      errorMsg = String(sp.error);
+    }
+  }
   const created = sp.created === "1";
   const assigned = sp.assigned === "1";
 
@@ -92,7 +112,26 @@ export default async function InventoryLpnsPage({
       ? rawTab
       : "summary";
 
-  const supabase = await createClient();
+  let supabase: any;
+  try {
+    supabase = await createClient();
+  } catch (e: any) {
+    console.error("[inventory/lpns] createClient() failed:", e);
+
+    return (
+      <div className="mx-auto w-full max-w-3xl px-4 py-10">
+        <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-800">
+          <div className="font-semibold">Error inicializando Supabase (server)</div>
+          <div className="mt-2 text-red-800/90">
+            createClient() lanzó una excepción. Revisa los logs del servidor (Vercel) para ver el stack real.
+          </div>
+          <div className="mt-3 rounded-xl bg-white/60 p-3 font-mono text-xs text-red-900">
+            {String(e?.message ?? e)}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   let user: any = null;
   try {
@@ -158,11 +197,13 @@ export default async function InventoryLpnsPage({
   const defaultSiteId = sitesRows?.[0]?.site_id ?? "";
 
   // Locations para putaway
-  const { data: locations, error: locErr } = await supabase
+  const { data: locationsRaw, error: locErr } = await supabase
     .from("inventory_locations")
     .select("id,code")
     .order("code", { ascending: true })
     .limit(500);
+
+  const locations = (locationsRaw ?? []) as InventoryLocationRow[];
 
   // Server action: crear LPN
   async function createLpnAction(formData: FormData) {
@@ -473,7 +514,8 @@ export default async function InventoryLpnsPage({
 
   if (code) q = q.eq("code", code);
 
-  const [{ data: lpns, error: lpnsError }] = await Promise.all([q]);
+  const [{ data: lpnsRaw, error: lpnsError }] = await Promise.all([q]);
+  const lpns = (lpnsRaw ?? []) as InventoryLpnRow[];
 
   const locMap = new Map<string, { code: string }>();
   for (const loc of locations ?? []) {
@@ -482,10 +524,9 @@ export default async function InventoryLpnsPage({
 
   // Preselección si viene code y hay match exacto
   const preselectedLpnId =
-    code && lpns?.[0]?.code === code ? (lpns?.[0]?.id ?? "") : "";
+    code && lpns[0]?.code === code ? (lpns[0]?.id ?? "") : "";
   const activeLpnId = lpnIdParam || preselectedLpnId || "";
-  const activeLpn =
-    activeLpnId && lpns ? (lpns as any[]).find((x) => x.id === activeLpnId) : null;
+  const activeLpn = activeLpnId ? lpns.find((x) => x.id === activeLpnId) ?? null : null;
 
   const activeLabel = String(activeLpn?.label ?? "");
   const activeNotes = String(activeLpn?.notes ?? "");
@@ -660,7 +701,7 @@ export default async function InventoryLpnsPage({
                     className="mt-1 h-11 w-full rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
                   >
                     <option value="">Selecciona…</option>
-                    {(lpns ?? []).map((lpn) => (
+                    {lpns.map((lpn) => (
                       <option key={lpn.id} value={lpn.id}>
                         {lpn.code}
                       </option>
@@ -700,7 +741,7 @@ export default async function InventoryLpnsPage({
                     </tr>
                   </thead>
                   <tbody>
-                    {(lpns ?? []).map((lpn) => {
+                    {lpns.map((lpn) => {
                       const loc = lpn.location_id ? locMap.get(lpn.location_id) : null;
                       const isActive = lpn.id === activeLpnId;
 
@@ -733,7 +774,7 @@ export default async function InventoryLpnsPage({
                       );
                     })}
 
-                    {!lpns || lpns.length === 0 ? (
+                    {lpns.length === 0 ? (
                       <tr>
                         <td colSpan={2} className="px-3 py-6 text-sm text-zinc-500">
                           No hay LPNs para mostrar (o RLS no te permite verlos).
@@ -861,7 +902,7 @@ export default async function InventoryLpnsPage({
                               className="mt-1 h-11 w-full rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
                             >
                               <option value="">Selecciona un LOC…</option>
-                              {(locations ?? []).map((loc) => (
+                              {locations.map((loc) => (
                                 <option key={loc.id} value={loc.id}>
                                   {loc.code}
                                 </option>
