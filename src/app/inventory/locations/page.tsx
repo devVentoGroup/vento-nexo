@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { LocCreateForm } from "@/features/inventory/locations/loc-create-form";
+import { buildShellLoginUrl } from "@/lib/auth/sso";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export default async function InventoryLocationsPage({
 
   const returnTo = "/inventory/locations";
   if (!user) {
-    redirect(`/login?returnTo=${encodeURIComponent(returnTo)}`);
+    redirect(await buildShellLoginUrl(returnTo));
   }
 
   // defaultSiteId desde employee_sites (para preselección en el formulario)

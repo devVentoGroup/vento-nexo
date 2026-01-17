@@ -23,7 +23,7 @@
 
 **1.1 Autenticacion y autorizacion**
 - ⬜ Login estable (staff)
-- 🟡 Login principal en vento-shell (SSO); NEXO redirige si no hay sesion
+- 🟢 Login principal en vento-shell (SSO); NEXO redirige si no hay sesion
 - ⬜ Roles (owner/global_manager/manager/cashier o equivalentes)
 - ⬜ RLS consistente para tablas criticas:
   - products (ya)

@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { LpnCreateForm } from "@/features/inventory/lpns/lpn-create-form";
+import { buildShellLoginUrl } from "@/lib/auth/sso";
 
 type SearchParams = {
   code?: string;
@@ -150,39 +151,7 @@ export default async function InventoryLpnsPage({
     : "/inventory/lpns";
 
   if (!user) {
-    return (
-      <div className="space-y-6">
-        <div>
-          <h1 className="text-2xl font-semibold tracking-tight">LPN</h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-600">
-            Necesitas iniciar sesión para ver/crear/asignar LPNs (RLS).
-          </p>
-        </div>
-
-        <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <div className="text-sm font-semibold text-zinc-900">Sin sesión</div>
-          <div className="mt-1 text-sm text-zinc-600">
-            Inicia sesión en NEXO para continuar.
-          </div>
-
-          <div className="mt-4 flex flex-col gap-2 sm:flex-row">
-            <Link
-              href={`/login?returnTo=${encodeURIComponent(returnTo)}`}
-              className="inline-flex h-11 items-center justify-center rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800"
-            >
-              Iniciar sesión
-            </Link>
-
-            <Link
-              href="/scanner"
-              className="inline-flex h-11 items-center justify-center rounded-xl bg-white px-4 text-sm font-semibold text-zinc-900 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
-            >
-              Ir a Scanner
-            </Link>
-          </div>
-        </div>
-      </div>
-    );
+    redirect(await buildShellLoginUrl(returnTo));
   }
 
   // Inferir site_id desde employee_sites (mismo patrón que LOC)

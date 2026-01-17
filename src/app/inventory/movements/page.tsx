@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 
+import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
@@ -47,7 +48,7 @@ export default async function InventoryMovementsPage({
 
   const returnTo = "/inventory/movements";
   if (!user) {
-    redirect(`/login?returnTo=${encodeURIComponent(returnTo)}`);
+    redirect(await buildShellLoginUrl(returnTo));
   }
 
   const { data: sitesRows } = await supabase
