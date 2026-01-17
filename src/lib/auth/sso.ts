@@ -1,6 +1,8 @@
 import { headers } from "next/headers";
 
-const SHELL_LOGIN_URL = "https://shell.ventogroup.co/login";
+const SHELL_LOGIN_URL =
+  process.env.NEXT_PUBLIC_SHELL_LOGIN_URL ||
+  "https://os.ventogroup.co/login";
 
 function normalizeReturnTo(value?: string) {
   const v = (value ?? "").trim();
