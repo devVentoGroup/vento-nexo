@@ -1,6 +1,9 @@
-import { LoginForm } from "../../features/auth/login-form";
+import { headers } from "next/headers";
+import { redirect } from "next/navigation";
 
 type SearchParams = { returnTo?: string; error?: string; email?: string };
+
+const SHELL_LOGIN_URL = "https://shell.ventogroup.co/login";
 
 function safeReturnTo(value?: string) {
   const v = (value ?? "").trim();
@@ -9,23 +12,32 @@ function safeReturnTo(value?: string) {
   return v;
 }
 
+async function buildReturnToUrl(pathname: string) {
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "nexo.ventogroup.co";
+  const proto = h.get("x-forwarded-proto") ?? "https";
+  return `${proto}://${host}${pathname}`;
+}
+
 export default async function LoginPage({
   searchParams,
 }: {
   searchParams?: Promise<SearchParams>;
 }) {
   const sp = (await searchParams) ?? {};
-  const returnTo = safeReturnTo(sp.returnTo);
-  const initialError = sp.error ? decodeURIComponent(sp.error) : "";
-  const defaultEmail = sp.email ? decodeURIComponent(sp.email) : "";
+  const returnPath = safeReturnTo(sp.returnTo);
+  const returnTo = await buildReturnToUrl(returnPath);
 
-  return (
-    <div className="mx-auto w-full max-w-xl">
-      <LoginForm
-        returnTo={returnTo}
-        initialError={initialError || undefined}
-        defaultEmail={defaultEmail || undefined}
-      />
-    </div>
-  );
+  const qs = new URLSearchParams();
+  qs.set("returnTo", returnTo);
+
+  if (sp.email) {
+    try {
+      qs.set("email", decodeURIComponent(sp.email));
+    } catch {
+      qs.set("email", sp.email);
+    }
+  }
+
+  redirect(`${SHELL_LOGIN_URL}?${qs.toString()}`);
 }
