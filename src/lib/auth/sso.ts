@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 
 const SHELL_LOGIN_URL =
   process.env.NEXT_PUBLIC_SHELL_LOGIN_URL ||
-  "https://workspace.ventogroup.co/login";
+  "https://os.ventogroup.co/login";
 
 function normalizeReturnTo(value?: string) {
   const v = (value ?? "").trim();
