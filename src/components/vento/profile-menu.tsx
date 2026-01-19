@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createClient } from "@/lib/supabase/client";
 
 type ProfileMenuProps = {
   name?: string;
@@ -18,10 +19,24 @@ function initialsFrom(value?: string) {
 
 export function ProfileMenu({ name, role, email }: ProfileMenuProps) {
   const [open, setOpen] = useState(false);
+  const [isSigningOut, setIsSigningOut] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   const initials = useMemo(() => initialsFrom(name || email || "Vento"), [name, email]);
   const displayName = name || "Usuario";
+  const shellLoginUrl =
+    process.env.NEXT_PUBLIC_SHELL_LOGIN_URL || "https://os.ventogroup.co/login";
+
+  const handleSignOut = async () => {
+    try {
+      setIsSigningOut(true);
+      const supabase = createClient();
+      await supabase.auth.signOut();
+    } finally {
+      const returnTo = encodeURIComponent(window.location.origin);
+      window.location.href = `${shellLoginUrl}?returnTo=${returnTo}`;
+    }
+  };
 
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
@@ -56,6 +71,14 @@ export function ProfileMenu({ name, role, email }: ProfileMenuProps) {
           <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
             Sesion activa en NEXO.
           </div>
+          <button
+            type="button"
+            onClick={handleSignOut}
+            disabled={isSigningOut}
+            className="mt-3 inline-flex h-10 w-full items-center justify-center rounded-xl bg-zinc-900 px-3 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-60"
+          >
+            {isSigningOut ? "Cerrando..." : "Cerrar sesion"}
+          </button>
         </div>
       ) : null}
     </div>

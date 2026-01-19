@@ -244,3 +244,23 @@ Copiar y completar:
 - Casos OK:
 - Casos fallidos:
 - Notas:
+
+## 6) Tabla de marcado (usar durante el QA)
+
+Legenda: OK / FAIL / N/A
+
+Usuario | Acceso base | Stock | Movimientos | Remisiones Solicitar | Remisiones Preparar | Remisiones Recibir | Remisiones Cancelar | All Sites | LOC | LPN | Prod manual | Observaciones
+---|---|---|---|---|---|---|---|---|---|---|---|---
+qa.propietario@ventogroup.co | OK | OK | OK |  |  |  | N/A | OK |  |  | N/A | Home carga; remisiones sin datos; vista global activa
+qa.gerente@ventogroup.co |  |  |  |  |  |  |  |  |  |  |  | 
+qa.cajero.vc@ventogroup.co |  |  |  |  |  |  |  |  |  |  |  | 
+qa.cocinero.vc@ventogroup.co |  |  |  |  |  |  |  |  |  |  |  | 
+qa.barista.vc@ventogroup.co |  |  |  |  |  |  |  |  |  |  |  | 
+qa.cajero.sa@ventogroup.co |  |  |  |  |  |  |  |  |  |  |  | 
+qa.cocinero.sa@ventogroup.co |  |  |  |  |  |  |  |  |  |  |  | 
+qa.barista.sa@ventogroup.co |  |  |  |  |  |  |  |  |  |  |  | 
+qa.bodeguero.cp@ventogroup.co |  |  |  |  |  |  |  |  |  |  |  | 
+qa.cocinero.cp@ventogroup.co |  |  |  |  |  |  |  |  |  |  |  | 
+qa.repostero.cp@ventogroup.co |  |  |  |  |  |  |  |  |  |  |  | 
+qa.panadero.cp@ventogroup.co |  |  |  |  |  |  |  |  |  |  |  | 
+qa.pastelero.cp@ventogroup.co |  |  |  |  |  |  |  |  |  |  |  | 

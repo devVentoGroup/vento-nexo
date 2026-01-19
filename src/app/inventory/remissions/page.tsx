@@ -284,7 +284,7 @@ export default async function RemissionsPage({
           </p>
         </div>
 
-        <div className="text-xs text-zinc-500">Produccion manual vive en FOGO.</div>
+        <div />
       </div>
 
       {errorMsg ? (

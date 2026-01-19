@@ -36,7 +36,7 @@ function DotsIcon() {
 }
 
 function StatusPill({ status }: { status: AppStatus }) {
-  const label = status === "active" ? "Activo" : "Próximamente";
+  const label = status === "active" ? "Activo" : "Pr+�ximamente";
   const cls =
     status === "active"
       ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
@@ -94,14 +94,14 @@ export function AppSwitcher({ sites = [], activeSiteId = "" }: AppSwitcherProps)
         id: "hub",
         name: "Hub",
         description: "Launcher del ecosistema.",
-        href: "https://hub.ventogroup.co",
+        href: "https://os.ventogroup.co",
         status: "active",
         group: "Workspace",
       },
       {
         id: "viso",
         name: "VISO",
-        description: "Gerencia y auditoría.",
+        description: "Gerencia y auditor+�a.",
         href: "https://viso.ventogroup.co",
         status: "soon",
         group: "Interno",
@@ -109,7 +109,7 @@ export function AppSwitcher({ sites = [], activeSiteId = "" }: AppSwitcherProps)
       {
         id: "nexo",
         name: "NEXO",
-        description: "Inventario y logística.",
+        description: "Inventario y log+�stica.",
         href: "https://nexo.ventogroup.co",
         status: "active",
         group: "Interno",
@@ -117,7 +117,7 @@ export function AppSwitcher({ sites = [], activeSiteId = "" }: AppSwitcherProps)
       {
         id: "fogo",
         name: "FOGO",
-        description: "Recetas y producción.",
+        description: "Recetas y producci+�n.",
         href: "https://fogo.ventogroup.co",
         status: "soon",
         group: "Interno",
@@ -145,22 +145,6 @@ export function AppSwitcher({ sites = [], activeSiteId = "" }: AppSwitcherProps)
         href: "https://aura.ventogroup.co",
         status: "soon",
         group: "Interno",
-      },
-      {
-        id: "pass",
-        name: "Vento Pass",
-        description: "Clientes: puntos y redenciones.",
-        href: "https://pass.ventogroup.co",
-        status: "active",
-        group: "Directo",
-      },
-      {
-        id: "anima",
-        name: "ANIMA",
-        description: "Empleados: asistencia y documentos.",
-        href: "https://anima.ventogroup.co",
-        status: "active",
-        group: "Directo",
       },
     ],
     []
