@@ -205,3 +205,4 @@ Si tu urgencia es control ya, el orden de implementacion mas efectivo es:
 3) Fase 4 (Entregas internas)
 4) Fase 5 (Transferencias satelites)
 5) Fase 6 (LPN/LOC + Zebra)
+
