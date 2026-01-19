@@ -16,6 +16,7 @@ const PERMISSIONS = {
   locations: "inventory.locations",
   lpns: "inventory.lpns",
   movements: "inventory.movements",
+  stock: "inventory.stock",
 };
 
 type SearchParams = {
@@ -157,6 +158,7 @@ export default async function Home({
   let canPreparePermission = false;
   let canReceivePermission = false;
   let canMovementsPermission = false;
+  let canStockPermission = false;
   let canLocationsPermission = false;
   let canLpnsPermission = false;
   let canProductionPermission = false;
@@ -168,6 +170,7 @@ export default async function Home({
       canPreparePermission,
       canReceivePermission,
       canMovementsPermission,
+      canStockPermission,
       canLocationsPermission,
       canLpnsPermission,
       canProductionPermission,
@@ -177,6 +180,7 @@ export default async function Home({
       checkPermission(supabase, APP_ID, PERMISSIONS.remissionsPrepare, { siteId: activeSiteId }),
       checkPermission(supabase, APP_ID, PERMISSIONS.remissionsReceive, { siteId: activeSiteId }),
       checkPermission(supabase, APP_ID, PERMISSIONS.movements, { siteId: activeSiteId }),
+      checkPermission(supabase, APP_ID, PERMISSIONS.stock, { siteId: activeSiteId }),
       checkPermission(supabase, APP_ID, PERMISSIONS.locations, { siteId: activeSiteId }),
       checkPermission(supabase, APP_ID, PERMISSIONS.lpns, { siteId: activeSiteId }),
       checkPermission(supabase, APP_ID, PERMISSIONS.productionBatches, { siteId: activeSiteId }),
@@ -194,6 +198,7 @@ export default async function Home({
   const canRequestRemission = isSatellite && canRequestPermission;
   const canPrepareRemission = isProductionCenter && canPreparePermission;
   const canReceiveRemission = isSatellite && canReceivePermission;
+  const canViewStock = canStockPermission;
   const canRegisterProduction = isProductionCenter && canProductionPermission;
   const canManageLocations = isProductionCenter && canLocationsPermission;
   const canManageLpns = isProductionCenter && canLpnsPermission;
@@ -250,6 +255,15 @@ export default async function Home({
       cta: "Abrir",
       tone: "secondary",
       visible: canViewRemissions,
+    },
+    {
+      id: "stock",
+      title: "Stock por sede",
+      description: "Consulta stock actual por SKU y sede.",
+      href: "/inventory/stock",
+      cta: "Abrir",
+      tone: "secondary",
+      visible: canViewStock,
     },
     {
       id: "movements",
