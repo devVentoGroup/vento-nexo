@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 
 import { requireAppAccess } from "@/lib/auth/guard";
 import { checkPermission } from "@/lib/auth/permissions";
@@ -12,7 +12,6 @@ const PERMISSIONS = {
   remissionsRequest: "inventory.remissions.request",
   remissionsPrepare: "inventory.remissions.prepare",
   remissionsReceive: "inventory.remissions.receive",
-  productionBatches: "inventory.production_batches",
   locations: "inventory.locations",
   lpns: "inventory.lpns",
   movements: "inventory.movements",
@@ -161,7 +160,6 @@ export default async function Home({
   let canStockPermission = false;
   let canLocationsPermission = false;
   let canLpnsPermission = false;
-  let canProductionPermission = false;
 
   if (activeSiteId) {
     [
@@ -173,7 +171,6 @@ export default async function Home({
       canStockPermission,
       canLocationsPermission,
       canLpnsPermission,
-      canProductionPermission,
     ] = await Promise.all([
       checkPermission(supabase, APP_ID, PERMISSIONS.remissions, { siteId: activeSiteId }),
       checkPermission(supabase, APP_ID, PERMISSIONS.remissionsRequest, { siteId: activeSiteId }),
@@ -183,7 +180,6 @@ export default async function Home({
       checkPermission(supabase, APP_ID, PERMISSIONS.stock, { siteId: activeSiteId }),
       checkPermission(supabase, APP_ID, PERMISSIONS.locations, { siteId: activeSiteId }),
       checkPermission(supabase, APP_ID, PERMISSIONS.lpns, { siteId: activeSiteId }),
-      checkPermission(supabase, APP_ID, PERMISSIONS.productionBatches, { siteId: activeSiteId }),
     ]);
   }
 
@@ -199,7 +195,6 @@ export default async function Home({
   const canPrepareRemission = isProductionCenter && canPreparePermission;
   const canReceiveRemission = isSatellite && canReceivePermission;
   const canViewStock = canStockPermission;
-  const canRegisterProduction = isProductionCenter && canProductionPermission;
   const canManageLocations = isProductionCenter && canLocationsPermission;
   const canManageLpns = isProductionCenter && canLpnsPermission;
 
@@ -310,22 +305,13 @@ export default async function Home({
       tone: "secondary",
       visible: canManageLpns,
     },
-    {
-      id: "production-batches",
-      title: "Produccion manual",
-      description: "Registrar lotes terminados y actualizar stock.",
-      href: "/inventory/production-batches",
-      cta: "Abrir",
-      tone: "secondary",
-      visible: canRegisterProduction,
-    },
   ];
 
   const primaryActions = actions.filter((action) => action.visible && action.tone === "primary");
   const secondaryActions = actions.filter((action) => action.visible && action.tone !== "primary");
 
   return (
-    <div className="mx-auto w-full max-w-6xl space-y-6 px-6 py-8">
+    <div className="w-full space-y-6 px-6 py-8">
       <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>

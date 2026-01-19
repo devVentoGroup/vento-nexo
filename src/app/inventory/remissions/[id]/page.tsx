@@ -366,7 +366,7 @@ export default async function RemissionDetailPage({
 
   if (!request) {
     return (
-      <div className="mx-auto w-full max-w-5xl px-6 py-8">
+      <div className="w-full px-6 py-8">
         <Link href="/inventory/remissions" className="text-sm text-zinc-600 underline">
           Volver
         </Link>
@@ -376,7 +376,7 @@ export default async function RemissionDetailPage({
   }
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-6 py-8 space-y-6">
+    <div className="w-full px-6 py-8 space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
           <Link href="/inventory/remissions" className="text-xs text-zinc-500 underline">

@@ -275,7 +275,7 @@ export default async function RemissionsPage({
   const productRows = (products ?? []) as ProductRow[];
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-6 py-8">
+    <div className="w-full px-6 py-8">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Remisiones</h1>
@@ -284,12 +284,7 @@ export default async function RemissionsPage({
           </p>
         </div>
 
-        <Link
-          href="/inventory/production-batches"
-          className="inline-flex h-11 items-center justify-center rounded-xl bg-white px-4 text-sm font-semibold text-zinc-900 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
-        >
-          Produccion manual
-        </Link>
+        <div className="text-xs text-zinc-500">Produccion manual vive en FOGO.</div>
       </div>
 
       {errorMsg ? (

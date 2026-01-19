@@ -107,7 +107,7 @@ export default async function InventoryLocationsPage({
   const locationRows = (locations ?? []) as LocationRow[];
 
   return (
-    <div className="mx-auto w-full max-w-6xl px-6 py-8">
+    <div className="w-full px-6 py-8">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">LOC</h1>

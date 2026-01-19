@@ -66,7 +66,7 @@ export async function VentoTopbar() {
 
   return (
     <header>
-      <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 px-6 py-4">
+      <div className="flex w-full flex-wrap items-center justify-between gap-3 px-6 py-4">
         <div className="flex items-center gap-3">
           <div className="flex flex-col leading-tight">
             <div className="text-sm font-semibold text-zinc-900">Vento OS</div>
