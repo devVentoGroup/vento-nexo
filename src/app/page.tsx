@@ -74,7 +74,7 @@ function statusLabel(value?: string | null) {
 function ActionCard({ action }: { action: ActionLink }) {
   const isPrimary = action.tone === "primary";
   const buttonClass = isPrimary
-    ? "inline-flex h-10 items-center justify-center rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800"
+    ? "inline-flex h-10 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500"
     : "inline-flex h-10 items-center justify-center rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-900 hover:bg-zinc-50";
 
   return (
@@ -342,7 +342,7 @@ export default async function Home({
             </Link>
             <Link
               href="/scanner"
-              className="inline-flex h-10 items-center justify-center rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800"
+              className="inline-flex h-10 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500"
             >
               Scanner
             </Link>

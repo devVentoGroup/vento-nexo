@@ -28,8 +28,8 @@ export default function RootLayout({
   return (
     <html lang="es">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <div className="min-h-screen bg-[#FFF7E6] text-[#2A1A00]">
-          <div className="sticky top-0 z-40 border-b border-[#F0E3C6] bg-white">
+        <div className="min-h-screen bg-[#F9FAFB] text-[#111827]">
+          <div className="sticky top-0 z-40 border-b border-[#E5E7EB] bg-white">
             <VentoTopbar />
           </div>
 

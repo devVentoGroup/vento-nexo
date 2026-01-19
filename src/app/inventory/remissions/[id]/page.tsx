@@ -434,7 +434,7 @@ export default async function RemissionDetailPage({
             <button
               name="action"
               value="prepare"
-              className="rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white"
+              className="rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white"
             >
               Marcar preparado
             </button>
@@ -576,7 +576,7 @@ export default async function RemissionDetailPage({
             ))}
           </div>
 
-          <button className="inline-flex h-11 items-center justify-center rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white">
+          <button className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white">
             Guardar items
           </button>
         </form>

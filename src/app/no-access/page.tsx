@@ -37,7 +37,7 @@ export default async function NoAccessPage({
         <div className="mt-6 flex flex-col gap-2 sm:flex-row">
           <a
             href={HUB_URL}
-            className="inline-flex h-11 items-center justify-center rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800"
+            className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500"
           >
             Volver al Hub
           </a>

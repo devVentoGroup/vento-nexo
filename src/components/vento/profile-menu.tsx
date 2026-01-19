@@ -57,7 +57,7 @@ export function ProfileMenu({ name, role, email }: ProfileMenuProps) {
         aria-haspopup="dialog"
         aria-expanded={open}
       >
-        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-zinc-900 text-xs font-semibold text-white">
+        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-600 text-xs font-semibold text-white">
           {initials}
         </span>
         <span className="hidden sm:inline">Perfil</span>
@@ -75,7 +75,7 @@ export function ProfileMenu({ name, role, email }: ProfileMenuProps) {
             type="button"
             onClick={handleSignOut}
             disabled={isSigningOut}
-            className="mt-3 inline-flex h-10 w-full items-center justify-center rounded-xl bg-zinc-900 px-3 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-60"
+            className="mt-3 inline-flex h-10 w-full items-center justify-center rounded-xl bg-amber-600 px-3 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-60"
           >
             {isSigningOut ? "Cerrando..." : "Cerrar sesion"}
           </button>

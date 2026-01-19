@@ -178,7 +178,7 @@ export default async function InventoryStockPage({
           </label>
 
           <div className="sm:col-span-2 lg:col-span-4">
-            <button className="inline-flex h-11 items-center justify-center rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800">
+            <button className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500">
               Aplicar filtros
             </button>
           </div>

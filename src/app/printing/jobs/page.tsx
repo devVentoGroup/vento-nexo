@@ -846,7 +846,7 @@ function PrintingJobsContent() {
       <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-center gap-3">
           <button
-            className="rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white"
+            className="rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white"
             onClick={detectPrinters}
             type="button"
           >
@@ -927,7 +927,7 @@ function PrintingJobsContent() {
                   <button
                     type="button"
                     onClick={() => setPresetId("LOC_50x70")}
-                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "LOC" ? "bg-zinc-900 text-white" : "bg-white text-zinc-900"
+                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "LOC" ? "bg-amber-600 text-white" : "bg-white text-zinc-900"
                       }`}
                   >
                     LOC
@@ -935,7 +935,7 @@ function PrintingJobsContent() {
                   <button
                     type="button"
                     onClick={() => setPresetId("LPN_50x25")}
-                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "LPN" ? "bg-zinc-900 text-white" : "bg-white text-zinc-900"
+                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "LPN" ? "bg-amber-600 text-white" : "bg-white text-zinc-900"
                       }`}
                   >
                     LPN
@@ -943,7 +943,7 @@ function PrintingJobsContent() {
                   <button
                     type="button"
                     onClick={() => setPresetId("SKU_32x25_3UP")}
-                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "SKU" ? "bg-zinc-900 text-white" : "bg-white text-zinc-900"
+                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "SKU" ? "bg-amber-600 text-white" : "bg-white text-zinc-900"
                       }`}
                   >
                     SKU
@@ -951,7 +951,7 @@ function PrintingJobsContent() {
                   <button
                     type="button"
                     onClick={() => setPresetId("PROD_50x30")}
-                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "PROD" ? "bg-zinc-900 text-white" : "bg-white text-zinc-900"
+                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "PROD" ? "bg-amber-600 text-white" : "bg-white text-zinc-900"
                       }`}
                   >
                     PROD

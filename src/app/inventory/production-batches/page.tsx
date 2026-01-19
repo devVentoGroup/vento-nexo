@@ -374,7 +374,7 @@ export default async function ProductionBatchesPage({
               />
             </label>
 
-            <button className="inline-flex h-11 items-center justify-center rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800">
+            <button className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500">
               Registrar lote
             </button>
           </form>

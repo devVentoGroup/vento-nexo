@@ -100,7 +100,7 @@ export function LpnCreateForm({ defaultSiteId, action }: Props) {
         <button
           type="submit"
           disabled={!canSubmit}
-          className="md:col-span-2 inline-flex h-11 items-center justify-center rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-40"
+          className="md:col-span-2 inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-40"
         >
           Crear LPN
         </button>

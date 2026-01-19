@@ -1,11 +1,11 @@
 @import "tailwindcss";
 
 :root {
-  --background: #fff7e6;
-  --foreground: #2a1a00;
-  --nexo-base: #fff7e6;
-  --nexo-base-alt: #fff1d1;
-  --nexo-border: #f0e3c6;
+  --background: #ffffff;
+  --foreground: #111827;
+  --nexo-base: #ffffff;
+  --nexo-base-alt: #f9fafb;
+  --nexo-border: #e5e7eb;
 }
 
 @theme inline {

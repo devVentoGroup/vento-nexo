@@ -693,7 +693,7 @@ export default async function InventoryLpnsPage({
 
               {code ? <input type="hidden" name="code" value={code} /> : null}
 
-              <button className="inline-flex h-11 items-center justify-center rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800">
+              <button className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500">
                 Abrir
               </button>
             </form>
@@ -879,7 +879,7 @@ export default async function InventoryLpnsPage({
                           </div>
 
                           <div className="sm:col-span-2">
-                            <button className="inline-flex h-11 items-center justify-center rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800">
+                            <button className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500">
                               Asignar LOC
                             </button>
                           </div>
@@ -1049,7 +1049,7 @@ export default async function InventoryLpnsPage({
                               />
                             </div>
 
-                            <button className="inline-flex h-11 items-center justify-center rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800">
+                            <button className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500">
                               Agregar
                             </button>
                           </form>
@@ -1090,7 +1090,7 @@ export default async function InventoryLpnsPage({
                               />
                             </div>
 
-                            <button className="inline-flex h-11 items-center justify-center rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800">
+                            <button className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500">
                               Retirar
                             </button>
                           </form>
@@ -1148,7 +1148,7 @@ export default async function InventoryLpnsPage({
                             />
                           </div>
 
-                          <button className="inline-flex h-11 items-center justify-center rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800">
+                          <button className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500">
                             Guardar
                           </button>
                         </form>
