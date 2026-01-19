@@ -2,10 +2,19 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { requireAppAccess } from "@/lib/auth/guard";
+import { checkPermission } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 
 export const dynamic = "force-dynamic";
+
+const APP_ID = "nexo";
+
+const PERMISSIONS = {
+  remissionsPrepare: "inventory.remissions.prepare",
+  remissionsReceive: "inventory.remissions.receive",
+  remissionsCancel: "inventory.remissions.cancel",
+};
 
 type SearchParams = {
   error?: string;
@@ -14,9 +23,7 @@ type SearchParams = {
 
 type AccessContext = {
   role: string;
-  isAdminRole: boolean;
-  isBodegaRole: boolean;
-  employeeSiteIds: string[];
+  roleLabel: string;
   fromSiteType: string;
   toSiteType: string;
   fromSiteName: string;
@@ -25,6 +32,7 @@ type AccessContext = {
   canTransit: boolean;
   canReceive: boolean;
   canClose: boolean;
+  canCancel: boolean;
 };
 
 type SiteRow = {
@@ -76,18 +84,15 @@ async function loadAccessContext(
     .single();
 
   const role = String(employee?.role ?? "");
-  const isAdminRole = ["propietario", "gerente_general", "gerente"].includes(role);
-  const isBodegaRole = role === "bodeguero";
-
-  const { data: employeeSites } = await supabase
-    .from("employee_sites")
-    .select("site_id")
-    .eq("employee_id", userId)
-    .eq("is_active", true);
-
-  const employeeSiteIds = (employeeSites ?? [])
-    .map((row: { site_id: string }) => row.site_id)
-    .filter(Boolean);
+  let roleLabel = role || "sin rol";
+  if (role) {
+    const { data: roleRow } = await supabase
+      .from("roles")
+      .select("name")
+      .eq("code", role)
+      .single();
+    roleLabel = roleRow?.name ?? role;
+  }
 
   const fromSiteId = request?.from_site_id ?? "";
   const toSiteId = request?.to_site_id ?? "";
@@ -108,21 +113,28 @@ async function loadAccessContext(
   const fromSiteName = String(siteMap.get(fromSiteId)?.name ?? fromSiteId ?? "");
   const toSiteName = String(siteMap.get(toSiteId)?.name ?? toSiteId ?? "");
 
-  const hasFromAccess = fromSiteId ? employeeSiteIds.includes(fromSiteId) : false;
-  const hasToAccess = toSiteId ? employeeSiteIds.includes(toSiteId) : false;
+  const canPreparePermission = fromSiteId
+    ? await checkPermission(supabase, APP_ID, PERMISSIONS.remissionsPrepare, {
+        siteId: fromSiteId,
+      })
+    : false;
+  const canReceivePermission = toSiteId
+    ? await checkPermission(supabase, APP_ID, PERMISSIONS.remissionsReceive, {
+        siteId: toSiteId,
+      })
+    : false;
+  const canCancel = await checkPermission(supabase, APP_ID, PERMISSIONS.remissionsCancel, {
+    siteId: fromSiteId || toSiteId || null,
+  });
 
-  const canPrepare =
-    isAdminRole || (isBodegaRole && hasFromAccess && fromSiteType === "production_center");
+  const canPrepare = fromSiteType === "production_center" && canPreparePermission;
   const canTransit = canPrepare;
-  const canReceive =
-    isAdminRole || (isBodegaRole && hasToAccess && toSiteType === "satellite");
-  const canClose = isAdminRole || canReceive;
+  const canReceive = toSiteType === "satellite" && canReceivePermission;
+  const canClose = canReceive || canCancel;
 
   return {
     role,
-    isAdminRole,
-    isBodegaRole,
-    employeeSiteIds,
+    roleLabel,
     fromSiteType,
     toSiteType,
     fromSiteName,
@@ -131,6 +143,7 @@ async function loadAccessContext(
     canTransit,
     canReceive,
     canClose,
+    canCancel,
   };
 }
 
@@ -154,8 +167,8 @@ async function updateItems(formData: FormData) {
   const access = await loadAccessContext(supabase, user.id, request);
   const allowPrepared = access.canPrepare;
   const allowReceived = access.canReceive;
-  const allowStatus = access.isAdminRole || access.canPrepare || access.canReceive;
-  const allowArea = access.isAdminRole || access.canPrepare;
+  const allowStatus = access.canCancel || access.canPrepare || access.canReceive;
+  const allowArea = access.canCancel || access.canPrepare;
 
   const itemIds = formData.getAll("item_id").map((v) => String(v).trim());
   const prepared = formData.getAll("prepared_quantity").map((v) => String(v).trim());
@@ -245,8 +258,11 @@ async function updateStatus(formData: FormData) {
     redirect(`/inventory/remissions/${requestId}?error=` + encodeURIComponent("No puedes cerrar."));
   }
 
-  if (action === "cancel" && !access.isAdminRole) {
-    redirect(`/inventory/remissions/${requestId}?error=` + encodeURIComponent("Solo admin puede cancelar."));
+  if (action === "cancel" && !access.canCancel) {
+    redirect(
+      `/inventory/remissions/${requestId}?error=` +
+        encodeURIComponent("No tienes permiso para cancelar.")
+    );
   }
   const updates: Record<string, string | null> = {
     status_updated_at: new Date().toISOString(),
@@ -319,7 +335,7 @@ export default async function RemissionDetailPage({
   const okMsg = sp.ok ? decodeURIComponent(sp.ok) : "";
 
   const { supabase, user } = await requireAppAccess({
-    appId: "nexo",
+    appId: APP_ID,
     returnTo: `/inventory/remissions/${id}`,
     permissionCode: "inventory.remissions",
   });
@@ -371,7 +387,7 @@ export default async function RemissionDetailPage({
             Estado: <span className="font-semibold">{request.status}</span>
           </p>
           <p className="mt-1 text-xs text-zinc-500">
-            Vista: {access.canPrepare ? "Bodega (Centro)" : "Sede satelite"} · Rol: {access.role || "sin rol"}
+            Vista: {access.fromSiteType === "production_center" ? "Bodega (Centro)" : "Sede satelite"} | Rol: {access.roleLabel || "sin rol"}
           </p>
         </div>
       </div>
@@ -450,7 +466,7 @@ export default async function RemissionDetailPage({
               Cerrar
             </button>
           ) : null}
-          {access.isAdminRole ? (
+          {access.canCancel ? (
             <button
               name="action"
               value="cancel"
@@ -522,7 +538,7 @@ export default async function RemissionDetailPage({
                       />
                     </label>
                   ) : null}
-                  {access.isAdminRole || access.canPrepare || access.canReceive ? (
+                  {access.canCancel || access.canPrepare || access.canReceive ? (
                     <label className="flex flex-col gap-1">
                       <span className="text-xs text-zinc-500">Estado</span>
                       <select
@@ -538,7 +554,7 @@ export default async function RemissionDetailPage({
                       </select>
                     </label>
                   ) : null}
-                  {access.isAdminRole || access.canPrepare ? (
+                  {access.canCancel || access.canPrepare ? (
                     <label className="flex flex-col gap-1">
                       <span className="text-xs text-zinc-500">Area</span>
                       <select

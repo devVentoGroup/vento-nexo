@@ -4,8 +4,14 @@ import { redirect } from "next/navigation";
 
 import { LocCreateForm } from "@/features/inventory/locations/loc-create-form";
 import { requireAppAccess } from "@/lib/auth/guard";
+import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
+
+type LocationRow = {
+  id: string;
+  code: string | null;
+};
 
 export default async function InventoryLocationsPage({
   searchParams,
@@ -98,6 +104,7 @@ export default async function InventoryLocationsPage({
     .select("id,code")
     .order("code", { ascending: true })
     .limit(500);
+  const locationRows = (locations ?? []) as LocationRow[];
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-8">
@@ -152,7 +159,7 @@ export default async function InventoryLocationsPage({
               </tr>
             </thead>
             <tbody>
-              {(locations ?? []).map((loc) => (
+              {locationRows.map((loc) => (
                 <tr key={loc.id} className="text-sm text-zinc-800">
                   <td className="border-b border-zinc-100 py-3 font-mono">
                     {loc.code}

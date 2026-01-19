@@ -23,6 +23,11 @@ const MOVEMENT_TYPES = [
   "shrink",
 ];
 
+type SiteRow = {
+  site_id: string;
+  is_primary: boolean | null;
+};
+
 function startOfDayIso(dateStr: string) {
   return `${dateStr}T00:00:00`;
 }
@@ -54,6 +59,7 @@ export default async function InventoryMovementsPage({
     .order("is_primary", { ascending: false })
     .limit(50);
 
+  const siteRows = (sitesRows ?? []) as SiteRow[];
   const defaultSiteId = sitesRows?.[0]?.site_id ?? "";
   const siteId = String(sp.site_id ?? defaultSiteId).trim();
   const movementType = String(sp.type ?? "").trim();
@@ -112,7 +118,7 @@ export default async function InventoryMovementsPage({
               className="h-11 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
             >
               <option value="">Todas</option>
-              {(sitesRows ?? []).map((s) => (
+              {siteRows.map((s) => (
                 <option key={s.site_id} value={s.site_id}>
                   {s.site_id}
                   {s.is_primary ? " (primary)" : ""}

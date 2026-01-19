@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Script from "next/script";
 import { useSearchParams } from "next/navigation";
 
@@ -313,7 +313,7 @@ function normalizeDevices(devsRaw: any): any[] {
   return [];
 }
 
-export default function PrintingJobsPage() {
+function PrintingJobsContent() {
   const searchParams = useSearchParams();
   // Si tus scripts ya est+�n en otro path, ajusta aqu+�:
   const BROWSERPRINT_CORE = "/zebra/BrowserPrint.min.js";
@@ -1233,5 +1233,19 @@ export default function PrintingJobsPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+export default function PrintingJobsPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="mx-auto w-full max-w-6xl px-6 py-8 text-sm text-zinc-600">
+          Cargando impresion...
+        </div>
+      }
+    >
+      <PrintingJobsContent />
+    </Suspense>
   );
 }

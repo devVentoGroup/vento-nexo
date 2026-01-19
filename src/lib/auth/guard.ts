@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
+import { normalizePermissionCode } from "@/lib/auth/permissions";
 
 type GuardOptions = {
   appId: string;
@@ -43,8 +44,11 @@ export async function requireAppAccess({
       : [];
 
   if (permissionCodes.length) {
+    const normalizedCodes = permissionCodes.map((code) =>
+      normalizePermissionCode(appId, code)
+    );
     const checks = await Promise.all(
-      permissionCodes.map((code) =>
+      normalizedCodes.map((code) =>
         client.rpc("has_permission", { p_permission_code: code })
       )
     );
@@ -54,7 +58,7 @@ export async function requireAppAccess({
       const qs = new URLSearchParams();
       qs.set("returnTo", returnTo);
       qs.set("reason", "no_permission");
-      qs.set("permission", String(permissionCodes[deniedIndex] ?? ""));
+      qs.set("permission", String(normalizedCodes[deniedIndex] ?? ""));
       redirect(`/no-access?${qs.toString()}`);
     }
   }

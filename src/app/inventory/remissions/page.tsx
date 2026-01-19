@@ -2,10 +2,18 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { requireAppAccess } from "@/lib/auth/guard";
+import { checkPermission } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 
 export const dynamic = "force-dynamic";
+
+const APP_ID = "nexo";
+
+const PERMISSIONS = {
+  remissionsRequest: "inventory.remissions.request",
+  remissionsAllSites: "inventory.remissions.all_sites",
+};
 
 type SearchParams = {
   error?: string;
@@ -22,8 +30,36 @@ function parseNumber(value: string) {
   return Number.isFinite(n) ? n : 0;
 }
 
-const ADMIN_ROLES = new Set(["propietario", "gerente_general", "gerente"]);
-const REQUEST_ROLES = new Set(["cajero", "barista", "cocinero"]);
+type EmployeeSiteRow = {
+  site_id: string | null;
+  is_primary: boolean | null;
+};
+
+type SiteRow = {
+  id: string;
+  name: string | null;
+  site_type: string | null;
+};
+
+type AreaKindRow = {
+  code: string;
+  name: string | null;
+};
+
+type ProductRow = {
+  id: string;
+  name: string | null;
+  unit: string | null;
+};
+
+type RemissionRow = {
+  id: string;
+  created_at: string | null;
+  status: string | null;
+  from_site_id: string | null;
+  to_site_id: string | null;
+  notes: string | null;
+};
 
 async function createRemission(formData: FormData) {
   "use server";
@@ -33,23 +69,6 @@ async function createRemission(formData: FormData) {
   const user = userRes.user ?? null;
   if (!user) {
     redirect(await buildShellLoginUrl("/inventory/remissions"));
-  }
-
-  const { data: employee } = await supabase
-    .from("employees")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  const role = String(employee?.role ?? "");
-  const isAdminRole = ADMIN_ROLES.has(role);
-  const canRequestRole = REQUEST_ROLES.has(role);
-
-  if (!isAdminRole && !canRequestRole) {
-    redirect(
-      "/inventory/remissions?error=" +
-        encodeURIComponent("No tienes permiso para solicitar remisiones.")
-    );
   }
 
   const fromSiteId = asText(formData.get("from_site_id"));
@@ -73,6 +92,16 @@ async function createRemission(formData: FormData) {
 
   if (!toSiteId || !fromSiteId) {
     redirect("/inventory/remissions?error=" + encodeURIComponent("Debes definir origen y destino."));
+  }
+
+  const canRequest = await checkPermission(supabase, APP_ID, PERMISSIONS.remissionsRequest, {
+    siteId: toSiteId,
+  });
+  if (!canRequest) {
+    redirect(
+      "/inventory/remissions?error=" +
+        encodeURIComponent("No tienes permiso para solicitar remisiones.")
+    );
   }
 
   const { data: toSite } = await supabase
@@ -148,21 +177,18 @@ export default async function RemissionsPage({
   const okMsg = sp.ok ? decodeURIComponent(sp.ok) : "";
 
   const { supabase, user } = await requireAppAccess({
-    appId: "nexo",
+    appId: APP_ID,
     returnTo: "/inventory/remissions",
     permissionCode: "inventory.remissions",
   });
 
   const { data: employee } = await supabase
     .from("employees")
-    .select("role,site_id")
+    .select("site_id")
     .eq("id", user.id)
     .single();
 
-  const role = String(employee?.role ?? "");
-  const isAdminRole = ADMIN_ROLES.has(role);
-  const canRequestRole = REQUEST_ROLES.has(role);
-  const isBodegaRole = role === "bodeguero";
+  const canViewAll = await checkPermission(supabase, APP_ID, PERMISSIONS.remissionsAllSites);
 
   const { data: sitesRows } = await supabase
     .from("employee_sites")
@@ -172,14 +198,15 @@ export default async function RemissionsPage({
     .order("is_primary", { ascending: false })
     .limit(50);
 
-  const defaultSiteId = sitesRows?.[0]?.site_id ?? employee?.site_id ?? "";
+  const employeeSiteRows = (sitesRows ?? []) as EmployeeSiteRow[];
+  const defaultSiteId = employeeSiteRows[0]?.site_id ?? employee?.site_id ?? "";
   let activeSiteId =
-    sp.site_id !== undefined ? String(sp.site_id).trim() : isAdminRole ? "" : defaultSiteId;
-  if (!activeSiteId && !isAdminRole) {
+    sp.site_id !== undefined ? String(sp.site_id).trim() : canViewAll ? "" : defaultSiteId;
+  if (!activeSiteId && !canViewAll) {
     activeSiteId = defaultSiteId;
   }
 
-  const siteIds = (sitesRows ?? [])
+  const siteIds = employeeSiteRows
     .map((row) => row.site_id)
     .filter((id): id is string => Boolean(id));
 
@@ -189,18 +216,24 @@ export default async function RemissionsPage({
         .select("id,name,site_type")
         .in("id", siteIds)
         .order("name", { ascending: true })
-    : { data: [] as Array<{ id: string; name: string | null; site_type: string | null }> };
+    : { data: [] as SiteRow[] };
 
-  const siteMap = new Map((sites ?? []).map((site) => [site.id, site]));
+  const siteRows = (sites ?? []) as SiteRow[];
+  const siteMap = new Map(siteRows.map((site) => [site.id, site]));
   const activeSite = activeSiteId ? siteMap.get(activeSiteId) : undefined;
-  const isAllSites = !activeSiteId && isAdminRole;
+  const isAllSites = !activeSiteId && canViewAll;
   const activeSiteName = isAllSites ? "Todas las sedes" : activeSite?.name ?? activeSiteId;
   const activeSiteType = String(activeSite?.site_type ?? "");
   const isProductionCenter = activeSiteType === "production_center";
 
+  const canRequestPermission = activeSiteId
+    ? await checkPermission(supabase, APP_ID, PERMISSIONS.remissionsRequest, {
+        siteId: activeSiteId,
+      })
+    : false;
+
   const viewMode = isAllSites ? "all" : isProductionCenter ? "bodega" : "satelite";
-  const canCreate = viewMode === "satelite" && (canRequestRole || isAdminRole);
-  const canPrepare = viewMode === "bodega" && (isBodegaRole || isAdminRole);
+  const canCreate = viewMode === "satelite" && canRequestPermission;
 
   const { data: routes } = await supabase
     .from("site_supply_routes")
@@ -226,17 +259,20 @@ export default async function RemissionsPage({
   }
 
   const { data: remissions } = await remissionsQuery;
+  const remissionRows = (remissions ?? []) as RemissionRow[];
 
   const { data: areaKinds } = await supabase
     .from("area_kinds")
     .select("code, name")
     .order("code", { ascending: true });
+  const areaKindRows = (areaKinds ?? []) as AreaKindRow[];
 
   const { data: products } = await supabase
     .from("products")
     .select("id,name,unit")
     .order("name", { ascending: true })
     .limit(200);
+  const productRows = (products ?? []) as ProductRow[];
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-8">
@@ -287,13 +323,15 @@ export default async function RemissionsPage({
               defaultValue={activeSiteId}
               className="h-10 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
             >
-              {isAdminRole ? <option value="">Todas las sedes</option> : null}
-              {(sitesRows ?? []).map((row) => {
-                const site = siteMap.get(row.site_id);
-                const label = site?.name ? `${site.name}` : row.site_id;
+              {canViewAll ? <option value="">Todas las sedes</option> : null}
+              {employeeSiteRows.map((row) => {
+                const siteId = row.site_id ?? "";
+                if (!siteId) return null;
+                const site = siteMap.get(siteId);
+                const label = site?.name ? `${site.name}` : siteId;
                 const suffix = row.is_primary ? " (principal)" : "";
                 return (
-                  <option key={row.site_id} value={row.site_id}>
+                  <option key={siteId} value={siteId}>
                     {label}
                     {suffix}
                   </option>
@@ -308,7 +346,7 @@ export default async function RemissionsPage({
 
         {!activeSiteId ? (
           <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
-            {isAdminRole
+            {canViewAll
               ? "Vista global activa. Selecciona una sede para operar remisiones."
               : "No hay sede activa. Asigna una sede al empleado para operar remisiones."}
           </div>
@@ -403,7 +441,7 @@ export default async function RemissionsPage({
                   className="h-11 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-200 focus:outline-none"
                 >
                   <option value="">Area (opcional)</option>
-                  {(areaKinds ?? []).map((row) => (
+                  {areaKindRows.map((row) => (
                     <option key={row.code} value={row.code}>
                       {row.name ?? row.code}
                     </option>
@@ -413,7 +451,7 @@ export default async function RemissionsPage({
             ))}
           </div>
           <datalist id="product-options">
-            {(products ?? []).map((product) => (
+            {productRows.map((product) => (
               <option
                 key={product.id}
                 value={product.id}
@@ -450,27 +488,33 @@ export default async function RemissionsPage({
               </tr>
             </thead>
             <tbody>
-              {(remissions ?? []).map((row) => (
-                <tr key={row.id} className="text-sm text-zinc-800">
-                  <td className="border-b border-zinc-100 py-3 font-mono">{row.created_at}</td>
-                  <td className="border-b border-zinc-100 py-3">{row.status}</td>
-                  <td className="border-b border-zinc-100 py-3">
-                    {siteMap.get(row.from_site_id ?? "")?.name ?? row.from_site_id}
-                  </td>
-                  <td className="border-b border-zinc-100 py-3">
-                    {siteMap.get(row.to_site_id ?? "")?.name ?? row.to_site_id}
-                  </td>
-                  <td className="border-b border-zinc-100 py-3">{row.notes ?? ""}</td>
-                  <td className="border-b border-zinc-100 py-3">
-                    <Link
-                      href={`/inventory/remissions/${row.id}`}
-                      className="text-sm font-semibold text-zinc-900 underline decoration-zinc-200 underline-offset-4"
-                    >
-                      Ver detalle
-                    </Link>
-                  </td>
-                </tr>
-              ))}
+              {remissionRows.map((row) => {
+                const fromSiteId = row.from_site_id ?? "";
+                const toSiteId = row.to_site_id ?? "";
+                return (
+                  <tr key={row.id} className="text-sm text-zinc-800">
+                    <td className="border-b border-zinc-100 py-3 font-mono">
+                      {row.created_at ?? ""}
+                    </td>
+                    <td className="border-b border-zinc-100 py-3">{row.status ?? ""}</td>
+                    <td className="border-b border-zinc-100 py-3">
+                      {siteMap.get(fromSiteId)?.name ?? fromSiteId}
+                    </td>
+                    <td className="border-b border-zinc-100 py-3">
+                      {siteMap.get(toSiteId)?.name ?? toSiteId}
+                    </td>
+                    <td className="border-b border-zinc-100 py-3">{row.notes ?? ""}</td>
+                    <td className="border-b border-zinc-100 py-3">
+                      <Link
+                        href={`/inventory/remissions/${row.id}`}
+                        className="text-sm font-semibold text-zinc-900 underline decoration-zinc-200 underline-offset-4"
+                      >
+                        Ver detalle
+                      </Link>
+                    </td>
+                  </tr>
+                );
+              })}
 
               {!remissions?.length ? (
                 <tr>

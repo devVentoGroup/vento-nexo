@@ -36,10 +36,18 @@ Este documento formaliza las definiciones base para NEXO antes de continuar con 
   - Responsable: bodeguero
 - Cocina/panaderia (solicita/recibe):
   - Responsable: cocinero / panadero / repostero / pastelero (segun area)
+- Remisiones (solicitar):
+  - Responsable: cajero / barista / cocinero (sede satelite)
+- Remisiones (preparar):
+  - Responsable: repostero / panadero / pastelero / cocinero (centro de produccion)
+- Remisiones (recibir):
+  - Responsable: cajero / barista / cocinero (sede satelite)
+- Remisiones (ver todas las sedes):
+  - Responsable: propietario / gerente_general
 - Despacho/remisiones:
-  - Responsable: bodeguero (prepara) + conductor (transporta)
+  - Responsable: conductor (transporta)
 - Satelite (recibe y disputa):
-  - Responsable: gerente o cajero (en sede satelite)
+  - Responsable: cajero / barista / cocinero (en sede satelite)
 - Admin/owner:
   - Responsable: propietario / gerente_general
 - Roles definidos en BD:
@@ -72,7 +80,16 @@ Este documento formaliza las definiciones base para NEXO antes de continuar con 
 - Quien puede ajustar: bodeguero y gerente (solo en su sede).
 - Quien aprueba ajustes/mermas: gerente y gerente_general; propietario en casos especiales.
 - Que requiere evidencia: ajustes manuales, merma y discrepancias de recepcion/remision.
-## 7. Estado de definiciones
+## 7. Permisos NEXO (BD)
+- Fuente de verdad: tablas roles, app_permissions, role_permissions, employee_permissions.
+- Validacion de permisos: RPC has_permission (app.permission_code + contexto de sede).
+- Permisos remisiones (nexo):
+  - inventory.remissions.request: cajero, barista, cocinero (satellite).
+  - inventory.remissions.prepare: repostero, panadero, pastelero, cocinero (production_center).
+  - inventory.remissions.receive: cajero, barista, cocinero (satellite).
+  - inventory.remissions.all_sites: propietario, gerente_general (global).
+  - inventory.remissions.cancel: propietario, gerente_general (global).
+## 8. Estado de definiciones
 - Fecha de ultima revision: 2026-01-18
 - Aprobado por: pendiente
 

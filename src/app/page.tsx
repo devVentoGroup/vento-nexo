@@ -1,8 +1,22 @@
 ﻿import Link from "next/link";
 
 import { requireAppAccess } from "@/lib/auth/guard";
+import { checkPermission } from "@/lib/auth/permissions";
 
 export const dynamic = "force-dynamic";
+
+const APP_ID = "nexo";
+
+const PERMISSIONS = {
+  remissions: "inventory.remissions",
+  remissionsRequest: "inventory.remissions.request",
+  remissionsPrepare: "inventory.remissions.prepare",
+  remissionsReceive: "inventory.remissions.receive",
+  productionBatches: "inventory.production_batches",
+  locations: "inventory.locations",
+  lpns: "inventory.lpns",
+  movements: "inventory.movements",
+};
 
 type SearchParams = {
   site_id?: string;
@@ -12,6 +26,11 @@ type SiteRow = {
   id: string;
   name: string | null;
   site_type: string | null;
+};
+
+type EmployeeSiteRow = {
+  site_id: string | null;
+  is_primary: boolean | null;
 };
 
 type RemissionRow = {
@@ -31,26 +50,6 @@ type ActionLink = {
   tone?: "primary" | "secondary";
   visible?: boolean;
 };
-
-const ROLE_LABELS: Record<string, string> = {
-  propietario: "Propietario",
-  gerente_general: "Gerente general",
-  gerente: "Gerente",
-  bodeguero: "Bodeguero",
-  conductor: "Conductor",
-  cajero: "Cajero",
-  mesero: "Mesero",
-  barista: "Barista",
-  cocinero: "Cocinero",
-  panadero: "Panadero",
-  repostero: "Repostero",
-  pastelero: "Pastelero",
-  contador: "Contador",
-  marketing: "Marketing",
-};
-
-const REQUEST_ROLES = new Set(["cajero", "barista", "cocinero"]);
-const PRODUCTION_ROLES = new Set(["cocinero", "panadero", "repostero", "pastelero", "barista"]);
 
 const STATUS_LABELS: Record<string, string> = {
   pending: "pendiente",
@@ -99,7 +98,7 @@ export default async function Home({
   const sp = (await searchParams) ?? {};
 
   const { supabase, user } = await requireAppAccess({
-    appId: "nexo",
+    appId: APP_ID,
     returnTo: "/",
   });
 
@@ -110,13 +109,16 @@ export default async function Home({
     .single();
 
   const role = String(employee?.role ?? "");
-  const roleLabel = ROLE_LABELS[role] ?? (role || "sin rol");
+  let roleLabel = role || "sin rol";
+  if (role) {
+    const { data: roleRow } = await supabase
+      .from("roles")
+      .select("name")
+      .eq("code", role)
+      .single();
+    roleLabel = roleRow?.name ?? role;
+  }
   const displayName = String(employee?.alias ?? employee?.full_name ?? user.email ?? "Usuario");
-
-  const isAdminRole = ["propietario", "gerente_general", "gerente"].includes(role);
-  const isBodegaRole = role === "bodeguero";
-  const canRequestRole = REQUEST_ROLES.has(role);
-  const canProductionRole = PRODUCTION_ROLES.has(role);
 
   const { data: employeeSites } = await supabase
     .from("employee_sites")
@@ -126,10 +128,11 @@ export default async function Home({
     .order("is_primary", { ascending: false })
     .limit(50);
 
-  const defaultSiteId = employeeSites?.[0]?.site_id ?? employee?.site_id ?? "";
+  const employeeSiteRows = (employeeSites ?? []) as EmployeeSiteRow[];
+  const defaultSiteId = employeeSiteRows[0]?.site_id ?? employee?.site_id ?? "";
   const activeSiteId = String(sp.site_id ?? defaultSiteId).trim();
 
-  const siteIds = (employeeSites ?? [])
+  const siteIds = employeeSiteRows
     .map((row) => row.site_id)
     .filter((id): id is string => Boolean(id));
 
@@ -141,12 +144,44 @@ export default async function Home({
         .order("name", { ascending: true })
     : { data: [] as SiteRow[] };
 
-  const siteMap = new Map((sites ?? []).map((site) => [site.id, site]));
+  const siteRows = (sites ?? []) as SiteRow[];
+  const siteMap = new Map(siteRows.map((site) => [site.id, site]));
   const activeSite = activeSiteId ? siteMap.get(activeSiteId) : undefined;
   const activeSiteName = activeSite?.name ?? activeSiteId ?? "Sin sede";
   const siteType = String(activeSite?.site_type ?? "");
   const isProductionCenter = siteType === "production_center";
   const isSatellite = siteType === "satellite";
+
+  let canViewRemissions = false;
+  let canRequestPermission = false;
+  let canPreparePermission = false;
+  let canReceivePermission = false;
+  let canMovementsPermission = false;
+  let canLocationsPermission = false;
+  let canLpnsPermission = false;
+  let canProductionPermission = false;
+
+  if (activeSiteId) {
+    [
+      canViewRemissions,
+      canRequestPermission,
+      canPreparePermission,
+      canReceivePermission,
+      canMovementsPermission,
+      canLocationsPermission,
+      canLpnsPermission,
+      canProductionPermission,
+    ] = await Promise.all([
+      checkPermission(supabase, APP_ID, PERMISSIONS.remissions, { siteId: activeSiteId }),
+      checkPermission(supabase, APP_ID, PERMISSIONS.remissionsRequest, { siteId: activeSiteId }),
+      checkPermission(supabase, APP_ID, PERMISSIONS.remissionsPrepare, { siteId: activeSiteId }),
+      checkPermission(supabase, APP_ID, PERMISSIONS.remissionsReceive, { siteId: activeSiteId }),
+      checkPermission(supabase, APP_ID, PERMISSIONS.movements, { siteId: activeSiteId }),
+      checkPermission(supabase, APP_ID, PERMISSIONS.locations, { siteId: activeSiteId }),
+      checkPermission(supabase, APP_ID, PERMISSIONS.lpns, { siteId: activeSiteId }),
+      checkPermission(supabase, APP_ID, PERMISSIONS.productionBatches, { siteId: activeSiteId }),
+    ]);
+  }
 
   const viewLabel = !activeSiteId
     ? "Sin sede"
@@ -156,14 +191,15 @@ export default async function Home({
         ? "Sede satelite"
         : "Sede";
 
-  const canRequestRemission = isSatellite && (canRequestRole || isAdminRole);
-  const canPrepareRemission = isProductionCenter && (isBodegaRole || isAdminRole);
-  const canReceiveRemission = isSatellite && (isBodegaRole || isAdminRole);
-  const canManageStorage = isProductionCenter && (isBodegaRole || isAdminRole);
-  const canRegisterProduction = isAdminRole || (isProductionCenter && canProductionRole);
+  const canRequestRemission = isSatellite && canRequestPermission;
+  const canPrepareRemission = isProductionCenter && canPreparePermission;
+  const canReceiveRemission = isSatellite && canReceivePermission;
+  const canRegisterProduction = isProductionCenter && canProductionPermission;
+  const canManageLocations = isProductionCenter && canLocationsPermission;
+  const canManageLpns = isProductionCenter && canLpnsPermission;
 
   let remissionRows: RemissionRow[] = [];
-  if (activeSiteId) {
+  if (activeSiteId && canViewRemissions) {
     let remissionsQuery = supabase
       .from("restock_requests")
       .select("id,created_at,status,from_site_id,to_site_id")
@@ -213,7 +249,7 @@ export default async function Home({
       href: "/inventory/remissions",
       cta: "Abrir",
       tone: "secondary",
-      visible: true,
+      visible: canViewRemissions,
     },
     {
       id: "movements",
@@ -222,7 +258,7 @@ export default async function Home({
       href: "/inventory/movements",
       cta: "Abrir",
       tone: "secondary",
-      visible: true,
+      visible: canMovementsPermission,
     },
     {
       id: "scanner",
@@ -249,7 +285,7 @@ export default async function Home({
       href: "/inventory/locations",
       cta: "Abrir",
       tone: "secondary",
-      visible: canManageStorage,
+      visible: canManageLocations,
     },
     {
       id: "lpns",
@@ -258,7 +294,7 @@ export default async function Home({
       href: "/inventory/lpns",
       cta: "Abrir",
       tone: "secondary",
-      visible: canManageStorage,
+      visible: canManageLpns,
     },
     {
       id: "production-batches",
@@ -324,12 +360,14 @@ export default async function Home({
               defaultValue={activeSiteId}
               className="h-10 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
             >
-              {(employeeSites ?? []).map((row) => {
-                const site = siteMap.get(row.site_id);
-                const label = site?.name ? `${site.name}` : row.site_id;
+              {employeeSiteRows.map((row) => {
+                const siteId = row.site_id ?? "";
+                if (!siteId) return null;
+                const site = siteMap.get(siteId);
+                const label = site?.name ? `${site.name}` : siteId;
                 const suffix = row.is_primary ? " (principal)" : "";
                 return (
-                  <option key={row.site_id} value={row.site_id}>
+                  <option key={siteId} value={siteId}>
                     {label}
                     {suffix}
                   </option>
@@ -427,15 +465,19 @@ export default async function Home({
                 </tr>
               ))}
 
-              {!activeSiteId ? (
+              {!canViewRemissions ? (
+                <tr>
+                  <td colSpan={5} className="py-6 text-sm text-zinc-500">
+                    No tienes permiso para ver remisiones.
+                  </td>
+                </tr>
+              ) : !activeSiteId ? (
                 <tr>
                   <td colSpan={5} className="py-6 text-sm text-zinc-500">
                     Selecciona una sede para ver remisiones recientes.
                   </td>
                 </tr>
-              ) : null}
-
-              {activeSiteId && remissionRows.length === 0 ? (
+              ) : remissionRows.length === 0 ? (
                 <tr>
                   <td colSpan={5} className="py-6 text-sm text-zinc-500">
                     No hay remisiones recientes para esta sede.

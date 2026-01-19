@@ -2,10 +2,13 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { requireAppAccess } from "@/lib/auth/guard";
+import { checkPermission } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 
 export const dynamic = "force-dynamic";
+
+const APP_ID = "nexo";
 
 type SearchParams = {
   error?: string;
@@ -28,8 +31,36 @@ function formatDate(value?: string | null) {
   return value;
 }
 
-const ADMIN_ROLES = new Set(["propietario", "gerente_general", "gerente"]);
-const PRODUCTION_ROLES = new Set(["cocinero", "panadero", "repostero", "pastelero", "barista"]);
+type EmployeeSiteRow = {
+  site_id: string | null;
+  is_primary: boolean | null;
+};
+
+type SiteRow = {
+  id: string;
+  name: string | null;
+  site_type: string | null;
+};
+
+type ProductRow = {
+  id: string;
+  name: string | null;
+  unit: string | null;
+};
+
+type BatchRow = {
+  id: string;
+  batch_code: string | null;
+  created_at: string | null;
+  expires_at: string | null;
+  produced_qty: number | null;
+  produced_unit: string | null;
+  notes: string | null;
+  product: {
+    name: string | null;
+    unit: string | null;
+  } | null;
+};
 
 async function createBatch(formData: FormData) {
   "use server";
@@ -48,24 +79,9 @@ async function createBatch(formData: FormData) {
   const expiresAt = asText(formData.get("expires_at"));
   const notes = asText(formData.get("notes"));
 
-  const { data: employee } = await supabase
-    .from("employees")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  const role = String(employee?.role ?? "");
-  const isAdminRole = ADMIN_ROLES.has(role);
-  let isProductionCenter = false;
-  if (siteId) {
-    const { data: site } = await supabase
-      .from("sites")
-      .select("site_type")
-      .eq("id", siteId)
-      .single();
-    isProductionCenter = String(site?.site_type ?? "") === "production_center";
-  }
-  const canRegister = isAdminRole || (isProductionCenter && PRODUCTION_ROLES.has(role));
+  const canRegister = siteId
+    ? await checkPermission(supabase, APP_ID, "inventory.production_batches", { siteId })
+    : false;
 
   if (!canRegister) {
     redirect(
@@ -171,19 +187,16 @@ export default async function ProductionBatchesPage({
   const okMsg = sp.ok ? decodeURIComponent(sp.ok) : "";
 
   const { supabase, user } = await requireAppAccess({
-    appId: "nexo",
+    appId: APP_ID,
     returnTo: "/inventory/production-batches",
     permissionCode: "inventory.production_batches",
   });
 
   const { data: employee } = await supabase
     .from("employees")
-    .select("role,site_id")
+    .select("site_id")
     .eq("id", user.id)
     .single();
-
-  const role = String(employee?.role ?? "");
-  const isAdminRole = ADMIN_ROLES.has(role);
 
   const { data: employeeSites } = await supabase
     .from("employee_sites")
@@ -193,10 +206,11 @@ export default async function ProductionBatchesPage({
     .order("is_primary", { ascending: false })
     .limit(50);
 
-  const defaultSiteId = employeeSites?.[0]?.site_id ?? employee?.site_id ?? "";
+  const employeeSiteRows = (employeeSites ?? []) as EmployeeSiteRow[];
+  const defaultSiteId = employeeSiteRows[0]?.site_id ?? employee?.site_id ?? "";
   const activeSiteId = String(sp.site_id ?? defaultSiteId).trim();
 
-  const siteIds = (employeeSites ?? [])
+  const siteIds = employeeSiteRows
     .map((row) => row.site_id)
     .filter((id): id is string => Boolean(id));
 
@@ -206,19 +220,23 @@ export default async function ProductionBatchesPage({
         .select("id,name,site_type")
         .in("id", siteIds)
         .order("name", { ascending: true })
-    : { data: [] as Array<{ id: string; name: string | null; site_type: string | null }> };
+    : { data: [] as SiteRow[] };
 
-  const siteMap = new Map((sites ?? []).map((site) => [site.id, site]));
+  const siteRows = (sites ?? []) as SiteRow[];
+  const siteMap = new Map(siteRows.map((site) => [site.id, site]));
   const activeSiteName = siteMap.get(activeSiteId)?.name ?? activeSiteId;
-  const activeSiteType = siteMap.get(activeSiteId)?.site_type ?? "";
-  const isProductionCenter = String(activeSiteType) === "production_center";
-  const canRegister = isAdminRole || (isProductionCenter && PRODUCTION_ROLES.has(role));
+  const canRegister = activeSiteId
+    ? await checkPermission(supabase, APP_ID, "inventory.production_batches", {
+        siteId: activeSiteId,
+      })
+    : false;
 
   const { data: products } = await supabase
     .from("products")
     .select("id,name,unit")
     .order("name", { ascending: true })
     .limit(200);
+  const productRows = (products ?? []) as ProductRow[];
 
   const { data: batches } = await supabase
     .from("production_batches")
@@ -228,6 +246,7 @@ export default async function ProductionBatchesPage({
     .eq("site_id", activeSiteId)
     .order("created_at", { ascending: false })
     .limit(30);
+  const batchRows = (batches ?? []) as BatchRow[];
 
   return (
     <div className="mx-auto w-full max-w-6xl px-6 py-8">
@@ -271,12 +290,14 @@ export default async function ProductionBatchesPage({
               defaultValue={activeSiteId}
               className="h-10 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
             >
-              {(employeeSites ?? []).map((row) => {
-                const site = siteMap.get(row.site_id);
-                const label = site?.name ? `${site.name}` : row.site_id;
+              {employeeSiteRows.map((row) => {
+                const siteId = row.site_id ?? "";
+                if (!siteId) return null;
+                const site = siteMap.get(siteId);
+                const label = site?.name ? `${site.name}` : siteId;
                 const suffix = row.is_primary ? " (principal)" : "";
                 return (
-                  <option key={row.site_id} value={row.site_id}>
+                  <option key={siteId} value={siteId}>
                     {label}
                     {suffix}
                   </option>
@@ -306,7 +327,7 @@ export default async function ProductionBatchesPage({
                   className="h-11 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
                 >
                   <option value="">Selecciona producto</option>
-                  {(products ?? []).map((product) => (
+                  {productRows.map((product) => (
                     <option key={product.id} value={product.id}>
                       {product.name ?? product.id}
                     </option>
@@ -376,7 +397,7 @@ export default async function ProductionBatchesPage({
               </tr>
             </thead>
             <tbody>
-              {(batches ?? []).map((batch) => {
+              {batchRows.map((batch) => {
                 const code = batch.batch_code ?? batch.id;
                 const created = formatDate(batch.created_at);
                 const expires = formatDate(batch.expires_at);
