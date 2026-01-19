@@ -35,6 +35,10 @@ type StockRow = {
   } | null;
 };
 
+type ProductIdRow = {
+  id: string | null;
+};
+
 function formatDate(value?: string | null) {
   if (!value) return "-";
   if (value.length >= 10) return value.slice(0, 10);
@@ -94,7 +98,8 @@ export default async function InventoryStockPage({
       .or(`id.eq.${searchQuery},name.ilike.${pattern},sku.ilike.${pattern}`)
       .limit(200);
 
-    matchedProductIds = (products ?? [])
+    const productRows = (products ?? []) as ProductIdRow[];
+    matchedProductIds = productRows
       .map((row) => row.id)
       .filter((id): id is string => Boolean(id));
   }
