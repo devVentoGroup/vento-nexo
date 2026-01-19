@@ -1,6 +1,14 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
+const cookieDomain =
+  process.env.NEXT_PUBLIC_COOKIE_DOMAIN || process.env.COOKIE_DOMAIN;
+
+function withCookieDomain(options?: any) {
+  if (!cookieDomain) return options;
+  return { ...(options ?? {}), domain: cookieDomain };
+}
+
 function getSupabaseKey() {
   return (
     process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
@@ -17,7 +25,11 @@ function clearSupabaseCookies(request: NextRequest, response: NextResponse) {
   // Borra todas las cookies Supabase presentes en el request (sb-*)
   for (const c of request.cookies.getAll()) {
     if (c.name.startsWith("sb-")) {
-      response.cookies.set(c.name, "", { path: "/", maxAge: 0 });
+      response.cookies.set(
+        c.name,
+        "",
+        withCookieDomain({ path: "/", maxAge: 0 })
+      );
     }
   }
 }
@@ -50,7 +62,7 @@ export async function updateSession(request: NextRequest) {
         response = NextResponse.next({ request });
 
         cookiesToSet.forEach(({ name, value, options }) => {
-          response.cookies.set(name, value, options);
+          response.cookies.set(name, value, withCookieDomain(options));
         });
       },
     },
