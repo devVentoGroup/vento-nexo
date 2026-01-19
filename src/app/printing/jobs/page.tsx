@@ -1,7 +1,8 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Script from "next/script";
+import { useSearchParams } from "next/navigation";
 
 declare global {
   interface Window {
@@ -19,17 +20,17 @@ type Preset = {
   heightMm: number;
   columns: number;
 
-  // Defaults de simbología
+  // Defaults de simbolog+�a
   defaultBarcodeKind: BarcodeKind;
 
   // Para Code128 (alto en dots)
   defaultCode128HeightDots: number;
 
-  // Para DataMatrix (tamaño de módulo en dots)
+  // Para DataMatrix (tama+�o de m+�dulo en dots)
   defaultDmModuleDots: number;
 
-  // Tipo lógico (para codificar VENTO|TYPE|CODE)
-  defaultType: "LOC" | "LPN" | "SKU";
+  // Tipo l+�gico (para codificar VENTO|TYPE|CODE)
+  defaultType: "LOC" | "LPN" | "SKU" | "PROD";
 };
 
 type LocRow = {
@@ -55,7 +56,7 @@ function mmToDots(mm: number, dpi: number) {
 }
 
 function safeText(s: string) {
-  // Evitamos caracteres raros para ZPL; si necesitas más, luego metemos ^FH.
+  // Evitamos caracteres raros para ZPL; si necesitas m+�s, luego metemos ^FH.
   return String(s ?? "").replace(/[\r\n]+/g, " ").trim();
 }
 
@@ -72,7 +73,7 @@ function buildZplHeader(opts: {
     `^LL${heightDots}`,
     // Label Home (offset)
     `^LH${offsetXDots},${offsetYDots}`,
-    "^CI28", // UTF-8-ish para textos (sin garantía total, pero ayuda)
+    "^CI28", // UTF-8-ish para textos (sin garant+�a total, pero ayuda)
   ].join("\n");
 }
 
@@ -88,7 +89,7 @@ function buildCode128Field(opts: {
 }) {
   const { x, y, heightDots, data } = opts;
   const payload = safeText(data);
-  // Importante: sin línea de interpretación (N) para que se vea limpio
+  // Importante: sin l+�nea de interpretaci+�n (N) para que se vea limpio
   return [
     "^BY2,2," + heightDots,
     `^FO${x},${y}`,
@@ -102,7 +103,7 @@ function buildDataMatrixField(opts: { x: number; y: number; moduleDots: number; 
   const payload = safeText(data);
   // ^BX: Data Matrix (ECC 200)
   // Formato: ^BXo,h,s,c,r,f
-  // o=N, h=módulo (dots), s=200 (ECC200), c/r=0 auto, f=6 default
+  // o=N, h=m+�dulo (dots), s=200 (ECC200), c/r=0 auto, f=6 default
   return [`^FO${x},${y}`, `^BXN,${moduleDots},200,0,0,6`, `^FD${payload}^FS`].join("\n");
 }
 
@@ -133,7 +134,7 @@ function buildTextBlock(opts: {
   ].join("\n");
 }
 
-function encodeVento(type: "LOC" | "LPN" | "SKU", code: string) {
+function encodeVento(type: "LOC" | "LPN" | "SKU" | "PROD", code: string) {
   return `VENTO|${type}|${safeText(code)}`;
 }
 
@@ -148,10 +149,10 @@ function buildSingleLabelZpl(opts: {
   dmModuleDots: number;
 
   // Label content
-  type: "LOC" | "LPN" | "SKU";
+  type: "LOC" | "LPN" | "SKU" | "PROD";
   title: string; // arriba
   code: string; // humano abajo
-  note?: string; // segunda línea arriba
+  note?: string; // segunda l+�nea arriba
 }) {
   const { preset, dpi, offsetXDots, offsetYDots, barcodeKind, code128HeightDots, dmModuleDots, type } = opts;
 
@@ -161,29 +162,30 @@ function buildSingleLabelZpl(opts: {
   const header = buildZplHeader({ widthDots, heightDots, offsetXDots, offsetYDots });
 
   // Layout simple y limpio:
-  // - Título arriba
+  // - T+�tulo arriba
   // - Nota debajo
   // - Barcode (DM o 1D) centrado-ish
-  // - Código humano abajo
+  // - C+�digo humano abajo
   const title = safeText(opts.title);
   const note = safeText(opts.note ?? "");
   const code = safeText(opts.code);
 
   const encoded = encodeVento(type, code);
 
-  // Márgenes
+  // M+�rgenes
   const marginX = 18;
   const yTitle = 12;
   const yNote = 38;
 
   const isLoc70 = preset.id === "LOC_50x70" && barcodeKind === "datamatrix" && type === "LOC";
+  const isProd = type === "PROD";
 
   const maxTextWidth = widthDots - marginX * 2;
 
   // Ajuste de layout por preset:
   const yBarcode = isLoc70 ? 140 : 70;
 
-  // Centramos DataMatrix con una estimación de tamaño (mejor que dejarlo pegado al margen)
+  // Centramos DataMatrix con una estimaci+�n de tama+�o (mejor que dejarlo pegado al margen)
   const dmSizeGuess = dmModuleDots * 26;
   const dmX = Math.max(marginX, Math.floor((widthDots - dmSizeGuess) / 2));
 
@@ -191,7 +193,7 @@ function buildSingleLabelZpl(opts: {
   parts.push(header);
 
   // Texto arriba (con ancho fijo para que NO se salga del label)
-  // LOC 50x70: nota (descripción) más grande
+  // LOC 50x70: nota (descripci+�n) m+�s grande
   parts.push(
     buildTextBlock({
       x: marginX,
@@ -210,10 +212,10 @@ function buildSingleLabelZpl(opts: {
       buildTextBlock({
         x: marginX,
         y: isLoc70 ? 46 : yNote,
-        h: isLoc70 ? 40 : 22,
-        w: isLoc70 ? 40 : 22,
+        h: isLoc70 ? 40 : isProd ? 20 : 22,
+        w: isLoc70 ? 40 : isProd ? 20 : 22,
         maxWidthDots: maxTextWidth,
-        lines: isLoc70 ? 2 : 1,
+        lines: isLoc70 ? 2 : isProd ? 2 : 1,
         align: "L",
         text: note,
       })
@@ -227,7 +229,7 @@ function buildSingleLabelZpl(opts: {
     parts.push(buildCode128Field({ x: marginX, y: yBarcode, heightDots: code128HeightDots, data: encoded }));
   }
 
-  // Código humano (centrado y con ancho fijo para que NO se vaya al borde)
+  // C+�digo humano (centrado y con ancho fijo para que NO se vaya al borde)
   parts.push(
     buildTextBlock({
       x: marginX,
@@ -255,7 +257,7 @@ function buildThreeUpRowZpl(opts: {
   code128HeightDots: number;
   dmModuleDots: number;
 
-  type: "LOC" | "LPN" | "SKU";
+  type: "LOC" | "LPN" | "SKU" | "PROD";
   title: string;
 
   items: Array<{ code: string; note?: string }>; // EXACTAMENTE 3
@@ -303,7 +305,7 @@ function normalizeDevices(devsRaw: any): any[] {
   if (Array.isArray(devsRaw)) return devsRaw;
   if (Array.isArray(devsRaw?.devices)) return devsRaw.devices;
   if (Array.isArray(devsRaw?.device)) return devsRaw.device;
-  // A veces viene como objeto con keys numéricas
+  // A veces viene como objeto con keys num+�ricas
   if (devsRaw && typeof devsRaw === "object") {
     const vals = Object.values(devsRaw);
     if (vals.every((v) => typeof v === "object")) return vals as any[];
@@ -312,7 +314,8 @@ function normalizeDevices(devsRaw: any): any[] {
 }
 
 export default function PrintingJobsPage() {
-  // Si tus scripts ya están en otro path, ajusta aquí:
+  const searchParams = useSearchParams();
+  // Si tus scripts ya est+�n en otro path, ajusta aqu+�:
   const BROWSERPRINT_CORE = "/zebra/BrowserPrint.min.js";
   const BROWSERPRINT_ZEBRA = "/zebra/BrowserPrint-Zebra.min.js";
   // Endpoints (ajusta si tus rutas reales son distintas)
@@ -322,7 +325,7 @@ export default function PrintingJobsPage() {
     () => [
       {
         id: "LOC_50x70",
-        label: "LOC · 50x70 (DataMatrix)",
+        label: "LOC -� 50x70 (DataMatrix)",
         widthMm: 50,
         heightMm: 70,
         columns: 1,
@@ -333,7 +336,7 @@ export default function PrintingJobsPage() {
       },
       {
         id: "LPN_50x25",
-        label: "LPN · 50x25 (Code128)",
+        label: "LPN -� 50x25 (Code128)",
         widthMm: 50,
         heightMm: 25,
         columns: 1,
@@ -344,7 +347,7 @@ export default function PrintingJobsPage() {
       },
       {
         id: "SKU_32x25_3UP",
-        label: "SKU/Producto · 32x25 (Code128 · 3 por fila)",
+        label: "SKU/Producto -� 32x25 (Code128 -� 3 por fila)",
         widthMm: 105, // rollo completo 3 columnas (32x25 x3)
         heightMm: 25,
         columns: 3,
@@ -352,6 +355,17 @@ export default function PrintingJobsPage() {
         defaultCode128HeightDots: 55,
         defaultDmModuleDots: 4,
         defaultType: "SKU",
+      },
+      {
+        id: "PROD_50x30",
+        label: "PROD 50x30 (Code128)",
+        widthMm: 50,
+        heightMm: 30,
+        columns: 1,
+        defaultBarcodeKind: "code128",
+        defaultCode128HeightDots: 60,
+        defaultDmModuleDots: 4,
+        defaultType: "PROD",
       },
     ],
     []
@@ -367,7 +381,7 @@ export default function PrintingJobsPage() {
   const [offsetXmm, setOffsetXmm] = useState(0);
   const [offsetYmm, setOffsetYmm] = useState(0);
 
-  const [title, setTitle] = useState("VENTO · LOC");
+  const [title, setTitle] = useState("VENTO -� LOC");
   const [barcodeKind, setBarcodeKind] = useState<BarcodeKind>(preset.defaultBarcodeKind);
   const [code128HeightDots, setCode128HeightDots] = useState(preset.defaultCode128HeightDots);
   const [dmModuleDots, setDmModuleDots] = useState(preset.defaultDmModuleDots);
@@ -381,6 +395,16 @@ export default function PrintingJobsPage() {
 
   const [queueText, setQueueText] = useState<string>("");
   const [previewZpl, setPreviewZpl] = useState<string>("");
+
+  useEffect(() => {
+    const presetParam = searchParams.get("preset");
+    const queueParam = searchParams.get("queue");
+    const titleParam = searchParams.get("title");
+
+    if (presetParam) setPresetId(presetParam);
+    if (queueParam) setQueueText(queueParam.replace(/\r/g, ""));
+    if (titleParam) setTitle(titleParam);
+  }, [searchParams]);
 
   // LOC selector
   const [locs, setLocs] = useState<LocRow[]>([]);
@@ -398,10 +422,11 @@ export default function PrintingJobsPage() {
     setCode128HeightDots(preset.defaultCode128HeightDots);
     setDmModuleDots(preset.defaultDmModuleDots);
 
-    // Ajuste automático de título según tipo
-    if (preset.defaultType === "LOC") setTitle("VENTO · LOC");
-    if (preset.defaultType === "LPN") setTitle("VENTO · LPN");
-    if (preset.defaultType === "SKU") setTitle("VENTO · SKU");
+    // Ajuste autom+�tico de t+�tulo seg+�n tipo
+    if (preset.defaultType === "LOC") setTitle("VENTO -� LOC");
+    if (preset.defaultType === "LPN") setTitle("VENTO -� LPN");
+    if (preset.defaultType === "SKU") setTitle("VENTO -� SKU");
+    if (preset.defaultType === "PROD") setTitle("VENTO - PROD");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetId]);
 
@@ -481,11 +506,11 @@ export default function PrintingJobsPage() {
 
   function requireReady() {
     if (!enablePrinting) {
-      setStatus("Impresión deshabilitada.");
+      setStatus("Impresi+�n deshabilitada.");
       return false;
     }
     if (!browserPrintOk || !window.BrowserPrint) {
-      setStatus("BrowserPrint no está listo. Verifica scripts/servicio.");
+      setStatus("BrowserPrint no est+� listo. Verifica scripts/servicio.");
       return false;
     }
     if (!deviceRef.current) {
@@ -498,7 +523,7 @@ export default function PrintingJobsPage() {
   function detectPrinters() {
     setStatus("");
     if (!window.BrowserPrint) {
-      setStatus("BrowserPrint no está disponible.");
+      setStatus("BrowserPrint no est+� disponible.");
       return;
     }
 
@@ -530,7 +555,7 @@ export default function PrintingJobsPage() {
     setStatus("");
     const dev = devices.find((d) => String(d?.uid) === String(selectedUid));
     if (!dev) {
-      setStatus("Selecciona una impresora válida.");
+      setStatus("Selecciona una impresora v+�lida.");
       return;
     }
     deviceRef.current = dev;
@@ -541,28 +566,28 @@ export default function PrintingJobsPage() {
     if (!requireReady()) return;
 
     const dev = deviceRef.current;
-    setStatus("Enviando impresión...");
+    setStatus("Enviando impresi+�n...");
 
     try {
       dev.send(
         zpl,
         () => {
-          setStatus("Impresión enviada.");
+          setStatus("Impresi+�n enviada.");
         },
         (err: any) => {
-          // Ojo: a veces imprime y aún así el driver devuelve error de “connection closed”.
+          // Ojo: a veces imprime y a+�n as+� el driver devuelve error de �ǣconnection closed���.
           setStatus(`Error al imprimir: ${String(err?.message ?? err)}`);
         }
       );
     } catch (e: any) {
-      setStatus(`Excepción al imprimir: ${String(e?.message ?? e)}`);
+      setStatus(`Excepci+�n al imprimir: ${String(e?.message ?? e)}`);
     }
   }
 
   function printAll() {
     if (!preset) return;
     if (!parsedQueue.length) {
-      setStatus("Cola vacía.");
+      setStatus("Cola vac+�a.");
       return;
     }
 
@@ -753,16 +778,16 @@ export default function PrintingJobsPage() {
   function addSelectedLocToQueue(mode: "replace" | "append") {
     const loc = locs.find((l) => l.code === selectedLocCode);
     if (!loc) {
-      setStatus("Selecciona un LOC válido.");
+      setStatus("Selecciona un LOC v+�lido.");
       return;
     }
 
-    // Auto (estándar): LOC siempre es 50x70 + DataMatrix
+    // Auto (est+�ndar): LOC siempre es 50x70 + DataMatrix
     if (presetId !== "LOC_50x70") {
       setPresetId("LOC_50x70");
     }
     setBarcodeKind("datamatrix");
-    setTitle("VENTO · LOC");
+    setTitle("VENTO -� LOC");
 
     const line = `${loc.code}|${safeText(loc.description ?? "LOC")}`;
 
@@ -780,16 +805,16 @@ export default function PrintingJobsPage() {
   function addSelectedLpnToQueue(mode: "replace" | "append") {
     const lpn = lpns.find((l) => l.code === selectedLpnCode);
     if (!lpn) {
-      setStatus("Selecciona un LPN válido.");
+      setStatus("Selecciona un LPN v+�lido.");
       return;
     }
 
-    // Auto (estándar): LPN siempre es 50x25 + Code128
+    // Auto (est+�ndar): LPN siempre es 50x25 + Code128
     if (presetId !== "LPN_50x25") {
       setPresetId("LPN_50x25");
     }
     setBarcodeKind("code128");
-    setTitle("VENTO · LPN");
+    setTitle("VENTO -� LPN");
 
     const note = lpn.loc_code ? `LOC ${safeText(lpn.loc_code)}` : safeText(lpn.description ?? "LPN");
     const line = `${safeText(lpn.code)}|${note}`;
@@ -811,9 +836,9 @@ export default function PrintingJobsPage() {
       <Script src={BROWSERPRINT_ZEBRA} strategy="afterInteractive" />
 
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Impresión</h1>
+        <h1 className="text-2xl font-semibold tracking-tight">Impresi+�n</h1>
         <p className="mt-2 text-sm text-zinc-600">
-          Zebra + BrowserPrint. Para escaneo canónico, el código impreso codifica{" "}
+          Zebra + BrowserPrint. Para escaneo can+�nico, el c+�digo impreso codifica{" "}
           <span className="font-mono">VENTO|TYPE|CODE</span>. Para LOC usamos DataMatrix por defecto.
         </p>
       </div>
@@ -849,7 +874,7 @@ export default function PrintingJobsPage() {
             onClick={printAlignmentTest}
             type="button"
           >
-            Prueba alineación
+            Prueba alineaci+�n
           </button>
 
           <div className="ml-auto flex items-center gap-3 text-sm text-zinc-600">
@@ -881,7 +906,7 @@ export default function PrintingJobsPage() {
             checked={enablePrinting}
             onChange={(e) => setEnablePrinting(e.target.checked)}
           />
-          Habilitar impresión
+          Habilitar impresi+�n
         </label>
 
         {status ? (
@@ -891,13 +916,13 @@ export default function PrintingJobsPage() {
 
       <div className="grid gap-6 md:grid-cols-2">
         <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
-          <div className="text-sm font-semibold text-zinc-900">Configuración</div>
+          <div className="text-sm font-semibold text-zinc-900">Configuraci+�n</div>
 
           <div className="mt-4 grid grid-cols-2 gap-4">
             <div>
               <div className="text-xs font-medium text-zinc-600">Preset</div>
               <div className="col-span-2">
-                <div className="text-xs font-medium text-zinc-600">Tipo rápido</div>
+                <div className="text-xs font-medium text-zinc-600">Tipo r+�pido</div>
                 <div className="mt-1 inline-flex overflow-hidden rounded-xl border border-zinc-200 bg-white">
                   <button
                     type="button"
@@ -923,9 +948,17 @@ export default function PrintingJobsPage() {
                   >
                     SKU
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setPresetId("PROD_50x30")}
+                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "PROD" ? "bg-zinc-900 text-white" : "bg-white text-zinc-900"
+                      }`}
+                  >
+                    PROD
+                  </button>
                 </div>
                 <div className="mt-2 text-xs text-zinc-500">
-                  Esto solo cambia el preset recomendado. La cola es la que define qué se imprime.
+                  Esto solo cambia el preset recomendado. La cola es la que define qu+� se imprime.
                 </div>
               </div>
               <select
@@ -972,7 +1005,7 @@ export default function PrintingJobsPage() {
             </div>
 
             <div className="col-span-2">
-              <div className="text-xs font-medium text-zinc-600">Título</div>
+              <div className="text-xs font-medium text-zinc-600">T+�tulo</div>
               <input
                 className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
                 value={title}
@@ -981,12 +1014,12 @@ export default function PrintingJobsPage() {
             </div>
 
             <div>
-              <div className="text-xs font-medium text-zinc-600">Tipo de código</div>
+              <div className="text-xs font-medium text-zinc-600">Tipo de c+�digo</div>
               <select
                 className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm opacity-70"
                 value={barcodeKind}
                 disabled
-                title="Estándar bloqueado por preset"
+                title="Est+�ndar bloqueado por preset"
               >
                 <option value="datamatrix">DataMatrix (2D)</option>
                 <option value="code128">Code128 (1D)</option>
@@ -995,7 +1028,7 @@ export default function PrintingJobsPage() {
 
             {barcodeKind === "datamatrix" ? (
               <div>
-                <div className="text-xs font-medium text-zinc-600">Módulo DM (dots)</div>
+                <div className="text-xs font-medium text-zinc-600">M+�dulo DM (dots)</div>
                 <input
                   className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
                   value={dmModuleDots}
@@ -1014,7 +1047,7 @@ export default function PrintingJobsPage() {
             )}
 
             <div className="col-span-2 text-xs text-zinc-500">
-              Recomendación: usa <span className="font-medium">Prueba alineación</span> y ajusta Offset X/Y hasta que el
+              Recomendaci+�n: usa <span className="font-medium">Prueba alineaci+�n</span> y ajusta Offset X/Y hasta que el
               marco caiga exactamente.
             </div>
           </div>
@@ -1043,7 +1076,7 @@ export default function PrintingJobsPage() {
 
                   <input
                     className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
-                    placeholder="Buscar por código o descripción..."
+                    placeholder="Buscar por c+�digo o descripci+�n..."
                     value={locSearch}
                     onChange={(e) => setLocSearch(e.target.value)}
                   />
@@ -1058,7 +1091,7 @@ export default function PrintingJobsPage() {
                     <option value="">{locs.length ? "(Selecciona un LOC)" : "(Primero carga LOCs)"}</option>
                     {filteredLocs.map((l) => (
                       <option key={l.id} value={l.code}>
-                        {l.code} — {String(l.description ?? "").slice(0, 40)}
+                        {l.code} ��� {String(l.description ?? "").slice(0, 40)}
                       </option>
                     ))}
                   </select>
@@ -1081,7 +1114,7 @@ export default function PrintingJobsPage() {
                 </div>
 
                 <div className="mt-2 text-xs text-zinc-500">
-                  Al escoger un LOC, el preset cambia automáticamente a LOC 50x70 (DataMatrix).
+                  Al escoger un LOC, el preset cambia autom+�ticamente a LOC 50x70 (DataMatrix).
                 </div>
               </>
             ) : null}
@@ -1101,7 +1134,7 @@ export default function PrintingJobsPage() {
 
                   <input
                     className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
-                    placeholder="Buscar por código, LOC o descripción..."
+                    placeholder="Buscar por c+�digo, LOC o descripci+�n..."
                     value={lpnSearch}
                     onChange={(e) => setLpnSearch(e.target.value)}
                   />
@@ -1117,8 +1150,8 @@ export default function PrintingJobsPage() {
                     {filteredLpns.map((l) => (
                       <option key={l.id} value={l.code}>
                         {l.code}
-                        {l.loc_code ? ` — LOC ${l.loc_code}` : ""}
-                        {l.description ? ` — ${String(l.description).slice(0, 28)}` : ""}
+                        {l.loc_code ? ` ��� LOC ${l.loc_code}` : ""}
+                        {l.description ? ` ��� ${String(l.description).slice(0, 28)}` : ""}
                       </option>
                     ))}
                   </select>
@@ -1141,14 +1174,14 @@ export default function PrintingJobsPage() {
                 </div>
 
                 <div className="mt-2 text-xs text-zinc-500">
-                  Al escoger un LPN, el preset cambia automáticamente a LPN 50x25 (Code128).
+                  Al escoger un LPN, el preset cambia autom+�ticamente a LPN 50x25 (Code128).
                 </div>
               </>
             ) : null}
 
             {preset.defaultType === "SKU" ? (
               <div className="mt-2 text-xs text-zinc-500">
-                Para SKU/Producto (3-up), pega códigos en la cola. Se imprime en filas de 3.
+                Para SKU/Producto (3-up), pega c+�digos en la cola. Se imprime en filas de 3.
               </div>
             ) : null}
           </div>
@@ -1159,10 +1192,12 @@ export default function PrintingJobsPage() {
             className="mt-4 h-64 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-mono"
             placeholder={
               preset.defaultType === "LOC"
-                ? `Formato: LOC|DESCRIPCIÓN (o solo LOC)\nEj:\nLOC-VGR-OFI-01-N0|TODA LA NAVIDAD`
+                ? `Formato: LOC|DESCRIPCI+�N (o solo LOC)\nEj:\nLOC-VGR-OFI-01-N0|TODA LA NAVIDAD`
                 : preset.defaultType === "LPN"
                   ? `Formato: LPN|NOTA (o solo LPN)\nEj:\nLPN-00001234|LOC LOC-VGR-OFI-01-N0`
-                  : `Formato: CODE|NOTA (o solo CODE)\nEj (3-up):\nSKU-0001|PIZZA\nSKU-0002|PIZZA\nSKU-0003|PIZZA`
+                  : preset.defaultType === "PROD"
+                    ? `Formato: LOTE|PRODUCTO - Prod YYYY-MM-DD - Exp YYYY-MM-DD\nEj:\nPB-20260118-0001|PAN BURGER - Prod 2026-01-18 - Exp 2026-01-20`
+                    : `Formato: CODE|NOTA (o solo CODE)\nEj (3-up):\nSKU-0001|PIZZA\nSKU-0002|PIZZA\nSKU-0003|PIZZA`
             }
             value={queueText}
             onChange={(e) => setQueueText(e.target.value)}
@@ -1185,14 +1220,14 @@ export default function PrintingJobsPage() {
 
           {preset.columns === 3 ? (
             <div className="mt-2 text-xs text-zinc-500">
-              Si en cola no hay múltiplos de 3, se imprimen solo filas completas y lo restante queda esperando.
+              Si en cola no hay m+�ltiplos de 3, se imprimen solo filas completas y lo restante queda esperando.
             </div>
           ) : null}
 
           <div className="mt-6">
             <div className="text-sm font-semibold text-zinc-900">Preview ZPL</div>
             <pre className="mt-3 max-h-80 overflow-auto rounded-xl bg-zinc-950 p-4 text-xs text-zinc-100">
-              {previewZpl || "// (vacío)"}
+              {previewZpl || "// (vac+�o)"}
             </pre>
           </div>
         </div>

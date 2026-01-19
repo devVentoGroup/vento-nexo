@@ -1,8 +1,5 @@
 import Link from "next/link";
-import { redirect } from "next/navigation";
-
-import { buildShellLoginUrl } from "@/lib/auth/sso";
-import { createClient } from "@/lib/supabase/server";
+import { requireAppAccess } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -42,14 +39,12 @@ export default async function InventoryMovementsPage({
   const sp = (await searchParams) ?? {};
   const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
 
-  const supabase = await createClient();
-  const { data: userRes } = await supabase.auth.getUser();
-  const user = userRes.user ?? null;
-
   const returnTo = "/inventory/movements";
-  if (!user) {
-    redirect(await buildShellLoginUrl(returnTo));
-  }
+  const { supabase, user } = await requireAppAccess({
+    appId: "nexo",
+    returnTo,
+    permissionCode: "inventory.movements",
+  });
 
   const { data: sitesRows } = await supabase
     .from("employee_sites")

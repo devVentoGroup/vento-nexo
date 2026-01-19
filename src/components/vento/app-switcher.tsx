@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 type AppStatus = "active" | "soon";
 
@@ -11,6 +12,17 @@ type AppLink = {
   href: string;
   status: AppStatus;
   group: "Workspace" | "Interno" | "Directo";
+};
+
+type SiteOption = {
+  id: string;
+  name: string | null;
+  site_type?: string | null;
+};
+
+type AppSwitcherProps = {
+  sites?: SiteOption[];
+  activeSiteId?: string;
 };
 
 function DotsIcon() {
@@ -69,9 +81,12 @@ function AppTile({ app, onNavigate }: { app: AppLink; onNavigate: () => void }) 
   );
 }
 
-export function AppSwitcher() {
+export function AppSwitcher({ sites = [], activeSiteId = "" }: AppSwitcherProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
 
   const apps = useMemo<AppLink[]>(
     () => [
@@ -155,6 +170,24 @@ export function AppSwitcher() {
   const interno = apps.filter((a) => a.group === "Interno");
   const directo = apps.filter((a) => a.group === "Directo");
 
+  const currentSiteId = searchParams.get("site_id") ?? activeSiteId ?? "";
+  const currentSite = useMemo(
+    () => sites.find((site) => site.id === currentSiteId),
+    [sites, currentSiteId]
+  );
+  const currentSiteLabel = currentSite?.name ?? currentSiteId ?? "";
+
+  const navigateWithSite = (nextId: string) => {
+    const params = new URLSearchParams(searchParams.toString());
+    if (nextId) {
+      params.set("site_id", nextId);
+    } else {
+      params.delete("site_id");
+    }
+    const qs = params.toString();
+    router.push(qs ? `${pathname}?${qs}` : pathname);
+  };
+
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
       if (!open) return;
@@ -181,6 +214,30 @@ export function AppSwitcher() {
       {open ? (
         <div className="absolute right-0 z-50 mt-2 w-[360px] rounded-2xl border border-zinc-200 bg-white p-4 shadow-lg">
           <div className="space-y-4">
+            {sites.length ? (
+              <div>
+                <div className="mb-2 text-xs font-semibold tracking-wide text-zinc-500">SEDE</div>
+                <select
+                  className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
+                  value={currentSiteId}
+                  onChange={(e) => {
+                    navigateWithSite(e.target.value);
+                    setOpen(false);
+                  }}
+                >
+                  <option value="">Sin sede</option>
+                  {sites.map((site) => (
+                    <option key={site.id} value={site.id}>
+                      {site.name ?? site.id}
+                    </option>
+                  ))}
+                </select>
+                <div className="mt-2 text-xs text-zinc-500">
+                  Activa: {currentSiteLabel || "Sin sede"}
+                </div>
+              </div>
+            ) : null}
+
             <div>
               <div className="mb-2 text-xs font-semibold tracking-wide text-zinc-500">WORKSPACE</div>
               <div className="grid grid-cols-1 gap-2">

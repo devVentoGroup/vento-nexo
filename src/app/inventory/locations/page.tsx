@@ -2,9 +2,8 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { createClient } from "@/lib/supabase/server";
 import { LocCreateForm } from "@/features/inventory/locations/loc-create-form";
-import { buildShellLoginUrl } from "@/lib/auth/sso";
+import { requireAppAccess } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
 
@@ -17,15 +16,12 @@ export default async function InventoryLocationsPage({
   const created = sp.created === "1";
   const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
 
-  const supabase = await createClient();
-
-  const { data: userRes } = await supabase.auth.getUser();
-  const user = userRes.user ?? null;
-
   const returnTo = "/inventory/locations";
-  if (!user) {
-    redirect(await buildShellLoginUrl(returnTo));
-  }
+  const { supabase, user } = await requireAppAccess({
+    appId: "nexo",
+    returnTo,
+    permissionCode: "inventory.locations",
+  });
 
   // defaultSiteId desde employee_sites (para preselección en el formulario)
   const { data: sitesRows } = await supabase

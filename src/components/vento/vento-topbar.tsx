@@ -1,5 +1,9 @@
 import Link from "next/link";
+
+import { createClient } from "@/lib/supabase/server";
+
 import { AppSwitcher } from "./app-switcher";
+import { ProfileMenu } from "./profile-menu";
 
 function NavItem({ href, label }: { href: string; label: string }) {
   return (
@@ -12,7 +16,54 @@ function NavItem({ href, label }: { href: string; label: string }) {
   );
 }
 
-export function VentoTopbar() {
+export async function VentoTopbar() {
+  const supabase = await createClient();
+  const { data: userRes } = await supabase.auth.getUser();
+  const user = userRes.user ?? null;
+
+  let employee: { role?: string | null; full_name?: string | null; alias?: string | null; site_id?: string | null } | null =
+    null;
+  let sites: Array<{ id: string; name: string | null; site_type: string | null }> = [];
+  let activeSiteId = "";
+
+  if (user) {
+    const { data: employeeRow } = await supabase
+      .from("employees")
+      .select("role,full_name,alias,site_id")
+      .eq("id", user.id)
+      .single();
+
+    employee = employeeRow ?? null;
+
+    const { data: employeeSites } = await supabase
+      .from("employee_sites")
+      .select("site_id,is_primary")
+      .eq("employee_id", user.id)
+      .eq("is_active", true)
+      .order("is_primary", { ascending: false })
+      .limit(50);
+
+    const defaultSiteId = employeeSites?.[0]?.site_id ?? employee?.site_id ?? "";
+    activeSiteId = defaultSiteId;
+
+    const siteIds = (employeeSites ?? [])
+      .map((row) => row.site_id)
+      .filter((id): id is string => Boolean(id));
+
+    if (siteIds.length) {
+      const { data: sitesRows } = await supabase
+        .from("sites")
+        .select("id,name,site_type")
+        .in("id", siteIds)
+        .order("name", { ascending: true });
+      sites = sitesRows ?? [];
+    }
+  }
+
+  const displayName =
+    employee?.alias ?? employee?.full_name ?? user?.email ?? "Usuario";
+  const role = employee?.role ?? "";
+
   return (
     <header>
       <div className="mx-auto flex w-full max-w-6xl flex-wrap items-center justify-between gap-3 px-6 py-4">
@@ -32,7 +83,10 @@ export function VentoTopbar() {
         </nav>
 
         <div className="flex items-center gap-2">
-          <AppSwitcher />
+          <AppSwitcher sites={sites} activeSiteId={activeSiteId} />
+          {user ? (
+            <ProfileMenu name={displayName} role={role} email={user.email} />
+          ) : null}
         </div>
       </div>
     </header>

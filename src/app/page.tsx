@@ -1,207 +1,451 @@
-export default function Home() {
-  type AppStatus = "active" | "soon";
+﻿import Link from "next/link";
 
-  type AppLink = {
-    id: string;
-    name: string;
-    description: string;
-    href: string;
-    status: AppStatus;
-  };
+import { requireAppAccess } from "@/lib/auth/guard";
 
-  const INTERNAL_APPS: AppLink[] = [
-    {
-      id: "viso",
-      name: "VISO",
-      description: "Gerencia, auditoría y configuración.",
-      href: "https://viso.ventogroup.co",
-      status: "soon",
-    },
-    {
-      id: "nexo",
-      name: "NEXO",
-      description: "Inventario (LOC/LPN) y logística operativa.",
-      href: "https://nexo.ventogroup.co",
-      status: "active",
-    },
-    {
-      id: "fogo",
-      name: "FOGO",
-      description: "Recetario, producción y lotes (FIFO).",
-      href: "https://fogo.ventogroup.co",
-      status: "soon",
-    },
-    {
-      id: "origo",
-      name: "ORIGO",
-      description: "Compras, proveedores y recepción.",
-      href: "https://origo.ventogroup.co",
-      status: "soon",
-    },
-    {
-      id: "pulso",
-      name: "PULSO",
-      description: "POS y operación de ventas.",
-      href: "https://pulso.ventogroup.co",
-      status: "soon",
-    },
-    {
-      id: "aura",
-      name: "AURA",
-      description: "Marketing, contenidos y aprobaciones.",
-      href: "https://aura.ventogroup.co",
-      status: "soon",
-    },
-  ];
+export const dynamic = "force-dynamic";
 
-  const DIRECT_APPS: AppLink[] = [
-    {
-      id: "pass",
-      name: "Vento Pass",
-      description: "Clientes: puntos, redenciones y experiencia.",
-      href: "https://pass.ventogroup.co",
-      status: "active",
-    },
-    {
-      id: "anima",
-      name: "ANIMA",
-      description: "Empleados: asistencia, documentos y calendario.",
-      href: "https://anima.ventogroup.co",
-      status: "active",
-    },
-  ];
+type SearchParams = {
+  site_id?: string;
+};
 
-  const StatusPill = ({ status }: { status: AppStatus }) => {
-    const label = status === "active" ? "Activo" : "Próximamente";
-    const cls =
-      status === "active"
-        ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-        : "bg-zinc-100 text-zinc-600 ring-zinc-200";
+type SiteRow = {
+  id: string;
+  name: string | null;
+  site_type: string | null;
+};
 
-    return (
-      <span
-        className={`inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium ring-1 ring-inset ${cls}`}
-      >
-        {label}
-      </span>
-    );
-  };
+type RemissionRow = {
+  id: string;
+  created_at: string | null;
+  status: string | null;
+  from_site_id: string | null;
+  to_site_id: string | null;
+};
 
-  const AppCard = ({ app }: { app: AppLink }) => {
-    const isActive = app.status === "active";
+type ActionLink = {
+  id: string;
+  title: string;
+  description: string;
+  href: string;
+  cta: string;
+  tone?: "primary" | "secondary";
+  visible?: boolean;
+};
 
-    return (
-      <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm transition hover:shadow-md">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <div className="text-base font-semibold text-zinc-900">{app.name}</div>
-            <div className="mt-1 text-sm leading-6 text-zinc-600">{app.description}</div>
-          </div>
-          <StatusPill status={app.status} />
-        </div>
+const ROLE_LABELS: Record<string, string> = {
+  propietario: "Propietario",
+  gerente_general: "Gerente general",
+  gerente: "Gerente",
+  bodeguero: "Bodeguero",
+  conductor: "Conductor",
+  cajero: "Cajero",
+  mesero: "Mesero",
+  barista: "Barista",
+  cocinero: "Cocinero",
+  panadero: "Panadero",
+  repostero: "Repostero",
+  pastelero: "Pastelero",
+  contador: "Contador",
+  marketing: "Marketing",
+};
 
-        <div className="mt-4">
-          {isActive ? (
-            <a
-              href={app.href}
-              className="inline-flex items-center justify-center rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
-            >
-              Abrir
-            </a>
-          ) : (
-            <button
-              type="button"
-              disabled
-              className="inline-flex cursor-not-allowed items-center justify-center rounded-xl bg-zinc-100 px-4 py-2 text-sm font-semibold text-zinc-500"
-              aria-disabled="true"
-            >
-              Próximamente
-            </button>
-          )}
-        </div>
-      </div>
-    );
-  };
+const REQUEST_ROLES = new Set(["cajero", "barista", "cocinero"]);
+const PRODUCTION_ROLES = new Set(["cocinero", "panadero", "repostero", "pastelero", "barista"]);
+
+const STATUS_LABELS: Record<string, string> = {
+  pending: "pendiente",
+  preparing: "preparando",
+  in_transit: "en_transito",
+  received: "recibido",
+  closed: "cerrado",
+  cancelled: "cancelado",
+};
+
+function formatDate(value?: string | null) {
+  if (!value) return "-";
+  if (value.length >= 10) return value.slice(0, 10);
+  return value;
+}
+
+function statusLabel(value?: string | null) {
+  if (!value) return "-";
+  return STATUS_LABELS[value] ?? value;
+}
+
+function ActionCard({ action }: { action: ActionLink }) {
+  const isPrimary = action.tone === "primary";
+  const buttonClass = isPrimary
+    ? "inline-flex h-10 items-center justify-center rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800"
+    : "inline-flex h-10 items-center justify-center rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-900 hover:bg-zinc-50";
 
   return (
-    <div className="min-h-screen bg-zinc-50 text-zinc-900">
-      {/* Top bar */}
-      <header className="border-b border-zinc-200 bg-white">
-        <div className="mx-auto flex w-full max-w-6xl items-center justify-between px-6 py-5">
-          <div className="flex items-baseline gap-3">
-            <div className="text-lg font-semibold tracking-tight">NEXO</div>
-            <div className="text-sm text-zinc-500">Inventario y logística</div>
+    <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div className="text-base font-semibold text-zinc-900">{action.title}</div>
+      <p className="mt-1 text-sm leading-6 text-zinc-600">{action.description}</p>
+      <div className="mt-4">
+        <Link href={action.href} className={buttonClass}>
+          {action.cta}
+        </Link>
+      </div>
+    </div>
+  );
+}
+
+export default async function Home({
+  searchParams,
+}: {
+  searchParams?: Promise<SearchParams>;
+}) {
+  const sp = (await searchParams) ?? {};
+
+  const { supabase, user } = await requireAppAccess({
+    appId: "nexo",
+    returnTo: "/",
+  });
+
+  const { data: employee } = await supabase
+    .from("employees")
+    .select("role,site_id,full_name,alias")
+    .eq("id", user.id)
+    .single();
+
+  const role = String(employee?.role ?? "");
+  const roleLabel = ROLE_LABELS[role] ?? (role || "sin rol");
+  const displayName = String(employee?.alias ?? employee?.full_name ?? user.email ?? "Usuario");
+
+  const isAdminRole = ["propietario", "gerente_general", "gerente"].includes(role);
+  const isBodegaRole = role === "bodeguero";
+  const canRequestRole = REQUEST_ROLES.has(role);
+  const canProductionRole = PRODUCTION_ROLES.has(role);
+
+  const { data: employeeSites } = await supabase
+    .from("employee_sites")
+    .select("site_id,is_primary")
+    .eq("employee_id", user.id)
+    .eq("is_active", true)
+    .order("is_primary", { ascending: false })
+    .limit(50);
+
+  const defaultSiteId = employeeSites?.[0]?.site_id ?? employee?.site_id ?? "";
+  const activeSiteId = String(sp.site_id ?? defaultSiteId).trim();
+
+  const siteIds = (employeeSites ?? [])
+    .map((row) => row.site_id)
+    .filter((id): id is string => Boolean(id));
+
+  const { data: sites } = siteIds.length
+    ? await supabase
+        .from("sites")
+        .select("id,name,site_type")
+        .in("id", siteIds)
+        .order("name", { ascending: true })
+    : { data: [] as SiteRow[] };
+
+  const siteMap = new Map((sites ?? []).map((site) => [site.id, site]));
+  const activeSite = activeSiteId ? siteMap.get(activeSiteId) : undefined;
+  const activeSiteName = activeSite?.name ?? activeSiteId ?? "Sin sede";
+  const siteType = String(activeSite?.site_type ?? "");
+  const isProductionCenter = siteType === "production_center";
+  const isSatellite = siteType === "satellite";
+
+  const viewLabel = !activeSiteId
+    ? "Sin sede"
+    : isProductionCenter
+      ? "Bodega (Centro)"
+      : isSatellite
+        ? "Sede satelite"
+        : "Sede";
+
+  const canRequestRemission = isSatellite && (canRequestRole || isAdminRole);
+  const canPrepareRemission = isProductionCenter && (isBodegaRole || isAdminRole);
+  const canReceiveRemission = isSatellite && (isBodegaRole || isAdminRole);
+  const canManageStorage = isProductionCenter && (isBodegaRole || isAdminRole);
+  const canRegisterProduction = isAdminRole || (isProductionCenter && canProductionRole);
+
+  let remissionRows: RemissionRow[] = [];
+  if (activeSiteId) {
+    let remissionsQuery = supabase
+      .from("restock_requests")
+      .select("id,created_at,status,from_site_id,to_site_id")
+      .order("created_at", { ascending: false })
+      .limit(8);
+
+    remissionsQuery = isProductionCenter
+      ? remissionsQuery.eq("from_site_id", activeSiteId)
+      : remissionsQuery.eq("to_site_id", activeSiteId);
+
+    const { data: remissions } = await remissionsQuery;
+    remissionRows = (remissions ?? []) as RemissionRow[];
+  }
+
+  const actions: ActionLink[] = [
+    {
+      id: "request-remission",
+      title: "Solicitar remision",
+      description: "Pide insumos desde sede satelite hacia el centro de produccion.",
+      href: "/inventory/remissions",
+      cta: "Solicitar",
+      tone: "primary",
+      visible: canRequestRemission,
+    },
+    {
+      id: "prepare-remissions",
+      title: "Preparar remisiones",
+      description: "Gestiona picking y despacho para sedes satelite.",
+      href: "/inventory/remissions",
+      cta: "Preparar",
+      tone: "primary",
+      visible: canPrepareRemission,
+    },
+    {
+      id: "receive-remissions",
+      title: "Recibir remisiones",
+      description: "Confirma cantidades recibidas y reporta faltantes.",
+      href: "/inventory/remissions",
+      cta: "Recibir",
+      tone: "primary",
+      visible: canReceiveRemission,
+    },
+    {
+      id: "remissions",
+      title: "Ver remisiones",
+      description: "Seguimiento de solicitudes y estados recientes.",
+      href: "/inventory/remissions",
+      cta: "Abrir",
+      tone: "secondary",
+      visible: true,
+    },
+    {
+      id: "movements",
+      title: "Movimientos",
+      description: "Ledger de inventario por sede y tipo de movimiento.",
+      href: "/inventory/movements",
+      cta: "Abrir",
+      tone: "secondary",
+      visible: true,
+    },
+    {
+      id: "scanner",
+      title: "Scanner",
+      description: "Escaneo rapido de LOC/LPN/AST.",
+      href: "/scanner",
+      cta: "Abrir",
+      tone: "secondary",
+      visible: true,
+    },
+    {
+      id: "printing",
+      title: "Impresion",
+      description: "Etiquetas Zebra para LOC, LPN, SKU y PROD.",
+      href: "/printing/jobs",
+      cta: "Abrir",
+      tone: "secondary",
+      visible: true,
+    },
+    {
+      id: "locations",
+      title: "LOC",
+      description: "Ubicaciones fisicas y zonas de almacen.",
+      href: "/inventory/locations",
+      cta: "Abrir",
+      tone: "secondary",
+      visible: canManageStorage,
+    },
+    {
+      id: "lpns",
+      title: "LPN",
+      description: "Contenedores y contenido por LPN.",
+      href: "/inventory/lpns",
+      cta: "Abrir",
+      tone: "secondary",
+      visible: canManageStorage,
+    },
+    {
+      id: "production-batches",
+      title: "Produccion manual",
+      description: "Registrar lotes terminados y actualizar stock.",
+      href: "/inventory/production-batches",
+      cta: "Abrir",
+      tone: "secondary",
+      visible: canRegisterProduction,
+    },
+  ];
+
+  const primaryActions = actions.filter((action) => action.visible && action.tone === "primary");
+  const secondaryActions = actions.filter((action) => action.visible && action.tone !== "primary");
+
+  return (
+    <div className="mx-auto w-full max-w-6xl space-y-6 px-6 py-8">
+      <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="text-sm font-semibold text-zinc-500">NEXO</div>
+            <h1 className="mt-2 text-2xl font-semibold tracking-tight">Bienvenido, {displayName}</h1>
+            <p className="mt-2 text-sm leading-6 text-zinc-600">
+              Panel operativo de inventario y logistica, organizado por rol y sede.
+            </p>
+            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-zinc-600">
+              <span className="rounded-full bg-zinc-100 px-2.5 py-1 ring-1 ring-inset ring-zinc-200">
+                Rol: {roleLabel}
+              </span>
+              <span className="rounded-full bg-zinc-100 px-2.5 py-1 ring-1 ring-inset ring-zinc-200">
+                Sede: {activeSiteName}
+              </span>
+              <span className="rounded-full bg-zinc-100 px-2.5 py-1 ring-1 ring-inset ring-zinc-200">
+                Vista: {viewLabel}
+              </span>
+            </div>
           </div>
 
-          <div className="text-sm text-zinc-500">ventogroup.co</div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href="/inventory/remissions"
+              className="inline-flex h-10 items-center justify-center rounded-xl bg-white px-4 text-sm font-semibold text-zinc-900 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
+            >
+              Remisiones
+            </Link>
+            <Link
+              href="/scanner"
+              className="inline-flex h-10 items-center justify-center rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800"
+            >
+              Scanner
+            </Link>
+          </div>
         </div>
-      </header>
 
-      <main className="mx-auto w-full max-w-6xl px-6 py-10">
-        {/* Hero */}
-        <section className="mb-10">
-          <h1 className="text-3xl font-semibold tracking-tight">Centro de aplicaciones</h1>
-          <p className="mt-2 max-w-2xl text-base leading-7 text-zinc-600">
-            Accede a los módulos de Vento Group. Este Hub es un launcher: cada aplicación vive independiente
-            para mantener el sistema estable y escalable.
-          </p>
-        </section>
-
-        {/* Internal apps */}
-        <section className="mb-12">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Operación interna</h2>
-            <div className="text-sm text-zinc-500">VISO · NEXO · FOGO · ORIGO · PULSO · AURA</div>
+        <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-zinc-900">Sede activa</div>
+            <div className="mt-1 text-xs text-zinc-500">{activeSiteName || "Sin sede"}</div>
           </div>
+          <form method="get" className="flex items-center gap-3">
+            <select
+              name="site_id"
+              defaultValue={activeSiteId}
+              className="h-10 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+            >
+              {(employeeSites ?? []).map((row) => {
+                const site = siteMap.get(row.site_id);
+                const label = site?.name ? `${site.name}` : row.site_id;
+                const suffix = row.is_primary ? " (principal)" : "";
+                return (
+                  <option key={row.site_id} value={row.site_id}>
+                    {label}
+                    {suffix}
+                  </option>
+                );
+              })}
+            </select>
+            <button className="inline-flex h-10 items-center justify-center rounded-xl bg-white px-3 text-sm font-semibold text-zinc-900 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50">
+              Cambiar
+            </button>
+          </form>
+        </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {INTERNAL_APPS.map((app) => (
-              <AppCard key={app.id} app={app} />
+        {!activeSiteId ? (
+          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+            No hay sede activa. Asigna una sede al empleado para operar NEXO.
+          </div>
+        ) : null}
+      </div>
+
+      <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <div className="text-sm font-semibold text-zinc-900">Acciones clave</div>
+        {primaryActions.length ? (
+          <div className="mt-4 grid gap-4 md:grid-cols-3">
+            {primaryActions.map((action) => (
+              <ActionCard key={action.id} action={action} />
             ))}
           </div>
-        </section>
-
-        {/* Direct apps */}
-        <section>
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-lg font-semibold">Apps directas</h2>
-            <div className="text-sm text-zinc-500">Sin pasar por el Hub</div>
+        ) : (
+          <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700">
+            No hay acciones clave asignadas a tu rol en esta sede.
           </div>
+        )}
+      </div>
 
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-            {DIRECT_APPS.map((app) => (
-              <div
-                key={app.id}
-                className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm transition hover:shadow-md"
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <div>
-                    <div className="text-base font-semibold text-zinc-900">{app.name}</div>
-                    <div className="mt-1 text-sm leading-6 text-zinc-600">{app.description}</div>
-                  </div>
-                  <StatusPill status={app.status} />
-                </div>
+      <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-sm font-semibold text-zinc-900">Modulos</div>
+          <div className="text-xs text-zinc-500">Accesos rapidos</div>
+        </div>
+        <div className="mt-4 grid gap-4 md:grid-cols-3">
+          {secondaryActions.map((action) => (
+            <ActionCard key={action.id} action={action} />
+          ))}
+        </div>
+      </div>
 
-                <div className="mt-4">
-                  <a
-                    href={app.href}
-                    className="inline-flex items-center justify-center rounded-xl bg-white px-4 py-2 text-sm font-semibold text-zinc-900 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
-                  >
-                    Abrir
-                  </a>
-                </div>
-              </div>
-            ))}
+      <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="text-sm font-semibold text-zinc-900">Remisiones recientes</div>
+            <div className="mt-1 text-sm text-zinc-600">
+              {isProductionCenter ? "Solicitudes para preparar" : "Solicitudes enviadas/recibidas"}
+            </div>
           </div>
-        </section>
+          <Link
+            href="/inventory/remissions"
+            className="text-sm font-semibold text-zinc-900 underline decoration-zinc-200 underline-offset-4"
+          >
+            Ver todas
+          </Link>
+        </div>
 
-        <footer className="mt-12 border-t border-zinc-200 pt-6 text-sm text-zinc-500">
-          <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-            <div>Vento OS · Hub</div>
-            <div>Versión MVP · Launcher</div>
-          </div>
-        </footer>
-      </main>
+        <div className="mt-4 overflow-x-auto">
+          <table className="w-full border-separate border-spacing-0">
+            <thead>
+              <tr className="text-left text-xs font-semibold tracking-wide text-zinc-500">
+                <th className="border-b border-zinc-200 pb-2">Fecha</th>
+                <th className="border-b border-zinc-200 pb-2">Estado</th>
+                <th className="border-b border-zinc-200 pb-2">Origen</th>
+                <th className="border-b border-zinc-200 pb-2">Destino</th>
+                <th className="border-b border-zinc-200 pb-2">Acciones</th>
+              </tr>
+            </thead>
+            <tbody>
+              {remissionRows.map((row) => (
+                <tr key={row.id} className="text-sm text-zinc-800">
+                  <td className="border-b border-zinc-100 py-3 font-mono">
+                    {formatDate(row.created_at)}
+                  </td>
+                  <td className="border-b border-zinc-100 py-3">{statusLabel(row.status)}</td>
+                  <td className="border-b border-zinc-100 py-3">
+                    {siteMap.get(row.from_site_id ?? "")?.name ?? row.from_site_id ?? "-"}
+                  </td>
+                  <td className="border-b border-zinc-100 py-3">
+                    {siteMap.get(row.to_site_id ?? "")?.name ?? row.to_site_id ?? "-"}
+                  </td>
+                  <td className="border-b border-zinc-100 py-3">
+                    <Link
+                      href={`/inventory/remissions/${row.id}`}
+                      className="text-sm font-semibold text-zinc-900 underline decoration-zinc-200 underline-offset-4"
+                    >
+                      Ver detalle
+                    </Link>
+                  </td>
+                </tr>
+              ))}
+
+              {!activeSiteId ? (
+                <tr>
+                  <td colSpan={5} className="py-6 text-sm text-zinc-500">
+                    Selecciona una sede para ver remisiones recientes.
+                  </td>
+                </tr>
+              ) : null}
+
+              {activeSiteId && remissionRows.length === 0 ? (
+                <tr>
+                  <td colSpan={5} className="py-6 text-sm text-zinc-500">
+                    No hay remisiones recientes para esta sede.
+                  </td>
+                </tr>
+              ) : null}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

@@ -2,9 +2,9 @@ import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
-import { createClient } from "@/lib/supabase/server";
 import { LpnCreateForm } from "@/features/inventory/lpns/lpn-create-form";
-import { buildShellLoginUrl } from "@/lib/auth/sso";
+import { requireAppAccess } from "@/lib/auth/guard";
+import { createClient } from "@/lib/supabase/server";
 
 type SearchParams = {
   code?: string;
@@ -113,18 +113,33 @@ export default async function InventoryLpnsPage({
       ? rawTab
       : "summary";
 
+  const returnParams = new URLSearchParams();
+  if (code) returnParams.set("code", code);
+  if (lpnIdParam) returnParams.set("lpn_id", lpnIdParam);
+
+  const returnTo = returnParams.toString()
+    ? `/inventory/lpns?${returnParams.toString()}`
+    : "/inventory/lpns";
+
   let supabase: any;
+  let user: any;
   try {
     supabase = await createClient();
+    ({ supabase, user } = await requireAppAccess({
+      appId: "nexo",
+      returnTo,
+      supabase,
+      permissionCode: "inventory.lpns",
+    }));
   } catch (e: any) {
-    console.error("[inventory/lpns] createClient() failed:", e);
+    console.error("[inventory/lpns] auth guard failed:", e);
 
     return (
       <div className="mx-auto w-full max-w-3xl px-4 py-10">
         <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-800">
-          <div className="font-semibold">Error inicializando Supabase (server)</div>
+          <div className="font-semibold">Error validando acceso</div>
           <div className="mt-2 text-red-800/90">
-            createClient() lanzó una excepción. Revisa los logs del servidor (Vercel) para ver el stack real.
+            No se pudo validar la sesión o permisos. Revisa los logs del servidor.
           </div>
           <div className="mt-3 rounded-xl bg-white/60 p-3 font-mono text-xs text-red-900">
             {String(e?.message ?? e)}
@@ -134,24 +149,8 @@ export default async function InventoryLpnsPage({
     );
   }
 
-  let user: any = null;
-  try {
-    const res = await supabase.auth.getUser();
-    user = res.data.user ?? null;
-  } catch {
-    user = null;
-  }
-
-  const returnParams = new URLSearchParams();
-  if (code) returnParams.set("code", code);
-  if (lpnIdParam) returnParams.set("lpn_id", lpnIdParam);
-
-  const returnTo = returnParams.toString()
-    ? `/inventory/lpns?${returnParams.toString()}`
-    : "/inventory/lpns";
-
   if (!user) {
-    redirect(await buildShellLoginUrl(returnTo));
+    redirect(`/no-access?returnTo=${encodeURIComponent(returnTo)}`);
   }
 
   // Inferir site_id desde employee_sites (mismo patrón que LOC)

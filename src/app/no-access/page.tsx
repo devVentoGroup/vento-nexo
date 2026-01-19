@@ -1,0 +1,54 @@
+import Link from "next/link";
+
+type SearchParams = { returnTo?: string };
+
+const HUB_URL = "https://os.ventogroup.co";
+
+function safeReturnTo(value?: string) {
+  const v = (value ?? "").trim();
+  if (!v) return "";
+  if (!v.startsWith("/")) return "";
+  return v;
+}
+
+export default async function NoAccessPage({
+  searchParams,
+}: {
+  searchParams?: Promise<SearchParams>;
+}) {
+  const sp = (await searchParams) ?? {};
+  const returnTo = safeReturnTo(sp.returnTo);
+
+  return (
+    <div className="mx-auto w-full max-w-2xl px-6 py-16">
+      <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
+        <div className="text-sm font-semibold text-zinc-500">Vento OS</div>
+        <h1 className="mt-2 text-2xl font-semibold text-zinc-900">No tienes permisos</h1>
+        <p className="mt-2 text-sm text-zinc-600">
+          Tu usuario esta autenticado, pero no tiene acceso a este modulo.
+        </p>
+
+        {returnTo ? (
+          <div className="mt-3 text-xs text-zinc-500">
+            Ruta solicitada: <span className="font-mono">{returnTo}</span>
+          </div>
+        ) : null}
+
+        <div className="mt-6 flex flex-col gap-2 sm:flex-row">
+          <a
+            href={HUB_URL}
+            className="inline-flex h-11 items-center justify-center rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800"
+          >
+            Volver al Hub
+          </a>
+          <Link
+            href="/"
+            className="inline-flex h-11 items-center justify-center rounded-xl bg-white px-4 text-sm font-semibold text-zinc-900 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
+          >
+            Ir a inicio NEXO
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
+}

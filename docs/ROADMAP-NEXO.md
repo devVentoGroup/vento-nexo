@@ -24,6 +24,8 @@
 **1.1 Autenticacion y autorizacion**
 - ⬜ Login estable (staff)
 - 🟢 Login principal en vento-shell (SSO); NEXO redirige si no hay sesion
+- 🟢 Si esta autenticado y no tiene permisos: pagina "No tienes permisos" + boton Volver al Hub
+- 🟡 Permisos por app/vista desde BD (roles/apps/permissions + scopes)
 - ⬜ Roles (owner/global_manager/manager/cashier o equivalentes)
 - ⬜ RLS consistente para tablas criticas:
   - products (ya)
@@ -122,6 +124,7 @@ Esto desbloquea control de todo aunque aun no existan LPN/LOC perfectos.
 
 **5.1 Solicitud y preparacion**
 - ⬜ Solicitudes satelite (opcional al inicio; puede arrancar manual)
+- �YY� Remisiones MVP (crear -> preparar -> en viaje -> recibir -> faltantes)
 - ⬜ Transferencias > Nueva:
   - destino (satelite)
   - lineas solicitadas
@@ -156,6 +159,7 @@ Importante: esto es potente, pero no debe bloquear el core.
   - movimientos pueden referenciar lpn_id / from_loc / to_loc si existe
 - ⬜ Impresion Zebra operacion:
   - Jobs persistentes
+- �YY� Etiquetas produccion (lote + expiracion)
   - plantillas finales ZPL
   - Print Station estable
 
