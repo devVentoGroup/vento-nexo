@@ -1,21 +1,20 @@
-# Organización del Código — Vento NEXO
+# Organización del Código — Vento OS (Platform)
 
-**Vento NEXO** es la aplicación de inventario y logística operativa del ecosistema Vento OS. Gestiona ubicaciones (LOC), pallets/contenedores (LPN), activos (AST), impresión de etiquetas y escaneo QR/barcode.
+**Vento OS** es la plataforma unificada del ecosistema Vento. Integra inventario (NEXO), punto de venta (PULSO), producción (FOGO), asistencia (ANIMA) y fidelización (PASS) en una arquitectura monorepo.
 
 ---
 
 ## Stack Tecnológico
 
-- **Framework**: Next.js 16.1.1 (App Router)
-- **React**: 19.2.3
-- **TypeScript**: 5.x
+- **Framework**: Next.js 15+ (App Router)
+- **Lenguaje**: TypeScript 5.x
 - **Estilos**: Tailwind CSS 4
-- **Auth & DB**: Supabase (`@supabase/ssr`, `@supabase/supabase-js`)
-- **Deployment**: Vercel
+- **Base de Datos**: Supabase (PostgreSQL)
+- **Gestor de Paquetes**: pnpm (Workspaces)
 
 ---
 
-## Estructura de Carpetas
+## Estructura del Monorepo
 
 ```
 vento-nexo/

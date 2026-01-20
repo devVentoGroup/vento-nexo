@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { checkPermission } from "@/lib/auth/permissions";
 import { createClient } from "@/lib/supabase/server";
+import { RemissionsDestinationSelect } from "@/components/vento/remissions-destination-select";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +20,7 @@ type SearchParams = {
   error?: string;
   ok?: string;
   site_id?: string;
+  from_site_id?: string;
 };
 
 function asText(value: FormDataEntryValue | null) {
@@ -41,15 +43,23 @@ type SiteRow = {
   site_type: string | null;
 };
 
-type AreaKindRow = {
-  code: string;
+type AreaRow = {
+  id: string;
   name: string | null;
+  kind: string | null;
+  site_id: string | null;
 };
 
 type ProductRow = {
   id: string;
   name: string | null;
   unit: string | null;
+};
+
+type ProductSiteRow = {
+  product_id: string;
+  is_active: boolean | null;
+  default_area_kind: string | null;
 };
 
 type RemissionRow = {
@@ -242,8 +252,25 @@ export default async function RemissionsPage({
     .eq("is_active", true)
     .limit(1);
 
-  const defaultFromSiteId = routes?.[0]?.fulfillment_site_id ?? "";
-  const hasDefaultFromSite = Boolean(defaultFromSiteId);
+  const fulfillmentSiteIds = (routes ?? [])
+    .map((route) => route.fulfillment_site_id)
+    .filter((id): id is string => Boolean(id));
+
+  const { data: fulfillmentSites } = fulfillmentSiteIds.length
+    ? await supabase
+        .from("sites")
+        .select("id,name,site_type")
+        .in("id", fulfillmentSiteIds)
+        .order("name", { ascending: true })
+    : { data: [] as SiteRow[] };
+
+  const fulfillmentSiteRows = (fulfillmentSites ?? []) as SiteRow[];
+  const requestedFromSiteId = sp.from_site_id ? String(sp.from_site_id).trim() : "";
+  const selectedFromSiteId =
+    requestedFromSiteId && fulfillmentSiteRows.some((site) => site.id === requestedFromSiteId)
+      ? requestedFromSiteId
+      : fulfillmentSiteRows[0]?.id ?? "";
+  const hasDefaultFromSite = Boolean(selectedFromSiteId);
 
   let remissionsQuery = supabase
     .from("restock_requests")
@@ -261,18 +288,57 @@ export default async function RemissionsPage({
   const { data: remissions } = await remissionsQuery;
   const remissionRows = (remissions ?? []) as RemissionRow[];
 
-  const { data: areaKinds } = await supabase
-    .from("area_kinds")
-    .select("code, name")
-    .order("code", { ascending: true });
-  const areaKindRows = (areaKinds ?? []) as AreaKindRow[];
+  const { data: areas } = selectedFromSiteId
+    ? await supabase
+        .from("areas")
+        .select("id,name,kind,site_id")
+        .eq("site_id", selectedFromSiteId)
+        .order("name", { ascending: true })
+    : { data: [] as AreaRow[] };
 
-  const { data: products } = await supabase
-    .from("products")
-    .select("id,name,unit")
-    .order("name", { ascending: true })
-    .limit(200);
-  const productRows = (products ?? []) as ProductRow[];
+  const areaRows = (areas ?? []) as AreaRow[];
+  const areaOptions = Array.from(
+    areaRows.reduce((map, row) => {
+      const key = String(row.kind ?? "").trim();
+      if (!key) return map;
+      if (!map.has(key)) {
+        map.set(key, {
+          value: key,
+          label: row.name ?? key,
+        });
+      }
+      return map;
+    }, new Map<string, { value: string; label: string }>())
+  ).map(([, value]) => value);
+
+  const { data: productSites } = selectedFromSiteId
+    ? await supabase
+        .from("product_site_settings")
+        .select("product_id,is_active,default_area_kind")
+        .eq("site_id", selectedFromSiteId)
+        .eq("is_active", true)
+    : { data: [] as ProductSiteRow[] };
+
+  const productSiteRows = (productSites ?? []) as ProductSiteRow[];
+  const productSiteIds = productSiteRows.map((row) => row.product_id);
+  const hasProductSiteFilter = productSiteIds.length > 0;
+
+  let productsQuery = supabase
+    .from("product_inventory_profiles")
+    .select("product_id, products(id,name,unit)")
+    .eq("track_inventory", true)
+    .in("inventory_kind", ["ingredient", "finished", "resale", "packaging"])
+    .order("name", { foreignTable: "products", ascending: true })
+    .limit(400);
+
+  if (hasProductSiteFilter) {
+    productsQuery = productsQuery.in("product_id", productSiteIds);
+  }
+
+  const { data: products } = await productsQuery;
+  const productRows = (products ?? [])
+    .map((row) => row.products as ProductRow | null)
+    .filter((row): row is ProductRow => Boolean(row));
 
   return (
     <div className="w-full px-6 py-8">
@@ -354,36 +420,30 @@ export default async function RemissionsPage({
         ) : null}
 
         {canCreate ? (
-          <form action={createRemission} className="mt-4 space-y-4">
-            {hasDefaultFromSite ? (
-              <input type="hidden" name="from_site_id" value={defaultFromSiteId} />
-            ) : null}
-            <input type="hidden" name="to_site_id" value={activeSiteId} />
-          <div className="grid gap-3 md:grid-cols-2">
-            {hasDefaultFromSite ? (
-              <div className="flex flex-col gap-1 text-sm text-zinc-600">
-                <span className="text-xs font-semibold">Sede origen (bodega)</span>
-                <div className="h-11 rounded-xl bg-zinc-50 px-3 text-sm text-zinc-800 ring-1 ring-inset ring-zinc-200">
-                  {siteMap.get(defaultFromSiteId)?.name ?? defaultFromSiteId}
-                </div>
-              </div>
-            ) : (
-              <label className="flex flex-col gap-1 text-sm text-zinc-600">
-                <span className="text-xs font-semibold">Sede origen (bodega)</span>
-                <input
-                  name="from_site_id"
-                  placeholder="UUID sede origen"
-                  className="h-11 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
-                />
-              </label>
-            )}
+        <form action={createRemission} className="mt-4 space-y-4">
+          {activeSiteId ? <input type="hidden" name="to_site_id" value={activeSiteId} /> : null}
 
+          <div className="grid gap-3 md:grid-cols-2">
             <div className="flex flex-col gap-1 text-sm text-zinc-600">
-              <span className="text-xs font-semibold">Sede destino (satelite)</span>
+              <span className="text-xs font-semibold">Sede origen (satelite)</span>
               <div className="h-11 rounded-xl bg-zinc-50 px-3 text-sm text-zinc-800 ring-1 ring-inset ring-zinc-200">
                 {activeSiteName}
               </div>
             </div>
+
+            <label className="flex flex-col gap-1 text-sm text-zinc-600">
+              <span className="text-xs font-semibold">Sede destino (Centro de produccion / Bodega)</span>
+              <RemissionsDestinationSelect
+                name="from_site_id"
+                activeSiteId={activeSiteId}
+                value={selectedFromSiteId}
+                options={fulfillmentSiteRows.map((site) => ({
+                  id: site.id,
+                  name: site.name ?? site.id,
+                }))}
+                placeholder="Selecciona centro de produccion / bodega"
+              />
+            </label>
           </div>
 
           <div className="grid gap-3 md:grid-cols-2">
@@ -415,12 +475,18 @@ export default async function RemissionsPage({
                 key={`item-${idx}`}
                 className="grid gap-3 rounded-xl border border-zinc-200 p-3 md:grid-cols-4"
               >
-                <input
+                <select
                   name="item_product_id"
-                  placeholder="product_id"
-                  list="product-options"
-                  className="h-11 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-200 focus:outline-none"
-                />
+                  className="h-11 rounded-xl bg-white px-3 py-2 text-sm leading-[1.1] ring-1 ring-inset ring-zinc-200 focus:outline-none"
+                >
+                  <option value="">Selecciona producto</option>
+                  {productRows.map((product) => (
+                    <option key={product.id} value={product.id}>
+                      {product.name ?? product.id}
+                      {product.unit ? ` (${product.unit})` : ""}
+                    </option>
+                  ))}
+                </select>
                 <input
                   name="item_quantity"
                   placeholder="Cantidad"
@@ -433,28 +499,18 @@ export default async function RemissionsPage({
                 />
                 <select
                   name="item_area_kind"
-                  className="h-11 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-200 focus:outline-none"
+                  className="h-11 rounded-xl bg-white px-3 py-2 text-sm leading-[1.1] ring-1 ring-inset ring-zinc-200 focus:outline-none"
                 >
                   <option value="">Area (opcional)</option>
-                  {areaKindRows.map((row) => (
-                    <option key={row.code} value={row.code}>
-                      {row.name ?? row.code}
+                  {areaOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
                     </option>
                   ))}
                 </select>
               </div>
             ))}
           </div>
-          <datalist id="product-options">
-            {productRows.map((product) => (
-              <option
-                key={product.id}
-                value={product.id}
-                label={`${product.name ?? "Producto"}${product.unit ? ` (${product.unit})` : ""}`}
-              />
-            ))}
-          </datalist>
-
           <button className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500">
             Crear remision
           </button>
