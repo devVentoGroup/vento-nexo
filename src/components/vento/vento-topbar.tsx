@@ -3,6 +3,7 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 
 import { AppSwitcher } from "./app-switcher";
+import { NavDropdown } from "./nav-dropdown";
 import { ProfileMenu } from "./profile-menu";
 
 function NavItem({ href, label }: { href: string; label: string }) {
@@ -15,6 +16,25 @@ function NavItem({ href, label }: { href: string; label: string }) {
     </Link>
   );
 }
+
+// MVP Inventario (Fase 2 NEXO): Stock, Movimientos, Conteo inicial, Ajustes.
+// LOC y LPN (Fase 6) se pueden volver a añadir cuando se priorice trazabilidad.
+const INVENTARIO_ITEMS = [
+  { href: "/inventory/stock", label: "Stock" },
+  { href: "/inventory/movements", label: "Movimientos" },
+  { href: "/inventory/count-initial", label: "Conteo inicial" },
+  { href: "/inventory/adjust", label: "Ajustes" },
+];
+
+const INVENTARIO_ACTIVE = [
+  "/inventory/stock",
+  "/inventory/movements",
+  "/inventory/count-initial",
+  "/inventory/adjust",
+];
+
+const DOCUMENTOS_ITEMS = [{ href: "/inventory/remissions", label: "Remisiones" }];
+const DOCUMENTOS_ACTIVE = ["/inventory/remissions"];
 
 export async function VentoTopbar() {
   const supabase = await createClient();
@@ -76,11 +96,9 @@ export async function VentoTopbar() {
 
         <nav className="flex w-full items-center gap-1 overflow-x-auto whitespace-nowrap md:w-auto">
           <NavItem href="/" label="Inicio" />
-          <NavItem href="/inventory/stock" label="Stock" />
-          <NavItem href="/inventory/count-initial" label="Conteo inicial" />
+          <NavDropdown label="Inventario" items={INVENTARIO_ITEMS} activePrefixes={INVENTARIO_ACTIVE} />
+          <NavDropdown label="Documentos" items={DOCUMENTOS_ITEMS} activePrefixes={DOCUMENTOS_ACTIVE} />
           <NavItem href="/scanner" label="Scanner" />
-          <NavItem href="/inventory/locations" label="LOC" />
-          <NavItem href="/inventory/lpns" label="LPN" />
           <NavItem href="/printing/jobs" label="Impresión" />
         </nav>
 
