@@ -14,6 +14,7 @@ type SearchParams = {
   inventory_kind?: string;
   category_id?: string;
   error?: string;
+  count_initial?: string;
 };
 
 type EmployeeSiteRow = {
@@ -214,13 +215,27 @@ export default async function InventoryStockPage({
           </p>
         </div>
 
-        <Link
-          href="/inventory/movements"
-          className="inline-flex h-11 items-center justify-center rounded-xl bg-white px-4 text-sm font-semibold text-zinc-900 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
-        >
-          Ver movimientos
-        </Link>
+        <div className="flex gap-2">
+          <Link
+            href="/inventory/count-initial"
+            className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500"
+          >
+            Conteo inicial
+          </Link>
+          <Link
+            href="/inventory/movements"
+            className="inline-flex h-11 items-center justify-center rounded-xl bg-white px-4 text-sm font-semibold text-zinc-900 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
+          >
+            Ver movimientos
+          </Link>
+        </div>
       </div>
+
+      {sp.count_initial === "1" ? (
+        <div className="mt-6 rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+          Conteo inicial registrado. Los movimientos y el stock se actualizaron.
+        </div>
+      ) : null}
 
       {errorMsg ? (
         <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">

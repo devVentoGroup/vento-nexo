@@ -62,6 +62,12 @@ type ProductSiteRow = {
   default_area_kind: string | null;
 };
 
+/** Filas de product_inventory_profiles con el join a products(id,name,unit) */
+type ProductProfileWithProduct = {
+  product_id: string;
+  products: ProductRow | null;
+};
+
 type RemissionRow = {
   id: string;
   created_at: string | null;
@@ -253,8 +259,8 @@ export default async function RemissionsPage({
     .limit(1);
 
   const fulfillmentSiteIds = (routes ?? [])
-    .map((route) => route.fulfillment_site_id)
-    .filter((id): id is string => Boolean(id));
+    .map((route: { fulfillment_site_id: string | null }) => route.fulfillment_site_id)
+    .filter((id: string | null): id is string => Boolean(id));
 
   const { data: fulfillmentSites } = fulfillmentSiteIds.length
     ? await supabase
@@ -336,9 +342,9 @@ export default async function RemissionsPage({
   }
 
   const { data: products } = await productsQuery;
-  const productRows = (products ?? [])
-    .map((row) => row.products as ProductRow | null)
-    .filter((row): row is ProductRow => Boolean(row));
+  const productRows = ((products ?? []) as ProductProfileWithProduct[])
+    .map((row) => row.products)
+    .filter((r): r is ProductRow => Boolean(r));
 
   return (
     <div className="w-full px-6 py-8">

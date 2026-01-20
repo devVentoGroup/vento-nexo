@@ -1,9 +1,11 @@
 # Roadmap NEXO (Checklist completo)
 
 ## Leyenda
+
 - ⬜ Pendiente  - 🟡 En progreso  - 🟢 Listo
 
 ## Fase 0 — Alineacion y reglas del juego (1-2 dias)
+
 - 🟢 Definir objetivo: NEXO = fuente de verdad de inventario (ledger + documentos)
 - 🟢 Definir alcance MVP (que entra ahora, que se pospone)
 - 🟢 Definir sedes: Centro Produccion + satelites (IDs y nombres oficiales)
@@ -22,6 +24,7 @@
 ## Fase 1 — Base tecnica y seguridad (2-5 dias)
 
 **1.1 Autenticacion y autorizacion**
+
 - 🟡 Login estable (staff)
 - 🟢 Login principal en vento-shell (SSO); NEXO redirige si no hay sesion
 - 🟢 Si esta autenticado y no tiene permisos: pagina "No tienes permisos" + boton Volver al Hub
@@ -41,6 +44,7 @@
 **Listo cuando:** un usuario no autorizado no puede ver ni escribir inventario.
 
 **1.2 Higiene de datos (catalogo)**
+
 - ⬜ Insumos con SKU: 563 / 563 con SKU (0 sin SKU)
 - ⬜ Corregir incoherencias de product_type en policies (ej. sale vs venta)
 - ⬜ Validar product_inventory_profiles cubre todos los insumos
@@ -53,6 +57,7 @@
 Esto desbloquea control de todo aunque aun no existan LPN/LOC perfectos.
 
 **🟡 2.1 Ledger de movimientos (Inventory Movements) — la verdad**
+
 - 🟡 Definir catalogo de tipos de movimiento (estandar):
   - receipt (entrada por proveedor)
   - issue_internal (salida a cocina/panaderia)
@@ -69,11 +74,12 @@ Esto desbloquea control de todo aunque aun no existan LPN/LOC perfectos.
 **Listo cuando:** puedes reconstruir stock desde movimientos.
 
 **2.2 Stock por sede (Inventory Stock by Site) — vista operativa**
+
 - ⬜ Definir si se mantiene:
   - derivado por trigger / function, o
   - recalculado por job/manual (al inicio puede ser manual)
 - 🟡 Vista/endpoint de consulta rapido por SKU, sede, categoria
-- �YY� Catalogo por sede (product_site_settings) para filtrar productos activos
+- �YY� Catalogo por sede (product_site_settings) para filtrar productos activos
 - ⬜ Alertas basicas:
   - stock negativo
   - bajo minimo (si existe PAR)
@@ -82,6 +88,7 @@ Esto desbloquea control de todo aunque aun no existan LPN/LOC perfectos.
 **Listo cuando:** hay pantalla de stock confiable para operar.
 
 **2.3 Pantallas core**
+
 - 🟢 Inventario > Stock (filtros, busqueda, export basico)
 - 🟢 Inventario > Movimientos (filtros por fecha, sede, tipo, SKU)
 - ⬜ Inventario > Ajuste (con motivo, permisos, evidencia opcional)
@@ -93,6 +100,7 @@ Esto desbloquea control de todo aunque aun no existan LPN/LOC perfectos.
 ## Fase 3 — Recepcion de proveedores (Inbound) (7-14 dias)
 
 **3.1 Documento de recepcion**
+
 - ⬜ Recepciones > Nueva:
   - proveedor, factura, fecha/hora
   - lineas: SKU + cantidad + unidad + costo (si aplica) + lote/exp (si aplica)
@@ -104,12 +112,14 @@ Esto desbloquea control de todo aunque aun no existan LPN/LOC perfectos.
   - actualiza stock
 
 **3.2 Operacion real (staging + SLA)**
+
 - ⬜ Bandeja "pendiente de guardar" (put-away pendiente)
 - ⬜ SLA: recepcion cerrada -> guardada antes de X horas
 
 **Listo cuando:** todo lo que entra queda registrado y disponible.
 
 ## Fase 4 — Entregas internas (CP -> cocina/panaderia/produccion) (7-14 dias)
+
 - ⬜ Maestros: destinos internos (cocina, panaderia, reposteria, frio, etc.)
 - ⬜ Entregas internas > Nueva:
   - responsable entrega / recibe
@@ -126,6 +136,7 @@ Esto desbloquea control de todo aunque aun no existan LPN/LOC perfectos.
 ## Fase 5 — Transferencias y remisiones a satelites (2-4 semanas)
 
 **5.1 Solicitud y preparacion**
+
 - ⬜ Solicitudes satelite (opcional al inicio; puede arrancar manual)
 - 🟡 Remisiones MVP (crear -> preparar -> en viaje -> recibir -> faltantes)
 - ⬜ Transferencias > Nueva:
@@ -135,6 +146,7 @@ Esto desbloquea control de todo aunque aun no existan LPN/LOC perfectos.
 - ⬜ Picking list (por zonas: seco/frio/congelado)
 
 **5.2 Despacho y recepcion**
+
 - ⬜ Confirmacion de carga (quien, hora, checklist)
 - ⬜ Recepcion en satelite:
   - confirmar lineas
@@ -169,6 +181,7 @@ Importante: esto es potente, pero no debe bloquear el core.
 **Listo cuando:** trazas fisicamente donde esta cada contenedor.
 
 ## Fase 7 — Conteos ciclicos y auditoria (continuo)
+
 - ⬜ ABC operativo:
   - A: diario/semanal
   - B: quincenal
@@ -180,6 +193,7 @@ Importante: esto es potente, pero no debe bloquear el core.
 **Listo cuando:** reduces merma/fugas sostenidamente.
 
 ## Fase 8 — Costeo y compras (si quieres reemplazar parte de Epsilon) (4-8 semanas)
+
 - ⬜ Captura de costo unitario en recepciones
 - ⬜ Historial de costos por proveedor
 - ⬜ Valorizacion de inventario (promedio ponderado o FIFO contable, segun decidan)
@@ -189,12 +203,14 @@ Importante: esto es potente, pero no debe bloquear el core.
 **Listo cuando:** compras vuelve a ser controlable y auditable.
 
 ## Fase 9 — Produccion/recetas (FOGO) integrado (posterior)
+
 - ⬜ Recetas y rendimientos
 - ⬜ Ordenes de produccion
 - ⬜ Consumo automatico (ledger) + creacion de lote terminado
 - ⬜ Etiquetas FIFO/FEFO y trazabilidad por lote
 
 ## Modulos transversales (aplican en todas las fases)
+
 - 🟡 UI Kit NEXO (consistencia visual): layout, cards, tables, filters, toasts, empty states
 - ⬜ Observabilidad: logs de errores en API, auditoria de acciones
 - 🟡 Permisos y aprobaciones: ajustes/mermas requieren rol o aprobacion
@@ -202,7 +218,9 @@ Importante: esto es potente, pero no debe bloquear el core.
 - ⬜ SOPs (procedimientos): recepcion, salida interna, remisiones, conteos
 
 ## Prioridad recomendada (para que esto se vuelva real rapido)
+
 Si tu urgencia es control ya, el orden de implementacion mas efectivo es:
+
 1) Fase 2 (Inventario Core)
 2) Fase 3 (Recepciones)
 3) Fase 4 (Entregas internas)

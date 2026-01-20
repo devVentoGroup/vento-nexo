@@ -76,6 +76,8 @@ export async function VentoTopbar() {
 
         <nav className="flex w-full items-center gap-1 overflow-x-auto whitespace-nowrap md:w-auto">
           <NavItem href="/" label="Inicio" />
+          <NavItem href="/inventory/stock" label="Stock" />
+          <NavItem href="/inventory/count-initial" label="Conteo inicial" />
           <NavItem href="/scanner" label="Scanner" />
           <NavItem href="/inventory/locations" label="LOC" />
           <NavItem href="/inventory/lpns" label="LPN" />

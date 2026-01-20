@@ -12,12 +12,20 @@ type SearchParams = {
   error?: string;
 };
 
+// Incluye los de inventory_movement_types en la BD (initial_count, restock_*, etc.) y aliases habituales
 const MOVEMENT_TYPES = [
+  "adjustment",
+  "initial_count",
+  "production_in",
+  "production_out",
+  "purchase_in",
+  "restock_in",
+  "restock_out",
+  "sale_out",
+  "transfer_in",
+  "transfer_out",
   "receipt",
   "issue_internal",
-  "transfer_out",
-  "transfer_in",
-  "adjustment",
   "count",
   "waste",
   "shrink",
