@@ -23,7 +23,7 @@
 
 ## Fase 1 — Base tecnica y seguridad (2-5 dias)
 
-**1.1 Autenticacion y autorizacion**
+## 1.1 Autenticacion y autorizacion
 
 - 🟡 Login estable (staff)
 - 🟢 Login principal en vento-shell (SSO); NEXO redirige si no hay sesion
@@ -41,9 +41,9 @@
   - transfers/shipments (cuando existan)
 - 🟡 Auditoria minima: created_by, created_at en documentos/movimientos
 
-**Listo cuando:** un usuario no autorizado no puede ver ni escribir inventario.
+## Listo cuando: un usuario no autorizado no puede ver ni escribir inventario.
 
-**1.2 Higiene de datos (catalogo)**
+## 1.2 Higiene de datos (catalogo)
 
 - ⬜ Insumos con SKU: 563 / 563 con SKU (0 sin SKU)
 - ⬜ Corregir incoherencias de product_type en policies (ej. sale vs venta)

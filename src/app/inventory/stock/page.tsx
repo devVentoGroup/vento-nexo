@@ -15,6 +15,7 @@ type SearchParams = {
   category_id?: string;
   error?: string;
   count_initial?: string;
+  adjust?: string;
 };
 
 type EmployeeSiteRow = {
@@ -234,6 +235,12 @@ export default async function InventoryStockPage({
       {sp.count_initial === "1" ? (
         <div className="mt-6 rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-800">
           Conteo inicial registrado. Los movimientos y el stock se actualizaron.
+        </div>
+      ) : null}
+
+      {sp.adjust === "1" ? (
+        <div className="mt-6 rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+          Ajuste registrado. El movimiento y el stock se actualizaron.
         </div>
       ) : null}
 
