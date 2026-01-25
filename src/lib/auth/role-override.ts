@@ -6,8 +6,8 @@ import {
   ROLE_OVERRIDE_COOKIE,
 } from "@/lib/auth/role-override-config";
 
-export function getRoleOverrideFromCookies(): string | null {
-  const cookieStore = cookies();
+export async function getRoleOverrideFromCookies(): Promise<string | null> {
+  const cookieStore = await cookies();
   const raw = cookieStore.get(ROLE_OVERRIDE_COOKIE)?.value ?? "";
   const value = raw.trim();
   return value ? value : null;
@@ -169,7 +169,7 @@ export async function checkPermissionWithRoleOverride({
   context?: { siteId?: string | null; areaId?: string | null };
   actualRole: string;
 }) {
-  const overrideRole = getRoleOverrideFromCookies();
+  const overrideRole = await getRoleOverrideFromCookies();
   if (canUseRoleOverride(actualRole, overrideRole)) {
     return isPermissionAllowedForRole(supabase, overrideRole!, appId, code, context);
   }

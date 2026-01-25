@@ -113,7 +113,7 @@ export default async function Home({
     .single();
 
   const role = String(employee?.role ?? "");
-  const overrideRole = getRoleOverrideFromCookies();
+  const overrideRole = await getRoleOverrideFromCookies();
   const canOverrideRole = canUseRoleOverride(role, overrideRole);
   const effectiveRole = canOverrideRole ? String(overrideRole) : role;
   let roleLabel = effectiveRole || "sin rol";

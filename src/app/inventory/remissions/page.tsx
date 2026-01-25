@@ -259,8 +259,12 @@ export default async function RemissionsPage({
   const isProductionCenter = activeSiteType === "production_center";
 
   const canRequestPermission = activeSiteId
-    ? await checkPermission(supabase, APP_ID, PERMISSIONS.remissionsRequest, {
-        siteId: activeSiteId,
+    ? await checkPermissionWithRoleOverride({
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.remissionsRequest,
+        context: { siteId: activeSiteId },
+        actualRole,
       })
     : false;
 

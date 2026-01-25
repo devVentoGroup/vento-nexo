@@ -52,7 +52,7 @@ export async function requireAppAccess({
     const normalizedCodes = permissionCodes.map((code) =>
       normalizePermissionCode(appId, code)
     );
-    const overrideRole = getRoleOverrideFromCookies();
+    const overrideRole = await getRoleOverrideFromCookies();
     let canOverride = false;
     let actualRole = "";
     let defaultSiteId: string | null = null;
