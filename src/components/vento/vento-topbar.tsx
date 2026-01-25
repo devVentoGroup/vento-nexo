@@ -105,7 +105,7 @@ export async function VentoTopbar() {
         <div className="flex items-center gap-2">
           <AppSwitcher sites={sites} activeSiteId={activeSiteId} />
           {user ? (
-            <ProfileMenu name={displayName} role={role} email={user.email} />
+            <ProfileMenu name={displayName} role={role} email={user.email} sites={sites} />
           ) : null}
         </div>
       </div>

@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { requireAppAccess } from "@/lib/auth/guard";
-import { checkPermission } from "@/lib/auth/permissions";
+import { checkPermissionWithRoleOverride } from "@/lib/auth/role-override";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 
@@ -71,6 +71,12 @@ async function createBatch(formData: FormData) {
   if (!user) {
     redirect(await buildShellLoginUrl("/inventory/production-batches"));
   }
+  const { data: employee } = await supabase
+    .from("employees")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+  const actualRole = String(employee?.role ?? "");
 
   const siteId = asText(formData.get("site_id"));
   const productId = asText(formData.get("product_id"));
@@ -80,7 +86,13 @@ async function createBatch(formData: FormData) {
   const notes = asText(formData.get("notes"));
 
   const canRegister = siteId
-    ? await checkPermission(supabase, APP_ID, "inventory.production_batches", { siteId })
+    ? await checkPermissionWithRoleOverride({
+        supabase,
+        appId: APP_ID,
+        code: "inventory.production_batches",
+        context: { siteId },
+        actualRole,
+      })
     : false;
 
   if (!canRegister) {
@@ -194,9 +206,10 @@ export default async function ProductionBatchesPage({
 
   const { data: employee } = await supabase
     .from("employees")
-    .select("site_id")
+    .select("site_id,role")
     .eq("id", user.id)
     .single();
+  const actualRole = String(employee?.role ?? "");
 
   const { data: employeeSites } = await supabase
     .from("employee_sites")
@@ -226,8 +239,12 @@ export default async function ProductionBatchesPage({
   const siteMap = new Map(siteRows.map((site) => [site.id, site]));
   const activeSiteName = siteMap.get(activeSiteId)?.name ?? activeSiteId;
   const canRegister = activeSiteId
-    ? await checkPermission(supabase, APP_ID, "inventory.production_batches", {
-        siteId: activeSiteId,
+    ? await checkPermissionWithRoleOverride({
+        supabase,
+        appId: APP_ID,
+        code: "inventory.production_batches",
+        context: { siteId: activeSiteId },
+        actualRole,
       })
     : false;
 

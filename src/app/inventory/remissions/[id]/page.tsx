@@ -2,7 +2,11 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { requireAppAccess } from "@/lib/auth/guard";
-import { checkPermission } from "@/lib/auth/permissions";
+import {
+  canUseRoleOverride,
+  checkPermissionWithRoleOverride,
+  getRoleOverrideFromCookies,
+} from "@/lib/auth/role-override";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 
@@ -84,14 +88,17 @@ async function loadAccessContext(
     .single();
 
   const role = String(employee?.role ?? "");
-  let roleLabel = role || "sin rol";
-  if (role) {
+  const overrideRole = getRoleOverrideFromCookies();
+  const canOverrideRole = canUseRoleOverride(role, overrideRole);
+  const effectiveRole = canOverrideRole ? String(overrideRole) : role;
+  let roleLabel = effectiveRole || "sin rol";
+  if (effectiveRole) {
     const { data: roleRow } = await supabase
       .from("roles")
       .select("name")
-      .eq("code", role)
+      .eq("code", effectiveRole)
       .single();
-    roleLabel = roleRow?.name ?? role;
+    roleLabel = roleRow?.name ?? effectiveRole;
   }
 
   const fromSiteId = request?.from_site_id ?? "";
@@ -114,17 +121,29 @@ async function loadAccessContext(
   const toSiteName = String(siteMap.get(toSiteId)?.name ?? toSiteId ?? "");
 
   const canPreparePermission = fromSiteId
-    ? await checkPermission(supabase, APP_ID, PERMISSIONS.remissionsPrepare, {
-        siteId: fromSiteId,
+    ? await checkPermissionWithRoleOverride({
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.remissionsPrepare,
+        context: { siteId: fromSiteId },
+        actualRole: role,
       })
     : false;
   const canReceivePermission = toSiteId
-    ? await checkPermission(supabase, APP_ID, PERMISSIONS.remissionsReceive, {
-        siteId: toSiteId,
+    ? await checkPermissionWithRoleOverride({
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.remissionsReceive,
+        context: { siteId: toSiteId },
+        actualRole: role,
       })
     : false;
-  const canCancel = await checkPermission(supabase, APP_ID, PERMISSIONS.remissionsCancel, {
-    siteId: fromSiteId || toSiteId || null,
+  const canCancel = await checkPermissionWithRoleOverride({
+    supabase,
+    appId: APP_ID,
+    code: PERMISSIONS.remissionsCancel,
+    context: { siteId: fromSiteId || toSiteId || null },
+    actualRole: role,
   });
 
   const canPrepare = fromSiteType === "production_center" && canPreparePermission;

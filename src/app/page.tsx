@@ -1,7 +1,11 @@
 import Link from "next/link";
 
 import { requireAppAccess } from "@/lib/auth/guard";
-import { checkPermission } from "@/lib/auth/permissions";
+import {
+  canUseRoleOverride,
+  checkPermissionWithRoleOverride,
+  getRoleOverrideFromCookies,
+} from "@/lib/auth/role-override";
 
 export const dynamic = "force-dynamic";
 
@@ -109,14 +113,17 @@ export default async function Home({
     .single();
 
   const role = String(employee?.role ?? "");
-  let roleLabel = role || "sin rol";
-  if (role) {
+  const overrideRole = getRoleOverrideFromCookies();
+  const canOverrideRole = canUseRoleOverride(role, overrideRole);
+  const effectiveRole = canOverrideRole ? String(overrideRole) : role;
+  let roleLabel = effectiveRole || "sin rol";
+  if (effectiveRole) {
     const { data: roleRow } = await supabase
       .from("roles")
       .select("name")
-      .eq("code", role)
+      .eq("code", effectiveRole)
       .single();
-    roleLabel = roleRow?.name ?? role;
+    roleLabel = roleRow?.name ?? effectiveRole;
   }
   const displayName = String(employee?.alias ?? employee?.full_name ?? user.email ?? "Usuario");
 
@@ -172,14 +179,62 @@ export default async function Home({
       canLocationsPermission,
       canLpnsPermission,
     ] = await Promise.all([
-      checkPermission(supabase, APP_ID, PERMISSIONS.remissions, { siteId: activeSiteId }),
-      checkPermission(supabase, APP_ID, PERMISSIONS.remissionsRequest, { siteId: activeSiteId }),
-      checkPermission(supabase, APP_ID, PERMISSIONS.remissionsPrepare, { siteId: activeSiteId }),
-      checkPermission(supabase, APP_ID, PERMISSIONS.remissionsReceive, { siteId: activeSiteId }),
-      checkPermission(supabase, APP_ID, PERMISSIONS.movements, { siteId: activeSiteId }),
-      checkPermission(supabase, APP_ID, PERMISSIONS.stock, { siteId: activeSiteId }),
-      checkPermission(supabase, APP_ID, PERMISSIONS.locations, { siteId: activeSiteId }),
-      checkPermission(supabase, APP_ID, PERMISSIONS.lpns, { siteId: activeSiteId }),
+      checkPermissionWithRoleOverride({
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.remissions,
+        context: { siteId: activeSiteId },
+        actualRole: role,
+      }),
+      checkPermissionWithRoleOverride({
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.remissionsRequest,
+        context: { siteId: activeSiteId },
+        actualRole: role,
+      }),
+      checkPermissionWithRoleOverride({
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.remissionsPrepare,
+        context: { siteId: activeSiteId },
+        actualRole: role,
+      }),
+      checkPermissionWithRoleOverride({
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.remissionsReceive,
+        context: { siteId: activeSiteId },
+        actualRole: role,
+      }),
+      checkPermissionWithRoleOverride({
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.movements,
+        context: { siteId: activeSiteId },
+        actualRole: role,
+      }),
+      checkPermissionWithRoleOverride({
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.stock,
+        context: { siteId: activeSiteId },
+        actualRole: role,
+      }),
+      checkPermissionWithRoleOverride({
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.locations,
+        context: { siteId: activeSiteId },
+        actualRole: role,
+      }),
+      checkPermissionWithRoleOverride({
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.lpns,
+        context: { siteId: activeSiteId },
+        actualRole: role,
+      }),
     ]);
   }
 
@@ -324,6 +379,11 @@ export default async function Home({
               <span className="rounded-full bg-zinc-100 px-2.5 py-1 ring-1 ring-inset ring-zinc-200">
                 Rol: {roleLabel}
               </span>
+              {canOverrideRole && overrideRole ? (
+                <span className="rounded-full bg-amber-100 px-2.5 py-1 font-semibold text-amber-800 ring-1 ring-inset ring-amber-200">
+                  Modo prueba
+                </span>
+              ) : null}
               <span className="rounded-full bg-zinc-100 px-2.5 py-1 ring-1 ring-inset ring-zinc-200">
                 Sede: {activeSiteName}
               </span>

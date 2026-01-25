@@ -3,6 +3,11 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { normalizePermissionCode } from "@/lib/auth/permissions";
+import {
+  canUseRoleOverride,
+  getRoleOverrideFromCookies,
+  isPermissionAllowedForRole,
+} from "@/lib/auth/role-override";
 
 type GuardOptions = {
   appId: string;
@@ -47,19 +52,50 @@ export async function requireAppAccess({
     const normalizedCodes = permissionCodes.map((code) =>
       normalizePermissionCode(appId, code)
     );
-    const checks = await Promise.all(
-      normalizedCodes.map((code) =>
-        client.rpc("has_permission", { p_permission_code: code })
-      )
-    );
+    const overrideRole = getRoleOverrideFromCookies();
+    let canOverride = false;
+    let actualRole = "";
 
-    const deniedIndex = checks.findIndex((res) => res.error || !res.data);
-    if (deniedIndex !== -1) {
-      const qs = new URLSearchParams();
-      qs.set("returnTo", returnTo);
-      qs.set("reason", "no_permission");
-      qs.set("permission", String(normalizedCodes[deniedIndex] ?? ""));
-      redirect(`/no-access?${qs.toString()}`);
+    if (overrideRole) {
+      const { data: employee } = await client
+        .from("employees")
+        .select("role")
+        .eq("id", user.id)
+        .maybeSingle();
+      actualRole = String(employee?.role ?? "");
+      canOverride = canUseRoleOverride(actualRole, overrideRole);
+    }
+
+    if (canOverride) {
+      const checks = await Promise.all(
+        normalizedCodes.map((code) =>
+          isPermissionAllowedForRole(client, overrideRole!, appId, code)
+        )
+      );
+      const deniedIndex = checks.findIndex((allowed) => !allowed);
+      const deniedCode = deniedIndex >= 0 ? normalizedCodes[deniedIndex] : null;
+      if (deniedCode) {
+        const qs = new URLSearchParams();
+        qs.set("returnTo", returnTo);
+        qs.set("reason", "role_override");
+        qs.set("permission", String(deniedCode ?? ""));
+        redirect(`/no-access?${qs.toString()}`);
+      }
+    } else {
+      const checks = await Promise.all(
+        normalizedCodes.map((code) =>
+          client.rpc("has_permission", { p_permission_code: code })
+        )
+      );
+
+      const deniedIndex = checks.findIndex((res) => res.error || !res.data);
+      if (deniedIndex !== -1) {
+        const qs = new URLSearchParams();
+        qs.set("returnTo", returnTo);
+        qs.set("reason", "no_permission");
+        qs.set("permission", String(normalizedCodes[deniedIndex] ?? ""));
+        redirect(`/no-access?${qs.toString()}`);
+      }
     }
   }
 

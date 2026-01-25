@@ -2,7 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { requireAppAccess } from "@/lib/auth/guard";
-import { checkPermission } from "@/lib/auth/permissions";
+import { checkPermissionWithRoleOverride } from "@/lib/auth/role-override";
 import { createClient } from "@/lib/supabase/server";
 import { RemissionsDestinationSelect } from "@/components/vento/remissions-destination-select";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
@@ -86,6 +86,12 @@ async function createRemission(formData: FormData) {
   if (!user) {
     redirect(await buildShellLoginUrl("/inventory/remissions"));
   }
+  const { data: employee } = await supabase
+    .from("employees")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+  const actualRole = String(employee?.role ?? "");
 
   const fromSiteId = asText(formData.get("from_site_id"));
   const toSiteId = asText(formData.get("to_site_id"));
@@ -110,8 +116,12 @@ async function createRemission(formData: FormData) {
     redirect("/inventory/remissions?error=" + encodeURIComponent("Debes definir origen y destino."));
   }
 
-  const canRequest = await checkPermission(supabase, APP_ID, PERMISSIONS.remissionsRequest, {
-    siteId: toSiteId,
+  const canRequest = await checkPermissionWithRoleOverride({
+    supabase,
+    appId: APP_ID,
+    code: PERMISSIONS.remissionsRequest,
+    context: { siteId: toSiteId },
+    actualRole,
   });
   if (!canRequest) {
     redirect(
@@ -200,11 +210,17 @@ export default async function RemissionsPage({
 
   const { data: employee } = await supabase
     .from("employees")
-    .select("site_id")
+    .select("site_id,role")
     .eq("id", user.id)
     .single();
 
-  const canViewAll = await checkPermission(supabase, APP_ID, PERMISSIONS.remissionsAllSites);
+  const actualRole = String(employee?.role ?? "");
+  const canViewAll = await checkPermissionWithRoleOverride({
+    supabase,
+    appId: APP_ID,
+    code: PERMISSIONS.remissionsAllSites,
+    actualRole,
+  });
 
   const { data: sitesRows } = await supabase
     .from("employee_sites")
