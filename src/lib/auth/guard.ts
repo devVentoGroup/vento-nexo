@@ -55,21 +55,25 @@ export async function requireAppAccess({
     const overrideRole = getRoleOverrideFromCookies();
     let canOverride = false;
     let actualRole = "";
+    let defaultSiteId: string | null = null;
 
     if (overrideRole) {
       const { data: employee } = await client
         .from("employees")
-        .select("role")
+        .select("role,site_id")
         .eq("id", user.id)
         .maybeSingle();
       actualRole = String(employee?.role ?? "");
+      defaultSiteId = employee?.site_id ?? null;
       canOverride = canUseRoleOverride(actualRole, overrideRole);
     }
 
     if (canOverride) {
       const checks = await Promise.all(
         normalizedCodes.map((code) =>
-          isPermissionAllowedForRole(client, overrideRole!, appId, code)
+          isPermissionAllowedForRole(client, overrideRole!, appId, code, {
+            siteId: defaultSiteId,
+          })
         )
       );
       const deniedIndex = checks.findIndex((allowed) => !allowed);
