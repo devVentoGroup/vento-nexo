@@ -9,6 +9,7 @@ export const dynamic = "force-dynamic";
 const APP_ID = "nexo";
 const PERMISSION = "inventory.adjustments";
 
+
 type SearchParams = { site_id?: string };
 
 type EmployeeSiteRow = { site_id: string | null; is_primary: boolean | null };
