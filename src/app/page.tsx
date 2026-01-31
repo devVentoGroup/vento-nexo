@@ -54,6 +54,7 @@ type ActionLink = {
   cta: string;
   tone?: "primary" | "secondary";
   visible?: boolean;
+  icon?: IconName;
 };
 
 const STATUS_LABELS: Record<string, string> = {
@@ -76,6 +77,123 @@ function statusLabel(value?: string | null) {
   return STATUS_LABELS[value] ?? value;
 }
 
+type IconName =
+  | "sparkles"
+  | "package"
+  | "scan"
+  | "printer"
+  | "boxes"
+  | "arrows"
+  | "map"
+  | "layers"
+  | "clipboard"
+  | "badge"
+  | "building"
+  | "eye";
+
+function Icon({ name, className }: { name?: IconName; className?: string }) {
+  const common = "none";
+  switch (name) {
+    case "sparkles":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6" className={className}>
+          <path d="M12 3l1.5 3.5L17 8l-3.5 1.5L12 13l-1.5-3.5L7 8l3.5-1.5L12 3z" />
+          <path d="M5 16l1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2z" />
+        </svg>
+      );
+    case "package":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6" className={className}>
+          <path d="M21 8.5V19a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8.5" />
+          <path d="M12 3 2 8l10 5 10-5-10-5z" />
+          <path d="M12 13v8" />
+        </svg>
+      );
+    case "scan":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6" className={className}>
+          <path d="M3 7V5a2 2 0 0 1 2-2h2" />
+          <path d="M17 3h2a2 2 0 0 1 2 2v2" />
+          <path d="M21 17v2a2 2 0 0 1-2 2h-2" />
+          <path d="M7 21H5a2 2 0 0 1-2-2v-2" />
+          <path d="M7 12h10" />
+        </svg>
+      );
+    case "printer":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6" className={className}>
+          <path d="M7 8V4h10v4" />
+          <path d="M6 17h12v3H6z" />
+          <path d="M5 8h14a2 2 0 0 1 2 2v5H3v-5a2 2 0 0 1 2-2z" />
+        </svg>
+      );
+    case "boxes":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6" className={className}>
+          <path d="M3 7h7v7H3z" />
+          <path d="M14 7h7v7h-7z" />
+          <path d="M7 14v7" />
+          <path d="M17 14v7" />
+        </svg>
+      );
+    case "arrows":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6" className={className}>
+          <path d="M7 7h11l-3-3" />
+          <path d="M17 17H6l3 3" />
+        </svg>
+      );
+    case "map":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6" className={className}>
+          <path d="M9 18l-6 3V6l6-3 6 3 6-3v15l-6 3-6-3z" />
+          <path d="M9 3v15" />
+          <path d="M15 6v15" />
+        </svg>
+      );
+    case "layers":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6" className={className}>
+          <path d="M12 3 2 8l10 5 10-5-10-5z" />
+          <path d="M2 12l10 5 10-5" />
+          <path d="M2 16l10 5 10-5" />
+        </svg>
+      );
+    case "clipboard":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6" className={className}>
+          <path d="M9 3h6a2 2 0 0 1 2 2v2H7V5a2 2 0 0 1 2-2z" />
+          <path d="M7 7h10v14H7z" />
+          <path d="M10 11h4" />
+          <path d="M10 15h4" />
+        </svg>
+      );
+    case "badge":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6" className={className}>
+          <circle cx="12" cy="8" r="4" />
+          <path d="M8 12l-2 9 6-3 6 3-2-9" />
+        </svg>
+      );
+    case "building":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6" className={className}>
+          <rect x="4" y="3" width="16" height="18" rx="2" />
+          <path d="M8 7h2M8 11h2M8 15h2M14 7h2M14 11h2M14 15h2" />
+        </svg>
+      );
+    case "eye":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6" className={className}>
+          <path d="M2 12s4-6 10-6 10 6 10 6-4 6-10 6-10-6-10-6z" />
+          <circle cx="12" cy="12" r="3" />
+        </svg>
+      );
+    default:
+      return null;
+  }
+}
+
 function ActionCard({ action }: { action: ActionLink }) {
   const isPrimary = action.tone === "primary";
   const buttonClass = isPrimary
@@ -83,14 +201,42 @@ function ActionCard({ action }: { action: ActionLink }) {
     : "ui-btn ui-btn--ghost";
 
   return (
-    <div className="ui-panel">
-      <div className="text-base font-semibold text-zinc-900">{action.title}</div>
+    <div className="ui-card">
+      <div className="flex items-center gap-2 text-base font-semibold text-zinc-900">
+        <Icon name={action.icon} className="h-5 w-5 text-[var(--ui-brand-600)]" />
+        {action.title}
+      </div>
       <p className="mt-1 text-sm leading-6 text-zinc-600">{action.description}</p>
       <div className="mt-4">
         <Link href={action.href} className={buttonClass}>
           {action.cta}
         </Link>
       </div>
+    </div>
+  );
+}
+
+function EmptyState({
+  title,
+  description,
+  cta,
+  href,
+}: {
+  title: string;
+  description: string;
+  cta?: string;
+  href?: string;
+}) {
+  return (
+    <div className="ui-empty-state">
+      <Icon name="sparkles" />
+      <div className="text-sm font-semibold text-[var(--ui-text)]">{title}</div>
+      <div className="text-sm text-[var(--ui-muted)]">{description}</div>
+      {cta && href ? (
+        <Link href={href} className="ui-btn ui-btn--ghost">
+          {cta}
+        </Link>
+      ) : null}
     </div>
   );
 }
@@ -279,6 +425,7 @@ export default async function Home({
       cta: "Solicitar",
       tone: "primary",
       visible: canRequestRemission,
+      icon: "package",
     },
     {
       id: "prepare-remissions",
@@ -288,6 +435,7 @@ export default async function Home({
       cta: "Preparar",
       tone: "primary",
       visible: canPrepareRemission,
+      icon: "package",
     },
     {
       id: "receive-remissions",
@@ -297,6 +445,7 @@ export default async function Home({
       cta: "Recibir",
       tone: "primary",
       visible: canReceiveRemission,
+      icon: "package",
     },
     {
       id: "remissions",
@@ -306,6 +455,7 @@ export default async function Home({
       cta: "Abrir",
       tone: "secondary",
       visible: canViewRemissions,
+      icon: "package",
     },
     {
       id: "stock",
@@ -315,6 +465,7 @@ export default async function Home({
       cta: "Abrir",
       tone: "secondary",
       visible: canViewStock,
+      icon: "boxes",
     },
     {
       id: "movements",
@@ -324,6 +475,7 @@ export default async function Home({
       cta: "Abrir",
       tone: "secondary",
       visible: canMovementsPermission,
+      icon: "arrows",
     },
     {
       id: "scanner",
@@ -333,6 +485,7 @@ export default async function Home({
       cta: "Abrir",
       tone: "secondary",
       visible: true,
+      icon: "scan",
     },
     {
       id: "printing",
@@ -342,6 +495,7 @@ export default async function Home({
       cta: "Abrir",
       tone: "secondary",
       visible: true,
+      icon: "printer",
     },
     {
       id: "locations",
@@ -351,6 +505,7 @@ export default async function Home({
       cta: "Abrir",
       tone: "secondary",
       visible: canManageLocations,
+      icon: "map",
     },
     {
       id: "lpns",
@@ -360,6 +515,7 @@ export default async function Home({
       cta: "Abrir",
       tone: "secondary",
       visible: canManageLpns,
+      icon: "layers",
     },
   ];
 
@@ -368,27 +524,32 @@ export default async function Home({
 
   return (
     <div className="w-full space-y-6">
-      <div className="ui-panel">
+      <div className="ui-panel ui-panel--halo">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="text-sm font-semibold text-zinc-500">NEXO</div>
-            <h1 className="mt-2 text-2xl font-semibold tracking-tight">Bienvenido, {displayName}</h1>
+            <div className="text-sm font-semibold text-zinc-500">NEXO · Inventario</div>
+            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-[var(--ui-text)]">
+              Bienvenido, {displayName}
+            </h1>
             <p className="mt-2 text-sm leading-6 text-zinc-600">
               Panel operativo de inventario y logistica, organizado por rol y sede.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-zinc-600">
-              <span className="rounded-full bg-zinc-100 px-2.5 py-1 ring-1 ring-inset ring-zinc-200">
+              <span className="ui-chip">
+                <Icon name="badge" className="h-3.5 w-3.5" />
                 Rol: {roleLabel}
               </span>
               {canOverrideRole && overrideRole ? (
-                <span className="rounded-full bg-amber-100 px-2.5 py-1 font-semibold text-amber-800 ring-1 ring-inset ring-amber-200">
+                <span className="ui-chip ui-chip--brand">
                   Modo prueba
                 </span>
               ) : null}
-              <span className="rounded-full bg-zinc-100 px-2.5 py-1 ring-1 ring-inset ring-zinc-200">
+              <span className="ui-chip">
+                <Icon name="building" className="h-3.5 w-3.5" />
                 Sede: {activeSiteName}
               </span>
-              <span className="rounded-full bg-zinc-100 px-2.5 py-1 ring-1 ring-inset ring-zinc-200">
+              <span className="ui-chip">
+                <Icon name="eye" className="h-3.5 w-3.5" />
                 Vista: {viewLabel}
               </span>
             </div>
@@ -399,12 +560,14 @@ export default async function Home({
               href="/inventory/remissions"
               className="ui-btn ui-btn--ghost"
             >
+              <Icon name="package" className="h-4 w-4" />
               Remisiones
             </Link>
             <Link
               href="/scanner"
               className="ui-btn ui-btn--brand"
             >
+              <Icon name="scan" className="h-4 w-4" />
               Scanner
             </Link>
           </div>
@@ -419,7 +582,7 @@ export default async function Home({
             <select
               name="site_id"
               defaultValue={activeSiteId}
-              className="h-10 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+              className="ui-input"
             >
               {employeeSiteRows.map((row) => {
                 const siteId = row.site_id ?? "";
@@ -449,7 +612,10 @@ export default async function Home({
       </div>
 
       <div className="ui-panel">
-        <div className="text-sm font-semibold text-zinc-900">Acciones clave</div>
+        <div className="ui-section-title">
+          <Icon name="sparkles" />
+          Acciones clave
+        </div>
         {primaryActions.length ? (
           <div className="mt-4 grid gap-4 md:grid-cols-3">
             {primaryActions.map((action) => (
@@ -457,15 +623,19 @@ export default async function Home({
             ))}
           </div>
         ) : (
-          <div className="mt-4 ui-alert ui-alert--neutral">
-            No hay acciones clave asignadas a tu rol en esta sede.
-          </div>
+          <EmptyState
+            title="No hay acciones clave"
+            description="Tu rol no tiene acciones asignadas en esta sede."
+          />
         )}
       </div>
 
       <div className="ui-panel">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="text-sm font-semibold text-zinc-900">Modulos</div>
+          <div className="ui-section-title">
+            <Icon name="sparkles" />
+            Módulos
+          </div>
           <div className="text-xs text-zinc-500">Accesos rapidos</div>
         </div>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
@@ -478,7 +648,10 @@ export default async function Home({
       <div className="ui-panel">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-sm font-semibold text-zinc-900">Remisiones recientes</div>
+            <div className="ui-section-title">
+              <Icon name="package" />
+              Remisiones recientes
+            </div>
             <div className="mt-1 text-sm text-zinc-600">
               {isProductionCenter ? "Solicitudes para preparar" : "Solicitudes enviadas/recibidas"}
             </div>
@@ -528,20 +701,31 @@ export default async function Home({
 
               {!canViewRemissions ? (
                 <tr>
-                  <TableCell colSpan={5} className="ui-empty">
-                    No tienes permiso para ver remisiones.
+                  <TableCell colSpan={5}>
+                    <EmptyState
+                      title="Sin permiso de remisiones"
+                      description="Solicita acceso para consultar remisiones."
+                    />
                   </TableCell>
                 </tr>
               ) : !activeSiteId ? (
                 <tr>
-                  <TableCell colSpan={5} className="ui-empty">
-                    Selecciona una sede para ver remisiones recientes.
+                  <TableCell colSpan={5}>
+                    <EmptyState
+                      title="Selecciona una sede"
+                      description="Elige una sede para ver remisiones recientes."
+                    />
                   </TableCell>
                 </tr>
               ) : remissionRows.length === 0 ? (
                 <tr>
-                  <TableCell colSpan={5} className="ui-empty">
-                    No hay remisiones recientes para esta sede.
+                  <TableCell colSpan={5}>
+                    <EmptyState
+                      title="Sin remisiones recientes"
+                      description="Cuando se creen solicitudes aparecerán aquí."
+                      cta="Abrir remisiones"
+                      href="/inventory/remissions"
+                    />
                   </TableCell>
                 </tr>
               ) : null}
