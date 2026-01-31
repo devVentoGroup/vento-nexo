@@ -4,8 +4,8 @@ import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 
-import { AppSwitcher } from "../app-switcher";
-import { ProfileMenu } from "../profile-menu";
+import { AppSwitcher } from "./app-switcher";
+import { ProfileMenu } from "./profile-menu";
 import { createClient } from "@/lib/supabase/client";
 
 type SiteOption = {
