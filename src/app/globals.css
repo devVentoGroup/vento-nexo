@@ -1,29 +1,29 @@
 @import "tailwindcss";
 
 :root {
-  --ui-bg: #FFF7E6;
-  --ui-bg-2: #FFEFD0;
-  --ui-surface: rgba(255, 255, 255, 0.88);
-  --ui-surface-2: rgba(255, 241, 209, 0.9);
-  --ui-border: rgba(240, 227, 198, 0.9);
-  --ui-text: #2A1A00;
-  --ui-muted: #A58C66;
+  --ui-bg: #FFFFFF;
+  --ui-bg-2: #F7F8FA;
+  --ui-surface: #FFFFFF;
+  --ui-surface-2: #F7F7F9;
+  --ui-border: #E5E7EB;
+  --ui-text: #111827;
+  --ui-muted: #6B7280;
   --ui-primary: #1F2937;
   --ui-primary-hover: #111827;
   --ui-on-primary: #FFFFFF;
   --ui-brand: #F59E0B;
   --ui-brand-600: #92400E;
   --ui-brand-700: #7C2D12;
-  --ui-brand-soft: rgba(245, 158, 11, 0.16);
+  --ui-brand-soft: rgba(245, 158, 11, 0.14);
   --ui-success: #16A34A;
   --ui-success-soft: rgba(22, 163, 74, 0.12);
   --ui-danger: #DC2626;
   --ui-danger-soft: rgba(220, 38, 38, 0.12);
-  --ui-neutral-soft: rgba(42, 26, 0, 0.06);
+  --ui-neutral-soft: rgba(17, 24, 39, 0.06);
   --ui-radius-card: 16px;
   --ui-radius-control: 12px;
-  --ui-shadow-1: 0 10px 24px rgba(42, 26, 0, 0.08);
-  --ui-shadow-2: 0 18px 56px rgba(42, 26, 0, 0.14);
+  --ui-shadow-1: 0 10px 24px rgba(15, 23, 42, 0.08);
+  --ui-shadow-2: 0 18px 56px rgba(15, 23, 42, 0.12);
 
   --background: var(--ui-bg);
   --foreground: var(--ui-text);
@@ -38,8 +38,8 @@
 
 body {
   background:
-    radial-gradient(900px 520px at 0% -10%, rgba(255, 255, 255, 0.9) 0%, rgba(255, 255, 255, 0) 60%),
-    radial-gradient(900px 620px at 100% 0%, rgba(255, 241, 209, 0.9) 0%, rgba(255, 241, 209, 0) 60%),
+    radial-gradient(900px 520px at 0% -10%, rgba(245, 247, 250, 0.9) 0%, rgba(245, 247, 250, 0) 60%),
+    radial-gradient(900px 620px at 100% 0%, rgba(255, 248, 235, 0.55) 0%, rgba(255, 248, 235, 0) 60%),
     linear-gradient(180deg, var(--ui-bg) 0%, var(--ui-bg-2) 100%);
   color: var(--foreground);
   font-family: var(--font-manrope, Arial, Helvetica, sans-serif);
@@ -93,7 +93,7 @@ body {
 }
 
 .ui-input:focus {
-  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.25);
+  box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.22);
 }
 
 .ui-btn {
@@ -193,14 +193,14 @@ body {
 }
 
 .ui-td {
-  border-bottom: 1px solid rgba(42, 26, 0, 0.08);
+  border-bottom: 1px solid rgba(17, 24, 39, 0.08);
   padding: 14px 0;
   font-size: 0.95rem;
   color: var(--ui-text);
 }
 
 .ui-table tbody tr:hover {
-  background: rgba(255, 255, 255, 0.35);
+  background: rgba(17, 24, 39, 0.03);
 }
 
 .ui-empty {
