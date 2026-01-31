@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 
 import { requireAppAccess } from "@/lib/auth/guard";
 
@@ -207,7 +208,7 @@ export default async function InventoryStockPage({
   const hasError = Boolean(productError || stockError);
 
   return (
-    <div className="w-full px-6 py-8">
+    <div className="w-full">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Stock por sede</h1>
@@ -219,13 +220,13 @@ export default async function InventoryStockPage({
         <div className="flex gap-2">
           <Link
             href="/inventory/count-initial"
-            className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500"
+            className="ui-btn ui-btn--brand"
           >
             Conteo inicial
           </Link>
           <Link
             href="/inventory/movements"
-            className="inline-flex h-11 items-center justify-center rounded-xl bg-white px-4 text-sm font-semibold text-zinc-900 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
+            className="ui-btn ui-btn--ghost"
           >
             Ver movimientos
           </Link>
@@ -233,32 +234,32 @@ export default async function InventoryStockPage({
       </div>
 
       {sp.count_initial === "1" ? (
-        <div className="mt-6 rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+        <div className="mt-6 ui-alert ui-alert--success">
           Conteo inicial registrado. Los movimientos y el stock se actualizaron.
         </div>
       ) : null}
 
       {sp.adjust === "1" ? (
-        <div className="mt-6 rounded-2xl border border-green-200 bg-green-50 p-4 text-sm text-green-800">
+        <div className="mt-6 ui-alert ui-alert--success">
           Ajuste registrado. El movimiento y el stock se actualizaron.
         </div>
       ) : null}
 
       {errorMsg ? (
-        <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        <div className="mt-6 ui-alert ui-alert--error">
           Error: {errorMsg}
         </div>
       ) : null}
 
-      <div className="mt-6 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div className="mt-6 ui-panel">
         <div className="text-sm font-semibold text-zinc-900">Filtros</div>
         <form method="get" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-semibold text-zinc-600">Sede</span>
+            <span className="ui-label">Sede</span>
             <select
               name="site_id"
               defaultValue={siteId}
-              className="h-11 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+              className="ui-input"
             >
               <option value="">Todas</option>
               {siteIds.map((id) => (
@@ -270,11 +271,11 @@ export default async function InventoryStockPage({
           </label>
 
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-semibold text-zinc-600">Tipo de producto</span>
+            <span className="ui-label">Tipo de producto</span>
             <select
               name="product_type"
               defaultValue={productType}
-              className="h-11 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+              className="ui-input"
             >
               {productTypeOptions.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -285,11 +286,11 @@ export default async function InventoryStockPage({
           </label>
 
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-semibold text-zinc-600">Tipo inventario</span>
+            <span className="ui-label">Tipo inventario</span>
             <select
               name="inventory_kind"
               defaultValue={inventoryKind}
-              className="h-11 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+              className="ui-input"
             >
               {inventoryKindOptions.map((option) => (
                 <option key={option.value} value={option.value}>
@@ -300,11 +301,11 @@ export default async function InventoryStockPage({
           </label>
 
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-semibold text-zinc-600">Categoria</span>
+            <span className="ui-label">Categoria</span>
             <select
               name="category_id"
               defaultValue={categoryId}
-              className="h-11 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+              className="ui-input"
             >
               <option value="">Todas</option>
               {categoryRows.map((row) => (
@@ -316,17 +317,17 @@ export default async function InventoryStockPage({
           </label>
 
           <label className="flex flex-col gap-1 sm:col-span-2 lg:col-span-4">
-            <span className="text-xs font-semibold text-zinc-600">Buscar SKU o nombre</span>
+            <span className="ui-label">Buscar SKU o nombre</span>
             <input
               name="q"
               defaultValue={searchQuery}
               placeholder="SKU o nombre de producto"
-              className="h-11 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+              className="ui-input"
             />
           </label>
 
           <div className="sm:col-span-2 lg:col-span-4">
-            <button className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500">
+            <button className="ui-btn ui-btn--brand">
               Aplicar filtros
             </button>
           </div>
@@ -334,12 +335,12 @@ export default async function InventoryStockPage({
       </div>
 
       {hasError ? (
-        <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        <div className="mt-6 ui-alert ui-alert--error">
           Fallo el SELECT de inventario: {productError?.message ?? stockError?.message}
         </div>
       ) : null}
 
-      <div className="mt-6 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div className="mt-6 ui-panel">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <div className="text-sm font-semibold text-zinc-900">Stock</div>
@@ -353,19 +354,19 @@ export default async function InventoryStockPage({
         </div>
 
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full border-separate border-spacing-0">
+          <Table>
             <thead>
-              <tr className="text-left text-xs font-semibold tracking-wide text-zinc-500">
-                <th className="border-b border-zinc-200 pb-2">Producto</th>
-                <th className="border-b border-zinc-200 pb-2">SKU</th>
-                <th className="border-b border-zinc-200 pb-2">Categoria</th>
-                <th className="border-b border-zinc-200 pb-2">Tipo</th>
-                <th className="border-b border-zinc-200 pb-2">Inventario</th>
-                <th className="border-b border-zinc-200 pb-2">Track</th>
-                <th className="border-b border-zinc-200 pb-2">Sede</th>
-                <th className="border-b border-zinc-200 pb-2">Qty</th>
-                <th className="border-b border-zinc-200 pb-2">Unidad</th>
-                <th className="border-b border-zinc-200 pb-2">Actualizado</th>
+              <tr>
+                <TableHeaderCell>Producto</TableHeaderCell>
+                <TableHeaderCell>SKU</TableHeaderCell>
+                <TableHeaderCell>Categoria</TableHeaderCell>
+                <TableHeaderCell>Tipo</TableHeaderCell>
+                <TableHeaderCell>Inventario</TableHeaderCell>
+                <TableHeaderCell>Track</TableHeaderCell>
+                <TableHeaderCell>Sede</TableHeaderCell>
+                <TableHeaderCell>Qty</TableHeaderCell>
+                <TableHeaderCell>Unidad</TableHeaderCell>
+                <TableHeaderCell>Actualizado</TableHeaderCell>
               </tr>
             </thead>
             <tbody>
@@ -386,33 +387,33 @@ export default async function InventoryStockPage({
 
                 return (
                   <tr key={product.id} className="text-sm text-zinc-800">
-                    <td className="border-b border-zinc-100 py-3">{product.name}</td>
-                    <td className="border-b border-zinc-100 py-3 font-mono">{sku}</td>
-                    <td className="border-b border-zinc-100 py-3">{categoryLabel}</td>
-                    <td className="border-b border-zinc-100 py-3">{product.product_type}</td>
-                    <td className="border-b border-zinc-100 py-3">{inventoryLabel}</td>
-                    <td className="border-b border-zinc-100 py-3">{trackLabel}</td>
-                    <td className="border-b border-zinc-100 py-3 font-mono">{siteLabel}</td>
-                    <td className={`border-b border-zinc-100 py-3 font-mono ${qtyClass}`}>
+                    <TableCell>{product.name}</TableCell>
+                    <TableCell className="font-mono">{sku}</TableCell>
+                    <TableCell>{categoryLabel}</TableCell>
+                    <TableCell>{product.product_type}</TableCell>
+                    <TableCell>{inventoryLabel}</TableCell>
+                    <TableCell>{trackLabel}</TableCell>
+                    <TableCell className="font-mono">{siteLabel}</TableCell>
+                    <TableCell className={`font-mono ${qtyClass}`}>
                       {Number.isFinite(qtyValue) ? qtyValue : "-"}
-                    </td>
-                    <td className="border-b border-zinc-100 py-3">{unit}</td>
-                    <td className="border-b border-zinc-100 py-3 font-mono">
+                    </TableCell>
+                    <TableCell>{unit}</TableCell>
+                    <TableCell className="font-mono">
                       {formatDate(stockRow?.updated_at)}
-                    </td>
+                    </TableCell>
                   </tr>
                 );
               })}
 
               {!hasError && productRows.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className="py-6 text-sm text-zinc-500">
+                  <TableCell colSpan={10} className="ui-empty">
                     No hay productos para mostrar (o RLS no te permite verlo).
-                  </td>
+                  </TableCell>
                 </tr>
               ) : null}
             </tbody>
-          </table>
+          </Table>
         </div>
       </div>
     </div>

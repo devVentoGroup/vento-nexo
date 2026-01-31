@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
@@ -563,14 +564,14 @@ export default async function InventoryLpnsPage({
         <div className="flex flex-wrap gap-2">
           <Link
             href="/scanner"
-            className="inline-flex h-11 items-center justify-center rounded-xl bg-white px-4 text-sm font-semibold text-zinc-900 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
+            className="ui-btn ui-btn--ghost"
           >
             Scanner
           </Link>
 
           <Link
             href="/printing/jobs"
-            className="inline-flex h-11 items-center justify-center rounded-xl bg-white px-4 text-sm font-semibold text-zinc-900 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
+            className="ui-btn ui-btn--ghost"
           >
             Imprimir
           </Link>
@@ -610,25 +611,25 @@ export default async function InventoryLpnsPage({
         ) : null}
 
         {errorMsg ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <div className="ui-alert ui-alert--error">
             Error: {errorMsg}
           </div>
         ) : null}
 
         {locErr ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <div className="ui-alert ui-alert--error">
             Falló el SELECT de LOCs: {locErr.message}
           </div>
         ) : null}
 
         {invProfilesErr ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <div className="ui-alert ui-alert--error">
             Falló el SELECT de productos inventariables: {invProfilesErr.message}
           </div>
         ) : null}
 
         {!invProfilesErr && invProducts.length === 0 ? (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+          <div className="ui-alert ui-alert--warn">
             No hay productos habilitados para inventario todavía. Agrega filas a{" "}
             <span className="font-mono">product_inventory_profiles</span> (track_inventory=true).
           </div>
@@ -639,7 +640,7 @@ export default async function InventoryLpnsPage({
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-12">
         {/* Left: List */}
         <aside className="lg:col-span-4">
-          <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+          <div className="ui-panel">
             <div className="flex items-start justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-zinc-900">LPNs</div>
@@ -662,11 +663,11 @@ export default async function InventoryLpnsPage({
             <form method="get" action="/inventory/lpns" className="mt-4 grid gap-2">
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div>
-                  <label className="text-xs font-semibold text-zinc-600">Abrir LPN</label>
+                  <label className="ui-label">Abrir LPN</label>
                   <select
                     name="lpn_id"
                     defaultValue={activeLpnId}
-                    className="mt-1 h-11 w-full rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+                    className="mt-1 ui-input"
                   >
                     <option value="">Selecciona…</option>
                     {lpns.map((lpn) => (
@@ -678,11 +679,11 @@ export default async function InventoryLpnsPage({
                 </div>
 
                 <div>
-                  <label className="text-xs font-semibold text-zinc-600">Tab</label>
+                  <label className="ui-label">Tab</label>
                   <select
                     name="tab"
                     defaultValue={activeTab}
-                    className="mt-1 h-11 w-full rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+                    className="mt-1 ui-input"
                   >
                     <option value="summary">Resumen</option>
                     <option value="items">Items</option>
@@ -693,7 +694,7 @@ export default async function InventoryLpnsPage({
 
               {code ? <input type="hidden" name="code" value={code} /> : null}
 
-              <button className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500">
+              <button className="ui-btn ui-btn--brand">
                 Abrir
               </button>
             </form>
@@ -701,11 +702,11 @@ export default async function InventoryLpnsPage({
             {/* Lista */}
             <div className="mt-5 overflow-hidden rounded-2xl border border-zinc-200">
               <div className="max-h-[520px] overflow-auto">
-                <table className="w-full border-separate border-spacing-0">
+                <Table>
                   <thead className="sticky top-0 z-10 bg-white">
-                    <tr className="text-left text-xs font-semibold tracking-wide text-zinc-500">
-                      <th className="border-b border-zinc-200 px-3 py-2">Código</th>
-                      <th className="border-b border-zinc-200 px-3 py-2">LOC</th>
+                    <tr>
+                      <TableHeaderCell className="px-3 py-2">Código</TableHeaderCell>
+                      <TableHeaderCell className="px-3 py-2">LOC</TableHeaderCell>
                     </tr>
                   </thead>
                   <tbody>
@@ -715,7 +716,7 @@ export default async function InventoryLpnsPage({
 
                       return (
                         <tr key={lpn.id} className={isActive ? "bg-amber-50/40" : "bg-white"}>
-                          <td className="border-b border-zinc-100 px-3 py-3">
+                          <TableCell className="px-3 py-3">
                             <Link
                               href={hrefWith({ lpn_id: lpn.id })}
                               className={[
@@ -730,32 +731,32 @@ export default async function InventoryLpnsPage({
                                 <div className="mt-1 text-xs font-sans text-zinc-600">{lpn.label}</div>
                               ) : null}
                             </Link>
-                          </td>
-                          <td className="border-b border-zinc-100 px-3 py-3">
+                          </TableCell>
+                          <TableCell className="px-3 py-3">
                             {loc ? (
                               <span className="font-mono text-sm text-zinc-800">{loc.code}</span>
                             ) : (
                               <span className="text-sm text-zinc-500">—</span>
                             )}
-                          </td>
+                          </TableCell>
                         </tr>
                       );
                     })}
 
                     {lpns.length === 0 ? (
                       <tr>
-                        <td colSpan={2} className="px-3 py-6 text-sm text-zinc-500">
+                        <TableCell colSpan={2} className="px-3 ui-empty">
                           No hay LPNs para mostrar (o RLS no te permite verlos).
-                        </td>
+                        </TableCell>
                       </tr>
                     ) : null}
                   </tbody>
-                </table>
+                </Table>
               </div>
             </div>
 
             {lpnsError ? (
-              <div className="mt-4 rounded-xl bg-red-50 p-4 text-sm text-red-800">
+              <div className="mt-4 ui-alert ui-alert--error">
                 Falló el SELECT: {lpnsError.message}
               </div>
             ) : null}
@@ -764,7 +765,7 @@ export default async function InventoryLpnsPage({
 
         {/* Right: Detail */}
         <section className="lg:col-span-8">
-          <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+          <div className="ui-panel">
             {!activeLpnId ? (
               <div className="rounded-2xl bg-zinc-50 p-6">
                 <div className="text-sm font-semibold text-zinc-900">Selecciona un LPN</div>
@@ -803,7 +804,7 @@ export default async function InventoryLpnsPage({
                   <div className="flex flex-wrap gap-2">
                     <Link
                       href="/printing/jobs"
-                      className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-500 px-4 text-sm font-semibold text-white hover:bg-amber-600"
+                      className="ui-btn ui-btn--brand"
                     >
                       Imprimir LPN
                     </Link>
@@ -815,10 +816,10 @@ export default async function InventoryLpnsPage({
                   <Link
                     href={hrefWith({ tab: "summary" })}
                     className={[
-                      "inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold ring-1 ring-inset",
+                      "inline-flex h-12 items-center justify-center rounded-xl px-4 text-base font-semibold ring-1 ring-inset",
                       activeTab === "summary"
-                        ? "bg-amber-50 text-amber-900 ring-amber-200"
-                        : "bg-white text-zinc-700 ring-zinc-200 hover:bg-zinc-50",
+                        ? "bg-[var(--ui-brand-soft)] text-[var(--ui-brand-700)] ring-[var(--ui-brand-600)]"
+                        : "bg-[var(--ui-surface)] text-[var(--ui-text)] ring-[var(--ui-border)] hover:bg-[var(--ui-surface-2)]",
                     ].join(" ")}
                   >
                     Resumen
@@ -827,10 +828,10 @@ export default async function InventoryLpnsPage({
                   <Link
                     href={hrefWith({ tab: "items" })}
                     className={[
-                      "inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold ring-1 ring-inset",
+                      "inline-flex h-12 items-center justify-center rounded-xl px-4 text-base font-semibold ring-1 ring-inset",
                       activeTab === "items"
-                        ? "bg-amber-50 text-amber-900 ring-amber-200"
-                        : "bg-white text-zinc-700 ring-zinc-200 hover:bg-zinc-50",
+                        ? "bg-[var(--ui-brand-soft)] text-[var(--ui-brand-700)] ring-[var(--ui-brand-600)]"
+                        : "bg-[var(--ui-surface)] text-[var(--ui-text)] ring-[var(--ui-border)] hover:bg-[var(--ui-surface-2)]",
                     ].join(" ")}
                   >
                     Items
@@ -839,10 +840,10 @@ export default async function InventoryLpnsPage({
                   <Link
                     href={hrefWith({ tab: "notes" })}
                     className={[
-                      "inline-flex h-10 items-center justify-center rounded-xl px-4 text-sm font-semibold ring-1 ring-inset",
+                      "inline-flex h-12 items-center justify-center rounded-xl px-4 text-base font-semibold ring-1 ring-inset",
                       activeTab === "notes"
-                        ? "bg-amber-50 text-amber-900 ring-amber-200"
-                        : "bg-white text-zinc-700 ring-zinc-200 hover:bg-zinc-50",
+                        ? "bg-[var(--ui-brand-soft)] text-[var(--ui-brand-700)] ring-[var(--ui-brand-600)]"
+                        : "bg-[var(--ui-surface)] text-[var(--ui-text)] ring-[var(--ui-border)] hover:bg-[var(--ui-surface-2)]",
                     ].join(" ")}
                   >
                     Notas
@@ -854,7 +855,7 @@ export default async function InventoryLpnsPage({
                   {/* SUMMARY */}
                   {activeTab === "summary" ? (
                     <div className="grid gap-4">
-                      <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+                      <div className="ui-panel-soft">
                         <div className="text-sm font-semibold text-zinc-900">Putaway (LPN → LOC)</div>
                         <div className="mt-1 text-sm text-zinc-600">
                           Asigna un LOC a este LPN (actualiza <span className="font-mono">location_id</span>).
@@ -864,10 +865,10 @@ export default async function InventoryLpnsPage({
                           <input type="hidden" name="lpn_id" value={activeLpnId} />
 
                           <div>
-                            <label className="text-xs font-semibold text-zinc-600">LOC destino</label>
+                            <label className="ui-label">LOC destino</label>
                             <select
                               name="location_id"
-                              className="mt-1 h-11 w-full rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+                              className="mt-1 ui-input"
                             >
                               <option value="">Selecciona un LOC…</option>
                               {locations.map((loc) => (
@@ -879,14 +880,14 @@ export default async function InventoryLpnsPage({
                           </div>
 
                           <div className="sm:col-span-2">
-                            <button className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500">
+                            <button className="ui-btn ui-btn--brand">
                               Asignar LOC
                             </button>
                           </div>
                         </form>
                       </div>
 
-                      <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+                      <div className="ui-panel-soft">
                         <div className="text-sm font-semibold text-zinc-900">Resumen</div>
                         <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
                           <div className="rounded-xl bg-zinc-50 p-3">
@@ -916,60 +917,60 @@ export default async function InventoryLpnsPage({
                   {activeTab === "items" ? (
                     <div className="grid gap-4">
                       {itemsErr ? (
-                        <div className="rounded-xl bg-red-50 p-4 text-sm text-red-800">
+                        <div className="ui-alert ui-alert--error">
                           Falló el SELECT de items: {itemsErr.message}
                         </div>
                       ) : null}
 
                       <div className="overflow-hidden rounded-2xl border border-zinc-200">
                         <div className="max-h-[360px] overflow-auto">
-                          <table className="w-full border-separate border-spacing-0">
+                          <Table>
                             <thead className="sticky top-0 z-10 bg-white">
-                              <tr className="text-left text-xs font-semibold tracking-wide text-zinc-500">
-                                <th className="border-b border-zinc-200 px-3 py-2">Producto</th>
-                                <th className="border-b border-zinc-200 px-3 py-2">Qty</th>
-                                <th className="border-b border-zinc-200 px-3 py-2">Unidad</th>
-                                <th className="border-b border-zinc-200 px-3 py-2">Lote</th>
-                                <th className="border-b border-zinc-200 px-3 py-2">Vence</th>
+                              <tr>
+                                <TableHeaderCell className="px-3 py-2">Producto</TableHeaderCell>
+                                <TableHeaderCell className="px-3 py-2">Qty</TableHeaderCell>
+                                <TableHeaderCell className="px-3 py-2">Unidad</TableHeaderCell>
+                                <TableHeaderCell className="px-3 py-2">Lote</TableHeaderCell>
+                                <TableHeaderCell className="px-3 py-2">Vence</TableHeaderCell>
                               </tr>
                             </thead>
                             <tbody>
                               {lpnItems.map((it) => (
                                 <tr key={it.id} className="text-sm text-zinc-800">
-                                  <td className="border-b border-zinc-100 px-3 py-3">
+                                  <TableCell className="px-3 py-3">
                                     <div className="text-sm text-zinc-900">
                                       {invProductMap.get(it.product_id)?.label ??
                                         `${String(it.product_id).slice(0, 8)}…`}
                                     </div>
                                     <div className="text-xs text-zinc-500 font-mono">{it.product_id}</div>
-                                  </td>
-                                  <td className="border-b border-zinc-100 px-3 py-3 font-mono">
+                                  </TableCell>
+                                  <TableCell className="px-3 py-3 font-mono">
                                     {String(it.quantity)}
-                                  </td>
-                                  <td className="border-b border-zinc-100 px-3 py-3">{it.unit}</td>
-                                  <td className="border-b border-zinc-100 px-3 py-3 font-mono">
+                                  </TableCell>
+                                  <TableCell className="px-3 py-3">{it.unit}</TableCell>
+                                  <TableCell className="px-3 py-3 font-mono">
                                     {it.lot_number ?? "—"}
-                                  </td>
-                                  <td className="border-b border-zinc-100 px-3 py-3 font-mono">
+                                  </TableCell>
+                                  <TableCell className="px-3 py-3 font-mono">
                                     {it.expiry_date ?? "—"}
-                                  </td>
+                                  </TableCell>
                                 </tr>
                               ))}
 
                               {lpnItems.length === 0 ? (
                                 <tr>
-                                  <td colSpan={5} className="px-3 py-6 text-sm text-zinc-500">
+                                  <TableCell colSpan={5} className="px-3 ui-empty">
                                     Este LPN no tiene items (o RLS no te permite verlos).
-                                  </td>
+                                  </TableCell>
                                 </tr>
                               ) : null}
                             </tbody>
-                          </table>
+                          </Table>
                         </div>
                       </div>
 
                       <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-                        <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+                        <div className="ui-panel-soft">
                           <div className="text-sm font-semibold text-zinc-900">Agregar item</div>
 
                           <form action={addItemAction} className="mt-3 grid gap-3">
@@ -977,12 +978,12 @@ export default async function InventoryLpnsPage({
                             <input type="hidden" name="lpn_id" value={activeLpnId} />
 
                             <div>
-                              <label className="text-xs font-semibold text-zinc-600">Producto (inventariable)</label>
+                              <label className="ui-label">Producto (inventariable)</label>
                               <input
                                 name="product_id"
                                 list="inv-products"
                                 placeholder="Busca y selecciona…"
-                                className="mt-1 h-11 w-full rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+                                className="mt-1 ui-input"
                               />
                               <datalist id="inv-products">
                                 {invProducts.map((r) => (
@@ -1000,62 +1001,62 @@ export default async function InventoryLpnsPage({
 
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                               <div>
-                                <label className="text-xs font-semibold text-zinc-600">Cantidad</label>
+                                <label className="ui-label">Cantidad</label>
                                 <input
                                   name="quantity"
                                   type="number"
                                   step="0.01"
                                   min="0"
-                                  className="mt-1 h-11 w-full rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+                                  className="mt-1 ui-input"
                                 />
                               </div>
                               <div>
-                                <label className="text-xs font-semibold text-zinc-600">Unidad</label>
+                                <label className="ui-label">Unidad</label>
                                 <input
                                   name="unit"
                                   placeholder="UND / g / ml"
-                                  className="mt-1 h-11 w-full rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+                                  className="mt-1 ui-input"
                                 />
                               </div>
                             </div>
 
                             <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                               <div>
-                                <label className="text-xs font-semibold text-zinc-600">Lote (opcional)</label>
+                                <label className="ui-label">Lote (opcional)</label>
                                 <input
                                   name="lot_number"
                                   placeholder="LOT-001"
-                                  className="mt-1 h-11 w-full rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+                                  className="mt-1 ui-input"
                                 />
                               </div>
                               <div>
-                                <label className="text-xs font-semibold text-zinc-600">Vencimiento (opcional)</label>
+                                <label className="ui-label">Vencimiento (opcional)</label>
                                 <input
                                   name="expiry_date"
                                   type="date"
-                                  className="mt-1 h-11 w-full rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+                                  className="mt-1 ui-input"
                                 />
                               </div>
                             </div>
 
                             <div>
-                              <label className="text-xs font-semibold text-zinc-600">Costo unitario (opcional)</label>
+                              <label className="ui-label">Costo unitario (opcional)</label>
                               <input
                                 name="cost_per_unit"
                                 type="number"
                                 step="0.01"
                                 min="0"
-                                className="mt-1 h-11 w-full rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+                                className="mt-1 ui-input"
                               />
                             </div>
 
-                            <button className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500">
+                            <button className="ui-btn ui-btn--brand">
                               Agregar
                             </button>
                           </form>
                         </div>
 
-                        <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+                        <div className="ui-panel-soft">
                           <div className="text-sm font-semibold text-zinc-900">Retirar cantidad</div>
 
                           <form action={removeItemAction} className="mt-3 grid gap-3">
@@ -1063,10 +1064,10 @@ export default async function InventoryLpnsPage({
                             <input type="hidden" name="lpn_id" value={activeLpnId} />
 
                             <div>
-                              <label className="text-xs font-semibold text-zinc-600">Item</label>
+                              <label className="ui-label">Item</label>
                               <select
                                 name="item_id"
-                                className="mt-1 h-11 w-full rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+                                className="mt-1 ui-input"
                               >
                                 <option value="">Selecciona un item…</option>
                                 {lpnItems.map((it) => (
@@ -1080,17 +1081,17 @@ export default async function InventoryLpnsPage({
                             </div>
 
                             <div>
-                              <label className="text-xs font-semibold text-zinc-600">Cantidad a retirar</label>
+                              <label className="ui-label">Cantidad a retirar</label>
                               <input
                                 name="quantity"
                                 type="number"
                                 step="0.01"
                                 min="0"
-                                className="mt-1 h-11 w-full rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+                                className="mt-1 ui-input"
                               />
                             </div>
 
-                            <button className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500">
+                            <button className="ui-btn ui-btn--brand">
                               Retirar
                             </button>
                           </form>
@@ -1106,7 +1107,7 @@ export default async function InventoryLpnsPage({
                   {/* NOTES */}
                   {activeTab === "notes" ? (
                     <div className="grid gap-4">
-                      <div className="rounded-2xl border border-zinc-200 bg-white p-4">
+                      <div className="ui-panel-soft">
                         <div className="text-sm font-semibold text-zinc-900">Contenido libre (Navidad / Activos)</div>
                         <div className="mt-1 text-sm text-zinc-600">
                           Para cajas o activos sin SKU: guarda un nombre corto y una lista libre del contenido.
@@ -1118,27 +1119,27 @@ export default async function InventoryLpnsPage({
 
                           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                             <div>
-                              <label className="text-xs font-semibold text-zinc-600">Nombre corto (label)</label>
+                              <label className="ui-label">Nombre corto (label)</label>
                               <input
                                 name="label"
                                 defaultValue={activeLabel}
                                 placeholder="Ej: NAVIDAD · Caja 01"
-                                className="mt-1 h-11 w-full rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+                                className="mt-1 ui-input"
                               />
                             </div>
 
                             <div>
-                              <label className="text-xs font-semibold text-zinc-600">Código</label>
+                              <label className="ui-label">Código</label>
                               <input
                                 value={activeCode}
                                 readOnly
-                                className="mt-1 h-11 w-full rounded-xl bg-zinc-50 px-3 text-sm text-zinc-700 ring-1 ring-inset ring-zinc-200 focus:outline-none"
+                                className="mt-1 ui-input"
                               />
                             </div>
                           </div>
 
                           <div>
-                            <label className="text-xs font-semibold text-zinc-600">Contenido (notes)</label>
+                            <label className="ui-label">Contenido (notes)</label>
                             <textarea
                               name="notes"
                               defaultValue={activeNotes}
@@ -1148,7 +1149,7 @@ export default async function InventoryLpnsPage({
                             />
                           </div>
 
-                          <button className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500">
+                          <button className="ui-btn ui-btn--brand">
                             Guardar
                           </button>
                         </form>

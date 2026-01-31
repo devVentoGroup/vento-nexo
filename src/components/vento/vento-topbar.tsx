@@ -24,6 +24,9 @@ const INVENTARIO_ITEMS = [
   { href: "/inventory/movements", label: "Movimientos" },
   { href: "/inventory/count-initial", label: "Conteo inicial" },
   { href: "/inventory/adjust", label: "Ajustes" },
+  { href: "/inventory/remissions", label: "Remisiones" },
+  { href: "/scanner", label: "Scanner" },
+  { href: "/printing/jobs", label: "Impresión" },
 ];
 
 const INVENTARIO_ACTIVE = [
@@ -31,10 +34,10 @@ const INVENTARIO_ACTIVE = [
   "/inventory/movements",
   "/inventory/count-initial",
   "/inventory/adjust",
+  "/inventory/remissions",
+  "/scanner",
+  "/printing",
 ];
-
-const DOCUMENTOS_ITEMS = [{ href: "/inventory/remissions", label: "Remisiones" }];
-const DOCUMENTOS_ACTIVE = ["/inventory/remissions"];
 
 export async function VentoTopbar() {
   const supabase = await createClient();
@@ -94,12 +97,9 @@ export async function VentoTopbar() {
           </div>
         </div>
 
-        <nav className="flex w-full items-center gap-1 overflow-x-auto whitespace-nowrap md:w-auto">
+        <nav className="flex w-full flex-wrap items-center gap-1 md:w-auto">
           <NavItem href="/" label="Inicio" />
           <NavDropdown label="Inventario" items={INVENTARIO_ITEMS} activePrefixes={INVENTARIO_ACTIVE} />
-          <NavDropdown label="Documentos" items={DOCUMENTOS_ITEMS} activePrefixes={DOCUMENTOS_ACTIVE} />
-          <NavItem href="/scanner" label="Scanner" />
-          <NavItem href="/printing/jobs" label="Impresión" />
         </nav>
 
         <div className="flex items-center gap-2">

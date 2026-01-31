@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 
 import { requireAppAccess } from "@/lib/auth/guard";
 import {
@@ -78,11 +79,11 @@ function statusLabel(value?: string | null) {
 function ActionCard({ action }: { action: ActionLink }) {
   const isPrimary = action.tone === "primary";
   const buttonClass = isPrimary
-    ? "inline-flex h-10 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500"
-    : "inline-flex h-10 items-center justify-center rounded-xl border border-zinc-200 bg-white px-4 text-sm font-semibold text-zinc-900 hover:bg-zinc-50";
+    ? "ui-btn ui-btn--brand"
+    : "ui-btn ui-btn--ghost";
 
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+    <div className="ui-panel">
       <div className="text-base font-semibold text-zinc-900">{action.title}</div>
       <p className="mt-1 text-sm leading-6 text-zinc-600">{action.description}</p>
       <div className="mt-4">
@@ -366,8 +367,8 @@ export default async function Home({
   const secondaryActions = actions.filter((action) => action.visible && action.tone !== "primary");
 
   return (
-    <div className="w-full space-y-6 px-6 py-8">
-      <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+    <div className="w-full space-y-6">
+      <div className="ui-panel">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="text-sm font-semibold text-zinc-500">NEXO</div>
@@ -396,13 +397,13 @@ export default async function Home({
           <div className="flex flex-wrap items-center gap-2">
             <Link
               href="/inventory/remissions"
-              className="inline-flex h-10 items-center justify-center rounded-xl bg-white px-4 text-sm font-semibold text-zinc-900 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
+              className="ui-btn ui-btn--ghost"
             >
               Remisiones
             </Link>
             <Link
               href="/scanner"
-              className="inline-flex h-10 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500"
+              className="ui-btn ui-btn--brand"
             >
               Scanner
             </Link>
@@ -434,20 +435,20 @@ export default async function Home({
                 );
               })}
             </select>
-            <button className="inline-flex h-10 items-center justify-center rounded-xl bg-white px-3 text-sm font-semibold text-zinc-900 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50">
+            <button className="ui-btn ui-btn--ghost">
               Cambiar
             </button>
           </form>
         </div>
 
         {!activeSiteId ? (
-          <div className="mt-4 rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          <div className="mt-4 ui-alert ui-alert--warn">
             No hay sede activa. Asigna una sede al empleado para operar NEXO.
           </div>
         ) : null}
       </div>
 
-      <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div className="ui-panel">
         <div className="text-sm font-semibold text-zinc-900">Acciones clave</div>
         {primaryActions.length ? (
           <div className="mt-4 grid gap-4 md:grid-cols-3">
@@ -456,13 +457,13 @@ export default async function Home({
             ))}
           </div>
         ) : (
-          <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700">
+          <div className="mt-4 ui-alert ui-alert--neutral">
             No hay acciones clave asignadas a tu rol en esta sede.
           </div>
         )}
       </div>
 
-      <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div className="ui-panel">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="text-sm font-semibold text-zinc-900">Modulos</div>
           <div className="text-xs text-zinc-500">Accesos rapidos</div>
@@ -474,7 +475,7 @@ export default async function Home({
         </div>
       </div>
 
-      <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div className="ui-panel">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="text-sm font-semibold text-zinc-900">Remisiones recientes</div>
@@ -491,61 +492,61 @@ export default async function Home({
         </div>
 
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full border-separate border-spacing-0">
+          <Table>
             <thead>
-              <tr className="text-left text-xs font-semibold tracking-wide text-zinc-500">
-                <th className="border-b border-zinc-200 pb-2">Fecha</th>
-                <th className="border-b border-zinc-200 pb-2">Estado</th>
-                <th className="border-b border-zinc-200 pb-2">Origen</th>
-                <th className="border-b border-zinc-200 pb-2">Destino</th>
-                <th className="border-b border-zinc-200 pb-2">Acciones</th>
+              <tr>
+                <TableHeaderCell>Fecha</TableHeaderCell>
+                <TableHeaderCell>Estado</TableHeaderCell>
+                <TableHeaderCell>Origen</TableHeaderCell>
+                <TableHeaderCell>Destino</TableHeaderCell>
+                <TableHeaderCell>Acciones</TableHeaderCell>
               </tr>
             </thead>
             <tbody>
               {remissionRows.map((row) => (
                 <tr key={row.id} className="text-sm text-zinc-800">
-                  <td className="border-b border-zinc-100 py-3 font-mono">
+                  <TableCell className="font-mono">
                     {formatDate(row.created_at)}
-                  </td>
-                  <td className="border-b border-zinc-100 py-3">{statusLabel(row.status)}</td>
-                  <td className="border-b border-zinc-100 py-3">
+                  </TableCell>
+                  <TableCell>{statusLabel(row.status)}</TableCell>
+                  <TableCell>
                     {siteMap.get(row.from_site_id ?? "")?.name ?? row.from_site_id ?? "-"}
-                  </td>
-                  <td className="border-b border-zinc-100 py-3">
+                  </TableCell>
+                  <TableCell>
                     {siteMap.get(row.to_site_id ?? "")?.name ?? row.to_site_id ?? "-"}
-                  </td>
-                  <td className="border-b border-zinc-100 py-3">
+                  </TableCell>
+                  <TableCell>
                     <Link
                       href={`/inventory/remissions/${row.id}`}
                       className="text-sm font-semibold text-zinc-900 underline decoration-zinc-200 underline-offset-4"
                     >
                       Ver detalle
                     </Link>
-                  </td>
+                  </TableCell>
                 </tr>
               ))}
 
               {!canViewRemissions ? (
                 <tr>
-                  <td colSpan={5} className="py-6 text-sm text-zinc-500">
+                  <TableCell colSpan={5} className="ui-empty">
                     No tienes permiso para ver remisiones.
-                  </td>
+                  </TableCell>
                 </tr>
               ) : !activeSiteId ? (
                 <tr>
-                  <td colSpan={5} className="py-6 text-sm text-zinc-500">
+                  <TableCell colSpan={5} className="ui-empty">
                     Selecciona una sede para ver remisiones recientes.
-                  </td>
+                  </TableCell>
                 </tr>
               ) : remissionRows.length === 0 ? (
                 <tr>
-                  <td colSpan={5} className="py-6 text-sm text-zinc-500">
+                  <TableCell colSpan={5} className="ui-empty">
                     No hay remisiones recientes para esta sede.
-                  </td>
+                  </TableCell>
                 </tr>
               ) : null}
             </tbody>
-          </table>
+          </Table>
         </div>
       </div>
     </div>

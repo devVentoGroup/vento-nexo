@@ -80,12 +80,12 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
   return (
     <div className="mt-6">
       {error ? (
-        <div className="mb-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        <div className="mb-6 ui-alert ui-alert--error">
           {error}
         </div>
       ) : null}
 
-      <form onSubmit={handleSubmit} className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <form onSubmit={handleSubmit} className="ui-panel">
         <div className="text-sm font-semibold text-zinc-900">Nuevo ajuste de inventario</div>
         <div className="mt-1 text-sm text-zinc-600">
           Sede: <strong>{siteName}</strong>. Registra un ajuste manual con motivo y trazabilidad.
@@ -94,7 +94,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
         <div className="mt-6 flex flex-col gap-4">
           {/* Producto */}
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-semibold text-zinc-600">
+            <span className="ui-label">
               Producto <span className="text-red-500">*</span>
             </span>
             <select
@@ -127,7 +127,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
 
           {/* Cantidad delta */}
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-semibold text-zinc-600">
+            <span className="ui-label">
               Ajuste (cantidad) <span className="text-red-500">*</span>
             </span>
             <div className="flex items-center gap-2">
@@ -159,7 +159,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
 
           {/* Motivo (obligatorio) */}
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-semibold text-zinc-600">
+            <span className="ui-label">
               Motivo <span className="text-red-500">*</span>
             </span>
             <textarea
@@ -177,7 +177,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
 
           {/* Evidencia (opcional) */}
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-semibold text-zinc-600">Evidencia (opcional)</span>
+            <span className="ui-label">Evidencia (opcional)</span>
             <textarea
               value={evidence}
               onChange={(e) => setEvidence(e.target.value)}
@@ -195,19 +195,19 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
           <button
             type="submit"
             disabled={!canSubmit}
-            className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-50 disabled:cursor-not-allowed"
+            className="ui-btn ui-btn--brand disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? "Guardando…" : "Registrar ajuste"}
           </button>
           <a
             href="/inventory/adjust"
-            className="inline-flex h-11 items-center justify-center rounded-xl border border-zinc-300 bg-white px-4 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+            className="ui-btn ui-btn--ghost"
           >
             Limpiar
           </a>
           <a
             href="/inventory/stock"
-            className="inline-flex h-11 items-center justify-center rounded-xl border border-zinc-300 bg-white px-4 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+            className="ui-btn ui-btn--ghost"
           >
             Ver stock
           </a>

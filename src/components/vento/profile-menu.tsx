@@ -109,34 +109,34 @@ export function ProfileMenu({ name, role, email, sites }: ProfileMenuProps) {
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm font-semibold text-zinc-900 ring-1 ring-inset ring-zinc-200 hover:bg-zinc-50"
+        className="inline-flex items-center gap-2 rounded-xl bg-[var(--ui-surface)] h-12 px-4 text-base font-semibold text-[var(--ui-text)] ring-1 ring-inset ring-[var(--ui-border)] hover:bg-[var(--ui-surface-2)]"
         aria-haspopup="dialog"
         aria-expanded={open}
       >
-        <span className="inline-flex h-8 w-8 items-center justify-center rounded-full bg-amber-600 text-xs font-semibold text-white">
+        <span className="inline-flex h-9 w-9 items-center justify-center rounded-full bg-[var(--ui-brand)] text-sm font-semibold text-[var(--ui-on-primary)]">
           {initials}
         </span>
         <span className="hidden sm:inline">Perfil</span>
       </button>
 
       {open ? (
-        <div className="absolute right-0 z-50 mt-2 w-64 rounded-2xl border border-zinc-200 bg-white p-4 shadow-lg">
-          <div className="text-sm font-semibold text-zinc-900">{displayName}</div>
+        <div className="absolute right-0 z-50 mt-2 w-64 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface)] backdrop-blur-xl p-4 shadow-[var(--ui-shadow-2)]">
+          <div className="text-sm font-semibold text-[var(--ui-text)]">{displayName}</div>
           {role ? (
-            <div className="mt-1 text-xs text-zinc-500">
+            <div className="mt-1 text-xs text-[var(--ui-muted)]">
               Rol: {roleLabelMap.get(role) ?? role}
             </div>
           ) : null}
-          {email ? <div className="mt-2 text-xs text-zinc-500">Email: {email}</div> : null}
-          <div className="mt-3 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600">
+          {email ? <div className="mt-2 text-xs text-[var(--ui-muted)]">Email: {email}</div> : null}
+          <div className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-3 py-2 text-xs text-[var(--ui-muted)]">
             Sesion activa en NEXO.
           </div>
           {canSwitchRole ? (
-            <div className="mt-3 space-y-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
-              <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">
+            <div className="mt-3 space-y-3 rounded-xl border border-[var(--ui-brand-600)] bg-[var(--ui-brand-soft)] px-3 py-2">
+              <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ui-brand-600)]">
                 Modo prueba
               </div>
-              <div className="text-xs text-amber-900">
+              <div className="text-xs text-[var(--ui-text)]">
                 Rol activo:{" "}
                 <span className="font-semibold">
                   {overrideRole ? roleLabelMap.get(overrideRole) ?? overrideRole : "Real"}
@@ -152,8 +152,8 @@ export function ProfileMenu({ name, role, email, sites }: ProfileMenuProps) {
                       onClick={() => handleRoleOverride(option.value)}
                       className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
                         isActive
-                          ? "bg-amber-600 text-white"
-                          : "bg-white text-amber-800 ring-1 ring-inset ring-amber-200"
+                          ? "bg-[var(--ui-brand)] text-[var(--ui-on-primary)]"
+                          : "bg-[var(--ui-surface)] text-[var(--ui-brand-600)] ring-1 ring-inset ring-[var(--ui-brand-600)]"
                       }`}
                     >
                       {option.label}
@@ -164,7 +164,7 @@ export function ProfileMenu({ name, role, email, sites }: ProfileMenuProps) {
               <button
                 type="button"
                 onClick={() => handleRoleOverride(null)}
-                className="text-xs font-semibold text-amber-700 hover:text-amber-800"
+                className="text-xs font-semibold text-[var(--ui-brand-600)] hover:text-[var(--ui-brand-700)]"
               >
                 Usar rol real
               </button>
@@ -172,11 +172,11 @@ export function ProfileMenu({ name, role, email, sites }: ProfileMenuProps) {
           ) : null}
           {canSwitchRole && sites?.length ? (
             <div className="mt-3 space-y-2">
-              <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
                 Sede activa
               </div>
               <select
-                className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs"
+                className="h-12 w-full rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 text-base"
                 value={activeSiteId}
                 onChange={(e) => handleSiteChange(e.target.value)}
               >
@@ -193,7 +193,7 @@ export function ProfileMenu({ name, role, email, sites }: ProfileMenuProps) {
             type="button"
             onClick={handleSignOut}
             disabled={isSigningOut}
-            className="mt-3 inline-flex h-10 w-full items-center justify-center rounded-xl bg-amber-600 px-3 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-60"
+            className="mt-3 inline-flex h-12 w-full items-center justify-center rounded-xl bg-[var(--ui-primary)] px-3 text-base font-semibold text-[var(--ui-on-primary)] hover:bg-[var(--ui-primary-hover)] disabled:opacity-60"
           >
             {isSigningOut ? "Cerrando..." : "Cerrar sesion"}
           </button>

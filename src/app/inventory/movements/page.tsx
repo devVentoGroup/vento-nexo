@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 import { requireAppAccess } from "@/lib/auth/guard";
 
 export const dynamic = "force-dynamic";
@@ -92,7 +93,7 @@ export default async function InventoryMovementsPage({
   const movements = (rows ?? []) as any[];
 
   return (
-    <div className="w-full px-6 py-8">
+    <div className="w-full">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Movimientos</h1>
@@ -103,27 +104,27 @@ export default async function InventoryMovementsPage({
 
         <Link
           href="/scanner"
-          className="inline-flex h-11 items-center justify-center rounded-xl bg-white px-4 text-sm font-semibold text-zinc-900 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
+          className="ui-btn ui-btn--ghost"
         >
           Ir a Scanner
         </Link>
       </div>
 
       {errorMsg ? (
-        <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        <div className="mt-6 ui-alert ui-alert--error">
           Error: {errorMsg}
         </div>
       ) : null}
 
-      <div className="mt-6 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div className="mt-6 ui-panel">
         <div className="text-sm font-semibold text-zinc-900">Filtros</div>
         <form method="get" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-semibold text-zinc-600">Sede (site_id)</span>
+            <span className="ui-label">Sede (site_id)</span>
             <select
               name="site_id"
               defaultValue={siteId}
-              className="h-11 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+              className="ui-input"
             >
               <option value="">Todas</option>
               {siteRows.map((s) => (
@@ -136,11 +137,11 @@ export default async function InventoryMovementsPage({
           </label>
 
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-semibold text-zinc-600">Tipo</span>
+            <span className="ui-label">Tipo</span>
             <select
               name="type"
               defaultValue={movementType}
-              className="h-11 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+              className="ui-input"
             >
               <option value="">Todos</option>
               {MOVEMENT_TYPES.map((t) => (
@@ -152,38 +153,38 @@ export default async function InventoryMovementsPage({
           </label>
 
           <label className="flex flex-col gap-1">
-            <span className="text-xs font-semibold text-zinc-600">Producto (product_id)</span>
+            <span className="ui-label">Producto (product_id)</span>
             <input
               name="product"
               defaultValue={productId}
               placeholder="UUID producto"
-              className="h-11 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+              className="ui-input"
             />
           </label>
 
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-1">
-              <span className="text-xs font-semibold text-zinc-600">Desde</span>
+              <span className="ui-label">Desde</span>
               <input
                 type="date"
                 name="from"
                 defaultValue={fromDate}
-                className="h-11 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+                className="ui-input"
               />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="text-xs font-semibold text-zinc-600">Hasta</span>
+              <span className="ui-label">Hasta</span>
               <input
                 type="date"
                 name="to"
                 defaultValue={toDate}
-                className="h-11 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+                className="ui-input"
               />
             </label>
           </div>
 
           <div className="sm:col-span-2 lg:col-span-4">
-            <button className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500">
+            <button className="ui-btn ui-btn--brand">
               Aplicar filtros
             </button>
           </div>
@@ -191,26 +192,26 @@ export default async function InventoryMovementsPage({
       </div>
 
       {error ? (
-        <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        <div className="mt-6 ui-alert ui-alert--error">
           Fallo el SELECT de movimientos: {error.message}
         </div>
       ) : null}
 
-      <div className="mt-6 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div className="mt-6 ui-panel">
         <div className="text-sm font-semibold text-zinc-900">Movimientos</div>
         <div className="mt-1 text-sm text-zinc-600">Mostrando hasta 200 registros.</div>
 
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full border-separate border-spacing-0">
+          <Table>
             <thead>
-              <tr className="text-left text-xs font-semibold tracking-wide text-zinc-500">
-                <th className="border-b border-zinc-200 pb-2">Fecha</th>
-                <th className="border-b border-zinc-200 pb-2">Tipo</th>
-                <th className="border-b border-zinc-200 pb-2">Sede</th>
-                <th className="border-b border-zinc-200 pb-2">Producto</th>
-                <th className="border-b border-zinc-200 pb-2">Qty</th>
-                <th className="border-b border-zinc-200 pb-2">Unidad</th>
-                <th className="border-b border-zinc-200 pb-2">Ref</th>
+              <tr>
+                <TableHeaderCell>Fecha</TableHeaderCell>
+                <TableHeaderCell>Tipo</TableHeaderCell>
+                <TableHeaderCell>Sede</TableHeaderCell>
+                <TableHeaderCell>Producto</TableHeaderCell>
+                <TableHeaderCell>Qty</TableHeaderCell>
+                <TableHeaderCell>Unidad</TableHeaderCell>
+                <TableHeaderCell>Ref</TableHeaderCell>
               </tr>
             </thead>
             <tbody>
@@ -231,26 +232,26 @@ export default async function InventoryMovementsPage({
 
                 return (
                   <tr key={String(row.id ?? `${createdAt}-${product}-${qty}`)} className="text-sm text-zinc-800">
-                    <td className="border-b border-zinc-100 py-3 font-mono">{createdAt}</td>
-                    <td className="border-b border-zinc-100 py-3">{type}</td>
-                    <td className="border-b border-zinc-100 py-3 font-mono">{site}</td>
-                    <td className="border-b border-zinc-100 py-3 font-mono">{product}</td>
-                    <td className="border-b border-zinc-100 py-3 font-mono">{qty}</td>
-                    <td className="border-b border-zinc-100 py-3">{unit}</td>
-                    <td className="border-b border-zinc-100 py-3 font-mono">{ref}</td>
+                    <TableCell className="font-mono">{createdAt}</TableCell>
+                    <TableCell>{type}</TableCell>
+                    <TableCell className="font-mono">{site}</TableCell>
+                    <TableCell className="font-mono">{product}</TableCell>
+                    <TableCell className="font-mono">{qty}</TableCell>
+                    <TableCell>{unit}</TableCell>
+                    <TableCell className="font-mono">{ref}</TableCell>
                   </tr>
                 );
               })}
 
               {!error && movements.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-6 text-sm text-zinc-500">
+                  <TableCell colSpan={7} className="ui-empty">
                     No hay movimientos para mostrar (o RLS no te permite verlos).
-                  </td>
+                  </TableCell>
                 </tr>
               ) : null}
             </tbody>
-          </table>
+          </Table>
         </div>
       </div>
     </div>

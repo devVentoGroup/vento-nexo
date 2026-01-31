@@ -29,7 +29,7 @@ function DotsIcon() {
   return (
     <span className="grid grid-cols-3 gap-0.5">
       {Array.from({ length: 9 }).map((_, i) => (
-        <span key={i} className="h-1.5 w-1.5 rounded-sm bg-zinc-600" />
+        <span key={i} className="h-1.5 w-1.5 rounded-sm bg-[var(--ui-muted)]" />
       ))}
     </span>
   );
@@ -39,8 +39,8 @@ function StatusPill({ status }: { status: AppStatus }) {
   const label = status === "active" ? "Activo" : "Pr+�ximamente";
   const cls =
     status === "active"
-      ? "bg-emerald-50 text-emerald-700 ring-emerald-200"
-      : "bg-zinc-100 text-zinc-600 ring-zinc-200";
+      ? "bg-[var(--ui-brand-soft)] text-[var(--ui-brand-600)] ring-[var(--ui-brand-600)]"
+      : "bg-[var(--ui-surface-2)] text-[var(--ui-muted)] ring-[var(--ui-border)]";
 
   return (
     <span
@@ -56,12 +56,12 @@ function AppTile({ app, onNavigate }: { app: AppLink; onNavigate: () => void }) 
 
   if (!isActive) {
     return (
-      <div className="rounded-xl border border-zinc-200 bg-white p-3 opacity-70">
+      <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-5 opacity-70">
         <div className="flex items-start justify-between gap-2">
-          <div className="text-sm font-semibold text-zinc-900">{app.name}</div>
+          <div className="text-base font-semibold text-[var(--ui-text)]">{app.name}</div>
           <StatusPill status={app.status} />
         </div>
-        <div className="mt-1 text-xs leading-5 text-zinc-600">{app.description}</div>
+        <div className="mt-1 text-sm leading-5 text-[var(--ui-muted)]">{app.description}</div>
       </div>
     );
   }
@@ -70,13 +70,13 @@ function AppTile({ app, onNavigate }: { app: AppLink; onNavigate: () => void }) 
     <a
       href={app.href}
       onClick={onNavigate}
-      className="block rounded-xl border border-zinc-200 bg-white p-3 hover:bg-zinc-50"
+      className="block rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-5 hover:bg-[var(--ui-surface-2)]"
     >
       <div className="flex items-start justify-between gap-2">
-        <div className="text-sm font-semibold text-zinc-900">{app.name}</div>
+        <div className="text-base font-semibold text-[var(--ui-text)]">{app.name}</div>
         <StatusPill status={app.status} />
       </div>
-      <div className="mt-1 text-xs leading-5 text-zinc-600">{app.description}</div>
+      <div className="mt-1 text-sm leading-5 text-[var(--ui-muted)]">{app.description}</div>
     </a>
   );
 }
@@ -187,7 +187,7 @@ export function AppSwitcher({ sites = [], activeSiteId = "" }: AppSwitcherProps)
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
-        className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm font-semibold text-zinc-900 ring-1 ring-inset ring-zinc-200 hover:bg-zinc-50"
+        className="inline-flex items-center gap-2 rounded-xl bg-[var(--ui-surface)] h-12 px-4 text-base font-semibold text-[var(--ui-text)] ring-1 ring-inset ring-[var(--ui-border)] hover:bg-[var(--ui-surface-2)]"
         aria-haspopup="dialog"
         aria-expanded={open}
       >
@@ -196,13 +196,13 @@ export function AppSwitcher({ sites = [], activeSiteId = "" }: AppSwitcherProps)
       </button>
 
       {open ? (
-        <div className="absolute right-0 z-50 mt-2 w-[360px] rounded-2xl border border-zinc-200 bg-white p-4 shadow-lg">
+        <div className="absolute right-0 z-50 mt-2 w-[360px] rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface)] backdrop-blur-xl p-4 shadow-[var(--ui-shadow-2)]">
           <div className="space-y-4">
             {sites.length ? (
               <div>
-                <div className="mb-2 text-xs font-semibold tracking-wide text-zinc-500">SEDE</div>
+                <div className="mb-2 text-xs font-semibold tracking-wide text-[var(--ui-muted)]">SEDE</div>
                 <select
-                  className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
+                  className="h-12 w-full rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 text-base"
                   value={currentSiteId}
                   onChange={(e) => {
                     navigateWithSite(e.target.value);
@@ -216,14 +216,14 @@ export function AppSwitcher({ sites = [], activeSiteId = "" }: AppSwitcherProps)
                     </option>
                   ))}
                 </select>
-                <div className="mt-2 text-xs text-zinc-500">
+                <div className="mt-2 text-xs text-[var(--ui-muted)]">
                   Activa: {currentSiteLabel || "Sin sede"}
                 </div>
               </div>
             ) : null}
 
             <div>
-              <div className="mb-2 text-xs font-semibold tracking-wide text-zinc-500">WORKSPACE</div>
+              <div className="mb-2 text-xs font-semibold tracking-wide text-[var(--ui-muted)]">WORKSPACE</div>
               <div className="grid grid-cols-1 gap-2">
                 {workspace.map((app) => (
                   <AppTile key={app.id} app={app} onNavigate={() => setOpen(false)} />
@@ -232,7 +232,7 @@ export function AppSwitcher({ sites = [], activeSiteId = "" }: AppSwitcherProps)
             </div>
 
             <div>
-              <div className="mb-2 text-xs font-semibold tracking-wide text-zinc-500">INTERNO</div>
+              <div className="mb-2 text-xs font-semibold tracking-wide text-[var(--ui-muted)]">INTERNO</div>
               <div className="grid grid-cols-1 gap-2">
                 {interno.map((app) => (
                   <AppTile key={app.id} app={app} onNavigate={() => setOpen(false)} />
@@ -241,7 +241,7 @@ export function AppSwitcher({ sites = [], activeSiteId = "" }: AppSwitcherProps)
             </div>
 
             <div>
-              <div className="mb-2 text-xs font-semibold tracking-wide text-zinc-500">DIRECTO</div>
+              <div className="mb-2 text-xs font-semibold tracking-wide text-[var(--ui-muted)]">DIRECTO</div>
               <div className="grid grid-cols-1 gap-2">
                 {directo.map((app) => (
                   <AppTile key={app.id} app={app} onNavigate={() => setOpen(false)} />

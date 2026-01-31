@@ -60,7 +60,7 @@ export default async function InventoryAdjustPage({
 
   if (!siteId) {
     return (
-      <div className="w-full px-6 py-8">
+      <div className="w-full">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Ajustes</h1>
           <p className="mt-2 text-sm leading-6 text-zinc-600">
@@ -68,11 +68,11 @@ export default async function InventoryAdjustPage({
           </p>
         </div>
 
-        <div className="mt-6 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <div className="mt-6 ui-panel">
           <div className="text-sm font-semibold text-zinc-900">Paso 1: elegir sede</div>
           <form method="get" action="/inventory/adjust" className="mt-4">
             <label className="flex flex-col gap-1">
-              <span className="text-xs font-semibold text-zinc-600">Sede</span>
+              <span className="ui-label">Sede</span>
               <select
                 name="site_id"
                 className="h-11 w-full max-w-xs rounded-xl border border-zinc-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
@@ -89,13 +89,13 @@ export default async function InventoryAdjustPage({
             <div className="mt-4 flex gap-3">
               <button
                 type="submit"
-                className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500"
+                className="ui-btn ui-btn--brand"
               >
                 Continuar
               </button>
               <Link
                 href="/inventory/stock"
-                className="inline-flex h-11 items-center justify-center rounded-xl border border-zinc-300 bg-white px-4 text-sm font-semibold text-zinc-700 hover:bg-zinc-50"
+                className="ui-btn ui-btn--ghost"
               >
                 Ver stock
               </Link>
@@ -153,7 +153,7 @@ export default async function InventoryAdjustPage({
   const siteName = siteNameMap.get(siteId) ?? siteId;
 
   return (
-    <div className="w-full px-6 py-8">
+    <div className="w-full">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Ajustes</h1>
@@ -163,18 +163,18 @@ export default async function InventoryAdjustPage({
         </div>
         <Link
           href="/inventory/stock"
-          className="inline-flex h-11 items-center justify-center rounded-xl bg-white px-4 text-sm font-semibold text-zinc-900 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
+          className="ui-btn ui-btn--ghost"
         >
           Ver stock
         </Link>
       </div>
 
       {productError ? (
-        <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        <div className="mt-6 ui-alert ui-alert--error">
           Error al cargar productos: {productError.message}
         </div>
       ) : productRows.length === 0 ? (
-        <div className="mt-6 rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+        <div className="mt-6 ui-alert ui-alert--warn">
           No hay productos con inventario trackeado para esta sede. Revisa el catálogo y
           product_site_settings, o &quot;Inventario &gt; Stock&quot; para ver el filtro por sede.
         </div>

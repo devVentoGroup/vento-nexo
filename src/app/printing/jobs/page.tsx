@@ -831,7 +831,7 @@ function PrintingJobsContent() {
   }
 
   return (
-    <div className="w-full space-y-6 px-6 py-8">
+    <div className="w-full space-y-6">
       <Script src={BROWSERPRINT_CORE} strategy="afterInteractive" />
       <Script src={BROWSERPRINT_ZEBRA} strategy="afterInteractive" />
 
@@ -843,10 +843,10 @@ function PrintingJobsContent() {
         </p>
       </div>
 
-      <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div className="ui-panel">
         <div className="flex flex-wrap items-center gap-3">
           <button
-            className="rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white"
+            className="ui-btn ui-btn--brand"
             onClick={detectPrinters}
             type="button"
           >
@@ -915,7 +915,7 @@ function PrintingJobsContent() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
-        <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <div className="ui-panel">
           <div className="text-sm font-semibold text-zinc-900">Configuraci+?n</div>
 
           <div className="mt-4 grid grid-cols-2 gap-4">
@@ -927,7 +927,7 @@ function PrintingJobsContent() {
                   <button
                     type="button"
                     onClick={() => setPresetId("LOC_50x70")}
-                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "LOC" ? "bg-amber-600 text-white" : "bg-white text-zinc-900"
+                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "LOC" ? "bg-[var(--ui-brand)] text-[var(--ui-on-primary)]" : "bg-[var(--ui-surface)] text-[var(--ui-text)]"
                       }`}
                   >
                     LOC
@@ -935,7 +935,7 @@ function PrintingJobsContent() {
                   <button
                     type="button"
                     onClick={() => setPresetId("LPN_50x25")}
-                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "LPN" ? "bg-amber-600 text-white" : "bg-white text-zinc-900"
+                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "LPN" ? "bg-[var(--ui-brand)] text-[var(--ui-on-primary)]" : "bg-[var(--ui-surface)] text-[var(--ui-text)]"
                       }`}
                   >
                     LPN
@@ -943,7 +943,7 @@ function PrintingJobsContent() {
                   <button
                     type="button"
                     onClick={() => setPresetId("SKU_32x25_3UP")}
-                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "SKU" ? "bg-amber-600 text-white" : "bg-white text-zinc-900"
+                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "SKU" ? "bg-[var(--ui-brand)] text-[var(--ui-on-primary)]" : "bg-[var(--ui-surface)] text-[var(--ui-text)]"
                       }`}
                   >
                     SKU
@@ -951,7 +951,7 @@ function PrintingJobsContent() {
                   <button
                     type="button"
                     onClick={() => setPresetId("PROD_50x30")}
-                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "PROD" ? "bg-amber-600 text-white" : "bg-white text-zinc-900"
+                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "PROD" ? "bg-[var(--ui-brand)] text-[var(--ui-on-primary)]" : "bg-[var(--ui-surface)] text-[var(--ui-text)]"
                       }`}
                   >
                     PROD
@@ -1186,7 +1186,7 @@ function PrintingJobsContent() {
             ) : null}
           </div>
         </div>
-        <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <div className="ui-panel">
           <div className="text-sm font-semibold text-zinc-900">Etiquetas</div>
           <textarea
             className="mt-4 h-64 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-mono"
@@ -1240,7 +1240,7 @@ export default function PrintingJobsPage() {
   return (
     <Suspense
       fallback={
-        <div className="w-full px-6 py-8 text-sm text-zinc-600">
+        <div className="w-full text-sm text-zinc-600">
           Cargando impresion...
         </div>
       }

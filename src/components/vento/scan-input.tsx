@@ -55,7 +55,7 @@ export function ScanInput(props: {
   }
 
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+    <div className="ui-panel">
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="text-sm font-semibold text-zinc-900">{label}</div>
@@ -95,7 +95,7 @@ export function ScanInput(props: {
           <button
             type="button"
             onClick={submit}
-            className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500"
+            className="ui-btn ui-btn--brand"
           >
             Procesar
           </button>
@@ -105,7 +105,7 @@ export function ScanInput(props: {
               setValue("");
               inputRef.current?.focus();
             }}
-            className="inline-flex h-11 items-center justify-center rounded-xl bg-white px-4 text-sm font-semibold text-zinc-900 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
+            className="ui-btn ui-btn--ghost"
           >
             Limpiar
           </button>

@@ -37,13 +37,13 @@ export default async function NoAccessPage({
         <div className="mt-6 flex flex-col gap-2 sm:flex-row">
           <a
             href={HUB_URL}
-            className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500"
+            className="ui-btn ui-btn--brand"
           >
             Volver al Hub
           </a>
           <Link
             href="/"
-            className="inline-flex h-11 items-center justify-center rounded-xl bg-white px-4 text-sm font-semibold text-zinc-900 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
+            className="ui-btn ui-btn--ghost"
           >
             Ir a inicio NEXO
           </Link>

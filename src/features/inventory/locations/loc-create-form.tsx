@@ -152,7 +152,7 @@ export function LocCreateForm({
     Boolean(siteIdToSend) && Boolean(zoneFinal) && Boolean(computed.code);
 
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+    <div className="ui-panel">
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="text-sm font-semibold text-zinc-900">Crear LOC</div>
@@ -303,7 +303,7 @@ export function LocCreateForm({
         ) : null}
 
         {siteCode === "CP" && zoneFinal === "DSP" ? (
-          <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700">
+          <div className="ui-alert ui-alert--neutral">
             Despacho es único. Aisle fijo:{" "}
             <span className="font-mono">MAIN</span>
           </div>
@@ -354,7 +354,7 @@ export function LocCreateForm({
         <button
           type="submit"
           disabled={!canSubmit}
-          className="md:col-span-2 inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-40"
+          className="md:col-span-2 ui-btn ui-btn--brand disabled:opacity-40"
         >
           Crear LOC
         </button>
@@ -362,7 +362,7 @@ export function LocCreateForm({
 
       {/* Plantilla CP */}
       {siteCode === "CP" && createCpTemplateAction ? (
-        <div className="mt-6 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+        <div className="mt-6 ui-panel">
           <div className="text-sm font-semibold text-zinc-900">
             Inicializar Centro de Producción (Plantilla)
           </div>

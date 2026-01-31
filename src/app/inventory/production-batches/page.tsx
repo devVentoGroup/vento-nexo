@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 import { redirect } from "next/navigation";
 
 import { requireAppAccess } from "@/lib/auth/guard";
@@ -266,7 +267,7 @@ export default async function ProductionBatchesPage({
   const batchRows = (batches ?? []) as BatchRow[];
 
   return (
-    <div className="w-full px-6 py-8">
+    <div className="w-full">
       <div className="flex items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Produccion manual</h1>
@@ -277,14 +278,14 @@ export default async function ProductionBatchesPage({
 
         <Link
           href="/inventory/remissions"
-          className="inline-flex h-11 items-center justify-center rounded-xl bg-white px-4 text-sm font-semibold text-zinc-900 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50"
+          className="ui-btn ui-btn--ghost"
         >
           Ver remisiones
         </Link>
       </div>
 
       {errorMsg ? (
-        <div className="mt-6 rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        <div className="mt-6 ui-alert ui-alert--error">
           Error: {errorMsg}
         </div>
       ) : null}
@@ -295,7 +296,7 @@ export default async function ProductionBatchesPage({
         </div>
       ) : null}
 
-      <div className="mt-6 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div className="mt-6 ui-panel">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="text-sm font-semibold text-zinc-900">Sede activa</div>
@@ -321,14 +322,14 @@ export default async function ProductionBatchesPage({
                 );
               })}
             </select>
-            <button className="inline-flex h-10 items-center justify-center rounded-xl bg-white px-3 text-sm font-semibold text-zinc-900 ring-1 ring-inset ring-zinc-300 hover:bg-zinc-50">
+            <button className="ui-btn ui-btn--ghost">
               Cambiar
             </button>
           </form>
         </div>
 
         {!canRegister ? (
-          <div className="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700">
+          <div className="mt-4 ui-alert ui-alert--neutral">
             Tu rol actual no puede registrar produccion manual.
           </div>
         ) : null}
@@ -338,10 +339,10 @@ export default async function ProductionBatchesPage({
             <input type="hidden" name="site_id" value={activeSiteId} />
             <div className="grid gap-3 md:grid-cols-2">
               <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-zinc-600">Producto</span>
+                <span className="ui-label">Producto</span>
                 <select
                   name="product_id"
-                  className="h-11 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+                  className="ui-input"
                 >
                   <option value="">Selecciona producto</option>
                   {productRows.map((product) => (
@@ -353,64 +354,64 @@ export default async function ProductionBatchesPage({
               </label>
 
               <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-zinc-600">Cantidad producida</span>
+                <span className="ui-label">Cantidad producida</span>
                 <input
                   name="produced_qty"
                   placeholder="Cantidad"
-                  className="h-11 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+                  className="ui-input"
                 />
               </label>
             </div>
 
             <div className="grid gap-3 md:grid-cols-2">
               <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-zinc-600">Unidad</span>
+                <span className="ui-label">Unidad</span>
                 <input
                   name="produced_unit"
                   placeholder="ej: kg, un"
-                  className="h-11 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+                  className="ui-input"
                 />
               </label>
 
               <label className="flex flex-col gap-1">
-                <span className="text-xs font-semibold text-zinc-600">Fecha expiracion</span>
+                <span className="ui-label">Fecha expiracion</span>
                 <input
                   type="date"
                   name="expires_at"
-                  className="h-11 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+                  className="ui-input"
                 />
               </label>
             </div>
 
             <label className="flex flex-col gap-1">
-              <span className="text-xs font-semibold text-zinc-600">Notas</span>
+              <span className="ui-label">Notas</span>
               <input
                 name="notes"
                 placeholder="Notas de produccion"
-                className="h-11 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+                className="ui-input"
               />
             </label>
 
-            <button className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500">
+            <button className="ui-btn ui-btn--brand">
               Registrar lote
             </button>
           </form>
         ) : null}
       </div>
 
-      <div className="mt-6 rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div className="mt-6 ui-panel">
         <div className="text-sm font-semibold text-zinc-900">Ultimos lotes</div>
         <div className="mt-1 text-sm text-zinc-600">Mostrando hasta 30 registros.</div>
 
         <div className="mt-4 overflow-x-auto">
-          <table className="w-full border-separate border-spacing-0">
+          <Table>
             <thead>
-              <tr className="text-left text-xs font-semibold tracking-wide text-zinc-500">
-                <th className="border-b border-zinc-200 pb-2">Fecha</th>
-                <th className="border-b border-zinc-200 pb-2">Producto</th>
-                <th className="border-b border-zinc-200 pb-2">Cantidad</th>
-                <th className="border-b border-zinc-200 pb-2">Expira</th>
-                <th className="border-b border-zinc-200 pb-2">Etiqueta</th>
+              <tr>
+                <TableHeaderCell>Fecha</TableHeaderCell>
+                <TableHeaderCell>Producto</TableHeaderCell>
+                <TableHeaderCell>Cantidad</TableHeaderCell>
+                <TableHeaderCell>Expira</TableHeaderCell>
+                <TableHeaderCell>Etiqueta</TableHeaderCell>
               </tr>
             </thead>
             <tbody>
@@ -425,33 +426,33 @@ export default async function ProductionBatchesPage({
 
                 return (
                   <tr key={batch.id} className="text-sm text-zinc-800">
-                    <td className="border-b border-zinc-100 py-3 font-mono">{created}</td>
-                    <td className="border-b border-zinc-100 py-3">{productName}</td>
-                    <td className="border-b border-zinc-100 py-3 font-mono">
+                    <TableCell className="font-mono">{created}</TableCell>
+                    <TableCell>{productName}</TableCell>
+                    <TableCell className="font-mono">
                       {batch.produced_qty} {batch.produced_unit ?? batch.product?.unit ?? ""}
-                    </td>
-                    <td className="border-b border-zinc-100 py-3 font-mono">{expires || "-"}</td>
-                    <td className="border-b border-zinc-100 py-3">
+                    </TableCell>
+                    <TableCell className="font-mono">{expires || "-"}</TableCell>
+                    <TableCell>
                       <Link
                         href={printHref}
                         className="text-sm font-semibold text-zinc-900 underline decoration-zinc-200 underline-offset-4"
                       >
                         Imprimir
                       </Link>
-                    </td>
+                    </TableCell>
                   </tr>
                 );
               })}
 
               {!batches?.length ? (
                 <tr>
-                  <td colSpan={5} className="py-6 text-sm text-zinc-500">
+                  <TableCell colSpan={5} className="ui-empty">
                     No hay lotes registrados.
-                  </td>
+                  </TableCell>
                 </tr>
               ) : null}
             </tbody>
-          </table>
+          </Table>
         </div>
       </div>
     </div>

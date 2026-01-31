@@ -385,7 +385,7 @@ export default async function RemissionDetailPage({
 
   if (!request) {
     return (
-      <div className="w-full px-6 py-8">
+      <div className="w-full">
         <Link href="/inventory/remissions" className="text-sm text-zinc-600 underline">
           Volver
         </Link>
@@ -395,7 +395,7 @@ export default async function RemissionDetailPage({
   }
 
   return (
-    <div className="w-full px-6 py-8 space-y-6">
+    <div className="w-full space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
           <Link href="/inventory/remissions" className="text-xs text-zinc-500 underline">
@@ -412,7 +412,7 @@ export default async function RemissionDetailPage({
       </div>
 
       {errorMsg ? (
-        <div className="rounded-2xl border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+        <div className="ui-alert ui-alert--error">
           Error: {errorMsg}
         </div>
       ) : null}
@@ -423,7 +423,7 @@ export default async function RemissionDetailPage({
         </div>
       ) : null}
 
-      <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div className="ui-panel">
         <div className="text-sm font-semibold text-zinc-900">Detalle</div>
         <div className="mt-3 grid gap-3 md:grid-cols-2 text-sm text-zinc-700">
           <div>
@@ -445,7 +445,7 @@ export default async function RemissionDetailPage({
         </div>
       </div>
 
-      <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div className="ui-panel">
         <div className="text-sm font-semibold text-zinc-900">Acciones</div>
         <form action={updateStatus} className="mt-4 flex flex-wrap gap-3">
           <input type="hidden" name="request_id" value={request.id} />
@@ -453,7 +453,7 @@ export default async function RemissionDetailPage({
             <button
               name="action"
               value="prepare"
-              className="rounded-xl bg-amber-600 px-4 py-2 text-sm font-semibold text-white"
+              className="ui-btn ui-btn--brand"
             >
               Marcar preparado
             </button>
@@ -489,7 +489,7 @@ export default async function RemissionDetailPage({
             <button
               name="action"
               value="cancel"
-              className="rounded-xl border border-red-200 bg-red-50 px-4 py-2 text-sm font-semibold text-red-700"
+              className="ui-btn ui-btn--danger"
             >
               Cancelar
             </button>
@@ -500,7 +500,7 @@ export default async function RemissionDetailPage({
         </div>
       </div>
 
-      <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div className="ui-panel">
         <div className="text-sm font-semibold text-zinc-900">Items</div>
         <form action={updateItems} className="mt-4 space-y-4">
           <input type="hidden" name="request_id" value={request.id} />
@@ -595,7 +595,7 @@ export default async function RemissionDetailPage({
             ))}
           </div>
 
-          <button className="inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white">
+          <button className="ui-btn ui-btn--brand">
             Guardar items
           </button>
         </form>

@@ -13,7 +13,7 @@ export default function ScannerPage() {
 
       <ScannerPanel />
 
-      <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+      <div className="ui-panel">
         <div className="text-sm font-semibold text-zinc-900">Regla</div>
         <div className="mt-1 text-sm text-zinc-600">
           LOC navega a <span className="font-mono">/inventory/locations</span> y LPN a{" "}

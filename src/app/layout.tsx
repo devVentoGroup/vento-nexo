@@ -1,10 +1,12 @@
 import type { Metadata } from "next";
-import { Geist, Geist_Mono } from "next/font/google";
+import { Geist_Mono, Manrope } from "next/font/google";
 import "./globals.css";
-import { VentoTopbar } from "../components/vento/vento-topbar";
-const geistSans = Geist({
-  variable: "--font-geist-sans",
+import { VentoShell } from "../components/vento/standard/vento-shell";
+const manrope = Manrope({
+  variable: "--font-manrope",
   subsets: ["latin"],
+  weight: ["400", "500", "600", "700"],
+  display: "swap",
 });
 
 const geistMono = Geist_Mono({
@@ -27,14 +29,8 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="es">
-      <body className={`${geistSans.variable} ${geistMono.variable} antialiased`}>
-        <div className="min-h-screen bg-[#F9FAFB] text-[#111827]">
-          <div className="sticky top-0 z-40 border-b border-[#E5E7EB] bg-white">
-            <VentoTopbar />
-          </div>
-
-          <main className="w-full px-6 py-8">{children}</main>
-        </div>
+      <body className={`${manrope.variable} ${geistMono.variable} antialiased`}>
+        <VentoShell>{children}</VentoShell>
       </body>
 
     </html>

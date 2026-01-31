@@ -39,7 +39,7 @@ export function LpnCreateForm({ defaultSiteId, action }: Props) {
   const canSubmit = Boolean(siteIdToUse);
 
   return (
-    <div className="rounded-2xl border border-zinc-200 bg-white p-5 shadow-sm">
+    <div className="ui-panel">
       <div className="flex items-start justify-between gap-4">
         <div>
           <div className="text-sm font-semibold text-zinc-900">Crear LPN</div>
@@ -90,7 +90,7 @@ export function LpnCreateForm({ defaultSiteId, action }: Props) {
           </div>
         </label>
 
-        <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-4 text-sm text-zinc-700">
+        <div className="ui-alert ui-alert--neutral">
           <div className="font-semibold text-zinc-900">Notas</div>
           <div className="mt-1 text-sm text-zinc-600">
             El consecutivo (SEQ) se calcula automáticamente al crear.
@@ -100,7 +100,7 @@ export function LpnCreateForm({ defaultSiteId, action }: Props) {
         <button
           type="submit"
           disabled={!canSubmit}
-          className="md:col-span-2 inline-flex h-11 items-center justify-center rounded-xl bg-amber-600 px-4 text-sm font-semibold text-white hover:bg-amber-500 disabled:opacity-40"
+          className="md:col-span-2 ui-btn ui-btn--brand disabled:opacity-40"
         >
           Crear LPN
         </button>
