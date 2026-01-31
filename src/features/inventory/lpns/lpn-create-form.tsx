@@ -10,9 +10,9 @@ type Props = {
 type SiteCode = "CP" | "SAU" | "VCF" | "VGR";
 
 const SITES: Array<{ code: SiteCode; label: string }> = [
-  { code: "CP", label: "Centro de ProducciÃ³n" },
+  { code: "CP", label: "Centro de Producción" },
   { code: "SAU", label: "Saudo" },
-  { code: "VCF", label: "Vento CafÃ©" },
+  { code: "VCF", label: "Vento Café" },
   { code: "VGR", label: "Vento Group (Oficina)" },
 ];
 
@@ -86,14 +86,14 @@ export function LpnCreateForm({ defaultSiteId, action }: Props) {
             ))}
           </select>
           <div className="text-[11px] text-zinc-500">
-            CÃ³digo: <span className="font-mono">{sede}</span> Â· AAMM: <span className="font-mono">{yymm}</span>
+            Código: <span className="font-mono">{sede}</span> · AAMM: <span className="font-mono">{yymm}</span>
           </div>
         </label>
 
         <div className="ui-alert ui-alert--neutral">
           <div className="font-semibold text-zinc-900">Notas</div>
           <div className="mt-1 ui-body-muted">
-            El consecutivo (SEQ) se calcula automÃ¡ticamente al crear.
+            El consecutivo (SEQ) se calcula automáticamente al crear.
           </div>
         </div>
 
@@ -114,5 +114,6 @@ export function LpnCreateForm({ defaultSiteId, action }: Props) {
     </div>
   );
 }
+
 
 

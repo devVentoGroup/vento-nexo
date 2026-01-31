@@ -26,7 +26,7 @@ const ZONES_BY_SITE: Record<
   CP: [
     { code: "BOD", label: "Bodega seca (BOD)" },
     { code: "EMP", label: "Empaques / Estibas (EMP)" },
-    { code: "REC", label: "RecepciÃ³n / Staging (REC)" },
+    { code: "REC", label: "Recepción / Staging (REC)" },
     { code: "DSP", label: "Despacho (DSP)" },
   ],
   SAU: [
@@ -92,7 +92,7 @@ export function LocCreateForm({
   const [cpPalletNumber, setCpPalletNumber] = useState("1"); // EMP
   const [cpRecState, setCpRecState] = useState<"PEND" | "OK" | "QUAR">("PEND"); // REC
 
-  // No-CP: pasillo/nivel clÃ¡sico
+  // No-CP: pasillo/nivel clásico
   const [aisleNumber, setAisleNumber] = useState("1");
   const [levelNumber, setLevelNumber] = useState("0");
 
@@ -133,7 +133,7 @@ export function LocCreateForm({
       return { code: `LOC-${s}-${z}-${aisle}`, aisle, level: "" };
     }
 
-    // No-CP: patrÃ³n clÃ¡sico LOC-SEDE-ZONA-PASILLO-NIVEL
+    // No-CP: patrón clásico LOC-SEDE-ZONA-PASILLO-NIVEL
     const aisle = pad2FromNumberString(aisleNumber);
     const level = toLevelCode(levelNumber);
     return { code: `LOC-${s}-${z}-${aisle}-${level}`, aisle, level };
@@ -164,7 +164,7 @@ export function LocCreateForm({
         <div className="rounded-xl bg-zinc-50 px-3 py-2 ui-caption">
           Preview:{" "}
           <span className="font-mono text-zinc-900">
-            {computed.code || "â€”"}
+            {computed.code || "—"}
           </span>
         </div>
       </div>
@@ -207,7 +207,7 @@ export function LocCreateForm({
           </label>
         )}
 
-        {/* valores canÃ³nicos al server action */}
+        {/* valores canónicos al server action */}
         <input type="hidden" name="site_id" value={siteIdToSend} />
         <input type="hidden" name="site_code" value={siteCode} />
         <input type="hidden" name="code" value={computed.code} />
@@ -228,7 +228,7 @@ export function LocCreateForm({
                 {z.label}
               </option>
             ))}
-            <option value={ZONE_CUSTOM}>Otraâ€¦ (escribir)</option>
+            <option value={ZONE_CUSTOM}>Otra… (escribir)</option>
           </select>
 
           {zoneChoice === ZONE_CUSTOM ? (
@@ -241,15 +241,15 @@ export function LocCreateForm({
           ) : null}
 
           <div className="text-[11px] text-zinc-500">
-            Guardado como: <span className="font-mono">{zoneFinal || "â€”"}</span>
+            Guardado como: <span className="font-mono">{zoneFinal || "—"}</span>
           </div>
         </label>
 
-        {/* Identificador dinÃ¡mico */}
+        {/* Identificador dinámico */}
         {siteCode === "CP" && zoneFinal === "BOD" ? (
           <label className="flex flex-col gap-1">
             <span className="ui-caption font-semibold">
-              ESTANTERÃA (1â€“12)
+              ESTANTERÍA (1–12)
             </span>
             <input
               value={cpShelfNumber}
@@ -259,7 +259,7 @@ export function LocCreateForm({
               className="h-11 rounded-xl border border-zinc-200 bg-white px-4 ui-body outline-none focus:border-zinc-400"
             />
             <div className="text-[11px] text-zinc-500">
-              Aisle: <span className="font-mono">{computed.aisle || "â€”"}</span>
+              Aisle: <span className="font-mono">{computed.aisle || "—"}</span>
             </div>
           </label>
         ) : null}
@@ -267,7 +267,7 @@ export function LocCreateForm({
         {siteCode === "CP" && zoneFinal === "EMP" ? (
           <label className="flex flex-col gap-1">
             <span className="ui-caption font-semibold">
-              ESTIBA (1â€“2)
+              ESTIBA (1–2)
             </span>
             <input
               value={cpPalletNumber}
@@ -277,7 +277,7 @@ export function LocCreateForm({
               className="h-11 rounded-xl border border-zinc-200 bg-white px-4 ui-body outline-none focus:border-zinc-400"
             />
             <div className="text-[11px] text-zinc-500">
-              Aisle: <span className="font-mono">{computed.aisle || "â€”"}</span>
+              Aisle: <span className="font-mono">{computed.aisle || "—"}</span>
             </div>
           </label>
         ) : null}
@@ -285,7 +285,7 @@ export function LocCreateForm({
         {siteCode === "CP" && zoneFinal === "REC" ? (
           <label className="flex flex-col gap-1">
             <span className="ui-caption font-semibold">
-              ESTADO RECEPCIÃ“N
+              ESTADO RECEPCIÓN
             </span>
             <select
               value={cpRecState}
@@ -297,14 +297,14 @@ export function LocCreateForm({
               <option value="QUAR">QUAR (cuarentena)</option>
             </select>
             <div className="text-[11px] text-zinc-500">
-              Aisle: <span className="font-mono">{computed.aisle || "â€”"}</span>
+              Aisle: <span className="font-mono">{computed.aisle || "—"}</span>
             </div>
           </label>
         ) : null}
 
         {siteCode === "CP" && zoneFinal === "DSP" ? (
           <div className="ui-alert ui-alert--neutral">
-            Despacho es Ãºnico. Aisle fijo:{" "}
+            Despacho es único. Aisle fijo:{" "}
             <span className="font-mono">MAIN</span>
           </div>
         ) : null}
@@ -340,13 +340,13 @@ export function LocCreateForm({
 
         <label className="md:col-span-2 flex flex-col gap-1">
           <span className="ui-caption font-semibold">
-            DescripciÃ³n (opcional)
+            Descripción (opcional)
           </span>
           <input
             name="description"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Ej: EstanterÃ­a 3 (insumos secos)"
+            placeholder="Ej: Estantería 3 (insumos secos)"
             className="h-11 rounded-xl border border-zinc-200 bg-white px-4 ui-body outline-none focus:border-zinc-400"
           />
         </label>
@@ -364,10 +364,10 @@ export function LocCreateForm({
       {siteCode === "CP" && createCpTemplateAction ? (
         <div className="mt-6 ui-panel">
           <div className="ui-body font-semibold">
-            Inicializar Centro de ProducciÃ³n (Plantilla)
+            Inicializar Centro de Producción (Plantilla)
           </div>
           <div className="mt-1 ui-body-muted">
-            Crea LOCs base definitivos: BOD(12 estanterÃ­as) + EMP(2 estibas) +
+            Crea LOCs base definitivos: BOD(12 estanterías) + EMP(2 estibas) +
             REC(PEND/OK/QUAR) + DSP(MAIN).
           </div>
 
@@ -387,13 +387,17 @@ export function LocCreateForm({
           </form>
 
           <div className="mt-3 ui-caption">
-            RecomendaciÃ³n operativa: imprime estas etiquetas primero y pÃ©galas
-            fÃ­sicamente.
+            Recomendación operativa: imprime estas etiquetas primero y pégalas
+            físicamente.
           </div>
         </div>
       ) : null}
     </div>
   );
 }
+
+
+
+
 
 

@@ -1,4 +1,4 @@
-import { createServerClient } from "@supabase/ssr";
+﻿import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
 const cookieDomain =
@@ -86,3 +86,4 @@ export async function updateSession(request: NextRequest) {
 
   return response;
 }
+

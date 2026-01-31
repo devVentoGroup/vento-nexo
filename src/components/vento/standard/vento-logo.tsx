@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 type VentoEntity =
   | "default"
@@ -150,3 +150,4 @@ export function VentoLogo({
     </div>
   );
 }
+

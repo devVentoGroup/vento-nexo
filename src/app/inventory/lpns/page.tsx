@@ -37,7 +37,7 @@ type InvProductRow = {
   product_id: string;
   inventory_kind: string | null;
   default_unit: string | null;
-  products: any | null; // relaciÃ³n a products(*)
+  products: any | null; // relación a products(*)
 };
 
 function productDisplay(p: any) {
@@ -97,7 +97,7 @@ export default async function InventoryLpnsPage({
     try {
       errorMsg = decodeURIComponent(sp.error);
     } catch {
-      // Si el querystring viene con % invÃ¡lido, no tumbamos el render.
+      // Si el querystring viene con % inválido, no tumbamos el render.
       errorMsg = String(sp.error);
     }
   }
@@ -140,7 +140,7 @@ export default async function InventoryLpnsPage({
         <div className="rounded-2xl border border-red-200 bg-red-50 p-5 text-sm text-red-800">
           <div className="font-semibold">Error validando acceso</div>
           <div className="mt-2 text-red-800/90">
-            No se pudo validar la sesiÃ³n o permisos. Revisa los logs del servidor.
+            No se pudo validar la sesión o permisos. Revisa los logs del servidor.
           </div>
           <div className="mt-3 rounded-xl bg-white/60 p-3 font-mono text-xs text-red-900">
             {String(e?.message ?? e)}
@@ -154,7 +154,7 @@ export default async function InventoryLpnsPage({
     redirect(`/no-access?returnTo=${encodeURIComponent(returnTo)}`);
   }
 
-  // Inferir site_id desde employee_sites (mismo patrÃ³n que LOC)
+  // Inferir site_id desde employee_sites (mismo patrón que LOC)
   const { data: sitesRows } = await supabase
     .from("employee_sites")
     .select("site_id,is_primary")
@@ -183,7 +183,7 @@ export default async function InventoryLpnsPage({
     const { data } = await supabase.auth.getUser();
     const user = data.user ?? null;
     if (!user) {
-      redirect(`/inventory/lpns?error=${encodeURIComponent("SesiÃ³n requerida")}`);
+      redirect(`/inventory/lpns?error=${encodeURIComponent("Sesión requerida")}`);
     }
 
     const site_id = String(formData.get("site_id") ?? "").trim();
@@ -215,7 +215,7 @@ export default async function InventoryLpnsPage({
       if (Number.isFinite(parsed) && parsed > 0) nextSeq = parsed + 1;
     }
 
-    // 2 intentos por colisiÃ³n
+    // 2 intentos por colisión
     for (let i = 0; i < 2; i++) {
       const finalCode = `${prefix}${pad4(nextSeq + i)}`;
 
@@ -245,7 +245,7 @@ export default async function InventoryLpnsPage({
     const { data } = await supabase.auth.getUser();
     const user = data.user ?? null;
     if (!user) {
-      redirect(`/inventory/lpns?error=${encodeURIComponent("SesiÃ³n requerida")}`);
+      redirect(`/inventory/lpns?error=${encodeURIComponent("Sesión requerida")}`);
     }
 
     const lpn_id = String(formData.get("lpn_id") ?? "").trim();
@@ -272,7 +272,7 @@ export default async function InventoryLpnsPage({
 
     const { data } = await supabase.auth.getUser();
     const user = data.user ?? null;
-    if (!user) redirect(`/inventory/lpns?error=${encodeURIComponent("SesiÃ³n requerida")}`);
+    if (!user) redirect(`/inventory/lpns?error=${encodeURIComponent("Sesión requerida")}`);
 
     const code = String(formData.get("code") ?? "").trim();
     const lpn_id = String(formData.get("lpn_id") ?? "").trim();
@@ -305,7 +305,7 @@ export default async function InventoryLpnsPage({
 
     const { data } = await supabase.auth.getUser();
     const user = data.user ?? null;
-    if (!user) redirect(`/inventory/lpns?error=${encodeURIComponent("SesiÃ³n requerida")}`);
+    if (!user) redirect(`/inventory/lpns?error=${encodeURIComponent("Sesión requerida")}`);
 
     const code = String(formData.get("code") ?? "").trim();
     const lpn_id = String(formData.get("lpn_id") ?? "").trim();
@@ -412,7 +412,7 @@ export default async function InventoryLpnsPage({
 
     const { data } = await supabase.auth.getUser();
     const user = data.user ?? null;
-    if (!user) redirect(`/inventory/lpns?error=${encodeURIComponent("SesiÃ³n requerida")}`);
+    if (!user) redirect(`/inventory/lpns?error=${encodeURIComponent("Sesión requerida")}`);
 
     const code = String(formData.get("code") ?? "").trim();
     const lpn_id = String(formData.get("lpn_id") ?? "").trim();
@@ -464,7 +464,7 @@ export default async function InventoryLpnsPage({
 
   const invProducts = (invProfiles ?? []) as any as InvProductRow[];
 
-  // Map para render rÃ¡pido (items -> nombre)
+  // Map para render rápido (items -> nombre)
   const invProductMap = new Map<string, { label: string; default_unit: string | null; kind: string | null }>();
   for (const r of invProducts) {
     const p = (r as any).products ?? null;
@@ -491,7 +491,7 @@ export default async function InventoryLpnsPage({
     locMap.set(loc.id, { code: loc.code });
   }
 
-  // PreselecciÃ³n si viene code y hay match exacto
+  // Preselección si viene code y hay match exacto
   const preselectedLpnId =
     code && lpns[0]?.code === code ? (lpns[0]?.id ?? "") : "";
   const activeLpnId = lpnIdParam || preselectedLpnId || "";
@@ -506,7 +506,7 @@ export default async function InventoryLpnsPage({
 
     if (!next.clearCode && code) qs.set("code", code);
 
-    // lpn_id: si lo pasan explÃ­cito, Ãºsalo; si no, usa el activo actual
+    // lpn_id: si lo pasan explícito, úsalo; si no, usa el activo actual
     const nextLpn =
       typeof next.lpn_id === "string" ? next.lpn_id : activeLpnId;
     if (nextLpn) qs.set("lpn_id", nextLpn);
@@ -544,9 +544,9 @@ export default async function InventoryLpnsPage({
           <div className="flex items-center gap-3">
             <div className="h-9 w-1.5 rounded-full bg-amber-500" />
             <div>
-              <h1 className="ui-h1">Inventario Â· LPN</h1>
+              <h1 className="ui-h1">Inventario · LPN</h1>
               <p className="mt-1 ui-body-muted">
-                Contenedores (LPN) para ubicaciÃ³n (LOC), contenido (items) y notas (manifest).
+                Contenedores (LPN) para ubicación (LOC), contenido (items) y notas (manifest).
               </p>
             </div>
           </div>
@@ -618,19 +618,19 @@ export default async function InventoryLpnsPage({
 
         {locErr ? (
           <div className="ui-alert ui-alert--error">
-            FallÃ³ el SELECT de LOCs: {locErr.message}
+            Falló el SELECT de LOCs: {locErr.message}
           </div>
         ) : null}
 
         {invProfilesErr ? (
           <div className="ui-alert ui-alert--error">
-            FallÃ³ el SELECT de productos inventariables: {invProfilesErr.message}
+            Falló el SELECT de productos inventariables: {invProfilesErr.message}
           </div>
         ) : null}
 
         {!invProfilesErr && invProducts.length === 0 ? (
           <div className="ui-alert ui-alert--warn">
-            No hay productos habilitados para inventario todavÃ­a. Agrega filas a{" "}
+            No hay productos habilitados para inventario todavía. Agrega filas a{" "}
             <span className="font-mono">product_inventory_profiles</span> (track_inventory=true).
           </div>
         ) : null}
@@ -659,7 +659,7 @@ export default async function InventoryLpnsPage({
               </div>
             </details>
 
-            {/* Selector rÃ¡pido (GET) */}
+            {/* Selector rápido (GET) */}
             <form method="get" action="/inventory/lpns" className="mt-4 grid gap-2">
               <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
                 <div>
@@ -669,7 +669,7 @@ export default async function InventoryLpnsPage({
                     defaultValue={activeLpnId}
                     className="mt-1 ui-input"
                   >
-                    <option value="">Seleccionaâ€¦</option>
+                    <option value="">Selecciona…</option>
                     {lpns.map((lpn) => (
                       <option key={lpn.id} value={lpn.id}>
                         {lpn.code}
@@ -705,7 +705,7 @@ export default async function InventoryLpnsPage({
                 <Table>
                   <thead className="sticky top-0 z-10 bg-white">
                     <tr>
-                      <TableHeaderCell className="px-3 py-2">CÃ³digo</TableHeaderCell>
+                      <TableHeaderCell className="px-3 py-2">Código</TableHeaderCell>
                       <TableHeaderCell className="px-3 py-2">LOC</TableHeaderCell>
                     </tr>
                   </thead>
@@ -757,7 +757,7 @@ export default async function InventoryLpnsPage({
 
             {lpnsError ? (
               <div className="mt-4 ui-alert ui-alert--error">
-                FallÃ³ el SELECT: {lpnsError.message}
+                Falló el SELECT: {lpnsError.message}
               </div>
             ) : null}
           </div>
@@ -856,7 +856,7 @@ export default async function InventoryLpnsPage({
                   {activeTab === "summary" ? (
                     <div className="grid gap-4">
                       <div className="ui-panel-soft">
-                        <div className="ui-h3">Putaway (LPN â†’ LOC)</div>
+                        <div className="ui-h3">Putaway (LPN → LOC)</div>
                         <div className="mt-1 ui-body-muted">
                           Asigna un LOC a este LPN (actualiza <span className="font-mono">location_id</span>).
                         </div>
@@ -870,7 +870,7 @@ export default async function InventoryLpnsPage({
                               name="location_id"
                               className="mt-1 ui-input"
                             >
-                              <option value="">Selecciona un LOCâ€¦</option>
+                              <option value="">Selecciona un LOC…</option>
                               {locations.map((loc) => (
                                 <option key={loc.id} value={loc.id}>
                                   {loc.code}
@@ -918,7 +918,7 @@ export default async function InventoryLpnsPage({
                     <div className="grid gap-4">
                       {itemsErr ? (
                         <div className="ui-alert ui-alert--error">
-                          FallÃ³ el SELECT de items: {itemsErr.message}
+                          Falló el SELECT de items: {itemsErr.message}
                         </div>
                       ) : null}
 
@@ -940,7 +940,7 @@ export default async function InventoryLpnsPage({
                                   <TableCell className="px-3 py-3">
                                     <div className="ui-body">
                                       {invProductMap.get(it.product_id)?.label ??
-                                        `${String(it.product_id).slice(0, 8)}â€¦`}
+                                        `${String(it.product_id).slice(0, 8)}…`}
                                     </div>
                                     <div className="ui-caption font-mono">{it.product_id}</div>
                                   </TableCell>
@@ -982,7 +982,7 @@ export default async function InventoryLpnsPage({
                               <input
                                 name="product_id"
                                 list="inv-products"
-                                placeholder="Busca y seleccionaâ€¦"
+                                placeholder="Busca y selecciona…"
                                 className="mt-1 ui-input"
                               />
                               <datalist id="inv-products">
@@ -1069,10 +1069,10 @@ export default async function InventoryLpnsPage({
                                 name="item_id"
                                 className="mt-1 ui-input"
                               >
-                                <option value="">Selecciona un itemâ€¦</option>
+                                <option value="">Selecciona un item…</option>
                                 {lpnItems.map((it) => (
                                   <option key={it.id} value={it.id}>
-                                    {String(it.product_id).slice(0, 8)}â€¦ | {String(it.quantity)} {it.unit}
+                                    {String(it.product_id).slice(0, 8)}… | {String(it.quantity)} {it.unit}
                                     {it.lot_number ? ` | ${it.lot_number}` : ""}
                                     {it.expiry_date ? ` | exp ${it.expiry_date}` : ""}
                                   </option>
@@ -1123,13 +1123,13 @@ export default async function InventoryLpnsPage({
                               <input
                                 name="label"
                                 defaultValue={activeLabel}
-                                placeholder="Ej: NAVIDAD Â· Caja 01"
+                                placeholder="Ej: NAVIDAD · Caja 01"
                                 className="mt-1 ui-input"
                               />
                             </div>
 
                             <div>
-                              <label className="ui-label">CÃ³digo</label>
+                              <label className="ui-label">Código</label>
                               <input
                                 value={activeCode}
                                 readOnly
@@ -1143,7 +1143,7 @@ export default async function InventoryLpnsPage({
                             <textarea
                               name="notes"
                               defaultValue={activeNotes}
-                              placeholder={"Ej:\n- Luces Ã¡rbol (blancas)\n- Extensiones x2\n- Esferas rojas\n- Ganchos\n"}
+                              placeholder={"Ej:\n- Luces árbol (blancas)\n- Extensiones x2\n- Esferas rojas\n- Ganchos\n"}
                               rows={10}
                               className="mt-1 w-full rounded-xl bg-white px-3 py-2 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
                             />
@@ -1165,6 +1165,8 @@ export default async function InventoryLpnsPage({
     </div>
   );
 }
+
+
 
 
 

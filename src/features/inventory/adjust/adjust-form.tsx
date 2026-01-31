@@ -145,7 +145,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
               ) : null}
             </div>
             <div className="mt-1 ui-caption">
-              Usa nÃºmeros positivos (+) para aumentar stock, negativos (-) para disminuir.
+              Usa números positivos (+) para aumentar stock, negativos (-) para disminuir.
             </div>
             {deltaNum != null && deltaNum !== 0 && productId ? (
               <div className="mt-2 text-sm font-medium text-zinc-700">
@@ -165,7 +165,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
             <textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="Ej: Merma detectada en inventario fÃ­sico, CorrecciÃ³n por error de conteo, Producto daÃ±ado..."
+              placeholder="Ej: Merma detectada en inventario físico, Corrección por error de conteo, Producto dañado..."
               required
               rows={3}
               className="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
@@ -181,12 +181,12 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
             <textarea
               value={evidence}
               onChange={(e) => setEvidence(e.target.value)}
-              placeholder="Ej: Foto adjunta en sistema, Nota del supervisor, NÃºmero de reporte..."
+              placeholder="Ej: Foto adjunta en sistema, Nota del supervisor, Número de reporte..."
               rows={2}
               className="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
             />
             <div className="mt-1 ui-caption">
-              InformaciÃ³n adicional que respalde el ajuste (opcional).
+              Información adicional que respalde el ajuste (opcional).
             </div>
           </label>
         </div>
@@ -197,7 +197,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
             disabled={!canSubmit}
             className="ui-btn ui-btn--brand disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? "Guardandoâ€¦" : "Registrar ajuste"}
+            {loading ? "Guardando…" : "Registrar ajuste"}
           </button>
           <a
             href="/inventory/adjust"
@@ -216,4 +216,6 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
     </div>
   );
 }
+
+
 

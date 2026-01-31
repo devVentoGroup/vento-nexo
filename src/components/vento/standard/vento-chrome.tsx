@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -502,3 +502,4 @@ export function VentoChrome({
     </div>
   );
 }
+

@@ -390,7 +390,7 @@ export default async function Home({
     : isProductionCenter
       ? "Bodega (Centro)"
       : isSatellite
-        ? "Sede satÃ©lite"
+        ? "Sede satélite"
         : "Sede";
 
   const canRequestRemission = isSatellite && canRequestPermission;
@@ -419,8 +419,8 @@ export default async function Home({
   const actions: ActionLink[] = [
     {
       id: "request-remission",
-      title: "Solicitar remisiÃ³n",
-      description: "Pide insumos desde sede satÃ©lite hacia el centro de producciÃ³n.",
+      title: "Solicitar remisión",
+      description: "Pide insumos desde sede satélite hacia el centro de producción.",
       href: "/inventory/remissions",
       cta: "Solicitar",
       tone: "primary",
@@ -430,7 +430,7 @@ export default async function Home({
     {
       id: "prepare-remissions",
       title: "Preparar remisiones",
-      description: "Gestiona picking y despacho para sedes satÃ©lite.",
+      description: "Gestiona picking y despacho para sedes satélite.",
       href: "/inventory/remissions",
       cta: "Preparar",
       tone: "primary",
@@ -480,7 +480,7 @@ export default async function Home({
     {
       id: "scanner",
       title: "Scanner",
-      description: "Escaneo rÃ¡pido de LOC/LPN/AST.",
+      description: "Escaneo rápido de LOC/LPN/AST.",
       href: "/scanner",
       cta: "Abrir",
       tone: "secondary",
@@ -489,7 +489,7 @@ export default async function Home({
     },
     {
       id: "printing",
-      title: "ImpresiÃ³n",
+      title: "Impresión",
       description: "Etiquetas Zebra para LOC, LPN, SKU y PROD.",
       href: "/printing/jobs",
       cta: "Abrir",
@@ -527,7 +527,7 @@ export default async function Home({
       <div className="ui-panel ui-panel--halo">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="ui-caption">NEXO Â· Inventario</div>
+            <div className="ui-caption">NEXO · Inventario</div>
             <h1 className="mt-2 ui-h1">
               Bienvenido, {displayName}
             </h1>
@@ -634,7 +634,7 @@ export default async function Home({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="ui-section-title">
             <Icon name="sparkles" />
-            MÃ³dulos
+            Módulos
           </div>
           <div className="ui-caption">Accesos rápidos</div>
         </div>
@@ -722,7 +722,7 @@ export default async function Home({
                   <TableCell colSpan={5}>
                     <EmptyState
                       title="Sin remisiones recientes"
-                      description="Cuando se creen solicitudes aparecerÃ¡n aquÃ­."
+                      description="Cuando se creen solicitudes aparecerán aquí."
                       cta="Abrir remisiones"
                       href="/inventory/remissions"
                     />
@@ -736,6 +736,7 @@ export default async function Home({
     </div>
   );
 }
+
 
 
 

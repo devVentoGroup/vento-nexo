@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useRouter } from "next/navigation";
 import { ScanInput } from "@/components/vento/scan-input";
@@ -31,3 +31,4 @@ export function ScannerPanel() {
     />
   );
 }
+

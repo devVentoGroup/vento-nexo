@@ -159,7 +159,7 @@ export default async function InventoryCountInitialPage({
         </div>
       ) : productRows.length === 0 ? (
         <div className="mt-6 ui-alert ui-alert--warn">
-          No hay productos con inventario trackeado para esta sede. Revisa el catÃ¡logo y
+          No hay productos con inventario trackeado para esta sede. Revisa el catálogo y
           product_site_settings, o &quot;Inventario &gt; Stock&quot; para ver el filtro por sede.
         </div>
       ) : (
@@ -172,4 +172,5 @@ export default async function InventoryCountInitialPage({
     </div>
   );
 }
+
 

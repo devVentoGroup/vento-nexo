@@ -31,7 +31,7 @@ function siteCodeFromName(name: string): SiteCode | null {
 
   if (n.includes("centro") && n.includes("produ")) return "CP";
   if (n.includes("saudo")) return "SAU";
-  if (n.includes("vento cafÃ©") || n.includes("vento cafe")) return "VCF";
+  if (n.includes("vento café") || n.includes("vento cafe")) return "VCF";
   if (n.includes("vento group")) return "VGR";
 
   return null;
@@ -44,7 +44,7 @@ function pad2(n: number) {
 function buildCpTemplateRows(site_id: string, siteCode: SiteCode) {
   const rows: Array<Record<string, any>> = [];
 
-  // BOD: 12 estanterÃ­as
+  // BOD: 12 estanterías
   for (let i = 1; i <= 12; i++) {
     const aisle = `EST${pad2(i)}`;
     rows.push({
@@ -52,7 +52,7 @@ function buildCpTemplateRows(site_id: string, siteCode: SiteCode) {
       code: `LOC-${siteCode}-BOD-${aisle}`,
       zone: "BOD",
       aisle,
-      description: `EstanterÃ­a ${i}`,
+      description: `Estantería ${i}`,
     });
   }
 
@@ -74,30 +74,30 @@ function buildCpTemplateRows(site_id: string, siteCode: SiteCode) {
     code: `LOC-${siteCode}-REC-PEND`,
     zone: "REC",
     aisle: "PEND",
-    description: "RecepciÃ³n - Pendiente de revisiÃ³n",
+    description: "Recepción - Pendiente de revisión",
   });
   rows.push({
     site_id,
     code: `LOC-${siteCode}-REC-OK`,
     zone: "REC",
     aisle: "OK",
-    description: "RecepciÃ³n - Revisado / listo para guardar",
+    description: "Recepción - Revisado / listo para guardar",
   });
   rows.push({
     site_id,
     code: `LOC-${siteCode}-REC-QUAR`,
     zone: "REC",
     aisle: "QUAR",
-    description: "RecepciÃ³n - Cuarentena",
+    description: "Recepción - Cuarentena",
   });
 
-  // DSP: Ãºnico
+  // DSP: único
   rows.push({
     site_id,
     code: `LOC-${siteCode}-DSP-MAIN`,
     zone: "DSP",
     aisle: "MAIN",
-    description: "Despacho (Ãºnico)",
+    description: "Despacho (único)",
   });
 
   return rows;
@@ -187,7 +187,7 @@ export default async function InventoryLocationsPage({
     const user = data.user ?? null;
     if (!user) {
       redirect(
-        `/inventory/locations?error=${encodeURIComponent("SesiÃ³n requerida")}`,
+        `/inventory/locations?error=${encodeURIComponent("Sesión requerida")}`,
       );
     }
 
@@ -266,7 +266,7 @@ export default async function InventoryLocationsPage({
     const user = data.user ?? null;
     if (!user) {
       redirect(
-        `/inventory/locations?error=${encodeURIComponent("SesiÃ³n requerida")}`,
+        `/inventory/locations?error=${encodeURIComponent("Sesión requerida")}`,
       );
     }
 
@@ -280,11 +280,11 @@ export default async function InventoryLocationsPage({
         `/inventory/locations?error=${encodeURIComponent("Falta site_id.")}`,
       );
 
-    // Por ahora, la plantilla solo aplica a CP (decisiÃ³n de negocio)
+    // Por ahora, la plantilla solo aplica a CP (decisión de negocio)
     if (site_code !== "CP") {
       redirect(
         `/inventory/locations?error=${encodeURIComponent(
-          "La plantilla inicial solo estÃ¡ habilitada para Centro de ProducciÃ³n (CP).",
+          "La plantilla inicial solo está habilitada para Centro de Producción (CP).",
         )}`,
       );
     }
@@ -335,7 +335,7 @@ export default async function InventoryLocationsPage({
         <div>
           <h1 className="ui-h1">LOC</h1>
           <p className="mt-2 ui-body-muted">
-            Ubicaciones fÃ­sicas (LOC). Para CP: BOD / EMP / REC / DSP.
+            Ubicaciones físicas (LOC). Para CP: BOD / EMP / REC / DSP.
           </p>
         </div>
 
@@ -361,7 +361,7 @@ export default async function InventoryLocationsPage({
               LOCs creados: <span className="font-semibold">{createdN}</span>.
             </>
           ) : (
-            <>No se creÃ³ nada (ya existÃ­an).</>
+            <>No se creó nada (ya existían).</>
           )}
         </div>
       ) : null}
@@ -383,7 +383,7 @@ export default async function InventoryLocationsPage({
 
       {error ? (
         <div className="mt-6 ui-alert ui-alert--error">
-          FallÃ³ el SELECT de LOCs: {error.message}
+          Falló el SELECT de LOCs: {error.message}
         </div>
       ) : null}
 
@@ -397,7 +397,7 @@ export default async function InventoryLocationsPage({
           <Table>
             <thead>
               <tr>
-                <TableHeaderCell>CÃ³digo</TableHeaderCell>
+                <TableHeaderCell>Código</TableHeaderCell>
                 <TableHeaderCell>Zona</TableHeaderCell>
                 <TableHeaderCell>Aisle</TableHeaderCell>
                 <TableHeaderCell>Level</TableHeaderCell>
@@ -410,13 +410,13 @@ export default async function InventoryLocationsPage({
                     {loc.code}
                   </TableCell>
                   <TableCell className="font-mono">
-                    {loc.zone ?? "â€”"}
+                    {loc.zone ?? "—"}
                   </TableCell>
                   <TableCell className="font-mono">
-                    {loc.aisle ?? "â€”"}
+                    {loc.aisle ?? "—"}
                   </TableCell>
                   <TableCell className="font-mono">
-                    {loc.level ?? "â€”"}
+                    {loc.level ?? "—"}
                   </TableCell>
                 </tr>
               ))}
@@ -435,5 +435,7 @@ export default async function InventoryLocationsPage({
     </div>
   );
 }
+
+
 
 

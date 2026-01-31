@@ -181,7 +181,7 @@ export function CountInitialForm({ products, siteId, siteName }: Props) {
               disabled={loading}
               className="ui-btn ui-btn--brand disabled:opacity-50"
             >
-              {loading ? "Guardandoâ€¦" : "Confirmar conteo inicial"}
+              {loading ? "Guardando…" : "Confirmar conteo inicial"}
             </button>
           </div>
         </>
@@ -189,4 +189,5 @@ export function CountInitialForm({ products, siteId, siteName }: Props) {
     </div>
   );
 }
+
 

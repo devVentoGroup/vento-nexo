@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -254,3 +254,4 @@ export function AppSwitcher({ sites = [], activeSiteId = "" }: AppSwitcherProps)
     </div>
   );
 }
+
