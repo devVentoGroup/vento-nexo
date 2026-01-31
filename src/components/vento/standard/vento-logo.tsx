@@ -119,23 +119,31 @@ type VentoLogoProps = {
   className?: string;
   entity?: VentoEntity;
   showText?: boolean;
+  title?: string;
+  subtitle?: string;
 };
 
 export function VentoLogo({
   className,
   entity = "default",
   showText = true,
+  title,
+  subtitle,
 }: VentoLogoProps) {
+  const resolvedTitle = title ?? "Vento OS";
+  const resolvedSubtitle =
+    subtitle ?? (entity === "nexo" ? "NEXO · Inventario" : entity.toUpperCase());
+
   return (
     <div className={`flex items-center gap-3 ${className ?? ""}`}>
-      <VentoIcon entity={entity} className="h-9 w-9" />
+      <VentoIcon entity={entity} className="h-9 w-9 shrink-0" />
       {showText ? (
         <div className="flex flex-col leading-none">
-          <span className="text-[15px] font-semibold tracking-tight text-[var(--ui-text)]">
-            Vento OS
+          <span className="text-[17px] font-semibold tracking-tight text-[var(--ui-text)]">
+            {resolvedTitle}
           </span>
-          <span className="text-xs text-[var(--ui-muted)]">
-            {entity === "nexo" ? "NEXO · Inventario" : entity.toUpperCase()}
+          <span className="text-[12px] text-[var(--ui-muted)]">
+            {resolvedSubtitle}
           </span>
         </div>
       ) : null}

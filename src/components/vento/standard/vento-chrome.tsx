@@ -38,6 +38,20 @@ type VentoChromeProps = {
   activeSiteId: string;
 };
 
+const APP_ENTITY =
+  (process.env.NEXT_PUBLIC_VENTO_ENTITY?.toLowerCase() as
+    | "default"
+    | "nexo"
+    | "fogo"
+    | "pulso"
+    | "viso"
+    | "origo"
+    | "anima"
+    | "aura") ?? "nexo";
+const APP_NAME = process.env.NEXT_PUBLIC_VENTO_APP_NAME ?? "NEXO";
+const APP_TAGLINE =
+  process.env.NEXT_PUBLIC_VENTO_APP_TAGLINE ?? "Logística e inventario operativo";
+
 const NAV_GROUPS: NavGroup[] = [
   {
     label: "Inicio",
@@ -401,7 +415,11 @@ export function VentoChrome({
           }`}
         >
           <div className="flex items-center justify-between">
-            <VentoLogo entity="nexo" />
+            <VentoLogo
+              entity={APP_ENTITY}
+              title="Vento OS"
+              subtitle={`${APP_NAME} · Inventario`}
+            />
             <button
               type="button"
               onClick={() => setMenuOpen(false)}
@@ -460,9 +478,14 @@ export function VentoChrome({
                 >
                   Menú
                 </button>
-                <div className="hidden sm:flex flex-col leading-tight">
-                  <span className="text-sm font-semibold text-[var(--ui-text)]">NEXO</span>
-                  <span className="text-xs text-[var(--ui-muted)]">Logística e inventario operativo</span>
+                <div className="hidden sm:flex items-center gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--ui-surface-2)] ring-1 ring-inset ring-[var(--ui-border)]">
+                    <img src={`/logos/${APP_ENTITY}.svg`} alt={APP_NAME} className="h-6 w-6" />
+                  </div>
+                  <div className="flex flex-col leading-tight">
+                    <span className="text-sm font-semibold text-[var(--ui-text)]">{APP_NAME}</span>
+                    <span className="text-xs text-[var(--ui-muted)]">{APP_TAGLINE}</span>
+                  </div>
                 </div>
               </div>
 
