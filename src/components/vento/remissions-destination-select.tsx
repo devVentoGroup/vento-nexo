@@ -46,7 +46,7 @@ export function RemissionsDestinationSelect({
       name={name}
       defaultValue={value}
       onChange={handleChange}
-      className="h-11 rounded-xl bg-white px-3 py-2 text-sm leading-[1.1] ring-1 ring-inset ring-zinc-300 focus:outline-none"
+      className="ui-input"
     >
       {hasOptions ? null : <option value="">{placeholder ?? "Selecciona una sede"}</option>}
       {options.map((option) => (

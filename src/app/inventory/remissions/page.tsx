@@ -6,6 +6,7 @@ import { requireAppAccess } from "@/lib/auth/guard";
 import { checkPermissionWithRoleOverride } from "@/lib/auth/role-override";
 import { createClient } from "@/lib/supabase/server";
 import { RemissionsDestinationSelect } from "@/components/vento/remissions-destination-select";
+import { RemissionsItems } from "@/components/vento/remissions-items";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 
 export const dynamic = "force-dynamic";
@@ -291,7 +292,16 @@ export default async function RemissionsPage({
         .order("name", { ascending: true })
     : { data: [] as SiteRow[] };
 
-  const fulfillmentSiteRows = (fulfillmentSites ?? []) as SiteRow[];
+  let fulfillmentSiteRows = (fulfillmentSites ?? []) as SiteRow[];
+  if (activeSiteId && fulfillmentSiteRows.length === 0) {
+    const { data: fallbackSites } = await supabase
+      .from("sites")
+      .select("id,name,site_type")
+      .eq("site_type", "production_center")
+      .order("name", { ascending: true })
+      .limit(50);
+    fulfillmentSiteRows = (fallbackSites ?? []) as SiteRow[];
+  }
   const requestedFromSiteId = sp.from_site_id ? String(sp.from_site_id).trim() : "";
   const selectedFromSiteId =
     requestedFromSiteId && fulfillmentSiteRows.some((site) => site.id === requestedFromSiteId)
@@ -371,8 +381,8 @@ export default async function RemissionsPage({
     <div className="w-full">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Remisiones</h1>
-          <p className="mt-2 text-sm leading-6 text-zinc-600">
+          <h1 className="text-2xl font-semibold tracking-tight text-[var(--ui-text)]">Remisiones</h1>
+          <p className="mt-2 text-sm leading-6 text-[var(--ui-muted)]">
             Flujo interno entre sedes. Satelites solicitan, bodega prepara y se recibe en destino.
           </p>
         </div>
@@ -395,8 +405,8 @@ export default async function RemissionsPage({
       <div className="mt-6 ui-panel">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-sm font-semibold text-zinc-900">Sede activa</div>
-            <div className="mt-1 text-xs text-zinc-500">
+            <div className="text-sm font-semibold text-[var(--ui-text)]">Sede activa</div>
+            <div className="mt-1 text-xs text-[var(--ui-muted)]">
               Vista:{" "}
               {viewMode === "all"
                 ? "Todas las sedes"
@@ -409,7 +419,7 @@ export default async function RemissionsPage({
             <select
               name="site_id"
               defaultValue={activeSiteId}
-              className="h-10 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+              className="ui-input"
             >
               {canViewAll ? <option value="">Todas las sedes</option> : null}
               {employeeSiteRows.map((row) => {
@@ -452,14 +462,14 @@ export default async function RemissionsPage({
 
           <div className="grid gap-3 md:grid-cols-2">
             <div className="flex flex-col gap-1 text-sm text-zinc-600">
-              <span className="text-xs font-semibold">Sede origen (satelite)</span>
-              <div className="h-11 rounded-xl bg-zinc-50 px-3 text-sm text-zinc-800 ring-1 ring-inset ring-zinc-200">
+              <span className="ui-label">Sede origen (satelite)</span>
+              <div className="ui-input flex items-center">
                 {activeSiteName}
               </div>
             </div>
 
             <label className="flex flex-col gap-1 text-sm text-zinc-600">
-              <span className="text-xs font-semibold">Sede destino (Centro de produccion / Bodega)</span>
+              <span className="ui-label">Sede destino (Centro de produccion / Bodega)</span>
               <RemissionsDestinationSelect
                 name="from_site_id"
                 activeSiteId={activeSiteId}
@@ -493,51 +503,10 @@ export default async function RemissionsPage({
             </label>
           </div>
 
-          <div className="mt-4 text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          <div className="mt-4 text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
             Items solicitados
           </div>
-          <div className="space-y-3">
-            {Array.from({ length: 5 }).map((_, idx) => (
-              <div
-                key={`item-${idx}`}
-                className="grid gap-3 rounded-xl border border-zinc-200 p-3 md:grid-cols-4"
-              >
-                <select
-                  name="item_product_id"
-                  className="h-11 rounded-xl bg-white px-3 py-2 text-sm leading-[1.1] ring-1 ring-inset ring-zinc-200 focus:outline-none"
-                >
-                  <option value="">Selecciona producto</option>
-                  {productRows.map((product) => (
-                    <option key={product.id} value={product.id}>
-                      {product.name ?? product.id}
-                      {product.unit ? ` (${product.unit})` : ""}
-                    </option>
-                  ))}
-                </select>
-                <input
-                  name="item_quantity"
-                  placeholder="Cantidad"
-                  className="h-11 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-200 focus:outline-none"
-                />
-                <input
-                  name="item_unit"
-                  placeholder="Unidad (ej: kg, un)"
-                  className="h-11 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-200 focus:outline-none"
-                />
-                <select
-                  name="item_area_kind"
-                  className="h-11 rounded-xl bg-white px-3 py-2 text-sm leading-[1.1] ring-1 ring-inset ring-zinc-200 focus:outline-none"
-                >
-                  <option value="">Area (opcional)</option>
-                  {areaOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </div>
-            ))}
-          </div>
+          <RemissionsItems products={productRows} areaOptions={areaOptions} />
           <button className="ui-btn ui-btn--brand">
             Crear remision
           </button>
@@ -546,10 +515,10 @@ export default async function RemissionsPage({
       </div>
 
       <div className="mt-6 ui-panel">
-        <div className="text-sm font-semibold text-zinc-900">
+        <div className="text-sm font-semibold text-[var(--ui-text)]">
           {viewMode === "bodega" ? "Solicitudes para preparar" : "Solicitudes enviadas"}
         </div>
-        <div className="mt-1 text-sm text-zinc-600">
+        <div className="mt-1 text-sm text-[var(--ui-muted)]">
           Mostrando hasta 50 solicitudes recientes.
         </div>
 

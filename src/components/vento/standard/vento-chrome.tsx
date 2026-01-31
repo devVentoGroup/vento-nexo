@@ -6,6 +6,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import { AppSwitcher } from "./app-switcher";
 import { ProfileMenu } from "./profile-menu";
+import { VentoLogo } from "./vento-logo";
 import { createClient } from "@/lib/supabase/client";
 
 type SiteOption = {
@@ -274,13 +275,15 @@ function SidebarLink({ item, active, onNavigate }: { item: NavItem; active: bool
       onClick={onNavigate}
       className={`ui-sidebar-item ${active ? "active" : ""}`}
     >
-      <span className="flex items-center gap-2 text-base font-semibold">
+      <span className="ui-sidebar-item-icon">
         <Icon name={item.icon} />
-        {item.label}
       </span>
-      {item.description ? (
-        <span className="text-sm leading-5 text-[var(--ui-muted)]">{item.description}</span>
-      ) : null}
+      <span className="ui-sidebar-item-content">
+        <span className="ui-sidebar-item-title">{item.label}</span>
+        {item.description ? (
+          <span className="ui-sidebar-item-desc">{item.description}</span>
+        ) : null}
+      </span>
     </Link>
   );
 }
@@ -398,10 +401,7 @@ export function VentoChrome({
           }`}
         >
           <div className="flex items-center justify-between">
-            <div className="flex flex-col leading-tight">
-              <span className="text-sm font-semibold text-[var(--ui-text)]">Vento OS</span>
-              <span className="text-xs text-[var(--ui-muted)]">NEXO · Inventario</span>
-            </div>
+            <VentoLogo entity="nexo" />
             <button
               type="button"
               onClick={() => setMenuOpen(false)}
