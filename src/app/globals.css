@@ -143,6 +143,52 @@ body {
   color: var(--ui-muted);
 }
 
+.ui-h1 {
+  font-size: 1.75rem;
+  line-height: 1.2;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ui-text);
+}
+
+.ui-h2 {
+  font-size: 1.25rem;
+  line-height: 1.3;
+  font-weight: 600;
+  color: var(--ui-text);
+}
+
+.ui-h3 {
+  font-size: 1.05rem;
+  line-height: 1.35;
+  font-weight: 600;
+  color: var(--ui-text);
+}
+
+.ui-body {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--ui-text);
+}
+
+.ui-body-muted {
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--ui-muted);
+}
+
+.ui-caption {
+  font-size: 0.8rem;
+  line-height: 1.4;
+  color: var(--ui-muted);
+}
+
+.ui-code {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  font-family: var(--font-geist-mono, ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace);
+}
+
 .ui-label {
   font-size: 0.8rem;
   font-weight: 600;

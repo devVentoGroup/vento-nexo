@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState } from "react";
 
@@ -10,9 +10,9 @@ type Props = {
 type SiteCode = "CP" | "SAU" | "VCF" | "VGR";
 
 const SITES: Array<{ code: SiteCode; label: string }> = [
-  { code: "CP", label: "Centro de Producción" },
+  { code: "CP", label: "Centro de ProducciÃ³n" },
   { code: "SAU", label: "Saudo" },
-  { code: "VCF", label: "Vento Café" },
+  { code: "VCF", label: "Vento CafÃ©" },
   { code: "VGR", label: "Vento Group (Oficina)" },
 ];
 
@@ -42,13 +42,13 @@ export function LpnCreateForm({ defaultSiteId, action }: Props) {
     <div className="ui-panel">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="text-sm font-semibold text-zinc-900">Crear LPN</div>
-          <div className="mt-1 text-sm text-zinc-600">
+          <div className="ui-body font-semibold">Crear LPN</div>
+          <div className="mt-1 ui-body-muted">
             Formato: <span className="font-mono">LPN-SEDE-AAMM-SEQ</span>
           </div>
         </div>
 
-        <div className="rounded-xl bg-zinc-50 px-3 py-2 text-xs text-zinc-700">
+        <div className="rounded-xl bg-zinc-50 px-3 py-2 ui-caption">
           Preview: <span className="font-mono text-zinc-900">{preview}</span>
         </div>
       </div>
@@ -58,14 +58,14 @@ export function LpnCreateForm({ defaultSiteId, action }: Props) {
           <input type="hidden" name="site_id" value={defaultSiteId} />
         ) : (
           <label className="md:col-span-2 flex flex-col gap-1">
-            <span className="text-xs font-semibold text-zinc-700">Site ID (requerido)</span>
+            <span className="ui-caption font-semibold">Site ID (requerido)</span>
             <input
               value={manualSiteId}
               onChange={(e) => setManualSiteId(e.target.value)}
               name="site_id"
               required
               placeholder="uuid del site"
-              className="h-11 rounded-xl border border-zinc-200 bg-white px-4 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+              className="h-11 rounded-xl border border-zinc-200 bg-white px-4 ui-body outline-none focus:border-zinc-400"
             />
           </label>
         )}
@@ -73,11 +73,11 @@ export function LpnCreateForm({ defaultSiteId, action }: Props) {
         <input type="hidden" name="sede_code" value={sede} />
 
         <label className="flex flex-col gap-1">
-          <span className="text-xs font-semibold text-zinc-700">SEDE</span>
+          <span className="ui-caption font-semibold">SEDE</span>
           <select
             value={sede}
             onChange={(e) => setSede(e.target.value as SiteCode)}
-            className="h-11 rounded-xl border border-zinc-200 bg-white px-3 text-sm text-zinc-900 outline-none focus:border-zinc-400"
+            className="h-11 rounded-xl border border-zinc-200 bg-white px-3 ui-body outline-none focus:border-zinc-400"
           >
             {SITES.map((o) => (
               <option key={o.code} value={o.code}>
@@ -86,14 +86,14 @@ export function LpnCreateForm({ defaultSiteId, action }: Props) {
             ))}
           </select>
           <div className="text-[11px] text-zinc-500">
-            Código: <span className="font-mono">{sede}</span> · AAMM: <span className="font-mono">{yymm}</span>
+            CÃ³digo: <span className="font-mono">{sede}</span> Â· AAMM: <span className="font-mono">{yymm}</span>
           </div>
         </label>
 
         <div className="ui-alert ui-alert--neutral">
           <div className="font-semibold text-zinc-900">Notas</div>
-          <div className="mt-1 text-sm text-zinc-600">
-            El consecutivo (SEQ) se calcula automáticamente al crear.
+          <div className="mt-1 ui-body-muted">
+            El consecutivo (SEQ) se calcula automÃ¡ticamente al crear.
           </div>
         </div>
 
@@ -107,10 +107,12 @@ export function LpnCreateForm({ defaultSiteId, action }: Props) {
       </form>
 
       {defaultSiteId ? (
-        <div className="mt-3 text-xs text-zinc-500">
+        <div className="mt-3 ui-caption">
           Site detectado: <span className="font-mono">{defaultSiteId}</span>
         </div>
       ) : null}
     </div>
   );
 }
+
+

@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 
 type SearchParams = { returnTo?: string };
 
@@ -22,14 +22,14 @@ export default async function NoAccessPage({
   return (
     <div className="mx-auto w-full max-w-2xl px-6 py-16">
       <div className="rounded-2xl border border-zinc-200 bg-white p-6 shadow-sm">
-        <div className="text-sm font-semibold text-zinc-500">Vento OS</div>
-        <h1 className="mt-2 text-2xl font-semibold text-zinc-900">No tienes permisos</h1>
-        <p className="mt-2 text-sm text-zinc-600">
+        <div className="ui-caption">Vento OS</div>
+        <h1 className="mt-2 ui-h1">No tienes permisos</h1>
+        <p className="mt-2 ui-body-muted">
           Tu usuario esta autenticado, pero no tiene acceso a este modulo.
         </p>
 
         {returnTo ? (
-          <div className="mt-3 text-xs text-zinc-500">
+          <div className="mt-3 ui-caption">
             Ruta solicitada: <span className="font-mono">{returnTo}</span>
           </div>
         ) : null}
@@ -52,3 +52,4 @@ export default async function NoAccessPage({
     </div>
   );
 }
+

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -86,8 +86,8 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
       ) : null}
 
       <form onSubmit={handleSubmit} className="ui-panel">
-        <div className="text-sm font-semibold text-zinc-900">Nuevo ajuste de inventario</div>
-        <div className="mt-1 text-sm text-zinc-600">
+        <div className="ui-body font-semibold">Nuevo ajuste de inventario</div>
+        <div className="mt-1 ui-body-muted">
           Sede: <strong>{siteName}</strong>. Registra un ajuste manual con motivo y trazabilidad.
         </div>
 
@@ -141,11 +141,11 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
                 className="h-11 flex-1 rounded-xl border border-zinc-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
               />
               {selectedProduct?.unit ? (
-                <span className="text-sm text-zinc-600">{selectedProduct.unit}</span>
+                <span className="ui-body-muted">{selectedProduct.unit}</span>
               ) : null}
             </div>
-            <div className="mt-1 text-xs text-zinc-500">
-              Usa números positivos (+) para aumentar stock, negativos (-) para disminuir.
+            <div className="mt-1 ui-caption">
+              Usa nÃºmeros positivos (+) para aumentar stock, negativos (-) para disminuir.
             </div>
             {deltaNum != null && deltaNum !== 0 && productId ? (
               <div className="mt-2 text-sm font-medium text-zinc-700">
@@ -165,12 +165,12 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
             <textarea
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              placeholder="Ej: Merma detectada en inventario físico, Corrección por error de conteo, Producto dañado..."
+              placeholder="Ej: Merma detectada en inventario fÃ­sico, CorrecciÃ³n por error de conteo, Producto daÃ±ado..."
               required
               rows={3}
               className="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
             />
-            <div className="mt-1 text-xs text-zinc-500">
+            <div className="mt-1 ui-caption">
               Describe el motivo del ajuste. Este campo es obligatorio para trazabilidad.
             </div>
           </label>
@@ -181,12 +181,12 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
             <textarea
               value={evidence}
               onChange={(e) => setEvidence(e.target.value)}
-              placeholder="Ej: Foto adjunta en sistema, Nota del supervisor, Número de reporte..."
+              placeholder="Ej: Foto adjunta en sistema, Nota del supervisor, NÃºmero de reporte..."
               rows={2}
               className="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
             />
-            <div className="mt-1 text-xs text-zinc-500">
-              Información adicional que respalde el ajuste (opcional).
+            <div className="mt-1 ui-caption">
+              InformaciÃ³n adicional que respalde el ajuste (opcional).
             </div>
           </label>
         </div>
@@ -197,7 +197,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
             disabled={!canSubmit}
             className="ui-btn ui-btn--brand disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? "Guardando…" : "Registrar ajuste"}
+            {loading ? "Guardandoâ€¦" : "Registrar ajuste"}
           </button>
           <a
             href="/inventory/adjust"
@@ -216,3 +216,4 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
     </div>
   );
 }
+

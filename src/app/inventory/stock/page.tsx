@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 
 import { requireAppAccess } from "@/lib/auth/guard";
@@ -211,8 +211,8 @@ export default async function InventoryStockPage({
     <div className="w-full">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Stock por sede</h1>
-          <p className="mt-2 text-sm leading-6 text-zinc-600">
+          <h1 className="ui-h1">Stock por sede</h1>
+          <p className="mt-2 ui-body-muted">
             Consulta el inventario actual por SKU y sede. Esta vista respeta los permisos por sitio.
           </p>
         </div>
@@ -252,7 +252,7 @@ export default async function InventoryStockPage({
       ) : null}
 
       <div className="mt-6 ui-panel">
-        <div className="text-sm font-semibold text-zinc-900">Filtros</div>
+        <div className="ui-h3">Filtros</div>
         <form method="get" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label className="flex flex-col gap-1">
             <span className="ui-label">Sede</span>
@@ -343,12 +343,12 @@ export default async function InventoryStockPage({
       <div className="mt-6 ui-panel">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <div className="text-sm font-semibold text-zinc-900">Stock</div>
-            <div className="mt-1 text-sm text-zinc-600">
+            <div className="ui-h3">Stock</div>
+            <div className="mt-1 ui-body-muted">
               Mostrando hasta 500 productos.
             </div>
           </div>
-          <div className="text-xs text-zinc-600">
+          <div className="ui-caption">
             Items: {productRows.length} | Negativos: {negativeCount}
           </div>
         </div>
@@ -386,7 +386,7 @@ export default async function InventoryStockPage({
                 const trackLabel = inventoryProfile?.track_inventory ? "si" : "no";
 
                 return (
-                  <tr key={product.id} className="text-sm text-zinc-800">
+                  <tr key={product.id} className="ui-body">
                     <TableCell>{product.name}</TableCell>
                     <TableCell className="font-mono">{sku}</TableCell>
                     <TableCell>{categoryLabel}</TableCell>
@@ -419,3 +419,5 @@ export default async function InventoryStockPage({
     </div>
   );
 }
+
+

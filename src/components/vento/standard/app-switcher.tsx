@@ -36,7 +36,7 @@ function DotsIcon() {
 }
 
 function StatusPill({ status }: { status: AppStatus }) {
-  const label = status === "active" ? "Activo" : "Pr+�ximamente";
+  const label = status === "active" ? "Activo" : "Próximamente";
   const cls =
     status === "active"
       ? "bg-[var(--ui-brand-soft)] text-[var(--ui-brand-600)] ring-[var(--ui-brand-600)]"
@@ -101,7 +101,7 @@ export function AppSwitcher({ sites = [], activeSiteId = "" }: AppSwitcherProps)
       {
         id: "viso",
         name: "VISO",
-        description: "Gerencia y auditor+�a.",
+        description: "Gerencia y auditoría.",
         href: "https://viso.ventogroup.co",
         status: "soon",
         group: "Interno",
@@ -109,7 +109,7 @@ export function AppSwitcher({ sites = [], activeSiteId = "" }: AppSwitcherProps)
       {
         id: "nexo",
         name: "NEXO",
-        description: "Inventario y log+�stica.",
+        description: "Inventario y logística.",
         href: "https://nexo.ventogroup.co",
         status: "active",
         group: "Interno",
@@ -117,7 +117,7 @@ export function AppSwitcher({ sites = [], activeSiteId = "" }: AppSwitcherProps)
       {
         id: "fogo",
         name: "FOGO",
-        description: "Recetas y producci+�n.",
+        description: "Recetas y producción.",
         href: "https://fogo.ventogroup.co",
         status: "soon",
         group: "Interno",

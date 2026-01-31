@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Script from "next/script";
@@ -20,16 +20,16 @@ type Preset = {
   heightMm: number;
   columns: number;
 
-  // Defaults de simbolog+?a
+  // Defaults de simbología
   defaultBarcodeKind: BarcodeKind;
 
   // Para Code128 (alto en dots)
   defaultCode128HeightDots: number;
 
-  // Para DataMatrix (tama+?o de m+?dulo en dots)
+  // Para DataMatrix (tamaño de módulo en dots)
   defaultDmModuleDots: number;
 
-  // Tipo l+?gico (para codificar VENTO|TYPE|CODE)
+  // Tipo lógico (para codificar VENTO|TYPE|CODE)
   defaultType: "LOC" | "LPN" | "SKU" | "PROD";
 };
 
@@ -56,7 +56,7 @@ function mmToDots(mm: number, dpi: number) {
 }
 
 function safeText(s: string) {
-  // Evitamos caracteres raros para ZPL; si necesitas m+?s, luego metemos ^FH.
+  // Evitamos caracteres raros para ZPL; si necesitas más, luego metemos ^FH.
   return String(s ?? "").replace(/[\r\n]+/g, " ").trim();
 }
 
@@ -73,7 +73,7 @@ function buildZplHeader(opts: {
     `^LL${heightDots}`,
     // Label Home (offset)
     `^LH${offsetXDots},${offsetYDots}`,
-    "^CI28", // UTF-8-ish para textos (sin garant+?a total, pero ayuda)
+    "^CI28", // UTF-8-ish para textos (sin garantía total, pero ayuda)
   ].join("\n");
 }
 
@@ -89,7 +89,7 @@ function buildCode128Field(opts: {
 }) {
   const { x, y, heightDots, data } = opts;
   const payload = safeText(data);
-  // Importante: sin l+?nea de interpretaci+?n (N) para que se vea limpio
+  // Importante: sin línea de interpretación (N) para que se vea limpio
   return [
     "^BY2,2," + heightDots,
     `^FO${x},${y}`,
@@ -103,7 +103,7 @@ function buildDataMatrixField(opts: { x: number; y: number; moduleDots: number; 
   const payload = safeText(data);
   // ^BX: Data Matrix (ECC 200)
   // Formato: ^BXo,h,s,c,r,f
-  // o=N, h=m+?dulo (dots), s=200 (ECC200), c/r=0 auto, f=6 default
+  // o=N, h=módulo (dots), s=200 (ECC200), c/r=0 auto, f=6 default
   return [`^FO${x},${y}`, `^BXN,${moduleDots},200,0,0,6`, `^FD${payload}^FS`].join("\n");
 }
 
@@ -152,7 +152,7 @@ function buildSingleLabelZpl(opts: {
   type: "LOC" | "LPN" | "SKU" | "PROD";
   title: string; // arriba
   code: string; // humano abajo
-  note?: string; // segunda l+?nea arriba
+  note?: string; // segunda línea arriba
 }) {
   const { preset, dpi, offsetXDots, offsetYDots, barcodeKind, code128HeightDots, dmModuleDots, type } = opts;
 
@@ -162,17 +162,17 @@ function buildSingleLabelZpl(opts: {
   const header = buildZplHeader({ widthDots, heightDots, offsetXDots, offsetYDots });
 
   // Layout simple y limpio:
-  // - T+?tulo arriba
+  // - Título arriba
   // - Nota debajo
   // - Barcode (DM o 1D) centrado-ish
-  // - C+?digo humano abajo
+  // - Código humano abajo
   const title = safeText(opts.title);
   const note = safeText(opts.note ?? "");
   const code = safeText(opts.code);
 
   const encoded = encodeVento(type, code);
 
-  // M+?rgenes
+  // Márgenes
   const marginX = 18;
   const yTitle = 12;
   const yNote = 38;
@@ -185,7 +185,7 @@ function buildSingleLabelZpl(opts: {
   // Ajuste de layout por preset:
   const yBarcode = isLoc70 ? 140 : 70;
 
-  // Centramos DataMatrix con una estimaci+?n de tama+?o (mejor que dejarlo pegado al margen)
+  // Centramos DataMatrix con una estimación de tamaño (mejor que dejarlo pegado al margen)
   const dmSizeGuess = dmModuleDots * 26;
   const dmX = Math.max(marginX, Math.floor((widthDots - dmSizeGuess) / 2));
 
@@ -193,7 +193,7 @@ function buildSingleLabelZpl(opts: {
   parts.push(header);
 
   // Texto arriba (con ancho fijo para que NO se salga del label)
-  // LOC 50x70: nota (descripci+?n) m+?s grande
+  // LOC 50x70: nota (descripción) más grande
   parts.push(
     buildTextBlock({
       x: marginX,
@@ -229,7 +229,7 @@ function buildSingleLabelZpl(opts: {
     parts.push(buildCode128Field({ x: marginX, y: yBarcode, heightDots: code128HeightDots, data: encoded }));
   }
 
-  // C+?digo humano (centrado y con ancho fijo para que NO se vaya al borde)
+  // Código humano (centrado y con ancho fijo para que NO se vaya al borde)
   parts.push(
     buildTextBlock({
       x: marginX,
@@ -305,7 +305,7 @@ function normalizeDevices(devsRaw: any): any[] {
   if (Array.isArray(devsRaw)) return devsRaw;
   if (Array.isArray(devsRaw?.devices)) return devsRaw.devices;
   if (Array.isArray(devsRaw?.device)) return devsRaw.device;
-  // A veces viene como objeto con keys num+?ricas
+  // A veces viene como objeto con keys numéricas
   if (devsRaw && typeof devsRaw === "object") {
     const vals = Object.values(devsRaw);
     if (vals.every((v) => typeof v === "object")) return vals as any[];
@@ -315,7 +315,7 @@ function normalizeDevices(devsRaw: any): any[] {
 
 function PrintingJobsContent() {
   const searchParams = useSearchParams();
-  // Si tus scripts ya est+?n en otro path, ajusta aqu+?:
+  // Si tus scripts ya están en otro path, ajusta aquí:
   const BROWSERPRINT_CORE = "/zebra/BrowserPrint.min.js";
   const BROWSERPRINT_ZEBRA = "/zebra/BrowserPrint-Zebra.min.js";
   // Endpoints (ajusta si tus rutas reales son distintas)
@@ -422,7 +422,7 @@ function PrintingJobsContent() {
     setCode128HeightDots(preset.defaultCode128HeightDots);
     setDmModuleDots(preset.defaultDmModuleDots);
 
-    // Ajuste autom+?tico de t+?tulo seg+?n tipo
+    // Ajuste automático de título según tipo
     if (preset.defaultType === "LOC") setTitle("VENTO -? LOC");
     if (preset.defaultType === "LPN") setTitle("VENTO -? LPN");
     if (preset.defaultType === "SKU") setTitle("VENTO -? SKU");
@@ -506,11 +506,11 @@ function PrintingJobsContent() {
 
   function requireReady() {
     if (!enablePrinting) {
-      setStatus("Impresi+?n deshabilitada.");
+      setStatus("Impresión deshabilitada.");
       return false;
     }
     if (!browserPrintOk || !window.BrowserPrint) {
-      setStatus("BrowserPrint no est+? listo. Verifica scripts/servicio.");
+      setStatus("BrowserPrint no está listo. Verifica scripts/servicio.");
       return false;
     }
     if (!deviceRef.current) {
@@ -523,7 +523,7 @@ function PrintingJobsContent() {
   function detectPrinters() {
     setStatus("");
     if (!window.BrowserPrint) {
-      setStatus("BrowserPrint no est+? disponible.");
+      setStatus("BrowserPrint no está disponible.");
       return;
     }
 
@@ -555,7 +555,7 @@ function PrintingJobsContent() {
     setStatus("");
     const dev = devices.find((d) => String(d?.uid) === String(selectedUid));
     if (!dev) {
-      setStatus("Selecciona una impresora v+?lida.");
+      setStatus("Selecciona una impresora válida.");
       return;
     }
     deviceRef.current = dev;
@@ -566,28 +566,28 @@ function PrintingJobsContent() {
     if (!requireReady()) return;
 
     const dev = deviceRef.current;
-    setStatus("Enviando impresi+?n...");
+    setStatus("Enviando impresión...");
 
     try {
       dev.send(
         zpl,
         () => {
-          setStatus("Impresi+?n enviada.");
+          setStatus("Impresión enviada.");
         },
         (err: any) => {
-          // Ojo: a veces imprime y a+?n as+? el driver devuelve error de ??connection closed???.
+          // Ojo: a veces imprime y aún así el driver devuelve error de ??connection closed???.
           setStatus(`Error al imprimir: ${String(err?.message ?? err)}`);
         }
       );
     } catch (e: any) {
-      setStatus(`Excepci+?n al imprimir: ${String(e?.message ?? e)}`);
+      setStatus(`Excepción al imprimir: ${String(e?.message ?? e)}`);
     }
   }
 
   function printAll() {
     if (!preset) return;
     if (!parsedQueue.length) {
-      setStatus("Cola vac+?a.");
+      setStatus("Cola vacía.");
       return;
     }
 
@@ -778,11 +778,11 @@ function PrintingJobsContent() {
   function addSelectedLocToQueue(mode: "replace" | "append") {
     const loc = locs.find((l) => l.code === selectedLocCode);
     if (!loc) {
-      setStatus("Selecciona un LOC v+?lido.");
+      setStatus("Selecciona un LOC válido.");
       return;
     }
 
-    // Auto (est+?ndar): LOC siempre es 50x70 + DataMatrix
+    // Auto (estándar): LOC siempre es 50x70 + DataMatrix
     if (presetId !== "LOC_50x70") {
       setPresetId("LOC_50x70");
     }
@@ -805,11 +805,11 @@ function PrintingJobsContent() {
   function addSelectedLpnToQueue(mode: "replace" | "append") {
     const lpn = lpns.find((l) => l.code === selectedLpnCode);
     if (!lpn) {
-      setStatus("Selecciona un LPN v+?lido.");
+      setStatus("Selecciona un LPN válido.");
       return;
     }
 
-    // Auto (est+?ndar): LPN siempre es 50x25 + Code128
+    // Auto (estándar): LPN siempre es 50x25 + Code128
     if (presetId !== "LPN_50x25") {
       setPresetId("LPN_50x25");
     }
@@ -836,9 +836,9 @@ function PrintingJobsContent() {
       <Script src={BROWSERPRINT_ZEBRA} strategy="afterInteractive" />
 
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight">Impresi+?n</h1>
-        <p className="mt-2 text-sm text-zinc-600">
-          Zebra + BrowserPrint. Para escaneo can+?nico, el c+?digo impreso codifica{" "}
+        <h1 className="ui-h1">Impresión</h1>
+        <p className="mt-2 ui-body-muted">
+          Zebra + BrowserPrint. Para escaneo canónico, el código impreso codifica{" "}
           <span className="font-mono">VENTO|TYPE|CODE</span>. Para LOC usamos DataMatrix por defecto.
         </p>
       </div>
@@ -854,7 +854,7 @@ function PrintingJobsContent() {
           </button>
 
           <button
-            className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
+            className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
             onClick={connectSelected}
             type="button"
           >
@@ -862,7 +862,7 @@ function PrintingJobsContent() {
           </button>
 
           <button
-            className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
+            className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
             onClick={printAll}
             type="button"
           >
@@ -870,14 +870,14 @@ function PrintingJobsContent() {
           </button>
 
           <button
-            className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
+            className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
             onClick={printAlignmentTest}
             type="button"
           >
-            Prueba alineaci+?n
+            Prueba alineación
           </button>
 
-          <div className="ml-auto flex items-center gap-3 text-sm text-zinc-600">
+          <div className="ml-auto flex items-center gap-3 ui-body-muted">
             <span>
               BrowserPrint: <span className="font-medium">{browserPrintOk ? "OK" : "NO"}</span>
             </span>
@@ -900,29 +900,29 @@ function PrintingJobsContent() {
           </div>
         </div>
 
-        <label className="mt-3 inline-flex items-center gap-2 text-sm text-zinc-700">
+        <label className="mt-3 inline-flex items-center gap-2 ui-body">
           <input
             type="checkbox"
             checked={enablePrinting}
             onChange={(e) => setEnablePrinting(e.target.checked)}
           />
-          Habilitar impresi+?n
+          Habilitar impresión
         </label>
 
         {status ? (
-          <div className="mt-3 rounded-xl bg-zinc-50 px-4 py-3 text-sm text-zinc-700">{status}</div>
+          <div className="mt-3 rounded-xl bg-zinc-50 px-4 py-3 ui-body">{status}</div>
         ) : null}
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
         <div className="ui-panel">
-          <div className="text-sm font-semibold text-zinc-900">Configuraci+?n</div>
+          <div className="ui-h3">Configuración</div>
 
           <div className="mt-4 grid grid-cols-2 gap-4">
             <div>
-              <div className="text-xs font-medium text-zinc-600">Preset</div>
+              <div className="ui-caption font-medium">Preset</div>
               <div className="col-span-2">
-                <div className="text-xs font-medium text-zinc-600">Tipo r+?pido</div>
+                <div className="ui-caption font-medium">Tipo rápido</div>
                 <div className="mt-1 inline-flex overflow-hidden rounded-xl border border-zinc-200 bg-white">
                   <button
                     type="button"
@@ -957,8 +957,8 @@ function PrintingJobsContent() {
                     PROD
                   </button>
                 </div>
-                <div className="mt-2 text-xs text-zinc-500">
-                  Esto solo cambia el preset recomendado. La cola es la que define qu+? se imprime.
+                <div className="mt-2 ui-caption">
+                  Esto solo cambia el preset recomendado. La cola es la que define qué se imprime.
                 </div>
               </div>
               <select
@@ -975,7 +975,7 @@ function PrintingJobsContent() {
             </div>
 
             <div>
-              <div className="text-xs font-medium text-zinc-600">DPI</div>
+              <div className="ui-caption font-medium">DPI</div>
               <select
                 className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
                 value={dpi}
@@ -987,7 +987,7 @@ function PrintingJobsContent() {
             </div>
 
             <div>
-              <div className="text-xs font-medium text-zinc-600">Offset X (mm)</div>
+              <div className="ui-caption font-medium">Offset X (mm)</div>
               <input
                 className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
                 value={offsetXmm}
@@ -996,7 +996,7 @@ function PrintingJobsContent() {
             </div>
 
             <div>
-              <div className="text-xs font-medium text-zinc-600">Offset Y (mm)</div>
+              <div className="ui-caption font-medium">Offset Y (mm)</div>
               <input
                 className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
                 value={offsetYmm}
@@ -1005,7 +1005,7 @@ function PrintingJobsContent() {
             </div>
 
             <div className="col-span-2">
-              <div className="text-xs font-medium text-zinc-600">T+?tulo</div>
+              <div className="ui-caption font-medium">Título</div>
               <input
                 className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
                 value={title}
@@ -1014,12 +1014,12 @@ function PrintingJobsContent() {
             </div>
 
             <div>
-              <div className="text-xs font-medium text-zinc-600">Tipo de c+?digo</div>
+              <div className="ui-caption font-medium">Tipo de código</div>
               <select
                 className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm opacity-70"
                 value={barcodeKind}
                 disabled
-                title="Est+?ndar bloqueado por preset"
+                title="Estándar bloqueado por preset"
               >
                 <option value="datamatrix">DataMatrix (2D)</option>
                 <option value="code128">Code128 (1D)</option>
@@ -1028,7 +1028,7 @@ function PrintingJobsContent() {
 
             {barcodeKind === "datamatrix" ? (
               <div>
-                <div className="text-xs font-medium text-zinc-600">M+?dulo DM (dots)</div>
+                <div className="ui-caption font-medium">Módulo DM (dots)</div>
                 <input
                   className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
                   value={dmModuleDots}
@@ -1037,7 +1037,7 @@ function PrintingJobsContent() {
               </div>
             ) : (
               <div>
-                <div className="text-xs font-medium text-zinc-600">Alto Code128 (dots)</div>
+                <div className="ui-caption font-medium">Alto Code128 (dots)</div>
                 <input
                   className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
                   value={code128HeightDots}
@@ -1046,13 +1046,13 @@ function PrintingJobsContent() {
               </div>
             )}
 
-            <div className="col-span-2 text-xs text-zinc-500">
-              Recomendaci+?n: usa <span className="font-medium">Prueba alineaci+?n</span> y ajusta Offset X/Y hasta que el
+            <div className="col-span-2 ui-caption">
+              Recomendación: usa <span className="font-medium">Prueba alineación</span> y ajusta Offset X/Y hasta que el
               marco caiga exactamente.
             </div>
           </div>
 
-          <div className="mt-5 rounded-xl bg-zinc-50 p-4 text-xs text-zinc-600">
+          <div className="mt-5 rounded-xl bg-zinc-50 p-4 ui-caption">
             <div className="font-semibold text-zinc-700">Nota clave</div>
             <div className="mt-1">
               En LOC (DataMatrix), el contenido codificado es: <span className="font-mono">VENTO|LOC|{"<CODE>"}</span>.
@@ -1063,11 +1063,11 @@ function PrintingJobsContent() {
           <div className="mt-6">
             {preset.defaultType === "LOC" ? (
               <>
-                <div className="text-sm font-semibold text-zinc-900">Seleccionar LOC</div>
+                <div className="ui-h3">Seleccionar LOC</div>
 
                 <div className="mt-3 flex items-center gap-3">
                   <button
-                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
+                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
                     onClick={loadLocs}
                     type="button"
                   >
@@ -1076,7 +1076,7 @@ function PrintingJobsContent() {
 
                   <input
                     className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
-                    placeholder="Buscar por c+?digo o descripci+?n..."
+                    placeholder="Buscar por código o descripción..."
                     value={locSearch}
                     onChange={(e) => setLocSearch(e.target.value)}
                   />
@@ -1097,7 +1097,7 @@ function PrintingJobsContent() {
                   </select>
 
                   <button
-                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
+                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
                     onClick={() => addSelectedLocToQueue("replace")}
                     type="button"
                   >
@@ -1105,7 +1105,7 @@ function PrintingJobsContent() {
                   </button>
 
                   <button
-                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
+                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
                     onClick={() => addSelectedLocToQueue("append")}
                     type="button"
                   >
@@ -1113,19 +1113,19 @@ function PrintingJobsContent() {
                   </button>
                 </div>
 
-                <div className="mt-2 text-xs text-zinc-500">
-                  Al escoger un LOC, el preset cambia autom+?ticamente a LOC 50x70 (DataMatrix).
+                <div className="mt-2 ui-caption">
+                  Al escoger un LOC, el preset cambia automáticamente a LOC 50x70 (DataMatrix).
                 </div>
               </>
             ) : null}
 
             {preset.defaultType === "LPN" ? (
               <>
-                <div className="text-sm font-semibold text-zinc-900">Seleccionar LPN</div>
+                <div className="ui-h3">Seleccionar LPN</div>
 
                 <div className="mt-3 flex items-center gap-3">
                   <button
-                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
+                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
                     onClick={loadLpns}
                     type="button"
                   >
@@ -1134,7 +1134,7 @@ function PrintingJobsContent() {
 
                   <input
                     className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
-                    placeholder="Buscar por c+?digo, LOC o descripci+?n..."
+                    placeholder="Buscar por código, LOC o descripción..."
                     value={lpnSearch}
                     onChange={(e) => setLpnSearch(e.target.value)}
                   />
@@ -1157,7 +1157,7 @@ function PrintingJobsContent() {
                   </select>
 
                   <button
-                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
+                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
                     onClick={() => addSelectedLpnToQueue("replace")}
                     type="button"
                   >
@@ -1165,7 +1165,7 @@ function PrintingJobsContent() {
                   </button>
 
                   <button
-                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
+                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
                     onClick={() => addSelectedLpnToQueue("append")}
                     type="button"
                   >
@@ -1173,26 +1173,26 @@ function PrintingJobsContent() {
                   </button>
                 </div>
 
-                <div className="mt-2 text-xs text-zinc-500">
-                  Al escoger un LPN, el preset cambia autom+?ticamente a LPN 50x25 (Code128).
+                <div className="mt-2 ui-caption">
+                  Al escoger un LPN, el preset cambia automáticamente a LPN 50x25 (Code128).
                 </div>
               </>
             ) : null}
 
             {preset.defaultType === "SKU" ? (
-              <div className="mt-2 text-xs text-zinc-500">
-                Para SKU/Producto (3-up), pega c+?digos en la cola. Se imprime en filas de 3.
+              <div className="mt-2 ui-caption">
+                Para SKU/Producto (3-up), pega códigos en la cola. Se imprime en filas de 3.
               </div>
             ) : null}
           </div>
         </div>
         <div className="ui-panel">
-          <div className="text-sm font-semibold text-zinc-900">Etiquetas</div>
+          <div className="ui-h3">Etiquetas</div>
           <textarea
             className="mt-4 h-64 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-mono"
             placeholder={
               preset.defaultType === "LOC"
-                ? `Formato: LOC|DESCRIPCI+?N (o solo LOC)\nEj:\nLOC-VGR-OFI-01-N0|TODA LA NAVIDAD`
+                ? `Formato: LOC|DESCRIPCIÓN (o solo LOC)\nEj:\nLOC-VGR-OFI-01-N0|TODA LA NAVIDAD`
                 : preset.defaultType === "LPN"
                   ? `Formato: LPN|NOTA (o solo LPN)\nEj:\nLPN-00001234|LOC LOC-VGR-OFI-01-N0`
                   : preset.defaultType === "PROD"
@@ -1204,7 +1204,7 @@ function PrintingJobsContent() {
           />
 
           <div className="mt-3 flex items-center justify-between gap-3">
-            <div className="text-xs text-zinc-500">
+            <div className="ui-caption">
               Total en cola: {parsedQueue.length}.{" "}
               {preset.columns === 3 ? "Este preset imprime en filas de 3 (3-up)." : "Este preset imprime 1-up."}
             </div>
@@ -1212,22 +1212,22 @@ function PrintingJobsContent() {
             <button
               type="button"
               onClick={() => setQueueText("")}
-              className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold text-zinc-900"
+              className="rounded-xl border border-zinc-200 bg-white px-3 py-2 ui-caption font-semibold"
             >
               Limpiar cola
             </button>
           </div>
 
           {preset.columns === 3 ? (
-            <div className="mt-2 text-xs text-zinc-500">
-              Si en cola no hay m+?ltiplos de 3, se imprimen solo filas completas y lo restante queda esperando.
+            <div className="mt-2 ui-caption">
+              Si en cola no hay múltiplos de 3, se imprimen solo filas completas y lo restante queda esperando.
             </div>
           ) : null}
 
           <div className="mt-6">
-            <div className="text-sm font-semibold text-zinc-900">Preview ZPL</div>
-            <pre className="mt-3 max-h-80 overflow-auto rounded-xl bg-zinc-950 p-4 text-xs text-zinc-100">
-              {previewZpl || "// (vac+?o)"}
+            <div className="ui-h3">Preview ZPL</div>
+            <pre className="mt-3 max-h-80 overflow-auto rounded-xl bg-zinc-950 p-4 ui-code text-zinc-100">
+              {previewZpl || "// (vacío)"}
             </pre>
           </div>
         </div>
@@ -1240,7 +1240,7 @@ export default function PrintingJobsPage() {
   return (
     <Suspense
       fallback={
-        <div className="w-full text-sm text-zinc-600">
+        <div className="w-full ui-body-muted">
           Cargando impresion...
         </div>
       }
@@ -1249,3 +1249,11 @@ export default function PrintingJobsPage() {
     </Suspense>
   );
 }
+
+
+
+
+
+
+
+

@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 import { redirect } from "next/navigation";
 
@@ -141,7 +141,7 @@ async function createRemission(formData: FormData) {
   if (String(toSite?.site_type ?? "") !== "satellite") {
     redirect(
       "/inventory/remissions?error=" +
-        encodeURIComponent("Solo sedes satelite pueden solicitar remisiones.")
+        encodeURIComponent("Solo sedes satélite pueden solicitar remisiones.")
     );
   }
 
@@ -172,7 +172,7 @@ async function createRemission(formData: FormData) {
   if (requestErr || !request) {
     redirect(
       "/inventory/remissions?error=" +
-        encodeURIComponent(requestErr?.message ?? "No se pudo crear la remision.")
+        encodeURIComponent(requestErr?.message ?? "No se pudo crear la remisión.")
     );
   }
 
@@ -270,8 +270,8 @@ export default async function RemissionsPage({
       })
     : false;
 
-  const viewMode = isAllSites ? "all" : isProductionCenter ? "bodega" : "satelite";
-  const canCreate = viewMode === "satelite" && canRequestPermission;
+  const viewMode = isAllSites ? "all" : isProductionCenter ? "bodega" : "satélite";
+  const canCreate = viewMode === "satélite" && canRequestPermission;
 
   const { data: routes } = await supabase
     .from("site_supply_routes")
@@ -381,8 +381,8 @@ export default async function RemissionsPage({
     <div className="w-full">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight text-[var(--ui-text)]">Remisiones</h1>
-          <p className="mt-2 text-sm leading-6 text-[var(--ui-muted)]">
+          <h1 className="ui-h1">Remisiones</h1>
+          <p className="mt-2 ui-body-muted">
             Flujo interno entre sedes. Satelites solicitan, bodega prepara y se recibe en destino.
           </p>
         </div>
@@ -405,14 +405,14 @@ export default async function RemissionsPage({
       <div className="mt-6 ui-panel">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-sm font-semibold text-[var(--ui-text)]">Sede activa</div>
-            <div className="mt-1 text-xs text-[var(--ui-muted)]">
+            <div className="ui-h3">Sede activa</div>
+            <div className="mt-1 ui-caption">
               Vista:{" "}
               {viewMode === "all"
                 ? "Todas las sedes"
                 : viewMode === "bodega"
                   ? "Bodega (Centro)"
-                  : "Sede satelite"}
+                  : "Sede satélite"}
             </div>
           </div>
           <form method="get" className="flex items-center gap-3">
@@ -450,9 +450,9 @@ export default async function RemissionsPage({
           </div>
         ) : null}
 
-        {!canCreate && viewMode === "satelite" ? (
+        {!canCreate && viewMode === "satélite" ? (
           <div className="mt-4 ui-alert ui-alert--neutral">
-            Esta vista es para sedes satelite. Tu rol actual no puede crear remisiones.
+            Esta vista es para sedes satélite. Tu rol actual no puede crear remisiones.
           </div>
         ) : null}
 
@@ -461,15 +461,15 @@ export default async function RemissionsPage({
           {activeSiteId ? <input type="hidden" name="to_site_id" value={activeSiteId} /> : null}
 
           <div className="grid gap-3 md:grid-cols-2">
-            <div className="flex flex-col gap-1 text-sm text-zinc-600">
-              <span className="ui-label">Sede origen (satelite)</span>
+            <div className="flex flex-col gap-1 ui-body-muted">
+              <span className="ui-label">Sede origen (satélite)</span>
               <div className="ui-input flex items-center">
                 {activeSiteName}
               </div>
             </div>
 
-            <label className="flex flex-col gap-1 text-sm text-zinc-600">
-              <span className="ui-label">Sede destino (Centro de produccion / Bodega)</span>
+            <label className="flex flex-col gap-1 ui-body-muted">
+              <span className="ui-label">Sede destino (Centro de producción / Bodega)</span>
               <RemissionsDestinationSelect
                 name="from_site_id"
                 activeSiteId={activeSiteId}
@@ -478,7 +478,7 @@ export default async function RemissionsPage({
                   id: site.id,
                   name: site.name ?? site.id,
                 }))}
-                placeholder="Selecciona centro de produccion / bodega"
+                placeholder="Selecciona centro de producción / bodega"
               />
             </label>
           </div>
@@ -508,17 +508,17 @@ export default async function RemissionsPage({
           </div>
           <RemissionsItems products={productRows} areaOptions={areaOptions} />
           <button className="ui-btn ui-btn--brand">
-            Crear remision
+            Crear remisión
           </button>
         </form>
         ) : null}
       </div>
 
       <div className="mt-6 ui-panel">
-        <div className="text-sm font-semibold text-[var(--ui-text)]">
+        <div className="ui-h3">
           {viewMode === "bodega" ? "Solicitudes para preparar" : "Solicitudes enviadas"}
         </div>
-        <div className="mt-1 text-sm text-[var(--ui-muted)]">
+        <div className="mt-1 ui-body-muted">
           Mostrando hasta 50 solicitudes recientes.
         </div>
 
@@ -539,7 +539,7 @@ export default async function RemissionsPage({
                 const fromSiteId = row.from_site_id ?? "";
                 const toSiteId = row.to_site_id ?? "";
                 return (
-                  <tr key={row.id} className="text-sm text-zinc-800">
+                  <tr key={row.id} className="ui-body">
                     <TableCell className="font-mono">
                       {row.created_at ?? ""}
                     </TableCell>
@@ -554,7 +554,7 @@ export default async function RemissionsPage({
                     <TableCell>
                       <Link
                         href={`/inventory/remissions/${row.id}`}
-                        className="text-sm font-semibold text-zinc-900 underline decoration-zinc-200 underline-offset-4"
+                        className="ui-body font-semibold underline decoration-zinc-200 underline-offset-4"
                       >
                         Ver detalle
                       </Link>
@@ -566,7 +566,7 @@ export default async function RemissionsPage({
               {!remissions?.length ? (
                 <tr>
                   <TableCell colSpan={6} className="ui-empty">
-                    No hay remisiones todavia.
+                    No hay remisiones todavía.
                   </TableCell>
                 </tr>
               ) : null}
@@ -577,3 +577,7 @@ export default async function RemissionsPage({
     </div>
   );
 }
+
+
+
+

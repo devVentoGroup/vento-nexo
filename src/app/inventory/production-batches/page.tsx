@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 import { redirect } from "next/navigation";
 
@@ -99,7 +99,7 @@ async function createBatch(formData: FormData) {
   if (!canRegister) {
     redirect(
       "/inventory/production-batches?error=" +
-        encodeURIComponent("No tienes permiso para registrar produccion manual.")
+        encodeURIComponent("No tienes permiso para registrar producción manual.")
     );
   }
 
@@ -138,7 +138,7 @@ async function createBatch(formData: FormData) {
     quantity: producedQty,
     unit: producedUnit,
     related_production_batch_id: batch.id,
-    note: "Produccion manual",
+    note: "Producción manual",
   });
 
   if (moveErr) {
@@ -270,9 +270,9 @@ export default async function ProductionBatchesPage({
     <div className="w-full">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Produccion manual</h1>
-          <p className="mt-2 text-sm leading-6 text-zinc-600">
-            Registra lotes terminados y genera etiquetas de produccion.
+          <h1 className="ui-h1">Producción manual</h1>
+          <p className="mt-2 ui-body-muted">
+            Registra lotes terminados y genera etiquetas de producción.
           </p>
         </div>
 
@@ -299,8 +299,8 @@ export default async function ProductionBatchesPage({
       <div className="mt-6 ui-panel">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-sm font-semibold text-zinc-900">Sede activa</div>
-            <div className="mt-1 text-xs text-zinc-500">{activeSiteName || "Sin sede"}</div>
+            <div className="ui-h3">Sede activa</div>
+            <div className="mt-1 ui-caption">{activeSiteName || "Sin sede"}</div>
           </div>
           <form method="get" className="flex items-center gap-3">
             <select
@@ -330,7 +330,7 @@ export default async function ProductionBatchesPage({
 
         {!canRegister ? (
           <div className="mt-4 ui-alert ui-alert--neutral">
-            Tu rol actual no puede registrar produccion manual.
+            Tu rol actual no puede registrar producción manual.
           </div>
         ) : null}
 
@@ -387,7 +387,7 @@ export default async function ProductionBatchesPage({
               <span className="ui-label">Notas</span>
               <input
                 name="notes"
-                placeholder="Notas de produccion"
+                placeholder="Notas de producción"
                 className="ui-input"
               />
             </label>
@@ -400,8 +400,8 @@ export default async function ProductionBatchesPage({
       </div>
 
       <div className="mt-6 ui-panel">
-        <div className="text-sm font-semibold text-zinc-900">Ultimos lotes</div>
-        <div className="mt-1 text-sm text-zinc-600">Mostrando hasta 30 registros.</div>
+        <div className="ui-h3">Últimos lotes</div>
+        <div className="mt-1 ui-body-muted">Mostrando hasta 30 registros.</div>
 
         <div className="mt-4 overflow-x-auto">
           <Table>
@@ -425,7 +425,7 @@ export default async function ProductionBatchesPage({
                   "/printing/jobs?preset=PROD_50x30&queue=" + encodeURIComponent(queueLine);
 
                 return (
-                  <tr key={batch.id} className="text-sm text-zinc-800">
+                  <tr key={batch.id} className="ui-body">
                     <TableCell className="font-mono">{created}</TableCell>
                     <TableCell>{productName}</TableCell>
                     <TableCell className="font-mono">
@@ -435,7 +435,7 @@ export default async function ProductionBatchesPage({
                     <TableCell>
                       <Link
                         href={printHref}
-                        className="text-sm font-semibold text-zinc-900 underline decoration-zinc-200 underline-offset-4"
+                        className="ui-body font-semibold underline decoration-zinc-200 underline-offset-4"
                       >
                         Imprimir
                       </Link>
@@ -458,3 +458,7 @@ export default async function ProductionBatchesPage({
     </div>
   );
 }
+
+
+
+

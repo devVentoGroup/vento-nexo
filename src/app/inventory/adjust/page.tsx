@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 
 import { requireAppAccess } from "@/lib/auth/guard";
 
@@ -62,14 +62,14 @@ export default async function InventoryAdjustPage({
     return (
       <div className="w-full">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Ajustes</h1>
-          <p className="mt-2 text-sm leading-6 text-zinc-600">
+          <h1 className="ui-h1">Ajustes</h1>
+          <p className="mt-2 ui-body-muted">
             Ajustes manuales con motivo, permisos y evidencia opcional.
           </p>
         </div>
 
         <div className="mt-6 ui-panel">
-          <div className="text-sm font-semibold text-zinc-900">Paso 1: elegir sede</div>
+          <div className="ui-h3">Paso 1: elegir sede</div>
           <form method="get" action="/inventory/adjust" className="mt-4">
             <label className="flex flex-col gap-1">
               <span className="ui-label">Sede</span>
@@ -104,7 +104,7 @@ export default async function InventoryAdjustPage({
         </div>
 
         {siteRows.length === 0 ? (
-          <p className="mt-4 text-sm text-zinc-600">No tienes sedes asignadas. Contacta al administrador.</p>
+          <p className="mt-4 ui-body-muted">No tienes sedes asignadas. Contacta al administrador.</p>
         ) : null}
       </div>
     );
@@ -156,8 +156,8 @@ export default async function InventoryAdjustPage({
     <div className="w-full">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Ajustes</h1>
-          <p className="mt-2 text-sm leading-6 text-zinc-600">
+          <h1 className="ui-h1">Ajustes</h1>
+          <p className="mt-2 ui-body-muted">
             Sede: <strong>{siteName}</strong>. Registra ajustes manuales con motivo y trazabilidad.
           </p>
         </div>
@@ -175,7 +175,7 @@ export default async function InventoryAdjustPage({
         </div>
       ) : productRows.length === 0 ? (
         <div className="mt-6 ui-alert ui-alert--warn">
-          No hay productos con inventario trackeado para esta sede. Revisa el catálogo y
+          No hay productos con inventario trackeado para esta sede. Revisa el catÃ¡logo y
           product_site_settings, o &quot;Inventario &gt; Stock&quot; para ver el filtro por sede.
         </div>
       ) : (
@@ -189,3 +189,4 @@ export default async function InventoryAdjustPage({
     </div>
   );
 }
+

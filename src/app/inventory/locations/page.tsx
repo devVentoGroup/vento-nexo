@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -31,7 +31,7 @@ function siteCodeFromName(name: string): SiteCode | null {
 
   if (n.includes("centro") && n.includes("produ")) return "CP";
   if (n.includes("saudo")) return "SAU";
-  if (n.includes("vento café") || n.includes("vento cafe")) return "VCF";
+  if (n.includes("vento cafÃ©") || n.includes("vento cafe")) return "VCF";
   if (n.includes("vento group")) return "VGR";
 
   return null;
@@ -44,7 +44,7 @@ function pad2(n: number) {
 function buildCpTemplateRows(site_id: string, siteCode: SiteCode) {
   const rows: Array<Record<string, any>> = [];
 
-  // BOD: 12 estanterías
+  // BOD: 12 estanterÃ­as
   for (let i = 1; i <= 12; i++) {
     const aisle = `EST${pad2(i)}`;
     rows.push({
@@ -52,7 +52,7 @@ function buildCpTemplateRows(site_id: string, siteCode: SiteCode) {
       code: `LOC-${siteCode}-BOD-${aisle}`,
       zone: "BOD",
       aisle,
-      description: `Estantería ${i}`,
+      description: `EstanterÃ­a ${i}`,
     });
   }
 
@@ -74,30 +74,30 @@ function buildCpTemplateRows(site_id: string, siteCode: SiteCode) {
     code: `LOC-${siteCode}-REC-PEND`,
     zone: "REC",
     aisle: "PEND",
-    description: "Recepción - Pendiente de revisión",
+    description: "RecepciÃ³n - Pendiente de revisiÃ³n",
   });
   rows.push({
     site_id,
     code: `LOC-${siteCode}-REC-OK`,
     zone: "REC",
     aisle: "OK",
-    description: "Recepción - Revisado / listo para guardar",
+    description: "RecepciÃ³n - Revisado / listo para guardar",
   });
   rows.push({
     site_id,
     code: `LOC-${siteCode}-REC-QUAR`,
     zone: "REC",
     aisle: "QUAR",
-    description: "Recepción - Cuarentena",
+    description: "RecepciÃ³n - Cuarentena",
   });
 
-  // DSP: único
+  // DSP: Ãºnico
   rows.push({
     site_id,
     code: `LOC-${siteCode}-DSP-MAIN`,
     zone: "DSP",
     aisle: "MAIN",
-    description: "Despacho (único)",
+    description: "Despacho (Ãºnico)",
   });
 
   return rows;
@@ -187,7 +187,7 @@ export default async function InventoryLocationsPage({
     const user = data.user ?? null;
     if (!user) {
       redirect(
-        `/inventory/locations?error=${encodeURIComponent("Sesión requerida")}`,
+        `/inventory/locations?error=${encodeURIComponent("SesiÃ³n requerida")}`,
       );
     }
 
@@ -266,7 +266,7 @@ export default async function InventoryLocationsPage({
     const user = data.user ?? null;
     if (!user) {
       redirect(
-        `/inventory/locations?error=${encodeURIComponent("Sesión requerida")}`,
+        `/inventory/locations?error=${encodeURIComponent("SesiÃ³n requerida")}`,
       );
     }
 
@@ -280,11 +280,11 @@ export default async function InventoryLocationsPage({
         `/inventory/locations?error=${encodeURIComponent("Falta site_id.")}`,
       );
 
-    // Por ahora, la plantilla solo aplica a CP (decisión de negocio)
+    // Por ahora, la plantilla solo aplica a CP (decisiÃ³n de negocio)
     if (site_code !== "CP") {
       redirect(
         `/inventory/locations?error=${encodeURIComponent(
-          "La plantilla inicial solo está habilitada para Centro de Producción (CP).",
+          "La plantilla inicial solo estÃ¡ habilitada para Centro de ProducciÃ³n (CP).",
         )}`,
       );
     }
@@ -333,9 +333,9 @@ export default async function InventoryLocationsPage({
     <div className="w-full">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">LOC</h1>
-          <p className="mt-2 text-sm leading-6 text-zinc-600">
-            Ubicaciones físicas (LOC). Para CP: BOD / EMP / REC / DSP.
+          <h1 className="ui-h1">LOC</h1>
+          <p className="mt-2 ui-body-muted">
+            Ubicaciones fÃ­sicas (LOC). Para CP: BOD / EMP / REC / DSP.
           </p>
         </div>
 
@@ -361,7 +361,7 @@ export default async function InventoryLocationsPage({
               LOCs creados: <span className="font-semibold">{createdN}</span>.
             </>
           ) : (
-            <>No se creó nada (ya existían).</>
+            <>No se creÃ³ nada (ya existÃ­an).</>
           )}
         </div>
       ) : null}
@@ -383,13 +383,13 @@ export default async function InventoryLocationsPage({
 
       {error ? (
         <div className="mt-6 ui-alert ui-alert--error">
-          Falló el SELECT de LOCs: {error.message}
+          FallÃ³ el SELECT de LOCs: {error.message}
         </div>
       ) : null}
 
       <div className="mt-6 ui-panel">
-        <div className="text-sm font-semibold text-zinc-900">Ubicaciones</div>
-        <div className="mt-1 text-sm text-zinc-600">
+        <div className="ui-h3">Ubicaciones</div>
+        <div className="mt-1 ui-body-muted">
           Mostrando hasta 500 registros.
         </div>
 
@@ -397,7 +397,7 @@ export default async function InventoryLocationsPage({
           <Table>
             <thead>
               <tr>
-                <TableHeaderCell>Código</TableHeaderCell>
+                <TableHeaderCell>CÃ³digo</TableHeaderCell>
                 <TableHeaderCell>Zona</TableHeaderCell>
                 <TableHeaderCell>Aisle</TableHeaderCell>
                 <TableHeaderCell>Level</TableHeaderCell>
@@ -405,18 +405,18 @@ export default async function InventoryLocationsPage({
             </thead>
             <tbody>
               {locationRows.map((loc) => (
-                <tr key={loc.id} className="text-sm text-zinc-800">
+                <tr key={loc.id} className="ui-body">
                   <TableCell className="font-mono">
                     {loc.code}
                   </TableCell>
                   <TableCell className="font-mono">
-                    {loc.zone ?? "—"}
+                    {loc.zone ?? "â€”"}
                   </TableCell>
                   <TableCell className="font-mono">
-                    {loc.aisle ?? "—"}
+                    {loc.aisle ?? "â€”"}
                   </TableCell>
                   <TableCell className="font-mono">
-                    {loc.level ?? "—"}
+                    {loc.level ?? "â€”"}
                   </TableCell>
                 </tr>
               ))}
@@ -435,3 +435,5 @@ export default async function InventoryLocationsPage({
     </div>
   );
 }
+
+

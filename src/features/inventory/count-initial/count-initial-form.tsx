@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 
@@ -79,8 +79,8 @@ export function CountInitialForm({ products, siteId, siteName }: Props) {
       {step === 2 ? (
         <>
           <div className="ui-panel">
-            <div className="text-sm font-semibold text-zinc-900">Cantidad contada por producto</div>
-            <div className="mt-1 text-sm text-zinc-600">
+            <div className="ui-body font-semibold">Cantidad contada por producto</div>
+            <div className="mt-1 ui-body-muted">
               Sede: {siteName}. Deja en blanco o 0 los que no cuentes.
             </div>
             <div className="mt-4 overflow-x-auto">
@@ -95,7 +95,7 @@ export function CountInitialForm({ products, siteId, siteName }: Props) {
                 </thead>
                 <tbody>
                   {products.map((p) => (
-                    <tr key={p.id} className="text-sm text-zinc-800">
+                    <tr key={p.id} className="ui-body">
                       <TableCell>{p.name}</TableCell>
                       <TableCell className="font-mono">{p.sku ?? "-"}</TableCell>
                       <TableCell>{p.unit ?? "-"}</TableCell>
@@ -135,8 +135,8 @@ export function CountInitialForm({ products, siteId, siteName }: Props) {
       ) : (
         <>
           <div className="ui-panel">
-            <div className="text-sm font-semibold text-zinc-900">Resumen del conteo inicial</div>
-            <div className="mt-1 text-sm text-zinc-600">
+            <div className="ui-body font-semibold">Resumen del conteo inicial</div>
+            <div className="mt-1 ui-body-muted">
               {lines.length} producto(s) con cantidad. Al confirmar se crean movimientos tipo &quot;count&quot; y se
               actualiza el stock.
             </div>
@@ -154,7 +154,7 @@ export function CountInitialForm({ products, siteId, siteName }: Props) {
                   {lines.map((l) => {
                     const p = products.find((x) => x.id === l.product_id);
                     return (
-                      <tr key={l.product_id} className="text-sm text-zinc-800">
+                      <tr key={l.product_id} className="ui-body">
                         <TableCell>{p?.name ?? l.product_id}</TableCell>
                         <TableCell className="font-mono">{p?.sku ?? "-"}</TableCell>
                         <TableCell>{p?.unit ?? "-"}</TableCell>
@@ -181,7 +181,7 @@ export function CountInitialForm({ products, siteId, siteName }: Props) {
               disabled={loading}
               className="ui-btn ui-btn--brand disabled:opacity-50"
             >
-              {loading ? "Guardando…" : "Confirmar conteo inicial"}
+              {loading ? "Guardandoâ€¦" : "Confirmar conteo inicial"}
             </button>
           </div>
         </>
@@ -189,3 +189,4 @@ export function CountInitialForm({ products, siteId, siteName }: Props) {
     </div>
   );
 }
+

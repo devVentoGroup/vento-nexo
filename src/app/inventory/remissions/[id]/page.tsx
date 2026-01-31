@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { requireAppAccess } from "@/lib/auth/guard";
@@ -386,10 +386,10 @@ export default async function RemissionDetailPage({
   if (!request) {
     return (
       <div className="w-full">
-        <Link href="/inventory/remissions" className="text-sm text-zinc-600 underline">
+        <Link href="/inventory/remissions" className="ui-body-muted underline">
           Volver
         </Link>
-        <div className="mt-4 text-sm text-red-700">Remision no encontrada o sin acceso.</div>
+        <div className="mt-4 text-sm text-red-700">Remisión no encontrada o sin acceso.</div>
       </div>
     );
   }
@@ -398,15 +398,15 @@ export default async function RemissionDetailPage({
     <div className="w-full space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <Link href="/inventory/remissions" className="text-xs text-zinc-500 underline">
+          <Link href="/inventory/remissions" className="ui-caption underline">
             Volver a remisiones
           </Link>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight">Remision {request.id}</h1>
-          <p className="mt-2 text-sm text-zinc-600">
+          <h1 className="mt-2 ui-h1">Remisión {request.id}</h1>
+          <p className="mt-2 ui-body-muted">
             Estado: <span className="font-semibold">{request.status}</span>
           </p>
-          <p className="mt-1 text-xs text-zinc-500">
-            Vista: {access.fromSiteType === "production_center" ? "Bodega (Centro)" : "Sede satelite"} | Rol: {access.roleLabel || "sin rol"}
+          <p className="mt-1 ui-caption">
+            Vista: {access.fromSiteType === "production_center" ? "Bodega (Centro)" : "Sede satélite"} | Rol: {access.roleLabel || "sin rol"}
           </p>
         </div>
       </div>
@@ -424,29 +424,29 @@ export default async function RemissionDetailPage({
       ) : null}
 
       <div className="ui-panel">
-        <div className="text-sm font-semibold text-zinc-900">Detalle</div>
-        <div className="mt-3 grid gap-3 md:grid-cols-2 text-sm text-zinc-700">
+        <div className="ui-h3">Detalle</div>
+        <div className="mt-3 grid gap-3 md:grid-cols-2 ui-body">
           <div>
-            <div className="text-xs text-zinc-500">Origen</div>
+            <div className="ui-caption">Origen</div>
             <div>{access.fromSiteName || "-"}</div>
           </div>
           <div>
-            <div className="text-xs text-zinc-500">Destino</div>
+            <div className="ui-caption">Destino</div>
             <div>{access.toSiteName || "-"}</div>
           </div>
           <div>
-            <div className="text-xs text-zinc-500">Creada</div>
+            <div className="ui-caption">Creada</div>
             <div className="font-mono">{request.created_at ?? "-"}</div>
           </div>
           <div>
-            <div className="text-xs text-zinc-500">Notas</div>
+            <div className="ui-caption">Notas</div>
             <div>{request.notes ?? "-"}</div>
           </div>
         </div>
       </div>
 
       <div className="ui-panel">
-        <div className="text-sm font-semibold text-zinc-900">Acciones</div>
+        <div className="ui-h3">Acciones</div>
         <form action={updateStatus} className="mt-4 flex flex-wrap gap-3">
           <input type="hidden" name="request_id" value={request.id} />
           {access.canPrepare ? (
@@ -462,7 +462,7 @@ export default async function RemissionDetailPage({
             <button
               name="action"
               value="transit"
-              className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
+              className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
             >
               En viaje
             </button>
@@ -471,7 +471,7 @@ export default async function RemissionDetailPage({
             <button
               name="action"
               value="receive"
-              className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
+              className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
             >
               Recibir
             </button>
@@ -480,7 +480,7 @@ export default async function RemissionDetailPage({
             <button
               name="action"
               value="close"
-              className="rounded-xl border border-zinc-200 bg-white px-4 py-2 text-sm font-semibold text-zinc-900"
+              className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
             >
               Cerrar
             </button>
@@ -495,22 +495,22 @@ export default async function RemissionDetailPage({
             </button>
           ) : null}
         </form>
-        <div className="mt-2 text-xs text-zinc-500">
+        <div className="mt-2 ui-caption">
           "En viaje" descuenta stock en origen. "Recibir" agrega stock en destino.
         </div>
       </div>
 
       <div className="ui-panel">
-        <div className="text-sm font-semibold text-zinc-900">Items</div>
+        <div className="ui-h3">Items</div>
         <form action={updateItems} className="mt-4 space-y-4">
           <input type="hidden" name="request_id" value={request.id} />
           <div className="space-y-3">
             {itemRows.map((item) => (
               <div key={item.id} className="rounded-xl border border-zinc-200 p-4">
-                <div className="text-sm font-semibold text-zinc-900">
+                <div className="ui-h3">
                   {item.product?.name ?? item.product_id}
                 </div>
-                <div className="mt-1 text-xs text-zinc-500">
+                <div className="mt-1 ui-caption">
                   Producto: <span className="font-mono">{item.product_id}</span> Solicitado: {item.quantity} {item.unit ?? item.product?.unit ?? ""}
                 </div>
 
@@ -519,7 +519,7 @@ export default async function RemissionDetailPage({
                                 <div className="mt-3 grid gap-3 md:grid-cols-6">
                   {access.canPrepare ? (
                     <label className="flex flex-col gap-1">
-                      <span className="text-xs text-zinc-500">Preparado</span>
+                      <span className="ui-caption">Preparado</span>
                       <input
                         name="prepared_quantity"
                         defaultValue={item.prepared_quantity ?? 0}
@@ -529,7 +529,7 @@ export default async function RemissionDetailPage({
                   ) : null}
                   {access.canPrepare ? (
                     <label className="flex flex-col gap-1">
-                      <span className="text-xs text-zinc-500">Enviado</span>
+                      <span className="ui-caption">Enviado</span>
                       <input
                         name="shipped_quantity"
                         defaultValue={item.shipped_quantity ?? 0}
@@ -539,7 +539,7 @@ export default async function RemissionDetailPage({
                   ) : null}
                   {access.canReceive ? (
                     <label className="flex flex-col gap-1">
-                      <span className="text-xs text-zinc-500">Recibido</span>
+                      <span className="ui-caption">Recibido</span>
                       <input
                         name="received_quantity"
                         defaultValue={item.received_quantity ?? 0}
@@ -549,7 +549,7 @@ export default async function RemissionDetailPage({
                   ) : null}
                   {access.canReceive ? (
                     <label className="flex flex-col gap-1">
-                      <span className="text-xs text-zinc-500">Faltante</span>
+                      <span className="ui-caption">Faltante</span>
                       <input
                         name="shortage_quantity"
                         defaultValue={item.shortage_quantity ?? 0}
@@ -559,7 +559,7 @@ export default async function RemissionDetailPage({
                   ) : null}
                   {access.canCancel || access.canPrepare || access.canReceive ? (
                     <label className="flex flex-col gap-1">
-                      <span className="text-xs text-zinc-500">Estado</span>
+                      <span className="ui-caption">Estado</span>
                       <select
                         name="item_status"
                         defaultValue={item.item_status ?? "pending"}
@@ -575,7 +575,7 @@ export default async function RemissionDetailPage({
                   ) : null}
                   {access.canCancel || access.canPrepare ? (
                     <label className="flex flex-col gap-1">
-                      <span className="text-xs text-zinc-500">Area</span>
+                      <span className="ui-caption">Área</span>
                       <select
                         name="item_area_kind"
                         defaultValue={item.production_area_kind ?? ""}
@@ -603,3 +603,8 @@ export default async function RemissionDetailPage({
     </div>
   );
 }
+
+
+
+
+

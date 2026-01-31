@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -32,7 +32,7 @@ export function ScanInput(props: {
   autoFocus?: boolean;
   onScan: (parsed: ParsedScan) => void;
 }) {
-  const { label = "Escanear", placeholder = "Escanea o pega el código…", autoFocus = true, onScan } = props;
+  const { label = "Escanear", placeholder = "Escanea o pega el cÃ³digoâ€¦", autoFocus = true, onScan } = props;
 
   const [value, setValue] = useState("");
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -58,21 +58,21 @@ export function ScanInput(props: {
     <div className="ui-panel">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="text-sm font-semibold text-zinc-900">{label}</div>
-          <div className="mt-1 text-sm text-zinc-600">
-            Compatible con escáner Bluetooth/USB tipo teclado. También puedes pegar el código.
+          <div className="ui-body font-semibold">{label}</div>
+          <div className="mt-1 ui-body-muted">
+            Compatible con escÃ¡ner Bluetooth/USB tipo teclado. TambiÃ©n puedes pegar el cÃ³digo.
           </div>
         </div>
 
         <button
           type="button"
-          className="rounded-xl bg-zinc-100 px-3 py-2 text-sm font-semibold text-zinc-700 hover:bg-zinc-200"
+          className="rounded-xl bg-zinc-100 px-3 py-2 ui-body font-semibold hover:bg-zinc-200"
           onClick={() => {
-            // Placeholder para modo cámara; lo implementamos cuando definamos librería.
-            alert("Modo cámara: pendiente. Por ahora usa escáner tipo teclado o pega el código.");
+            // Placeholder para modo cÃ¡mara; lo implementamos cuando definamos librerÃ­a.
+            alert("Modo cÃ¡mara: pendiente. Por ahora usa escÃ¡ner tipo teclado o pega el cÃ³digo.");
           }}
         >
-          Cámara (QR)
+          CÃ¡mara (QR)
         </button>
       </div>
 
@@ -88,7 +88,7 @@ export function ScanInput(props: {
             }
           }}
           placeholder={placeholder}
-          className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-4 text-sm text-zinc-900 outline-none ring-0 focus:border-zinc-400"
+          className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-4 ui-body outline-none ring-0 focus:border-zinc-400"
         />
 
         <div className="flex gap-2">
@@ -114,7 +114,7 @@ export function ScanInput(props: {
 
       <div className="mt-4 rounded-xl bg-zinc-50 p-4">
         <div className="text-xs font-semibold tracking-wide text-zinc-500">VISTA PREVIA</div>
-        <div className="mt-2 text-sm text-zinc-700">
+        <div className="mt-2 ui-body">
           {parsed ? (
             parsed.kind === "vento" ? (
               <div className="space-y-1">
@@ -122,7 +122,7 @@ export function ScanInput(props: {
                   <span className="font-semibold">Tipo:</span> {parsed.entity}
                 </div>
                 <div>
-                  <span className="font-semibold">Código:</span> <span className="font-mono">{parsed.code}</span>
+                  <span className="font-semibold">CÃ³digo:</span> <span className="font-mono">{parsed.code}</span>
                 </div>
               </div>
             ) : (
@@ -131,10 +131,12 @@ export function ScanInput(props: {
               </div>
             )
           ) : (
-            <div className="text-zinc-500">Esperando escaneo…</div>
+            <div className="text-zinc-500">Esperando escaneoâ€¦</div>
           )}
         </div>
       </div>
     </div>
   );
 }
+
+

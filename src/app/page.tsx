@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 
 import { requireAppAccess } from "@/lib/auth/guard";
@@ -202,11 +202,11 @@ function ActionCard({ action }: { action: ActionLink }) {
 
   return (
     <div className="ui-card">
-      <div className="flex items-center gap-2 text-base font-semibold text-zinc-900">
+      <div className="flex items-center gap-2 ui-h3">
         <Icon name={action.icon} className="h-5 w-5 text-[var(--ui-brand-600)]" />
         {action.title}
       </div>
-      <p className="mt-1 text-sm leading-6 text-zinc-600">{action.description}</p>
+      <p className="mt-1 ui-body-muted">{action.description}</p>
       <div className="mt-4">
         <Link href={action.href} className={buttonClass}>
           {action.cta}
@@ -230,8 +230,8 @@ function EmptyState({
   return (
     <div className="ui-empty-state">
       <Icon name="sparkles" />
-      <div className="text-sm font-semibold text-[var(--ui-text)]">{title}</div>
-      <div className="text-sm text-[var(--ui-muted)]">{description}</div>
+      <div className="ui-h3">{title}</div>
+      <div className="ui-body-muted">{description}</div>
       {cta && href ? (
         <Link href={href} className="ui-btn ui-btn--ghost">
           {cta}
@@ -390,7 +390,7 @@ export default async function Home({
     : isProductionCenter
       ? "Bodega (Centro)"
       : isSatellite
-        ? "Sede satelite"
+        ? "Sede satÃ©lite"
         : "Sede";
 
   const canRequestRemission = isSatellite && canRequestPermission;
@@ -419,8 +419,8 @@ export default async function Home({
   const actions: ActionLink[] = [
     {
       id: "request-remission",
-      title: "Solicitar remision",
-      description: "Pide insumos desde sede satelite hacia el centro de produccion.",
+      title: "Solicitar remisiÃ³n",
+      description: "Pide insumos desde sede satÃ©lite hacia el centro de producciÃ³n.",
       href: "/inventory/remissions",
       cta: "Solicitar",
       tone: "primary",
@@ -430,7 +430,7 @@ export default async function Home({
     {
       id: "prepare-remissions",
       title: "Preparar remisiones",
-      description: "Gestiona picking y despacho para sedes satelite.",
+      description: "Gestiona picking y despacho para sedes satÃ©lite.",
       href: "/inventory/remissions",
       cta: "Preparar",
       tone: "primary",
@@ -480,7 +480,7 @@ export default async function Home({
     {
       id: "scanner",
       title: "Scanner",
-      description: "Escaneo rapido de LOC/LPN/AST.",
+      description: "Escaneo rÃ¡pido de LOC/LPN/AST.",
       href: "/scanner",
       cta: "Abrir",
       tone: "secondary",
@@ -489,7 +489,7 @@ export default async function Home({
     },
     {
       id: "printing",
-      title: "Impresion",
+      title: "ImpresiÃ³n",
       description: "Etiquetas Zebra para LOC, LPN, SKU y PROD.",
       href: "/printing/jobs",
       cta: "Abrir",
@@ -527,14 +527,14 @@ export default async function Home({
       <div className="ui-panel ui-panel--halo">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="text-sm font-semibold text-zinc-500">NEXO · Inventario</div>
-            <h1 className="mt-2 text-3xl font-semibold tracking-tight text-[var(--ui-text)]">
+            <div className="ui-caption">NEXO Â· Inventario</div>
+            <h1 className="mt-2 ui-h1">
               Bienvenido, {displayName}
             </h1>
-            <p className="mt-2 text-sm leading-6 text-zinc-600">
-              Panel operativo de inventario y logistica, organizado por rol y sede.
+            <p className="mt-2 ui-body-muted">
+              Panel operativo de inventario y logística, organizado por rol y sede.
             </p>
-            <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-zinc-600">
+            <div className="mt-3 flex flex-wrap items-center gap-2 ui-caption">
               <span className="ui-chip">
                 <Icon name="badge" className="h-3.5 w-3.5" />
                 Rol: {roleLabel}
@@ -575,8 +575,8 @@ export default async function Home({
 
         <div className="mt-4 flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="text-sm font-semibold text-zinc-900">Sede activa</div>
-            <div className="mt-1 text-xs text-zinc-500">{activeSiteName || "Sin sede"}</div>
+            <div className="ui-h3">Sede activa</div>
+            <div className="mt-1 ui-caption">{activeSiteName || "Sin sede"}</div>
           </div>
           <form method="get" className="flex items-center gap-3">
             <select
@@ -634,9 +634,9 @@ export default async function Home({
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div className="ui-section-title">
             <Icon name="sparkles" />
-            Módulos
+            MÃ³dulos
           </div>
-          <div className="text-xs text-zinc-500">Accesos rapidos</div>
+          <div className="ui-caption">Accesos rápidos</div>
         </div>
         <div className="mt-4 grid gap-4 md:grid-cols-3">
           {secondaryActions.map((action) => (
@@ -652,13 +652,13 @@ export default async function Home({
               <Icon name="package" />
               Remisiones recientes
             </div>
-            <div className="mt-1 text-sm text-zinc-600">
+            <div className="mt-1 ui-body-muted">
               {isProductionCenter ? "Solicitudes para preparar" : "Solicitudes enviadas/recibidas"}
             </div>
           </div>
           <Link
             href="/inventory/remissions"
-            className="text-sm font-semibold text-zinc-900 underline decoration-zinc-200 underline-offset-4"
+            className="ui-body font-semibold underline decoration-zinc-200 underline-offset-4"
           >
             Ver todas
           </Link>
@@ -677,7 +677,7 @@ export default async function Home({
             </thead>
             <tbody>
               {remissionRows.map((row) => (
-                <tr key={row.id} className="text-sm text-zinc-800">
+                <tr key={row.id} className="ui-body">
                   <TableCell className="font-mono">
                     {formatDate(row.created_at)}
                   </TableCell>
@@ -691,7 +691,7 @@ export default async function Home({
                   <TableCell>
                     <Link
                       href={`/inventory/remissions/${row.id}`}
-                      className="text-sm font-semibold text-zinc-900 underline decoration-zinc-200 underline-offset-4"
+                      className="ui-body font-semibold underline decoration-zinc-200 underline-offset-4"
                     >
                       Ver detalle
                     </Link>
@@ -722,7 +722,7 @@ export default async function Home({
                   <TableCell colSpan={5}>
                     <EmptyState
                       title="Sin remisiones recientes"
-                      description="Cuando se creen solicitudes aparecerán aquí."
+                      description="Cuando se creen solicitudes aparecerÃ¡n aquÃ­."
                       cta="Abrir remisiones"
                       href="/inventory/remissions"
                     />
@@ -736,3 +736,8 @@ export default async function Home({
     </div>
   );
 }
+
+
+
+
+

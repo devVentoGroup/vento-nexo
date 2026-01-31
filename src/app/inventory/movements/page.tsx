@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 import { requireAppAccess } from "@/lib/auth/guard";
 
@@ -96,8 +96,8 @@ export default async function InventoryMovementsPage({
     <div className="w-full">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-semibold tracking-tight">Movimientos</h1>
-          <p className="mt-2 text-sm leading-6 text-zinc-600">
+          <h1 className="ui-h1">Movimientos</h1>
+          <p className="mt-2 ui-body-muted">
             Ledger de inventario. Filtra por sede, tipo y producto para auditar cambios.
           </p>
         </div>
@@ -117,7 +117,7 @@ export default async function InventoryMovementsPage({
       ) : null}
 
       <div className="mt-6 ui-panel">
-        <div className="text-sm font-semibold text-zinc-900">Filtros</div>
+        <div className="ui-h3">Filtros</div>
         <form method="get" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label className="flex flex-col gap-1">
             <span className="ui-label">Sede (site_id)</span>
@@ -198,8 +198,8 @@ export default async function InventoryMovementsPage({
       ) : null}
 
       <div className="mt-6 ui-panel">
-        <div className="text-sm font-semibold text-zinc-900">Movimientos</div>
-        <div className="mt-1 text-sm text-zinc-600">Mostrando hasta 200 registros.</div>
+        <div className="ui-h3">Movimientos</div>
+        <div className="mt-1 ui-body-muted">Mostrando hasta 200 registros.</div>
 
         <div className="mt-4 overflow-x-auto">
           <Table>
@@ -231,7 +231,7 @@ export default async function InventoryMovementsPage({
                 );
 
                 return (
-                  <tr key={String(row.id ?? `${createdAt}-${product}-${qty}`)} className="text-sm text-zinc-800">
+                  <tr key={String(row.id ?? `${createdAt}-${product}-${qty}`)} className="ui-body">
                     <TableCell className="font-mono">{createdAt}</TableCell>
                     <TableCell>{type}</TableCell>
                     <TableCell className="font-mono">{site}</TableCell>
@@ -257,3 +257,5 @@ export default async function InventoryMovementsPage({
     </div>
   );
 }
+
+
