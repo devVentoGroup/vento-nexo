@@ -150,6 +150,26 @@ export default async function InventoryStockPage({
     { value: "asset", label: "Activo (maquinaria/utensilios)" },
   ];
 
+  const quickInventoryKinds = [
+    { value: "", label: "Todos" },
+    { value: "ingredient", label: "Insumos" },
+    { value: "finished", label: "Terminado" },
+    { value: "resale", label: "Reventa" },
+    { value: "packaging", label: "Empaques" },
+    { value: "asset", label: "Activos" },
+  ];
+
+  const buildKindHref = (kind: string) => {
+    const params = new URLSearchParams();
+    if (siteId) params.set("site_id", siteId);
+    if (searchQuery) params.set("q", searchQuery);
+    if (productType) params.set("product_type", productType);
+    if (categoryId) params.set("category_id", categoryId);
+    if (kind) params.set("inventory_kind", kind);
+    const qs = params.toString();
+    return `/inventory/stock${qs ? `?${qs}` : ""}`;
+  };
+
   const { data: productSites } = siteId
     ? await supabase
         .from("product_site_settings")
@@ -353,7 +373,21 @@ export default async function InventoryStockPage({
           </div>
         </div>
 
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-3 flex flex-wrap gap-2">
+          {quickInventoryKinds.map((kind) => (
+            <Link
+              key={kind.value || "all"}
+              href={buildKindHref(kind.value)}
+              className={
+                inventoryKind === kind.value ? "ui-chip ui-chip--brand" : "ui-chip"
+              }
+            >
+              {kind.label}
+            </Link>
+          ))}
+        </div>
+
+        <div className="mt-4 max-h-[70vh] overflow-x-auto overflow-y-auto">
           <Table>
             <thead>
               <tr>

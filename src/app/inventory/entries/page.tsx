@@ -25,6 +25,11 @@ type LocRow = {
   description: string | null;
 };
 
+type SupplierRow = {
+  id: string;
+  name: string | null;
+};
+
 type SearchParams = {
   error?: string;
   ok?: string;
@@ -90,7 +95,8 @@ async function createEntry(formData: FormData) {
     redirect("/inventory/entries?error=" + encodeURIComponent("No tienes sede activa."));
   }
 
-  const supplierName = asText(formData.get("supplier_name"));
+  const supplierId = asText(formData.get("supplier_id"));
+  const supplierCustom = asText(formData.get("supplier_custom"));
   const invoiceNumber = asText(formData.get("invoice_number"));
   const receivedAt = asText(formData.get("received_at"));
   const notes = asText(formData.get("notes"));
@@ -112,6 +118,16 @@ async function createEntry(formData: FormData) {
       notes: itemNotes[idx] || null,
     }))
     .filter((item) => item.product_id && item.quantity_declared > 0);
+
+  let supplierName = supplierCustom;
+  if (supplierId && supplierId !== "__new__") {
+    const { data: supplierRow } = await supabase
+      .from("suppliers")
+      .select("name")
+      .eq("id", supplierId)
+      .maybeSingle();
+    supplierName = supplierRow?.name ?? "";
+  }
 
   if (!supplierName) {
     redirect("/inventory/entries?error=" + encodeURIComponent("Proveedor requerido."));
@@ -249,9 +265,19 @@ export default async function EntriesPage({
     .order("name", { foreignTable: "products", ascending: true })
     .limit(400);
 
-  const productRows = ((products ?? []) as ProductProfileWithProduct[])
+  let productRows = ((products ?? []) as ProductProfileWithProduct[])
     .map((row) => row.products)
     .filter((row): row is ProductRow => Boolean(row));
+
+  if (productRows.length === 0) {
+    const { data: fallbackProducts } = await supabase
+      .from("products")
+      .select("id,name,unit")
+      .eq("is_active", true)
+      .order("name", { ascending: true })
+      .limit(400);
+    productRows = (fallbackProducts ?? []) as ProductRow[];
+  }
 
   const { data: employee } = await supabase
     .from("employees")
@@ -300,6 +326,15 @@ export default async function EntriesPage({
     .order("created_at", { ascending: false })
     .limit(25);
 
+  const { data: suppliers } = await supabase
+    .from("suppliers")
+    .select("id,name")
+    .eq("is_active", true)
+    .order("name", { ascending: true })
+    .limit(300);
+
+  const supplierRows = (suppliers ?? []) as SupplierRow[];
+
   const entryRows = (entries ?? []) as EntryRow[];
 
   return (
@@ -324,6 +359,7 @@ export default async function EntriesPage({
         products={productRows}
         locations={(locations ?? []) as LocRow[]}
         defaultLocationId={pickDefaultLocationId((locations ?? []) as LocRow[])}
+        suppliers={supplierRows}
         action={createEntry}
       />
 

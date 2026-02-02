@@ -395,9 +395,23 @@ export default async function RemissionsPage({
   }
 
   const { data: products } = await productsQuery;
-  const productRows = ((products ?? []) as ProductProfileWithProduct[])
+  let productRows = ((products ?? []) as ProductProfileWithProduct[])
     .map((row) => row.products)
     .filter((r): r is ProductRow => Boolean(r));
+
+  if (productRows.length === 0) {
+    let fallbackQuery = supabase
+      .from("products")
+      .select("id,name,unit")
+      .eq("is_active", true)
+      .order("name", { ascending: true })
+      .limit(400);
+    if (hasProductSiteFilter) {
+      fallbackQuery = fallbackQuery.in("id", productSiteIds);
+    }
+    const { data: fallbackProducts } = await fallbackQuery;
+    productRows = (fallbackProducts ?? []) as ProductRow[];
+  }
 
   return (
     <div className="w-full">

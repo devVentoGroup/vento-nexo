@@ -16,9 +16,15 @@ type LocationOption = {
   description: string | null;
 };
 
+type SupplierOption = {
+  id: string;
+  name: string | null;
+};
+
 type Props = {
   products: ProductOption[];
   locations: LocationOption[];
+  suppliers: SupplierOption[];
   defaultLocationId?: string;
   action: (formData: FormData) => void | Promise<void>;
 };
@@ -38,9 +44,13 @@ function statusChip(status: EntryStatus) {
   }
 }
 
-export function EntriesForm({ products, locations, defaultLocationId, action }: Props) {
+export function EntriesForm({ products, locations, suppliers, defaultLocationId, action }: Props) {
   const [status, setStatus] = useState<EntryStatus>("pending");
   const statusView = useMemo(() => statusChip(status), [status]);
+  const [supplierId, setSupplierId] = useState(
+    suppliers[0]?.id ?? "__new__"
+  );
+  const showCustomSupplier = supplierId === "__new__";
 
   return (
     <form
@@ -62,8 +72,26 @@ export function EntriesForm({ products, locations, defaultLocationId, action }: 
         <div className="mt-4 grid gap-3 md:grid-cols-2">
           <label className="flex flex-col gap-1">
             <span className="ui-label">Proveedor</span>
-            <input name="supplier_name" className="ui-input" placeholder="Nombre proveedor" />
+            <select
+              name="supplier_id"
+              className="ui-input"
+              value={supplierId}
+              onChange={(e) => setSupplierId(e.target.value)}
+            >
+              <option value="__new__">Crear proveedor...</option>
+              {suppliers.map((supplier) => (
+                <option key={supplier.id} value={supplier.id}>
+                  {supplier.name ?? supplier.id}
+                </option>
+              ))}
+            </select>
           </label>
+          {showCustomSupplier ? (
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Nombre proveedor</span>
+              <input name="supplier_custom" className="ui-input" placeholder="Nombre proveedor" />
+            </label>
+          ) : null}
           <label className="flex flex-col gap-1">
             <span className="ui-label">Factura (opcional)</span>
             <input name="invoice_number" className="ui-input" placeholder="FAC-0001" />
