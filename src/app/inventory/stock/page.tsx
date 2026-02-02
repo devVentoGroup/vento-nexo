@@ -188,7 +188,7 @@ export default async function InventoryStockPage({
       "id,name,sku,unit,product_type,category_id,product_inventory_profiles(track_inventory,inventory_kind)"
     )
     .order("name", { ascending: true })
-    .limit(500);
+    .limit(1000);
 
   if (searchQuery) {
     const pattern = `%${searchQuery}%`;
@@ -365,7 +365,7 @@ export default async function InventoryStockPage({
           <div>
             <div className="ui-h3">Stock</div>
             <div className="mt-1 ui-body-muted">
-              Mostrando hasta 500 productos.
+              Mostrando hasta 1000 productos.
             </div>
           </div>
           <div className="ui-caption">

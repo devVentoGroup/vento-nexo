@@ -155,6 +155,7 @@ async function createEntry(formData: FormData) {
     .from("inventory_entries")
     .insert({
       site_id: siteId,
+      supplier_id: supplierId && supplierId !== "__new__" ? supplierId : null,
       supplier_name: supplierName,
       invoice_number: invoiceNumber || null,
       received_at: receivedAt || null,
