@@ -22,6 +22,7 @@ type NavItem = {
   required?: string[];
   anyOf?: string[];
   icon?: IconName;
+  allowedRoles?: string[];
 };
 
 type NavGroup = {
@@ -100,6 +101,14 @@ const NAV_GROUPS: NavGroup[] = [
         description: "Saldo por sede",
         required: ["inventory.stock"],
         icon: "boxes",
+      },
+      {
+        href: "/inventory/catalog",
+        label: "Catálogo",
+        description: "Maestro de productos",
+        required: ["inventory.stock"],
+        allowedRoles: ["propietario", "gerente_general"],
+        icon: "sliders",
       },
       {
         href: "/inventory/movements",
@@ -350,6 +359,12 @@ export function VentoChrome({
 
   const isItemVisible = (item: NavItem) => {
     if (!permissionsReady) return false;
+    if (item.allowedRoles?.length) {
+      const currentRole = String(role ?? "").toLowerCase();
+      if (!item.allowedRoles.some((r) => r.toLowerCase() === currentRole)) {
+        return false;
+      }
+    }
     if (item.required?.length) return item.required.every((code) => can(code));
     if (item.anyOf?.length) return item.anyOf.some((code) => can(code));
     return true;

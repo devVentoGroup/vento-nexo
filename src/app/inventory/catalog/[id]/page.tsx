@@ -1,7 +1,9 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { requireAppAccess } from "@/lib/auth/guard";
+import { createClient } from "@/lib/supabase/server";
+import { buildShellLoginUrl } from "@/lib/auth/sso";
 
 export const dynamic = "force-dynamic";
 
@@ -56,14 +58,93 @@ type SiteSettingRow = {
   sites?: { id: string; name: string | null } | null;
 };
 
+type SearchParams = {
+  ok?: string;
+  error?: string;
+};
+
+function asText(value: FormDataEntryValue | null) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+async function updateProduct(formData: FormData) {
+  "use server";
+
+  const supabase = await createClient();
+  const { data: userRes } = await supabase.auth.getUser();
+  const user = userRes.user ?? null;
+  if (!user) {
+    redirect(await buildShellLoginUrl("/inventory/catalog"));
+  }
+
+  const { data: employee } = await supabase
+    .from("employees")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const role = String(employee?.role ?? "").toLowerCase();
+  if (!["propietario", "gerente_general"].includes(role)) {
+    redirect(`/inventory/catalog?error=${encodeURIComponent("No tienes permisos para editar productos.")}`);
+  }
+
+  const productId = asText(formData.get("product_id"));
+  if (!productId) {
+    redirect("/inventory/catalog?error=" + encodeURIComponent("Producto inválido."));
+  }
+
+  const payload = {
+    name: asText(formData.get("name")),
+    description: asText(formData.get("description")) || null,
+    sku: asText(formData.get("sku")) || null,
+    unit: asText(formData.get("unit")) || null,
+    product_type: asText(formData.get("product_type")) || null,
+    category_id: asText(formData.get("category_id")) || null,
+    price: formData.get("price") ? Number(formData.get("price")) : null,
+    cost: formData.get("cost") ? Number(formData.get("cost")) : null,
+    is_active: Boolean(formData.get("is_active")),
+  };
+
+  const { error: updateErr } = await supabase
+    .from("products")
+    .update(payload)
+    .eq("id", productId);
+  if (updateErr) {
+    redirect(`/inventory/catalog/${productId}?error=${encodeURIComponent(updateErr.message)}`);
+  }
+
+  const profilePayload = {
+    product_id: productId,
+    track_inventory: Boolean(formData.get("track_inventory")),
+    inventory_kind: asText(formData.get("inventory_kind")) || "unclassified",
+    default_unit: asText(formData.get("default_unit")) || null,
+    lot_tracking: Boolean(formData.get("lot_tracking")),
+    expiry_tracking: Boolean(formData.get("expiry_tracking")),
+  };
+
+  const { error: profileErr } = await supabase
+    .from("product_inventory_profiles")
+    .upsert(profilePayload, { onConflict: "product_id" });
+  if (profileErr) {
+    redirect(`/inventory/catalog/${productId}?error=${encodeURIComponent(profileErr.message)}`);
+  }
+
+  redirect(`/inventory/catalog/${productId}?ok=1`);
+}
+
 export default async function ProductCatalogDetailPage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams?: Promise<SearchParams>;
 }) {
   const { id } = await params;
+  const sp = (await searchParams) ?? {};
+  const okMsg = sp.ok ? "Producto actualizado." : "";
+  const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
 
-  const { supabase } = await requireAppAccess({
+  const { supabase, user } = await requireAppAccess({
     appId: APP_ID,
     returnTo: `/inventory/catalog/${id}`,
     permissionCode: PERMISSION,
@@ -123,6 +204,15 @@ export default async function ProductCatalogDetailPage({
 
   const siteRows = (siteSettings ?? []) as SiteSettingRow[];
 
+  const { data: employee } = await supabase
+    .from("employees")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const role = String(employee?.role ?? "").toLowerCase();
+  const canEdit = ["propietario", "gerente_general"].includes(role);
+
   const productRow = product as ProductRow;
   const profileRow = (profile ?? null) as InventoryProfileRow | null;
 
@@ -139,6 +229,109 @@ export default async function ProductCatalogDetailPage({
           Volver al catalogo
         </Link>
       </div>
+
+      {errorMsg ? (
+        <div className="ui-alert ui-alert--error">Error: {errorMsg}</div>
+      ) : null}
+      {okMsg ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+          {okMsg}
+        </div>
+      ) : null}
+
+      {canEdit ? (
+        <form action={updateProduct} className="ui-panel space-y-4">
+          <input type="hidden" name="product_id" value={productRow.id} />
+          <div className="ui-h3">Editar producto</div>
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Nombre</span>
+              <input name="name" defaultValue={productRow.name ?? ""} className="ui-input" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">SKU</span>
+              <input name="sku" defaultValue={productRow.sku ?? ""} className="ui-input" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Unidad</span>
+              <input name="unit" defaultValue={productRow.unit ?? ""} className="ui-input" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Tipo</span>
+              <select name="product_type" defaultValue={productRow.product_type ?? ""} className="ui-input">
+                <option value="">Sin definir</option>
+                <option value="insumo">Insumo</option>
+                <option value="preparacion">Preparacion</option>
+                <option value="venta">Venta</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1 md:col-span-2">
+              <span className="ui-label">Categoria</span>
+              <select name="category_id" defaultValue={productRow.category_id ?? ""} className="ui-input">
+                <option value="">Sin categoria</option>
+                {categoryRows.map((row) => (
+                  <option key={row.id} value={row.id}>
+                    {categoryPath(row.id)}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Precio</span>
+              <input name="price" type="number" step="0.01" defaultValue={productRow.price ?? ""} className="ui-input" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Costo</span>
+              <input name="cost" type="number" step="0.01" defaultValue={productRow.cost ?? ""} className="ui-input" />
+            </label>
+            <label className="flex flex-col gap-1 md:col-span-2">
+              <span className="ui-label">Descripcion</span>
+              <input name="description" defaultValue={productRow.description ?? ""} className="ui-input" />
+            </label>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-3">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" name="is_active" defaultChecked={Boolean(productRow.is_active)} />
+              <span className="ui-label">Activo</span>
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" name="track_inventory" defaultChecked={Boolean(profileRow?.track_inventory)} />
+              <span className="ui-label">Track inventario</span>
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" name="lot_tracking" defaultChecked={Boolean(profileRow?.lot_tracking)} />
+              <span className="ui-label">Lotes</span>
+            </label>
+            <label className="flex items-center gap-2">
+              <input type="checkbox" name="expiry_tracking" defaultChecked={Boolean(profileRow?.expiry_tracking)} />
+              <span className="ui-label">Vencimiento</span>
+            </label>
+          </div>
+
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Tipo inventario</span>
+              <select name="inventory_kind" defaultValue={profileRow?.inventory_kind ?? "unclassified"} className="ui-input">
+                <option value="unclassified">Sin clasificar</option>
+                <option value="ingredient">Insumo</option>
+                <option value="finished">Producto terminado</option>
+                <option value="resale">Reventa</option>
+                <option value="packaging">Empaque</option>
+                <option value="asset">Activo</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Unidad default inventario</span>
+              <input name="default_unit" defaultValue={profileRow?.default_unit ?? ""} className="ui-input" />
+            </label>
+          </div>
+
+          <div className="flex justify-end">
+            <button className="ui-btn ui-btn--brand">Guardar cambios</button>
+          </div>
+        </form>
+      ) : null}
 
       <div className="ui-panel">
         <div className="ui-h3">Datos base</div>
