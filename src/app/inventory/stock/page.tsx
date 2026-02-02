@@ -134,6 +134,31 @@ export default async function InventoryStockPage({
     return parts.join(" / ");
   };
 
+  const orderedCategories = categoryRows
+    .map((row) => ({
+      id: row.id,
+      path: categoryPath(row.id),
+    }))
+    .sort((a, b) => a.path.localeCompare(b.path, "es"));
+
+  const categoriesByParent = categoryRows.reduce((acc, row) => {
+    const key = row.parent_id ?? "root";
+    if (!acc.has(key)) acc.set(key, []);
+    acc.get(key)?.push(row);
+    return acc;
+  }, new Map<string, CategoryRow[]>());
+
+  const buildCategoryHref = (id: string) => {
+    const params = new URLSearchParams();
+    if (siteId) params.set("site_id", siteId);
+    if (searchQuery) params.set("q", searchQuery);
+    if (productType) params.set("product_type", productType);
+    if (inventoryKind) params.set("inventory_kind", inventoryKind);
+    params.set("category_id", id);
+    const qs = params.toString();
+    return `/inventory/stock?${qs}`;
+  };
+
   const productTypeOptions = [
     { value: "", label: "Todos los tipos" },
     { value: "insumo", label: "Insumo" },
@@ -274,17 +299,26 @@ export default async function InventoryStockPage({
       <div className="mt-6 ui-panel">
         <div className="ui-h3">Filtros</div>
         <form method="get" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="flex flex-col gap-1 sm:col-span-2 lg:col-span-4">
+            <span className="ui-label">Buscar SKU o nombre</span>
+            <input
+              name="q"
+              defaultValue={searchQuery}
+              placeholder="SKU o nombre de producto"
+              className="ui-input"
+            />
+          </label>
+
           <label className="flex flex-col gap-1">
-            <span className="ui-label">Sede</span>
+            <span className="ui-label">Tipo inventario</span>
             <select
-              name="site_id"
-              defaultValue={siteId}
+              name="inventory_kind"
+              defaultValue={inventoryKind}
               className="ui-input"
             >
-              <option value="">Todas</option>
-              {siteIds.map((id) => (
-                <option key={id} value={id}>
-                  {siteNameMap.get(id) ?? id}
+              {inventoryKindOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
                 </option>
               ))}
             </select>
@@ -306,21 +340,6 @@ export default async function InventoryStockPage({
           </label>
 
           <label className="flex flex-col gap-1">
-            <span className="ui-label">Tipo inventario</span>
-            <select
-              name="inventory_kind"
-              defaultValue={inventoryKind}
-              className="ui-input"
-            >
-              {inventoryKindOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1">
             <span className="ui-label">Categoria</span>
             <select
               name="category_id"
@@ -328,22 +347,28 @@ export default async function InventoryStockPage({
               className="ui-input"
             >
               <option value="">Todas</option>
-              {categoryRows.map((row) => (
+              {orderedCategories.map((row) => (
                 <option key={row.id} value={row.id}>
-                  {categoryPath(row.id)}
+                  {row.path}
                 </option>
               ))}
             </select>
           </label>
 
           <label className="flex flex-col gap-1 sm:col-span-2 lg:col-span-4">
-            <span className="ui-label">Buscar SKU o nombre</span>
-            <input
-              name="q"
-              defaultValue={searchQuery}
-              placeholder="SKU o nombre de producto"
+            <span className="ui-label">Sede</span>
+            <select
+              name="site_id"
+              defaultValue={siteId}
               className="ui-input"
-            />
+            >
+              <option value="">Todas</option>
+              {siteIds.map((id) => (
+                <option key={id} value={id}>
+                  {siteNameMap.get(id) ?? id}
+                </option>
+              ))}
+            </select>
           </label>
 
           <div className="sm:col-span-2 lg:col-span-4">
@@ -352,6 +377,42 @@ export default async function InventoryStockPage({
             </button>
           </div>
         </form>
+
+        <div className="mt-6">
+          <div className="ui-h3">Categorias</div>
+          <div className="mt-1 ui-body-muted">
+            Explora por categoria general y subcategoria.
+          </div>
+          <div className="mt-4 space-y-3">
+            {(categoriesByParent.get("root") ?? []).map((parent) => {
+              const children = categoriesByParent.get(parent.id) ?? [];
+              return (
+                <details key={parent.id} className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-4 py-3">
+                  <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+                    {parent.name}
+                  </summary>
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <Link
+                      href={buildCategoryHref(parent.id)}
+                      className={categoryId === parent.id ? "ui-chip ui-chip--brand" : "ui-chip"}
+                    >
+                      Ver todo
+                    </Link>
+                    {children.map((child) => (
+                      <Link
+                        key={child.id}
+                        href={buildCategoryHref(child.id)}
+                        className={categoryId === child.id ? "ui-chip ui-chip--brand" : "ui-chip"}
+                      >
+                        {child.name}
+                      </Link>
+                    ))}
+                  </div>
+                </details>
+              );
+            })}
+          </div>
+        </div>
       </div>
 
       {hasError ? (
