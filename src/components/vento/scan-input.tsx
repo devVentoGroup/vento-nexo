@@ -3,8 +3,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 
 type ParsedScan =
-  | { kind: "vento"; entity: "LOC" | "LPN" | "AST"; code: string; raw: string }
+  | { kind: "vento"; entity: "LOC" | "AST"; code: string; raw: string }
   | { kind: "raw"; raw: string };
+
+type DetectedBarcode = { rawValue?: string };
+type BarcodeDetectorLike = {
+  detect: (video: HTMLVideoElement) => Promise<DetectedBarcode[]>;
+};
+type BarcodeDetectorCtor = new (opts: { formats: string[] }) => BarcodeDetectorLike;
 
 function parseScan(raw: string): ParsedScan {
   const cleaned = raw.trim();
@@ -12,13 +18,12 @@ function parseScan(raw: string): ParsedScan {
   // Formato oficial: VENTO|TYPE|CODE
   // Ejemplos:
   // VENTO|LOC|LOC-CP-F1FRI-03-N2
-  // VENTO|LPN|LPN-CP-2601-00042
   // VENTO|AST|AST-VCF-0015
   const parts = cleaned.split("|");
   if (parts.length === 3 && parts[0] === "VENTO") {
-    const entity = parts[1] as "LOC" | "LPN" | "AST";
+    const entity = parts[1] as "LOC" | "AST";
     const code = parts[2]?.trim();
-    if ((entity === "LOC" || entity === "LPN" || entity === "AST") && code) {
+    if ((entity === "LOC" || entity === "AST") && code) {
       return { kind: "vento", entity, code, raw: cleaned };
     }
   }
@@ -35,7 +40,14 @@ export function ScanInput(props: {
   const { label = "Escanear", placeholder = "Escanea o pega el código…", autoFocus = true, onScan } = props;
 
   const [value, setValue] = useState("");
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [cameraError, setCameraError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const rafRef = useRef<number | null>(null);
+  const detectorRef = useRef<BarcodeDetectorLike | null>(null);
+  const lastScanAtRef = useRef<number>(0);
 
   const parsed = useMemo(() => {
     if (!value.trim()) return null;
@@ -45,6 +57,96 @@ export function ScanInput(props: {
   useEffect(() => {
     if (autoFocus) inputRef.current?.focus();
   }, [autoFocus]);
+
+  useEffect(() => {
+    if (!cameraOpen) return;
+    let cancelled = false;
+
+    async function startCamera() {
+      setCameraError(null);
+
+      const BarcodeDetectorImpl = (window as any).BarcodeDetector as BarcodeDetectorCtor | undefined;
+      if (typeof window === "undefined" || !BarcodeDetectorImpl) {
+        setCameraError("Tu navegador no soporta escaneo por cámara.");
+        return;
+      }
+
+      try {
+        const detector = new BarcodeDetectorImpl({
+          formats: ["qr_code", "code_128", "code_39", "ean_13", "ean_8", "upc_a", "upc_e"],
+        });
+        detectorRef.current = detector;
+
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: { ideal: "environment" } },
+          audio: false,
+        });
+
+        if (cancelled) {
+          stream.getTracks().forEach((track) => track.stop());
+          return;
+        }
+
+        streamRef.current = stream;
+        if (videoRef.current) {
+          videoRef.current.srcObject = stream;
+          await videoRef.current.play();
+        }
+
+        const tick = async () => {
+          if (cancelled) return;
+          const video = videoRef.current;
+          const detector = detectorRef.current;
+          if (!video || !detector) {
+            rafRef.current = requestAnimationFrame(tick);
+            return;
+          }
+
+          try {
+            const now = Date.now();
+            if (now - lastScanAtRef.current > 350) {
+              const barcodes = await detector.detect(video);
+              if (barcodes.length > 0) {
+                const raw = barcodes[0]?.rawValue ?? "";
+                if (raw) {
+                  lastScanAtRef.current = now;
+                  onScan(parseScan(raw));
+                  setCameraOpen(false);
+                  return;
+                }
+              }
+            }
+          } catch {
+            // Ignore scan errors; keep loop alive.
+          }
+
+          rafRef.current = requestAnimationFrame(tick);
+        };
+
+        rafRef.current = requestAnimationFrame(tick);
+      } catch (err) {
+        setCameraError(
+          err instanceof Error
+            ? err.message
+            : "No se pudo abrir la cámara. Verifica permisos."
+        );
+      }
+    }
+
+    startCamera();
+
+    return () => {
+      cancelled = true;
+      if (rafRef.current) {
+        cancelAnimationFrame(rafRef.current);
+        rafRef.current = null;
+      }
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+      }
+    };
+  }, [cameraOpen, onScan]);
 
   function submit() {
     const v = value.trim();
@@ -66,10 +168,9 @@ export function ScanInput(props: {
 
         <button
           type="button"
-          className="rounded-xl bg-zinc-100 px-3 py-2 ui-body font-semibold hover:bg-zinc-200"
+          className="ui-btn ui-btn--ghost"
           onClick={() => {
-            // Placeholder para modo cámara; lo implementamos cuando definamos librería.
-            alert("Modo cámara: pendiente. Por ahora usa escáner tipo teclado o pega el código.");
+            setCameraOpen(true);
           }}
         >
           Cámara (QR)
@@ -113,7 +214,7 @@ export function ScanInput(props: {
       </div>
 
       <div className="mt-4 rounded-xl bg-zinc-50 p-4">
-        <div className="text-xs font-semibold tracking-wide text-zinc-500">VISTA PREVIA</div>
+        <div className="ui-caption font-semibold tracking-wide">VISTA PREVIA</div>
         <div className="mt-2 ui-body">
           {parsed ? (
             parsed.kind === "vento" ? (
@@ -131,10 +232,48 @@ export function ScanInput(props: {
               </div>
             )
           ) : (
-            <div className="text-zinc-500">Esperando escaneo…</div>
+            <div className="ui-caption">Esperando escaneo…</div>
           )}
         </div>
       </div>
+
+      {cameraOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
+          <div className="ui-panel w-full max-w-lg space-y-4">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <div className="ui-h3">Escaneo por cámara</div>
+                <div className="mt-1 ui-caption">
+                  Apunta la cámara al código QR o etiqueta.
+                </div>
+              </div>
+              <button
+                type="button"
+                className="ui-btn ui-btn--ghost"
+                onClick={() => setCameraOpen(false)}
+              >
+                Cerrar
+              </button>
+            </div>
+
+            {cameraError ? (
+              <div className="ui-alert ui-alert--error">{cameraError}</div>
+            ) : (
+              <div className="relative overflow-hidden rounded-2xl border border-[var(--ui-border)] bg-black">
+                <video
+                  ref={videoRef}
+                  className="h-64 w-full object-cover"
+                  playsInline
+                  muted
+                />
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <div className="h-40 w-40 rounded-2xl border-2 border-white/70 shadow-[0_0_0_9999px_rgba(0,0,0,0.25)]" />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

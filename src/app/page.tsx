@@ -18,7 +18,6 @@ const PERMISSIONS = {
   remissionsPrepare: "inventory.remissions.prepare",
   remissionsReceive: "inventory.remissions.receive",
   locations: "inventory.locations",
-  lpns: "inventory.lpns",
   movements: "inventory.movements",
   stock: "inventory.stock",
 };
@@ -84,8 +83,8 @@ type IconName =
   | "printer"
   | "boxes"
   | "arrows"
-  | "map"
   | "layers"
+  | "map"
   | "clipboard"
   | "badge"
   | "building"
@@ -313,7 +312,6 @@ export default async function Home({
   let canMovementsPermission = false;
   let canStockPermission = false;
   let canLocationsPermission = false;
-  let canLpnsPermission = false;
 
   if (activeSiteId) {
     [
@@ -324,7 +322,6 @@ export default async function Home({
       canMovementsPermission,
       canStockPermission,
       canLocationsPermission,
-      canLpnsPermission,
     ] = await Promise.all([
       checkPermissionWithRoleOverride({
         supabase,
@@ -375,13 +372,6 @@ export default async function Home({
         context: { siteId: activeSiteId },
         actualRole: role,
       }),
-      checkPermissionWithRoleOverride({
-        supabase,
-        appId: APP_ID,
-        code: PERMISSIONS.lpns,
-        context: { siteId: activeSiteId },
-        actualRole: role,
-      }),
     ]);
   }
 
@@ -398,7 +388,6 @@ export default async function Home({
   const canReceiveRemission = isSatellite && canReceivePermission;
   const canViewStock = canStockPermission;
   const canManageLocations = isProductionCenter && canLocationsPermission;
-  const canManageLpns = isProductionCenter && canLpnsPermission;
 
   let remissionRows: RemissionRow[] = [];
   if (activeSiteId && canViewRemissions) {
@@ -480,7 +469,7 @@ export default async function Home({
     {
       id: "scanner",
       title: "Scanner",
-      description: "Escaneo rápido de LOC/LPN/AST.",
+      description: "Escaneo rápido de LOC/AST.",
       href: "/scanner",
       cta: "Abrir",
       tone: "secondary",
@@ -490,7 +479,7 @@ export default async function Home({
     {
       id: "printing",
       title: "Impresión",
-      description: "Etiquetas Zebra para LOC, LPN, SKU y PROD.",
+      description: "Etiquetas Zebra para LOC, SKU y PROD.",
       href: "/printing/jobs",
       cta: "Abrir",
       tone: "secondary",
@@ -506,16 +495,6 @@ export default async function Home({
       tone: "secondary",
       visible: canManageLocations,
       icon: "map",
-    },
-    {
-      id: "lpns",
-      title: "LPN",
-      description: "Contenedores y contenido por LPN.",
-      href: "/inventory/lpns",
-      cta: "Abrir",
-      tone: "secondary",
-      visible: canManageLpns,
-      icon: "layers",
     },
   ];
 

@@ -21,6 +21,7 @@ export function RemissionsDestinationSelect({
   placeholder,
 }: Props) {
   const hasOptions = options.length > 0;
+  const placeholderLabel = placeholder ?? "Selecciona una sede";
 
   function handleChange(event: React.ChangeEvent<HTMLSelectElement>) {
     const next = event.target.value;
@@ -44,11 +45,14 @@ export function RemissionsDestinationSelect({
   return (
     <select
       name={name}
-      defaultValue={value}
+      defaultValue={value || ""}
       onChange={handleChange}
       className="ui-input"
+      disabled={!hasOptions}
     >
-      {hasOptions ? null : <option value="">{placeholder ?? "Selecciona una sede"}</option>}
+      <option value="" disabled>
+        {hasOptions ? placeholderLabel : `${placeholderLabel} (sin opciones)`}
+      </option>
       {options.map((option) => (
         <option key={option.id} value={option.id}>
           {option.name}

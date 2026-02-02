@@ -135,7 +135,7 @@ export function CountInitialForm({ products, siteId, siteName }: Props) {
       ) : (
         <>
           <div className="ui-panel">
-            <div className="ui-body font-semibold">Resumen del conteo inicial</div>
+            <div className="ui-body font-semibold">Resumen del conteo</div>
             <div className="mt-1 ui-body-muted">
               {lines.length} producto(s) con cantidad. Al confirmar se crean movimientos tipo &quot;count&quot; y se
               actualiza el stock.
@@ -181,7 +181,7 @@ export function CountInitialForm({ products, siteId, siteName }: Props) {
               disabled={loading}
               className="ui-btn ui-btn--brand disabled:opacity-50"
             >
-              {loading ? "Guardando…" : "Confirmar conteo inicial"}
+              {loading ? "Guardando…" : "Confirmar conteo"}
             </button>
           </div>
         </>

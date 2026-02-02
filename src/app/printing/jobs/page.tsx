@@ -30,7 +30,7 @@ type Preset = {
   defaultDmModuleDots: number;
 
   // Tipo lógico (para codificar VENTO|TYPE|CODE)
-  defaultType: "LOC" | "LPN" | "SKU" | "PROD";
+  defaultType: "LOC" | "SKU" | "PROD";
 };
 
 type LocRow = {
@@ -38,15 +38,6 @@ type LocRow = {
   code: string;
   description?: string | null;
   zone?: string | null;
-  site_id?: string | null;
-  created_at?: string | null;
-};
-
-type LpnRow = {
-  id: string;
-  code: string;
-  description?: string | null;
-  loc_code?: string | null;
   site_id?: string | null;
   created_at?: string | null;
 };
@@ -134,7 +125,7 @@ function buildTextBlock(opts: {
   ].join("\n");
 }
 
-function encodeVento(type: "LOC" | "LPN" | "SKU" | "PROD", code: string) {
+function encodeVento(type: "LOC" | "SKU" | "PROD", code: string) {
   return `VENTO|${type}|${safeText(code)}`;
 }
 
@@ -149,7 +140,7 @@ function buildSingleLabelZpl(opts: {
   dmModuleDots: number;
 
   // Label content
-  type: "LOC" | "LPN" | "SKU" | "PROD";
+  type: "LOC" | "SKU" | "PROD";
   title: string; // arriba
   code: string; // humano abajo
   note?: string; // segunda línea arriba
@@ -257,7 +248,7 @@ function buildThreeUpRowZpl(opts: {
   code128HeightDots: number;
   dmModuleDots: number;
 
-  type: "LOC" | "LPN" | "SKU" | "PROD";
+  type: "LOC" | "SKU" | "PROD";
   title: string;
 
   items: Array<{ code: string; note?: string }>; // EXACTAMENTE 3
@@ -320,7 +311,6 @@ function PrintingJobsContent() {
   const BROWSERPRINT_ZEBRA = "/zebra/BrowserPrint-Zebra.min.js";
   // Endpoints (ajusta si tus rutas reales son distintas)
   const LOCS_API = "/api/inventory/locations?limit=500";
-  const LPNS_API = "/api/inventory/lpns?limit=500";
   const presets: Preset[] = useMemo(
     () => [
       {
@@ -333,17 +323,6 @@ function PrintingJobsContent() {
         defaultCode128HeightDots: 120,
         defaultDmModuleDots: 10,
         defaultType: "LOC",
-      },
-      {
-        id: "LPN_50x25",
-        label: "LPN -? 50x25 (Code128)",
-        widthMm: 50,
-        heightMm: 25,
-        columns: 1,
-        defaultBarcodeKind: "code128",
-        defaultCode128HeightDots: 70,
-        defaultDmModuleDots: 5,
-        defaultType: "LPN",
       },
       {
         id: "SKU_32x25_3UP",
@@ -411,11 +390,6 @@ function PrintingJobsContent() {
   const [locSearch, setLocSearch] = useState("");
   const [selectedLocCode, setSelectedLocCode] = useState<string>("");
 
-  // LPN selector
-  const [lpns, setLpns] = useState<LpnRow[]>([]);
-  const [lpnSearch, setLpnSearch] = useState("");
-  const [selectedLpnCode, setSelectedLpnCode] = useState<string>("");
-
   // Mantener defaults al cambiar preset
   useEffect(() => {
     setBarcodeKind(preset.defaultBarcodeKind);
@@ -424,7 +398,6 @@ function PrintingJobsContent() {
 
     // Ajuste automático de título según tipo
     if (preset.defaultType === "LOC") setTitle("VENTO -? LOC");
-    if (preset.defaultType === "LPN") setTitle("VENTO -? LPN");
     if (preset.defaultType === "SKU") setTitle("VENTO -? SKU");
     if (preset.defaultType === "PROD") setTitle("VENTO - PROD");
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -716,44 +689,6 @@ function PrintingJobsContent() {
     }
   }
 
-  async function loadLpns() {
-    setStatus("");
-    try {
-      const url = LPNS_API;
-      const res = await fetch(url, { cache: "no-store" });
-
-      const raw = await res.text();
-      let json: any = null;
-      try {
-        json = raw ? JSON.parse(raw) : null;
-      } catch {
-        // si no es JSON, lo dejamos como texto
-      }
-
-      if (!res.ok) {
-        const msg =
-          json?.error ??
-          json?.message ??
-          (typeof raw === "string" && raw.trim() ? raw : `HTTP ${res.status}`);
-        setStatus(`Error cargando LPNs: ${msg}`);
-        return;
-      }
-
-      const rows: any[] =
-        Array.isArray(json) ? json :
-          Array.isArray(json?.data) ? json.data :
-            Array.isArray(json?.rows) ? json.rows :
-              Array.isArray(json?.lpns) ? json.lpns :
-                Array.isArray(json?.items) ? json.items :
-                  [];
-
-      setLpns(rows as LpnRow[]);
-      setStatus(`LPNs cargados: ${rows.length}`);
-    } catch (e: any) {
-      setStatus(`Error cargando LPNs: ${String(e?.message ?? e)}`);
-    }
-  }
-
   const filteredLocs = useMemo(() => {
     const q = locSearch.trim().toLowerCase();
     if (!q) return locs;
@@ -763,17 +698,6 @@ function PrintingJobsContent() {
       return code.includes(q) || desc.includes(q);
     });
   }, [locs, locSearch]);
-
-  const filteredLpns = useMemo(() => {
-    const q = lpnSearch.trim().toLowerCase();
-    if (!q) return lpns;
-    return lpns.filter((l) => {
-      const code = String(l.code ?? "").toLowerCase();
-      const desc = String(l.description ?? "").toLowerCase();
-      const loc = String(l.loc_code ?? "").toLowerCase();
-      return code.includes(q) || desc.includes(q) || loc.includes(q);
-    });
-  }, [lpns, lpnSearch]);
 
   function addSelectedLocToQueue(mode: "replace" | "append") {
     const loc = locs.find((l) => l.code === selectedLocCode);
@@ -790,34 +714,6 @@ function PrintingJobsContent() {
     setTitle("VENTO -? LOC");
 
     const line = `${loc.code}|${safeText(loc.description ?? "LOC")}`;
-
-    if (mode === "replace") {
-      setQueueText(line);
-    } else {
-      setQueueText((prev) => {
-        const p = prev.trim();
-        if (!p) return line;
-        return p + "\n" + line;
-      });
-    }
-  }
-
-  function addSelectedLpnToQueue(mode: "replace" | "append") {
-    const lpn = lpns.find((l) => l.code === selectedLpnCode);
-    if (!lpn) {
-      setStatus("Selecciona un LPN válido.");
-      return;
-    }
-
-    // Auto (estándar): LPN siempre es 50x25 + Code128
-    if (presetId !== "LPN_50x25") {
-      setPresetId("LPN_50x25");
-    }
-    setBarcodeKind("code128");
-    setTitle("VENTO -? LPN");
-
-    const note = lpn.loc_code ? `LOC ${safeText(lpn.loc_code)}` : safeText(lpn.description ?? "LPN");
-    const line = `${safeText(lpn.code)}|${note}`;
 
     if (mode === "replace") {
       setQueueText(line);
@@ -931,14 +827,6 @@ function PrintingJobsContent() {
                       }`}
                   >
                     LOC
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPresetId("LPN_50x25")}
-                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "LPN" ? "bg-[var(--ui-brand)] text-[var(--ui-on-primary)]" : "bg-[var(--ui-surface)] text-[var(--ui-text)]"
-                      }`}
-                  >
-                    LPN
                   </button>
                   <button
                     type="button"
@@ -1056,7 +944,7 @@ function PrintingJobsContent() {
             <div className="font-semibold text-zinc-700">Nota clave</div>
             <div className="mt-1">
               En LOC (DataMatrix), el contenido codificado es: <span className="font-mono">VENTO|LOC|{"<CODE>"}</span>.
-              En LPN/SKU igual con su TYPE.
+              En SKU/PROD igual con su TYPE.
             </div>
           </div>
 
@@ -1119,66 +1007,6 @@ function PrintingJobsContent() {
               </>
             ) : null}
 
-            {preset.defaultType === "LPN" ? (
-              <>
-                <div className="ui-h3">Seleccionar LPN</div>
-
-                <div className="mt-3 flex items-center gap-3">
-                  <button
-                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
-                    onClick={loadLpns}
-                    type="button"
-                  >
-                    Cargar LPNs
-                  </button>
-
-                  <input
-                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
-                    placeholder="Buscar por código, LOC o descripción..."
-                    value={lpnSearch}
-                    onChange={(e) => setLpnSearch(e.target.value)}
-                  />
-                </div>
-
-                <div className="mt-3 flex items-center gap-3">
-                  <select
-                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
-                    value={selectedLpnCode}
-                    onChange={(e) => setSelectedLpnCode(e.target.value)}
-                  >
-                    <option value="">{lpns.length ? "(Selecciona un LPN)" : "(Primero carga LPNs)"}</option>
-                    {filteredLpns.map((l) => (
-                      <option key={l.id} value={l.code}>
-                        {l.code}
-                        {l.loc_code ? ` ??? LOC ${l.loc_code}` : ""}
-                        {l.description ? ` ??? ${String(l.description).slice(0, 28)}` : ""}
-                      </option>
-                    ))}
-                  </select>
-
-                  <button
-                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
-                    onClick={() => addSelectedLpnToQueue("replace")}
-                    type="button"
-                  >
-                    Reemplazar
-                  </button>
-
-                  <button
-                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
-                    onClick={() => addSelectedLpnToQueue("append")}
-                    type="button"
-                  >
-                    Agregar
-                  </button>
-                </div>
-
-                <div className="mt-2 ui-caption">
-                  Al escoger un LPN, el preset cambia automáticamente a LPN 50x25 (Code128).
-                </div>
-              </>
-            ) : null}
-
             {preset.defaultType === "SKU" ? (
               <div className="mt-2 ui-caption">
                 Para SKU/Producto (3-up), pega códigos en la cola. Se imprime en filas de 3.
@@ -1193,11 +1021,9 @@ function PrintingJobsContent() {
             placeholder={
               preset.defaultType === "LOC"
                 ? `Formato: LOC|DESCRIPCIÓN (o solo LOC)\nEj:\nLOC-VGR-OFI-01-N0|TODA LA NAVIDAD`
-                : preset.defaultType === "LPN"
-                  ? `Formato: LPN|NOTA (o solo LPN)\nEj:\nLPN-00001234|LOC LOC-VGR-OFI-01-N0`
-                  : preset.defaultType === "PROD"
-                    ? `Formato: LOTE|PRODUCTO - Prod YYYY-MM-DD - Exp YYYY-MM-DD\nEj:\nPB-20260118-0001|PAN BURGER - Prod 2026-01-18 - Exp 2026-01-20`
-                    : `Formato: CODE|NOTA (o solo CODE)\nEj (3-up):\nSKU-0001|PIZZA\nSKU-0002|PIZZA\nSKU-0003|PIZZA`
+                : preset.defaultType === "PROD"
+                  ? `Formato: LOTE|PRODUCTO - Prod YYYY-MM-DD - Exp YYYY-MM-DD\nEj:\nPB-20260118-0001|PAN BURGER - Prod 2026-01-18 - Exp 2026-01-20`
+                  : `Formato: CODE|NOTA (o solo CODE)\nEj (3-up):\nSKU-0001|PIZZA\nSKU-0002|PIZZA\nSKU-0003|PIZZA`
             }
             value={queueText}
             onChange={(e) => setQueueText(e.target.value)}

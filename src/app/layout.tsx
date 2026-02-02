@@ -16,7 +16,7 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: "Vento OS · NEXO",
-  description: "Logística e inventario operativo (LOC/LPN).",
+  description: "Logística e inventario operativo.",
   applicationName: "Vento OS",
   authors: [{ name: "Vento Group" }],
   metadataBase: new URL("https://nexo.ventogroup.co"),

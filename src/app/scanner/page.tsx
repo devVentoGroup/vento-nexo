@@ -6,7 +6,7 @@ export default function ScannerPage() {
       <div>
         <h1 className="ui-h1">Scanner</h1>
         <p className="mt-2 ui-body-muted max-w-2xl">
-          Escanea etiquetas LOC/LPN/AST. Formato recomendado:{" "}
+          Escanea etiquetas LOC/AST. Formato recomendado:{" "}
           <span className="font-mono">VENTO|TYPE|CODE</span>.
         </p>
       </div>
@@ -16,9 +16,8 @@ export default function ScannerPage() {
       <div className="ui-panel">
         <div className="ui-h3">Regla</div>
         <div className="mt-1 ui-body-muted">
-          LOC navega a <span className="font-mono">/inventory/locations</span> y LPN a{" "}
-          <span className="font-mono">/inventory/lpns</span>, ambos con{" "}
-          <span className="font-mono">?code=</span>.
+          LOC navega a <span className="font-mono">/inventory/locations</span> con{" "}
+          <span className="font-mono">?code=</span>. AST aún no tiene ficha en NEXO.
         </div>
       </div>
     </div>

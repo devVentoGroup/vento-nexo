@@ -79,6 +79,28 @@ type RemissionRow = {
   notes: string | null;
 };
 
+function formatStatus(status?: string | null) {
+  const value = String(status ?? "").trim();
+  switch (value) {
+    case "pending":
+      return { label: "Pendiente", className: "ui-chip ui-chip--warn" };
+    case "preparing":
+      return { label: "Preparando", className: "ui-chip ui-chip--brand" };
+    case "in_transit":
+      return { label: "En tránsito", className: "ui-chip ui-chip--warn" };
+    case "partial":
+      return { label: "Parcial", className: "ui-chip ui-chip--warn" };
+    case "received":
+      return { label: "Recibida", className: "ui-chip ui-chip--success" };
+    case "closed":
+      return { label: "Cerrada", className: "ui-chip ui-chip--success" };
+    case "cancelled":
+      return { label: "Cancelada", className: "ui-chip" };
+    default:
+      return { label: value || "Sin estado", className: "ui-chip" };
+  }
+}
+
 async function createRemission(formData: FormData) {
   "use server";
 
@@ -383,7 +405,7 @@ export default async function RemissionsPage({
         <div>
           <h1 className="ui-h1">Remisiones</h1>
           <p className="mt-2 ui-body-muted">
-            Flujo interno entre sedes. Satelites solicitan, bodega prepara y se recibe en destino.
+            Flujo interno entre sedes. Satélites solicitan, bodega prepara y se recibe en destino.
           </p>
         </div>
 
@@ -461,14 +483,14 @@ export default async function RemissionsPage({
           {activeSiteId ? <input type="hidden" name="to_site_id" value={activeSiteId} /> : null}
 
           <div className="grid gap-3 md:grid-cols-2">
-            <div className="flex flex-col gap-1 ui-body-muted">
+            <label className="flex flex-col gap-1">
               <span className="ui-label">Sede origen (satélite)</span>
-              <div className="ui-input flex items-center">
-                {activeSiteName}
+              <div className="ui-input flex h-11 items-center">
+                <span className="ui-body">{activeSiteName}</span>
               </div>
-            </div>
+            </label>
 
-            <label className="flex flex-col gap-1 ui-body-muted">
+            <label className="flex flex-col gap-1">
               <span className="ui-label">Sede destino (Centro de producción / Bodega)</span>
               <RemissionsDestinationSelect
                 name="from_site_id"
@@ -543,7 +565,11 @@ export default async function RemissionsPage({
                     <TableCell className="font-mono">
                       {row.created_at ?? ""}
                     </TableCell>
-                    <TableCell>{row.status ?? ""}</TableCell>
+                    <TableCell>
+                      <span className={formatStatus(row.status).className}>
+                        {formatStatus(row.status).label}
+                      </span>
+                    </TableCell>
                     <TableCell>
                       {siteMap.get(fromSiteId)?.name ?? fromSiteId}
                     </TableCell>

@@ -31,40 +31,47 @@ export function RemissionsItems({ products, areaOptions }: Props) {
 
   return (
     <div className="space-y-3">
-      {rows.map((row) => (
-        <div key={row} className="ui-card grid gap-3 md:grid-cols-4">
-          <select name="item_product_id" className="ui-input">
-            <option value="">Selecciona producto</option>
-            {products.map((product) => (
-              <option key={product.id} value={product.id}>
-                {product.name ?? product.id}
-                {product.unit ? ` (${product.unit})` : ""}
-              </option>
-            ))}
-          </select>
-          <input name="item_quantity" placeholder="Cantidad" className="ui-input" />
-          <input name="item_unit" placeholder="Unidad (ej: kg, un)" className="ui-input" />
-          <div className="flex gap-2">
-            <select name="item_area_kind" className="ui-input">
-              <option value="">Area (opcional)</option>
-              {areaOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-            {rows.length > 1 ? (
-              <button type="button" className="ui-btn ui-btn--ghost" onClick={() => removeRow(row)}>
-                Quitar
+      {rows.map((row, idx) => {
+        const isLast = idx === rows.length - 1;
+        return (
+          <div key={row} className="space-y-3">
+            <div className="ui-card grid gap-3 md:grid-cols-4">
+              <select name="item_product_id" className="ui-input">
+                <option value="">Selecciona producto</option>
+                {products.map((product) => (
+                  <option key={product.id} value={product.id}>
+                    {product.name ?? product.id}
+                    {product.unit ? ` (${product.unit})` : ""}
+                  </option>
+                ))}
+              </select>
+              <input name="item_quantity" placeholder="Cantidad" className="ui-input" />
+              <input name="item_unit" placeholder="Unidad (ej: kg, un)" className="ui-input" />
+              <div className="flex gap-2">
+                <select name="item_area_kind" className="ui-input">
+                  <option value="">Área (opcional)</option>
+                  {areaOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                {rows.length > 1 ? (
+                  <button type="button" className="ui-btn ui-btn--ghost" onClick={() => removeRow(row)}>
+                    Quitar
+                  </button>
+                ) : null}
+              </div>
+            </div>
+
+            {isLast ? (
+              <button type="button" className="ui-btn ui-btn--ghost w-fit" onClick={addRow}>
+                + Agregar otro item
               </button>
             ) : null}
           </div>
-        </div>
-      ))}
-
-      <button type="button" className="ui-btn ui-btn--ghost w-fit" onClick={addRow}>
-        + Agregar otro item
-      </button>
+        );
+      })}
     </div>
   );
 }

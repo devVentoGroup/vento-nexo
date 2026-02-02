@@ -19,11 +19,6 @@ export function ScannerPanel() {
           return;
         }
 
-        if (parsed.entity === "LPN") {
-          router.push(`/inventory/lpns?code=${encodeURIComponent(parsed.code)}`);
-          return;
-        }
-
         // AST: por ahora no tenemos ficha en NEXO (eso será VISO).
         // Lo dejamos explícito para no inventar rutas.
         alert(`AST detectado: ${parsed.code}\nFicha técnica: pendiente (VISO).`);

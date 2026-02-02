@@ -2,13 +2,13 @@
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 
-// POST: ejecutar conteo inicial para una sede.
+// POST: ejecutar conteo cíclico para una sede.
 // Body: { site_id: string, lines: Array<{ product_id: string, quantity: number }> }
-// - Inserta inventory_movements (movement_type='count', note=count_initial:sessionId)
-// - Upsert inventory_stock_by_site (current_qty = quantity; para inicial reemplaza)
+// - Inserta inventory_movements (movement_type='count', note=count:sessionId)
+// - Upsert inventory_stock_by_site (current_qty = quantity; reemplaza por conteo)
 // RLS exige nexo.inventory.counts o nexo.inventory.movements/stock según políticas.
 
-const SESSION_PREFIX = "count_initial:";
+const SESSION_PREFIX = "count:";
 
 export async function POST(req: Request) {
   const cookieStore = await cookies();
@@ -58,8 +58,8 @@ export async function POST(req: Request) {
   const sessionId = crypto.randomUUID();
   const note = `${SESSION_PREFIX}${sessionId}`;
 
-  // Usar initial_count: existe en inventory_movement_types (affects_stock=1)
-  const MOVEMENT_TYPE = "initial_count";
+  // Usar count (conteo cíclico)
+  const MOVEMENT_TYPE = "count";
 
   for (const { product_id, quantity } of lines) {
     const { error: movErr } = await supabase.from("inventory_movements").insert({

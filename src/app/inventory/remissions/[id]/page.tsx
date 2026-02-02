@@ -67,6 +67,28 @@ type RestockItemRow = {
   } | null;
 };
 
+function formatStatus(status?: string | null) {
+  const value = String(status ?? "").trim();
+  switch (value) {
+    case "pending":
+      return { label: "Pendiente", className: "ui-chip ui-chip--warn" };
+    case "preparing":
+      return { label: "Preparando", className: "ui-chip ui-chip--brand" };
+    case "in_transit":
+      return { label: "En tránsito", className: "ui-chip ui-chip--warn" };
+    case "partial":
+      return { label: "Parcial", className: "ui-chip ui-chip--warn" };
+    case "received":
+      return { label: "Recibida", className: "ui-chip ui-chip--success" };
+    case "closed":
+      return { label: "Cerrada", className: "ui-chip ui-chip--success" };
+    case "cancelled":
+      return { label: "Cancelada", className: "ui-chip" };
+    default:
+      return { label: value || "Sin estado", className: "ui-chip" };
+  }
+}
+
 function asText(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -273,6 +295,10 @@ async function updateStatus(formData: FormData) {
     redirect(`/inventory/remissions/${requestId}?error=` + encodeURIComponent("No puedes recibir."));
   }
 
+  if (action === "receive_partial" && !access.canReceive) {
+    redirect(`/inventory/remissions/${requestId}?error=` + encodeURIComponent("No puedes recibir."));
+  }
+
   if (action === "close" && !access.canClose) {
     redirect(`/inventory/remissions/${requestId}?error=` + encodeURIComponent("No puedes cerrar."));
   }
@@ -305,6 +331,12 @@ async function updateStatus(formData: FormData) {
     updates.received_by = user.id;
   }
 
+  if (action === "receive_partial") {
+    updates.status = "partial";
+    updates.received_at = new Date().toISOString();
+    updates.received_by = user.id;
+  }
+
   if (action === "close") {
     updates.status = "closed";
     updates.closed_at = new Date().toISOString();
@@ -329,7 +361,7 @@ async function updateStatus(formData: FormData) {
     }
   }
 
-  if (action === "receive") {
+  if (action === "receive" || action === "receive_partial") {
     const { error: moveErr } = await supabase.rpc("apply_restock_receipt", {
       p_request_id: requestId,
     });
@@ -403,7 +435,10 @@ export default async function RemissionDetailPage({
           </Link>
           <h1 className="mt-2 ui-h1">Remisión {request.id}</h1>
           <p className="mt-2 ui-body-muted">
-            Estado: <span className="font-semibold">{request.status}</span>
+            Estado:{" "}
+            <span className={formatStatus(request.status).className}>
+              {formatStatus(request.status).label}
+            </span>
           </p>
           <p className="mt-1 ui-caption">
             Vista: {access.fromSiteType === "production_center" ? "Bodega (Centro)" : "Sede satélite"} | Rol: {access.roleLabel || "sin rol"}
@@ -474,6 +509,15 @@ export default async function RemissionDetailPage({
               className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
             >
               Recibir
+            </button>
+          ) : null}
+          {access.canReceive ? (
+            <button
+              name="action"
+              value="receive_partial"
+              className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
+            >
+              Recibir parcial
             </button>
           ) : null}
           {access.canClose ? (

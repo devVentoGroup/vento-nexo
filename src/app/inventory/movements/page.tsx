@@ -17,17 +17,19 @@ type SearchParams = {
 const MOVEMENT_TYPES = [
   "adjustment",
   "initial_count",
+  "count",
   "production_in",
   "production_out",
   "purchase_in",
   "restock_in",
   "restock_out",
   "sale_out",
+  "receipt_in",
+  "transfer_internal",
   "transfer_in",
   "transfer_out",
   "receipt",
   "issue_internal",
-  "count",
   "waste",
   "shrink",
 ];
@@ -35,6 +37,18 @@ const MOVEMENT_TYPES = [
 type SiteRow = {
   site_id: string;
   is_primary: boolean | null;
+};
+
+type SiteNameRow = {
+  id: string;
+  name: string | null;
+};
+
+type ProductRow = {
+  id: string;
+  name: string | null;
+  sku: string | null;
+  unit: string | null;
 };
 
 function startOfDayIso(dateStr: string) {
@@ -76,9 +90,26 @@ export default async function InventoryMovementsPage({
   const fromDate = String(sp.from ?? "").trim();
   const toDate = String(sp.to ?? "").trim();
 
+  const siteIds = siteRows
+    .map((row) => row.site_id)
+    .filter((id): id is string => Boolean(id));
+
+  const { data: sites } = siteIds.length
+    ? await supabase
+        .from("sites")
+        .select("id,name")
+        .in("id", siteIds)
+    : { data: [] as SiteNameRow[] };
+
+  const siteNameMap = new Map(
+    ((sites ?? []) as SiteNameRow[]).map((s: SiteNameRow) => [s.id, s.name ?? s.id])
+  );
+
   let q = supabase
     .from("inventory_movements")
-    .select("*")
+    .select(
+      "id,site_id,product_id,movement_type,quantity,note,created_at, product:products(id,name,sku,unit)"
+    )
     .order("created_at", { ascending: false })
     .limit(200);
 
@@ -120,7 +151,7 @@ export default async function InventoryMovementsPage({
         <div className="ui-h3">Filtros</div>
         <form method="get" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label className="flex flex-col gap-1">
-            <span className="ui-label">Sede (site_id)</span>
+            <span className="ui-label">Sede</span>
             <select
               name="site_id"
               defaultValue={siteId}
@@ -129,8 +160,8 @@ export default async function InventoryMovementsPage({
               <option value="">Todas</option>
               {siteRows.map((s) => (
                 <option key={s.site_id} value={s.site_id}>
-                  {s.site_id}
-                  {s.is_primary ? " (primary)" : ""}
+                  {siteNameMap.get(s.site_id) ?? s.site_id}
+                  {s.is_primary ? " (principal)" : ""}
                 </option>
               ))}
             </select>
@@ -219,9 +250,11 @@ export default async function InventoryMovementsPage({
                 const createdAt = String(row.created_at ?? row.createdAt ?? "");
                 const type = String(row.movement_type ?? row.type ?? row.kind ?? "");
                 const site = String(row.site_id ?? "");
-                const product = String(row.product_id ?? row.sku ?? row.item_id ?? "");
+                const product = row.product ?? null;
+                const productLabel = product?.name ?? row.product_id ?? row.sku ?? row.item_id ?? "";
+                const productSku = product?.sku ?? "";
                 const qty = String(row.quantity ?? row.qty ?? row.delta ?? "");
-                const unit = String(row.unit ?? row.uom ?? "");
+                const unit = String(product?.unit ?? row.unit ?? row.uom ?? "");
                 const ref = String(
                   row.document_id ??
                     row.document_ref ??
@@ -234,8 +267,11 @@ export default async function InventoryMovementsPage({
                   <tr key={String(row.id ?? `${createdAt}-${product}-${qty}`)} className="ui-body">
                     <TableCell className="font-mono">{createdAt}</TableCell>
                     <TableCell>{type}</TableCell>
-                    <TableCell className="font-mono">{site}</TableCell>
-                    <TableCell className="font-mono">{product}</TableCell>
+                    <TableCell className="font-mono">{siteNameMap.get(site) ?? site}</TableCell>
+                    <TableCell>
+                      <div className="font-mono">{productLabel}</div>
+                      {productSku ? <div className="ui-caption">{productSku}</div> : null}
+                    </TableCell>
                     <TableCell className="font-mono">{qty}</TableCell>
                     <TableCell>{unit}</TableCell>
                     <TableCell className="font-mono">{ref}</TableCell>

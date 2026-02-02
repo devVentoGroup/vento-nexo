@@ -60,10 +60,10 @@ export default async function InventoryCountInitialPage({
     return (
       <div className="w-full">
         <div>
-          <h1 className="ui-h1">Conteo inicial</h1>
+          <h1 className="ui-h1">Conteos</h1>
           <p className="mt-2 ui-body-muted">
-            Wizard por sede: elige la sede, ingresa cantidades contadas y confirma. Se generan movimientos
-            tipo &quot;count&quot; y se actualiza el stock.
+            Wizard por sede: elige la sede, ingresa cantidades contadas y confirma. No bloquea operación.
+            Se generan movimientos tipo &quot;count&quot; y se actualiza el stock.
           </p>
         </div>
 
@@ -140,7 +140,7 @@ export default async function InventoryCountInitialPage({
     <div className="w-full">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="ui-h1">Conteo inicial</h1>
+          <h1 className="ui-h1">Conteos</h1>
           <p className="mt-2 ui-body-muted">
             Sede: <strong>{siteName}</strong>. Ingresa las cantidades contadas y confirma.
           </p>
