@@ -1,7 +1,8 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 
 import { requireAppAccess } from "@/lib/auth/guard";
+import { getCategoryDomainLabel } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
 
@@ -14,6 +15,7 @@ type SearchParams = {
   product_type?: string;
   inventory_kind?: string;
   category_id?: string;
+  category_domain?: string;
   error?: string;
   count_initial?: string;
   adjust?: string;
@@ -97,6 +99,7 @@ export default async function InventoryStockPage({
   const productType = String(sp.product_type ?? "").trim();
   const inventoryKind = String(sp.inventory_kind ?? "").trim();
   const categoryId = String(sp.category_id ?? "").trim();
+  const categoryDomain = String(sp.category_domain ?? "").trim();
 
   const siteIds = employeeSiteRows
     .map((row) => row.site_id)
@@ -118,8 +121,8 @@ export default async function InventoryStockPage({
     .select("id,name,parent_id,domain")
     .order("name", { ascending: true });
 
-  const categoryRows = (categories ?? []) as CategoryRow[];
-  const categoryMap = new Map(categoryRows.map((row) => [row.id, row]));
+  const allCategoryRows = (categories ?? []) as CategoryRow[];
+  const categoryMap = new Map(allCategoryRows.map((row) => [row.id, row]));
 
   const categoryPath = (id: string | null) => {
     if (!id) return "Sin categoria";
@@ -134,30 +137,34 @@ export default async function InventoryStockPage({
     return parts.join(" / ");
   };
 
+  const categoryRows = (() => {
+    if (!categoryDomain) return allCategoryRows;
+    const withDomain = allCategoryRows.filter((row) => row.domain === categoryDomain);
+    const ancestorIds = new Set<string>();
+    for (const row of withDomain) {
+      let current = row.parent_id ? categoryMap.get(row.parent_id) : null;
+      let safety = 0;
+      while (current && safety < 10) {
+        ancestorIds.add(current.id);
+        current = current.parent_id ? categoryMap.get(current.parent_id) : null;
+        safety += 1;
+      }
+    }
+    return allCategoryRows.filter((row) => row.domain === categoryDomain || ancestorIds.has(row.id));
+  })();
+
+  const displayPath = (row: CategoryRow) => {
+    const path = categoryPath(row.id);
+    const label = row.domain ? getCategoryDomainLabel(row.domain) : "";
+    return label ? `${path} (${label})` : path;
+  };
+
   const orderedCategories = categoryRows
     .map((row) => ({
       id: row.id,
-      path: categoryPath(row.id),
+      path: displayPath(row),
     }))
     .sort((a, b) => a.path.localeCompare(b.path, "es"));
-
-  const categoriesByParent = categoryRows.reduce((acc, row) => {
-    const key = row.parent_id ?? "root";
-    if (!acc.has(key)) acc.set(key, []);
-    acc.get(key)?.push(row);
-    return acc;
-  }, new Map<string, CategoryRow[]>());
-
-  const buildCategoryHref = (id: string) => {
-    const params = new URLSearchParams();
-    if (siteId) params.set("site_id", siteId);
-    if (searchQuery) params.set("q", searchQuery);
-    if (productType) params.set("product_type", productType);
-    if (inventoryKind) params.set("inventory_kind", inventoryKind);
-    params.set("category_id", id);
-    const qs = params.toString();
-    return `/inventory/stock?${qs}`;
-  };
 
   const productTypeOptions = [
     { value: "", label: "Todos los tipos" },
@@ -184,12 +191,22 @@ export default async function InventoryStockPage({
     { value: "asset", label: "Activos" },
   ];
 
+  const categoryDomainOptions = [
+    { value: "", label: "Todas las marcas" },
+    { value: "SAU", label: "Saudo" },
+    { value: "VCF", label: "Vento Café" },
+  ];
+
+  const filteredCategoryIds =
+    categoryDomain ? allCategoryRows.filter((r) => r.domain === categoryDomain).map((r) => r.id) : [];
+
   const buildKindHref = (kind: string) => {
     const params = new URLSearchParams();
     if (siteId) params.set("site_id", siteId);
     if (searchQuery) params.set("q", searchQuery);
     if (productType) params.set("product_type", productType);
     if (categoryId) params.set("category_id", categoryId);
+    if (categoryDomain) params.set("category_domain", categoryDomain);
     if (kind) params.set("inventory_kind", kind);
     const qs = params.toString();
     return `/inventory/stock${qs ? `?${qs}` : ""}`;
@@ -226,6 +243,8 @@ export default async function InventoryStockPage({
 
   if (categoryId) {
     productsQuery = productsQuery.eq("category_id", categoryId);
+  } else if (categoryDomain && filteredCategoryIds.length > 0) {
+    productsQuery = productsQuery.in("category_id", filteredCategoryIds);
   }
 
   if (inventoryKind) {
@@ -340,6 +359,21 @@ export default async function InventoryStockPage({
           </label>
 
           <label className="flex flex-col gap-1">
+            <span className="ui-label">Marca / punto de venta</span>
+            <select
+              name="category_domain"
+              defaultValue={categoryDomain}
+              className="ui-input"
+            >
+              {categoryDomainOptions.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1">
             <span className="ui-label">Categoria</span>
             <select
               name="category_id"
@@ -377,42 +411,6 @@ export default async function InventoryStockPage({
             </button>
           </div>
         </form>
-
-        <div className="mt-6">
-          <div className="ui-h3">Categorias</div>
-          <div className="mt-1 ui-body-muted">
-            Explora por categoria general y subcategoria.
-          </div>
-          <div className="mt-4 space-y-3">
-            {(categoriesByParent.get("root") ?? []).map((parent) => {
-              const children = categoriesByParent.get(parent.id) ?? [];
-              return (
-                <details key={parent.id} className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-4 py-3">
-                  <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
-                    {parent.name}
-                  </summary>
-                  <div className="mt-3 flex flex-wrap gap-2">
-                    <Link
-                      href={buildCategoryHref(parent.id)}
-                      className={categoryId === parent.id ? "ui-chip ui-chip--brand" : "ui-chip"}
-                    >
-                      Ver todo
-                    </Link>
-                    {children.map((child) => (
-                      <Link
-                        key={child.id}
-                        href={buildCategoryHref(child.id)}
-                        className={categoryId === child.id ? "ui-chip ui-chip--brand" : "ui-chip"}
-                      >
-                        {child.name}
-                      </Link>
-                    ))}
-                  </div>
-                </details>
-              );
-            })}
-          </div>
-        </div>
       </div>
 
       {hasError ? (
