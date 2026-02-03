@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -101,6 +101,14 @@ const NAV_GROUPS: NavGroup[] = [
         description: "Saldo por sede",
         required: ["inventory.stock"],
         icon: "boxes",
+      },
+      {
+        href: "/inventory/locations",
+        label: "Ubicaciones",
+        description: "Locaciones (LOC)",
+        required: ["inventory.locations"],
+        allowedRoles: ["propietario", "gerente_general"],
+        icon: "map",
       },
       {
         href: "/inventory/catalog",
