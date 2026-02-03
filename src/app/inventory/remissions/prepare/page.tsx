@@ -61,25 +61,32 @@ export default async function RemissionsPreparePage() {
     );
   }
 
-  const { data: siteRow } = await supabase
-    .from("sites")
-    .select("id,name,site_type")
-    .eq("id", siteId)
+  const { data: employeeRow } = await supabase
+    .from("employees")
+    .select("role")
+    .eq("id", user.id)
     .single();
 
-  const isBodega = (siteRow as { site_type?: string } | null)?.site_type === "production_center";
-  if (!isBodega) {
+  const role = String((employeeRow as { role?: string } | null)?.role ?? "");
+  const canPrepareByRole = ["bodeguero", "propietario", "gerente_general"].includes(role);
+  if (!canPrepareByRole) {
     return (
       <div className="w-full">
         <Link href="/inventory/remissions" className="ui-caption underline">
           Volver a remisiones
         </Link>
         <div className="mt-4 ui-alert ui-alert--neutral">
-          Esta vista es para el centro de producción (bodega). Tu sede activa no es bodega.
+          Esta vista es para bodegueros, gerentes y propietarios. Tu rol actual no tiene acceso.
         </div>
       </div>
     );
   }
+
+  const { data: siteRow } = await supabase
+    .from("sites")
+    .select("id,name")
+    .eq("id", siteId)
+    .single();
 
   const { data: remissions } = await supabase
     .from("restock_requests")
