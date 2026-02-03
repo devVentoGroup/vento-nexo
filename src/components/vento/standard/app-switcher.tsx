@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
@@ -196,8 +196,8 @@ export function AppSwitcher({ sites = [], activeSiteId = "" }: AppSwitcherProps)
       </button>
 
       {open ? (
-        <div className="absolute right-0 z-50 mt-2 w-[360px] rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface)] backdrop-blur-xl p-4 shadow-[var(--ui-shadow-2)]">
-          <div className="space-y-4">
+        <div className="absolute right-0 z-50 mt-2 w-[360px] max-h-[min(70vh,480px)] flex flex-col rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface)] backdrop-blur-xl shadow-[var(--ui-shadow-2)]">
+          <div className="overflow-y-auto overscroll-contain p-4 space-y-4">
             {sites.length ? (
               <div>
                 <div className="mb-2 text-xs font-semibold tracking-wide text-[var(--ui-muted)]">SEDE</div>
