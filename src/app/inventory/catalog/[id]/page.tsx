@@ -1,6 +1,8 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
+import { ProductSiteSettingsEditor } from "@/features/inventory/catalog/product-site-settings-editor";
+import { ProductSuppliersEditor } from "@/features/inventory/catalog/product-suppliers-editor";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
@@ -20,6 +22,8 @@ type ProductRow = {
   category_id: string | null;
   price: number | null;
   cost: number | null;
+  cost_original?: number | null;
+  production_area_kind?: string | null;
   is_active: boolean | null;
 };
 
@@ -39,6 +43,7 @@ type CategoryRow = {
 };
 
 type SupplierLinkRow = {
+  id?: string;
   supplier_id: string;
   supplier_sku: string | null;
   purchase_unit: string | null;
@@ -52,11 +57,20 @@ type SupplierLinkRow = {
 };
 
 type SiteSettingRow = {
+  id?: string;
   site_id: string;
   is_active: boolean | null;
   default_area_kind: string | null;
   sites?: { id: string; name: string | null } | null;
 };
+
+type AreaKindRow = {
+  code: string;
+  name: string | null;
+};
+
+type SupplierOptionRow = { id: string; name: string | null };
+type SiteOptionRow = { id: string; name: string | null };
 
 type SearchParams = {
   ok?: string;
@@ -93,7 +107,7 @@ async function updateProduct(formData: FormData) {
     redirect("/inventory/catalog?error=" + encodeURIComponent("Producto inválido."));
   }
 
-  const payload = {
+  const payload: Record<string, unknown> = {
     name: asText(formData.get("name")),
     description: asText(formData.get("description")) || null,
     sku: asText(formData.get("sku")) || null,
@@ -104,6 +118,11 @@ async function updateProduct(formData: FormData) {
     cost: formData.get("cost") ? Number(formData.get("cost")) : null,
     is_active: Boolean(formData.get("is_active")),
   };
+  const costOriginal = formData.get("cost_original");
+  if (costOriginal !== null && costOriginal !== undefined && costOriginal !== "")
+    payload.cost_original = Number(costOriginal);
+  const productionAreaKind = asText(formData.get("production_area_kind"));
+  if (productionAreaKind) payload.production_area_kind = productionAreaKind;
 
   const { error: updateErr } = await supabase
     .from("products")
@@ -129,6 +148,94 @@ async function updateProduct(formData: FormData) {
     redirect(`/inventory/catalog/${productId}?error=${encodeURIComponent(profileErr.message)}`);
   }
 
+  const supplierLinesRaw = formData.get("supplier_lines");
+  if (typeof supplierLinesRaw === "string" && supplierLinesRaw) {
+    try {
+      const supplierLines = JSON.parse(supplierLinesRaw) as Array<{
+        id?: string;
+        supplier_id?: string;
+        supplier_sku?: string;
+        purchase_unit?: string;
+        purchase_unit_size?: number;
+        purchase_price?: number;
+        currency?: string;
+        lead_time_days?: number;
+        min_order_qty?: number;
+        is_primary?: boolean;
+        _delete?: boolean;
+      }>;
+      const toDelete = supplierLines.filter((l) => l.id && l._delete).map((l) => l.id as string);
+      for (const id of toDelete) {
+        await supabase.from("product_suppliers").delete().eq("id", id);
+      }
+      for (const line of supplierLines) {
+        if (line._delete || !line.supplier_id) continue;
+        const row = {
+          product_id: productId,
+          supplier_id: line.supplier_id,
+          supplier_sku: line.supplier_sku || null,
+          purchase_unit: line.purchase_unit || null,
+          purchase_unit_size: line.purchase_unit_size ?? null,
+          purchase_price: line.purchase_price ?? null,
+          currency: line.currency || "COP",
+          lead_time_days: line.lead_time_days ?? null,
+          min_order_qty: line.min_order_qty ?? null,
+          is_primary: Boolean(line.is_primary),
+        };
+        if (line.id) {
+          const { error: upErr } = await supabase
+            .from("product_suppliers")
+            .update(row)
+            .eq("id", line.id);
+          if (upErr) redirect(`/inventory/catalog/${productId}?error=${encodeURIComponent(upErr.message)}`);
+        } else {
+          const { error: insErr } = await supabase.from("product_suppliers").insert(row);
+          if (insErr) redirect(`/inventory/catalog/${productId}?error=${encodeURIComponent(insErr.message)}`);
+        }
+      }
+    } catch {
+      // ignore invalid JSON
+    }
+  }
+
+  const siteSettingsRaw = formData.get("site_settings_lines");
+  if (typeof siteSettingsRaw === "string" && siteSettingsRaw) {
+    try {
+      const siteLines = JSON.parse(siteSettingsRaw) as Array<{
+        id?: string;
+        site_id?: string;
+        is_active?: boolean;
+        default_area_kind?: string;
+        _delete?: boolean;
+      }>;
+      const toDelete = siteLines.filter((l) => l.id && l._delete).map((l) => l.id as string);
+      for (const id of toDelete) {
+        await supabase.from("product_site_settings").delete().eq("id", id);
+      }
+      for (const line of siteLines) {
+        if (line._delete || !line.site_id) continue;
+        const row = {
+          product_id: productId,
+          site_id: line.site_id,
+          is_active: Boolean(line.is_active),
+          default_area_kind: line.default_area_kind || null,
+        };
+        if (line.id) {
+          const { error: upErr } = await supabase
+            .from("product_site_settings")
+            .update(row)
+            .eq("id", line.id);
+          if (upErr) redirect(`/inventory/catalog/${productId}?error=${encodeURIComponent(upErr.message)}`);
+        } else {
+          const { error: insErr } = await supabase.from("product_site_settings").insert(row);
+          if (insErr) redirect(`/inventory/catalog/${productId}?error=${encodeURIComponent(insErr.message)}`);
+        }
+      }
+    } catch {
+      // ignore invalid JSON
+    }
+  }
+
   redirect(`/inventory/catalog/${productId}?ok=1`);
 }
 
@@ -152,7 +259,7 @@ export default async function ProductCatalogDetailPage({
 
   const { data: product } = await supabase
     .from("products")
-    .select("id,name,description,sku,unit,product_type,category_id,price,cost,is_active")
+    .select("id,name,description,sku,unit,product_type,category_id,price,cost,cost_original,production_area_kind,is_active")
     .eq("id", id)
     .maybeSingle();
 
@@ -190,7 +297,7 @@ export default async function ProductCatalogDetailPage({
   const { data: supplierLinks } = await supabase
     .from("product_suppliers")
     .select(
-      "supplier_id,supplier_sku,purchase_unit,purchase_unit_size,purchase_price,currency,lead_time_days,min_order_qty,is_primary,suppliers(id,name)"
+      "id,supplier_id,supplier_sku,purchase_unit,purchase_unit_size,purchase_price,currency,lead_time_days,min_order_qty,is_primary,suppliers(id,name)"
     )
     .eq("product_id", id)
     .order("is_primary", { ascending: false });
@@ -199,10 +306,30 @@ export default async function ProductCatalogDetailPage({
 
   const { data: siteSettings } = await supabase
     .from("product_site_settings")
-    .select("site_id,is_active,default_area_kind,sites(id,name)")
+    .select("id,site_id,is_active,default_area_kind,sites(id,name)")
     .eq("product_id", id);
 
   const siteRows = (siteSettings ?? []) as SiteSettingRow[];
+
+  const { data: suppliersData } = await supabase
+    .from("suppliers")
+    .select("id,name")
+    .eq("is_active", true)
+    .order("name", { ascending: true });
+  const suppliersList = (suppliersData ?? []) as SupplierOptionRow[];
+
+  const { data: sitesData } = await supabase
+    .from("sites")
+    .select("id,name")
+    .eq("is_active", true)
+    .order("name", { ascending: true });
+  const sitesList = (sitesData ?? []) as SiteOptionRow[];
+
+  const { data: areaKindsData } = await supabase
+    .from("area_kinds")
+    .select("code,name")
+    .order("name", { ascending: true });
+  const areaKindsList = (areaKindsData ?? []) as AreaKindRow[];
 
   const { data: employee } = await supabase
     .from("employees")
@@ -284,6 +411,21 @@ export default async function ProductCatalogDetailPage({
               <span className="ui-label">Costo</span>
               <input name="cost" type="number" step="0.01" defaultValue={productRow.cost ?? ""} className="ui-input" />
             </label>
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Costo original</span>
+              <input name="cost_original" type="number" step="0.01" defaultValue={productRow.cost_original ?? ""} className="ui-input" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Área de producción</span>
+              <select name="production_area_kind" defaultValue={productRow.production_area_kind ?? ""} className="ui-input">
+                <option value="">Sin definir</option>
+                {areaKindsList.map((a) => (
+                  <option key={a.code} value={a.code}>
+                    {a.name ?? a.code}
+                  </option>
+                ))}
+              </select>
+            </label>
             <label className="flex flex-col gap-1 md:col-span-2">
               <span className="ui-label">Descripcion</span>
               <input name="description" defaultValue={productRow.description ?? ""} className="ui-input" />
@@ -327,7 +469,40 @@ export default async function ProductCatalogDetailPage({
             </label>
           </div>
 
-          <div className="flex justify-end">
+          <div className="mt-6 border-t border-[var(--ui-border)] pt-6">
+            <ProductSuppliersEditor
+              name="supplier_lines"
+              initialRows={supplierRows.map((r) => ({
+                id: r.id,
+                supplier_id: r.supplier_id,
+                supplier_sku: r.supplier_sku ?? "",
+                purchase_unit: r.purchase_unit ?? "",
+                purchase_unit_size: r.purchase_unit_size ?? undefined,
+                purchase_price: r.purchase_price ?? undefined,
+                currency: r.currency ?? "COP",
+                lead_time_days: r.lead_time_days ?? undefined,
+                min_order_qty: r.min_order_qty ?? undefined,
+                is_primary: Boolean(r.is_primary),
+              }))}
+              suppliers={suppliersList.map((s) => ({ id: s.id, name: s.name }))}
+            />
+          </div>
+
+          <div className="mt-6 border-t border-[var(--ui-border)] pt-6">
+            <ProductSiteSettingsEditor
+              name="site_settings_lines"
+              initialRows={siteRows.map((r) => ({
+                id: r.id,
+                site_id: r.site_id,
+                is_active: Boolean(r.is_active),
+                default_area_kind: r.default_area_kind ?? "",
+              }))}
+              sites={sitesList.map((s) => ({ id: s.id, name: s.name }))}
+              areaKinds={areaKindsList.map((a) => ({ code: a.code, name: a.name ?? a.code }))}
+            />
+          </div>
+
+          <div className="flex justify-end mt-6">
             <button className="ui-btn ui-btn--brand">Guardar cambios</button>
           </div>
         </form>
@@ -359,6 +534,14 @@ export default async function ProductCatalogDetailPage({
           <div>
             <div className="ui-label">Costo</div>
             <div className="mt-1">{productRow.cost ?? "-"}</div>
+          </div>
+          <div>
+            <div className="ui-label">Costo original</div>
+            <div className="mt-1">{productRow.cost_original ?? "-"}</div>
+          </div>
+          <div>
+            <div className="ui-label">Área de producción</div>
+            <div className="mt-1">{productRow.production_area_kind ?? "-"}</div>
           </div>
           <div className="md:col-span-2">
             <div className="ui-label">Descripcion</div>
