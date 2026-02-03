@@ -1,229 +1,110 @@
-# Roadmap NEXO (Checklist completo)
+# Roadmap Nexo – Checklist de implementación
 
-## Leyenda
+Documento vivo: se van marcando los ítems hechos a medida que se implementan.
 
-- ⬜ Pendiente  - 🟡 En progreso  - 🟢 Listo
+**Leyenda:** `[ ]` Pendiente · `[x]` Hecho
 
-## Fase 0 — Alineacion y reglas del juego (1-2 dias)
+---
 
-- 🟢 Definir objetivo: NEXO = fuente de verdad de inventario (ledger + documentos)
-- 🟢 Definir alcance MVP (que entra ahora, que se pospone)
-- 🟢 Definir sedes: Centro Produccion + satelites (IDs y nombres oficiales)
-- 🟢 Definir roles y responsabilidades operativas
-  - Recepcion proveedores
-  - Bodega/put-away
-  - Cocina/panaderia (solicita/recibe)
-  - Despacho/remisiones
-  - Satelite (recibe y disputa)
-  - Admin/owner
-- 🟢 Definir glosario operativo (SLA, custodia, staging, ABC, PAR, FEFO/FIFO)
-- 🟢 Definir politicas: quien puede ajustar, quien aprueba, que requiere evidencia
+## Fase 1: Stock y visibilidad por LOC
 
-**Listo cuando:** hay reglas y owners por proceso (aunque sea provisional).
+- [x] **1.1** Stock: mostrar columna o desglose por LOC (qué hay en cada ubicación).
+- [x] **1.2** Stock: filtro opcional por LOC (ver solo un LOC o una zona).
+- [x] **1.3** Stock: alerta o indicador “Sin ubicación” para productos con stock pero sin LOC asignado (según INVENTARIO-PERFECTO).
+- [ ] **1.4** (Opcional) Vista o export “Stock por LOC” (tabla producto × LOC con cantidades).
 
-## Fase 1 — Base tecnica y seguridad (2-5 dias)
+---
 
-## 1.1 Autenticacion y autorizacion
+## Fase 2: Remisiones y LOC
 
-- 🟡 Login estable (staff)
-- 🟢 Login principal en vento-shell (SSO); NEXO redirige si no hay sesion
-- 🟢 Si esta autenticado y no tiene permisos: pagina "No tienes permisos" + boton Volver al Hub
-- 🟢 Permisos por app/vista desde BD (roles/apps/permissions + scopes)
-- 🟢 Roles (owner/global_manager/manager/cashier o equivalentes)
-- 🟢 RLS consistente para tablas criticas:
-  - products (ya)
-  - inventory_movements
-  - inventory_stock_by_site
-  - inventory_locations
-  - inventory_lpns
-  - procurement_receptions / items
-  - restock_requests / items
-  - transfers/shipments (cuando existan)
-- 🟡 Auditoria minima: created_by, created_at en documentos/movimientos
+- [ ] **2.1** Al preparar remisión: mostrar stock disponible por LOC para cada ítem (solo lectura).
+- [ ] **2.2** (Opcional) Al marcar “En tránsito”: permitir indicar LOC de origen por ítem (descuento desde ese LOC).
+- [ ] **2.3** Validación al preparar: cantidad preparada ≤ stock disponible (por sede o por LOC si se implementa 2.2).
 
-## Listo cuando: un usuario no autorizado no puede ver ni escribir inventario.
+---
 
-## 1.2 Higiene de datos (catalogo)
+## Fase 3: Conteos y ajustes
 
-- ⬜ Insumos con SKU: 563 / 563 con SKU (0 sin SKU)
-- ⬜ Corregir incoherencias de product_type en policies (ej. sale vs venta)
-- ⬜ Validar product_inventory_profiles cubre todos los insumos
-  - 0 insumos sin perfil (o plan para completar perfiles)
+- [ ] **3.1** Conteos: flujo “Crear conteo” por zona/LOC (pantalla o mejora en `/inventory/count-initial`).
+- [ ] **3.2** Conteos: listado de conteos abiertos y cerrar conteo.
+- [ ] **3.3** Conteos: al cerrar, calcular diferencias y proponer ajustes.
+- [ ] **3.4** Ajustes: CTA “Aprobar ajustes” desde conteo (solo roles permitidos).
+- [ ] **3.5** Documentar en código/UX el flujo completo de conteos según INVENTARIO-PERFECTO.
 
-**Listo cuando:** catalogo no bloquea inventario.
+---
 
-## Fase 2 — Inventario Core (MVP operativo) (5-10 dias)
+## Fase 4: Entradas y recepción
 
-Esto desbloquea control de todo aunque aun no existan LPN/LOC perfectos.
+- [ ] **4.1** Entradas: recepción parcial ya implementada; verificar estados (pendiente / parcial / recibido) y mensajes.
+- [ ] **4.2** Entradas: nota de incidencia por línea (faltante, calidad, daño) si está en spec.
+- [ ] **4.3** Entradas: lote/vencimiento por ítem (campos opcionales) si aplica al modelo de datos.
 
-**🟡 2.1 Ledger de movimientos (Inventory Movements) — la verdad**
+---
 
-- 🟡 Definir catalogo de tipos de movimiento (estandar):
-  - receipt (entrada por proveedor)
-  - issue_internal (salida a cocina/panaderia)
-  - transfer_out / transfer_in (CP -> satelite)
-  - adjustment (ajuste manual controlado)
-  - count (conteo que genera ajuste)
-  - waste/shrink (merma/perdida)
-- 🟡 Regla: toda operacion de stock escribe movimiento con motivo y relacion a documento
-- ⬜ Guardrails:
-  - evitar duplicidad de conteos por sesion
-  - cuantizacion de quantity (decimales consistentes)
-  - notas obligatorias en adjustment
+## Fase 5: Traslados y ubicaciones
 
-**Listo cuando:** puedes reconstruir stock desde movimientos.
+- [ ] **5.1** Traslados: validar que cantidad ≤ stock disponible en LOC origen.
+- [ ] **5.2** Ubicaciones: flujo “Crear LOC” una a una (además de plantilla) si no existe.
+- [ ] **5.3** Ubicaciones: listado por sede con búsqueda/filtro por zona o código.
 
-**2.2 Stock por sede (Inventory Stock by Site) — vista operativa**
+---
 
-- ⬜ Definir si se mantiene:
-  - derivado por trigger / function, o
-  - recalculado por job/manual (al inicio puede ser manual)
-- 🟡 Vista/endpoint de consulta rapido por SKU, sede, categoria
-- �YY� Catalogo por sede (product_site_settings) para filtrar productos activos
-- ⬜ Alertas basicas:
-  - stock negativo
-  - bajo minimo (si existe PAR)
-  - vencimiento (si manejas lotes)
+## Fase 6: Movimientos y auditoría
 
-**Listo cuando:** hay pantalla de stock confiable para operar.
+- [ ] **6.1** Movimientos: filtro por tipo (entrada, salida, traslado, ajuste) y por producto.
+- [ ] **6.2** Movimientos: exportar (CSV/Excel) si está en scope.
+- [ ] **6.3** (Opcional) Movimientos: mostrar LOC en movimientos de traslado/entrada cuando aplique.
 
-**2.3 Pantallas core**
+---
 
-- 🟢 Inventario > Stock (filtros, busqueda, export basico)
-- 🟢 Inventario > Movimientos (filtros por fecha, sede, tipo, SKU)
-- ⬜ Inventario > Ajuste (con motivo, permisos, evidencia opcional)
-- ⬜ Inventario > Conteo inicial (wizard por sede; genera sesion y movimientos)
-- ⬜ Conteos > Historial (sesiones, diferencias, aprobacion si aplica)
+## Fase 7: Panel y navegación por rol
 
-**Listo cuando:** puedes iniciar control desde cero sin Excel/Epsilon.
+- [ ] **7.1** Panel: CTAs claros por permiso (“Solicitar remisión”, “Preparar remisión”, “Recibir remisión”, “Crear entrada”, “Ver stock”).
+- [ ] **7.2** Menú lateral: ocultar ítems sin permiso (ya depende de permisos; verificar que todos los permisos estén mapeados).
+- [ ] **7.3** Sin acceso: mensaje claro en `/no-access` con rol y permiso faltante.
 
-## Fase 3 — Recepcion de proveedores (Inbound) (7-14 dias)
+---
 
-**3.1 Documento de recepcion**
+## Fase 8: Impresión y scanner
 
-- ⬜ Recepciones > Nueva:
-  - proveedor, factura, fecha/hora
-  - lineas: SKU + cantidad + unidad + costo (si aplica) + lote/exp (si aplica)
-  - estado: draft -> verificado -> cerrado
-- ⬜ Manejo de discrepancias:
-  - faltante/danado -> cuarentena
-- ⬜ Al cerrar:
-  - crea movimientos receipt
-  - actualiza stock
+- [ ] **8.1** Impresión: presets LOC / SKU / PROD alineados con uso real (LOC DataMatrix, SKU Code128).
+- [ ] **8.2** Impresión: cola + preview y prueba de alineación si no está.
+- [ ] **8.3** Scanner: flujo mínimo (lectura y redirección) documentado o mejorado si es atajo principal.
 
-**3.2 Operacion real (staging + SLA)**
+---
 
-- ⬜ Bandeja "pendiente de guardar" (put-away pendiente)
-- ⬜ SLA: recepcion cerrada -> guardada antes de X horas
+## Fase 9: Integración ORIGO (órdenes de compra)
 
-**Listo cuando:** todo lo que entra queda registrado y disponible.
+- [ ] **9.1** Diseño: modelo de datos OC en ORIGO y cómo se vincula a Nexo (referencia en entradas).
+- [ ] **9.2** Entradas: campo o selector “Orden de compra” (referencia a OC de ORIGO).
+- [ ] **9.3** Entradas: cargar ítems desde OC seleccionada (producto, cantidad esperada) en lugar de solo tipeo manual.
+- [ ] **9.4** (Opcional) Vista “Recepciones pendientes por OC” para bodeguero.
+- [ ] **9.5** Actualizar stock y movimientos al recibir contra OC (mismo flujo que entrada actual + vínculo OC).
 
-## Fase 4 — Entregas internas (CP -> cocina/panaderia/produccion) (7-14 dias)
+---
 
-- ⬜ Maestros: destinos internos (cocina, panaderia, reposteria, frio, etc.)
-- ⬜ Entregas internas > Nueva:
-  - responsable entrega / recibe
-  - lineas SKU + cantidad (en unidades controlables)
-  - motivo (reposicion / urgencia)
-- ⬜ Al confirmar:
-  - crea movimientos issue_internal
-- ⬜ Ventanas de entrega:
-  - agenda por turnos
-  - urgencias registradas
+## Fase 10: Documentación y cierre
 
-**Listo cuando:** desaparece el "sacan y ya" al menos para bodega.
+- [ ] **10.1** FLUJO-NEXO-POR-ROL.md: revisar y actualizar si cambian pantallas o permisos.
+- [ ] **10.2** INVENTARIO-PERFECTO.md: marcar o resumir qué pasos del checklist ya están hechos.
+- [ ] **10.3** README o docs de desarrollo: cómo levantar Nexo, permisos necesarios en BD, roles de prueba.
 
-## Fase 5 — Transferencias y remisiones a satelites (2-4 semanas)
+---
 
-**5.1 Solicitud y preparacion**
+## Resumen de progreso
 
-- ⬜ Solicitudes satelite (opcional al inicio; puede arrancar manual)
-- 🟡 Remisiones MVP (crear -> preparar -> en viaje -> recibir -> faltantes)
-- ⬜ Transferencias > Nueva:
-  - destino (satelite)
-  - lineas solicitadas
-  - estado: draft -> aprobado -> picking -> packed -> despachado -> recibido
-- ⬜ Picking list (por zonas: seco/frio/congelado)
+| Fase | Hechos | Total |
+|------|--------|-------|
+| 1. Stock y LOC | 3 | 4 |
+| 2. Remisiones y LOC | 0 | 3 |
+| 3. Conteos y ajustes | 0 | 5 |
+| 4. Entradas | 0 | 3 |
+| 5. Traslados y ubicaciones | 0 | 3 |
+| 6. Movimientos | 0 | 3 |
+| 7. Panel y roles | 0 | 3 |
+| 8. Impresión y scanner | 0 | 3 |
+| 9. ORIGO | 0 | 5 |
+| 10. Documentación | 0 | 3 |
+| **Total** | **3** | **35** |
 
-**5.2 Despacho y recepcion**
-
-- ⬜ Confirmacion de carga (quien, hora, checklist)
-- ⬜ Recepcion en satelite:
-  - confirmar lineas
-  - discrepancias (faltante/danado)
-- 🟢 Movimientos:
-  - transfer_out en CP
-  - transfer_in en satelite (al recibir)
-  - manejo de disputa (ajuste controlado)
-
-**Listo cuando:** las remisiones dejan de ser WhatsApp/papel.
-
-## Fase 6 — LPN/LOC (contenedores/ubicaciones) como mejora de trazabilidad (2-6 semanas)
-
-Importante: esto es potente, pero no debe bloquear el core.
-
-- 🟡 Definir modelo minimo:
-  - LOC = ubicacion fisica (area/zona/nivel/pasillo)
-  - LPN = contenedor (caja/canasta/pallet)
-- 🟡 Pantallas:
-  - LOC list + create
-  - LPN list + create
-  - Put-away: asignar LPN -> LOC
-  - Contenido por LPN (SKU + qty)
-- ⬜ Integrar con movimientos:
-  - movimientos pueden referenciar lpn_id / from_loc / to_loc si existe
-- 🟡 Impresion Zebra operacion:
-  - Jobs persistentes
-- 🟡 Etiquetas produccion (lote + expiracion)
-  - plantillas finales ZPL
-  - Print Station estable
-
-**Listo cuando:** trazas fisicamente donde esta cada contenedor.
-
-## Fase 7 — Conteos ciclicos y auditoria (continuo)
-
-- ⬜ ABC operativo:
-  - A: diario/semanal
-  - B: quincenal
-  - C: mensual
-- ⬜ Sesiones de conteo por area/LOC/LPN
-- ⬜ Reconciliacion y aprobacion de ajustes
-- ⬜ Reporte de precision inventario
-
-**Listo cuando:** reduces merma/fugas sostenidamente.
-
-## Fase 8 — Costeo y compras (si quieres reemplazar parte de Epsilon) (4-8 semanas)
-
-- ⬜ Captura de costo unitario en recepciones
-- ⬜ Historial de costos por proveedor
-- ⬜ Valorizacion de inventario (promedio ponderado o FIFO contable, segun decidan)
-- ⬜ Ordenes de compra (PO) y recepciones contra PO
-- ⬜ Recomendaciones de compra (PAR + consumo)
-
-**Listo cuando:** compras vuelve a ser controlable y auditable.
-
-## Fase 9 — Produccion/recetas (FOGO) integrado (posterior)
-
-- ⬜ Recetas y rendimientos
-- ⬜ Ordenes de produccion
-- ⬜ Consumo automatico (ledger) + creacion de lote terminado
-- ⬜ Etiquetas FIFO/FEFO y trazabilidad por lote
-
-## Modulos transversales (aplican en todas las fases)
-
-- 🟡 UI Kit NEXO (consistencia visual): layout, cards, tables, filters, toasts, empty states
-- ⬜ Observabilidad: logs de errores en API, auditoria de acciones
-- 🟡 Permisos y aprobaciones: ajustes/mermas requieren rol o aprobacion
-- ⬜ Exportaciones: CSV de stock, movimientos, recepciones, transferencias
-- ⬜ SOPs (procedimientos): recepcion, salida interna, remisiones, conteos
-
-## Prioridad recomendada (para que esto se vuelva real rapido)
-
-Si tu urgencia es control ya, el orden de implementacion mas efectivo es:
-
-1) Fase 2 (Inventario Core)
-2) Fase 3 (Recepciones)
-3) Fase 4 (Entregas internas)
-4) Fase 5 (Transferencias satelites)
-5) Fase 6 (LPN/LOC + Zebra)
-
+*Última actualización: Fase 1 (1.1, 1.2, 1.3) implementada – Stock con columna Ubicaciones (LOC), filtros LOC/Zona y alerta "Sin ubicación".*

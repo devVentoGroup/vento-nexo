@@ -16,6 +16,8 @@ type SearchParams = {
   inventory_kind?: string;
   category_id?: string;
   category_domain?: string;
+  location_id?: string;
+  zone?: string;
   error?: string;
   count_initial?: string;
   adjust?: string;
@@ -43,6 +45,20 @@ type StockRow = {
   product_id: string;
   current_qty: number | null;
   updated_at: string | null;
+};
+
+type StockByLocRow = {
+  location_id: string;
+  product_id: string;
+  current_qty: number | null;
+  location?: { code: string | null; zone: string | null; site_id: string } | null;
+};
+
+type LocRow = {
+  id: string;
+  code: string | null;
+  zone: string | null;
+  description: string | null;
 };
 
 type ProductRow = {
@@ -100,6 +116,8 @@ export default async function InventoryStockPage({
   const inventoryKind = String(sp.inventory_kind ?? "").trim();
   const categoryId = String(sp.category_id ?? "").trim();
   const categoryDomain = String(sp.category_domain ?? "").trim();
+  const locationIdFilter = String(sp.location_id ?? "").trim();
+  const zoneFilter = String(sp.zone ?? "").trim();
 
   const siteIds = employeeSiteRows
     .map((row) => row.site_id)
@@ -207,6 +225,8 @@ export default async function InventoryStockPage({
     if (productType) params.set("product_type", productType);
     if (categoryId) params.set("category_id", categoryId);
     if (categoryDomain) params.set("category_domain", categoryDomain);
+    if (locationIdFilter) params.set("location_id", locationIdFilter);
+    if (zoneFilter) params.set("zone", zoneFilter);
     if (kind) params.set("inventory_kind", kind);
     const qs = params.toString();
     return `/inventory/stock${qs ? `?${qs}` : ""}`;
@@ -256,7 +276,7 @@ export default async function InventoryStockPage({
   }
 
   const { data: products, error: productError } = await productsQuery;
-  const productRows = (products ?? []) as ProductRow[];
+  let productRows = (products ?? []) as ProductRow[];
 
   const { data: stockData, error: stockError } = siteId
     ? await supabase
@@ -268,8 +288,94 @@ export default async function InventoryStockPage({
   const stockRows = (stockData ?? []) as StockRow[];
   const stockMap = new Map(stockRows.map((row) => [row.product_id, row]));
 
+  const { data: locationRows } =
+    siteId && siteIds.includes(siteId)
+      ? await supabase
+          .from("inventory_locations")
+          .select("id,code,zone,description")
+          .eq("site_id", siteId)
+          .eq("is_active", true)
+          .order("zone", { ascending: true })
+          .order("code", { ascending: true })
+          .limit(500)
+      : { data: [] as LocRow[] };
+
+  const locList = (locationRows ?? []) as LocRow[];
+  const locIdsForSite = new Set(locList.map((l) => l.id));
+  const locById = new Map(locList.map((l) => [l.id, l]));
+
+  const { data: stockByLocData } =
+    siteId && locIdsForSite.size > 0
+      ? await supabase
+          .from("inventory_stock_by_location")
+          .select("location_id,product_id,current_qty,location:inventory_locations(code,zone,site_id)")
+          .in("location_id", Array.from(locIdsForSite))
+          .gt("current_qty", 0)
+      : { data: [] as StockByLocRow[] };
+
+  const stockByLocRows = (stockByLocData ?? []) as StockByLocRow[];
+
+  const locSummaryByProduct = new Map<
+    string,
+    { lines: string[]; locationIds: Set<string>; hasAny: boolean }
+  >();
+  for (const row of stockByLocRows) {
+    const code = row.location?.code ?? row.location_id.slice(0, 8);
+    const qty = Number(row.current_qty ?? 0);
+    if (!qty) continue;
+    const key = row.product_id;
+    if (!locSummaryByProduct.has(key)) {
+      locSummaryByProduct.set(key, { lines: [], locationIds: new Set(), hasAny: true });
+    }
+    const rec = locSummaryByProduct.get(key)!;
+    rec.lines.push(`${code}: ${qty}`);
+    rec.locationIds.add(row.location_id);
+  }
+
+  const productIdsInSelectedLoc =
+    locationIdFilter && locIdsForSite.has(locationIdFilter)
+      ? new Set(
+          stockByLocRows
+            .filter((r) => r.location_id === locationIdFilter && Number(r.current_qty ?? 0) > 0)
+            .map((r) => r.product_id)
+        )
+      : null;
+
+  const locIdsInZone =
+    zoneFilter && locList.length > 0
+      ? new Set(locList.filter((l) => (l.zone ?? "").toLowerCase() === zoneFilter.toLowerCase()).map((l) => l.id))
+      : null;
+  const productIdsInSelectedZone =
+    locIdsInZone && locIdsInZone.size > 0
+      ? new Set(
+          stockByLocRows
+            .filter((r) => locIdsInZone.has(r.location_id) && Number(r.current_qty ?? 0) > 0)
+            .map((r) => r.product_id)
+        )
+      : null;
+
   const negativeCount = stockRows.filter((row) => Number(row.current_qty ?? 0) < 0).length;
   const hasError = Boolean(productError || stockError);
+
+  const productIdsWithStockNoLoc =
+    siteId && siteIds.includes(siteId)
+      ? stockRows
+          .filter((row) => {
+            const qty = Number(row.current_qty ?? 0);
+            const hasLoc = locSummaryByProduct.get(row.product_id)?.hasAny ?? false;
+            return qty > 0 && !hasLoc;
+          })
+          .map((row) => row.product_id)
+      : [];
+  if (siteId && (productIdsInSelectedLoc ?? productIdsInSelectedZone)) {
+    const byLoc = productIdsInSelectedLoc
+      ? (p: ProductRow) => productIdsInSelectedLoc!.has(p.id)
+      : () => true;
+    const byZone = productIdsInSelectedZone
+      ? (p: ProductRow) => productIdsInSelectedZone!.has(p.id)
+      : () => true;
+    productRows = productRows.filter((p) => byLoc(p) && byZone(p));
+  }
 
   return (
     <div className="w-full">
@@ -306,6 +412,13 @@ export default async function InventoryStockPage({
       {sp.adjust === "1" ? (
         <div className="mt-6 ui-alert ui-alert--success">
           Ajuste registrado. El movimiento y el stock se actualizaron.
+        </div>
+      ) : null}
+
+      {productIdsWithStockNoLoc.length > 0 ? (
+        <div className="mt-6 ui-alert ui-alert--warn">
+          <strong>Sin ubicación:</strong> {productIdsWithStockNoLoc.length} producto(s) tienen stock en esta sede pero
+          no tienen LOC asignada. Asigna ubicación en Entradas al recibir o en Traslados.
         </div>
       ) : null}
 
@@ -405,6 +518,33 @@ export default async function InventoryStockPage({
             </select>
           </label>
 
+          {siteId && locList.length > 0 ? (
+            <>
+              <label className="flex flex-col gap-1">
+                <span className="ui-label">Ubicación (LOC)</span>
+                <select name="location_id" defaultValue={locationIdFilter} className="ui-input">
+                  <option value="">Todas</option>
+                  {locList.map((loc) => (
+                    <option key={loc.id} value={loc.id}>
+                      {loc.code ?? loc.id} {loc.zone ? `(${loc.zone})` : ""}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="ui-label">Zona</span>
+                <select name="zone" defaultValue={zoneFilter} className="ui-input">
+                  <option value="">Todas</option>
+                  {Array.from(new Set(locList.map((l) => l.zone).filter(Boolean))).map((z) => (
+                    <option key={z!} value={z!}>
+                      {z}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </>
+          ) : null}
+
           <div className="sm:col-span-2 lg:col-span-4">
             <button className="ui-btn ui-btn--brand">
               Aplicar filtros
@@ -459,6 +599,9 @@ export default async function InventoryStockPage({
                 <TableHeaderCell>Sede</TableHeaderCell>
                 <TableHeaderCell>Qty</TableHeaderCell>
                 <TableHeaderCell>Unidad</TableHeaderCell>
+                {siteId && locList.length > 0 ? (
+                  <TableHeaderCell>Ubicaciones (LOC)</TableHeaderCell>
+                ) : null}
                 <TableHeaderCell>Actualizado</TableHeaderCell>
               </tr>
             </thead>
@@ -477,6 +620,18 @@ export default async function InventoryStockPage({
                 const inventoryProfile = product.product_inventory_profiles;
                 const inventoryLabel = inventoryProfile?.inventory_kind ?? "unclassified";
                 const trackLabel = inventoryProfile?.track_inventory ? "si" : "no";
+                const locSummary = locSummaryByProduct.get(product.id);
+                const ubicacionesLabel =
+                  siteId && locList.length > 0
+                    ? locSummary?.lines?.length
+                      ? locSummary.lines.join(" · ")
+                      : qtyValue > 0
+                        ? "Sin ubicación"
+                        : "-"
+                    : null;
+                const sinUbicacion = Boolean(
+                  siteId && qtyValue > 0 && !locSummary?.hasAny
+                );
 
                 return (
                   <tr key={product.id} className="ui-body">
@@ -491,6 +646,14 @@ export default async function InventoryStockPage({
                       {Number.isFinite(qtyValue) ? qtyValue : "-"}
                     </TableCell>
                     <TableCell>{unit}</TableCell>
+                    {siteId && locList.length > 0 ? (
+                      <TableCell
+                        className={sinUbicacion ? "text-amber-600 font-medium" : ""}
+                        title={sinUbicacion ? "Producto con stock sin LOC asignada" : undefined}
+                      >
+                        {ubicacionesLabel ?? "-"}
+                      </TableCell>
+                    ) : null}
                     <TableCell className="font-mono">
                       {formatDate(stockRow?.updated_at)}
                     </TableCell>
@@ -500,7 +663,10 @@ export default async function InventoryStockPage({
 
               {!hasError && productRows.length === 0 ? (
                 <tr>
-                  <TableCell colSpan={10} className="ui-empty">
+                  <TableCell
+                    colSpan={siteId && locList.length > 0 ? 11 : 10}
+                    className="ui-empty"
+                  >
                     No hay productos para mostrar (o RLS no te permite verlo).
                   </TableCell>
                 </tr>
