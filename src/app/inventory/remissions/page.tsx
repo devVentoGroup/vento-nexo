@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 import { redirect } from "next/navigation";
 
@@ -422,8 +422,14 @@ export default async function RemissionsPage({
             Flujo interno entre sedes. Satélites solicitan, bodega prepara y se recibe en destino.
           </p>
         </div>
-
-        <div />
+        {isProductionCenter ? (
+          <Link
+            href="/inventory/remissions/prepare"
+            className="ui-btn ui-btn--brand"
+          >
+            Preparar remisiones
+          </Link>
+        ) : null}
       </div>
 
       {errorMsg ? (

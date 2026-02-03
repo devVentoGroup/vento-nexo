@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { requireAppAccess } from "@/lib/auth/guard";
@@ -219,6 +219,42 @@ async function updateItems(formData: FormData) {
   const statuses = formData.getAll("item_status").map((v) => String(v).trim());
   const areaKinds = formData.getAll("item_area_kind").map((v) => String(v).trim());
 
+  const fromSiteId = request?.from_site_id ?? "";
+  if (allowPrepared && fromSiteId) {
+    const { data: stockRows } = await supabase
+      .from("inventory_stock_by_site")
+      .select("product_id,current_qty")
+      .eq("site_id", fromSiteId);
+    const stockMap = new Map(
+      (stockRows ?? []).map((r: { product_id: string; current_qty: number | null }) => [
+        r.product_id,
+        Number(r.current_qty ?? 0),
+      ])
+    );
+    const { data: itemsRows } = await supabase
+      .from("restock_request_items")
+      .select("id,product_id")
+      .eq("request_id", requestId);
+    const productById = new Map((itemsRows ?? []).map((r: { id: string; product_id: string }) => [r.id, r.product_id]));
+    for (let i = 0; i < itemIds.length; i += 1) {
+      const itemId = itemIds[i];
+      const productId = productById.get(itemId);
+      if (!productId) continue;
+      const available = stockMap.get(productId) ?? 0;
+      const prepQty = parseNumber(prepared[i] ?? "0");
+      const shipQty = parseNumber(shipped[i] ?? "0");
+      const maxQty = Math.max(prepQty, shipQty);
+      if (maxQty > available) {
+        redirect(
+          `/inventory/remissions/${requestId}?error=` +
+            encodeURIComponent(
+              `Cantidad preparada/enviada (${maxQty}) mayor que stock disponible en origen (${available}). Ajusta las cantidades.`
+            )
+        );
+      }
+    }
+  }
+
   for (let i = 0; i < itemIds.length; i += 1) {
     const itemId = itemIds[i];
     if (!itemId) continue;
@@ -415,6 +451,49 @@ export default async function RemissionDetailPage({
   const itemRows = (items ?? []) as RestockItemRow[];
   const areaKindRows = (areaKinds ?? []) as AreaKindRow[];
 
+  // Fase 2.1: stock disponible por sede y por LOC en origen (solo lectura al preparar)
+  const fromSiteId = request?.from_site_id ?? "";
+  type StockBySiteRow = { product_id: string; current_qty: number | null };
+  type StockByLocRow = { location_id: string; product_id: string; current_qty: number | null; location?: { code: string | null } | null };
+  const { data: stockBySiteData } = fromSiteId
+    ? await supabase
+        .from("inventory_stock_by_site")
+        .select("product_id,current_qty")
+        .eq("site_id", fromSiteId)
+    : { data: [] as StockBySiteRow[] };
+  const stockBySiteMap = new Map<string, number>(
+    (stockBySiteData ?? []).map((r: StockBySiteRow) => [r.product_id, Number(r.current_qty ?? 0)])
+  );
+
+  let locIdsFromSite: string[] = [];
+  const { data: locsFromSite } = fromSiteId
+    ? await supabase
+        .from("inventory_locations")
+        .select("id")
+        .eq("site_id", fromSiteId)
+        .limit(500)
+    : { data: [] as { id: string }[] };
+  locIdsFromSite = (locsFromSite ?? []).map((r: { id: string }) => r.id);
+
+  const { data: stockByLocData } =
+    fromSiteId && locIdsFromSite.length > 0
+      ? await supabase
+          .from("inventory_stock_by_location")
+          .select("location_id,product_id,current_qty,location:inventory_locations(code)")
+          .in("location_id", locIdsFromSite)
+          .gt("current_qty", 0)
+      : { data: [] as StockByLocRow[] };
+  const stockByLocRows = (stockByLocData ?? []) as StockByLocRow[];
+  const stockByLocByProduct = new Map<string, string[]>();
+  for (const row of stockByLocRows) {
+    const code = row.location?.code ?? row.location_id?.slice(0, 8) ?? "";
+    const qty = Number(row.current_qty ?? 0);
+    if (!qty) continue;
+    const key = row.product_id;
+    if (!stockByLocByProduct.has(key)) stockByLocByProduct.set(key, []);
+    stockByLocByProduct.get(key)!.push(`${code}: ${qty}`);
+  }
+
   if (!request) {
     return (
       <div className="w-full">
@@ -480,6 +559,16 @@ export default async function RemissionDetailPage({
         </div>
       </div>
 
+      {access.canPrepare || access.canTransit ? (
+        <div className="ui-panel rounded-2xl border-2 border-amber-200 bg-amber-50/80">
+          <div className="ui-h3">Flujo bodega: preparar y enviar</div>
+          <ol className="mt-2 list-decimal list-inside space-y-1 ui-body-muted">
+            <li>Marca cantidades <strong>Preparado</strong> y <strong>Enviado</strong> por ítem abajo y pulsa &quot;Guardar ítems&quot;.</li>
+            <li>Cuando todo esté listo, pulsa <strong>En viaje</strong> para descontar stock en origen.</li>
+          </ol>
+        </div>
+      ) : null}
+
       <div className="ui-panel">
         <div className="ui-h3">Acciones</div>
         <form action={updateStatus} className="mt-4 flex flex-wrap gap-3">
@@ -488,7 +577,7 @@ export default async function RemissionDetailPage({
             <button
               name="action"
               value="prepare"
-              className="ui-btn ui-btn--brand"
+              className="ui-btn ui-btn--ghost"
             >
               Marcar preparado
             </button>
@@ -497,7 +586,7 @@ export default async function RemissionDetailPage({
             <button
               name="action"
               value="transit"
-              className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
+              className="ui-btn ui-btn--brand"
             >
               En viaje
             </button>
@@ -540,16 +629,20 @@ export default async function RemissionDetailPage({
           ) : null}
         </form>
         <div className="mt-2 ui-caption">
-          "En viaje" descuenta stock en origen. "Recibir" agrega stock en destino.
+          &quot;En viaje&quot; descuenta stock en origen. &quot;Recibir&quot; agrega stock en destino.
         </div>
       </div>
 
       <div className="ui-panel">
-        <div className="ui-h3">Items</div>
+        <div className="ui-h3">Ítems — marcar cantidades a preparar y enviar</div>
         <form action={updateItems} className="mt-4 space-y-4">
           <input type="hidden" name="request_id" value={request.id} />
           <div className="space-y-3">
-            {itemRows.map((item) => (
+            {itemRows.map((item) => {
+              const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
+              const locLines = stockByLocByProduct.get(item.product_id) ?? [];
+              const stockOk = availableSite >= (item.quantity ?? 0);
+              return (
               <div key={item.id} className="rounded-xl border border-zinc-200 p-4">
                 <div className="ui-h3">
                   {item.product?.name ?? item.product_id}
@@ -557,6 +650,19 @@ export default async function RemissionDetailPage({
                 <div className="mt-1 ui-caption">
                   Producto: <span className="font-mono">{item.product_id}</span> Solicitado: {item.quantity} {item.unit ?? item.product?.unit ?? ""}
                 </div>
+                {access.canPrepare && fromSiteId ? (
+                  <div className="mt-2 rounded-lg bg-zinc-50 px-3 py-2 text-sm">
+                    <span className="font-semibold text-zinc-700">Stock en origen:</span>{" "}
+                    <span className={stockOk ? "text-emerald-700" : "text-amber-700"}>
+                      {availableSite} {item.unit ?? item.product?.unit ?? ""}
+                    </span>
+                    {locLines.length > 0 ? (
+                      <span className="ml-2 text-zinc-600">
+                        por LOC: {locLines.join(" · ")}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
 
                 <input type="hidden" name="item_id" value={item.id} />
 
@@ -636,7 +742,8 @@ export default async function RemissionDetailPage({
                   ) : null}
                 </div>
               </div>
-            ))}
+            );
+            })}
           </div>
 
           <button className="ui-btn ui-btn--brand">

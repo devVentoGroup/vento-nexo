@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 
@@ -16,9 +16,11 @@ type Props = {
   products: Product[];
   siteId: string;
   siteName: string;
+  countScopeLabel?: string;
+  zoneOrLocNote?: string;
 };
 
-export function CountInitialForm({ products, siteId, siteName }: Props) {
+export function CountInitialForm({ products, siteId, siteName, countScopeLabel, zoneOrLocNote }: Props) {
   const router = useRouter();
   const [step, setStep] = useState<2 | 3>(2);
   const [qty, setQty] = useState<Record<string, string>>({});
@@ -52,7 +54,11 @@ export function CountInitialForm({ products, siteId, siteName }: Props) {
       const res = await fetch("/api/inventory/count-initial", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ site_id: siteId, lines }),
+        body: JSON.stringify({
+          site_id: siteId,
+          lines,
+          scope_note: zoneOrLocNote ?? undefined,
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -81,7 +87,8 @@ export function CountInitialForm({ products, siteId, siteName }: Props) {
           <div className="ui-panel">
             <div className="ui-body font-semibold">Cantidad contada por producto</div>
             <div className="mt-1 ui-body-muted">
-              Sede: {siteName}. Deja en blanco o 0 los que no cuentes.
+              Sede: {siteName}
+              {countScopeLabel && countScopeLabel !== "Toda la sede" ? ` · ${countScopeLabel}` : ""}. Deja en blanco o 0 los que no cuentes.
             </div>
             <div className="mt-4 overflow-x-auto">
               <Table>
@@ -137,8 +144,8 @@ export function CountInitialForm({ products, siteId, siteName }: Props) {
           <div className="ui-panel">
             <div className="ui-body font-semibold">Resumen del conteo</div>
             <div className="mt-1 ui-body-muted">
-              {lines.length} producto(s) con cantidad. Al confirmar se crean movimientos tipo &quot;count&quot; y se
-              actualiza el stock.
+              {lines.length} producto(s) con cantidad. Al confirmar se crean movimientos tipo &quot;count&quot;
+              {zoneOrLocNote ? " (conteo por zona/LOC; el ajuste de stock se aplicará al cerrar el conteo)." : " y se actualiza el stock."}
             </div>
             <div className="mt-4 overflow-x-auto">
               <Table>

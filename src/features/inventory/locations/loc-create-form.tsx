@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useMemo, useState } from "react";
 
@@ -15,6 +15,7 @@ type Props = {
   defaultSiteId: string;
   action: (formData: FormData) => void | Promise<void>;
   createCpTemplateAction?: (formData: FormData) => void | Promise<void>;
+  createEspaciosFisicosTemplateAction?: (formData: FormData) => void | Promise<void>;
 };
 
 const ZONE_CUSTOM = "__CUSTOM__";
@@ -28,6 +29,13 @@ const ZONES_BY_SITE: Record<
     { code: "EMP", label: "Empaques / Estibas (EMP)" },
     { code: "REC", label: "Recepción / Staging (REC)" },
     { code: "DSP", label: "Despacho (DSP)" },
+    { code: "BODEGA", label: "Bodega (espacios físicos)" },
+    { code: "FRIO", label: "Cuarto frío" },
+    { code: "CONG", label: "Cuarto de congelación" },
+    { code: "N2P", label: "Nevera 2 puertas" },
+    { code: "N3P", label: "Nevera 3 puertas" },
+    { code: "SECOS1", label: "Zona de secos primer piso" },
+    { code: "SECPREP", label: "Secos preparados (porciones)" },
   ],
   SAU: [
     { code: "BOD", label: "Bodega (BOD)" },
@@ -35,6 +43,13 @@ const ZONES_BY_SITE: Record<
     { code: "BAR", label: "Bar (BAR)" },
     { code: "OFI", label: "Oficina (OFI)" },
     { code: "EXT", label: "Externo (EXT)" },
+    { code: "BODEGA", label: "Bodega (espacios físicos)" },
+    { code: "FRIO", label: "Cuarto frío" },
+    { code: "CONG", label: "Cuarto de congelación" },
+    { code: "N2P", label: "Nevera 2 puertas" },
+    { code: "N3P", label: "Nevera 3 puertas" },
+    { code: "SECOS1", label: "Zona de secos primer piso" },
+    { code: "SECPREP", label: "Secos preparados (porciones)" },
   ],
   VCF: [
     { code: "BOD", label: "Bodega (BOD)" },
@@ -42,11 +57,25 @@ const ZONES_BY_SITE: Record<
     { code: "BAR", label: "Bar (BAR)" },
     { code: "OFI", label: "Oficina (OFI)" },
     { code: "EXT", label: "Externo (EXT)" },
+    { code: "BODEGA", label: "Bodega (espacios físicos)" },
+    { code: "FRIO", label: "Cuarto frío" },
+    { code: "CONG", label: "Cuarto de congelación" },
+    { code: "N2P", label: "Nevera 2 puertas" },
+    { code: "N3P", label: "Nevera 3 puertas" },
+    { code: "SECOS1", label: "Zona de secos primer piso" },
+    { code: "SECPREP", label: "Secos preparados (porciones)" },
   ],
   VGR: [
     { code: "OFI", label: "Oficina (OFI)" },
     { code: "BOD", label: "Bodega (BOD)" },
     { code: "EXT", label: "Externo (EXT)" },
+    { code: "BODEGA", label: "Bodega (espacios físicos)" },
+    { code: "FRIO", label: "Cuarto frío" },
+    { code: "CONG", label: "Cuarto de congelación" },
+    { code: "N2P", label: "Nevera 2 puertas" },
+    { code: "N3P", label: "Nevera 3 puertas" },
+    { code: "SECOS1", label: "Zona de secos primer piso" },
+    { code: "SECPREP", label: "Secos preparados (porciones)" },
   ],
 };
 
@@ -70,6 +99,7 @@ export function LocCreateForm({
   defaultSiteId,
   action,
   createCpTemplateAction,
+  createEspaciosFisicosTemplateAction,
 }: Props) {
   const initialSiteId = defaultSiteId || sites[0]?.id || "";
   const [selectedSiteId, setSelectedSiteId] = useState(initialSiteId);
@@ -127,12 +157,20 @@ export function LocCreateForm({
         const aisle = "MAIN";
         return { code: `LOC-${s}-DSP-${aisle}`, aisle, level: "" };
       }
+      // Espacios físicos: un LOC por zona (MAIN)
+      if (["BODEGA", "FRIO", "CONG", "N2P", "N3P", "SECOS1", "SECPREP"].includes(z)) {
+        return { code: `LOC-${s}-${z}-MAIN`, aisle: "MAIN", level: "" };
+      }
 
       // CP + zona custom: fallback simple
       const aisle = `EST${pad2FromNumberString(cpShelfNumber)}`;
       return { code: `LOC-${s}-${z}-${aisle}`, aisle, level: "" };
     }
 
+    // No-CP: espacios físicos → un LOC por zona (MAIN)
+    if (["BODEGA", "FRIO", "CONG", "N2P", "N3P", "SECOS1", "SECPREP"].includes(z)) {
+      return { code: `LOC-${s}-${z}-MAIN`, aisle: "MAIN", level: "" };
+    }
     // No-CP: patrón clásico LOC-SEDE-ZONA-PASILLO-NIVEL
     const aisle = pad2FromNumberString(aisleNumber);
     const level = toLevelCode(levelNumber);
@@ -389,6 +427,38 @@ export function LocCreateForm({
           <div className="mt-3 ui-caption">
             Recomendación operativa: imprime estas etiquetas primero y pégalas
             físicamente.
+          </div>
+        </div>
+      ) : null}
+
+      {/* Plantilla espacios físicos (cualquier sede) */}
+      {createEspaciosFisicosTemplateAction ? (
+        <div className="mt-6 ui-panel">
+          <div className="ui-body font-semibold">
+            Plantilla espacios físicos
+          </div>
+          <div className="mt-1 ui-body-muted">
+            Crea 7 LOCs generales por zona: Bodega, Cuarto frío, Cuarto de congelación,
+            Nevera 2 puertas, Nevera 3 puertas, Zona de secos primer piso y Secos preparados (porciones en bolsa).
+          </div>
+
+          <form
+            action={createEspaciosFisicosTemplateAction}
+            className="mt-4 flex items-center gap-3"
+          >
+            <input type="hidden" name="site_id" value={siteIdToSend} />
+            <input type="hidden" name="site_code" value={siteCode} />
+            <button
+              type="submit"
+              disabled={!siteIdToSend}
+              className="inline-flex h-11 items-center justify-center rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-40"
+            >
+              Crear LOCs espacios físicos
+            </button>
+          </form>
+
+          <div className="mt-3 ui-caption">
+            Sirve para cualquier sede. Los códigos serán LOC-{siteCode}-BODEGA-MAIN, LOC-{siteCode}-FRIO-MAIN, etc.
           </div>
         </div>
       ) : null}

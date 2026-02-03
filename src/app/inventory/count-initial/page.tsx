@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 
 import { requireAppAccess } from "@/lib/auth/guard";
 
@@ -9,7 +9,7 @@ export const dynamic = "force-dynamic";
 const APP_ID = "nexo";
 const PERMISSION = "inventory.counts";
 
-type SearchParams = { site_id?: string };
+type SearchParams = { site_id?: string; zone?: string; location_id?: string };
 
 type EmployeeSiteRow = { site_id: string | null; is_primary: boolean | null };
 type SiteRow = { id: string; name: string | null };
@@ -55,6 +55,8 @@ export default async function InventoryCountInitialPage({
   const siteNameMap = new Map(siteRows.map((r) => [r.id, r.name ?? r.id]));
 
   const siteId = String(sp.site_id ?? "").trim();
+  const zoneParam = String(sp.zone ?? "").trim();
+  const locationIdParam = String(sp.location_id ?? "").trim();
 
   if (!siteId) {
     return (
@@ -109,6 +111,18 @@ export default async function InventoryCountInitialPage({
     );
   }
 
+  // LOCs de la sede (para filtro por zona/LOC en conteo - Fase 3.1)
+  type LocRow = { id: string; code: string | null; zone: string | null };
+  const { data: locsData } = await supabase
+    .from("inventory_locations")
+    .select("id,code,zone")
+    .eq("site_id", siteId)
+    .order("zone", { ascending: true })
+    .order("code", { ascending: true })
+    .limit(300);
+  const locRows = (locsData ?? []) as LocRow[];
+  const zones = [...new Set(locRows.map((l) => l.zone).filter(Boolean))] as string[];
+
   // Paso 2 y 3: productos y formulario
   const { data: productSites } = await supabase
     .from("product_site_settings")
@@ -132,9 +146,57 @@ export default async function InventoryCountInitialPage({
   }
 
   const { data: products, error: productError } = await productsQuery;
-  const productRows = (products ?? []) as ProductRow[];
+  let productRows = (products ?? []) as ProductRow[];
+
+  // Si se eligió zona o LOC: filtrar productos a los que tienen stock en esa zona/LOC (conteo por zona/LOC)
+  let productIdsInLoc: Set<string> | null = null;
+  if (locationIdParam && locRows.some((l) => l.id === locationIdParam)) {
+    const { data: stockByLoc } = await supabase
+      .from("inventory_stock_by_location")
+      .select("product_id")
+      .eq("location_id", locationIdParam)
+      .limit(2000);
+    productIdsInLoc = new Set((stockByLoc ?? []).map((r: { product_id: string }) => r.product_id));
+  } else if (zoneParam && zones.includes(zoneParam)) {
+    const locIdsInZone = locRows.filter((l) => l.zone === zoneParam).map((l) => l.id);
+    if (locIdsInZone.length > 0) {
+      const { data: stockByLoc } = await supabase
+        .from("inventory_stock_by_location")
+        .select("product_id")
+        .in("location_id", locIdsInZone)
+        .limit(2000);
+      productIdsInLoc = new Set((stockByLoc ?? []).map((r: { product_id: string }) => r.product_id));
+    }
+  }
+  if (productIdsInLoc && productIdsInLoc.size > 0) {
+    productRows = productRows.filter((p) => productIdsInLoc!.has(p.id));
+  }
 
   const siteName = siteNameMap.get(siteId) ?? siteId;
+  const selectedLoc = locationIdParam ? locRows.find((l) => l.id === locationIdParam) : null;
+  const countScopeLabel = selectedLoc
+    ? `LOC: ${selectedLoc.code ?? selectedLoc.zone ?? selectedLoc.id}`
+    : zoneParam
+      ? `Zona: ${zoneParam}`
+      : "Toda la sede";
+
+  // Fase 3.2: sesiones de conteo abiertas (por zona/LOC) para esta sede
+  type CountSessionRow = {
+    id: string;
+    name: string | null;
+    status: string | null;
+    scope_type: string | null;
+    scope_zone: string | null;
+    created_at: string | null;
+  };
+  const { data: sessionsData } = await supabase
+    .from("inventory_count_sessions")
+    .select("id,name,status,scope_type,scope_zone,created_at")
+    .eq("site_id", siteId)
+    .eq("status", "open")
+    .order("created_at", { ascending: false })
+    .limit(20);
+  const openSessions = (sessionsData ?? []) as CountSessionRow[];
 
   return (
     <div className="w-full">
@@ -153,6 +215,30 @@ export default async function InventoryCountInitialPage({
         </Link>
       </div>
 
+      {openSessions.length > 0 ? (
+        <div className="mt-6 ui-panel">
+          <div className="ui-h3">Sesiones abiertas (por zona/LOC)</div>
+          <p className="mt-1 ui-body-muted">
+            Conteos por zona/LOC pendientes de cerrar. Cierra el conteo para calcular diferencias y aprobar ajustes.
+          </p>
+          <ul className="mt-4 space-y-2">
+            {openSessions.map((s) => (
+              <li key={s.id} className="flex items-center justify-between gap-3 rounded-xl border border-zinc-200 px-4 py-3">
+                <span className="ui-body">
+                  {s.name ?? s.id.slice(0, 8)} · {s.scope_zone ? `Zona ${s.scope_zone}` : "LOC"} · {s.created_at ? new Date(s.created_at).toLocaleString() : ""}
+                </span>
+                <Link
+                  href={`/inventory/count-initial/session/${s.id}`}
+                  className="ui-btn ui-btn--brand"
+                >
+                  Ver / Cerrar
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+
       {productError ? (
         <div className="mt-6 ui-alert ui-alert--error">
           Error al cargar productos: {productError.message}
@@ -163,11 +249,66 @@ export default async function InventoryCountInitialPage({
           product_site_settings, o &quot;Inventario &gt; Stock&quot; para ver el filtro por sede.
         </div>
       ) : (
-        <CountInitialForm
-          products={productRows.map((p) => ({ id: p.id, name: p.name, sku: p.sku, unit: p.unit }))}
-          siteId={siteId}
-          siteName={siteName}
-        />
+        <>
+          {/* Fase 3.1: opción de conteo por zona/LOC */}
+          {locRows.length > 0 ? (
+            <div className="mt-6 ui-panel">
+              <div className="ui-h3">Ámbito del conteo</div>
+              <p className="mt-1 ui-body-muted">
+                Opcional: limita el conteo a una zona o un LOC (solo se listan productos con stock ahí). Si no eliges, se cuenta toda la sede.
+              </p>
+              <form method="get" action="/inventory/count-initial" className="mt-4 flex flex-wrap items-end gap-3">
+                <input type="hidden" name="site_id" value={siteId} />
+                <label className="flex flex-col gap-1">
+                  <span className="ui-caption">Zona</span>
+                  <select
+                    name="zone"
+                    className="h-10 min-w-[140px] rounded-xl border border-zinc-300 bg-white px-3 text-sm"
+                    defaultValue={zoneParam}
+                  >
+                    <option value="">Toda la sede</option>
+                    {zones.map((z) => (
+                      <option key={z} value={z}>
+                        {z}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="ui-caption">LOC (opcional)</span>
+                  <select
+                    name="location_id"
+                    className="h-10 min-w-[200px] rounded-xl border border-zinc-300 bg-white px-3 text-sm font-mono"
+                    defaultValue={locationIdParam}
+                  >
+                    <option value="">—</option>
+                    {locRows.map((l) => (
+                      <option key={l.id} value={l.id}>
+                        {l.code ?? l.zone ?? l.id}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button type="submit" className="ui-btn ui-btn--ghost">
+                  Aplicar
+                </button>
+              </form>
+              {(zoneParam || locationIdParam) ? (
+                <p className="mt-2 ui-caption">
+                  Actual: <strong>{countScopeLabel}</strong>
+                </p>
+              ) : null}
+            </div>
+          ) : null}
+
+          <CountInitialForm
+            products={productRows.map((p) => ({ id: p.id, name: p.name, sku: p.sku, unit: p.unit }))}
+            siteId={siteId}
+            siteName={siteName}
+            countScopeLabel={countScopeLabel}
+            zoneOrLocNote={locationIdParam ? `loc_id:${locationIdParam}` : zoneParam ? `zone:${zoneParam}` : undefined}
+          />
+        </>
       )}
     </div>
   );

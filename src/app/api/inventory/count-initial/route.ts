@@ -1,4 +1,4 @@
-﻿import { NextResponse } from "next/server";
+import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 
@@ -30,7 +30,11 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   }
 
-  let body: { site_id?: string; lines?: Array<{ product_id?: string; quantity?: number }> };
+  let body: {
+    site_id?: string;
+    lines?: Array<{ product_id?: string; quantity?: number }>;
+    scope_note?: string;
+  };
   try {
     body = await req.json();
   } catch {
@@ -39,6 +43,7 @@ export async function POST(req: Request) {
 
   const siteId = typeof body?.site_id === "string" ? body.site_id.trim() : "";
   const rawLines = Array.isArray(body?.lines) ? body.lines : [];
+  const scopeNote = typeof body?.scope_note === "string" ? body.scope_note.trim() : "";
 
   if (!siteId) {
     return NextResponse.json({ error: "site_id requerido" }, { status: 400 });
@@ -56,10 +61,49 @@ export async function POST(req: Request) {
   }
 
   const sessionId = crypto.randomUUID();
-  const note = `${SESSION_PREFIX}${sessionId}`;
+  const note = scopeNote
+    ? `${SESSION_PREFIX}${sessionId} ${scopeNote}`
+    : `${SESSION_PREFIX}${sessionId}`;
 
-  // Usar count (conteo cíclico)
   const MOVEMENT_TYPE = "count";
+  const isScopedCount = /loc_id:|zone:/.test(scopeNote);
+
+  let countSessionId: string | null = null;
+
+  if (isScopedCount) {
+    const scopeType = scopeNote.startsWith("loc_id:") ? "loc" : "zone";
+    const scopeLocationId = scopeNote.startsWith("loc_id:")
+      ? scopeNote.replace(/^loc_id:/, "").trim() || null
+      : null;
+    const scopeZone = scopeType === "zone" ? scopeNote.replace(/^zone:/, "").trim() || null : null;
+
+    const { data: sessionRow, error: sessionErr } = await supabase
+      .from("inventory_count_sessions")
+      .insert({
+        site_id: siteId,
+        status: "open",
+        scope_type: scopeType,
+        scope_zone: scopeZone || null,
+        scope_location_id: scopeLocationId || null,
+        name: scopeZone ? `Conteo zona ${scopeZone}` : scopeLocationId ? "Conteo por LOC" : "Conteo",
+        created_by: user.id,
+      })
+      .select("id")
+      .single();
+
+    if (!sessionErr && sessionRow?.id) {
+      countSessionId = sessionRow.id;
+      for (const { product_id, quantity } of lines) {
+        const { error: lineErr } = await supabase.from("inventory_count_lines").insert({
+          session_id: countSessionId,
+          product_id,
+          quantity_counted: quantity,
+        });
+        if (lineErr) break;
+      }
+    }
+    // Si las tablas no existen (migración no ejecutada), sessionErr; seguimos con movimientos igual
+  }
 
   for (const { product_id, quantity } of lines) {
     const { error: movErr } = await supabase.from("inventory_movements").insert({
@@ -77,26 +121,33 @@ export async function POST(req: Request) {
       );
     }
 
-    const { error: stockErr } = await supabase
-      .from("inventory_stock_by_site")
-      .upsert(
-        {
-          site_id: siteId,
-          product_id,
-          current_qty: quantity,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "site_id,product_id" }
-      );
+    if (!isScopedCount) {
+      const { error: stockErr } = await supabase
+        .from("inventory_stock_by_site")
+        .upsert(
+          {
+            site_id: siteId,
+            product_id,
+            current_qty: quantity,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "site_id,product_id" }
+        );
 
-    if (stockErr) {
-      return NextResponse.json(
-        { error: "inventory_stock_by_site: " + stockErr.message },
-        { status: 500 }
-      );
+      if (stockErr) {
+        return NextResponse.json(
+          { error: "inventory_stock_by_site: " + stockErr.message },
+          { status: 500 }
+        );
+      }
     }
   }
 
-  return NextResponse.json({ ok: true, sessionId, count: lines.length });
+  return NextResponse.json({
+    ok: true,
+    sessionId,
+    countSessionId: countSessionId ?? undefined,
+    count: lines.length,
+  });
 }
 

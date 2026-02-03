@@ -113,6 +113,31 @@ async function createTransfer(formData: FormData) {
     redirect("/inventory/transfers?error=" + encodeURIComponent("Agrega al menos un ítem con cantidad > 0."));
   }
 
+  // 5.1: validar que cantidad ≤ stock disponible en LOC origen
+  const productIdsForStock = [...new Set(items.map((i) => i.product_id))];
+  const { data: stockRows } = await supabase
+    .from("inventory_stock_by_location")
+    .select("product_id, current_qty")
+    .eq("location_id", fromLocId)
+    .in("product_id", productIdsForStock);
+  const stockByProduct = new Map(
+    (stockRows ?? []).map((r: { product_id: string; current_qty?: number }) => [
+      r.product_id,
+      Number(r.current_qty ?? 0),
+    ])
+  );
+  for (const item of items) {
+    const availableAtOrigin = stockByProduct.get(item.product_id) ?? 0;
+    if (availableAtOrigin < item.quantity) {
+      redirect(
+        "/inventory/transfers?error=" +
+          encodeURIComponent(
+            `Cantidad a trasladar (${item.quantity}) mayor que disponible en LOC origen (${availableAtOrigin}). Ajusta la cantidad o elige otro LOC.`
+          )
+      );
+    }
+  }
+
   const { data: transfer, error: transferErr } = await supabase
     .from("inventory_transfers")
     .insert({

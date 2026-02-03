@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -24,6 +24,7 @@ type LocationRow = {
   zone: string | null;
   aisle: string | null;
   level: string | null;
+  site_id: string | null;
 };
 
 function siteCodeFromName(name: string): SiteCode | null {
@@ -103,15 +104,39 @@ function buildCpTemplateRows(site_id: string, siteCode: SiteCode) {
   return rows;
 }
 
+/** Plantilla "Espacios físicos": LOCs generales por zona (bodega, frío, neveras, secos). */
+function buildEspaciosFisicosTemplateRows(site_id: string, siteCode: SiteCode) {
+  const rows: Array<Record<string, unknown>> = [
+    { site_id, code: `LOC-${siteCode}-BODEGA-MAIN`, zone: "BODEGA", aisle: "MAIN", description: "Bodega" },
+    { site_id, code: `LOC-${siteCode}-FRIO-MAIN`, zone: "FRIO", aisle: "MAIN", description: "Cuarto frío" },
+    { site_id, code: `LOC-${siteCode}-CONG-MAIN`, zone: "CONG", aisle: "MAIN", description: "Cuarto de congelación" },
+    { site_id, code: `LOC-${siteCode}-N2P-MAIN`, zone: "N2P", aisle: "MAIN", description: "Nevera 2 puertas" },
+    { site_id, code: `LOC-${siteCode}-N3P-MAIN`, zone: "N3P", aisle: "MAIN", description: "Nevera 3 puertas" },
+    { site_id, code: `LOC-${siteCode}-SECOS1-MAIN`, zone: "SECOS1", aisle: "MAIN", description: "Zona de secos primer piso" },
+    { site_id, code: `LOC-${siteCode}-SECPREP-MAIN`, zone: "SECPREP", aisle: "MAIN", description: "Secos preparados (porciones en bolsa)" },
+  ];
+  return rows;
+}
+
 export default async function InventoryLocationsPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ created?: string; n?: string; error?: string }>;
+  searchParams?: Promise<{
+    created?: string;
+    n?: string;
+    error?: string;
+    site_id?: string;
+    zone?: string;
+    code?: string;
+  }>;
 }) {
   const sp = (await searchParams) ?? {};
   const created = String(sp.created ?? "");
   const createdN = Number(sp.n ?? "0");
   const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
+  const filterSiteId = String(sp.site_id ?? "").trim();
+  const filterZone = String(sp.zone ?? "").trim().toUpperCase();
+  const filterCode = String(sp.code ?? "").trim();
 
   const returnTo = "/inventory/locations";
   const { supabase, user } = await requireAppAccess({
@@ -321,12 +346,79 @@ export default async function InventoryLocationsPage({
     redirect(`/inventory/locations?created=template&n=${toInsert.length}`);
   }
 
-  const { data: locations, error } = await supabase
+  async function createEspaciosFisicosTemplateAction(formData: FormData) {
+    "use server";
+
+    const supabase = await createClient();
+
+    const { data } = await supabase.auth.getUser();
+    const user = data.user ?? null;
+    if (!user) {
+      redirect(
+        `/inventory/locations?error=${encodeURIComponent("Sesión requerida")}`,
+      );
+    }
+
+    const site_id = String(formData.get("site_id") ?? "").trim();
+    const site_code = String(formData.get("site_code") ?? "")
+      .trim()
+      .toUpperCase() as SiteCode;
+
+    if (!site_id) {
+      redirect(
+        `/inventory/locations?error=${encodeURIComponent("Falta site_id.")}`,
+      );
+    }
+
+    const desiredRows = buildEspaciosFisicosTemplateRows(site_id, site_code);
+    const desiredCodes = desiredRows.map((r) => r.code as string);
+
+    const { data: existing } = await supabase
+      .from("inventory_locations")
+      .select("code")
+      .eq("site_id", site_id)
+      .in("code", desiredCodes);
+
+    const existingSet = new Set(
+      (existing ?? []).map((r) => (r.code ?? "").toUpperCase()).filter(Boolean),
+    );
+
+    const toInsert = desiredRows.filter(
+      (r) => !existingSet.has(String(r.code).toUpperCase()),
+    );
+
+    if (toInsert.length > 0) {
+      const { error: insertErr } = await supabase
+        .from("inventory_locations")
+        .insert(toInsert);
+      if (insertErr) {
+        redirect(
+          `/inventory/locations?error=${encodeURIComponent(insertErr.message)}`,
+        );
+      }
+    }
+
+    revalidatePath("/inventory/locations");
+    redirect(`/inventory/locations?created=espacios&n=${toInsert.length}`);
+  }
+
+  let locationsQuery = supabase
     .from("inventory_locations")
-    .select("id,code,zone,aisle,level")
+    .select("id,code,zone,aisle,level,site_id")
     .order("code", { ascending: true })
     .limit(500);
 
+  if (filterSiteId) {
+    locationsQuery = locationsQuery.eq("site_id", filterSiteId);
+  }
+  if (filterZone) {
+    locationsQuery = locationsQuery.eq("zone", filterZone);
+  }
+  if (filterCode) {
+    locationsQuery = locationsQuery.ilike("code", `%${filterCode}%`);
+  }
+
+  const { data: locations, error } = await locationsQuery;
   const locationRows = (locations ?? []) as LocationRow[];
 
   return (
@@ -366,6 +458,19 @@ export default async function InventoryLocationsPage({
         </div>
       ) : null}
 
+      {created === "espacios" ? (
+        <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+          Plantilla espacios físicos aplicada.{" "}
+          {createdN > 0 ? (
+            <>
+              LOCs creados: <span className="font-semibold">{createdN}</span> (Bodega, Cuarto frío, Congelación, Neveras, Secos 1.º piso, Secos preparados).
+            </>
+          ) : (
+            <>No se creó nada (ya existían).</>
+          )}
+        </div>
+      ) : null}
+
       {errorMsg ? (
         <div className="mt-6 ui-alert ui-alert--error">
           Error: {errorMsg}
@@ -378,6 +483,7 @@ export default async function InventoryLocationsPage({
           defaultSiteId={defaultSiteId}
           action={createLocAction}
           createCpTemplateAction={createCpTemplateAction}
+          createEspaciosFisicosTemplateAction={createEspaciosFisicosTemplateAction}
         />
       </div>
 
@@ -390,8 +496,59 @@ export default async function InventoryLocationsPage({
       <div className="mt-6 ui-panel">
         <div className="ui-h3">Ubicaciones</div>
         <div className="mt-1 ui-body-muted">
-          Mostrando hasta 500 registros.
+          Filtra por sede, zona o código. Mostrando hasta 500 registros.
         </div>
+
+        <form
+          method="get"
+          action="/inventory/locations"
+          className="mt-4 flex flex-wrap items-end gap-3"
+        >
+          <label className="flex flex-col gap-1">
+            <span className="ui-caption font-medium">Sede</span>
+            <select
+              name="site_id"
+              defaultValue={filterSiteId}
+              className="ui-input min-w-[180px]"
+            >
+              <option value="">Todas</option>
+              {siteOptions.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="ui-caption font-medium">Zona</span>
+            <input
+              type="text"
+              name="zone"
+              defaultValue={filterZone}
+              placeholder="Ej: BODEGA, FRIO"
+              className="ui-input min-w-[120px]"
+            />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="ui-caption font-medium">Código (contiene)</span>
+            <input
+              type="text"
+              name="code"
+              defaultValue={filterCode}
+              placeholder="Ej: LOC-CP"
+              className="ui-input min-w-[140px]"
+            />
+          </label>
+          <button type="submit" className="ui-btn ui-btn--brand">
+            Filtrar
+          </button>
+          <Link
+            href="/inventory/locations"
+            className="ui-btn ui-btn--ghost"
+          >
+            Limpiar
+          </Link>
+        </form>
 
         <div className="mt-4 overflow-x-auto">
           <Table>
