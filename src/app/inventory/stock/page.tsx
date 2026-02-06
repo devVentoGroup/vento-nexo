@@ -21,6 +21,8 @@ type SearchParams = {
   error?: string;
   count_initial?: string;
   adjust?: string;
+  /** 1.4 Vista Stock por LOC: tabla producto × LOC */
+  view?: string;
 };
 
 type EmployeeSiteRow = {
@@ -100,6 +102,14 @@ export default async function InventoryStockPage({
     permissionCode: PERMISSION,
   });
 
+  const { data: employeeRow } = await supabase
+    .from("employees")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+  const userRole = String((employeeRow as { role?: string } | null)?.role ?? "");
+  const canExportByLoc = ["gerente_general", "propietario"].includes(userRole);
+
   const { data: employeeSites } = await supabase
     .from("employee_sites")
     .select("site_id,is_primary")
@@ -118,6 +128,7 @@ export default async function InventoryStockPage({
   const categoryDomain = String(sp.category_domain ?? "").trim();
   const locationIdFilter = String(sp.location_id ?? "").trim();
   const zoneFilter = String(sp.zone ?? "").trim();
+  const viewByLoc = String(sp.view ?? "").trim() === "by_loc";
 
   const siteIds = employeeSiteRows
     .map((row) => row.site_id)
@@ -341,6 +352,12 @@ export default async function InventoryStockPage({
         )
       : null;
 
+  const matrixByProductLoc = new Map<string, number>();
+  for (const row of stockByLocRows) {
+    const key = `${row.product_id}|${row.location_id}`;
+    matrixByProductLoc.set(key, Number(row.current_qty ?? 0));
+  }
+
   const locIdsInZone =
     zoneFilter && locList.length > 0
       ? new Set(locList.filter((l) => (l.zone ?? "").toLowerCase() === zoneFilter.toLowerCase()).map((l) => l.id))
@@ -387,17 +404,28 @@ export default async function InventoryStockPage({
           </p>
         </div>
 
-        <div className="flex gap-2">
-          <Link
-            href="/inventory/count-initial"
-            className="ui-btn ui-btn--brand"
-          >
+        <div className="flex flex-wrap gap-2">
+          {siteId && locList.length > 0 ? (
+            viewByLoc ? (
+              <Link
+                href={`/inventory/stock?site_id=${encodeURIComponent(siteId)}${searchQuery ? `&q=${encodeURIComponent(searchQuery)}` : ""}${inventoryKind ? `&inventory_kind=${encodeURIComponent(inventoryKind)}` : ""}`}
+                className="ui-btn ui-btn--ghost"
+              >
+                Ver stock por sede
+              </Link>
+            ) : (
+              <Link
+                href={`/inventory/stock?site_id=${encodeURIComponent(siteId)}&view=by_loc${searchQuery ? `&q=${encodeURIComponent(searchQuery)}` : ""}${inventoryKind ? `&inventory_kind=${encodeURIComponent(inventoryKind)}` : ""}`}
+                className="ui-btn ui-btn--brand"
+              >
+                Stock por LOC (tabla)
+              </Link>
+            )
+          ) : null}
+          <Link href="/inventory/count-initial" className="ui-btn ui-btn--brand">
             Conteo inicial
           </Link>
-          <Link
-            href="/inventory/movements"
-            className="ui-btn ui-btn--ghost"
-          >
+          <Link href="/inventory/movements" className="ui-btn ui-btn--ghost">
             Ver movimientos
           </Link>
         </div>
@@ -553,12 +581,85 @@ export default async function InventoryStockPage({
         </form>
       </div>
 
+      {viewByLoc && siteId && locList.length > 0 ? (
+        <div className="mt-6 ui-panel">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="ui-h3">Stock por LOC (producto × ubicación)</div>
+              <div className="mt-1 ui-body-muted">
+                Cantidades por producto y por LOC. Sede: {siteNameMap.get(siteId) ?? siteId}.
+              </div>
+            </div>
+            {canExportByLoc ? (
+              <a
+                href={`/api/inventory/stock/export-by-loc?site_id=${encodeURIComponent(siteId)}`}
+                className="ui-btn ui-btn--ghost"
+                download="stock-por-loc.csv"
+              >
+                Exportar CSV
+              </a>
+            ) : null}
+          </div>
+          <div className="mt-4 max-h-[70vh] overflow-x-auto overflow-y-auto">
+            <Table>
+              <thead>
+                <tr>
+                  <TableHeaderCell>Producto</TableHeaderCell>
+                  <TableHeaderCell>SKU</TableHeaderCell>
+                  <TableHeaderCell>Unidad</TableHeaderCell>
+                  {locList.map((loc) => (
+                    <TableHeaderCell key={loc.id} className="font-mono text-right">
+                      {loc.code ?? loc.id}
+                    </TableHeaderCell>
+                  ))}
+                  <TableHeaderCell className="text-right">Total sede</TableHeaderCell>
+                </tr>
+              </thead>
+              <tbody>
+                {productRows.map((product) => {
+                  const stockRow = stockMap.get(product.id);
+                  const totalSede = Number(stockRow?.current_qty ?? 0);
+                  const hasAnyInLocs = locSummaryByProduct.get(product.id)?.hasAny ?? false;
+                  if (!hasAnyInLocs && totalSede <= 0) return null;
+                  return (
+                    <tr key={product.id} className="ui-body">
+                      <TableCell>{product.name}</TableCell>
+                      <TableCell className="font-mono">{product.sku ?? "-"}</TableCell>
+                      <TableCell>{product.unit ?? "-"}</TableCell>
+                      {locList.map((loc) => {
+                        const qty = matrixByProductLoc.get(`${product.id}|${loc.id}`) ?? 0;
+                        return (
+                          <TableCell key={loc.id} className="font-mono text-right">
+                            {qty > 0 ? qty : "-"}
+                          </TableCell>
+                        );
+                      })}
+                      <TableCell className="font-mono text-right font-medium">
+                        {totalSede}
+                      </TableCell>
+                    </tr>
+                  );
+                })}
+                {productRows.filter((p) => (locSummaryByProduct.get(p.id)?.hasAny ?? false) || Number(stockMap.get(p.id)?.current_qty ?? 0) > 0).length === 0 ? (
+                  <tr>
+                    <TableCell colSpan={4 + locList.length} className="ui-empty">
+                      No hay stock por LOC para mostrar en esta sede con los filtros actuales.
+                    </TableCell>
+                  </tr>
+                ) : null}
+              </tbody>
+            </Table>
+          </div>
+        </div>
+      ) : null}
+
       {hasError ? (
         <div className="mt-6 ui-alert ui-alert--error">
           Fallo el SELECT de inventario: {productError?.message ?? stockError?.message}
         </div>
       ) : null}
 
+      {!viewByLoc ? (
       <div className="mt-6 ui-panel">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
@@ -675,6 +776,7 @@ export default async function InventoryStockPage({
           </Table>
         </div>
       </div>
+      ) : null}
     </div>
   );
 }

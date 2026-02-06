@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
 
@@ -14,11 +14,9 @@ type BarcodeDetectorCtor = new (opts: { formats: string[] }) => BarcodeDetectorL
 
 function parseScan(raw: string): ParsedScan {
   const cleaned = raw.trim();
+  if (!cleaned) return { kind: "raw", raw: "" };
 
   // Formato oficial: VENTO|TYPE|CODE
-  // Ejemplos:
-  // VENTO|LOC|LOC-CP-F1FRI-03-N2
-  // VENTO|AST|AST-VCF-0015
   const parts = cleaned.split("|");
   if (parts.length === 3 && parts[0] === "VENTO") {
     const entity = parts[1] as "LOC" | "AST";
@@ -26,6 +24,14 @@ function parseScan(raw: string): ParsedScan {
     if ((entity === "LOC" || entity === "AST") && code) {
       return { kind: "vento", entity, code, raw: cleaned };
     }
+  }
+
+  // DataMatrix de etiqueta LOC suele traer solo el código (ej. LOC-CP-BODEGA-MAIN)
+  if (cleaned.toUpperCase().startsWith("LOC-")) {
+    return { kind: "vento", entity: "LOC", code: cleaned, raw: cleaned };
+  }
+  if (cleaned.toUpperCase().startsWith("AST-")) {
+    return { kind: "vento", entity: "AST", code: cleaned, raw: cleaned };
   }
 
   return { kind: "raw", raw: cleaned };
@@ -73,7 +79,7 @@ export function ScanInput(props: {
 
       try {
         const detector = new BarcodeDetectorImpl({
-          formats: ["qr_code", "code_128", "code_39", "ean_13", "ean_8", "upc_a", "upc_e"],
+          formats: ["qr_code", "datamatrix", "code_128", "code_39", "ean_13", "ean_8", "upc_a", "upc_e"],
         });
         detectorRef.current = detector;
 
@@ -162,18 +168,17 @@ export function ScanInput(props: {
         <div>
           <div className="ui-body font-semibold">{label}</div>
           <div className="mt-1 ui-body-muted">
-            Compatible con escáner Bluetooth/USB tipo teclado. También puedes pegar el código.
+            En cel o tablet: usa la cámara. En PC: escáner Bluetooth/USB tipo teclado o pega el código.
           </div>
         </div>
 
         <button
           type="button"
-          className="ui-btn ui-btn--ghost"
-          onClick={() => {
-            setCameraOpen(true);
-          }}
+          className="ui-btn ui-btn--brand"
+          onClick={() => setCameraOpen(true)}
+          aria-label="Abrir cámara para escanear"
         >
-          Cámara (QR)
+          Escanear con cámara
         </button>
       </div>
 
@@ -189,7 +194,7 @@ export function ScanInput(props: {
             }
           }}
           placeholder={placeholder}
-          className="h-11 w-full rounded-xl border border-zinc-200 bg-white px-4 ui-body outline-none ring-0 focus:border-zinc-400"
+          className="ui-input h-11 w-full"
         />
 
         <div className="flex gap-2">
@@ -213,8 +218,8 @@ export function ScanInput(props: {
         </div>
       </div>
 
-      <div className="mt-4 rounded-xl bg-zinc-50 p-4">
-        <div className="ui-caption font-semibold tracking-wide">VISTA PREVIA</div>
+      <div className="mt-4 rounded-[var(--ui-radius-card)] border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
+        <div className="ui-caption font-semibold tracking-wide text-[var(--ui-muted)]">Vista previa</div>
         <div className="mt-2 ui-body">
           {parsed ? (
             parsed.kind === "vento" ? (
@@ -244,7 +249,7 @@ export function ScanInput(props: {
               <div>
                 <div className="ui-h3">Escaneo por cámara</div>
                 <div className="mt-1 ui-caption">
-                  Apunta la cámara al código QR o etiqueta.
+                  Apunta al QR o DataMatrix de la etiqueta. En cel/tablet usa la cámara trasera si pide elegir.
                 </div>
               </div>
               <button

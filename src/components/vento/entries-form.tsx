@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { EntriesItems } from "./entries-items";
 
 type ProductOption = {
@@ -29,24 +29,7 @@ type Props = {
   action: (formData: FormData) => void | Promise<void>;
 };
 
-type EntryStatus = "pending" | "partial" | "received";
-
-function statusChip(status: EntryStatus) {
-  switch (status) {
-    case "pending":
-      return { label: "Pendiente", className: "ui-chip ui-chip--warn" };
-    case "partial":
-      return { label: "Parcial", className: "ui-chip ui-chip--warn" };
-    case "received":
-      return { label: "Recibida", className: "ui-chip ui-chip--success" };
-    default:
-      return { label: "Pendiente", className: "ui-chip ui-chip--warn" };
-  }
-}
-
 export function EntriesForm({ products, locations, suppliers, defaultLocationId, action }: Props) {
-  const [status, setStatus] = useState<EntryStatus>("pending");
-  const statusView = useMemo(() => statusChip(status), [status]);
   const [supplierId, setSupplierId] = useState(
     suppliers[0]?.id ?? "__new__"
   );
@@ -57,16 +40,10 @@ export function EntriesForm({ products, locations, suppliers, defaultLocationId,
       className="space-y-6"
       action={action}
     >
-      <input type="hidden" name="entry_status" value={status} />
       <div className="ui-panel">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="ui-h3">Nueva entrada</div>
-            <div className="mt-1 ui-body-muted">
-              Registro manual por factura. Permite recepción parcial.
-            </div>
-          </div>
-          <span className={statusView.className}>{statusView.label}</span>
+        <div className="ui-h3">Nueva entrada</div>
+        <div className="mt-1 ui-body-muted">
+          Registro manual por factura. El estado (Pendiente / Parcial / Recibida) se calcula al guardar según cantidades declaradas vs recibidas por ítem.
         </div>
 
         <div className="mt-4 grid gap-3 md:grid-cols-2">
@@ -104,18 +81,6 @@ export function EntriesForm({ products, locations, suppliers, defaultLocationId,
             <span className="ui-label">Notas</span>
             <input name="notes" className="ui-input" placeholder="Observaciones" />
           </label>
-        </div>
-
-        <div className="mt-4 flex flex-wrap gap-2">
-          <button type="button" className="ui-btn ui-btn--ghost" onClick={() => setStatus("pending")}>
-            Pendiente
-          </button>
-          <button type="button" className="ui-btn ui-btn--ghost" onClick={() => setStatus("partial")}>
-            Recibir parcial
-          </button>
-          <button type="button" className="ui-btn ui-btn--brand" onClick={() => setStatus("received")}>
-            Recibir completo
-          </button>
         </div>
       </div>
 

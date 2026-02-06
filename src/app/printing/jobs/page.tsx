@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Script from "next/script";
@@ -98,6 +98,16 @@ function buildDataMatrixField(opts: { x: number; y: number; moduleDots: number; 
   return [`^FO${x},${y}`, `^BXN,${moduleDots},200,0,0,6`, `^FD${payload}^FS`].join("\n");
 }
 
+/** QR Code ZPL (^BQ). Uso: retiro con URL en etiqueta LOC 50×70. */
+function buildQRField(opts: { x: number; y: number; magnification: number; data: string }) {
+  const { x, y, magnification, data } = opts;
+  const payload = String(data ?? "").trim();
+  if (!payload) return "";
+  // ^BQ: o=N (normal), 2=model 2, magnification 2–10 (4 ≈ 18–20 mm a 203 dpi)
+  const mag = Math.min(10, Math.max(1, magnification));
+  return [`^FO${x},${y}`, `^BQN,2,${mag}`, `^FDQA,${payload}^FS`].join("\n");
+}
+
 function buildTextField(opts: { x: number; y: number; h: number; w: number; text: string }) {
   const { x, y, h, w, text } = opts;
   const payload = safeText(text);
@@ -144,6 +154,8 @@ function buildSingleLabelZpl(opts: {
   title: string; // arriba
   code: string; // humano abajo
   note?: string; // segunda línea arriba
+  /** Solo para LOC 50×70: origen para URL de retiro (DataMatrix + QR). */
+  baseUrlForQr?: string;
 }) {
   const { preset, dpi, offsetXDots, offsetYDots, barcodeKind, code128HeightDots, dmModuleDots, type } = opts;
 
@@ -152,39 +164,29 @@ function buildSingleLabelZpl(opts: {
 
   const header = buildZplHeader({ widthDots, heightDots, offsetXDots, offsetYDots });
 
-  // Layout simple y limpio:
-  // - Título arriba
-  // - Nota debajo
-  // - Barcode (DM o 1D) centrado-ish
-  // - Código humano abajo
   const title = safeText(opts.title);
   const note = safeText(opts.note ?? "");
   const code = safeText(opts.code);
 
-  const encoded = encodeVento(type, code);
+  const isLoc70Dual =
+    preset.id === "LOC_50x70" &&
+    type === "LOC" &&
+    barcodeKind === "datamatrix" &&
+    Boolean(opts.baseUrlForQr?.trim());
 
-  // Márgenes
+  const encoded = isLoc70Dual ? code : encodeVento(type, code);
+
   const marginX = 18;
   const yTitle = 12;
   const yNote = 38;
-
   const isLoc70 = preset.id === "LOC_50x70" && barcodeKind === "datamatrix" && type === "LOC";
   const isProd = type === "PROD";
-
   const maxTextWidth = widthDots - marginX * 2;
-
-  // Ajuste de layout por preset:
-  const yBarcode = isLoc70 ? 140 : 70;
-
-  // Centramos DataMatrix con una estimación de tamaño (mejor que dejarlo pegado al margen)
-  const dmSizeGuess = dmModuleDots * 26;
-  const dmX = Math.max(marginX, Math.floor((widthDots - dmSizeGuess) / 2));
 
   const parts: string[] = [];
   parts.push(header);
 
-  // Texto arriba (con ancho fijo para que NO se salga del label)
-  // LOC 50x70: nota (descripción) más grande
+  // Arriba: nombre + código (LOC 50×70 según spec)
   parts.push(
     buildTextBlock({
       x: marginX,
@@ -213,26 +215,52 @@ function buildSingleLabelZpl(opts: {
     );
   }
 
-  // Barcode
-  if (barcodeKind === "datamatrix") {
-    parts.push(buildDataMatrixField({ x: isLoc70 ? dmX : marginX, y: yBarcode, moduleDots: dmModuleDots, data: encoded }));
+  // LOC 50×70 con dos códigos (8.1): DataMatrix = código LOC; QR = URL retiro
+  if (isLoc70Dual) {
+    const baseUrl = (opts.baseUrlForQr ?? "").replace(/\/$/, "");
+    const withdrawUrl = `${baseUrl}/inventory/withdraw?loc=${encodeURIComponent(code)}`;
+    const yCodes = 140;
+    const dmSize = dmModuleDots * 26;
+    const dmX = marginX;
+    const qrMagnification = 4;
+    const qrSizeApprox = 25 * qrMagnification * 4;
+    const qrX = Math.min(widthDots - marginX - qrSizeApprox, dmX + dmSize + 12);
+    parts.push(buildDataMatrixField({ x: dmX, y: yCodes, moduleDots: dmModuleDots, data: code }));
+    parts.push(buildQRField({ x: qrX, y: yCodes, magnification: qrMagnification, data: withdrawUrl }));
+    parts.push(
+      buildTextBlock({
+        x: marginX,
+        y: heightDots - 56,
+        h: 24,
+        w: 20,
+        maxWidthDots: maxTextWidth,
+        lines: 1,
+        align: "C",
+        text: code,
+      })
+    );
   } else {
-    parts.push(buildCode128Field({ x: marginX, y: yBarcode, heightDots: code128HeightDots, data: encoded }));
+    const yBarcode = isLoc70 ? 140 : 70;
+    const dmSizeGuess = dmModuleDots * 26;
+    const dmX = Math.max(marginX, Math.floor((widthDots - dmSizeGuess) / 2));
+    if (barcodeKind === "datamatrix") {
+      parts.push(buildDataMatrixField({ x: isLoc70 ? dmX : marginX, y: yBarcode, moduleDots: dmModuleDots, data: encoded }));
+    } else {
+      parts.push(buildCode128Field({ x: marginX, y: yBarcode, heightDots: code128HeightDots, data: encoded }));
+    }
+    parts.push(
+      buildTextBlock({
+        x: marginX,
+        y: isLoc70 ? heightDots - 56 : heightDots - 34,
+        h: isLoc70 ? 24 : 22,
+        w: isLoc70 ? 20 : 18,
+        maxWidthDots: maxTextWidth,
+        lines: 1,
+        align: "C",
+        text: code,
+      })
+    );
   }
-
-  // Código humano (centrado y con ancho fijo para que NO se vaya al borde)
-  parts.push(
-    buildTextBlock({
-      x: marginX,
-      y: isLoc70 ? heightDots - 56 : heightDots - 34,
-      h: isLoc70 ? 24 : 22,
-      w: isLoc70 ? 20 : 18,
-      maxWidthDots: maxTextWidth,
-      lines: 1,
-      align: "C",
-      text: code,
-    })
-  );
 
   parts.push(buildZplFooter());
   return parts.join("\n");
@@ -315,7 +343,7 @@ function PrintingJobsContent() {
     () => [
       {
         id: "LOC_50x70",
-        label: "LOC -? 50x70 (DataMatrix)",
+        label: "LOC 50×70 (DataMatrix + QR retiro)",
         widthMm: 50,
         heightMm: 70,
         columns: 1,
@@ -438,6 +466,8 @@ function PrintingJobsContent() {
     try {
       if (preset.columns === 1) {
         const first = parsedQueue[0] ?? { code: "EJEMPLO-001", note: "Demo" };
+        const baseUrl =
+          typeof window !== "undefined" ? (window.location?.origin ?? "") : "";
         const zpl = buildSingleLabelZpl({
           preset,
           dpi,
@@ -450,6 +480,7 @@ function PrintingJobsContent() {
           title,
           code: first.code,
           note: first.note,
+          baseUrlForQr: preset.id === "LOC_50x70" && preset.defaultType === "LOC" ? baseUrl : undefined,
         });
         setPreviewZpl(zpl);
       } else {
@@ -573,6 +604,10 @@ function PrintingJobsContent() {
     const zplParts: string[] = [];
 
     if (preset.columns === 1) {
+      const baseUrl =
+        typeof window !== "undefined" ? (window.location?.origin ?? "") : "";
+      const baseUrlForQr =
+        preset.id === "LOC_50x70" && preset.defaultType === "LOC" ? baseUrl : undefined;
       parsedQueue.forEach((it) => {
         zplParts.push(
           buildSingleLabelZpl({
@@ -587,6 +622,7 @@ function PrintingJobsContent() {
             title,
             code: it.code,
             note: it.note,
+            baseUrlForQr,
           })
         );
       });
@@ -734,8 +770,8 @@ function PrintingJobsContent() {
       <div>
         <h1 className="ui-h1">Impresión</h1>
         <p className="mt-2 ui-body-muted">
-          Zebra + BrowserPrint. Para escaneo canónico, el código impreso codifica{" "}
-          <span className="font-mono">VENTO|TYPE|CODE</span>. Para LOC usamos DataMatrix por defecto.
+          Zebra + BrowserPrint. Etiqueta LOC 50×70: DataMatrix (código LOC) + QR (URL retiro). SKU/PROD:{" "}
+          <span className="font-mono">VENTO|TYPE|CODE</span>.
         </p>
       </div>
 

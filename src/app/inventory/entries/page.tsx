@@ -1,4 +1,4 @@
-﻿import { redirect } from "next/navigation";
+import { redirect } from "next/navigation";
 
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
@@ -343,7 +343,7 @@ export default async function EntriesPage({
       <div>
         <h1 className="ui-h1">Entradas</h1>
         <p className="mt-2 ui-body-muted">
-          Recepcion de insumos por factura y recepcion parcial.
+          Recepción de insumos por factura. Permite recepción parcial por ítem.
         </p>
       </div>
 
@@ -366,7 +366,9 @@ export default async function EntriesPage({
 
       <div className="ui-panel">
         <div className="ui-h3">Entradas recientes</div>
-        <div className="mt-1 ui-body-muted">Ultimas 25 entradas registradas.</div>
+        <div className="mt-1 ui-body-muted">
+          Últimas 25 entradas. El estado (Pendiente / Parcial / Recibida) se calcula según cantidades declaradas vs recibidas por ítem.
+        </div>
 
         <div className="mt-4 overflow-x-auto">
           <table className="min-w-full text-sm">

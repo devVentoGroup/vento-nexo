@@ -6,16 +6,45 @@ Documento vivo: se van marcando los ítems hechos a medida que se implementan.
 
 ---
 
+## Alcance
+
+**Dentro del alcance (Nexo hoy):**
+
+- **Fuente de verdad del inventario:** ledger por sede y por LOC (Centro), movimientos, stock por sede en satélites.
+- **Centro de producción:** LOCs, entradas de proveedor (recepción parcial), traslados entre LOCs, preparar remisiones (salida desde Centro), retiros desde LOC, conteos y ajustes, impresión etiquetas (LOC/SKU/PROD).
+- **Satélites (Saudo, Vento Café):** solicitar remisión, recibir remisión; stock solo por sede (sin LOCs).
+- **Panel y permisos:** CTAs y menú por rol; exportaciones (CSV) solo gerentes/propietarios; mensaje claro en `/no-access`.
+
+**Fuera del alcance (por ahora):**
+
+- Costeo y órdenes de compra completas (ORIGO).
+- Recetas y producción integrada (FOGO).
+- LOCs en satélites (decisión: solo salida del LOC en Centro; en destino solo sube stock por sede).
+
+**Opcional / backlog (mejoran alcance si se priorizan):**
+
+- **2.2** LOC de origen por ítem al marcar “En tránsito” (descuento desde ese LOC).
+- **4.2** Nota de incidencia por línea en entradas (faltante, calidad, daño) — requiere spec y campos en BD.
+- **4.3** Lote/vencimiento por ítem en entradas — requiere modelo de datos.
+- ~~**8.4** Scanner~~ Hecho: acciones LOC (Ver ubicación / Abrir retiro), reconocimiento LOC sin prefijo, DataMatrix en cámara.
+- **Fase 9 (ORIGO):** vincular entradas a orden de compra; cargar ítems desde OC — amplía alcance cuando ORIGO esté listo.
+
+Para **mejorar el alcance** de forma controlada: (1) cerrar el núcleo actual (31/36 hecho); (2) priorizar una sola extensión a la vez (p. ej. solo Fase 9, o solo 4.2); (3) documentar cualquier nuevo “dentro/fuera” aquí.
+
+---
+
 ## Fase 1: Stock y visibilidad por LOC
 
 - [x] **1.1** Stock: mostrar columna o desglose por LOC (qué hay en cada ubicación).
 - [x] **1.2** Stock: filtro opcional por LOC (ver solo un LOC o una zona).
 - [x] **1.3** Stock: alerta o indicador “Sin ubicación” para productos con stock pero sin LOC asignado (según NEXO-GUIA).
-- [ ] **1.4** (Opcional) Vista o export “Stock por LOC” (tabla producto × LOC con cantidades).
+- [x] **1.4** (Opcional) Vista o export “Stock por LOC” (tabla producto × LOC con cantidades).
 
 ---
 
 ## Fase 2: Remisiones y LOC
+
+**Decisión:** Traslado sede→sede = solo salida del LOC en Centro. No hay LOCs en satélites (es demasiado trabajo); en destino solo sube stock por sede.
 
 - [x] **2.1** Al preparar remisión: mostrar stock disponible por LOC para cada ítem (solo lectura).
 - [ ] **2.2** (Opcional) Al marcar “En tránsito”: permitir indicar LOC de origen por ítem (descuento desde ese LOC).
@@ -35,7 +64,7 @@ Documento vivo: se van marcando los ítems hechos a medida que se implementan.
 
 ## Fase 4: Entradas y recepción
 
-- [ ] **4.1** Entradas: recepción parcial ya implementada; verificar estados (pendiente / parcial / recibido) y mensajes.
+- [x] **4.1** Entradas: recepción parcial ya implementada; verificar estados (pendiente / parcial / recibido) y mensajes.
 - [ ] **4.2** Entradas: nota de incidencia por línea (faltante, calidad, daño) si está en spec.
 - [ ] **4.3** Entradas: lote/vencimiento por ítem (campos opcionales) si aplica al modelo de datos.
 
@@ -51,29 +80,29 @@ Documento vivo: se van marcando los ítems hechos a medida que se implementan.
 
 ## Fase 6: Movimientos y auditoría
 
-- [ ] **6.1** Movimientos: filtro por tipo (entrada, salida, traslado, ajuste) y por producto.
-- [ ] **6.2** Movimientos: exportar (CSV/Excel) si está en scope.
-- [ ] **6.3** (Opcional) Movimientos: mostrar LOC en movimientos de traslado/entrada cuando aplique.
+- [x] **6.1** Movimientos: filtro por tipo (entrada, salida, traslado, ajuste) y por producto.
+- [x] **6.2** Movimientos: exportar (CSV/Excel) si está en scope. Solo gerentes y propietarios (igual que 1.4).
+- [x] **6.3** (Opcional) Movimientos: mostrar LOC en movimientos de traslado/entrada cuando aplique.
 
 ---
 
 ## Fase 7: Panel y navegación por rol
 
-- [ ] **7.1** Panel: CTAs claros por permiso (“Solicitar remisión”, “Preparar remisión”, “Recibir remisión”, “Crear entrada”, “Ver stock”).
-- [ ] **7.2** Menú lateral: ocultar ítems sin permiso (ya depende de permisos; verificar que todos los permisos estén mapeados).
-- [ ] **7.3** Sin acceso: mensaje claro en `/no-access` con rol y permiso faltante.
+- [x] **7.1** Panel: CTAs claros por permiso (“Solicitar remisión”, “Preparar remisión”, “Recibir remisión”, “Crear entrada”, “Ver stock”).
+- [x] **7.2** Menú lateral: ocultar ítems sin permiso (ya depende de permisos; verificar que todos los permisos estén mapeados).
+- [x] **7.3** Sin acceso: mensaje claro en `/no-access` con rol y permiso faltante.
 
 ---
 
 ## Fase 8: Impresión y scanner
 
-- [ ] **8.1** Impresión LOC: etiqueta 50×70 mm con **dos códigos** (ver especificación abajo).
+- [x] **8.1** Impresión LOC: etiqueta 50×70 mm con **dos códigos** (ver especificación abajo).
   - **DataMatrix:** contenido = código del LOC (ej. `LOC-CP-BODEGA-MAIN`). Uso: traslados, conteos, handhelds.
   - **QR:** contenido = URL retiro con ese LOC (ej. `https://<dominio>/inventory/withdraw?loc=LOC-CP-BODEGA-MAIN`). Uso: escanear con cel → abre formulario de retiro con LOC ya elegido.
   - **Layout 50×70 mm:** texto legible arriba (nombre + código LOC); DataMatrix y QR en zona central/inferior (DataMatrix ~15–20 mm, QR ~18–20 mm).
-- [ ] **8.2** Impresión: cola + preview y prueba de alineación; soporte Zebra por Bluetooth cuando esté configurado.
-- [ ] **8.3** Presets SKU/PROD: Code128 u otro según uso (LOC ya definido en 8.1).
-- [ ] **8.4** Scanner: flujo mínimo (lectura y redirección) documentado o mejorado si es atajo principal.
+- [x] **8.2** Impresión: cola + preview y prueba de alineación; soporte Zebra vía BrowserPrint (Bluetooth cuando esté configurado).
+- [x] **8.3** Presets SKU/PROD: Code128 en presets 32×25 (3-up) y 50×30 (LOC ya definido en 8.1).
+- [x] **8.4** (Opcional) Scanner: flujo mínimo documentado o mejorado si es atajo principal.
 
 ---
 
@@ -89,9 +118,9 @@ Documento vivo: se van marcando los ítems hechos a medida que se implementan.
 
 ## Fase 10: Documentación y cierre
 
-- [ ] **10.1** NEXO-GUIA.md: revisar y actualizar si cambian pantallas, permisos o flujos.
-- [ ] **10.2** ROADMAP-NEXO.md: mantener este checklist actualizado (marcar ítems hechos).
-- [ ] **10.3** README o docs de desarrollo: cómo levantar Nexo, permisos en BD, roles de prueba.
+- [x] **10.1** NEXO-GUIA.md: revisar y actualizar si cambian pantallas, permisos o flujos.
+- [x] **10.2** ROADMAP-NEXO.md: mantener este checklist actualizado (marcar ítems hechos).
+- [x] **10.3** README o docs de desarrollo: cómo levantar Nexo, permisos en BD, roles de prueba.
 
 ---
 
@@ -99,19 +128,19 @@ Documento vivo: se van marcando los ítems hechos a medida que se implementan.
 
 | Fase | Hechos | Total |
 |------|--------|-------|
-| 1. Stock y LOC | 3 | 4 |
+| 1. Stock y LOC | 4 | 4 |
 | 2. Remisiones y LOC | 2 | 3 |
 | 3. Conteos y ajustes | 5 | 5 |
-| 4. Entradas | 0 | 3 |
+| 4. Entradas | 1 | 3 |
 | 5. Traslados y ubicaciones | 3 | 3 |
-| 6. Movimientos | 0 | 3 |
-| 7. Panel y roles | 0 | 3 |
-| 8. Impresión y scanner | 0 | 4 |
+| 6. Movimientos | 3 | 3 |
+| 7. Panel y roles | 3 | 3 |
+| 8. Impresión y scanner | 4 | 4 |
 | 9. ORIGO | 0 | 5 |
-| 10. Documentación | 0 | 3 |
-| **Total** | **17** | **36** |
+| 10. Documentación | 3 | 3 |
+| **Total** | **32** | **36** |
 
-*Última actualización: Fase 5 completa (5.2 Crear LOC, 5.3 filtros sede/zona/código).*
+*Última actualización: 8.4 Scanner — acciones LOC (Ver ubicación / Abrir retiro), reconocimiento LOC- sin prefijo, DataMatrix en cámara, texto de uso.*
 
 ---
 

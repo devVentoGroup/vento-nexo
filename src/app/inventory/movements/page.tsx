@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 import { requireAppAccess } from "@/lib/auth/guard";
 
@@ -13,26 +13,20 @@ type SearchParams = {
   error?: string;
 };
 
-// Incluye los de inventory_movement_types en la BD (initial_count, restock_*, etc.) y aliases habituales
-const MOVEMENT_TYPES = [
-  "adjustment",
-  "initial_count",
-  "count",
-  "production_in",
-  "production_out",
-  "purchase_in",
-  "restock_in",
-  "restock_out",
-  "sale_out",
-  "receipt_in",
-  "transfer_internal",
-  "transfer_in",
-  "transfer_out",
-  "receipt",
-  "issue_internal",
-  "waste",
-  "shrink",
+// Tipos usados en inventory_movements; agrupados para filtro (6.1)
+const MOVEMENT_TYPES_BY_GROUP: { label: string; types: string[] }[] = [
+  { label: "Ajuste", types: ["adjustment", "initial_count", "count"] },
+  {
+    label: "Entrada",
+    types: ["receipt_in", "receipt", "purchase_in", "restock_in", "production_in"],
+  },
+  {
+    label: "Salida",
+    types: ["consumption", "sale_out", "restock_out", "production_out", "issue_internal", "waste", "shrink"],
+  },
+  { label: "Traslado", types: ["transfer_internal", "transfer_in", "transfer_out"] },
 ];
+const MOVEMENT_TYPES = MOVEMENT_TYPES_BY_GROUP.flatMap((g) => g.types);
 
 type SiteRow = {
   site_id: string;
@@ -74,6 +68,15 @@ export default async function InventoryMovementsPage({
     permissionCode: "inventory.movements",
   });
 
+  const { data: employeeRow } = await supabase
+    .from("employees")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+  const canExportMovements = ["gerente_general", "propietario"].includes(
+    String((employeeRow as { role?: string } | null)?.role ?? "")
+  );
+
   const { data: sitesRows } = await supabase
     .from("employee_sites")
     .select("site_id,is_primary")
@@ -105,6 +108,19 @@ export default async function InventoryMovementsPage({
     ((sites ?? []) as SiteNameRow[]).map((s: SiteNameRow) => [s.id, s.name ?? s.id])
   );
 
+  const { data: productsData } = await supabase
+    .from("product_inventory_profiles")
+    .select("product_id, products(id,name,sku)")
+    .eq("track_inventory", true)
+    .order("product_id", { ascending: true })
+    .limit(500);
+
+  type ProductProfileRow = { product_id: string; products: ProductRow | null };
+  const productOptions = ((productsData ?? []) as ProductProfileRow[])
+    .map((r) => r.products)
+    .filter((p): p is ProductRow => Boolean(p))
+    .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
+
   let q = supabase
     .from("inventory_movements")
     .select(
@@ -133,12 +149,26 @@ export default async function InventoryMovementsPage({
           </p>
         </div>
 
-        <Link
-          href="/scanner"
-          className="ui-btn ui-btn--ghost"
-        >
-          Ir a Scanner
-        </Link>
+        <div className="flex flex-wrap gap-2">
+          {canExportMovements ? (
+            <a
+              href={`/api/inventory/movements/export?${new URLSearchParams({
+                ...(siteId ? { site_id: siteId } : {}),
+                ...(movementType ? { type: movementType } : {}),
+                ...(productId ? { product: productId } : {}),
+                ...(fromDate ? { from: fromDate } : {}),
+                ...(toDate ? { to: toDate } : {}),
+              }).toString()}`}
+              className="ui-btn ui-btn--ghost"
+              download="movimientos.csv"
+            >
+              Exportar CSV
+            </a>
+          ) : null}
+          <Link href="/scanner" className="ui-btn ui-btn--ghost">
+            Ir a Scanner
+          </Link>
+        </div>
       </div>
 
       {errorMsg ? (
@@ -175,22 +205,32 @@ export default async function InventoryMovementsPage({
               className="ui-input"
             >
               <option value="">Todos</option>
-              {MOVEMENT_TYPES.map((t) => (
-                <option key={t} value={t}>
-                  {t}
-                </option>
+              {MOVEMENT_TYPES_BY_GROUP.map((group) => (
+                <optgroup key={group.label} label={group.label}>
+                  {group.types.map((t) => (
+                    <option key={t} value={t}>
+                      {t}
+                    </option>
+                  ))}
+                </optgroup>
               ))}
             </select>
           </label>
 
           <label className="flex flex-col gap-1">
-            <span className="ui-label">Producto (product_id)</span>
-            <input
+            <span className="ui-label">Producto</span>
+            <select
               name="product"
               defaultValue={productId}
-              placeholder="UUID producto"
               className="ui-input"
-            />
+            >
+              <option value="">Todos</option>
+              {productOptions.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name ?? p.id} {p.sku ? `(${p.sku})` : ""}
+                </option>
+              ))}
+            </select>
           </label>
 
           <div className="grid grid-cols-2 gap-3">
