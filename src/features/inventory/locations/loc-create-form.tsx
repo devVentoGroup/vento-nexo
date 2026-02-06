@@ -14,212 +14,82 @@ type Props = {
   sites: SiteOption[];
   defaultSiteId: string;
   action: (formData: FormData) => void | Promise<void>;
-  createCpTemplateAction?: (formData: FormData) => void | Promise<void>;
-  createEspaciosFisicosTemplateAction?: (formData: FormData) => void | Promise<void>;
 };
 
-const ZONE_CUSTOM = "__CUSTOM__";
-
-const ZONES_BY_SITE: Record<
-  SiteCode,
-  Array<{ code: string; label: string }>
-> = {
-  CP: [
-    { code: "BOD", label: "Bodega seca (BOD)" },
-    { code: "EMP", label: "Empaques / Estibas (EMP)" },
-    { code: "REC", label: "Recepción / Staging (REC)" },
-    { code: "DSP", label: "Despacho (DSP)" },
-    { code: "BODEGA", label: "Bodega (espacios físicos)" },
-    { code: "FRIO", label: "Cuarto frío" },
-    { code: "CONG", label: "Cuarto de congelación" },
-    { code: "N2P", label: "Nevera 2 puertas" },
-    { code: "N3P", label: "Nevera 3 puertas" },
-    { code: "SECOS1", label: "Zona de secos primer piso" },
-    { code: "SECPREP", label: "Secos preparados (porciones)" },
-  ],
-  SAU: [
-    { code: "BOD", label: "Bodega (BOD)" },
-    { code: "COC", label: "Cocina (COC)" },
-    { code: "BAR", label: "Bar (BAR)" },
-    { code: "OFI", label: "Oficina (OFI)" },
-    { code: "EXT", label: "Externo (EXT)" },
-    { code: "BODEGA", label: "Bodega (espacios físicos)" },
-    { code: "FRIO", label: "Cuarto frío" },
-    { code: "CONG", label: "Cuarto de congelación" },
-    { code: "N2P", label: "Nevera 2 puertas" },
-    { code: "N3P", label: "Nevera 3 puertas" },
-    { code: "SECOS1", label: "Zona de secos primer piso" },
-    { code: "SECPREP", label: "Secos preparados (porciones)" },
-  ],
-  VCF: [
-    { code: "BOD", label: "Bodega (BOD)" },
-    { code: "COC", label: "Cocina (COC)" },
-    { code: "BAR", label: "Bar (BAR)" },
-    { code: "OFI", label: "Oficina (OFI)" },
-    { code: "EXT", label: "Externo (EXT)" },
-    { code: "BODEGA", label: "Bodega (espacios físicos)" },
-    { code: "FRIO", label: "Cuarto frío" },
-    { code: "CONG", label: "Cuarto de congelación" },
-    { code: "N2P", label: "Nevera 2 puertas" },
-    { code: "N3P", label: "Nevera 3 puertas" },
-    { code: "SECOS1", label: "Zona de secos primer piso" },
-    { code: "SECPREP", label: "Secos preparados (porciones)" },
-  ],
-  VGR: [
-    { code: "OFI", label: "Oficina (OFI)" },
-    { code: "BOD", label: "Bodega (BOD)" },
-    { code: "EXT", label: "Externo (EXT)" },
-    { code: "BODEGA", label: "Bodega (espacios físicos)" },
-    { code: "FRIO", label: "Cuarto frío" },
-    { code: "CONG", label: "Cuarto de congelación" },
-    { code: "N2P", label: "Nevera 2 puertas" },
-    { code: "N3P", label: "Nevera 3 puertas" },
-    { code: "SECOS1", label: "Zona de secos primer piso" },
-    { code: "SECPREP", label: "Secos preparados (porciones)" },
-  ],
-};
-
-function digitsOnly(v: string) {
-  return v.replace(/\D/g, "");
-}
-
-function pad2FromNumberString(v: string) {
-  const n = digitsOnly(v).slice(0, 2);
-  if (!n) return "00";
-  return n.length === 1 ? `0${n}` : n;
-}
-
-function toLevelCode(v: string) {
-  const n = digitsOnly(v).slice(0, 2);
-  return `N${n ? n : "0"}`;
-}
+/** Convención estándar: LOC-{SEDE}-{ZONA}-{PASILLO} o LOC-{SEDE}-{ZONA}-{PASILLO}-{NIVEL} */
+const ZONAS_ESTANDAR = [
+  { code: "BOD", label: "Bodega (BOD)" },
+  { code: "EMP", label: "Empaques / Estibas (EMP)" },
+  { code: "REC", label: "Recepción (REC)" },
+  { code: "DSP", label: "Despacho (DSP)" },
+  { code: "BODEGA", label: "Bodega general" },
+  { code: "FRIO", label: "Cuarto frío" },
+  { code: "CONG", label: "Congelación" },
+  { code: "N2P", label: "Nevera 2 puertas" },
+  { code: "N3P", label: "Nevera 3 puertas" },
+  { code: "SECOS1", label: "Secos primer piso" },
+  { code: "SECPREP", label: "Secos preparados" },
+  { code: "COC", label: "Cocina (COC)" },
+  { code: "BAR", label: "Bar (BAR)" },
+  { code: "OFI", label: "Oficina (OFI)" },
+  { code: "EXT", label: "Externo (EXT)" },
+];
 
 export function LocCreateForm({
   sites,
   defaultSiteId,
   action,
-  createCpTemplateAction,
-  createEspaciosFisicosTemplateAction,
 }: Props) {
   const initialSiteId = defaultSiteId || sites[0]?.id || "";
-  const [selectedSiteId, setSelectedSiteId] = useState(initialSiteId);
-
-  const selectedSite = useMemo(
-    () => sites.find((s) => s.id === selectedSiteId) ?? null,
-    [sites, selectedSiteId],
-  );
-
-  const siteCode: SiteCode = selectedSite?.code ?? "CP";
-  const zonesForSite = ZONES_BY_SITE[siteCode] ?? ZONES_BY_SITE.CP;
-
-  const [zoneChoice, setZoneChoice] = useState<string>(
-    zonesForSite[0]?.code ?? "BOD",
-  );
-  const [customZone, setCustomZone] = useState("");
-
-  // CP: identificadores por zona
-  const [cpShelfNumber, setCpShelfNumber] = useState("1"); // BOD
-  const [cpPalletNumber, setCpPalletNumber] = useState("1"); // EMP
-  const [cpRecState, setCpRecState] = useState<"PEND" | "OK" | "QUAR">("PEND"); // REC
-
-  // No-CP: pasillo/nivel clásico
-  const [aisleNumber, setAisleNumber] = useState("1");
-  const [levelNumber, setLevelNumber] = useState("0");
-
+  const [siteId, setSiteId] = useState(initialSiteId);
+  const [zone, setZone] = useState("BOD");
+  const [aisle, setAisle] = useState("MAIN");
+  const [level, setLevel] = useState("");
   const [description, setDescription] = useState("");
 
-  const zoneFinal = useMemo(() => {
-    if (zoneChoice === ZONE_CUSTOM)
-      return (customZone || "").trim().toUpperCase();
-    return (zoneChoice || "").trim().toUpperCase();
-  }, [zoneChoice, customZone]);
+  const selectedSite = useMemo(
+    () => sites.find((s) => s.id === siteId) ?? null,
+    [sites, siteId],
+  );
+  const siteCode = (selectedSite?.code ?? "CP").toUpperCase();
+  const zoneUpper = (zone || "BOD").trim().toUpperCase();
+  const aisleUpper = (aisle || "MAIN").trim().toUpperCase();
+  const levelUpper = (level || "").trim().toUpperCase();
 
-  const computed = useMemo(() => {
-    const s = (siteCode || "").trim().toUpperCase();
-    const z = (zoneFinal || "").trim().toUpperCase();
-    if (!s || !z) return { code: "", aisle: "", level: "" };
+  const codigoGenerado = useMemo(() => {
+    if (!siteCode || !zoneUpper || !aisleUpper) return "";
+    const base = `LOC-${siteCode}-${zoneUpper}-${aisleUpper}`;
+    return levelUpper ? `${base}-${levelUpper}` : base;
+  }, [siteCode, zoneUpper, aisleUpper, levelUpper]);
 
-    // Reglas CP definitivas
-    if (s === "CP") {
-      if (z === "BOD") {
-        const aisle = `EST${pad2FromNumberString(cpShelfNumber)}`;
-        return { code: `LOC-${s}-BOD-${aisle}`, aisle, level: "" };
-      }
-      if (z === "EMP") {
-        const aisle = `ESTIBA${pad2FromNumberString(cpPalletNumber)}`;
-        return { code: `LOC-${s}-EMP-${aisle}`, aisle, level: "" };
-      }
-      if (z === "REC") {
-        const aisle = cpRecState;
-        return { code: `LOC-${s}-REC-${aisle}`, aisle, level: "" };
-      }
-      if (z === "DSP") {
-        const aisle = "MAIN";
-        return { code: `LOC-${s}-DSP-${aisle}`, aisle, level: "" };
-      }
-      // Espacios físicos: un LOC por zona (MAIN)
-      if (["BODEGA", "FRIO", "CONG", "N2P", "N3P", "SECOS1", "SECPREP"].includes(z)) {
-        return { code: `LOC-${s}-${z}-MAIN`, aisle: "MAIN", level: "" };
-      }
-
-      // CP + zona custom: fallback simple
-      const aisle = `EST${pad2FromNumberString(cpShelfNumber)}`;
-      return { code: `LOC-${s}-${z}-${aisle}`, aisle, level: "" };
-    }
-
-    // No-CP: espacios físicos → un LOC por zona (MAIN)
-    if (["BODEGA", "FRIO", "CONG", "N2P", "N3P", "SECOS1", "SECPREP"].includes(z)) {
-      return { code: `LOC-${s}-${z}-MAIN`, aisle: "MAIN", level: "" };
-    }
-    // No-CP: patrón clásico LOC-SEDE-ZONA-PASILLO-NIVEL
-    const aisle = pad2FromNumberString(aisleNumber);
-    const level = toLevelCode(levelNumber);
-    return { code: `LOC-${s}-${z}-${aisle}-${level}`, aisle, level };
-  }, [
-    siteCode,
-    zoneFinal,
-    cpShelfNumber,
-    cpPalletNumber,
-    cpRecState,
-    aisleNumber,
-    levelNumber,
-  ]);
-
-  const siteIdToSend = selectedSiteId || defaultSiteId || "";
-  const canSubmit =
-    Boolean(siteIdToSend) && Boolean(zoneFinal) && Boolean(computed.code);
+  const siteIdToSend = siteId || defaultSiteId || "";
+  const canSubmit = Boolean(siteIdToSend) && Boolean(codigoGenerado);
 
   return (
     <div className="ui-panel">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <div className="ui-body font-semibold">Crear LOC</div>
-          <div className="mt-1 ui-body-muted">
-            CP: <span className="font-mono">BOD/EMP/REC/DSP</span> (definitivo).
-          </div>
-        </div>
-
-        <div className="rounded-xl bg-zinc-50 px-3 py-2 ui-caption">
-          Preview:{" "}
-          <span className="font-mono text-zinc-900">
-            {computed.code || "—"}
-          </span>
-        </div>
+      <div className="mb-4">
+        <h2 className="ui-h3">Nueva ubicación</h2>
+        <p className="mt-1 ui-body-muted">
+          Convención: <span className="font-mono">LOC-SEDE-ZONA-PASILLO</span> o{" "}
+          <span className="font-mono">LOC-SEDE-ZONA-PASILLO-NIVEL</span>. Ej: LOC-CP-BOD-EST01, LOC-VGR-FRIO-MAIN.
+        </p>
       </div>
 
-      {/* FORM: crear LOC individual */}
-      <form
-        action={action}
-        className="mt-4 grid grid-cols-1 gap-3 md:grid-cols-2"
-      >
-        {/* site_id */}
-        {sites.length > 0 ? (
-          <label className="flex flex-col gap-1 md:col-span-2">
-            <span className="ui-caption font-semibold">SEDE</span>
+      <form action={action} className="space-y-4">
+        <input type="hidden" name="site_id" value={siteIdToSend} />
+        <input type="hidden" name="code" value={codigoGenerado} />
+        <input type="hidden" name="zone" value={zoneUpper} />
+        <input type="hidden" name="aisle" value={aisleUpper} />
+        <input type="hidden" name="level" value={levelUpper} />
+
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          <label className="flex flex-col gap-1">
+            <span className="ui-caption font-semibold">Sede</span>
             <select
-              value={selectedSiteId}
-              onChange={(e) => setSelectedSiteId(e.target.value)}
-              className="h-11 rounded-xl border border-zinc-200 bg-white px-3 ui-body outline-none focus:border-zinc-400"
+              value={siteId}
+              onChange={(e) => setSiteId(e.target.value)}
+              className="ui-input"
+              required
             >
               {sites.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -227,247 +97,75 @@ export function LocCreateForm({
                 </option>
               ))}
             </select>
-            <div className="text-[11px] text-zinc-500">
-              Site ID: <span className="font-mono">{siteIdToSend}</span>
-            </div>
           </label>
-        ) : (
-          <label className="flex flex-col gap-1 md:col-span-2">
-            <span className="ui-caption font-semibold">
-              Site ID (requerido)
-            </span>
-            <input
-              name="site_id"
-              required
-              placeholder="uuid del site"
-              className="h-11 rounded-xl border border-zinc-200 bg-white px-4 ui-body outline-none focus:border-zinc-400"
-            />
-          </label>
-        )}
 
-        {/* valores canónicos al server action */}
-        <input type="hidden" name="site_id" value={siteIdToSend} />
-        <input type="hidden" name="site_code" value={siteCode} />
-        <input type="hidden" name="code" value={computed.code} />
-        <input type="hidden" name="zone" value={zoneFinal} />
-        <input type="hidden" name="aisle" value={computed.aisle} />
-        <input type="hidden" name="level" value={computed.level} />
-
-        {/* ZONA */}
-        <label className="flex flex-col gap-1">
-          <span className="ui-caption font-semibold">ZONA</span>
-          <select
-            value={zoneChoice}
-            onChange={(e) => setZoneChoice(e.target.value)}
-            className="h-11 rounded-xl border border-zinc-200 bg-white px-3 ui-body outline-none focus:border-zinc-400"
-          >
-            {zonesForSite.map((z) => (
-              <option key={z.code} value={z.code}>
-                {z.label}
-              </option>
-            ))}
-            <option value={ZONE_CUSTOM}>Otra… (escribir)</option>
-          </select>
-
-          {zoneChoice === ZONE_CUSTOM ? (
-            <input
-              value={customZone}
-              onChange={(e) => setCustomZone(e.target.value.toUpperCase())}
-              placeholder="Ej: HV (alto valor)"
-              className="mt-2 h-11 rounded-xl border border-zinc-200 bg-white px-4 ui-body outline-none focus:border-zinc-400"
-            />
-          ) : null}
-
-          <div className="text-[11px] text-zinc-500">
-            Guardado como: <span className="font-mono">{zoneFinal || "—"}</span>
-          </div>
-        </label>
-
-        {/* Identificador dinámico */}
-        {siteCode === "CP" && zoneFinal === "BOD" ? (
           <label className="flex flex-col gap-1">
-            <span className="ui-caption font-semibold">
-              ESTANTERÍA (1–12)
-            </span>
-            <input
-              value={cpShelfNumber}
-              onChange={(e) => setCpShelfNumber(digitsOnly(e.target.value))}
-              inputMode="numeric"
-              placeholder="1"
-              className="h-11 rounded-xl border border-zinc-200 bg-white px-4 ui-body outline-none focus:border-zinc-400"
-            />
-            <div className="text-[11px] text-zinc-500">
-              Aisle: <span className="font-mono">{computed.aisle || "—"}</span>
-            </div>
-          </label>
-        ) : null}
-
-        {siteCode === "CP" && zoneFinal === "EMP" ? (
-          <label className="flex flex-col gap-1">
-            <span className="ui-caption font-semibold">
-              ESTIBA (1–2)
-            </span>
-            <input
-              value={cpPalletNumber}
-              onChange={(e) => setCpPalletNumber(digitsOnly(e.target.value))}
-              inputMode="numeric"
-              placeholder="1"
-              className="h-11 rounded-xl border border-zinc-200 bg-white px-4 ui-body outline-none focus:border-zinc-400"
-            />
-            <div className="text-[11px] text-zinc-500">
-              Aisle: <span className="font-mono">{computed.aisle || "—"}</span>
-            </div>
-          </label>
-        ) : null}
-
-        {siteCode === "CP" && zoneFinal === "REC" ? (
-          <label className="flex flex-col gap-1">
-            <span className="ui-caption font-semibold">
-              ESTADO RECEPCIÓN
-            </span>
+            <span className="ui-caption font-semibold">Zona</span>
             <select
-              value={cpRecState}
-              onChange={(e) => setCpRecState(e.target.value as any)}
-              className="h-11 rounded-xl border border-zinc-200 bg-white px-3 ui-body outline-none focus:border-zinc-400"
+              value={zone}
+              onChange={(e) => setZone(e.target.value)}
+              className="ui-input"
+              required
             >
-              <option value="PEND">PEND (pendiente)</option>
-              <option value="OK">OK (revisado)</option>
-              <option value="QUAR">QUAR (cuarentena)</option>
+              {ZONAS_ESTANDAR.map((z) => (
+                <option key={z.code} value={z.code}>
+                  {z.label}
+                </option>
+              ))}
             </select>
-            <div className="text-[11px] text-zinc-500">
-              Aisle: <span className="font-mono">{computed.aisle || "—"}</span>
-            </div>
           </label>
-        ) : null}
 
-        {siteCode === "CP" && zoneFinal === "DSP" ? (
-          <div className="ui-alert ui-alert--neutral">
-            Despacho es único. Aisle fijo:{" "}
-            <span className="font-mono">MAIN</span>
-          </div>
-        ) : null}
+          <label className="flex flex-col gap-1">
+            <span className="ui-caption font-semibold">Pasillo / identificador</span>
+            <input
+              type="text"
+              value={aisle}
+              onChange={(e) => setAisle(e.target.value.toUpperCase().replace(/\s/g, ""))}
+              placeholder="MAIN, EST01, PEND…"
+              className="ui-input"
+            />
+          </label>
 
-        {/* No-CP: pasillo + nivel */}
-        {siteCode !== "CP" ? (
-          <>
-            <label className="flex flex-col gap-1">
-              <span className="ui-caption font-semibold">
-                PASILLO
-              </span>
-              <input
-                value={aisleNumber}
-                onChange={(e) => setAisleNumber(digitsOnly(e.target.value))}
-                inputMode="numeric"
-                placeholder="1"
-                className="h-11 rounded-xl border border-zinc-200 bg-white px-4 ui-body outline-none focus:border-zinc-400"
-              />
-            </label>
+          <label className="flex flex-col gap-1">
+            <span className="ui-caption font-semibold">Nivel (opcional)</span>
+            <input
+              type="text"
+              value={level}
+              onChange={(e) => setLevel(e.target.value.toUpperCase().replace(/\s/g, ""))}
+              placeholder="N0, 1…"
+              className="ui-input"
+            />
+          </label>
+        </div>
 
-            <label className="flex flex-col gap-1">
-              <span className="ui-caption font-semibold">NIVEL</span>
-              <input
-                value={levelNumber}
-                onChange={(e) => setLevelNumber(digitsOnly(e.target.value))}
-                inputMode="numeric"
-                placeholder="0"
-                className="h-11 rounded-xl border border-zinc-200 bg-white px-4 ui-body outline-none focus:border-zinc-400"
-              />
-            </label>
-          </>
-        ) : null}
-
-        <label className="md:col-span-2 flex flex-col gap-1">
-          <span className="ui-caption font-semibold">
-            Descripción (opcional)
-          </span>
+        <label className="flex flex-col gap-1">
+          <span className="ui-caption font-semibold">Descripción (opcional)</span>
           <input
+            type="text"
             name="description"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="Ej: Estantería 3 (insumos secos)"
-            className="h-11 rounded-xl border border-zinc-200 bg-white px-4 ui-body outline-none focus:border-zinc-400"
+            placeholder="Ej: Estantería 1, Cuarto frío principal"
+            className="ui-input"
           />
         </label>
 
-        <button
-          type="submit"
-          disabled={!canSubmit}
-          className="md:col-span-2 ui-btn ui-btn--brand disabled:opacity-40"
-        >
-          Crear LOC
-        </button>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-3 py-2 ui-caption">
+            <span className="text-[var(--ui-muted)]">Código: </span>
+            <span className="font-mono font-semibold text-[var(--ui-text)]">
+              {codigoGenerado || "—"}
+            </span>
+          </div>
+          <button
+            type="submit"
+            disabled={!canSubmit}
+            className="ui-btn ui-btn--brand disabled:opacity-50"
+          >
+            Crear ubicación
+          </button>
+        </div>
       </form>
-
-      {/* Plantilla CP */}
-      {siteCode === "CP" && createCpTemplateAction ? (
-        <div className="mt-6 ui-panel">
-          <div className="ui-body font-semibold">
-            Inicializar Centro de Producción (Plantilla)
-          </div>
-          <div className="mt-1 ui-body-muted">
-            Crea LOCs base definitivos: BOD(12 estanterías) + EMP(2 estibas) +
-            REC(PEND/OK/QUAR) + DSP(MAIN).
-          </div>
-
-          <form
-            action={createCpTemplateAction}
-            className="mt-4 flex items-center gap-3"
-          >
-            <input type="hidden" name="site_id" value={siteIdToSend} />
-            <input type="hidden" name="site_code" value={siteCode} />
-            <button
-              type="submit"
-              disabled={!siteIdToSend}
-              className="inline-flex h-11 items-center justify-center rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-40"
-            >
-              Crear LOCs base (CP)
-            </button>
-          </form>
-
-          <div className="mt-3 ui-caption">
-            Recomendación operativa: imprime estas etiquetas primero y pégalas
-            físicamente.
-          </div>
-        </div>
-      ) : null}
-
-      {/* Plantilla espacios físicos (cualquier sede) */}
-      {createEspaciosFisicosTemplateAction ? (
-        <div className="mt-6 ui-panel">
-          <div className="ui-body font-semibold">
-            Plantilla espacios físicos
-          </div>
-          <div className="mt-1 ui-body-muted">
-            Crea 7 LOCs generales por zona: Bodega, Cuarto frío, Cuarto de congelación,
-            Nevera 2 puertas, Nevera 3 puertas, Zona de secos primer piso y Secos preparados (porciones en bolsa).
-          </div>
-
-          <form
-            action={createEspaciosFisicosTemplateAction}
-            className="mt-4 flex items-center gap-3"
-          >
-            <input type="hidden" name="site_id" value={siteIdToSend} />
-            <input type="hidden" name="site_code" value={siteCode} />
-            <button
-              type="submit"
-              disabled={!siteIdToSend}
-              className="inline-flex h-11 items-center justify-center rounded-xl bg-zinc-900 px-4 text-sm font-semibold text-white hover:bg-zinc-800 disabled:opacity-40"
-            >
-              Crear LOCs espacios físicos
-            </button>
-          </form>
-
-          <div className="mt-3 ui-caption">
-            Sirve para cualquier sede. Los códigos serán LOC-{siteCode}-BODEGA-MAIN, LOC-{siteCode}-FRIO-MAIN, etc.
-          </div>
-        </div>
-      ) : null}
     </div>
   );
 }
-
-
-
-
-
-

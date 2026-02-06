@@ -41,86 +41,6 @@ function siteCodeFromName(name: string): SiteCode | null {
   return null;
 }
 
-function pad2(n: number) {
-  return String(n).padStart(2, "0");
-}
-
-function buildCpTemplateRows(site_id: string, siteCode: SiteCode) {
-  const rows: Array<Record<string, any>> = [];
-
-  // BOD: 12 estanterías
-  for (let i = 1; i <= 12; i++) {
-    const aisle = `EST${pad2(i)}`;
-    rows.push({
-      site_id,
-      code: `LOC-${siteCode}-BOD-${aisle}`,
-      zone: "BOD",
-      aisle,
-      description: `Estantería ${i}`,
-    });
-  }
-
-  // EMP: 2 estibas (empaques)
-  for (let i = 1; i <= 2; i++) {
-    const aisle = `ESTIBA${pad2(i)}`;
-    rows.push({
-      site_id,
-      code: `LOC-${siteCode}-EMP-${aisle}`,
-      zone: "EMP",
-      aisle,
-      description: `Estiba ${i} (empaques)`,
-    });
-  }
-
-  // REC: 3 estados (pendiente / ok / cuarentena)
-  rows.push({
-    site_id,
-    code: `LOC-${siteCode}-REC-PEND`,
-    zone: "REC",
-    aisle: "PEND",
-    description: "Recepción - Pendiente de revisión",
-  });
-  rows.push({
-    site_id,
-    code: `LOC-${siteCode}-REC-OK`,
-    zone: "REC",
-    aisle: "OK",
-    description: "Recepción - Revisado / listo para guardar",
-  });
-  rows.push({
-    site_id,
-    code: `LOC-${siteCode}-REC-QUAR`,
-    zone: "REC",
-    aisle: "QUAR",
-    description: "Recepción - Cuarentena",
-  });
-
-  // DSP: único
-  rows.push({
-    site_id,
-    code: `LOC-${siteCode}-DSP-MAIN`,
-    zone: "DSP",
-    aisle: "MAIN",
-    description: "Despacho (único)",
-  });
-
-  return rows;
-}
-
-/** Plantilla "Espacios físicos": LOCs generales por zona (bodega, frío, neveras, secos). */
-function buildEspaciosFisicosTemplateRows(site_id: string, siteCode: SiteCode) {
-  const rows: Array<Record<string, unknown>> = [
-    { site_id, code: `LOC-${siteCode}-BODEGA-MAIN`, zone: "BODEGA", aisle: "MAIN", description: "Bodega" },
-    { site_id, code: `LOC-${siteCode}-FRIO-MAIN`, zone: "FRIO", aisle: "MAIN", description: "Cuarto frío" },
-    { site_id, code: `LOC-${siteCode}-CONG-MAIN`, zone: "CONG", aisle: "MAIN", description: "Cuarto de congelación" },
-    { site_id, code: `LOC-${siteCode}-N2P-MAIN`, zone: "N2P", aisle: "MAIN", description: "Nevera 2 puertas" },
-    { site_id, code: `LOC-${siteCode}-N3P-MAIN`, zone: "N3P", aisle: "MAIN", description: "Nevera 3 puertas" },
-    { site_id, code: `LOC-${siteCode}-SECOS1-MAIN`, zone: "SECOS1", aisle: "MAIN", description: "Zona de secos primer piso" },
-    { site_id, code: `LOC-${siteCode}-SECPREP-MAIN`, zone: "SECPREP", aisle: "MAIN", description: "Secos preparados (porciones en bolsa)" },
-  ];
-  return rows;
-}
-
 export default async function InventoryLocationsPage({
   searchParams,
 }: {
@@ -138,7 +58,6 @@ export default async function InventoryLocationsPage({
 }) {
   const sp = (await searchParams) ?? {};
   const created = String(sp.created ?? "");
-  const createdN = Number(sp.n ?? "0");
   const deleted = String(sp.deleted ?? "");
   const updated = String(sp.updated ?? "");
   const editId = String(sp.edit ?? "").trim();
@@ -300,126 +219,6 @@ export default async function InventoryLocationsPage({
     redirect("/inventory/locations?created=1");
   }
 
-  async function createCpTemplateAction(formData: FormData) {
-    "use server";
-
-    const supabase = await createClient();
-
-    const { data } = await supabase.auth.getUser();
-    const user = data.user ?? null;
-    if (!user) {
-      redirect(
-        `/inventory/locations?error=${encodeURIComponent("Sesión requerida")}`,
-      );
-    }
-
-    const site_id = String(formData.get("site_id") ?? "").trim();
-    const site_code = String(formData.get("site_code") ?? "")
-      .trim()
-      .toUpperCase() as SiteCode;
-
-    if (!site_id)
-      redirect(
-        `/inventory/locations?error=${encodeURIComponent("Falta site_id.")}`,
-      );
-
-    // Por ahora, la plantilla solo aplica a CP (decisión de negocio)
-    if (site_code !== "CP") {
-      redirect(
-        `/inventory/locations?error=${encodeURIComponent(
-          "La plantilla inicial solo está habilitada para Centro de Producción (CP).",
-        )}`,
-      );
-    }
-
-    const desiredRows = buildCpTemplateRows(site_id, site_code);
-    const desiredCodes = desiredRows.map((r) => r.code);
-
-    const { data: existing } = await supabase
-      .from("inventory_locations")
-      .select("code")
-      .eq("site_id", site_id)
-      .in("code", desiredCodes);
-
-    const existingSet = new Set(
-      (existing ?? []).map((r) => (r.code ?? "").toUpperCase()).filter(Boolean),
-    );
-
-    const toInsert = desiredRows.filter(
-      (r) => !existingSet.has(String(r.code).toUpperCase()),
-    );
-
-    if (toInsert.length > 0) {
-      const { error } = await supabase
-        .from("inventory_locations")
-        .insert(toInsert);
-      if (error) {
-        redirect(
-          `/inventory/locations?error=${encodeURIComponent(error.message)}`,
-        );
-      }
-    }
-
-    revalidatePath("/inventory/locations");
-    redirect(`/inventory/locations?created=template&n=${toInsert.length}`);
-  }
-
-  async function createEspaciosFisicosTemplateAction(formData: FormData) {
-    "use server";
-
-    const supabase = await createClient();
-
-    const { data } = await supabase.auth.getUser();
-    const user = data.user ?? null;
-    if (!user) {
-      redirect(
-        `/inventory/locations?error=${encodeURIComponent("Sesión requerida")}`,
-      );
-    }
-
-    const site_id = String(formData.get("site_id") ?? "").trim();
-    const site_code = String(formData.get("site_code") ?? "")
-      .trim()
-      .toUpperCase() as SiteCode;
-
-    if (!site_id) {
-      redirect(
-        `/inventory/locations?error=${encodeURIComponent("Falta site_id.")}`,
-      );
-    }
-
-    const desiredRows = buildEspaciosFisicosTemplateRows(site_id, site_code);
-    const desiredCodes = desiredRows.map((r) => r.code as string);
-
-    const { data: existing } = await supabase
-      .from("inventory_locations")
-      .select("code")
-      .eq("site_id", site_id)
-      .in("code", desiredCodes);
-
-    const existingSet = new Set(
-      (existing ?? []).map((r) => (r.code ?? "").toUpperCase()).filter(Boolean),
-    );
-
-    const toInsert = desiredRows.filter(
-      (r) => !existingSet.has(String(r.code).toUpperCase()),
-    );
-
-    if (toInsert.length > 0) {
-      const { error: insertErr } = await supabase
-        .from("inventory_locations")
-        .insert(toInsert);
-      if (insertErr) {
-        redirect(
-          `/inventory/locations?error=${encodeURIComponent(insertErr.message)}`,
-        );
-      }
-    }
-
-    revalidatePath("/inventory/locations");
-    redirect(`/inventory/locations?created=espacios&n=${toInsert.length}`);
-  }
-
   async function deleteLocAction(formData: FormData) {
     "use server";
 
@@ -562,9 +361,9 @@ export default async function InventoryLocationsPage({
     <div className="w-full">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="ui-h1">LOC</h1>
+          <h1 className="ui-h1">Ubicaciones</h1>
           <p className="mt-2 ui-body-muted">
-            Ubicaciones físicas (LOC). Para CP: BOD / EMP / REC / DSP.
+            Ubicaciones físicas (LOC). Convención: <span className="font-mono">LOC-SEDE-ZONA-PASILLO</span>.
           </p>
         </div>
 
@@ -578,33 +377,7 @@ export default async function InventoryLocationsPage({
 
       {created === "1" ? (
         <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-          LOC creado correctamente.
-        </div>
-      ) : null}
-
-      {created === "template" ? (
-        <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-          Plantilla CP aplicada.{" "}
-          {createdN > 0 ? (
-            <>
-              LOCs creados: <span className="font-semibold">{createdN}</span>.
-            </>
-          ) : (
-            <>No se creó nada (ya existían).</>
-          )}
-        </div>
-      ) : null}
-
-      {created === "espacios" ? (
-        <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-          Plantilla espacios físicos aplicada.{" "}
-          {createdN > 0 ? (
-            <>
-              LOCs creados: <span className="font-semibold">{createdN}</span> (Bodega, Cuarto frío, Congelación, Neveras, Secos 1.º piso, Secos preparados).
-            </>
-          ) : (
-            <>No se creó nada (ya existían).</>
-          )}
+          Ubicación creada correctamente.
         </div>
       ) : null}
 
@@ -639,8 +412,6 @@ export default async function InventoryLocationsPage({
           sites={siteOptions}
           defaultSiteId={defaultSiteId}
           action={createLocAction}
-          createCpTemplateAction={createCpTemplateAction}
-          createEspaciosFisicosTemplateAction={createEspaciosFisicosTemplateAction}
         />
       </div>
 
@@ -651,9 +422,9 @@ export default async function InventoryLocationsPage({
       ) : null}
 
       <div className="mt-6 ui-panel">
-        <div className="ui-h3">Ubicaciones</div>
+        <div className="ui-h3">Listado</div>
         <div className="mt-1 ui-body-muted">
-          Filtra por sede, zona o código. Mostrando hasta 500 registros.
+          Filtra por sede, zona o código. Máx. 500 registros.
         </div>
 
         <form
