@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 
 import { LocCreateForm } from "@/features/inventory/locations/loc-create-form";
+import { LocDeleteButton } from "@/features/inventory/locations/loc-delete-button";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 
@@ -124,6 +125,7 @@ export default async function InventoryLocationsPage({
   searchParams?: Promise<{
     created?: string;
     n?: string;
+    deleted?: string;
     error?: string;
     site_id?: string;
     zone?: string;
@@ -133,6 +135,7 @@ export default async function InventoryLocationsPage({
   const sp = (await searchParams) ?? {};
   const created = String(sp.created ?? "");
   const createdN = Number(sp.n ?? "0");
+  const deleted = String(sp.deleted ?? "");
   const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
   const filterSiteId = String(sp.site_id ?? "").trim();
   const filterZone = String(sp.zone ?? "").trim().toUpperCase();
@@ -144,6 +147,14 @@ export default async function InventoryLocationsPage({
     returnTo,
     permissionCode: "inventory.locations",
   });
+
+  const { data: employeeRow } = await supabase
+    .from("employees")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+  const userRole = String((employeeRow as { role?: string } | null)?.role ?? "");
+  const canDeleteLoc = ["propietario", "gerente_general"].includes(userRole);
 
   type EmployeeSiteRow = {
     site_id: string;
@@ -402,6 +413,52 @@ export default async function InventoryLocationsPage({
     redirect(`/inventory/locations?created=espacios&n=${toInsert.length}`);
   }
 
+  async function deleteLocAction(formData: FormData) {
+    "use server";
+
+    const supabase = await createClient();
+    const { data } = await supabase.auth.getUser();
+    const user = data.user ?? null;
+    if (!user) {
+      redirect(
+        `/inventory/locations?error=${encodeURIComponent("Sesión requerida")}`,
+      );
+    }
+
+    const { data: emp } = await supabase
+      .from("employees")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+    const role = String((emp as { role?: string } | null)?.role ?? "");
+    if (!["propietario", "gerente_general"].includes(role)) {
+      redirect(
+        `/inventory/locations?error=${encodeURIComponent("Solo propietarios pueden eliminar LOCs.")}`,
+      );
+    }
+
+    const locId = String(formData.get("loc_id") ?? "").trim();
+    if (!locId) {
+      redirect(
+        `/inventory/locations?error=${encodeURIComponent("Falta loc_id.")}`,
+      );
+    }
+
+    const { error } = await supabase
+      .from("inventory_locations")
+      .delete()
+      .eq("id", locId);
+
+    if (error) {
+      redirect(
+        `/inventory/locations?error=${encodeURIComponent(error.message)}`,
+      );
+    }
+
+    revalidatePath("/inventory/locations");
+    redirect("/inventory/locations?deleted=1");
+  }
+
   let locationsQuery = supabase
     .from("inventory_locations")
     .select("id,code,zone,aisle,level,site_id")
@@ -468,6 +525,12 @@ export default async function InventoryLocationsPage({
           ) : (
             <>No se creó nada (ya existían).</>
           )}
+        </div>
+      ) : null}
+
+      {deleted === "1" ? (
+        <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+          LOC eliminado correctamente.
         </div>
       ) : null}
 
@@ -558,6 +621,7 @@ export default async function InventoryLocationsPage({
                 <TableHeaderCell>Zona</TableHeaderCell>
                 <TableHeaderCell>Aisle</TableHeaderCell>
                 <TableHeaderCell>Level</TableHeaderCell>
+                {canDeleteLoc ? <TableHeaderCell>Acciones</TableHeaderCell> : null}
               </tr>
             </thead>
             <tbody>
@@ -575,12 +639,21 @@ export default async function InventoryLocationsPage({
                   <TableCell className="font-mono">
                     {loc.level ?? "—"}
                   </TableCell>
+                  {canDeleteLoc ? (
+                    <TableCell>
+                      <LocDeleteButton
+                        locId={loc.id}
+                        locCode={loc.code}
+                        action={deleteLocAction}
+                      />
+                    </TableCell>
+                  ) : null}
                 </tr>
               ))}
 
               {!error && (!locations || locations.length === 0) ? (
                 <tr>
-                  <TableCell className="ui-empty" colSpan={4}>
+                  <TableCell className="ui-empty" colSpan={canDeleteLoc ? 5 : 4}>
                     No hay LOCs para mostrar (o RLS no te permite verlos).
                   </TableCell>
                 </tr>

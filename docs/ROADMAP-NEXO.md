@@ -27,7 +27,7 @@ Documento vivo: se van marcando los ítems hechos a medida que se implementan.
 - **4.2** Nota de incidencia por línea en entradas (faltante, calidad, daño) — requiere spec y campos en BD.
 - **4.3** Lote/vencimiento por ítem en entradas — requiere modelo de datos.
 - ~~**8.4** Scanner~~ Hecho: acciones LOC (Ver ubicación / Abrir retiro), reconocimiento LOC sin prefijo, DataMatrix en cámara.
-- **Fase 9 (ORIGO):** vincular entradas a orden de compra; cargar ítems desde OC — amplía alcance cuando ORIGO esté listo.
+- **Fase 9 (ORIGO):** App **vento-origo** creada con páginas placeholder (Panel, Órdenes de compra, Nueva OC, Detalle OC, Proveedores). Falta modelo de datos, auth y vinculación Nexo.
 
 Para **mejorar el alcance** de forma controlada: (1) cerrar el núcleo actual (31/36 hecho); (2) priorizar una sola extensión a la vez (p. ej. solo Fase 9, o solo 4.2); (3) documentar cualquier nuevo “dentro/fuera” aquí.
 
@@ -158,6 +158,7 @@ Para **mejorar el alcance** de forma controlada: (1) cerrar el núcleo actual (3
 
 **Layout sugerido 50×70 mm:**
 - **Arriba (≈15–20 mm):** texto grande: nombre del LOC (ej. BODEGA) y debajo el código (ej. `LOC-CP-BODEGA-MAIN`).
+- 
 - **Centro/abajo:** DataMatrix y QR uno al lado del otro (o DataMatrix arriba, QR abajo).
   - DataMatrix: tamaño ~15×15 mm o 18×18 mm (código corto, lectura con handheld).
   - QR: tamaño ~18×18 mm o 20×20 mm (lectura cómoda con cel).
