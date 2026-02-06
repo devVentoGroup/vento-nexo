@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 
 import { LocCreateForm } from "@/features/inventory/locations/loc-create-form";
 import { LocDeleteButton } from "@/features/inventory/locations/loc-delete-button";
+import { LocEditForm } from "@/features/inventory/locations/loc-edit-form";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 
@@ -26,6 +27,7 @@ type LocationRow = {
   aisle: string | null;
   level: string | null;
   site_id: string | null;
+  description?: string | null;
 };
 
 function siteCodeFromName(name: string): SiteCode | null {
@@ -126,6 +128,8 @@ export default async function InventoryLocationsPage({
     created?: string;
     n?: string;
     deleted?: string;
+    updated?: string;
+    edit?: string;
     error?: string;
     site_id?: string;
     zone?: string;
@@ -136,6 +140,8 @@ export default async function InventoryLocationsPage({
   const created = String(sp.created ?? "");
   const createdN = Number(sp.n ?? "0");
   const deleted = String(sp.deleted ?? "");
+  const updated = String(sp.updated ?? "");
+  const editId = String(sp.edit ?? "").trim();
   const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
   const filterSiteId = String(sp.site_id ?? "").trim();
   const filterZone = String(sp.zone ?? "").trim().toUpperCase();
@@ -155,6 +161,7 @@ export default async function InventoryLocationsPage({
     .maybeSingle();
   const userRole = String((employeeRow as { role?: string } | null)?.role ?? "");
   const canDeleteLoc = ["propietario", "gerente_general"].includes(userRole);
+  const canEditLoc = canDeleteLoc;
 
   type EmployeeSiteRow = {
     site_id: string;
@@ -459,9 +466,75 @@ export default async function InventoryLocationsPage({
     redirect("/inventory/locations?deleted=1");
   }
 
+  async function updateLocAction(formData: FormData) {
+    "use server";
+
+    const supabase = await createClient();
+    const { data } = await supabase.auth.getUser();
+    const user = data.user ?? null;
+    if (!user) {
+      redirect(
+        `/inventory/locations?error=${encodeURIComponent("Sesión requerida")}`,
+      );
+    }
+
+    const { data: emp } = await supabase
+      .from("employees")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+    const role = String((emp as { role?: string } | null)?.role ?? "");
+    if (!["propietario", "gerente_general"].includes(role)) {
+      redirect(
+        `/inventory/locations?error=${encodeURIComponent("Solo propietarios pueden editar LOCs.")}`,
+      );
+    }
+
+    const locId = String(formData.get("loc_id") ?? "").trim();
+    if (!locId) {
+      redirect(
+        `/inventory/locations?error=${encodeURIComponent("Falta loc_id.")}`,
+      );
+    }
+
+    const code = String(formData.get("code") ?? "").trim().toUpperCase();
+    const zone = String(formData.get("zone") ?? "").trim().toUpperCase();
+    if (!code || !zone) {
+      redirect(
+        `/inventory/locations?error=${encodeURIComponent("Código y zona son obligatorios.")}`,
+      );
+    }
+
+    const aisle = String(formData.get("aisle") ?? "").trim().toUpperCase();
+    const level = String(formData.get("level") ?? "").trim().toUpperCase();
+    const description = String(formData.get("description") ?? "").trim();
+
+    const updates: Record<string, string | null> = {
+      code,
+      zone,
+      aisle: aisle || null,
+      level: level || null,
+      description: description || null,
+    };
+
+    const { error } = await supabase
+      .from("inventory_locations")
+      .update(updates)
+      .eq("id", locId);
+
+    if (error) {
+      redirect(
+        `/inventory/locations?error=${encodeURIComponent(error.message)}`,
+      );
+    }
+
+    revalidatePath("/inventory/locations");
+    redirect("/inventory/locations?updated=1");
+  }
+
   let locationsQuery = supabase
     .from("inventory_locations")
-    .select("id,code,zone,aisle,level,site_id")
+    .select("id,code,zone,aisle,level,site_id,description")
     .order("code", { ascending: true })
     .limit(500);
 
@@ -477,6 +550,13 @@ export default async function InventoryLocationsPage({
 
   const { data: locations, error } = await locationsQuery;
   const locationRows = (locations ?? []) as LocationRow[];
+
+  const editingLoc = editId ? locationRows.find((l) => l.id === editId) : null;
+  const baseQuery = new URLSearchParams();
+  if (filterSiteId) baseQuery.set("site_id", filterSiteId);
+  if (filterZone) baseQuery.set("zone", filterZone);
+  if (filterCode) baseQuery.set("code", filterCode);
+  const cancelHref = `/inventory/locations${baseQuery.toString() ? `?${baseQuery.toString()}` : ""}`;
 
   return (
     <div className="w-full">
@@ -534,10 +614,24 @@ export default async function InventoryLocationsPage({
         </div>
       ) : null}
 
+      {updated === "1" ? (
+        <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+          LOC actualizado correctamente.
+        </div>
+      ) : null}
+
       {errorMsg ? (
         <div className="mt-6 ui-alert ui-alert--error">
           Error: {errorMsg}
         </div>
+      ) : null}
+
+      {canEditLoc && editingLoc ? (
+        <LocEditForm
+          loc={editingLoc}
+          action={updateLocAction}
+          cancelHref={cancelHref}
+        />
       ) : null}
 
       <div className="mt-6">
@@ -621,7 +715,7 @@ export default async function InventoryLocationsPage({
                 <TableHeaderCell>Zona</TableHeaderCell>
                 <TableHeaderCell>Aisle</TableHeaderCell>
                 <TableHeaderCell>Level</TableHeaderCell>
-                {canDeleteLoc ? <TableHeaderCell>Acciones</TableHeaderCell> : null}
+                {canEditLoc || canDeleteLoc ? <TableHeaderCell>Acciones</TableHeaderCell> : null}
               </tr>
             </thead>
             <tbody>
@@ -639,13 +733,26 @@ export default async function InventoryLocationsPage({
                   <TableCell className="font-mono">
                     {loc.level ?? "—"}
                   </TableCell>
-                  {canDeleteLoc ? (
-                    <TableCell>
-                      <LocDeleteButton
-                        locId={loc.id}
-                        locCode={loc.code}
-                        action={deleteLocAction}
-                      />
+                  {canEditLoc || canDeleteLoc ? (
+                    <TableCell className="flex flex-wrap items-center gap-2">
+                      {canEditLoc ? (
+                        <Link
+                          href={`/inventory/locations?${baseQuery.toString() ? `${baseQuery.toString()}&` : ""}edit=${encodeURIComponent(loc.id)}`}
+                          className="text-sm font-semibold text-[var(--ui-brand-600)] hover:underline"
+                        >
+                          Editar
+                        </Link>
+                      ) : null}
+                      {canDeleteLoc ? (
+                        <>
+                          {canEditLoc ? <span className="text-[var(--ui-muted)]">·</span> : null}
+                          <LocDeleteButton
+                            locId={loc.id}
+                            locCode={loc.code}
+                            action={deleteLocAction}
+                          />
+                        </>
+                      ) : null}
                     </TableCell>
                   ) : null}
                 </tr>
@@ -653,7 +760,7 @@ export default async function InventoryLocationsPage({
 
               {!error && (!locations || locations.length === 0) ? (
                 <tr>
-                  <TableCell className="ui-empty" colSpan={canDeleteLoc ? 5 : 4}>
+                  <TableCell className="ui-empty" colSpan={canEditLoc || canDeleteLoc ? 5 : 4}>
                     No hay LOCs para mostrar (o RLS no te permite verlos).
                   </TableCell>
                 </tr>
