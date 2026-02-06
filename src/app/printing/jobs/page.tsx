@@ -354,7 +354,7 @@ function PrintingJobsContent() {
       },
       {
         id: "SKU_32x25_3UP",
-        label: "SKU/Producto -? 32x25 (Code128 -? 3 por fila)",
+        label: "SKU/Producto 32×25 (3 etiquetas por fila)",
         widthMm: 105, // rollo completo 3 columnas (32x25 x3)
         heightMm: 25,
         columns: 3,
@@ -388,7 +388,7 @@ function PrintingJobsContent() {
   const [offsetXmm, setOffsetXmm] = useState(0);
   const [offsetYmm, setOffsetYmm] = useState(0);
 
-  const [title, setTitle] = useState("VENTO -? LOC");
+  const [title, setTitle] = useState("VENTO · LOC");
   const [barcodeKind, setBarcodeKind] = useState<BarcodeKind>(preset.defaultBarcodeKind);
   const [code128HeightDots, setCode128HeightDots] = useState(preset.defaultCode128HeightDots);
   const [dmModuleDots, setDmModuleDots] = useState(preset.defaultDmModuleDots);
@@ -402,6 +402,9 @@ function PrintingJobsContent() {
 
   const [queueText, setQueueText] = useState<string>("");
   const [previewZpl, setPreviewZpl] = useState<string>("");
+  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  const [previewImageError, setPreviewImageError] = useState(false);
+  const [showZplCode, setShowZplCode] = useState(false);
 
   useEffect(() => {
     const presetParam = searchParams.get("preset");
@@ -425,13 +428,13 @@ function PrintingJobsContent() {
     setDmModuleDots(preset.defaultDmModuleDots);
 
     // Ajuste automático de título según tipo
-    if (preset.defaultType === "LOC") setTitle("VENTO -? LOC");
-    if (preset.defaultType === "SKU") setTitle("VENTO -? SKU");
-    if (preset.defaultType === "PROD") setTitle("VENTO - PROD");
+    if (preset.defaultType === "LOC") setTitle("VENTO · LOC");
+    if (preset.defaultType === "SKU") setTitle("VENTO · SKU");
+    if (preset.defaultType === "PROD") setTitle("VENTO · PROD");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [presetId]);
 
-  // Detectar BrowserPrint
+  // Detectar BrowserPrint y, cuando esté listo, detectar impresoras automáticamente
   useEffect(() => {
     const t = setInterval(() => {
       if (typeof window !== "undefined" && window.BrowserPrint) {
@@ -441,6 +444,41 @@ function PrintingJobsContent() {
     }, 300);
     return () => clearInterval(t);
   }, []);
+
+  useEffect(() => {
+    if (browserPrintOk && window.BrowserPrint) {
+      window.BrowserPrint.getLocalDevices(
+        (raw: any) => {
+          const list = normalizeDevices(raw);
+          const onlyPrinters = list.filter((d) => {
+            const t = String(d?.deviceType ?? d?.type ?? "").toLowerCase();
+            const n = String(d?.name ?? "").toLowerCase();
+            return t.includes("printer") || n.includes("zebra") || n.includes("zd");
+          });
+          setDevices(onlyPrinters.length ? onlyPrinters : list);
+          if (!selectedUid && (onlyPrinters[0]?.uid || list[0]?.uid)) {
+            setSelectedUid(String(onlyPrinters[0]?.uid ?? list[0]?.uid));
+          }
+        },
+        () => {},
+        "printer"
+      );
+    }
+  }, [browserPrintOk]);
+
+  // Auto-cargar LOCs al abrir la página si el tipo es LOC
+  const locsLoadedRef = useRef(false);
+  useEffect(() => {
+    if (preset.defaultType !== "LOC" || locsLoadedRef.current) return;
+    locsLoadedRef.current = true;
+    fetch(LOCS_API, { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : Promise.resolve([])))
+      .then((json) => {
+        const rows = Array.isArray(json) ? json : Array.isArray(json?.locations) ? json.locations : [];
+        setLocs(rows as LocRow[]);
+      })
+      .catch(() => {});
+  }, [preset.defaultType]);
 
   const offsetXDots = useMemo(() => mmToDots(offsetXmm, dpi), [offsetXmm, dpi]);
   const offsetYDots = useMemo(() => mmToDots(offsetYmm, dpi), [offsetYmm, dpi]);
@@ -507,6 +545,56 @@ function PrintingJobsContent() {
       setPreviewZpl(`// Error generando ZPL: ${String(e?.message ?? e)}`);
     }
   }, [preset, dpi, offsetXDots, offsetYDots, barcodeKind, code128HeightDots, dmModuleDots, title, parsedQueue]);
+
+  // Vista previa visual (Labelary): ZPL → imagen como se verá impresa
+  const previewImageDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const previewObjectUrlRef = useRef<string | null>(null);
+  useEffect(() => {
+    if (!previewZpl || previewZpl.startsWith("//")) {
+      if (previewObjectUrlRef.current) {
+        URL.revokeObjectURL(previewObjectUrlRef.current);
+        previewObjectUrlRef.current = null;
+      }
+      setPreviewImageUrl(null);
+      setPreviewImageError(false);
+      return;
+    }
+    const w = preset.widthMm;
+    const h = preset.heightMm;
+    const dpmm = 8;
+    const id = setTimeout(() => {
+      const url = `https://api.labelary.com/v1/printers/${dpmm}/labels/${w}x${h}/0/`;
+      fetch(url, {
+        method: "POST",
+        body: previewZpl,
+        headers: { "Accept": "image/png" },
+      })
+        .then((res) => {
+          if (!res.ok) throw new Error(String(res.status));
+          return res.blob();
+        })
+        .then((blob) => {
+          if (previewObjectUrlRef.current) URL.revokeObjectURL(previewObjectUrlRef.current);
+          const u = URL.createObjectURL(blob);
+          previewObjectUrlRef.current = u;
+          setPreviewImageUrl(u);
+          setPreviewImageError(false);
+        })
+        .catch(() => {
+          setPreviewImageUrl(null);
+          setPreviewImageError(true);
+        });
+    }, 400);
+    previewImageDebounceRef.current = id;
+    return () => {
+      if (previewImageDebounceRef.current) clearTimeout(previewImageDebounceRef.current);
+      if (previewObjectUrlRef.current) {
+        URL.revokeObjectURL(previewObjectUrlRef.current);
+        previewObjectUrlRef.current = null;
+      }
+      setPreviewImageUrl(null);
+    };
+  }, [previewZpl, preset.widthMm, preset.heightMm]);
 
   function requireReady() {
     if (!enablePrinting) {
@@ -747,7 +835,7 @@ function PrintingJobsContent() {
       setPresetId("LOC_50x70");
     }
     setBarcodeKind("datamatrix");
-    setTitle("VENTO -? LOC");
+    setTitle("VENTO · LOC");
 
     const line = `${loc.code}|${safeText(loc.description ?? "LOC")}`;
 
@@ -768,10 +856,9 @@ function PrintingJobsContent() {
       <Script src={BROWSERPRINT_ZEBRA} strategy="afterInteractive" />
 
       <div>
-        <h1 className="ui-h1">Impresión</h1>
+        <h1 className="ui-h1">Impresión de etiquetas</h1>
         <p className="mt-2 ui-body-muted">
-          Zebra + BrowserPrint. Etiqueta LOC 50×70: DataMatrix (código LOC) + QR (URL retiro). SKU/PROD:{" "}
-          <span className="font-mono">VENTO|TYPE|CODE</span>.
+          Imprime etiquetas de ubicaciones (LOC), productos (SKU/PROD). Elige ubicación, revisa la vista previa e imprime.
         </p>
       </div>
 
@@ -806,7 +893,7 @@ function PrintingJobsContent() {
             onClick={printAlignmentTest}
             type="button"
           >
-            Prueba alineación
+            Probar posición
           </button>
 
           <div className="ml-auto flex items-center gap-3 ui-body-muted">
@@ -911,20 +998,22 @@ function PrintingJobsContent() {
             </div>
 
             <div>
-              <div className="ui-caption font-medium">Offset X (mm)</div>
+              <div className="ui-caption font-medium">Margen horizontal (mm)</div>
               <input
                 className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
                 value={offsetXmm}
                 onChange={(e) => setOffsetXmm(Number(e.target.value || "0"))}
+                title="Desplaza la etiqueta a la derecha si imprime cortada"
               />
             </div>
 
             <div>
-              <div className="ui-caption font-medium">Offset Y (mm)</div>
+              <div className="ui-caption font-medium">Margen vertical (mm)</div>
               <input
                 className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
                 value={offsetYmm}
                 onChange={(e) => setOffsetYmm(Number(e.target.value || "0"))}
+                title="Desplaza la etiqueta hacia abajo si imprime cortada"
               />
             </div>
 
@@ -970,24 +1059,22 @@ function PrintingJobsContent() {
               </div>
             )}
 
-            <div className="col-span-2 ui-caption">
-              Recomendación: usa <span className="font-medium">Prueba alineación</span> y ajusta Offset X/Y hasta que el
-              marco caiga exactamente.
+            <div className="col-span-2 ui-caption text-[var(--ui-muted)]">
+              Si la etiqueta no sale bien alineada, ajusta los márgenes o usa <span className="font-medium">Probar posición</span>.
             </div>
           </div>
 
-          <div className="mt-5 rounded-xl bg-zinc-50 p-4 ui-caption">
-            <div className="font-semibold text-zinc-700">Nota clave</div>
-            <div className="mt-1">
-              En LOC (DataMatrix), el contenido codificado es: <span className="font-mono">VENTO|LOC|{"<CODE>"}</span>.
-              En SKU/PROD igual con su TYPE.
+          <div className="mt-5 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4 ui-caption">
+            <div className="font-semibold text-[var(--ui-text)]">Ubicación</div>
+            <div className="mt-1 text-[var(--ui-muted)]">
+              Elige una ubicación (LOC) de la lista y agrégalo a la cola para imprimir su etiqueta.
             </div>
           </div>
 
           <div className="mt-6">
             {preset.defaultType === "LOC" ? (
               <>
-                <div className="ui-h3">Seleccionar LOC</div>
+                <div className="ui-h3">Elegir ubicación</div>
 
                 <div className="mt-3 flex items-center gap-3">
                   <button
@@ -995,7 +1082,7 @@ function PrintingJobsContent() {
                     onClick={loadLocs}
                     type="button"
                   >
-                    Cargar LOCs
+                    Actualizar lista
                   </button>
 
                   <input
@@ -1012,10 +1099,10 @@ function PrintingJobsContent() {
                     value={selectedLocCode}
                     onChange={(e) => setSelectedLocCode(e.target.value)}
                   >
-                    <option value="">{locs.length ? "(Selecciona un LOC)" : "(Primero carga LOCs)"}</option>
+                    <option value="">{locs.length ? "Selecciona una ubicación" : "Cargando…"}</option>
                     {filteredLocs.map((l) => (
                       <option key={l.id} value={l.code}>
-                        {l.code} ??? {String(l.description ?? "").slice(0, 40)}
+                        {l.code}{l.description ? ` – ${String(l.description).slice(0, 40)}` : ""}
                       </option>
                     ))}
                   </select>
@@ -1037,8 +1124,8 @@ function PrintingJobsContent() {
                   </button>
                 </div>
 
-                <div className="mt-2 ui-caption">
-                  Al escoger un LOC, el preset cambia automáticamente a LOC 50x70 (DataMatrix).
+                <div className="mt-2 ui-caption text-[var(--ui-muted)]">
+                  Al elegir una ubicación se usa la etiqueta estándar 50×70 mm.
                 </div>
               </>
             ) : null}
@@ -1051,7 +1138,10 @@ function PrintingJobsContent() {
           </div>
         </div>
         <div className="ui-panel">
-          <div className="ui-h3">Etiquetas</div>
+          <div className="ui-h3">Cola de etiquetas</div>
+          <p className="mt-1 ui-body-muted">
+            Lista de etiquetas a imprimir (una por línea). Para ubicaciones LOC, usa el selector de la izquierda.
+          </p>
           <textarea
             className="mt-4 h-64 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-mono"
             placeholder={
@@ -1087,10 +1177,40 @@ function PrintingJobsContent() {
           ) : null}
 
           <div className="mt-6">
-            <div className="ui-h3">Preview ZPL</div>
-            <pre className="mt-3 max-h-80 overflow-auto rounded-xl bg-zinc-950 p-4 ui-code text-zinc-100">
-              {previewZpl || "// (vacío)"}
-            </pre>
+            <div className="ui-h3">Vista previa (cómo se verá impresa)</div>
+            <p className="mt-1 ui-body-muted">
+              Así saldrá la etiqueta en la impresora. Si no ves la imagen, revisa que haya al menos una etiqueta en la cola.
+            </p>
+            <div className="mt-3 flex min-h-[140px] items-center justify-center rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
+              {previewImageUrl ? (
+                <img
+                  src={previewImageUrl}
+                  alt="Vista previa de la etiqueta"
+                  className="max-h-80 w-auto object-contain"
+                  style={{ imageRendering: "pixelated" }}
+                />
+              ) : previewImageError ? (
+                <p className="ui-body-muted text-center">
+                  No se pudo generar la vista previa. Ajusta la cola y vuelve a intentar.
+                </p>
+              ) : (
+                <p className="ui-body-muted text-center">
+                  Añade una etiqueta a la cola para ver la vista previa.
+                </p>
+              )}
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowZplCode((v) => !v)}
+              className="mt-3 text-sm font-semibold text-[var(--ui-brand-600)] hover:underline"
+            >
+              {showZplCode ? "Ocultar código de impresora" : "Ver código de impresora (ZPL)"}
+            </button>
+            {showZplCode ? (
+              <pre className="mt-2 max-h-48 overflow-auto rounded-xl bg-zinc-950 p-3 text-xs text-zinc-100">
+                {previewZpl || "// (vacío)"}
+              </pre>
+            ) : null}
           </div>
         </div>
       </div>
