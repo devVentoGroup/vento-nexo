@@ -4,481 +4,122 @@ import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Script from "next/script";
 import { useSearchParams } from "next/navigation";
 
-declare global {
-  interface Window {
-    BrowserPrint?: any;
-  }
-}
-
-type BarcodeKind = "datamatrix" | "code128";
-
-type Preset = {
-  id: string;
-  label: string;
-  // Medida REAL del rollo (para 3-up, el ancho es el rollo completo)
-  widthMm: number;
-  heightMm: number;
-  columns: number;
-
-  // Defaults de simbología
-  defaultBarcodeKind: BarcodeKind;
-
-  // Para Code128 (alto en dots)
-  defaultCode128HeightDots: number;
-
-  // Para DataMatrix (tamaño de módulo en dots)
-  defaultDmModuleDots: number;
-
-  // Tipo lógico (para codificar VENTO|TYPE|CODE)
-  defaultType: "LOC" | "SKU" | "PROD";
-};
-
-type LocRow = {
-  id: string;
-  code: string;
-  description?: string | null;
-  zone?: string | null;
-  site_id?: string | null;
-  created_at?: string | null;
-};
-
-function mmToDots(mm: number, dpi: number) {
-  return Math.round((mm / 25.4) * dpi);
-}
-
-function safeText(s: string) {
-  // Evitamos caracteres raros para ZPL; si necesitas más, luego metemos ^FH.
-  return String(s ?? "").replace(/[\r\n]+/g, " ").trim();
-}
-
-function buildZplHeader(opts: {
-  widthDots: number;
-  heightDots: number;
-  offsetXDots: number;
-  offsetYDots: number;
-}) {
-  const { widthDots, heightDots, offsetXDots, offsetYDots } = opts;
-  return [
-    "^XA",
-    `^PW${widthDots}`,
-    `^LL${heightDots}`,
-    // Label Home (offset)
-    `^LH${offsetXDots},${offsetYDots}`,
-    "^CI28", // UTF-8-ish para textos (sin garantía total, pero ayuda)
-  ].join("\n");
-}
-
-function buildZplFooter() {
-  return "^XZ";
-}
-
-function buildCode128Field(opts: {
-  x: number;
-  y: number;
-  heightDots: number;
-  data: string;
-}) {
-  const { x, y, heightDots, data } = opts;
-  const payload = safeText(data);
-  // Importante: sin línea de interpretación (N) para que se vea limpio
-  return [
-    "^BY2,2," + heightDots,
-    `^FO${x},${y}`,
-    `^BCN,${heightDots},N,N,N`,
-    `^FD${payload}^FS`,
-  ].join("\n");
-}
-
-function buildDataMatrixField(opts: { x: number; y: number; moduleDots: number; data: string }) {
-  const { x, y, moduleDots, data } = opts;
-  const payload = safeText(data);
-  // ^BX: Data Matrix (ECC 200)
-  // Formato: ^BXo,h,s,c,r,f
-  // o=N, h=módulo (dots), s=200 (ECC200), c/r=0 auto, f=6 default
-  return [`^FO${x},${y}`, `^BXN,${moduleDots},200,0,0,6`, `^FD${payload}^FS`].join("\n");
-}
-
-/** QR Code ZPL (^BQ). Uso: retiro con URL en etiqueta LOC 50×70. */
-function buildQRField(opts: { x: number; y: number; magnification: number; data: string }) {
-  const { x, y, magnification, data } = opts;
-  const payload = String(data ?? "").trim();
-  if (!payload) return "";
-  // ^BQ: o=N (normal), 2=model 2, magnification 2–10 (4 ≈ 18–20 mm a 203 dpi)
-  const mag = Math.min(10, Math.max(1, magnification));
-  return [`^FO${x},${y}`, `^BQN,2,${mag}`, `^FDQA,${payload}^FS`].join("\n");
-}
-
-function buildTextField(opts: { x: number; y: number; h: number; w: number; text: string }) {
-  const { x, y, h, w, text } = opts;
-  const payload = safeText(text);
-  return [`^FO${x},${y}`, `^A0N,${h},${w}`, `^FD${payload}^FS`].join("\n");
-}
-
-function buildTextBlock(opts: {
-  x: number;
-  y: number;
-  h: number;
-  w: number;
-  maxWidthDots: number;
-  lines?: number;
-  align?: "L" | "C" | "R";
-  text: string;
-}) {
-  const { x, y, h, w, maxWidthDots, lines = 1, align = "L", text } = opts;
-  const payload = safeText(text);
-  const width = Math.max(1, Math.floor(maxWidthDots));
-  return [
-    `^FO${x},${y}`,
-    `^A0N,${h},${w}`,
-    `^FB${width},${lines},0,${align},0`,
-    `^FD${payload}^FS`,
-  ].join("\n");
-}
-
-function encodeVento(type: "LOC" | "SKU" | "PROD", code: string) {
-  return `VENTO|${type}|${safeText(code)}`;
-}
-
-function buildSingleLabelZpl(opts: {
-  preset: Preset;
-  dpi: number;
-  offsetXDots: number;
-  offsetYDots: number;
-
-  barcodeKind: BarcodeKind;
-  code128HeightDots: number;
-  dmModuleDots: number;
-
-  // Label content
-  type: "LOC" | "SKU" | "PROD";
-  title: string; // arriba
-  code: string; // humano abajo
-  note?: string; // segunda línea arriba
-  /** Solo para LOC 50×70: origen para URL de retiro (DataMatrix + QR). */
-  baseUrlForQr?: string;
-}) {
-  const { preset, dpi, offsetXDots, offsetYDots, barcodeKind, code128HeightDots, dmModuleDots, type } = opts;
-
-  const widthDots = mmToDots(preset.widthMm, dpi);
-  const heightDots = mmToDots(preset.heightMm, dpi);
-
-  const header = buildZplHeader({ widthDots, heightDots, offsetXDots, offsetYDots });
-
-  const title = safeText(opts.title);
-  const note = safeText(opts.note ?? "");
-  const code = safeText(opts.code);
-
-  const isLoc70Dual =
-    preset.id === "LOC_50x70" &&
-    type === "LOC" &&
-    barcodeKind === "datamatrix" &&
-    Boolean(opts.baseUrlForQr?.trim());
-
-  const encoded = isLoc70Dual ? code : encodeVento(type, code);
-
-  const marginX = 18;
-  const yTitle = 12;
-  const yNote = 38;
-  const isLoc70 = preset.id === "LOC_50x70" && barcodeKind === "datamatrix" && type === "LOC";
-  const isProd = type === "PROD";
-  const maxTextWidth = widthDots - marginX * 2;
-
-  const parts: string[] = [];
-  parts.push(header);
-
-  // Arriba: nombre + código (LOC 50×70 según spec)
-  parts.push(
-    buildTextBlock({
-      x: marginX,
-      y: yTitle,
-      h: isLoc70 ? 22 : 26,
-      w: isLoc70 ? 22 : 26,
-      maxWidthDots: maxTextWidth,
-      lines: 1,
-      align: "L",
-      text: title,
-    })
-  );
-
-  if (note) {
-    parts.push(
-      buildTextBlock({
-        x: marginX,
-        y: isLoc70 ? 46 : yNote,
-        h: isLoc70 ? 40 : isProd ? 20 : 22,
-        w: isLoc70 ? 40 : isProd ? 20 : 22,
-        maxWidthDots: maxTextWidth,
-        lines: isLoc70 ? 2 : isProd ? 2 : 1,
-        align: "L",
-        text: note,
-      })
-    );
-  }
-
-  // LOC 50×70 con dos códigos (8.1): DataMatrix = código LOC; QR = URL retiro
-  if (isLoc70Dual) {
-    const baseUrl = (opts.baseUrlForQr ?? "").replace(/\/$/, "");
-    const withdrawUrl = `${baseUrl}/inventory/withdraw?loc=${encodeURIComponent(code)}`;
-    const yCodes = 140;
-    const dmSize = dmModuleDots * 26;
-    const dmX = marginX;
-    const qrMagnification = 4;
-    const qrSizeApprox = 25 * qrMagnification * 4;
-    const qrX = Math.min(widthDots - marginX - qrSizeApprox, dmX + dmSize + 12);
-    parts.push(buildDataMatrixField({ x: dmX, y: yCodes, moduleDots: dmModuleDots, data: code }));
-    parts.push(buildQRField({ x: qrX, y: yCodes, magnification: qrMagnification, data: withdrawUrl }));
-    parts.push(
-      buildTextBlock({
-        x: marginX,
-        y: heightDots - 56,
-        h: 24,
-        w: 20,
-        maxWidthDots: maxTextWidth,
-        lines: 1,
-        align: "C",
-        text: code,
-      })
-    );
-  } else {
-    const yBarcode = isLoc70 ? 140 : 70;
-    const dmSizeGuess = dmModuleDots * 26;
-    const dmX = Math.max(marginX, Math.floor((widthDots - dmSizeGuess) / 2));
-    if (barcodeKind === "datamatrix") {
-      parts.push(buildDataMatrixField({ x: isLoc70 ? dmX : marginX, y: yBarcode, moduleDots: dmModuleDots, data: encoded }));
-    } else {
-      parts.push(buildCode128Field({ x: marginX, y: yBarcode, heightDots: code128HeightDots, data: encoded }));
-    }
-    parts.push(
-      buildTextBlock({
-        x: marginX,
-        y: isLoc70 ? heightDots - 56 : heightDots - 34,
-        h: isLoc70 ? 24 : 22,
-        w: isLoc70 ? 20 : 18,
-        maxWidthDots: maxTextWidth,
-        lines: 1,
-        align: "C",
-        text: code,
-      })
-    );
-  }
-
-  parts.push(buildZplFooter());
-  return parts.join("\n");
-}
-
-function buildThreeUpRowZpl(opts: {
-  preset: Preset; // columns=3, widthMm=rollo completo
-  dpi: number;
-  offsetXDots: number;
-  offsetYDots: number;
-
-  barcodeKind: BarcodeKind;
-  code128HeightDots: number;
-  dmModuleDots: number;
-
-  type: "LOC" | "SKU" | "PROD";
-  title: string;
-
-  items: Array<{ code: string; note?: string }>; // EXACTAMENTE 3
-}) {
-  const { preset, dpi, offsetXDots, offsetYDots, barcodeKind, code128HeightDots, dmModuleDots, type, title, items } =
-    opts;
-
-  const widthDots = mmToDots(preset.widthMm, dpi);
-  const heightDots = mmToDots(preset.heightMm, dpi);
-
-  const header = buildZplHeader({ widthDots, heightDots, offsetXDots, offsetYDots });
-
-  const colWidthDots = Math.floor(widthDots / preset.columns);
-  const marginX = 12;
-  const yTitle = 10;
-  const yNote = 34;
-  const yBarcode = 60;
-
-  const parts: string[] = [];
-  parts.push(header);
-
-  items.forEach((it, idx) => {
-    const x0 = idx * colWidthDots + marginX;
-    const code = safeText(it.code);
-    const note = safeText(it.note ?? "");
-    const encoded = encodeVento(type, code);
-
-    parts.push(buildTextField({ x: x0, y: yTitle, h: 22, w: 22, text: title }));
-    if (note) parts.push(buildTextField({ x: x0, y: yNote, h: 18, w: 18, text: note }));
-
-    if (barcodeKind === "datamatrix") {
-      parts.push(buildDataMatrixField({ x: x0, y: yBarcode, moduleDots: dmModuleDots, data: encoded }));
-    } else {
-      parts.push(buildCode128Field({ x: x0, y: yBarcode, heightDots: code128HeightDots, data: encoded }));
-    }
-
-    parts.push(buildTextField({ x: x0, y: heightDots - 26, h: 18, w: 18, text: code }));
-  });
-
-  parts.push(buildZplFooter());
-  return parts.join("\n");
-}
-
-function normalizeDevices(devsRaw: any): any[] {
-  if (Array.isArray(devsRaw)) return devsRaw;
-  if (Array.isArray(devsRaw?.devices)) return devsRaw.devices;
-  if (Array.isArray(devsRaw?.device)) return devsRaw.device;
-  // A veces viene como objeto con keys numéricas
-  if (devsRaw && typeof devsRaw === "object") {
-    const vals = Object.values(devsRaw);
-    if (vals.every((v) => typeof v === "object")) return vals as any[];
-  }
-  return [];
-}
+import { BROWSERPRINT_CORE, BROWSERPRINT_ZEBRA, LOCS_API, PRESETS } from "./_lib/constants";
+import type { BarcodeKind, BrowserPrintDevices, LocRow, PreviewMode } from "./_lib/types";
+import {
+  buildSingleLabelZpl,
+  buildThreeUpRowZpl,
+  buildZplFooter,
+  buildZplHeader,
+  buildTextField,
+  mmToDots,
+  normalizeDevices,
+  safeText,
+} from "./_lib/zpl";
+import { readStoredSettings } from "./_hooks/useStoredSettings";
+import { usePrinterDevices } from "./_hooks/usePrinterDevices";
+import { useStoredSettings } from "./_hooks/useStoredSettings";
+import { usePreviewZpl } from "./_hooks/usePreviewZpl";
+import { usePreviewImage } from "./_hooks/usePreviewImage";
+import { ConfigPanel } from "./_components/ConfigPanel";
+import { QueuePanel } from "./_components/QueuePanel";
+import { PreviewPanel } from "./_components/PreviewPanel";
 
 function PrintingJobsContent() {
   const searchParams = useSearchParams();
-  // Si tus scripts ya están en otro path, ajusta aquí:
-  const BROWSERPRINT_CORE = "/zebra/BrowserPrint.min.js";
-  const BROWSERPRINT_ZEBRA = "/zebra/BrowserPrint-Zebra.min.js";
-  // Endpoints (ajusta si tus rutas reales son distintas)
-  const LOCS_API = "/api/inventory/locations?limit=500";
-  const presets: Preset[] = useMemo(
-    () => [
-      {
-        id: "LOC_50x70",
-        label: "LOC 50×70 (DataMatrix + QR retiro)",
-        widthMm: 50,
-        heightMm: 70,
-        columns: 1,
-        defaultBarcodeKind: "datamatrix",
-        defaultCode128HeightDots: 120,
-        defaultDmModuleDots: 10,
-        defaultType: "LOC",
-      },
-      {
-        id: "SKU_32x25_3UP",
-        label: "SKU/Producto 32×25 (3 etiquetas por fila)",
-        widthMm: 105, // rollo completo 3 columnas (32x25 x3)
-        heightMm: 25,
-        columns: 3,
-        defaultBarcodeKind: "code128",
-        defaultCode128HeightDots: 55,
-        defaultDmModuleDots: 4,
-        defaultType: "SKU",
-      },
-      {
-        id: "PROD_50x30",
-        label: "PROD 50x30 (Code128)",
-        widthMm: 50,
-        heightMm: 30,
-        columns: 1,
-        defaultBarcodeKind: "code128",
-        defaultCode128HeightDots: 60,
-        defaultDmModuleDots: 4,
-        defaultType: "PROD",
-      },
-    ],
-    []
-  );
+  const presets = PRESETS;
 
   const [enablePrinting, setEnablePrinting] = useState(true);
-
   const [dpi, setDpi] = useState(203);
   const [presetId, setPresetId] = useState(presets[0]?.id ?? "LOC_50x70");
-
-  const preset = useMemo(() => presets.find((p) => p.id === presetId) ?? presets[0], [presetId, presets]);
+  const preset = useMemo(
+    () => presets.find((p) => p.id === presetId) ?? presets[0],
+    [presetId, presets]
+  );
+  const dpmm = useMemo(
+    () => Math.max(6, Math.min(12, Math.round(dpi / 25.4))),
+    [dpi]
+  );
 
   const [offsetXmm, setOffsetXmm] = useState(0);
   const [offsetYmm, setOffsetYmm] = useState(0);
-
   const [title, setTitle] = useState("VENTO · LOC");
   const [barcodeKind, setBarcodeKind] = useState<BarcodeKind>(preset.defaultBarcodeKind);
   const [code128HeightDots, setCode128HeightDots] = useState(preset.defaultCode128HeightDots);
   const [dmModuleDots, setDmModuleDots] = useState(preset.defaultDmModuleDots);
 
-  const [browserPrintOk, setBrowserPrintOk] = useState(false);
-  const [status, setStatus] = useState<string>("");
-
-  const [devices, setDevices] = useState<any[]>([]);
-  const [selectedUid, setSelectedUid] = useState<string>("");
-  const deviceRef = useRef<any>(null);
-
-  const [queueText, setQueueText] = useState<string>("");
-  const [previewZpl, setPreviewZpl] = useState<string>("");
+  const [status, setStatus] = useState("");
+  const [queueText, setQueueText] = useState("");
+  const [previewZpl, setPreviewZpl] = useState("");
   const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
-  const [previewImageError, setPreviewImageError] = useState(false);
+  const [previewImageError, setPreviewImageError] = useState<string | null>(null);
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("auto");
+  const [previewScale, setPreviewScale] = useState(1);
+  const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
   const [showZplCode, setShowZplCode] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
+
+  const [locs, setLocs] = useState<LocRow[]>([]);
+  const [locSearch, setLocSearch] = useState("");
+  const [selectedLocCode, setSelectedLocCode] = useState("");
+  const locsLoadedRef = useRef(false);
+
+  const {
+    browserPrintOk,
+    devices,
+    selectedUid,
+    setSelectedUid,
+    deviceRef,
+    connectSelected,
+    detectPrinters: detectPrintersFromHook,
+    isConnected,
+  } = usePrinterDevices();
+
+  const uidKey = selectedUid || "default";
+  const hasPresetParam = Boolean(searchParams.get("preset"));
+
+  useStoredSettings(
+    uidKey,
+    {
+      presetId,
+      dpi,
+      offsetXmm,
+      offsetYmm,
+      showAdvanced,
+    },
+    hasPresetParam
+  );
 
   useEffect(() => {
     const presetParam = searchParams.get("preset");
     const queueParam = searchParams.get("queue");
     const titleParam = searchParams.get("title");
-
     if (presetParam) setPresetId(presetParam);
     if (queueParam) setQueueText(queueParam.replace(/\r/g, ""));
     if (titleParam) setTitle(titleParam);
   }, [searchParams]);
 
-  // LOC selector
-  const [locs, setLocs] = useState<LocRow[]>([]);
-  const [locSearch, setLocSearch] = useState("");
-  const [selectedLocCode, setSelectedLocCode] = useState<string>("");
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const stored = readStoredSettings();
+    const saved = stored.byPrinter?.[uidKey];
+    if (saved && !hasPresetParam) {
+      if (saved.presetId) setPresetId(saved.presetId);
+      if (typeof saved.dpi === "number") setDpi(saved.dpi);
+      if (typeof saved.offsetXmm === "number") setOffsetXmm(saved.offsetXmm);
+      if (typeof saved.offsetYmm === "number") setOffsetYmm(saved.offsetYmm);
+      if (typeof saved.showAdvanced === "boolean") setShowAdvanced(saved.showAdvanced);
+    }
+  }, [uidKey, hasPresetParam]);
 
-  // Mantener defaults al cambiar preset
   useEffect(() => {
     setBarcodeKind(preset.defaultBarcodeKind);
     setCode128HeightDots(preset.defaultCode128HeightDots);
     setDmModuleDots(preset.defaultDmModuleDots);
-
-    // Ajuste automático de título según tipo
     if (preset.defaultType === "LOC") setTitle("VENTO · LOC");
     if (preset.defaultType === "SKU") setTitle("VENTO · SKU");
     if (preset.defaultType === "PROD") setTitle("VENTO · PROD");
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [presetId]);
-
-  // Detectar BrowserPrint y, cuando esté listo, detectar impresoras automáticamente
-  useEffect(() => {
-    const t = setInterval(() => {
-      if (typeof window !== "undefined" && window.BrowserPrint) {
-        setBrowserPrintOk(true);
-        clearInterval(t);
-      }
-    }, 300);
-    return () => clearInterval(t);
-  }, []);
-
-  useEffect(() => {
-    if (browserPrintOk && window.BrowserPrint) {
-      window.BrowserPrint.getLocalDevices(
-        (raw: any) => {
-          const list = normalizeDevices(raw);
-          const onlyPrinters = list.filter((d) => {
-            const t = String(d?.deviceType ?? d?.type ?? "").toLowerCase();
-            const n = String(d?.name ?? "").toLowerCase();
-            return t.includes("printer") || n.includes("zebra") || n.includes("zd");
-          });
-          setDevices(onlyPrinters.length ? onlyPrinters : list);
-          if (!selectedUid && (onlyPrinters[0]?.uid || list[0]?.uid)) {
-            setSelectedUid(String(onlyPrinters[0]?.uid ?? list[0]?.uid));
-          }
-        },
-        () => {},
-        "printer"
-      );
-    }
-  }, [browserPrintOk]);
-
-  // Auto-cargar LOCs al abrir la página si el tipo es LOC
-  const locsLoadedRef = useRef(false);
-  useEffect(() => {
-    if (preset.defaultType !== "LOC" || locsLoadedRef.current) return;
-    locsLoadedRef.current = true;
-    fetch(LOCS_API, { cache: "no-store" })
-      .then((res) => (res.ok ? res.json() : Promise.resolve([])))
-      .then((json) => {
-        const rows = Array.isArray(json) ? json : Array.isArray(json?.locations) ? json.locations : [];
-        setLocs(rows as LocRow[]);
-      })
-      .catch(() => {});
-  }, [preset.defaultType]);
+  }, [presetId, preset.defaultType, preset.defaultBarcodeKind, preset.defaultCode128HeightDots, preset.defaultDmModuleDots]);
 
   const offsetXDots = useMemo(() => mmToDots(offsetXmm, dpi), [offsetXmm, dpi]);
   const offsetYDots = useMemo(() => mmToDots(offsetYmm, dpi), [offsetYmm, dpi]);
@@ -488,7 +129,6 @@ function PrintingJobsContent() {
       .split("\n")
       .map((l) => l.trim())
       .filter(Boolean);
-
     return lines.map((line) => {
       const [codeRaw, ...rest] = line.split("|");
       const code = safeText(codeRaw ?? "");
@@ -497,106 +137,93 @@ function PrintingJobsContent() {
     });
   }, [queueText]);
 
-  // Preview (muestra el primer label / primera fila)
-  useEffect(() => {
-    if (!preset) return;
-
-    try {
-      if (preset.columns === 1) {
-        const first = parsedQueue[0] ?? { code: "EJEMPLO-001", note: "Demo" };
-        const baseUrl =
-          typeof window !== "undefined" ? (window.location?.origin ?? "") : "";
-        const zpl = buildSingleLabelZpl({
-          preset,
-          dpi,
-          offsetXDots,
-          offsetYDots,
-          barcodeKind,
-          code128HeightDots,
-          dmModuleDots,
-          type: preset.defaultType,
-          title,
-          code: first.code,
-          note: first.note,
-          baseUrlForQr: preset.id === "LOC_50x70" && preset.defaultType === "LOC" ? baseUrl : undefined,
-        });
-        setPreviewZpl(zpl);
-      } else {
-        const row = [
-          parsedQueue[0] ?? { code: "EJ-001", note: "Demo" },
-          parsedQueue[1] ?? { code: "EJ-002", note: "Demo" },
-          parsedQueue[2] ?? { code: "EJ-003", note: "Demo" },
-        ];
-        const zpl = buildThreeUpRowZpl({
-          preset,
-          dpi,
-          offsetXDots,
-          offsetYDots,
-          barcodeKind,
-          code128HeightDots,
-          dmModuleDots,
-          type: preset.defaultType,
-          title,
-          items: row,
-        });
-        setPreviewZpl(zpl);
-      }
-    } catch (e: any) {
-      setPreviewZpl(`// Error generando ZPL: ${String(e?.message ?? e)}`);
+  const previewItems = useMemo(() => {
+    if (preset.columns === 1) {
+      return [parsedQueue[0] ?? { code: "EJEMPLO-001", note: "Demo" }];
     }
-  }, [preset, dpi, offsetXDots, offsetYDots, barcodeKind, code128HeightDots, dmModuleDots, title, parsedQueue]);
+    return [
+      parsedQueue[0] ?? { code: "EJ-001", note: "Demo" },
+      parsedQueue[1] ?? { code: "EJ-002", note: "Demo" },
+      parsedQueue[2] ?? { code: "EJ-003", note: "Demo" },
+    ];
+  }, [preset.columns, parsedQueue]);
 
-  // Vista previa visual (Labelary): ZPL → imagen como se verá impresa
-  const previewImageDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const previewObjectUrlRef = useRef<string | null>(null);
+  const baseUrl =
+    typeof window !== "undefined" ? (window.location?.origin ?? "") : "";
+
+  usePreviewZpl(
+    preset,
+    {
+      dpi,
+      offsetXDots,
+      offsetYDots,
+      barcodeKind,
+      code128HeightDots,
+      dmModuleDots,
+      title,
+      previewItems,
+      baseUrl,
+    },
+    setPreviewZpl
+  );
+
+  usePreviewImage(
+    previewZpl,
+    previewMode,
+    preset.widthMm,
+    preset.heightMm,
+    dpmm,
+    previewRefreshKey,
+    setPreviewImageUrl,
+    setPreviewImageError
+  );
+
   useEffect(() => {
-    if (!previewZpl || previewZpl.startsWith("//")) {
-      if (previewObjectUrlRef.current) {
-        URL.revokeObjectURL(previewObjectUrlRef.current);
-        previewObjectUrlRef.current = null;
-      }
-      setPreviewImageUrl(null);
-      setPreviewImageError(false);
+    if (preset.defaultType !== "LOC" || locsLoadedRef.current) return;
+    locsLoadedRef.current = true;
+    fetch(LOCS_API, { cache: "no-store" })
+      .then((res) => (res.ok ? res.json() : Promise.resolve([])))
+      .then((json) => {
+        const rows = Array.isArray(json)
+          ? json
+          : Array.isArray((json as { locations?: LocRow[] })?.locations)
+            ? (json as { locations: LocRow[] }).locations
+            : [];
+        setLocs(rows);
+      })
+      .catch(() => {});
+  }, [preset.defaultType]);
+
+  const filteredLocs = useMemo(() => {
+    const q = locSearch.trim().toLowerCase();
+    if (!q) return locs;
+    return locs.filter((l) => {
+      const code = String(l.code ?? "").toLowerCase();
+      const desc = String(l.description ?? "").toLowerCase();
+      return code.includes(q) || desc.includes(q);
+    });
+  }, [locs, locSearch]);
+
+  function detectPrinters() {
+    setStatus("");
+    if (!window.BrowserPrint) {
+      setStatus("BrowserPrint no está disponible.");
       return;
     }
-    const w = preset.widthMm;
-    const h = preset.heightMm;
-    const dpmm = 8;
-    const id = setTimeout(() => {
-      const url = `https://api.labelary.com/v1/printers/${dpmm}/labels/${w}x${h}/0/`;
-      fetch(url, {
-        method: "POST",
-        body: previewZpl,
-        headers: { "Accept": "image/png" },
-      })
-        .then((res) => {
-          if (!res.ok) throw new Error(String(res.status));
-          return res.blob();
-        })
-        .then((blob) => {
-          if (previewObjectUrlRef.current) URL.revokeObjectURL(previewObjectUrlRef.current);
-          const u = URL.createObjectURL(blob);
-          previewObjectUrlRef.current = u;
-          setPreviewImageUrl(u);
-          setPreviewImageError(false);
-        })
-        .catch(() => {
-          setPreviewImageUrl(null);
-          setPreviewImageError(true);
-        });
-    }, 400);
-    previewImageDebounceRef.current = id;
-    return () => {
-      if (previewImageDebounceRef.current) clearTimeout(previewImageDebounceRef.current);
-      if (previewObjectUrlRef.current) {
-        URL.revokeObjectURL(previewObjectUrlRef.current);
-        previewObjectUrlRef.current = null;
-      }
-      setPreviewImageUrl(null);
-    };
-  }, [previewZpl, preset.widthMm, preset.heightMm]);
+    detectPrintersFromHook((count) => setStatus(`Detectadas: ${count}`));
+  }
 
-  function requireReady() {
+  function connectSelectedAndStatus() {
+    setStatus("");
+    if (connectSelected()) {
+      const dev = devices.find((d) => String(d?.uid) === String(selectedUid));
+      setStatus(`Impresora lista: ${String(dev?.name ?? dev?.uid ?? "")}`);
+    } else {
+      setStatus("Selecciona una impresora válida.");
+    }
+  }
+
+  function requireReady(): boolean {
     if (!enablePrinting) {
       setStatus("Impresión deshabilitada.");
       return false;
@@ -612,67 +239,22 @@ function PrintingJobsContent() {
     return true;
   }
 
-  function detectPrinters() {
-    setStatus("");
-    if (!window.BrowserPrint) {
-      setStatus("BrowserPrint no está disponible.");
-      return;
-    }
-
-    window.BrowserPrint.getLocalDevices(
-      (raw: any) => {
-        const list = normalizeDevices(raw);
-
-        // Filtrado defensivo: quedarnos con lo que parezca impresora
-        const onlyPrinters = list.filter((d) => {
-          const t = String(d?.deviceType ?? d?.type ?? "").toLowerCase();
-          const n = String(d?.name ?? "").toLowerCase();
-          return t.includes("printer") || n.includes("zebra") || n.includes("zd");
-        });
-
-        setDevices(onlyPrinters.length ? onlyPrinters : list);
-        if (!selectedUid && (onlyPrinters[0]?.uid || list[0]?.uid)) {
-          setSelectedUid(String(onlyPrinters[0]?.uid ?? list[0]?.uid));
-        }
-        setStatus(`Detectadas: ${onlyPrinters.length ? onlyPrinters.length : list.length}`);
-      },
-      (err: any) => {
-        setStatus(`Error detectando impresoras: ${String(err?.message ?? err)}`);
-      },
-      "printer"
-    );
-  }
-
-  function connectSelected() {
-    setStatus("");
-    const dev = devices.find((d) => String(d?.uid) === String(selectedUid));
-    if (!dev) {
-      setStatus("Selecciona una impresora válida.");
-      return;
-    }
-    deviceRef.current = dev;
-    setStatus(`Impresora lista: ${String(dev?.name ?? dev?.uid ?? "")}`);
-  }
-
   function sendZpl(zpl: string) {
     if (!requireReady()) return;
-
     const dev = deviceRef.current;
-    setStatus("Enviando impresión...");
-
+    setStatus("Enviando impresión…");
     try {
-      dev.send(
+      dev?.send?.(
         zpl,
-        () => {
-          setStatus("Impresión enviada.");
-        },
-        (err: any) => {
-          // Ojo: a veces imprime y aún así el driver devuelve error de ??connection closed???.
-          setStatus(`Error al imprimir: ${String(err?.message ?? err)}`);
+        () => setStatus("Impresión enviada."),
+        (err: unknown) => {
+          const msg = err instanceof Error ? err.message : String(err);
+          setStatus(`Error al imprimir: ${msg}`);
         }
       );
-    } catch (e: any) {
-      setStatus(`Excepción al imprimir: ${String(e?.message ?? e)}`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setStatus(`Excepción al imprimir: ${msg}`);
     }
   }
 
@@ -682,8 +264,6 @@ function PrintingJobsContent() {
       setStatus("Cola vacía.");
       return;
     }
-
-    // Para 3-up solo imprime filas completas
     if (preset.columns === 3 && parsedQueue.length < 3) {
       setStatus("Este preset imprime de a 3. Faltan etiquetas para completar una fila.");
       return;
@@ -692,8 +272,6 @@ function PrintingJobsContent() {
     const zplParts: string[] = [];
 
     if (preset.columns === 1) {
-      const baseUrl =
-        typeof window !== "undefined" ? (window.location?.origin ?? "") : "";
       const baseUrlForQr =
         preset.id === "LOC_50x70" && preset.defaultType === "LOC" ? baseUrl : undefined;
       parsedQueue.forEach((it) => {
@@ -715,11 +293,10 @@ function PrintingJobsContent() {
         );
       });
       sendZpl(zplParts.join("\n"));
-      setQueueText(""); // limpia
+      setQueueText("");
       return;
     }
 
-    // 3-up
     const fullRows = Math.floor(parsedQueue.length / 3);
     if (fullRows <= 0) {
       setStatus("No hay filas completas de 3 para imprimir.");
@@ -743,85 +320,91 @@ function PrintingJobsContent() {
         })
       );
     }
-
     sendZpl(zplParts.join("\n"));
 
-    // Remueve lo impreso (filas completas), deja remainder en cola
     const remainder = parsedQueue.slice(fullRows * 3);
-    const newText = remainder.map((it) => (it.note ? `${it.code}|${it.note}` : it.code)).join("\n");
+    const newText = remainder
+      .map((it) => (it.note ? `${it.code}|${it.note}` : it.code))
+      .join("\n");
     setQueueText(newText);
 
     if (remainder.length) {
-      setStatus(`Impreso ${fullRows * 3}. Quedan ${remainder.length} en cola (esperando completar 3).`);
+      setStatus(
+        `Impreso ${fullRows * 3}. Quedan ${remainder.length} en cola (esperando completar 3).`
+      );
     }
+  }
+
+  function printOneTestRow3Up() {
+    if (!preset || preset.columns !== 3) return;
+    const row = [
+      { code: "PRUEBA-1", note: "Test" },
+      { code: "PRUEBA-2", note: "Test" },
+      { code: "PRUEBA-3", note: "Test" },
+    ];
+    const zpl = buildThreeUpRowZpl({
+      preset,
+      dpi,
+      offsetXDots,
+      offsetYDots,
+      barcodeKind,
+      code128HeightDots,
+      dmModuleDots,
+      type: preset.defaultType,
+      title,
+      items: row,
+    });
+    sendZpl(zpl);
+    setStatus("Impresa una fila de prueba (3 etiquetas).");
   }
 
   function printAlignmentTest() {
     if (!preset) return;
     const widthDots = mmToDots(preset.widthMm, dpi);
     const heightDots = mmToDots(preset.heightMm, dpi);
-
     const zpl = [
       buildZplHeader({ widthDots, heightDots, offsetXDots, offsetYDots }),
-      // Marco
       "^FO10,10^GB" + (widthDots - 20) + "," + (heightDots - 20) + ",2^FS",
-      // Diagonal simple
       "^FO10,10^GD" + (widthDots - 20) + "," + (heightDots - 20) + ",2,B,L^FS",
       "^FO10," + (heightDots - 10) + "^GD" + (widthDots - 20) + "," + (heightDots - 20) + ",2,B,R^FS",
       buildTextField({ x: 20, y: 20, h: 26, w: 26, text: "TEST" }),
       buildZplFooter(),
     ].join("\n");
-
     sendZpl(zpl);
   }
 
   async function loadLocs() {
     setStatus("");
     try {
-      const url = LOCS_API;
-      const res = await fetch(url, { cache: "no-store" });
-
-      // Leemos texto para poder mostrar errores reales (no solo HTTP)
+      const res = await fetch(LOCS_API, { cache: "no-store" });
       const raw = await res.text();
-      let json: any = null;
+      let json: unknown = null;
       try {
         json = raw ? JSON.parse(raw) : null;
       } catch {
-        // si no es JSON, lo dejamos como texto
+        // noop
       }
-
       if (!res.ok) {
+        const obj = json && typeof json === "object" ? (json as Record<string, unknown>) : null;
         const msg =
-          json?.error ??
-          json?.message ??
+          (obj?.error != null ? String(obj.error) : null) ??
+          (obj?.message != null ? String(obj.message) : null) ??
           (typeof raw === "string" && raw.trim() ? raw : `HTTP ${res.status}`);
         setStatus(`Error cargando LOCs: ${msg}`);
         return;
       }
-
-      const rows: any[] =
-        Array.isArray(json) ? json :
-          Array.isArray(json?.data) ? json.data :
-            Array.isArray(json?.rows) ? json.rows :
-              Array.isArray(json?.locations) ? json.locations :
-                [];
-
-      setLocs(rows as LocRow[]);
+      const rows: LocRow[] = Array.isArray(json)
+        ? (json as LocRow[])
+        : Array.isArray((json as { locations?: LocRow[] })?.locations)
+          ? (json as { locations: LocRow[] }).locations
+          : [];
+      setLocs(rows);
       setStatus(`LOCs cargados: ${rows.length}`);
-    } catch (e: any) {
-      setStatus(`Error cargando LOCs: ${String(e?.message ?? e)}`);
+    } catch (e: unknown) {
+      const msg = e instanceof Error ? e.message : String(e);
+      setStatus(`Error cargando LOCs: ${msg}`);
     }
   }
-
-  const filteredLocs = useMemo(() => {
-    const q = locSearch.trim().toLowerCase();
-    if (!q) return locs;
-    return locs.filter((l) => {
-      const code = String(l.code ?? "").toLowerCase();
-      const desc = String(l.description ?? "").toLowerCase();
-      return code.includes(q) || desc.includes(q);
-    });
-  }, [locs, locSearch]);
 
   function addSelectedLocToQueue(mode: "replace" | "append") {
     const loc = locs.find((l) => l.code === selectedLocCode);
@@ -829,16 +412,11 @@ function PrintingJobsContent() {
       setStatus("Selecciona un LOC válido.");
       return;
     }
-
-    // Auto (estándar): LOC siempre es 50x70 + DataMatrix
-    if (presetId !== "LOC_50x70") {
-      setPresetId("LOC_50x70");
-    }
+    if (presetId !== "LOC_50x70") setPresetId("LOC_50x70");
     setBarcodeKind("datamatrix");
     setTitle("VENTO · LOC");
 
     const line = `${loc.code}|${safeText(loc.description ?? "LOC")}`;
-
     if (mode === "replace") {
       setQueueText(line);
     } else {
@@ -850,6 +428,32 @@ function PrintingJobsContent() {
     }
   }
 
+  const hasQueue = parsedQueue.length > 0;
+  const previewZplHasError = previewZpl.startsWith("// Error");
+  const previewShowImage = previewMode !== "mock" && Boolean(previewImageUrl);
+  const previewShowMock =
+    !previewZplHasError &&
+    (previewMode === "mock" || (previewMode === "auto" && !previewShowImage));
+  const previewDualMatrix =
+    preset.id === "LOC_50x70" &&
+    preset.defaultType === "LOC" &&
+    barcodeKind === "datamatrix";
+  const previewColGapMm = 2;
+  const previewColWidthMm =
+    preset.columns > 1
+      ? (preset.widthMm - previewColGapMm * (preset.columns - 1)) / preset.columns
+      : preset.widthMm;
+  const previewBarcodeScale = Math.max(2, Math.round(dpmm / 2));
+  const previewQrUrl = useMemo(() => {
+    if (!previewDualMatrix) return "";
+    if (typeof window === "undefined") return "";
+    const code = previewItems[0]?.code ?? "";
+    if (!code) return "";
+    const base = window.location?.origin ?? "";
+    if (!base) return "";
+    return `${base.replace(/\/$/, "")}/inventory/withdraw?loc=${encodeURIComponent(code)}`;
+  }, [previewDualMatrix, previewItems]);
+
   return (
     <div className="w-full space-y-6">
       <Script src={BROWSERPRINT_CORE} strategy="afterInteractive" />
@@ -858,9 +462,18 @@ function PrintingJobsContent() {
       <div>
         <h1 className="ui-h1">Impresión de etiquetas</h1>
         <p className="mt-2 ui-body-muted">
-          Imprime etiquetas de ubicaciones (LOC), productos (SKU/PROD). Elige ubicación, revisa la vista previa e imprime.
+          Imprime etiquetas de ubicaciones (LOC), productos (SKU/PROD). Elige ubicación, revisa la
+          vista previa e imprime.
         </p>
       </div>
+
+      {!browserPrintOk && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 ui-caption text-amber-800">
+          <strong>Para imprimir a impresoras Zebra</strong> necesitas tener instalado{" "}
+          <strong>Zebra Browser Print</strong> y el servicio en ejecución. Sin ello podrás usar la
+          vista previa y preparar la cola, pero no enviar a la impresora.
+        </div>
+      )}
 
       <div className="ui-panel">
         <div className="flex flex-wrap items-center gap-3">
@@ -874,7 +487,7 @@ function PrintingJobsContent() {
 
           <button
             className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
-            onClick={connectSelected}
+            onClick={connectSelectedAndStatus}
             type="button"
           >
             Conectar impresora
@@ -887,6 +500,17 @@ function PrintingJobsContent() {
           >
             Imprimir
           </button>
+
+          {preset.columns === 3 && (
+            <button
+              className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
+              onClick={printOneTestRow3Up}
+              type="button"
+              title="Imprime una fila de 3 etiquetas de prueba"
+            >
+              Imprimir una de prueba (3-up)
+            </button>
+          )}
 
           <button
             className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
@@ -901,7 +525,7 @@ function PrintingJobsContent() {
               BrowserPrint: <span className="font-medium">{browserPrintOk ? "OK" : "NO"}</span>
             </span>
             <span>
-              Impresora: <span className="font-medium">{deviceRef.current ? "OK" : "NO"}</span>
+              Impresora: <span className="font-medium">{isConnected ? "OK" : "NO"}</span>
             </span>
 
             <select
@@ -934,284 +558,72 @@ function PrintingJobsContent() {
       </div>
 
       <div className="grid gap-6 md:grid-cols-2">
-        <div className="ui-panel">
-          <div className="ui-h3">Configuración</div>
+        <ConfigPanel
+          presets={presets}
+          preset={preset}
+          presetId={presetId}
+          setPresetId={setPresetId}
+          title={title}
+          setTitle={setTitle}
+          dpi={dpi}
+          setDpi={setDpi}
+          offsetXmm={offsetXmm}
+          setOffsetXmm={setOffsetXmm}
+          offsetYmm={offsetYmm}
+          setOffsetYmm={setOffsetYmm}
+          showAdvanced={showAdvanced}
+          setShowAdvanced={setShowAdvanced}
+          barcodeKind={barcodeKind}
+          code128HeightDots={code128HeightDots}
+          setCode128HeightDots={setCode128HeightDots}
+          dmModuleDots={dmModuleDots}
+          setDmModuleDots={setDmModuleDots}
+          locs={locs}
+          locSearch={locSearch}
+          setLocSearch={setLocSearch}
+          filteredLocs={filteredLocs}
+          selectedLocCode={selectedLocCode}
+          setSelectedLocCode={setSelectedLocCode}
+          loadLocs={loadLocs}
+          addSelectedLocToQueue={addSelectedLocToQueue}
+        />
 
-          <div className="mt-4 grid grid-cols-2 gap-4">
-            <div>
-              <div className="ui-caption font-medium">Preset</div>
-              <div className="col-span-2">
-                <div className="ui-caption font-medium">Tipo rápido</div>
-                <div className="mt-1 inline-flex overflow-hidden rounded-xl border border-zinc-200 bg-white">
-                  <button
-                    type="button"
-                    onClick={() => setPresetId("LOC_50x70")}
-                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "LOC" ? "bg-[var(--ui-brand)] text-[var(--ui-on-primary)]" : "bg-[var(--ui-surface)] text-[var(--ui-text)]"
-                      }`}
-                  >
-                    LOC
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPresetId("SKU_32x25_3UP")}
-                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "SKU" ? "bg-[var(--ui-brand)] text-[var(--ui-on-primary)]" : "bg-[var(--ui-surface)] text-[var(--ui-text)]"
-                      }`}
-                  >
-                    SKU
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setPresetId("PROD_50x30")}
-                    className={`px-4 py-2 text-sm font-semibold ${preset.defaultType === "PROD" ? "bg-[var(--ui-brand)] text-[var(--ui-on-primary)]" : "bg-[var(--ui-surface)] text-[var(--ui-text)]"
-                      }`}
-                  >
-                    PROD
-                  </button>
-                </div>
-                <div className="mt-2 ui-caption">
-                  Esto solo cambia el preset recomendado. La cola es la que define qué se imprime.
-                </div>
-              </div>
-              <select
-                className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
-                value={presetId}
-                onChange={(e) => setPresetId(e.target.value)}
-              >
-                {presets.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {p.label}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div>
-              <div className="ui-caption font-medium">DPI</div>
-              <select
-                className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
-                value={dpi}
-                onChange={(e) => setDpi(Number(e.target.value))}
-              >
-                <option value={203}>203 dpi</option>
-                <option value={300}>300 dpi</option>
-              </select>
-            </div>
-
-            <div>
-              <div className="ui-caption font-medium">Margen horizontal (mm)</div>
-              <input
-                className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
-                value={offsetXmm}
-                onChange={(e) => setOffsetXmm(Number(e.target.value || "0"))}
-                title="Desplaza la etiqueta a la derecha si imprime cortada"
-              />
-            </div>
-
-            <div>
-              <div className="ui-caption font-medium">Margen vertical (mm)</div>
-              <input
-                className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
-                value={offsetYmm}
-                onChange={(e) => setOffsetYmm(Number(e.target.value || "0"))}
-                title="Desplaza la etiqueta hacia abajo si imprime cortada"
-              />
-            </div>
-
-            <div className="col-span-2">
-              <div className="ui-caption font-medium">Título</div>
-              <input
-                className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <div className="ui-caption font-medium">Tipo de código</div>
-              <select
-                className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm opacity-70"
-                value={barcodeKind}
-                disabled
-                title="Estándar bloqueado por preset"
-              >
-                <option value="datamatrix">DataMatrix (2D)</option>
-                <option value="code128">Code128 (1D)</option>
-              </select>
-            </div>
-
-            {barcodeKind === "datamatrix" ? (
-              <div>
-                <div className="ui-caption font-medium">Módulo DM (dots)</div>
-                <input
-                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
-                  value={dmModuleDots}
-                  onChange={(e) => setDmModuleDots(Number(e.target.value || "0"))}
-                />
-              </div>
-            ) : (
-              <div>
-                <div className="ui-caption font-medium">Alto Code128 (dots)</div>
-                <input
-                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
-                  value={code128HeightDots}
-                  onChange={(e) => setCode128HeightDots(Number(e.target.value || "0"))}
-                />
-              </div>
-            )}
-
-            <div className="col-span-2 ui-caption text-[var(--ui-muted)]">
-              Si la etiqueta no sale bien alineada, ajusta los márgenes o usa <span className="font-medium">Probar posición</span>.
-            </div>
-          </div>
-
-          <div className="mt-5 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4 ui-caption">
-            <div className="font-semibold text-[var(--ui-text)]">Ubicación</div>
-            <div className="mt-1 text-[var(--ui-muted)]">
-              Elige una ubicación (LOC) de la lista y agrégalo a la cola para imprimir su etiqueta.
-            </div>
-          </div>
-
-          <div className="mt-6">
-            {preset.defaultType === "LOC" ? (
-              <>
-                <div className="ui-h3">Elegir ubicación</div>
-
-                <div className="mt-3 flex items-center gap-3">
-                  <button
-                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
-                    onClick={loadLocs}
-                    type="button"
-                  >
-                    Actualizar lista
-                  </button>
-
-                  <input
-                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
-                    placeholder="Buscar por código o descripción..."
-                    value={locSearch}
-                    onChange={(e) => setLocSearch(e.target.value)}
-                  />
-                </div>
-
-                <div className="mt-3 flex items-center gap-3">
-                  <select
-                    className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
-                    value={selectedLocCode}
-                    onChange={(e) => setSelectedLocCode(e.target.value)}
-                  >
-                    <option value="">{locs.length ? "Selecciona una ubicación" : "Cargando…"}</option>
-                    {filteredLocs.map((l) => (
-                      <option key={l.id} value={l.code}>
-                        {l.code}{l.description ? ` – ${String(l.description).slice(0, 40)}` : ""}
-                      </option>
-                    ))}
-                  </select>
-
-                  <button
-                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
-                    onClick={() => addSelectedLocToQueue("replace")}
-                    type="button"
-                  >
-                    Reemplazar
-                  </button>
-
-                  <button
-                    className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
-                    onClick={() => addSelectedLocToQueue("append")}
-                    type="button"
-                  >
-                    Agregar
-                  </button>
-                </div>
-
-                <div className="mt-2 ui-caption text-[var(--ui-muted)]">
-                  Al elegir una ubicación se usa la etiqueta estándar 50×70 mm.
-                </div>
-              </>
-            ) : null}
-
-            {preset.defaultType === "SKU" ? (
-              <div className="mt-2 ui-caption">
-                Para SKU/Producto (3-up), pega códigos en la cola. Se imprime en filas de 3.
-              </div>
-            ) : null}
-          </div>
-        </div>
-        <div className="ui-panel">
-          <div className="ui-h3">Cola de etiquetas</div>
-          <p className="mt-1 ui-body-muted">
-            Lista de etiquetas a imprimir (una por línea). Para ubicaciones LOC, usa el selector de la izquierda.
-          </p>
-          <textarea
-            className="mt-4 h-64 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-mono"
-            placeholder={
-              preset.defaultType === "LOC"
-                ? `Formato: LOC|DESCRIPCIÓN (o solo LOC)\nEj:\nLOC-VGR-OFI-01-N0|TODA LA NAVIDAD`
-                : preset.defaultType === "PROD"
-                  ? `Formato: LOTE|PRODUCTO - Prod YYYY-MM-DD - Exp YYYY-MM-DD\nEj:\nPB-20260118-0001|PAN BURGER - Prod 2026-01-18 - Exp 2026-01-20`
-                  : `Formato: CODE|NOTA (o solo CODE)\nEj (3-up):\nSKU-0001|PIZZA\nSKU-0002|PIZZA\nSKU-0003|PIZZA`
-            }
-            value={queueText}
-            onChange={(e) => setQueueText(e.target.value)}
+        <div>
+          <QueuePanel
+            preset={preset}
+            queueText={queueText}
+            setQueueText={setQueueText}
+            parsedQueueLength={parsedQueue.length}
           />
 
-          <div className="mt-3 flex items-center justify-between gap-3">
-            <div className="ui-caption">
-              Total en cola: {parsedQueue.length}.{" "}
-              {preset.columns === 3 ? "Este preset imprime en filas de 3 (3-up)." : "Este preset imprime 1-up."}
-            </div>
-
-            <button
-              type="button"
-              onClick={() => setQueueText("")}
-              className="rounded-xl border border-zinc-200 bg-white px-3 py-2 ui-caption font-semibold"
-            >
-              Limpiar cola
-            </button>
-          </div>
-
-          {preset.columns === 3 ? (
-            <div className="mt-2 ui-caption">
-              Si en cola no hay múltiplos de 3, se imprimen solo filas completas y lo restante queda esperando.
-            </div>
-          ) : null}
-
-          <div className="mt-6">
-            <div className="ui-h3">Vista previa (cómo se verá impresa)</div>
-            <p className="mt-1 ui-body-muted">
-              Así saldrá la etiqueta en la impresora. Si no ves la imagen, revisa que haya al menos una etiqueta en la cola.
-            </p>
-            <div className="mt-3 flex min-h-[140px] items-center justify-center rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
-              {previewImageUrl ? (
-                <img
-                  src={previewImageUrl}
-                  alt="Vista previa de la etiqueta"
-                  className="max-h-80 w-auto object-contain"
-                  style={{ imageRendering: "pixelated" }}
-                />
-              ) : previewImageError ? (
-                <p className="ui-body-muted text-center">
-                  No se pudo generar la vista previa. Ajusta la cola y vuelve a intentar.
-                </p>
-              ) : (
-                <p className="ui-body-muted text-center">
-                  Añade una etiqueta a la cola para ver la vista previa.
-                </p>
-              )}
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowZplCode((v) => !v)}
-              className="mt-3 text-sm font-semibold text-[var(--ui-brand-600)] hover:underline"
-            >
-              {showZplCode ? "Ocultar código de impresora" : "Ver código de impresora (ZPL)"}
-            </button>
-            {showZplCode ? (
-              <pre className="mt-2 max-h-48 overflow-auto rounded-xl bg-zinc-950 p-3 text-xs text-zinc-100">
-                {previewZpl || "// (vacío)"}
-              </pre>
-            ) : null}
-          </div>
+          <PreviewPanel
+            preset={preset}
+            dpi={dpi}
+            dpmm={dpmm}
+            previewMode={previewMode}
+            setPreviewMode={setPreviewMode}
+            previewScale={previewScale}
+            setPreviewScale={setPreviewScale}
+            previewRefreshKey={previewRefreshKey}
+            setPreviewRefreshKey={setPreviewRefreshKey}
+            previewZpl={previewZpl}
+            previewZplHasError={previewZplHasError}
+            previewShowImage={previewShowImage}
+            previewShowMock={previewShowMock}
+            previewImageUrl={previewImageUrl}
+            previewImageError={previewImageError}
+            showZplCode={showZplCode}
+            setShowZplCode={setShowZplCode}
+            title={title}
+            barcodeKind={barcodeKind}
+            previewDualMatrix={previewDualMatrix}
+            previewColWidthMm={previewColWidthMm}
+            previewColGapMm={previewColGapMm}
+            previewBarcodeScale={previewBarcodeScale}
+            previewQrUrl={previewQrUrl}
+            previewItems={previewItems}
+            hasQueue={hasQueue}
+          />
         </div>
       </div>
     </div>
@@ -1222,20 +634,10 @@ export default function PrintingJobsPage() {
   return (
     <Suspense
       fallback={
-        <div className="w-full ui-body-muted">
-          Cargando impresion...
-        </div>
+        <div className="w-full ui-body-muted">Cargando impresión…</div>
       }
     >
       <PrintingJobsContent />
     </Suspense>
   );
 }
-
-
-
-
-
-
-
-

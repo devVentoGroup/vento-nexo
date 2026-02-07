@@ -71,7 +71,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
         `/inventory/stock?site_id=${encodeURIComponent(siteId)}&adjust=1`
       );
       return;
-    } catch (e) {
+    } catch {
       setError("Error de red al guardar.");
       setLoading(false);
     }

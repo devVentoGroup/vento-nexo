@@ -167,7 +167,7 @@ export default async function InventoryLocationsPage({
         `/inventory/locations?error=${encodeURIComponent("Falta code.")}`,
       );
 
-    const payload: Record<string, any> = { site_id, code };
+    const payload: Record<string, string> = { site_id, code };
 
     // ZONA (requerida)
     let zone = String(formData.get("zone") ?? "")

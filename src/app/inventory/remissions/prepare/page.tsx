@@ -2,8 +2,6 @@ import Link from "next/link";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 
 import { requireAppAccess } from "@/lib/auth/guard";
-import { createClient } from "@/lib/supabase/server";
-
 export const dynamic = "force-dynamic";
 
 type SiteRow = { id: string; name: string | null };

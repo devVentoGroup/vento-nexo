@@ -146,7 +146,7 @@ export default async function InventoryCountInitialPage({
   }
 
   const { data: products, error: productError } = await productsQuery;
-  let productRows = (products ?? []) as ProductRow[];
+  let productRows = (products ?? []) as unknown as ProductRow[];
 
   // Si se eligió zona o LOC: filtrar productos a los que tienen stock en esa zona/LOC (conteo por zona/LOC)
   let productIdsInLoc: Set<string> | null = null;

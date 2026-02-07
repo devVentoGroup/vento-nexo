@@ -347,6 +347,7 @@ export function VentoChrome({
     const supabase = createClient();
     const siteId = currentSiteId || activeSiteId || null;
 
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setPermissionsReady(false);
 
     Promise.all(
@@ -393,13 +394,12 @@ export function VentoChrome({
     return true;
   };
 
-  const visibleGroups = useMemo(() => {
-    if (!permissionsReady) return [];
-    return NAV_GROUPS.map((group) => ({
-      label: group.label,
-      items: group.items.filter((item) => isItemVisible(item)),
-    })).filter((group) => group.items.length > 0);
-  }, [permissionsReady, permMap]);
+  const visibleGroups = !permissionsReady
+    ? []
+    : NAV_GROUPS.map((group) => ({
+        label: group.label,
+        items: group.items.filter((item) => isItemVisible(item)),
+      })).filter((group) => group.items.length > 0);
 
   return (
     <div className="min-h-screen bg-[var(--ui-bg)] text-[var(--ui-text)]">
@@ -483,6 +483,7 @@ export function VentoChrome({
                 </button>
                 <div className="hidden sm:flex items-center gap-3">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--ui-surface-2)] ring-1 ring-inset ring-[var(--ui-border)]">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={`/logos/${APP_ENTITY}.svg`} alt={APP_NAME} className="h-6 w-6" />
                   </div>
                   <div className="flex flex-col leading-tight">
@@ -505,4 +506,3 @@ export function VentoChrome({
     </div>
   );
 }
-

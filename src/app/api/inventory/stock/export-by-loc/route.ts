@@ -99,8 +99,6 @@ export async function GET(req: Request) {
   for (const row of stockByLoc ?? []) {
     matrix.set(`${(row as { product_id: string }).product_id}|${(row as { location_id: string }).location_id}`, Number((row as { current_qty: number | null }).current_qty ?? 0));
   }
-  const locById = new Map(locList.map((l: { id: string; code: string | null }) => [l.id, l.code ?? l.id]));
-
   const header = ["Producto", "SKU", "Unidad", ...locList.map((l: { code: string | null }) => l.code ?? ""), "Total sede"].map(escapeCsv).join(",");
   const rows: string[] = [header];
 

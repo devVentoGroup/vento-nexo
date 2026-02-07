@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 import { redirect } from "next/navigation";
 
@@ -254,7 +254,7 @@ export default async function ProductionBatchesPage({
     .select("id,name,unit")
     .order("name", { ascending: true })
     .limit(200);
-  const productRows = (products ?? []) as ProductRow[];
+  const productRows = (products ?? []) as unknown as ProductRow[];
 
   const { data: batches } = await supabase
     .from("production_batches")
@@ -264,7 +264,7 @@ export default async function ProductionBatchesPage({
     .eq("site_id", activeSiteId)
     .order("created_at", { ascending: false })
     .limit(30);
-  const batchRows = (batches ?? []) as BatchRow[];
+  const batchRows = (batches ?? []) as unknown as BatchRow[];
 
   return (
     <div className="w-full">

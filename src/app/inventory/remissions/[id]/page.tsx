@@ -39,6 +39,8 @@ type AccessContext = {
   canCancel: boolean;
 };
 
+type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
+
 type SiteRow = {
   id: string;
   name: string | null;
@@ -99,7 +101,7 @@ function parseNumber(value: string) {
 }
 
 async function loadAccessContext(
-  supabase: any,
+  supabase: SupabaseClient,
   userId: string,
   request: { from_site_id?: string | null; to_site_id?: string | null } | null
 ): Promise<AccessContext> {
@@ -448,7 +450,7 @@ export default async function RemissionDetailPage({
     .select("code, name")
     .order("code", { ascending: true });
 
-  const itemRows = (items ?? []) as RestockItemRow[];
+  const itemRows = (items ?? []) as unknown as RestockItemRow[];
   const areaKindRows = (areaKinds ?? []) as AreaKindRow[];
 
   // Fase 2.1: stock disponible por sede y por LOC en origen (solo lectura al preparar)

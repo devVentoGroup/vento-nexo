@@ -266,7 +266,7 @@ export default async function EntriesPage({
     .order("name", { foreignTable: "products", ascending: true })
     .limit(400);
 
-  let productRows = ((products ?? []) as ProductProfileWithProduct[])
+  let productRows = ((products ?? []) as unknown as ProductProfileWithProduct[])
     .map((row) => row.products)
     .filter((row): row is ProductRow => Boolean(row));
 
@@ -277,7 +277,7 @@ export default async function EntriesPage({
       .eq("is_active", true)
       .order("name", { ascending: true })
       .limit(400);
-    productRows = (fallbackProducts ?? []) as ProductRow[];
+    productRows = (fallbackProducts ?? []) as unknown as ProductRow[];
   }
 
   const { data: employee } = await supabase

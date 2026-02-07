@@ -1,7 +1,9 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
+import { ProductImageUpload } from "@/features/inventory/catalog/product-image-upload";
 import { ProductSiteSettingsEditor } from "@/features/inventory/catalog/product-site-settings-editor";
+import { ProductSuppliersEditor } from "@/features/inventory/catalog/product-suppliers-editor";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
@@ -22,6 +24,8 @@ type ProductRow = {
   price: number | null;
   cost: number | null;
   is_active: boolean | null;
+  image_url: string | null;
+  catalog_image_url: string | null;
 };
 
 type InventoryProfileRow = {
@@ -33,11 +37,7 @@ type InventoryProfileRow = {
   expiry_tracking: boolean;
 };
 
-type CategoryRow = {
-  id: string;
-  name: string;
-  parent_id: string | null;
-};
+type CategoryRow = { id: string; name: string; parent_id: string | null };
 
 type SiteSettingRow = {
   id?: string;
@@ -47,17 +47,23 @@ type SiteSettingRow = {
   sites?: { id: string; name: string | null } | null;
 };
 
-type AreaKindRow = {
-  code: string;
-  name: string | null;
-};
-
+type AreaKindRow = { code: string; name: string | null };
 type SiteOptionRow = { id: string; name: string | null };
 
-type SearchParams = {
-  ok?: string;
-  error?: string;
+type SupplierRow = {
+  id: string;
+  supplier_id: string;
+  supplier_sku: string | null;
+  purchase_unit: string | null;
+  purchase_unit_size: number | null;
+  purchase_price: number | null;
+  currency: string | null;
+  lead_time_days: number | null;
+  min_order_qty: number | null;
+  is_primary: boolean;
 };
+
+type SearchParams = { ok?: string; error?: string };
 
 function asText(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
@@ -69,45 +75,34 @@ async function updateProduct(formData: FormData) {
   const supabase = await createClient();
   const { data: userRes } = await supabase.auth.getUser();
   const user = userRes.user ?? null;
-  if (!user) {
-    redirect(await buildShellLoginUrl("/inventory/catalog"));
-  }
+  if (!user) redirect(await buildShellLoginUrl("/inventory/catalog"));
 
-  const { data: employee } = await supabase
-    .from("employees")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
+  const { data: employee } = await supabase.from("employees").select("role").eq("id", user.id).maybeSingle();
   const role = String(employee?.role ?? "").toLowerCase();
   if (!["propietario", "gerente_general"].includes(role)) {
     redirect(`/inventory/catalog?error=${encodeURIComponent("No tienes permisos para editar productos.")}`);
   }
 
   const productId = asText(formData.get("product_id"));
-  if (!productId) {
-    redirect("/inventory/catalog?error=" + encodeURIComponent("Producto inválido."));
-  }
+  if (!productId) redirect("/inventory/catalog?error=" + encodeURIComponent("Producto inválido."));
 
-  const payload = {
+  const categoryId = asText(formData.get("category_id"));
+  const payload: Record<string, unknown> = {
     name: asText(formData.get("name")),
     description: asText(formData.get("description")) || null,
     sku: asText(formData.get("sku")) || null,
     unit: asText(formData.get("unit")) || null,
     product_type: asText(formData.get("product_type")) || null,
-    category_id: asText(formData.get("category_id")) || null,
     price: formData.get("price") ? Number(formData.get("price")) : null,
     cost: formData.get("cost") ? Number(formData.get("cost")) : null,
     is_active: Boolean(formData.get("is_active")),
+    image_url: asText(formData.get("image_url")) || null,
+    catalog_image_url: asText(formData.get("catalog_image_url")) || null,
   };
+  if (categoryId) payload.category_id = categoryId;
 
-  const { error: updateErr } = await supabase
-    .from("products")
-    .update(payload)
-    .eq("id", productId);
-  if (updateErr) {
-    redirect(`/inventory/catalog/${productId}?error=${encodeURIComponent(updateErr.message)}`);
-  }
+  const { error: updateErr } = await supabase.from("products").update(payload).eq("id", productId);
+  if (updateErr) redirect(`/inventory/catalog/${productId}?error=${encodeURIComponent(updateErr.message)}`);
 
   const profilePayload = {
     product_id: productId,
@@ -117,12 +112,46 @@ async function updateProduct(formData: FormData) {
     lot_tracking: Boolean(formData.get("lot_tracking")),
     expiry_tracking: Boolean(formData.get("expiry_tracking")),
   };
-
   const { error: profileErr } = await supabase
     .from("product_inventory_profiles")
     .upsert(profilePayload, { onConflict: "product_id" });
-  if (profileErr) {
-    redirect(`/inventory/catalog/${productId}?error=${encodeURIComponent(profileErr.message)}`);
+  if (profileErr) redirect(`/inventory/catalog/${productId}?error=${encodeURIComponent(profileErr.message)}`);
+
+  const supplierLinesRaw = formData.get("supplier_lines");
+  if (typeof supplierLinesRaw === "string" && supplierLinesRaw) {
+    try {
+      const lines = JSON.parse(supplierLinesRaw) as Array<{
+        id?: string;
+        supplier_id?: string;
+        supplier_sku?: string;
+        purchase_unit?: string;
+        purchase_unit_size?: number;
+        purchase_price?: number;
+        currency?: string;
+        lead_time_days?: number;
+        min_order_qty?: number;
+        is_primary?: boolean;
+        _delete?: boolean;
+      }>;
+      await supabase.from("product_suppliers").delete().eq("product_id", productId);
+      for (const line of lines) {
+        if (line._delete || !line.supplier_id) continue;
+        await supabase.from("product_suppliers").insert({
+          product_id: productId,
+          supplier_id: line.supplier_id,
+          supplier_sku: line.supplier_sku || null,
+          purchase_unit: line.purchase_unit || null,
+          purchase_unit_size: line.purchase_unit_size ?? null,
+          purchase_price: line.purchase_price ?? null,
+          currency: line.currency || "COP",
+          lead_time_days: line.lead_time_days ?? null,
+          min_order_qty: line.min_order_qty ?? null,
+          is_primary: Boolean(line.is_primary),
+        });
+      }
+    } catch {
+      // ignore invalid JSON
+    }
   }
 
   const siteSettingsRaw = formData.get("site_settings_lines");
@@ -136,9 +165,7 @@ async function updateProduct(formData: FormData) {
         _delete?: boolean;
       }>;
       const toDelete = siteLines.filter((l) => l.id && l._delete).map((l) => l.id as string);
-      for (const id of toDelete) {
-        await supabase.from("product_site_settings").delete().eq("id", id);
-      }
+      for (const id of toDelete) await supabase.from("product_site_settings").delete().eq("id", id);
       for (const line of siteLines) {
         if (line._delete || !line.site_id) continue;
         const row = {
@@ -148,10 +175,7 @@ async function updateProduct(formData: FormData) {
           default_area_kind: line.default_area_kind || null,
         };
         if (line.id) {
-          const { error: upErr } = await supabase
-            .from("product_site_settings")
-            .update(row)
-            .eq("id", line.id);
+          const { error: upErr } = await supabase.from("product_site_settings").update(row).eq("id", line.id);
           if (upErr) redirect(`/inventory/catalog/${productId}?error=${encodeURIComponent(upErr.message)}`);
         } else {
           const { error: insErr } = await supabase.from("product_site_settings").insert(row);
@@ -159,7 +183,7 @@ async function updateProduct(formData: FormData) {
         }
       }
     } catch {
-      // ignore invalid JSON
+      // ignore
     }
   }
 
@@ -175,7 +199,7 @@ export default async function ProductCatalogDetailPage({
 }) {
   const { id } = await params;
   const sp = (await searchParams) ?? {};
-  const okMsg = sp.ok ? "Producto actualizado." : "";
+  const okMsg = sp.ok ? "Cambios guardados." : "";
   const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
 
   const { supabase, user } = await requireAppAccess({
@@ -186,13 +210,11 @@ export default async function ProductCatalogDetailPage({
 
   const { data: product } = await supabase
     .from("products")
-    .select("id,name,description,sku,unit,product_type,category_id,price,cost,is_active")
+    .select("id,name,description,sku,unit,product_type,category_id,price,cost,is_active,image_url,catalog_image_url")
     .eq("id", id)
     .maybeSingle();
 
-  if (!product) {
-    notFound();
-  }
+  if (!product) notFound();
 
   const { data: profile } = await supabase
     .from("product_inventory_profiles")
@@ -204,12 +226,10 @@ export default async function ProductCatalogDetailPage({
     .from("product_categories")
     .select("id,name,parent_id")
     .order("name", { ascending: true });
-
   const categoryRows = (categories ?? []) as CategoryRow[];
-  const categoryMap = new Map(categoryRows.map((row) => [row.id, row]));
-
+  const categoryMap = new Map(categoryRows.map((r) => [r.id, r]));
   const categoryPath = (categoryId: string | null) => {
-    if (!categoryId) return "Sin categoria";
+    if (!categoryId) return "Sin categoría";
     const parts: string[] = [];
     let current = categoryMap.get(categoryId);
     let safety = 0;
@@ -225,138 +245,160 @@ export default async function ProductCatalogDetailPage({
     .from("product_site_settings")
     .select("id,site_id,is_active,default_area_kind,sites(id,name)")
     .eq("product_id", id);
+  const siteRows = (siteSettings ?? []) as unknown as SiteSettingRow[];
 
-  const siteRows = (siteSettings ?? []) as SiteSettingRow[];
-
-  const { data: sitesData } = await supabase
-    .from("sites")
-    .select("id,name")
-    .eq("is_active", true)
-    .order("name", { ascending: true });
+  const { data: sitesData } = await supabase.from("sites").select("id,name").eq("is_active", true).order("name", { ascending: true });
   const sitesList = (sitesData ?? []) as SiteOptionRow[];
 
-  const { data: areaKindsData } = await supabase
-    .from("area_kinds")
-    .select("code,name")
-    .order("name", { ascending: true });
+  const { data: areaKindsData } = await supabase.from("area_kinds").select("code,name").order("name", { ascending: true });
   const areaKindsList = (areaKindsData ?? []) as AreaKindRow[];
 
-  const { data: employee } = await supabase
-    .from("employees")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
+  const { data: supplierLinks } = await supabase
+    .from("product_suppliers")
+    .select("id,supplier_id,supplier_sku,purchase_unit,purchase_unit_size,purchase_price,currency,lead_time_days,min_order_qty,is_primary")
+    .eq("product_id", id)
+    .order("is_primary", { ascending: false });
+  const supplierRows = (supplierLinks ?? []) as SupplierRow[];
 
+  const { data: suppliersData } = await supabase.from("suppliers").select("id,name").eq("is_active", true).order("name");
+  const suppliersList = (suppliersData ?? []) as { id: string; name: string | null }[];
+
+  const { data: employee } = await supabase.from("employees").select("role").eq("id", user.id).maybeSingle();
   const role = String(employee?.role ?? "").toLowerCase();
   const canEdit = ["propietario", "gerente_general"].includes(role);
 
   const productRow = product as ProductRow;
   const profileRow = (profile ?? null) as InventoryProfileRow | null;
 
+  const supplierInitialRows = supplierRows.map((r) => ({
+    id: r.id,
+    supplier_id: r.supplier_id,
+    supplier_sku: r.supplier_sku ?? "",
+    purchase_unit: r.purchase_unit ?? "",
+    purchase_unit_size: r.purchase_unit_size ?? undefined,
+    purchase_price: r.purchase_price ?? undefined,
+    currency: r.currency ?? "COP",
+    lead_time_days: r.lead_time_days ?? undefined,
+    min_order_qty: r.min_order_qty ?? undefined,
+    is_primary: Boolean(r.is_primary),
+  }));
+
   return (
-    <div className="w-full space-y-6">
+    <div className="w-full space-y-8">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="ui-h1">{productRow.name ?? "Producto"}</h1>
+          <h1 className="ui-h1">{productRow.name ?? "Ficha maestra"}</h1>
           <p className="mt-2 ui-body-muted">
-            Ficha completa del producto y sus relaciones.
+            Catálogo del insumo o producto: compra, almacenamiento y distribución.
           </p>
         </div>
         <Link href="/inventory/catalog" className="ui-btn ui-btn--ghost">
-          Volver al catalogo
+          Volver al catálogo
         </Link>
       </div>
 
-      {errorMsg ? (
-        <div className="ui-alert ui-alert--error">Error: {errorMsg}</div>
-      ) : null}
-      {okMsg ? (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-          {okMsg}
-        </div>
-      ) : null}
-
-      <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4 text-sm text-[var(--ui-muted)]">
-        <strong className="text-[var(--ui-text)]">¿Cómo crear ubicaciones (LOCs)?</strong> Ve a{" "}
-        <Link href="/inventory/locations" className="font-medium underline decoration-[var(--ui-border)] underline-offset-2">
-          Inventario → Ubicaciones
-        </Link>
-        , elige la sede y crea LOCs desde la plantilla o uno a uno. Luego en Entradas asignas cada ítem a un LOC al recibir.
-      </div>
+      {errorMsg ? <div className="ui-alert ui-alert--error">Error: {errorMsg}</div> : null}
+      {okMsg ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{okMsg}</div> : null}
 
       {canEdit ? (
-        <form action={updateProduct} className="ui-panel space-y-6">
+        <form action={updateProduct} className="space-y-8">
           <input type="hidden" name="product_id" value={productRow.id} />
 
-          <section className="space-y-3">
-            <h2 className="ui-h3">Identificación</h2>
-            <p className="text-sm text-[var(--ui-muted)]">Nombre, código y descripción del producto.</p>
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Nombre</span>
-                <input name="name" defaultValue={productRow.name ?? ""} className="ui-input" placeholder="Ej. Harina 000" />
+          {/* ——— Bloque 1: Compra y proveedor ——— */}
+          <section className="ui-panel space-y-6">
+            <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">1</span>
+              <div>
+                <h2 className="ui-h3">Compra y proveedor</h2>
+                <p className="text-sm text-[var(--ui-muted)]">
+                  De quién se compra, cómo se identifica y en qué unidad. Fotos para listados y catálogo.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2">
+              <label className="flex flex-col gap-1 sm:col-span-2">
+                <span className="ui-label">Nombre del producto / insumo</span>
+                <input name="name" defaultValue={productRow.name ?? ""} className="ui-input" placeholder="Ej. Harina 000" required />
               </label>
               <label className="flex flex-col gap-1">
-                <span className="ui-label">SKU</span>
+                <span className="ui-label">SKU (código interno)</span>
                 <input name="sku" defaultValue={productRow.sku ?? ""} className="ui-input font-mono" placeholder="Código único" />
               </label>
-              <label className="flex flex-col gap-1 md:col-span-2">
-                <span className="ui-label">Descripción</span>
-                <input name="description" defaultValue={productRow.description ?? ""} className="ui-input" placeholder="Opcional" />
-              </label>
-            </div>
-          </section>
-
-          <section className="space-y-3 border-t border-[var(--ui-border)] pt-6">
-            <h2 className="ui-h3">Clasificación</h2>
-            <p className="text-sm text-[var(--ui-muted)]">Tipo de producto y categoría para filtros y reportes.</p>
-            <div className="grid gap-3 md:grid-cols-2">
               <label className="flex flex-col gap-1">
                 <span className="ui-label">Tipo</span>
-                <select name="product_type" defaultValue={productRow.product_type ?? ""} className="ui-input">
-                  <option value="">Sin definir</option>
+                <select name="product_type" defaultValue={productRow.product_type ?? "insumo"} className="ui-input">
                   <option value="insumo">Insumo</option>
                   <option value="preparacion">Preparación</option>
                   <option value="venta">Venta</option>
                 </select>
               </label>
-              <label className="flex flex-col gap-1">
+              <label className="flex flex-col gap-1 sm:col-span-2">
+                <span className="ui-label">Descripción</span>
+                <input name="description" defaultValue={productRow.description ?? ""} className="ui-input" placeholder="Opcional" />
+              </label>
+              <label className="flex flex-col gap-1 sm:col-span-2">
                 <span className="ui-label">Categoría</span>
                 <select name="category_id" defaultValue={productRow.category_id ?? ""} className="ui-input">
                   <option value="">Sin categoría</option>
                   {categoryRows.map((row) => (
-                    <option key={row.id} value={row.id}>
-                      {categoryPath(row.id)}
-                    </option>
+                    <option key={row.id} value={row.id}>{categoryPath(row.id)}</option>
                   ))}
                 </select>
               </label>
             </div>
-          </section>
 
-          <section className="space-y-3 border-t border-[var(--ui-border)] pt-6">
-            <h2 className="ui-h3">Unidades y precios</h2>
-            <p className="text-sm text-[var(--ui-muted)]">Unidad de medida (kg, L, un, etc.), precio de venta y costo para inventario.</p>
-            <div className="grid gap-3 md:grid-cols-3">
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Unidad</span>
-                <input name="unit" defaultValue={productRow.unit ?? ""} className="ui-input" placeholder="kg, L, un" />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Precio de venta</span>
-                <input name="price" type="number" step="0.01" defaultValue={productRow.price ?? ""} className="ui-input" placeholder="0.00" />
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Costo</span>
-                <input name="cost" type="number" step="0.01" defaultValue={productRow.cost ?? ""} className="ui-input" placeholder="Costo actual" />
-              </label>
+            <div>
+              <p className="mb-2 text-sm font-medium text-[var(--ui-text)]">Proveedores del insumo</p>
+              <p className="mb-3 text-sm text-[var(--ui-muted)]">
+                Asigna uno o más proveedores. En cada fila: SKU del proveedor, unidad de compra, tamaño (p. ej. cuántas unidades base por bulto) y precio. Marca uno como primario.
+              </p>
+              <ProductSuppliersEditor
+                name="supplier_lines"
+                initialRows={supplierInitialRows}
+                suppliers={suppliersList.map((s) => ({ id: s.id, name: s.name }))}
+              />
+            </div>
+
+            <div className="grid gap-6 sm:grid-cols-2">
+              <ProductImageUpload
+                name="image_url"
+                label="Foto del producto"
+                currentUrl={productRow.image_url}
+                productId={productRow.id}
+                kind="product"
+              />
+              <ProductImageUpload
+                name="catalog_image_url"
+                label="Foto de catálogo"
+                currentUrl={productRow.catalog_image_url}
+                productId={productRow.id}
+                kind="catalog"
+              />
             </div>
           </section>
 
-          <section className="space-y-3 border-t border-[var(--ui-border)] pt-6">
-            <h2 className="ui-h3">Inventario</h2>
-            <p className="text-sm text-[var(--ui-muted)]">Si se controla stock, tipo (insumo/terminado/reventa/etc.) y si usa lotes o vencimiento.</p>
-            <div className="grid gap-3 md:grid-cols-2">
+          {/* ——— Bloque 2: Almacenamiento ——— */}
+          <section className="ui-panel space-y-6">
+            <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">2</span>
+              <div>
+                <h2 className="ui-h3">Almacenamiento</h2>
+                <p className="text-sm text-[var(--ui-muted)]">
+                  Unidad en bodega, control de stock, lotes y vencimiento. Precio y costo para inventario.
+                </p>
+              </div>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
+              <label className="flex flex-col gap-1">
+                <span className="ui-label">Unidad de almacenamiento</span>
+                <input name="unit" defaultValue={productRow.unit ?? ""} className="ui-input" placeholder="kg, L, un, etc." required />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="ui-label">Unidad por defecto (inventario)</span>
+                <input name="default_unit" defaultValue={profileRow?.default_unit ?? ""} className="ui-input" placeholder="Igual que arriba si se deja vacío" />
+              </label>
               <label className="flex flex-col gap-1">
                 <span className="ui-label">Tipo de inventario</span>
                 <select name="inventory_kind" defaultValue={profileRow?.inventory_kind ?? "unclassified"} className="ui-input">
@@ -369,11 +411,16 @@ export default async function ProductCatalogDetailPage({
                 </select>
               </label>
               <label className="flex flex-col gap-1">
-                <span className="ui-label">Unidad por defecto (inventario)</span>
-                <input name="default_unit" defaultValue={profileRow?.default_unit ?? ""} className="ui-input" placeholder="Misma que Unidad si está vacío" />
+                <span className="ui-label">Precio de venta</span>
+                <input name="price" type="number" step="0.01" defaultValue={productRow.price ?? ""} className="ui-input" placeholder="0.00" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="ui-label">Costo (inventario)</span>
+                <input name="cost" type="number" step="0.01" defaultValue={productRow.cost ?? ""} className="ui-input" placeholder="Costo actual" />
               </label>
             </div>
-            <div className="flex flex-wrap gap-4">
+
+            <div className="flex flex-wrap gap-6">
               <label className="flex items-center gap-2">
                 <input type="checkbox" name="track_inventory" defaultChecked={Boolean(profileRow?.track_inventory)} />
                 <span className="ui-label">Controlar stock</span>
@@ -389,17 +436,18 @@ export default async function ProductCatalogDetailPage({
             </div>
           </section>
 
-          <section className="space-y-3 border-t border-[var(--ui-border)] pt-6">
-            <h2 className="ui-h3">Estado</h2>
-            <label className="flex items-center gap-2">
-              <input type="checkbox" name="is_active" defaultChecked={Boolean(productRow.is_active)} />
-              <span className="ui-label">Producto activo</span>
-            </label>
-          </section>
+          {/* ——— Bloque 3: Distribución y venta interna ——— */}
+          <section className="ui-panel space-y-6">
+            <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">3</span>
+              <div>
+                <h2 className="ui-h3">Distribución y venta interna</h2>
+                <p className="text-sm text-[var(--ui-muted)]">
+                  En qué sedes está disponible y a qué área se envía (remisiones, envío a satélite).
+                </p>
+              </div>
+            </div>
 
-          <section className="space-y-3 border-t border-[var(--ui-border)] pt-6">
-            <h2 className="ui-h3">Por sede</h2>
-            <p className="text-sm text-[var(--ui-muted)]">En qué sedes aparece este producto y área sugerida para remisiones.</p>
             <ProductSiteSettingsEditor
               name="site_settings_lines"
               initialRows={siteRows.map((r) => ({
@@ -413,117 +461,29 @@ export default async function ProductCatalogDetailPage({
             />
           </section>
 
-          <div className="flex justify-end pt-4">
+          <section className="ui-panel border-t border-[var(--ui-border)] pt-6">
+            <label className="flex items-center gap-2">
+              <input type="checkbox" name="is_active" defaultChecked={Boolean(productRow.is_active)} />
+              <span className="ui-label">Producto activo</span>
+            </label>
+          </section>
+
+          <div className="flex justify-end">
             <button type="submit" className="ui-btn ui-btn--brand">Guardar cambios</button>
           </div>
         </form>
-      ) : null}
-
-      <div className="ui-panel">
-        <div className="ui-h3">Resumen</div>
-        <p className="mt-1 text-sm text-[var(--ui-muted)]">Datos actuales del producto (solo lectura).</p>
-        <div className="mt-4 grid gap-4 md:grid-cols-2">
-          <div>
-            <div className="ui-label">SKU</div>
-            <div className="mt-1 font-mono">{productRow.sku ?? "-"}</div>
-          </div>
-          <div>
-            <div className="ui-label">Unidad</div>
-            <div className="mt-1">{productRow.unit ?? "-"}</div>
-          </div>
-          <div>
-            <div className="ui-label">Tipo</div>
-            <div className="mt-1">{productRow.product_type ?? "-"}</div>
-          </div>
-          <div>
-            <div className="ui-label">Categoría</div>
-            <div className="mt-1">{categoryPath(productRow.category_id)}</div>
-          </div>
-          <div>
-            <div className="ui-label">Precio de venta</div>
-            <div className="mt-1">{productRow.price ?? "-"}</div>
-          </div>
-          <div>
-            <div className="ui-label">Costo</div>
-            <div className="mt-1">{productRow.cost ?? "-"}</div>
-          </div>
-          <div className="md:col-span-2">
-            <div className="ui-label">Descripción</div>
-            <div className="mt-1">{productRow.description ?? "-"}</div>
-          </div>
-          <div>
-            <div className="ui-label">Activo</div>
-            <div className="mt-1">{productRow.is_active ? "Sí" : "No"}</div>
-          </div>
+      ) : (
+        <div className="ui-panel rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800">
+          Solo propietarios y gerentes generales pueden editar la ficha maestra.
         </div>
-      </div>
+      )}
 
-      <div className="ui-panel">
-        <div className="ui-h3">Perfil de inventario</div>
-        {profileRow ? (
-          <div className="mt-4 grid gap-4 md:grid-cols-3">
-            <div>
-              <div className="ui-label">Controlar stock</div>
-              <div className="mt-1">{profileRow.track_inventory ? "Sí" : "No"}</div>
-            </div>
-            <div>
-              <div className="ui-label">Tipo inventario</div>
-              <div className="mt-1">{profileRow.inventory_kind}</div>
-            </div>
-            <div>
-              <div className="ui-label">Unidad por defecto</div>
-              <div className="mt-1">{profileRow.default_unit ?? "-"}</div>
-            </div>
-            <div>
-              <div className="ui-label">Lotes</div>
-              <div className="mt-1">{profileRow.lot_tracking ? "Sí" : "No"}</div>
-            </div>
-            <div>
-              <div className="ui-label">Vencimiento</div>
-              <div className="mt-1">{profileRow.expiry_tracking ? "Sí" : "No"}</div>
-            </div>
-          </div>
-        ) : (
-          <div className="mt-3 ui-body-muted">No hay perfil de inventario.</div>
-        )}
-      </div>
-
-      <div className="ui-panel rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
-        <div className="ui-h3">Proveedores y compras</div>
-        <p className="mt-1 text-sm text-[var(--ui-muted)]">
-          Los proveedores, órdenes de compra y condiciones de compra se gestionan en <strong>ORIGO</strong> (módulo de compras). En Nexo solo defines el catálogo del producto y en qué sedes está disponible.
-        </p>
-      </div>
-
-      <div className="ui-panel">
-        <div className="ui-h3">Configuración por sede</div>
-        <div className="mt-4 overflow-x-auto">
-          <table className="min-w-full text-sm">
-            <thead className="text-left text-[var(--ui-muted)]">
-              <tr>
-                <th className="py-2 pr-4">Sede</th>
-                <th className="py-2 pr-4">Activo</th>
-                <th className="py-2 pr-4">Area default</th>
-              </tr>
-            </thead>
-            <tbody>
-              {siteRows.map((row) => (
-                <tr key={row.site_id} className="border-t border-zinc-200/60">
-                  <td className="py-3 pr-4">{row.sites?.name ?? row.site_id}</td>
-                  <td className="py-3 pr-4">{row.is_active ? "Si" : "No"}</td>
-                  <td className="py-3 pr-4">{row.default_area_kind ?? "-"}</td>
-                </tr>
-              ))}
-              {!siteRows.length ? (
-                <tr>
-                  <td className="py-4 text-[var(--ui-muted)]" colSpan={3}>
-                    No hay configuracion por sede.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
+      <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4 text-sm text-[var(--ui-muted)]">
+        <strong className="text-[var(--ui-text)]">Ubicaciones (LOCs)</strong> — Crealas en{" "}
+        <Link href="/inventory/locations" className="font-medium underline decoration-[var(--ui-border)] underline-offset-2">
+          Inventario → Ubicaciones
+        </Link>
+        . En Entradas asignas cada ítem a un LOC al recibir.
       </div>
     </div>
   );

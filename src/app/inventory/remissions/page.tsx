@@ -329,8 +329,6 @@ export default async function RemissionsPage({
     requestedFromSiteId && fulfillmentSiteRows.some((site) => site.id === requestedFromSiteId)
       ? requestedFromSiteId
       : fulfillmentSiteRows[0]?.id ?? "";
-  const hasDefaultFromSite = Boolean(selectedFromSiteId);
-
   let remissionsQuery = supabase
     .from("restock_requests")
     .select("id, created_at, status, from_site_id, to_site_id, notes")
@@ -395,7 +393,7 @@ export default async function RemissionsPage({
   }
 
   const { data: products } = await productsQuery;
-  let productRows = ((products ?? []) as ProductProfileWithProduct[])
+  let productRows = ((products ?? []) as unknown as ProductProfileWithProduct[])
     .map((row) => row.products)
     .filter((r): r is ProductRow => Boolean(r));
 
@@ -410,7 +408,7 @@ export default async function RemissionsPage({
       fallbackQuery = fallbackQuery.in("id", productSiteIds);
     }
     const { data: fallbackProducts } = await fallbackQuery;
-    productRows = (fallbackProducts ?? []) as ProductRow[];
+    productRows = (fallbackProducts ?? []) as unknown as ProductRow[];
   }
 
   return (

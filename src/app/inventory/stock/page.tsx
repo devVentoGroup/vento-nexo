@@ -287,7 +287,7 @@ export default async function InventoryStockPage({
   }
 
   const { data: products, error: productError } = await productsQuery;
-  let productRows = (products ?? []) as ProductRow[];
+  let productRows = (products ?? []) as unknown as ProductRow[];
 
   const { data: stockData, error: stockError } = siteId
     ? await supabase
@@ -313,8 +313,6 @@ export default async function InventoryStockPage({
 
   const locList = (locationRows ?? []) as LocRow[];
   const locIdsForSite = new Set(locList.map((l) => l.id));
-  const locById = new Map(locList.map((l) => [l.id, l]));
-
   const { data: stockByLocData } =
     siteId && locIdsForSite.size > 0
       ? await supabase

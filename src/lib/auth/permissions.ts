@@ -1,7 +1,11 @@
+import type { createClient } from "@/lib/supabase/server";
+
 export type PermissionContext = {
   siteId?: string | null;
   areaId?: string | null;
 };
+
+type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
 
 export function normalizePermissionCode(appId: string, code: string) {
   if (code.startsWith(`${appId}.`)) return code;
@@ -9,7 +13,7 @@ export function normalizePermissionCode(appId: string, code: string) {
 }
 
 export async function checkPermission(
-  supabase: any,
+  supabase: SupabaseClient,
   appId: string,
   code: string,
   context: PermissionContext = {}

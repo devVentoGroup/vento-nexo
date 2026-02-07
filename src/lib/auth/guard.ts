@@ -12,7 +12,7 @@ import {
 type GuardOptions = {
   appId: string;
   returnTo: string;
-  supabase?: any;
+  supabase?: Awaited<ReturnType<typeof createClient>>;
   permissionCode?: string | string[];
 };
 

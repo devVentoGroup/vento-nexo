@@ -71,7 +71,7 @@ export function ScanInput(props: {
     async function startCamera() {
       setCameraError(null);
 
-      const BarcodeDetectorImpl = (window as any).BarcodeDetector as BarcodeDetectorCtor | undefined;
+      const BarcodeDetectorImpl = (window as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector;
       if (typeof window === "undefined" || !BarcodeDetectorImpl) {
         setCameraError("Tu navegador no soporta escaneo por cámara.");
         return;

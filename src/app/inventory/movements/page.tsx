@@ -26,8 +26,6 @@ const MOVEMENT_TYPES_BY_GROUP: { label: string; types: string[] }[] = [
   },
   { label: "Traslado", types: ["transfer_internal", "transfer_in", "transfer_out"] },
 ];
-const MOVEMENT_TYPES = MOVEMENT_TYPES_BY_GROUP.flatMap((g) => g.types);
-
 type SiteRow = {
   site_id: string;
   is_primary: boolean | null;
@@ -116,7 +114,17 @@ export default async function InventoryMovementsPage({
     .limit(500);
 
   type ProductProfileRow = { product_id: string; products: ProductRow | null };
-  const productOptions = ((productsData ?? []) as ProductProfileRow[])
+  type MovementRow = {
+    id: string;
+    site_id: string;
+    product_id: string;
+    movement_type: string;
+    quantity: number;
+    note?: string | null;
+    created_at?: string | null;
+    product?: ProductRow | null;
+  };
+  const productOptions = ((productsData ?? []) as unknown as ProductProfileRow[])
     .map((r) => r.products)
     .filter((p): p is ProductRow => Boolean(p))
     .sort((a, b) => (a.name ?? "").localeCompare(b.name ?? ""));
@@ -137,7 +145,7 @@ export default async function InventoryMovementsPage({
 
   const { data: rows, error } = await q;
 
-  const movements = (rows ?? []) as any[];
+  const movements = (rows ?? []) as unknown as MovementRow[];
 
   return (
     <div className="w-full">
@@ -287,21 +295,15 @@ export default async function InventoryMovementsPage({
             </thead>
             <tbody>
               {movements.map((row) => {
-                const createdAt = String(row.created_at ?? row.createdAt ?? "");
-                const type = String(row.movement_type ?? row.type ?? row.kind ?? "");
+                const createdAt = String(row.created_at ?? "");
+                const type = String(row.movement_type ?? "");
                 const site = String(row.site_id ?? "");
                 const product = row.product ?? null;
-                const productLabel = product?.name ?? row.product_id ?? row.sku ?? row.item_id ?? "";
+                const productLabel = product?.name ?? row.product_id ?? "";
                 const productSku = product?.sku ?? "";
-                const qty = String(row.quantity ?? row.qty ?? row.delta ?? "");
-                const unit = String(product?.unit ?? row.unit ?? row.uom ?? "");
-                const ref = String(
-                  row.document_id ??
-                    row.document_ref ??
-                    row.reference ??
-                    row.source_doc_id ??
-                    ""
-                );
+                const qty = String(row.quantity ?? "");
+                const unit = String(product?.unit ?? "");
+                const ref = String((row as { note?: string | null }).note ?? "");
 
                 return (
                   <tr key={String(row.id ?? `${createdAt}-${product}-${qty}`)} className="ui-body">

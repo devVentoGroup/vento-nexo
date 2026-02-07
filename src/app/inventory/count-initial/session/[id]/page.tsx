@@ -184,7 +184,7 @@ export default async function CountSessionPage({
 }) {
   const { id } = await params;
   const sp = (await searchParams) ?? {};
-  const { supabase, user } = await requireAppAccess({
+  const { supabase } = await requireAppAccess({
     appId: "nexo",
     returnTo: "/inventory/count-initial",
     permissionCode: "inventory.counts",
@@ -225,7 +225,7 @@ export default async function CountSessionPage({
     .select("id,product_id,quantity_counted,current_qty_at_close,quantity_delta,adjustment_applied_at,product:products(name,unit)")
     .eq("session_id", id)
     .order("product_id", { ascending: true });
-  const lineRows = (lines ?? []) as LineRow[];
+  const lineRows = (lines ?? []) as unknown as LineRow[];
 
   let currentQtyByProduct: Map<string, number> = new Map();
   if (isOpen && lineRows.length > 0) {

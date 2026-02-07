@@ -174,7 +174,8 @@ async function createTransfer(formData: FormData) {
     .from("inventory_locations")
     .select("id,code")
     .in("id", [fromLocId, toLocId]);
-  const locMap = new Map((locRows ?? []).map((l: any) => [l.id, l.code ?? l.id]));
+  type LocRow = { id: string; code?: string | null };
+  const locMap = new Map(((locRows ?? []) as LocRow[]).map((l) => [l.id, l.code ?? l.id]));
   const fromCode = locMap.get(fromLocId) ?? fromLocId;
   const toCode = locMap.get(toLocId) ?? toLocId;
 
@@ -264,7 +265,7 @@ export default async function TransfersPage({
     .order("name", { foreignTable: "products", ascending: true })
     .limit(400);
 
-  const productRows = ((products ?? []) as ProductProfileWithProduct[])
+  const productRows = ((products ?? []) as unknown as ProductProfileWithProduct[])
     .map((row) => row.products)
     .filter((row): row is ProductRow => Boolean(row));
 

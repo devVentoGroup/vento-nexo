@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 
 import { requireAppAccess } from "@/lib/auth/guard";
 
@@ -133,7 +133,7 @@ export default async function InventoryAdjustPage({
   }
 
   const { data: products, error: productError } = await productsQuery;
-  const productRows = (products ?? []) as ProductRow[];
+  const productRows = (products ?? []) as unknown as ProductRow[];
 
   // Obtener stock actual para los productos
   const { data: stockData } =

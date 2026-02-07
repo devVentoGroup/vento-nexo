@@ -193,7 +193,7 @@ export default async function WithdrawPage({
   let defaultLocationId = locIdParam;
 
   if (siteId) {
-    let locQuery = supabase
+    const locQuery = supabase
       .from("inventory_locations")
       .select("id,code,zone")
       .eq("site_id", siteId)
@@ -223,7 +223,7 @@ export default async function WithdrawPage({
     .limit(400);
 
   let productRows: ProductRow[] = [];
-  const raw = (products ?? []) as { product_id: string; products: ProductRow | null }[];
+  const raw = (products ?? []) as unknown as { product_id: string; products: ProductRow | null }[];
   productRows = raw
     .map((r) => r.products)
     .filter((p): p is ProductRow => Boolean(p));
@@ -235,7 +235,7 @@ export default async function WithdrawPage({
       .eq("is_active", true)
       .order("name", { ascending: true })
       .limit(400);
-    productRows = (fallback ?? []) as ProductRow[];
+    productRows = (fallback ?? []) as unknown as ProductRow[];
   }
 
   return (

@@ -157,7 +157,7 @@ export default async function InventoryCatalogPage({
   }
 
   const { data: products } = await productsQuery;
-  const productRows = (products ?? []) as ProductRow[];
+  const productRows = (products ?? []) as unknown as ProductRow[];
 
   return (
     <div className="w-full">
