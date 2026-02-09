@@ -68,17 +68,30 @@ export function ConfigPanel({
       <div className="mt-4 grid grid-cols-2 gap-4">
         <div className="col-span-2">
           <div className="ui-caption font-medium">Tipo rápido</div>
-          <div className="mt-1 inline-flex overflow-hidden rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)]">
+          <div className="mt-1 inline-flex flex-wrap overflow-hidden rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)]">
             <button
               type="button"
-              onClick={() => setPresetId("LOC_50x70")}
-              className={`px-4 py-2 text-sm font-semibold ${
-                preset.defaultType === "LOC"
+              onClick={() => setPresetId("LOC_50x70_DM")}
+              className={`px-3 py-2 text-sm font-semibold ${
+                preset.id === "LOC_50x70_DM"
                   ? "bg-[var(--ui-brand)] text-[var(--ui-on-primary)]"
                   : "bg-[var(--ui-surface)] text-[var(--ui-text)]"
               }`}
+              title="DataMatrix grande, centrado"
             >
-              LOC
+              LOC DM
+            </button>
+            <button
+              type="button"
+              onClick={() => setPresetId("LOC_50x70_QR")}
+              className={`px-3 py-2 text-sm font-semibold ${
+                preset.id === "LOC_50x70_QR"
+                  ? "bg-[var(--ui-brand)] text-[var(--ui-on-primary)]"
+                  : "bg-[var(--ui-surface)] text-[var(--ui-text)]"
+              }`}
+              title="QR grande, centrado"
+            >
+              LOC QR
             </button>
             <button
               type="button"

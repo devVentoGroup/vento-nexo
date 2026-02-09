@@ -39,7 +39,7 @@ export function usePreviewZpl(
           code: first.code,
           note: first.note,
           baseUrlForQr:
-            preset.id === "LOC_50x70" && preset.defaultType === "LOC" ? opts.baseUrl : undefined,
+            preset.id === "LOC_50x70_QR" && preset.defaultType === "LOC" ? opts.baseUrl : undefined,
         });
         setPreviewZpl(zpl);
       } else {

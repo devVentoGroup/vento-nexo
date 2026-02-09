@@ -12,7 +12,7 @@ export function MockMiniLabel(props: {
   code: string;
   barcodeKind: BarcodeKind;
   type: "LOC" | "SKU" | "PROD";
-  dualMatrix?: boolean;
+  locVariant?: "dm" | "qr" | null;
   qrData?: string;
   renderScale?: number;
 }) {
@@ -24,21 +24,24 @@ export function MockMiniLabel(props: {
     code,
     barcodeKind,
     type,
-    dualMatrix = false,
+    locVariant = null,
     qrData,
     renderScale = 3,
   } = props;
   const padMm = Math.max(2, Math.min(4, widthMm * 0.08));
   const titleSizeMm = Math.max(2.6, Math.min(4.2, heightMm * 0.08));
   const noteSizeMm = Math.max(2.2, Math.min(3.2, heightMm * 0.06));
-  const codesTopMm = heightMm * 0.38;
-  const matrixSizeMm = Math.min(heightMm * 0.45, widthMm * (dualMatrix ? 0.38 : 0.55));
+  const codesTopMm = heightMm * 0.28;
+  const showQrOnly = locVariant === "qr";
+  const showDmOnly = locVariant === "dm" || (barcodeKind === "datamatrix" && !showQrOnly);
+  const bigBarcodeMm = Math.min(heightMm * 0.42, widthMm * 0.7);
+  const matrixSizeMm = locVariant ? bigBarcodeMm : Math.min(heightMm * 0.45, widthMm * 0.55);
   const barcodeHeightMm = Math.min(heightMm * 0.28, 12);
   const barcodeWidthMm = Math.min(widthMm * 0.86, widthMm - padMm * 2);
   const safeNote = note ? note.slice(0, 40) : "";
 
   const encoded = encodeVento(type, code);
-  const dmText = dualMatrix ? code : encoded;
+  const dmText = encoded;
   const qrText = qrData || code;
 
   return (
@@ -84,54 +87,44 @@ export function MockMiniLabel(props: {
         </div>
       ) : null}
 
-      {barcodeKind === "datamatrix" ? (
-        dualMatrix ? (
-          <div
-            style={{
-              position: "absolute",
-              left: 0,
-              right: 0,
-              top: `${codesTopMm}mm`,
-              display: "flex",
-              justifyContent: "center",
-              gap: `${Math.max(2, widthMm * 0.04)}mm`,
-            }}
-          >
-            <BarcodeImage
-              kind="datamatrix"
-              text={dmText}
-              widthMm={matrixSizeMm}
-              heightMm={matrixSizeMm}
-              scale={renderScale}
-            />
-            <BarcodeImage
-              kind="qrcode"
-              text={qrText}
-              widthMm={matrixSizeMm}
-              heightMm={matrixSizeMm}
-              scale={renderScale}
-            />
-          </div>
-        ) : (
-          <div
-            style={{
-              position: "absolute",
-              left: 0,
-              right: 0,
-              top: `${codesTopMm}mm`,
-              display: "flex",
-              justifyContent: "center",
-            }}
-          >
-            <BarcodeImage
-              kind="datamatrix"
-              text={dmText}
-              widthMm={matrixSizeMm}
-              heightMm={matrixSizeMm}
-              scale={renderScale}
-            />
-          </div>
-        )
+      {showQrOnly ? (
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            top: `${codesTopMm}mm`,
+            display: "flex",
+            justifyContent: "center",
+          }}
+        >
+          <BarcodeImage
+            kind="qrcode"
+            text={qrText}
+            widthMm={matrixSizeMm}
+            heightMm={matrixSizeMm}
+            scale={renderScale}
+          />
+        </div>
+      ) : showDmOnly ? (
+        <div
+          style={{
+            position: "absolute",
+            left: 0,
+            right: 0,
+            top: `${codesTopMm}mm`,
+            display: "flex",
+            justifyContent: "center",
+          }}
+        >
+          <BarcodeImage
+            kind="datamatrix"
+            text={dmText}
+            widthMm={matrixSizeMm}
+            heightMm={matrixSizeMm}
+            scale={renderScale}
+          />
+        </div>
       ) : (
         <div
           style={{

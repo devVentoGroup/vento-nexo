@@ -7,9 +7,6 @@ import { useSearchParams } from "next/navigation";
 
 import { BROWSERPRINT_CORE, BROWSERPRINT_ZEBRA, LOCS_API, PRESETS } from "./_lib/constants";
 import type { BarcodeKind, BrowserPrintDevices, LocRow, PreviewMode } from "./_lib/types";
-import { loadTemplates } from "../designer/_lib/template-storage";
-import { templateToZpl } from "../designer/_lib/template-to-zpl";
-import type { LabelTemplate } from "../designer/_lib/types";
 import {
   buildSingleLabelZpl,
   buildThreeUpRowZpl,
@@ -35,7 +32,7 @@ function PrintingJobsContent() {
 
   const [enablePrinting, setEnablePrinting] = useState(true);
   const [dpi, setDpi] = useState(203);
-  const [presetId, setPresetId] = useState(presets[0]?.id ?? "LOC_50x70");
+  const [presetId, setPresetId] = useState(presets[0]?.id ?? "LOC_50x70_DM");
   const preset = useMemo(
     () => presets.find((p) => p.id === presetId) ?? presets[0],
     [presetId, presets]
@@ -68,10 +65,6 @@ function PrintingJobsContent() {
   const [selectedLocCode, setSelectedLocCode] = useState("");
   const locsLoadedRef = useRef(false);
 
-  // Custom layout from designer
-  const [customLayout, setCustomLayout] = useState<LabelTemplate | null>(null);
-  const [availableLayouts, setAvailableLayouts] = useState<LabelTemplate[]>([]);
-
   const {
     browserPrintOk,
     devices,
@@ -102,25 +95,10 @@ function PrintingJobsContent() {
     const presetParam = searchParams.get("preset");
     const queueParam = searchParams.get("queue");
     const titleParam = searchParams.get("title");
-    const layoutParam = searchParams.get("layout");
     if (presetParam) setPresetId(presetParam);
     if (queueParam) setQueueText(queueParam.replace(/\r/g, ""));
     if (titleParam) setTitle(titleParam);
-    // Load custom layout from designer
-    if (layoutParam && typeof window !== "undefined") {
-      const templates = loadTemplates();
-      setAvailableLayouts(templates);
-      const found = templates.find((t) => t.id === layoutParam);
-      if (found) setCustomLayout(found);
-    }
   }, [searchParams]);
-
-  // Load available layouts on mount
-  useEffect(() => {
-    if (typeof window !== "undefined") {
-      setAvailableLayouts(loadTemplates());
-    }
-  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -288,28 +266,6 @@ function PrintingJobsContent() {
       return;
     }
 
-    // --- Custom layout mode ---
-    if (customLayout) {
-      const baseUrlStr = baseUrl ?? "";
-      const zplParts: string[] = [];
-      parsedQueue.forEach((it) => {
-        const modified: LabelTemplate = {
-          ...customLayout,
-          elements: customLayout.elements.map((el) => {
-            if (el.id === "el_code") return { ...el, content: it.code };
-            if (el.id === "el_dm") return { ...el, content: `VENTO|LOC|${it.code}` };
-            if (el.id === "el_qr") return { ...el, content: `${baseUrlStr}/inventory/withdraw?loc=${encodeURIComponent(it.code)}` };
-            if (el.id === "el_desc") return { ...el, content: it.note ?? "" };
-            return el;
-          }),
-        };
-        zplParts.push(templateToZpl(modified));
-      });
-      sendZpl(zplParts.join("\n"));
-      setQueueText("");
-      return;
-    }
-
     // --- Standard preset mode ---
     if (preset.columns === 3 && parsedQueue.length < 3) {
       setStatus("Este preset imprime de a 3. Faltan etiquetas para completar una fila.");
@@ -320,7 +276,7 @@ function PrintingJobsContent() {
 
     if (preset.columns === 1) {
       const baseUrlForQr =
-        preset.id === "LOC_50x70" && preset.defaultType === "LOC" ? baseUrl : undefined;
+        preset.id === "LOC_50x70_QR" && preset.defaultType === "LOC" ? baseUrl : undefined;
       parsedQueue.forEach((it) => {
         zplParts.push(
           buildSingleLabelZpl({
@@ -459,7 +415,7 @@ function PrintingJobsContent() {
       setStatus("Selecciona un LOC válido.");
       return;
     }
-    if (presetId !== "LOC_50x70") setPresetId("LOC_50x70");
+    if (presetId !== "LOC_50x70_DM" && presetId !== "LOC_50x70_QR") setPresetId("LOC_50x70_DM");
     setBarcodeKind("datamatrix");
     setTitle("VENTO · LOC");
 
@@ -481,10 +437,10 @@ function PrintingJobsContent() {
   const previewShowMock =
     !previewZplHasError &&
     (previewMode === "mock" || (previewMode === "auto" && !previewShowImage));
-  const previewDualMatrix =
-    preset.id === "LOC_50x70" &&
-    preset.defaultType === "LOC" &&
-    barcodeKind === "datamatrix";
+  const previewLocVariant =
+    preset.defaultType === "LOC" && (preset.id === "LOC_50x70_DM" || preset.id === "LOC_50x70_QR")
+      ? (preset.id === "LOC_50x70_QR" ? "qr" : "dm")
+      : null;
   const previewColGapMm = 2;
   const previewColWidthMm =
     preset.columns > 1
@@ -492,14 +448,14 @@ function PrintingJobsContent() {
       : preset.widthMm;
   const previewBarcodeScale = Math.max(2, Math.round(dpmm / 2));
   const previewQrUrl = useMemo(() => {
-    if (!previewDualMatrix) return "";
+    if (previewLocVariant !== "qr") return "";
     if (typeof window === "undefined") return "";
     const code = previewItems[0]?.code ?? "";
     if (!code) return "";
     const base = window.location?.origin ?? "";
     if (!base) return "";
     return `${base.replace(/\/$/, "")}/inventory/withdraw?loc=${encodeURIComponent(code)}`;
-  }, [previewDualMatrix, previewItems]);
+  }, [previewLocVariant, previewItems]);
 
   return (
     <div className="w-full space-y-6">
@@ -532,34 +488,6 @@ function PrintingJobsContent() {
           <Link href="/printing/setup" className="font-medium underline">
             Guía de configuración paso a paso →
           </Link>
-        </div>
-      )}
-
-      {/* Custom layout selector */}
-      {availableLayouts.length > 0 && (
-        <div className="ui-panel-soft p-4 flex flex-wrap items-center gap-3">
-          <span className="ui-label">Layout personalizado:</span>
-          <select
-            value={customLayout?.id ?? ""}
-            onChange={(e) => {
-              if (!e.target.value) { setCustomLayout(null); return; }
-              const found = availableLayouts.find((t) => t.id === e.target.value);
-              setCustomLayout(found ?? null);
-            }}
-            className="ui-input max-w-xs"
-          >
-            <option value="">Usar preset estandar</option>
-            {availableLayouts.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.name} ({t.widthMm}x{t.heightMm}mm {t.orientation})
-              </option>
-            ))}
-          </select>
-          {customLayout && (
-            <span className="ui-chip ui-chip--brand">
-              Layout: {customLayout.name}
-            </span>
-          )}
         </div>
       )}
 
@@ -704,11 +632,11 @@ function PrintingJobsContent() {
             setShowZplCode={setShowZplCode}
             title={title}
             barcodeKind={barcodeKind}
-            previewDualMatrix={previewDualMatrix}
+            previewLocVariant={previewLocVariant}
             previewColWidthMm={previewColWidthMm}
             previewColGapMm={previewColGapMm}
             previewBarcodeScale={previewBarcodeScale}
-            previewQrUrl={previewQrUrl}
+            previewQrUrl={previewLocVariant === "qr" ? previewQrUrl : ""}
             previewItems={previewItems}
             hasQueue={hasQueue}
           />

@@ -24,7 +24,7 @@ export type PreviewPanelProps = {
   setShowZplCode: (fn: (v: boolean) => boolean) => void;
   title: string;
   barcodeKind: BarcodeKind;
-  previewDualMatrix: boolean;
+  previewLocVariant: "dm" | "qr" | null;
   previewColWidthMm: number;
   previewColGapMm: number;
   previewBarcodeScale: number;
@@ -53,7 +53,7 @@ export function PreviewPanel({
   setShowZplCode,
   title,
   barcodeKind,
-  previewDualMatrix,
+  previewLocVariant,
   previewColWidthMm,
   previewColGapMm,
   previewBarcodeScale,
@@ -168,8 +168,8 @@ export function PreviewPanel({
                   code={previewItems[0]?.code ?? ""}
                   barcodeKind={barcodeKind}
                   type={preset.defaultType}
-                  dualMatrix={previewDualMatrix}
-                  qrData={previewDualMatrix ? previewQrUrl : undefined}
+                  locVariant={previewLocVariant}
+                  qrData={previewLocVariant === "qr" ? previewQrUrl : undefined}
                   renderScale={previewBarcodeScale}
                 />
               ) : (
