@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useMemo, useState } from "react";
 
@@ -65,7 +65,7 @@ export function LpnCreateForm({ defaultSiteId, action }: Props) {
               name="site_id"
               required
               placeholder="uuid del site"
-              className="h-11 rounded-xl border border-zinc-200 bg-white px-4 ui-body outline-none focus:border-zinc-400"
+              className="ui-input"
             />
           </label>
         )}
@@ -77,7 +77,7 @@ export function LpnCreateForm({ defaultSiteId, action }: Props) {
           <select
             value={sede}
             onChange={(e) => setSede(e.target.value as SiteCode)}
-            className="h-11 rounded-xl border border-zinc-200 bg-white px-3 ui-body outline-none focus:border-zinc-400"
+            className="ui-input"
           >
             {SITES.map((o) => (
               <option key={o.code} value={o.code}>

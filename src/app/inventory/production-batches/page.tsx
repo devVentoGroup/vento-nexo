@@ -291,9 +291,7 @@ export default async function ProductionBatchesPage({
       ) : null}
 
       {okMsg ? (
-        <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-          Lote creado y stock actualizado.
-        </div>
+        <div className="mt-6 ui-alert ui-alert--success">Lote creado y stock actualizado.</div>
       ) : null}
 
       <div className="mt-6 ui-panel">
@@ -306,7 +304,7 @@ export default async function ProductionBatchesPage({
             <select
               name="site_id"
               defaultValue={activeSiteId}
-              className="h-10 rounded-xl bg-white px-3 text-sm ring-1 ring-inset ring-zinc-300 focus:outline-none"
+              className="ui-input h-10 min-w-[140px]"
             >
               {employeeSiteRows.map((row) => {
                 const siteId = row.site_id ?? "";

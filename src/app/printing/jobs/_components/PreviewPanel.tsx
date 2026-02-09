@@ -85,7 +85,7 @@ export function PreviewPanel({
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <span className="ui-caption">Vista</span>
           <select
-            className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs"
+            className="ui-input min-w-0 px-3 py-2 text-xs"
             value={previewMode}
             onChange={(e) => setPreviewMode(e.target.value as PreviewMode)}
           >
@@ -108,14 +108,14 @@ export function PreviewPanel({
           <button
             type="button"
             onClick={() => setPreviewScale(1)}
-            className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold"
+            className="ui-btn ui-btn--ghost text-xs"
           >
             1:1
           </button>
           <button
             type="button"
             onClick={() => setPreviewRefreshKey((v) => v + 1)}
-            className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold"
+            className="ui-btn ui-btn--ghost text-xs"
           >
             Reintentar
           </button>
@@ -124,19 +124,19 @@ export function PreviewPanel({
             <a
               href={previewImageUrl}
               download={`etiqueta-${preset.id}.png`}
-              className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold"
+              className="ui-btn ui-btn--ghost text-xs"
             >
               Descargar PNG
             </a>
           ) : (
-            <span className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold opacity-50">
+            <span className="ui-btn ui-btn--ghost text-xs opacity-50 pointer-events-none">
               Descargar PNG
             </span>
           )}
         </div>
       </div>
 
-      <div className="mt-3 flex min-h-[180px] items-center justify-center rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
+      <div className="mt-3 flex min-h-[180px] items-center justify-center ui-panel-soft p-4">
         <div style={{ transform: `scale(${previewScale})`, transformOrigin: "center" }}>
           {previewShowImage ? (
             <div className="rounded-md border border-zinc-200 bg-white p-2 shadow-sm">

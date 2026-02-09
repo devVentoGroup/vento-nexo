@@ -463,9 +463,7 @@ export default async function RemissionsPage({
       ) : null}
 
       {okMsg ? (
-        <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-          {okMsg}
-        </div>
+        <div className="mt-6 ui-alert ui-alert--success">{okMsg}</div>
       ) : null}
 
       <div className="mt-6 ui-panel">

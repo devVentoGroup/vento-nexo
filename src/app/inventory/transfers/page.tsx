@@ -293,9 +293,7 @@ export default async function TransfersPage({
         <div className="ui-alert ui-alert--error">Error: {errorMsg}</div>
       ) : null}
       {okMsg ? (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-          Traslado registrado correctamente.
-        </div>
+        <div className="ui-alert ui-alert--success">Traslado registrado correctamente.</div>
       ) : null}
 
       <TransfersForm locations={(locations ?? []) as LocRow[]} products={productRows} action={createTransfer} />
@@ -305,7 +303,7 @@ export default async function TransfersPage({
         <div className="mt-1 ui-body-muted">Últimos 25 traslados registrados.</div>
 
         <div className="mt-4 overflow-x-auto">
-          <table className="min-w-full text-sm">
+          <table className="ui-table min-w-full text-sm">
             <thead className="text-left text-[var(--ui-muted)]">
               <tr>
                 <th className="py-2 pr-4">Fecha</th>

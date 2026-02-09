@@ -151,7 +151,7 @@ export function LocCreateForm({
         </label>
 
         <div className="flex flex-wrap items-center gap-3">
-          <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-3 py-2 ui-caption">
+          <div className="ui-panel-soft px-3 py-2 ui-caption">
             <span className="text-[var(--ui-muted)]">Código: </span>
             <span className="font-mono font-semibold text-[var(--ui-text)]">
               {codigoGenerado || "—"}

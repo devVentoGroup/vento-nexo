@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
@@ -53,7 +53,7 @@ export function NavDropdown({ label, items, activePrefixes }: NavDropdownProps) 
       </button>
 
       {open ? (
-        <div className="absolute left-0 z-50 mt-1 min-w-[200px] rounded-xl border border-zinc-200 bg-white py-2 shadow-lg">
+        <div className="absolute left-0 z-50 mt-1 min-w-[200px] ui-panel py-2 shadow-lg">
           {items.map((item) => {
             const itemActive = pathname === item.href || pathname.startsWith(item.href + "/");
             return (

@@ -102,7 +102,7 @@ export default async function ConfigChecklistPage() {
         </Link>
       </div>
 
-      <div className="mt-6 flex items-center gap-3 rounded-xl border border-zinc-200/80 bg-zinc-50/50 px-4 py-3">
+      <div className="mt-6 flex items-center gap-3 ui-panel-soft px-4 py-3">
         <span className="text-2xl font-bold text-[var(--ui-text)]">
           {completed}/{total}
         </span>
@@ -118,11 +118,11 @@ export default async function ConfigChecklistPage() {
           <Link
             key={i}
             href={check.href}
-            className="flex items-center gap-4 rounded-xl border border-zinc-200/80 bg-white p-4 transition-colors hover:bg-zinc-50/50"
+            className="flex items-center gap-4 ui-panel p-4 transition-colors hover:bg-[var(--ui-surface-2)]"
           >
             <span
               className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-bold ${
-                check.ok ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"
+                check.ok ? "ui-chip ui-chip--success" : "ui-chip ui-chip--warn"
               }`}
             >
               {check.ok ? "✓" : "—"}
@@ -138,7 +138,7 @@ export default async function ConfigChecklistPage() {
         ))}
       </div>
 
-      <div className="mt-8 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4 text-sm text-[var(--ui-muted)]">
+      <div className="mt-8 ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
         <strong className="text-[var(--ui-text)]">Orden sugerido:</strong> Sedes → Rutas → Insumos por sede → LOCs → Entrada inicial. Ver{" "}
         <Link href="/inventory/remissions" className="font-medium underline">
           Remisiones

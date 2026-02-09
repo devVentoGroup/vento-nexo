@@ -186,15 +186,15 @@ export default async function InventoryCatalogPage({
         </Link>
       </div>
 
-      <div className="mt-6 flex gap-1 overflow-x-auto rounded-xl border border-zinc-200/80 bg-zinc-50/50 p-1">
+      <div className="mt-6 flex gap-1 overflow-x-auto ui-panel-soft p-1">
         {TAB_OPTIONS.map((tab) => (
           <Link
             key={tab.value}
             href={buildUrl(tab.value)}
             className={`rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
               activeTab === tab.value
-                ? "bg-white text-zinc-900 shadow-sm"
-                : "text-zinc-600 hover:bg-white/60 hover:text-zinc-900"
+                ? "bg-[var(--ui-surface)] text-[var(--ui-text)] shadow-sm"
+                : "text-[var(--ui-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
             }`}
           >
             {tab.label}
@@ -255,7 +255,7 @@ export default async function InventoryCatalogPage({
         </div>
 
         <div className="mt-4 max-h-[70vh] overflow-auto">
-          <table className="min-w-full text-sm">
+          <table className="ui-table min-w-full text-sm">
             <thead className="text-left text-[var(--ui-muted)]">
               <tr>
                 <th className="py-2 pr-4">Producto</th>

@@ -15,7 +15,7 @@ export function DeleteRouteForm({ action, routeId }: Props) {
       }}
     >
       <input type="hidden" name="id" value={routeId} />
-      <button type="submit" className="text-sm text-red-600 hover:underline">
+      <button type="submit" className="ui-btn ui-btn--danger text-sm">
         Eliminar
       </button>
     </form>

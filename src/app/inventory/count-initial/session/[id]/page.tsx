@@ -295,7 +295,7 @@ export default async function CountSessionPage({
       </div>
 
       {sp.ok ? (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
+        <div className="ui-alert ui-alert--success">
           {sp.ok === "closed" ? "Conteo cerrado. Revisa diferencias y aprueba ajustes." : ""}
           {sp.ok === "adjusted" ? "Ajustes aplicados." : ""}
         </div>

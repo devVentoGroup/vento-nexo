@@ -143,9 +143,7 @@ export default async function SupplyRoutesPage({
         <div className="mt-6 ui-alert ui-alert--error">Error: {errorMsg}</div>
       ) : null}
       {okMsg ? (
-        <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-          {okMsg}
-        </div>
+        <div className="mt-6 ui-alert ui-alert--success">{okMsg}</div>
       ) : null}
 
       <div className="mt-6 ui-panel">
@@ -242,7 +240,7 @@ export default async function SupplyRoutesPage({
         </div>
       </div>
 
-      <div className="mt-6 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4 text-sm text-[var(--ui-muted)]">
+      <div className="mt-6 ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
         <strong className="text-[var(--ui-text)]">¿Para qué sirve?</strong> Cuando un satélite (Saudo, Vento Café) solicita una remisión, el sistema usa estas rutas para saber que el Centro de producción es quien abastece. Sin rutas configuradas, las remisiones no funcionan correctamente.
       </div>
     </div>

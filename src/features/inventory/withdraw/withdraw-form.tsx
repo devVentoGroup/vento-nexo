@@ -76,7 +76,7 @@ export function WithdrawForm({
             name="location_id"
             value={locationId}
             onChange={(e) => setLocationId(e.target.value)}
-            className="h-11 rounded-xl border border-zinc-200 bg-white px-3 ui-body outline-none focus:border-zinc-400"
+            className="ui-input"
           >
             {locations.map((loc) => (
               <option key={loc.id} value={loc.id}>
@@ -93,7 +93,7 @@ export function WithdrawForm({
               const product = products.find((p) => p.id === row.productId);
               const isLast = idx === rows.length - 1;
               return (
-                <div key={row.id} className="flex flex-wrap items-end gap-3 rounded-xl border border-zinc-200 p-3">
+                <div key={row.id} className="flex flex-wrap items-end gap-3 ui-panel-soft p-3">
                   <label className="min-w-[180px] flex-1 flex-col gap-1 md:flex-initial">
                     <span className="text-[11px] text-zinc-500">Producto</span>
                     <select
@@ -135,7 +135,7 @@ export function WithdrawForm({
                           prev.map((r) => (r.id === row.id ? { ...r, quantity: e.target.value } : r))
                         )
                       }
-                      className="mt-1 h-10 rounded-lg border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400"
+                      className="ui-input mt-1 h-10 min-w-0"
                     />
                   </label>
                   <label className="flex w-20 flex-col gap-1">
@@ -149,7 +149,7 @@ export function WithdrawForm({
                           prev.map((r) => (r.id === row.id ? { ...r, unit: e.target.value } : r))
                         )
                       }
-                      className="mt-1 h-10 rounded-lg border border-zinc-200 bg-white px-3 text-sm outline-none focus:border-zinc-400"
+                      className="ui-input mt-1 h-10 min-w-0"
                     />
                   </label>
                   <label className="min-w-[120px] flex-1 flex-col gap-1 md:flex-initial">
@@ -170,7 +170,7 @@ export function WithdrawForm({
                     <button
                       type="button"
                       onClick={() => removeRow(row.id)}
-                      className="h-10 rounded-lg border border-zinc-200 px-3 text-sm text-zinc-600 hover:bg-zinc-100"
+                      className="ui-btn ui-btn--ghost h-10 text-sm"
                     >
                       Quitar
                     </button>
@@ -179,7 +179,7 @@ export function WithdrawForm({
                     <button
                       type="button"
                       onClick={addRow}
-                      className="h-10 rounded-lg border border-zinc-200 px-3 text-sm text-zinc-600 hover:bg-zinc-100"
+                      className="ui-btn ui-btn--ghost h-10 text-sm"
                     >
                       + Otro ítem
                     </button>

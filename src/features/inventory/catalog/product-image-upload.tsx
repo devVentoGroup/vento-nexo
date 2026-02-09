@@ -61,14 +61,14 @@ export function ProductImageUpload({ name, label, currentUrl, productId, kind }:
 
       <div className="flex flex-wrap items-start gap-4">
         {displayUrl ? (
-          <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface-2)]">
+          <div className="relative h-24 w-24 shrink-0 overflow-hidden rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface-2)]">
             {/* eslint-disable-next-line @next/next/no-img-element */}
             <img src={displayUrl} alt="" className="h-full w-full object-cover" />
           </div>
         ) : null}
 
         <div className="flex flex-col gap-2">
-          <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-4 py-2 text-sm font-medium text-[var(--ui-text)] hover:bg-[var(--ui-surface)]">
+          <label className="ui-btn ui-btn--ghost flex cursor-pointer items-center gap-2 text-sm">
             <input
               type="file"
               accept="image/jpeg,image/png,image/webp,image/gif"
@@ -82,7 +82,7 @@ export function ProductImageUpload({ name, label, currentUrl, productId, kind }:
         </div>
       </div>
 
-      {error ? <p className="text-sm text-red-600">{error}</p> : null}
+      {error ? <p className="text-sm ui-alert ui-alert--error">{error}</p> : null}
     </div>
   );
 }

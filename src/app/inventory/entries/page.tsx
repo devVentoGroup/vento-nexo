@@ -351,9 +351,7 @@ export default async function EntriesPage({
         <div className="ui-alert ui-alert--error">Error: {errorMsg}</div>
       ) : null}
       {okMsg ? (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-          Entrada creada correctamente.
-        </div>
+        <div className="ui-alert ui-alert--success">Entrada creada correctamente.</div>
       ) : null}
 
       <EntriesForm
@@ -371,7 +369,7 @@ export default async function EntriesPage({
         </div>
 
         <div className="mt-4 overflow-x-auto">
-          <table className="min-w-full text-sm">
+          <table className="ui-table min-w-full text-sm">
             <thead className="text-left text-[var(--ui-muted)]">
               <tr>
                 <th className="py-2 pr-4">Fecha</th>

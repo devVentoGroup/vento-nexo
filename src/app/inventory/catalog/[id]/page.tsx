@@ -298,7 +298,7 @@ export default async function ProductCatalogDetailPage({
       </div>
 
       {errorMsg ? <div className="ui-alert ui-alert--error">Error: {errorMsg}</div> : null}
-      {okMsg ? <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">{okMsg}</div> : null}
+      {okMsg ? <div className="ui-alert ui-alert--success">{okMsg}</div> : null}
 
       {canEdit ? (
         <form action={updateProduct} className="space-y-8">
@@ -473,12 +473,12 @@ export default async function ProductCatalogDetailPage({
           </div>
         </form>
       ) : (
-        <div className="ui-panel rounded-xl border border-amber-200 bg-amber-50 p-4 text-amber-800">
+        <div className="ui-alert ui-alert--warn">
           Solo propietarios y gerentes generales pueden editar la ficha maestra.
         </div>
       )}
 
-      <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4 text-sm text-[var(--ui-muted)]">
+      <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
         <strong className="text-[var(--ui-text)]">Ubicaciones (LOCs)</strong> — Crealas en{" "}
         <Link href="/inventory/locations" className="font-medium underline decoration-[var(--ui-border)] underline-offset-2">
           Inventario → Ubicaciones

@@ -26,7 +26,7 @@ export function LocDeleteButton({ locId, locCode, action }: Props) {
       <input type="hidden" name="loc_id" value={locId} />
       <button
         type="submit"
-        className="text-sm font-semibold text-[var(--ui-danger)] hover:underline"
+        className="ui-btn ui-btn--danger text-sm"
       >
         Eliminar
       </button>

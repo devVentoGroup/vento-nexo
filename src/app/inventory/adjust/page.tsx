@@ -75,7 +75,7 @@ export default async function InventoryAdjustPage({
               <span className="ui-label">Sede</span>
               <select
                 name="site_id"
-                className="h-11 w-full max-w-xs rounded-xl border border-zinc-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="ui-input max-w-xs"
                 required
               >
                 <option value="">Selecciona una sede</option>

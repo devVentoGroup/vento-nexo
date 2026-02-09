@@ -512,7 +512,7 @@ export default async function RemissionDetailPage({
         <Link href="/inventory/remissions" className="ui-body-muted underline">
           Volver
         </Link>
-        <div className="mt-4 text-sm text-red-700">Remisión no encontrada o sin acceso.</div>
+        <div className="mt-4 ui-alert ui-alert--error">Remisión no encontrada o sin acceso.</div>
       </div>
     );
   }
@@ -544,13 +544,11 @@ export default async function RemissionDetailPage({
       ) : null}
 
       {okMsg ? (
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-          {okMsg}
-        </div>
+        <div className="ui-alert ui-alert--success">{okMsg}</div>
       ) : null}
 
       {lowStockWarning ? (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+        <div className="ui-alert ui-alert--warn">
           Algunos productos pueden no tener stock suficiente en Centro. Bodega verificará al preparar.
         </div>
       ) : null}
@@ -578,7 +576,7 @@ export default async function RemissionDetailPage({
       </div>
 
       {access.canPrepare || access.canTransit ? (
-        <div className="ui-panel rounded-2xl border-2 border-amber-200 bg-amber-50/80">
+        <div className="ui-alert ui-alert--warn">
           <div className="ui-h3">Flujo bodega: preparar y enviar</div>
           <ol className="mt-2 list-decimal list-inside space-y-1 ui-body-muted">
             <li>Marca cantidades <strong>Preparado</strong> y <strong>Enviado</strong> por ítem abajo y pulsa &quot;Guardar ítems&quot;.</li>
@@ -613,7 +611,7 @@ export default async function RemissionDetailPage({
             <button
               name="action"
               value="receive"
-              className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
+              className="ui-btn ui-btn--ghost"
             >
               Recibir
             </button>
@@ -622,7 +620,7 @@ export default async function RemissionDetailPage({
             <button
               name="action"
               value="receive_partial"
-              className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
+              className="ui-btn ui-btn--ghost"
             >
               Recibir parcial
             </button>
@@ -631,7 +629,7 @@ export default async function RemissionDetailPage({
             <button
               name="action"
               value="close"
-              className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
+              className="ui-btn ui-btn--ghost"
             >
               Cerrar
             </button>
@@ -661,7 +659,7 @@ export default async function RemissionDetailPage({
               const locLines = stockByLocByProduct.get(item.product_id) ?? [];
               const stockOk = availableSite >= (item.quantity ?? 0);
               return (
-              <div key={item.id} className="rounded-xl border border-zinc-200 p-4">
+              <div key={item.id} className="ui-panel-soft p-4">
                 <div className="ui-h3">
                   {item.product?.name ?? item.product_id}
                 </div>
@@ -669,9 +667,9 @@ export default async function RemissionDetailPage({
                   Producto: <span className="font-mono">{item.product_id}</span> Solicitado: {item.quantity} {item.unit ?? item.product?.unit ?? ""}
                 </div>
                 {access.canPrepare && fromSiteId ? (
-                  <div className="mt-2 rounded-lg bg-zinc-50 px-3 py-2 text-sm">
-                    <span className="font-semibold text-zinc-700">Stock en origen:</span>{" "}
-                    <span className={stockOk ? "text-emerald-700" : "text-amber-700"}>
+                  <div className="mt-2 ui-panel-soft px-3 py-2 text-sm">
+                    <span className="font-semibold text-[var(--ui-text)]">Stock en origen:</span>{" "}
+                    <span className={stockOk ? "text-[var(--ui-success)]" : "text-[var(--ui-brand-700)]"}>
                       {availableSite} {item.unit ?? item.product?.unit ?? ""}
                     </span>
                     {locLines.length > 0 ? (
@@ -691,7 +689,7 @@ export default async function RemissionDetailPage({
                       <input
                         name="prepared_quantity"
                         defaultValue={item.prepared_quantity ?? 0}
-                        className="h-10 rounded-lg bg-white px-3 text-sm ring-1 ring-inset ring-zinc-200"
+                        className="ui-input h-10 min-w-0"
                       />
                     </label>
                   ) : null}
@@ -701,7 +699,7 @@ export default async function RemissionDetailPage({
                       <input
                         name="shipped_quantity"
                         defaultValue={item.shipped_quantity ?? 0}
-                        className="h-10 rounded-lg bg-white px-3 text-sm ring-1 ring-inset ring-zinc-200"
+                        className="ui-input h-10 min-w-0"
                       />
                     </label>
                   ) : null}
@@ -711,7 +709,7 @@ export default async function RemissionDetailPage({
                       <input
                         name="received_quantity"
                         defaultValue={item.received_quantity ?? 0}
-                        className="h-10 rounded-lg bg-white px-3 text-sm ring-1 ring-inset ring-zinc-200"
+                        className="ui-input h-10 min-w-0"
                       />
                     </label>
                   ) : null}
@@ -721,7 +719,7 @@ export default async function RemissionDetailPage({
                       <input
                         name="shortage_quantity"
                         defaultValue={item.shortage_quantity ?? 0}
-                        className="h-10 rounded-lg bg-white px-3 text-sm ring-1 ring-inset ring-zinc-200"
+                        className="ui-input h-10 min-w-0"
                       />
                     </label>
                   ) : null}
@@ -731,7 +729,7 @@ export default async function RemissionDetailPage({
                       <select
                         name="item_status"
                         defaultValue={item.item_status ?? "pending"}
-                        className="h-10 rounded-lg bg-white px-3 text-sm ring-1 ring-inset ring-zinc-200"
+                        className="ui-input h-10 min-w-0"
                       >
                         <option value="pending">pendiente</option>
                         <option value="preparing">preparando</option>
@@ -747,7 +745,7 @@ export default async function RemissionDetailPage({
                       <select
                         name="item_area_kind"
                         defaultValue={item.production_area_kind ?? ""}
-                        className="h-10 rounded-lg bg-white px-3 text-sm ring-1 ring-inset ring-zinc-200"
+                        className="ui-input h-10 min-w-0"
                       >
                         <option value="">(sin area)</option>
                         {areaKindRows.map((row) => (

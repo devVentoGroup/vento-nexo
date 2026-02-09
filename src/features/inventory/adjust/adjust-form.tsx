@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
@@ -95,7 +95,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
           {/* Producto */}
           <label className="flex flex-col gap-1">
             <span className="ui-label">
-              Producto <span className="text-red-500">*</span>
+              Producto <span className="text-[var(--ui-danger)]">*</span>
             </span>
             <select
               value={productId}
@@ -104,7 +104,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
                 setQuantityDelta("");
               }}
               required
-              className="h-11 rounded-xl border border-zinc-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+              className="ui-input"
             >
               <option value="">Selecciona un producto</option>
               {products.map((p) => (
@@ -117,7 +117,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
 
           {/* Stock actual (solo lectura, informativo) */}
           {productId ? (
-            <div className="rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-sm">
+            <div className="ui-panel-soft p-3 text-sm">
               <div className="font-semibold text-zinc-700">Stock actual</div>
               <div className="mt-1 text-zinc-600">
                 {currentQty.toLocaleString()} {selectedProduct?.unit ?? "unidades"}
@@ -128,7 +128,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
           {/* Cantidad delta */}
           <label className="flex flex-col gap-1">
             <span className="ui-label">
-              Ajuste (cantidad) <span className="text-red-500">*</span>
+              Ajuste (cantidad) <span className="text-[var(--ui-danger)]">*</span>
             </span>
             <div className="flex items-center gap-2">
               <input
@@ -138,7 +138,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
                 onChange={(e) => setQuantityDelta(e.target.value)}
                 placeholder="Ej: +10 o -5"
                 required
-                className="h-11 flex-1 rounded-xl border border-zinc-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="ui-input flex-1"
               />
               {selectedProduct?.unit ? (
                 <span className="ui-body-muted">{selectedProduct.unit}</span>
@@ -160,7 +160,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
           {/* Motivo (obligatorio) */}
           <label className="flex flex-col gap-1">
             <span className="ui-label">
-              Motivo <span className="text-red-500">*</span>
+              Motivo <span className="text-[var(--ui-danger)]">*</span>
             </span>
             <textarea
               value={reason}
@@ -168,7 +168,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
               placeholder="Ej: Merma detectada en inventario físico, Corrección por error de conteo, Producto dañado..."
               required
               rows={3}
-              className="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+              className="ui-input"
             />
             <div className="mt-1 ui-caption">
               Describe el motivo del ajuste. Este campo es obligatorio para trazabilidad.
@@ -183,7 +183,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
               onChange={(e) => setEvidence(e.target.value)}
               placeholder="Ej: Foto adjunta en sistema, Nota del supervisor, Número de reporte..."
               rows={2}
-              className="rounded-xl border border-zinc-300 bg-white px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+              className="ui-input"
             />
             <div className="mt-1 ui-caption">
               Información adicional que respalde el ajuste (opcional).

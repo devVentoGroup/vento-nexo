@@ -30,7 +30,7 @@ export function QueuePanel({
         izquierda.
       </p>
       <textarea
-        className="mt-4 h-64 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm font-mono"
+        className="ui-input mt-4 h-64 w-full min-h-0 px-3 py-2 text-sm font-mono"
         placeholder={placeholder}
         value={queueText}
         onChange={(e) => setQueueText(e.target.value)}
@@ -47,7 +47,7 @@ export function QueuePanel({
         <button
           type="button"
           onClick={() => setQueueText("")}
-          className="rounded-xl border border-zinc-200 bg-white px-3 py-2 ui-caption font-semibold"
+          className="ui-btn ui-btn--ghost"
         >
           Limpiar cola
         </button>

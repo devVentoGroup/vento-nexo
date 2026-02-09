@@ -114,7 +114,7 @@ export function CountInitialForm({ products, siteId, siteName, countScopeLabel, 
                           value={qty[p.id] ?? ""}
                           onChange={(e) => setQty((s) => ({ ...s, [p.id]: e.target.value }))}
                           placeholder="0"
-                          className="h-10 w-full rounded-xl border border-zinc-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                          className="ui-input"
                         />
                       </TableCell>
                     </tr>

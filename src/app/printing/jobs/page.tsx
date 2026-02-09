@@ -468,7 +468,7 @@ function PrintingJobsContent() {
       </div>
 
       {!browserPrintOk && (
-        <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 ui-caption text-amber-800">
+        <div className="ui-alert ui-alert--warn">
           <strong>Para imprimir a impresoras Zebra</strong> necesitas tener instalado{" "}
           <strong>Zebra Browser Print</strong> y el servicio en ejecución. Sin ello podrás usar la
           vista previa y preparar la cola, pero no enviar a la impresora.
@@ -486,7 +486,7 @@ function PrintingJobsContent() {
           </button>
 
           <button
-            className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
+            className="ui-btn ui-btn--ghost"
             onClick={connectSelectedAndStatus}
             type="button"
           >
@@ -494,7 +494,7 @@ function PrintingJobsContent() {
           </button>
 
           <button
-            className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
+            className="ui-btn ui-btn--ghost"
             onClick={printAll}
             type="button"
           >
@@ -503,7 +503,7 @@ function PrintingJobsContent() {
 
           {preset.columns === 3 && (
             <button
-              className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
+              className="ui-btn ui-btn--ghost"
               onClick={printOneTestRow3Up}
               type="button"
               title="Imprime una fila de 3 etiquetas de prueba"
@@ -513,7 +513,7 @@ function PrintingJobsContent() {
           )}
 
           <button
-            className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
+            className="ui-btn ui-btn--ghost"
             onClick={printAlignmentTest}
             type="button"
           >
@@ -529,7 +529,7 @@ function PrintingJobsContent() {
             </span>
 
             <select
-              className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
+              className="ui-input min-w-[140px]"
               value={selectedUid}
               onChange={(e) => setSelectedUid(e.target.value)}
             >
@@ -553,7 +553,7 @@ function PrintingJobsContent() {
         </label>
 
         {status ? (
-          <div className="mt-3 rounded-xl bg-zinc-50 px-4 py-3 ui-body">{status}</div>
+          <div className="mt-3 ui-panel-soft px-4 py-3 ui-body">{status}</div>
         ) : null}
       </div>
 

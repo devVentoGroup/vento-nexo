@@ -376,21 +376,15 @@ export default async function InventoryLocationsPage({
       </div>
 
       {created === "1" ? (
-        <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-          Ubicación creada correctamente.
-        </div>
+        <div className="mt-6 ui-alert ui-alert--success">Ubicación creada correctamente.</div>
       ) : null}
 
       {deleted === "1" ? (
-        <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-          LOC eliminado correctamente.
-        </div>
+        <div className="mt-6 ui-alert ui-alert--success">LOC eliminado correctamente.</div>
       ) : null}
 
       {updated === "1" ? (
-        <div className="mt-6 rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
-          LOC actualizado correctamente.
-        </div>
+        <div className="mt-6 ui-alert ui-alert--success">LOC actualizado correctamente.</div>
       ) : null}
 
       {errorMsg ? (

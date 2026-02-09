@@ -68,7 +68,7 @@ export function ConfigPanel({
       <div className="mt-4 grid grid-cols-2 gap-4">
         <div className="col-span-2">
           <div className="ui-caption font-medium">Tipo rápido</div>
-          <div className="mt-1 inline-flex overflow-hidden rounded-xl border border-zinc-200 bg-white">
+          <div className="mt-1 inline-flex overflow-hidden rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)]">
             <button
               type="button"
               onClick={() => setPresetId("LOC_50x70")}
@@ -111,7 +111,7 @@ export function ConfigPanel({
         <div className="col-span-2">
           <div className="ui-caption font-medium">Preset</div>
           <select
-            className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
+            className="ui-input mt-1 w-full"
             value={presetId}
             onChange={(e) => setPresetId(e.target.value)}
           >
@@ -126,7 +126,7 @@ export function ConfigPanel({
         <div className="col-span-2">
           <div className="ui-caption font-medium">Título</div>
           <input
-            className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
+            className="ui-input mt-1 w-full"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
           />
@@ -136,7 +136,7 @@ export function ConfigPanel({
           <button
             type="button"
             onClick={() => setShowAdvanced(!showAdvanced)}
-            className="rounded-xl border border-zinc-200 bg-white px-3 py-2 text-xs font-semibold"
+            className="ui-btn ui-btn--ghost text-xs"
           >
             {showAdvanced ? "Ocultar ajustes avanzados" : "Mostrar ajustes avanzados"}
           </button>
@@ -150,7 +150,7 @@ export function ConfigPanel({
             <div>
               <div className="ui-caption font-medium">DPI</div>
               <select
-                className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
+                className="ui-input mt-1 w-full"
                 value={dpi}
                 onChange={(e) => setDpi(Number(e.target.value))}
               >
@@ -162,7 +162,7 @@ export function ConfigPanel({
             <div>
               <div className="ui-caption font-medium">Margen horizontal (mm)</div>
               <input
-                className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
+                className="ui-input mt-1 w-full"
                 value={offsetXmm}
                 onChange={(e) => setOffsetXmm(Number(e.target.value || "0"))}
                 title="Desplaza la etiqueta a la derecha si imprime cortada"
@@ -172,7 +172,7 @@ export function ConfigPanel({
             <div>
               <div className="ui-caption font-medium">Margen vertical (mm)</div>
               <input
-                className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
+                className="ui-input mt-1 w-full"
                 value={offsetYmm}
                 onChange={(e) => setOffsetYmm(Number(e.target.value || "0"))}
                 title="Desplaza la etiqueta hacia abajo si imprime cortada"
@@ -182,7 +182,7 @@ export function ConfigPanel({
             <div>
               <div className="ui-caption font-medium">Tipo de código</div>
               <select
-                className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm opacity-70"
+                className="ui-input mt-1 w-full opacity-70"
                 value={barcodeKind}
                 disabled
                 title="Estándar bloqueado por preset"
@@ -196,7 +196,7 @@ export function ConfigPanel({
               <div>
                 <div className="ui-caption font-medium">Módulo DM (dots)</div>
                 <input
-                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
+                  className="ui-input mt-1 w-full"
                   value={dmModuleDots}
                   onChange={(e) => setDmModuleDots(Number(e.target.value || "0"))}
                 />
@@ -205,7 +205,7 @@ export function ConfigPanel({
               <div>
                 <div className="ui-caption font-medium">Alto Code128 (dots)</div>
                 <input
-                  className="mt-1 w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
+                  className="ui-input mt-1 w-full"
                   value={code128HeightDots}
                   onChange={(e) => setCode128HeightDots(Number(e.target.value || "0"))}
                 />
@@ -220,7 +220,7 @@ export function ConfigPanel({
         ) : null}
       </div>
 
-      <div className="mt-5 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4 ui-caption">
+      <div className="mt-5 ui-panel-soft p-4 ui-caption">
         <div className="font-semibold text-[var(--ui-text)]">Ubicación</div>
         <div className="mt-1 text-[var(--ui-muted)]">
           Elige una ubicación (LOC) de la lista y agrégalo a la cola para imprimir su etiqueta.
@@ -234,7 +234,7 @@ export function ConfigPanel({
 
             <div className="mt-3 flex items-center gap-3">
               <button
-                className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
+                className="ui-btn ui-btn--ghost"
                 onClick={loadLocs}
                 type="button"
               >
@@ -242,7 +242,7 @@ export function ConfigPanel({
               </button>
 
               <input
-                className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
+                className="ui-input w-full"
                 placeholder="Buscar por código o descripción…"
                 value={locSearch}
                 onChange={(e) => setLocSearch(e.target.value)}
@@ -251,7 +251,7 @@ export function ConfigPanel({
 
             <div className="mt-3 flex items-center gap-3">
               <select
-                className="w-full rounded-xl border border-zinc-200 bg-white px-3 py-2 text-sm"
+                className="ui-input w-full"
                 value={selectedLocCode}
                 onChange={(e) => setSelectedLocCode(e.target.value)}
               >
@@ -265,7 +265,7 @@ export function ConfigPanel({
               </select>
 
               <button
-                className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
+                className="ui-btn ui-btn--ghost"
                 onClick={() => addSelectedLocToQueue("replace")}
                 type="button"
               >
@@ -273,7 +273,7 @@ export function ConfigPanel({
               </button>
 
               <button
-                className="rounded-xl border border-zinc-200 bg-white px-4 py-2 ui-body font-semibold"
+                className="ui-btn ui-btn--ghost"
                 onClick={() => addSelectedLocToQueue("append")}
                 type="button"
               >

@@ -76,7 +76,7 @@ export default async function InventoryCountInitialPage({
               <span className="ui-label">Sede</span>
               <select
                 name="site_id"
-                className="h-11 w-full max-w-xs rounded-xl border border-zinc-300 bg-white px-3 text-sm focus:outline-none focus:ring-2 focus:ring-amber-500"
+                className="ui-input max-w-xs"
                 required
               >
                 <option value="">Selecciona una sede</option>
@@ -223,7 +223,7 @@ export default async function InventoryCountInitialPage({
           </p>
           <ul className="mt-4 space-y-2">
             {openSessions.map((s) => (
-              <li key={s.id} className="flex items-center justify-between gap-3 rounded-xl border border-zinc-200 px-4 py-3">
+              <li key={s.id} className="flex items-center justify-between gap-3 ui-panel-soft px-4 py-3">
                 <span className="ui-body">
                   {s.name ?? s.id.slice(0, 8)} · {s.scope_zone ? `Zona ${s.scope_zone}` : "LOC"} · {s.created_at ? new Date(s.created_at).toLocaleString() : ""}
                 </span>
@@ -263,7 +263,7 @@ export default async function InventoryCountInitialPage({
                   <span className="ui-caption">Zona</span>
                   <select
                     name="zone"
-                    className="h-10 min-w-[140px] rounded-xl border border-zinc-300 bg-white px-3 text-sm"
+                    className="ui-input min-w-[140px]"
                     defaultValue={zoneParam}
                   >
                     <option value="">Toda la sede</option>
@@ -278,7 +278,7 @@ export default async function InventoryCountInitialPage({
                   <span className="ui-caption">LOC (opcional)</span>
                   <select
                     name="location_id"
-                    className="h-10 min-w-[200px] rounded-xl border border-zinc-300 bg-white px-3 text-sm font-mono"
+                    className="ui-input min-w-[200px] font-mono"
                     defaultValue={locationIdParam}
                   >
                     <option value="">—</option>
