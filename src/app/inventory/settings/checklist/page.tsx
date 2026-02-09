@@ -14,7 +14,6 @@ export default async function ConfigChecklistPage() {
   const { supabase } = await requireAppAccess({
     appId: "nexo",
     returnTo: "/inventory/settings/checklist",
-    permissionCode: "inventory.stock",
   });
 
   const checks: CheckResult[] = [];

@@ -21,39 +21,57 @@ function asText(v: FormDataEntryValue | null) {
 
 async function addRoute(formData: FormData) {
   "use server";
-  const supabase = await createClient();
   const requesting = asText(formData.get("requesting_site_id"));
   const fulfillment = asText(formData.get("fulfillment_site_id"));
   if (!requesting || !fulfillment) {
     redirect("/inventory/settings/supply-routes?error=" + encodeURIComponent("Selecciona sede solicitante y sede abastecedora."));
   }
-  const { error } = await supabase.from("site_supply_routes").insert({
-    requesting_site_id: requesting,
-    fulfillment_site_id: fulfillment,
-    is_active: true,
-  });
-  if (error) redirect("/inventory/settings/supply-routes?error=" + encodeURIComponent(error.message));
+  let errMsg: string | null = null;
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.from("site_supply_routes").insert({
+      requesting_site_id: requesting,
+      fulfillment_site_id: fulfillment,
+      is_active: true,
+    });
+    if (error) errMsg = error.message;
+  } catch (e) {
+    errMsg = e instanceof Error ? e.message : "Error al añadir ruta.";
+  }
+  if (errMsg) redirect("/inventory/settings/supply-routes?error=" + encodeURIComponent(errMsg));
   redirect("/inventory/settings/supply-routes?ok=added");
 }
 
 async function toggleRoute(formData: FormData) {
   "use server";
-  const supabase = await createClient();
   const id = asText(formData.get("id"));
-  const isActive = formData.get("is_active") === "true";
   if (!id) redirect("/inventory/settings/supply-routes?error=" + encodeURIComponent("ID inválido."));
-  const { error } = await supabase.from("site_supply_routes").update({ is_active: !isActive }).eq("id", id);
-  if (error) redirect("/inventory/settings/supply-routes?error=" + encodeURIComponent(error.message));
+  let errMsg: string | null = null;
+  try {
+    const supabase = await createClient();
+    const isActive = formData.get("is_active") === "true";
+    const { error } = await supabase.from("site_supply_routes").update({ is_active: !isActive }).eq("id", id);
+    if (error) errMsg = error.message;
+  } catch (e) {
+    errMsg = e instanceof Error ? e.message : "Error al actualizar.";
+  }
+  if (errMsg) redirect("/inventory/settings/supply-routes?error=" + encodeURIComponent(errMsg));
   redirect("/inventory/settings/supply-routes?ok=toggled");
 }
 
 async function deleteRoute(formData: FormData) {
   "use server";
-  const supabase = await createClient();
   const id = asText(formData.get("id"));
   if (!id) redirect("/inventory/settings/supply-routes?error=" + encodeURIComponent("ID inválido."));
-  const { error } = await supabase.from("site_supply_routes").delete().eq("id", id);
-  if (error) redirect("/inventory/settings/supply-routes?error=" + encodeURIComponent(error.message));
+  let errMsg: string | null = null;
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.from("site_supply_routes").delete().eq("id", id);
+    if (error) errMsg = error.message;
+  } catch (e) {
+    errMsg = e instanceof Error ? e.message : "Error al eliminar.";
+  }
+  if (errMsg) redirect("/inventory/settings/supply-routes?error=" + encodeURIComponent(errMsg));
   redirect("/inventory/settings/supply-routes?ok=deleted");
 }
 
@@ -69,7 +87,6 @@ export default async function SupplyRoutesPage({
   const { supabase, user } = await requireAppAccess({
     appId: "nexo",
     returnTo: "/inventory/settings/supply-routes",
-    permissionCode: "inventory.stock",
   });
 
   const { data: emp } = await supabase.from("employees").select("role").eq("id", user.id).maybeSingle();

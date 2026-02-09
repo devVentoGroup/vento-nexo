@@ -47,7 +47,7 @@ Regla importante: el Centro es la bodega que abastece a los satélites. Los sat�
 
 ### 3.1 Sedes y rutas
 
-- **Sedes:** Centro de producción, Saudo, Vento Café (ya deben existir). Ver listado en **Configuración → Sedes**.
+- **Sedes:** Centro de producción, Saudo, Vento Café. Carga por defecto con la migración `20260209120000_seed_sites_vento.sql` o créalas en **Configuración → Sedes**.
 - **Rutas:** Cada satélite debe tener al Centro como quien le abastece.
   - **Configuración → Rutas de abastecimiento** (pantalla en NEXO).
   - Añadir: Solicitante = Saudo (o Vento Café), Abastecedor = Centro.
