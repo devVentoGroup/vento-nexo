@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
+import { DeleteRouteForm } from "@/components/vento/delete-route-form";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +41,7 @@ async function addRoute(formData: FormData) {
     errMsg = e instanceof Error ? e.message : "Error al añadir ruta.";
   }
   if (errMsg) redirect("/inventory/settings/supply-routes?error=" + encodeURIComponent(errMsg));
+  revalidatePath("/inventory/settings/supply-routes");
   redirect("/inventory/settings/supply-routes?ok=added");
 }
 
@@ -56,6 +59,7 @@ async function toggleRoute(formData: FormData) {
     errMsg = e instanceof Error ? e.message : "Error al actualizar.";
   }
   if (errMsg) redirect("/inventory/settings/supply-routes?error=" + encodeURIComponent(errMsg));
+  revalidatePath("/inventory/settings/supply-routes");
   redirect("/inventory/settings/supply-routes?ok=toggled");
 }
 
@@ -72,6 +76,7 @@ async function deleteRoute(formData: FormData) {
     errMsg = e instanceof Error ? e.message : "Error al eliminar.";
   }
   if (errMsg) redirect("/inventory/settings/supply-routes?error=" + encodeURIComponent(errMsg));
+  revalidatePath("/inventory/settings/supply-routes");
   redirect("/inventory/settings/supply-routes?ok=deleted");
 }
 
@@ -219,14 +224,7 @@ export default async function SupplyRoutesPage({
                             {r.is_active ? "Desactivar" : "Activar"}
                           </button>
                         </form>
-                        <form action={deleteRoute} className="inline" onSubmit={(e) => {
-                          if (!confirm("¿Eliminar esta ruta?")) e.preventDefault();
-                        }}>
-                          <input type="hidden" name="id" value={r.id} />
-                          <button type="submit" className="text-sm text-red-600 hover:underline">
-                            Eliminar
-                          </button>
-                        </form>
+                        <DeleteRouteForm action={deleteRoute} routeId={r.id} />
                       </div>
                     </TableCell>
                   </tr>
