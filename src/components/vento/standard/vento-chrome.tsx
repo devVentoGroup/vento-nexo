@@ -158,6 +158,13 @@ const NAV_GROUPS: NavGroup[] = [
         anyOf: ["inventory.production_batches", "inventory.locations"],
         icon: "printer",
       },
+      {
+        href: "/printing/setup",
+        label: "Config. impresora",
+        description: "Instalación, Bluetooth, detección",
+        anyOf: ["inventory.production_batches", "inventory.locations"],
+        icon: "sliders",
+      },
     ],
   },
   {

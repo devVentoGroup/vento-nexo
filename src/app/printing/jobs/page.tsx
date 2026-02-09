@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useMemo, useRef, useState } from "react";
 import Script from "next/script";
+import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
 import { BROWSERPRINT_CORE, BROWSERPRINT_ZEBRA, LOCS_API, PRESETS } from "./_lib/constants";
@@ -459,19 +460,27 @@ function PrintingJobsContent() {
       <Script src={BROWSERPRINT_CORE} strategy="afterInteractive" />
       <Script src={BROWSERPRINT_ZEBRA} strategy="afterInteractive" />
 
-      <div>
-        <h1 className="ui-h1">Impresión de etiquetas</h1>
-        <p className="mt-2 ui-body-muted">
-          Imprime etiquetas de ubicaciones (LOC), productos (SKU/PROD). Elige ubicación, revisa la
-          vista previa e imprime.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h1 className="ui-h1">Impresión de etiquetas</h1>
+          <p className="mt-2 ui-body-muted">
+            Imprime etiquetas de ubicaciones (LOC), productos (SKU/PROD). Elige ubicación, revisa la
+            vista previa e imprime.
+          </p>
+        </div>
+        <Link href="/printing/setup" className="ui-btn ui-btn--ghost ui-btn--sm">
+          Configurar impresora
+        </Link>
       </div>
 
       {!browserPrintOk && (
         <div className="ui-alert ui-alert--warn">
           <strong>Para imprimir a impresoras Zebra</strong> necesitas tener instalado{" "}
           <strong>Zebra Browser Print</strong> y el servicio en ejecución. Sin ello podrás usar la
-          vista previa y preparar la cola, pero no enviar a la impresora.
+          vista previa y preparar la cola, pero no enviar a la impresora.{" "}
+          <Link href="/printing/setup" className="font-medium underline">
+            Guía de configuración paso a paso →
+          </Link>
         </div>
       )}
 

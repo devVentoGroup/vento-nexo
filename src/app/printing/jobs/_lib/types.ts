@@ -6,6 +6,7 @@ export type BrowserPrintDevice = {
   name?: string;
   deviceType?: string;
   type?: string;
+  connection?: string; // e.g. "bluetooth", "usb"
   send?: (data: string, onSuccess: () => void, onError: (err: unknown) => void) => void;
 };
 

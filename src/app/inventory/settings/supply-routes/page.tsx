@@ -218,7 +218,7 @@ export default async function SupplyRoutesPage({
                         <form action={toggleRoute} className="inline">
                           <input type="hidden" name="id" value={r.id} />
                           <input type="hidden" name="is_active" value={String(r.is_active)} />
-                          <button type="submit" className="ui-btn ui-btn--ghost text-sm">
+                          <button type="submit" className="ui-btn ui-btn--ghost ui-btn--sm">
                             {r.is_active ? "Desactivar" : "Activar"}
                           </button>
                         </form>
