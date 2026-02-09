@@ -57,25 +57,25 @@ export function buildLocLayout(
   const qrUrl = `${baseUrl}/inventory/withdraw?loc=${encodeURIComponent(loc.code)}`;
 
   if (isHorizontal) {
-    // Horizontal layout: barcodes left, text right
-    const barcodeSize = Math.min(heightMm * 0.7, widthMm * 0.35);
+    // Horizontal: text top-right, barcodes left, code bottom-right
+    const bcSize = Math.min(heightMm * 0.55, 18); // cap at 18mm
     return [
-      { id: "el_title", type: "title", x: widthMm * 0.45, y: 2, width: widthMm * 0.5, height: 6, content: "VENTO · LOC", fontSize: 32, fontWeight: "bold" },
-      { id: "el_code", type: "text", x: widthMm * 0.45, y: 10, width: widthMm * 0.5, height: 5, content: loc.code, fontSize: 28, fontWeight: "bold" },
-      { id: "el_desc", type: "text", x: widthMm * 0.45, y: 17, width: widthMm * 0.5, height: 4, content: loc.description || loc.zone || "", fontSize: 20, fontWeight: "normal" },
-      { id: "el_dm", type: "barcode_dm", x: 2, y: 2, width: barcodeSize, height: barcodeSize, content: ventoCode },
-      { id: "el_qr", type: "barcode_qr", x: barcodeSize + 4, y: 2, width: barcodeSize * 0.8, height: barcodeSize * 0.8, content: qrUrl },
+      { id: "el_dm", type: "barcode_dm", x: 3, y: 3, width: bcSize, height: bcSize, content: ventoCode },
+      { id: "el_qr", type: "barcode_qr", x: bcSize + 5, y: 3, width: bcSize * 0.85, height: bcSize * 0.85, content: qrUrl },
+      { id: "el_title", type: "title", x: (bcSize * 2) + 8, y: 3, width: widthMm - (bcSize * 2) - 10, height: 6, content: "VENTO · LOC", fontSize: 28, fontWeight: "bold" },
+      { id: "el_desc", type: "text", x: (bcSize * 2) + 8, y: 10, width: widthMm - (bcSize * 2) - 10, height: 4, content: loc.description || loc.zone || "", fontSize: 18, fontWeight: "normal" },
+      { id: "el_code", type: "text", x: (bcSize * 2) + 8, y: heightMm - 10, width: widthMm - (bcSize * 2) - 10, height: 6, content: loc.code, fontSize: 26, fontWeight: "bold" },
     ];
   } else {
-    // Vertical layout (default): text top, barcodes middle, code bottom
-    const barcodeSize = Math.min(widthMm * 0.42, heightMm * 0.3);
-    const barcodeY = heightMm * 0.25;
+    // Vertical: title top, description, barcodes side by side in middle, code bottom
+    const bcSize = Math.min(widthMm * 0.38, 18); // cap at 18mm
+    const barcodeY = 16;
     return [
-      { id: "el_title", type: "title", x: 2, y: 2, width: widthMm - 4, height: 6, content: "VENTO · LOC", fontSize: 32, fontWeight: "bold" },
-      { id: "el_desc", type: "text", x: 2, y: 9, width: widthMm - 4, height: 4, content: loc.description || loc.zone || "", fontSize: 20, fontWeight: "normal" },
-      { id: "el_dm", type: "barcode_dm", x: 3, y: barcodeY, width: barcodeSize, height: barcodeSize, content: ventoCode },
-      { id: "el_qr", type: "barcode_qr", x: widthMm - barcodeSize - 3, y: barcodeY, width: barcodeSize, height: barcodeSize, content: qrUrl },
-      { id: "el_code", type: "text", x: 2, y: heightMm - 12, width: widthMm - 4, height: 6, content: loc.code, fontSize: 28, fontWeight: "bold" },
+      { id: "el_title", type: "title", x: 2, y: 2, width: widthMm - 4, height: 5, content: "VENTO · LOC", fontSize: 28, fontWeight: "bold" },
+      { id: "el_desc", type: "text", x: 2, y: 8, width: widthMm - 4, height: 4, content: loc.description || loc.zone || "", fontSize: 20, fontWeight: "normal" },
+      { id: "el_dm", type: "barcode_dm", x: 3, y: barcodeY, width: bcSize, height: bcSize, content: ventoCode },
+      { id: "el_qr", type: "barcode_qr", x: widthMm - bcSize - 3, y: barcodeY, width: bcSize, height: bcSize, content: qrUrl },
+      { id: "el_code", type: "text", x: 2, y: barcodeY + bcSize + 3, width: widthMm - 4, height: 6, content: loc.code, fontSize: 26, fontWeight: "bold" },
     ];
   }
 }

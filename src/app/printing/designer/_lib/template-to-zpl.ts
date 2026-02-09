@@ -28,7 +28,9 @@ function elementToZpl(el: LabelElement, dpi: number): string {
       ].join("\n");
     }
     case "barcode_dm": {
-      const moduleDots = Math.max(2, Math.round(h / 18));
+      // Module size: target ~8 for 15mm, scale down for smaller
+      const targetModules = 26; // DM has ~26 modules for typical data
+      const moduleDots = Math.max(2, Math.min(10, Math.round(h / targetModules)));
       return [
         `^FO${x},${y}`,
         `^BXN,${moduleDots},200,0,0,6`,
@@ -36,15 +38,17 @@ function elementToZpl(el: LabelElement, dpi: number): string {
       ].join("\n");
     }
     case "barcode_c128": {
+      const barH = Math.max(30, Math.min(200, h));
       return [
-        "^BY2,2," + h,
+        `^BY2,2,${barH}`,
         `^FO${x},${y}`,
-        `^BCN,${h},N,N,N`,
+        `^BCN,${barH},N,N,N`,
         `^FD${text}^FS`,
       ].join("\n");
     }
     case "barcode_qr": {
-      const mag = Math.max(1, Math.min(10, Math.round(h / 20)));
+      // Magnification: ~3 for 15mm at 203dpi
+      const mag = Math.max(1, Math.min(6, Math.round(h / 40)));
       return [
         `^FO${x},${y}`,
         `^BQN,2,${mag}`,

@@ -148,58 +148,40 @@ export function buildSingleLabelZpl(opts: {
   const parts: string[] = [];
   parts.push(header);
 
-  parts.push(
-    buildTextBlock({
-      x: marginX,
-      y: yTitle,
-      h: isLoc70 ? 22 : 26,
-      w: isLoc70 ? 22 : 26,
-      maxWidthDots: maxTextWidth,
-      lines: 1,
-      align: "L",
-      text: titleStr,
-    })
-  );
-
-  if (note) {
-    parts.push(
-      buildTextBlock({
-        x: marginX,
-        y: isLoc70 ? 46 : yNote,
-        h: isLoc70 ? 40 : isProd ? 20 : 22,
-        w: isLoc70 ? 40 : isProd ? 20 : 22,
-        maxWidthDots: maxTextWidth,
-        lines: isLoc70 ? 2 : isProd ? 2 : 1,
-        align: "L",
-        text: note,
-      })
-    );
-  }
-
   if (isLoc70Dual) {
+    // --- LOC 50x70 with DataMatrix + QR ---
     const baseUrl = (opts.baseUrlForQr ?? "").replace(/\/$/, "");
     const withdrawUrl = `${baseUrl}/inventory/withdraw?loc=${encodeURIComponent(code)}`;
-    const yCodes = 140;
-    const dmSize = dmModuleDots * 26;
+    const ventoCode = encodeVento("LOC", code);
+
+    // Title at top
+    parts.push(buildTextBlock({ x: marginX, y: 12, h: 28, w: 28, maxWidthDots: maxTextWidth, lines: 1, align: "L", text: titleStr }));
+
+    // Note/description below title
+    if (note) {
+      parts.push(buildTextBlock({ x: marginX, y: 48, h: 22, w: 22, maxWidthDots: maxTextWidth, lines: 1, align: "L", text: note }));
+    }
+
+    // Barcodes: DM left, QR right at ~30% from top
+    const yCodes = Math.round(heightDots * 0.22);
+    const dmMod = Math.min(dmModuleDots, 8);
+    const dmSize = dmMod * 26;
     const dmX = marginX;
-    const qrMagnification = 4;
-    const qrSizeApprox = 25 * qrMagnification * 4;
-    const qrX = Math.min(widthDots - marginX - qrSizeApprox, dmX + dmSize + 12);
-    parts.push(buildDataMatrixField({ x: dmX, y: yCodes, moduleDots: dmModuleDots, data: code }));
-    parts.push(buildQRField({ x: qrX, y: yCodes, magnification: qrMagnification, data: withdrawUrl }));
-    parts.push(
-      buildTextBlock({
-        x: marginX,
-        y: heightDots - 56,
-        h: 24,
-        w: 20,
-        maxWidthDots: maxTextWidth,
-        lines: 1,
-        align: "C",
-        text: code,
-      })
-    );
+    const qrMag = 3;
+    const qrX = dmX + dmSize + 16;
+
+    parts.push(buildDataMatrixField({ x: dmX, y: yCodes, moduleDots: dmMod, data: ventoCode }));
+    parts.push(buildQRField({ x: qrX, y: yCodes, magnification: qrMag, data: withdrawUrl }));
+
+    // Code text at bottom - big and centered
+    parts.push(buildTextBlock({ x: marginX, y: heightDots - 70, h: 30, w: 26, maxWidthDots: maxTextWidth, lines: 1, align: "C", text: code }));
   } else {
+    // --- Standard presets ---
+    parts.push(buildTextBlock({ x: marginX, y: yTitle, h: isLoc70 ? 22 : 26, w: isLoc70 ? 22 : 26, maxWidthDots: maxTextWidth, lines: 1, align: "L", text: titleStr }));
+
+    if (note) {
+      parts.push(buildTextBlock({ x: marginX, y: isLoc70 ? 46 : yNote, h: isLoc70 ? 40 : isProd ? 20 : 22, w: isLoc70 ? 40 : isProd ? 20 : 22, maxWidthDots: maxTextWidth, lines: isLoc70 ? 2 : isProd ? 2 : 1, align: "L", text: note }));
+    }
     const yBarcode = isLoc70 ? 140 : 70;
     const dmSizeGuess = dmModuleDots * 26;
     const dmX = Math.max(marginX, Math.floor((widthDots - dmSizeGuess) / 2));
