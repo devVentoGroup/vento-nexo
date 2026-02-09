@@ -8,26 +8,12 @@ function safeText(s: string): string {
   return String(s ?? "").replace(/[\r\n]+/g, " ").trim();
 }
 
-type Variables = {
-  code?: string;
-  note?: string;
-  title?: string;
-};
-
-function resolveContent(content: string, vars: Variables): string {
-  let out = content;
-  if (vars.code) out = out.replace(/\{code\}/gi, vars.code);
-  if (vars.note) out = out.replace(/\{note\}/gi, vars.note);
-  if (vars.title) out = out.replace(/\{title\}/gi, vars.title);
-  return safeText(out);
-}
-
-function elementToZpl(el: LabelElement, dpi: number, vars: Variables): string {
+function elementToZpl(el: LabelElement, dpi: number): string {
   const x = mmToDots(el.x, dpi);
   const y = mmToDots(el.y, dpi);
   const w = mmToDots(el.width, dpi);
   const h = mmToDots(el.height, dpi);
-  const text = resolveContent(el.content, vars);
+  const text = safeText(el.content);
 
   switch (el.type) {
     case "title":
@@ -70,13 +56,14 @@ function elementToZpl(el: LabelElement, dpi: number, vars: Variables): string {
   }
 }
 
-export function templateToZpl(
-  template: LabelTemplate,
-  vars: Variables = {}
-): string {
-  const { widthMm, heightMm, dpi, elements } = template;
-  const widthDots = mmToDots(widthMm, dpi);
-  const heightDots = mmToDots(heightMm, dpi);
+export function templateToZpl(template: LabelTemplate): string {
+  const { dpi, elements } = template;
+  // Use orientation to determine physical dimensions
+  const isHoriz = template.orientation === "horizontal";
+  const physW = isHoriz ? Math.max(template.widthMm, template.heightMm) : template.widthMm;
+  const physH = isHoriz ? Math.min(template.widthMm, template.heightMm) : template.heightMm;
+  const widthDots = mmToDots(physW, dpi);
+  const heightDots = mmToDots(physH, dpi);
 
   const header = [
     "^XA",
@@ -87,18 +74,30 @@ export function templateToZpl(
   ].join("\n");
 
   const body = elements
-    .map((el) => elementToZpl(el, dpi, vars))
+    .map((el) => elementToZpl(el, dpi))
     .filter(Boolean)
     .join("\n");
 
   return `${header}\n${body}\n^XZ`;
 }
 
+/** Generate ZPL for multiple LOCs using the same template layout */
 export function templateToZplBatch(
   template: LabelTemplate,
-  items: Array<{ code: string; note?: string; title?: string }>
+  codes: Array<{ code: string; ventoCode: string; qrUrl: string; description?: string }>
 ): string {
-  return items
-    .map((item) => templateToZpl(template, item))
-    .join("\n");
+  return codes.map((item) => {
+    // Clone template and replace content in elements
+    const modified: LabelTemplate = {
+      ...template,
+      elements: template.elements.map((el) => {
+        if (el.id === "el_code") return { ...el, content: item.code };
+        if (el.id === "el_dm") return { ...el, content: item.ventoCode };
+        if (el.id === "el_qr") return { ...el, content: item.qrUrl };
+        if (el.id === "el_desc") return { ...el, content: item.description ?? "" };
+        return el;
+      }),
+    };
+    return templateToZpl(modified);
+  }).join("\n");
 }
