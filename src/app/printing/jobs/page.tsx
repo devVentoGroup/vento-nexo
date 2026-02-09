@@ -7,6 +7,9 @@ import { useSearchParams } from "next/navigation";
 
 import { BROWSERPRINT_CORE, BROWSERPRINT_ZEBRA, LOCS_API, PRESETS } from "./_lib/constants";
 import type { BarcodeKind, BrowserPrintDevices, LocRow, PreviewMode } from "./_lib/types";
+import { loadTemplates } from "../designer/_lib/template-storage";
+import { templateToZpl } from "../designer/_lib/template-to-zpl";
+import type { LabelTemplate } from "../designer/_lib/types";
 import {
   buildSingleLabelZpl,
   buildThreeUpRowZpl,
@@ -65,6 +68,10 @@ function PrintingJobsContent() {
   const [selectedLocCode, setSelectedLocCode] = useState("");
   const locsLoadedRef = useRef(false);
 
+  // Custom layout from designer
+  const [customLayout, setCustomLayout] = useState<LabelTemplate | null>(null);
+  const [availableLayouts, setAvailableLayouts] = useState<LabelTemplate[]>([]);
+
   const {
     browserPrintOk,
     devices,
@@ -95,10 +102,25 @@ function PrintingJobsContent() {
     const presetParam = searchParams.get("preset");
     const queueParam = searchParams.get("queue");
     const titleParam = searchParams.get("title");
+    const layoutParam = searchParams.get("layout");
     if (presetParam) setPresetId(presetParam);
     if (queueParam) setQueueText(queueParam.replace(/\r/g, ""));
     if (titleParam) setTitle(titleParam);
+    // Load custom layout from designer
+    if (layoutParam && typeof window !== "undefined") {
+      const templates = loadTemplates();
+      setAvailableLayouts(templates);
+      const found = templates.find((t) => t.id === layoutParam);
+      if (found) setCustomLayout(found);
+    }
   }, [searchParams]);
+
+  // Load available layouts on mount
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      setAvailableLayouts(loadTemplates());
+    }
+  }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -265,6 +287,30 @@ function PrintingJobsContent() {
       setStatus("Cola vacía.");
       return;
     }
+
+    // --- Custom layout mode ---
+    if (customLayout) {
+      const baseUrlStr = baseUrl ?? "";
+      const zplParts: string[] = [];
+      parsedQueue.forEach((it) => {
+        const modified: LabelTemplate = {
+          ...customLayout,
+          elements: customLayout.elements.map((el) => {
+            if (el.id === "el_code") return { ...el, content: it.code };
+            if (el.id === "el_dm") return { ...el, content: `VENTO|LOC|${it.code}` };
+            if (el.id === "el_qr") return { ...el, content: `${baseUrlStr}/inventory/withdraw?loc=${encodeURIComponent(it.code)}` };
+            if (el.id === "el_desc") return { ...el, content: it.note ?? "" };
+            return el;
+          }),
+        };
+        zplParts.push(templateToZpl(modified));
+      });
+      sendZpl(zplParts.join("\n"));
+      setQueueText("");
+      return;
+    }
+
+    // --- Standard preset mode ---
     if (preset.columns === 3 && parsedQueue.length < 3) {
       setStatus("Este preset imprime de a 3. Faltan etiquetas para completar una fila.");
       return;
@@ -486,6 +532,34 @@ function PrintingJobsContent() {
           <Link href="/printing/setup" className="font-medium underline">
             Guía de configuración paso a paso →
           </Link>
+        </div>
+      )}
+
+      {/* Custom layout selector */}
+      {availableLayouts.length > 0 && (
+        <div className="ui-panel-soft p-4 flex flex-wrap items-center gap-3">
+          <span className="ui-label">Layout personalizado:</span>
+          <select
+            value={customLayout?.id ?? ""}
+            onChange={(e) => {
+              if (!e.target.value) { setCustomLayout(null); return; }
+              const found = availableLayouts.find((t) => t.id === e.target.value);
+              setCustomLayout(found ?? null);
+            }}
+            className="ui-input max-w-xs"
+          >
+            <option value="">Usar preset estandar</option>
+            {availableLayouts.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name} ({t.widthMm}x{t.heightMm}mm {t.orientation})
+              </option>
+            ))}
+          </select>
+          {customLayout && (
+            <span className="ui-chip ui-chip--brand">
+              Layout: {customLayout.name}
+            </span>
+          )}
         </div>
       )}
 

@@ -363,6 +363,18 @@ export default function DesignerPage() {
               <button type="button" onClick={handleLoad} className="ui-btn ui-btn--ghost ui-btn--sm">Cargar ({savedCount})</button>
               <button type="button" onClick={handleShowZpl} className="ui-btn ui-btn--ghost ui-btn--sm">Ver ZPL</button>
             </div>
+            {template.elements.length > 0 && (
+              <button
+                type="button"
+                onClick={() => {
+                  saveTemplate(template);
+                  window.location.href = `/printing/jobs?layout=${encodeURIComponent(template.id)}`;
+                }}
+                className="ui-btn ui-btn--brand w-full"
+              >
+                Imprimir con este layout
+              </button>
+            )}
           </div>
 
           {/* Properties panel (desktop) */}
