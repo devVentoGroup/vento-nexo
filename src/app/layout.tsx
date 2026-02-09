@@ -1,4 +1,4 @@
-﻿import type { Metadata } from "next";
+import type { Metadata } from "next";
 import { Geist_Mono, Manrope } from "next/font/google";
 import "./globals.css";
 import { VentoShell } from "../components/vento/standard/vento-shell";
@@ -20,6 +20,7 @@ export const metadata: Metadata = {
   applicationName: "Vento OS",
   authors: [{ name: "Vento Group" }],
   metadataBase: new URL("https://nexo.ventogroup.co"),
+  icons: { icon: "/logos/nexo.svg", apple: "/logos/nexo.svg" },
 };
 
 export default function RootLayout({
