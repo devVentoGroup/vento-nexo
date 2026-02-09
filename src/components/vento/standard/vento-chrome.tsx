@@ -160,6 +160,35 @@ const NAV_GROUPS: NavGroup[] = [
       },
     ],
   },
+  {
+    label: "Configuración",
+    items: [
+      {
+        href: "/inventory/settings/checklist",
+        label: "Configuración inicial",
+        description: "Checklist para inventario y remisiones",
+        required: ["inventory.stock"],
+        allowedRoles: ["propietario", "gerente_general"],
+        icon: "clipboard",
+      },
+      {
+        href: "/inventory/settings/supply-routes",
+        label: "Rutas de abastecimiento",
+        description: "Satélite → Centro (remisiones)",
+        required: ["inventory.stock"],
+        allowedRoles: ["propietario", "gerente_general"],
+        icon: "sliders",
+      },
+      {
+        href: "/inventory/settings/sites",
+        label: "Sedes",
+        description: "Listado de sedes",
+        required: ["inventory.stock"],
+        allowedRoles: ["propietario", "gerente_general"],
+        icon: "map",
+      },
+    ],
+  },
 ];
 
 type IconName =

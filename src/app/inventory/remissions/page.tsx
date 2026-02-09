@@ -214,7 +214,29 @@ async function createRemission(formData: FormData) {
     );
   }
 
-  redirect(`/inventory/remissions/${request.id}?ok=created`);
+  let hasLowStock = false;
+  const { data: stockRows } = await supabase
+    .from("inventory_stock_by_site")
+    .select("product_id,current_qty")
+    .eq("site_id", fromSiteId)
+    .in("product_id", items.map((i) => i.product_id));
+  const stockMap = new Map(
+    (stockRows ?? []).map((r: { product_id: string; current_qty: number | null }) => [
+      r.product_id,
+      Number(r.current_qty ?? 0),
+    ])
+  );
+  for (const item of items) {
+    const available = stockMap.get(item.product_id) ?? 0;
+    if (available < item.quantity) {
+      hasLowStock = true;
+      break;
+    }
+  }
+
+  const params = new URLSearchParams({ ok: "created" });
+  if (hasLowStock) params.set("warning", "low_stock");
+  redirect(`/inventory/remissions/${request.id}?${params.toString()}`);
 }
 
 export default async function RemissionsPage({
@@ -497,6 +519,26 @@ export default async function RemissionsPage({
         {!canCreate && viewMode === "satélite" ? (
           <div className="mt-4 ui-alert ui-alert--neutral">
             Esta vista es para sedes satélite. Tu rol actual no puede crear remisiones.
+          </div>
+        ) : null}
+
+        {canCreate && activeSiteId && fulfillmentSiteIds.length === 0 ? (
+          <div className="mt-4 ui-alert ui-alert--warn">
+            No hay rutas de abastecimiento para {activeSiteName}. Configúralas en{" "}
+            <Link href="/inventory/settings/supply-routes" className="font-semibold underline">
+              Configuración → Rutas de abastecimiento
+            </Link>
+            .
+          </div>
+        ) : null}
+
+        {canCreate && productRows.length === 0 ? (
+          <div className="mt-4 ui-alert ui-alert--warn">
+            No hay insumos configurados para {activeSiteName}. Añade la sede en{" "}
+            <Link href="/inventory/catalog" className="font-semibold underline">
+              Catálogo
+            </Link>
+            → ficha del producto → Sedes.
           </div>
         ) : null}
 

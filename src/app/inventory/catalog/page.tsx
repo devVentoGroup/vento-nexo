@@ -154,7 +154,9 @@ export default async function InventoryCatalogPage({
   const { data: products } = await productsQuery;
   let productRows = (products ?? []) as unknown as ProductRow[];
 
-  if (activeTab !== "equipos") {
+  if (activeTab === "equipos") {
+    productRows = productRows.filter((p) => p.product_inventory_profiles?.inventory_kind === "asset");
+  } else {
     productRows = productRows.filter((p) => {
       const kind = p.product_inventory_profiles?.inventory_kind;
       return kind !== "asset";

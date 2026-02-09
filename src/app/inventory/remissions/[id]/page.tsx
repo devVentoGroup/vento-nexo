@@ -23,6 +23,7 @@ const PERMISSIONS = {
 type SearchParams = {
   error?: string;
   ok?: string;
+  warning?: string;
 };
 
 type AccessContext = {
@@ -421,7 +422,16 @@ export default async function RemissionDetailPage({
   const { id } = await params;
   const sp = (await searchParams) ?? {};
   const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
-  const okMsg = sp.ok ? decodeURIComponent(sp.ok) : "";
+  const okMsg = sp.ok === "created"
+    ? "Remisión creada."
+    : sp.ok === "items_updated"
+      ? "Ítems actualizados."
+      : sp.ok === "status_updated"
+        ? "Estado actualizado."
+        : sp.ok
+          ? decodeURIComponent(sp.ok)
+          : "";
+  const lowStockWarning = sp.warning === "low_stock";
 
   const { supabase, user } = await requireAppAccess({
     appId: APP_ID,
@@ -536,6 +546,12 @@ export default async function RemissionDetailPage({
       {okMsg ? (
         <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-800">
           {okMsg}
+        </div>
+      ) : null}
+
+      {lowStockWarning ? (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-800">
+          Algunos productos pueden no tener stock suficiente en Centro. Bodega verificará al preparar.
         </div>
       ) : null}
 
