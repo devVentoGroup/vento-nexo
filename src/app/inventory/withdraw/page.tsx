@@ -161,11 +161,12 @@ type ProductRow = { id: string; name: string | null; unit: string | null };
 export default async function WithdrawPage({
   searchParams,
 }: {
-  searchParams?: Promise<{ loc_id?: string; loc?: string; error?: string; ok?: string }>;
+  searchParams?: Promise<{ loc_id?: string; loc?: string; site_id?: string; error?: string; ok?: string }>;
 }) {
   const sp = (await searchParams) ?? {};
   const locIdParam = sp.loc_id ? String(sp.loc_id).trim() : "";
   const locCodeParam = sp.loc ? String(sp.loc).trim().toUpperCase() : "";
+  const siteIdParam = sp.site_id ? String(sp.site_id).trim() : "";
   const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
   const okMsg = sp.ok ? "Retiro registrado." : "";
 
@@ -187,7 +188,8 @@ export default async function WithdrawPage({
     .eq("employee_id", user.id)
     .maybeSingle();
 
-  const siteId = settings?.selected_site_id ?? employee?.site_id ?? "";
+  // Prioridad: URL (selector de sede) > employee_settings > employee.site_id
+  let siteId = siteIdParam || (settings?.selected_site_id ?? employee?.site_id ?? "");
 
   let locations: LocRow[] = [];
   let defaultLocationId = locIdParam;
@@ -211,6 +213,28 @@ export default async function WithdrawPage({
     }
     if (!defaultLocationId && locations.length > 0) {
       defaultLocationId = locations[0].id;
+    }
+  }
+
+  // Si no hay LOCs en la sede actual pero tenemos ?loc=XXX, buscar el LOC y usar su sede
+  if (locations.length === 0 && locCodeParam) {
+    const { data: locByCode } = await supabase
+      .from("inventory_locations")
+      .select("id,code,zone,site_id")
+      .ilike("code", locCodeParam)
+      .limit(5);
+    const found = (locByCode ?? []) as (LocRow & { site_id?: string })[];
+    const match = found.find((l) => (l.code ?? "").toUpperCase() === locCodeParam);
+    if (match?.site_id) {
+      siteId = match.site_id;
+      defaultLocationId = match.id;
+      const { data: locData } = await supabase
+        .from("inventory_locations")
+        .select("id,code,zone")
+        .eq("site_id", siteId)
+        .order("code", { ascending: true })
+        .limit(200);
+      locations = (locData ?? []) as LocRow[];
     }
   }
 

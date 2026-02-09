@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 import { ScanInput } from "@/components/vento/scan-input";
 
 type ParsedScan =
@@ -11,6 +11,8 @@ type ParsedScan =
 
 export function ScannerPanel() {
   const [lastScanned, setLastScanned] = useState<ParsedScan | null>(null);
+  const searchParams = useSearchParams();
+  const currentSiteId = searchParams.get("site_id") ?? "";
 
   function handleScan(parsed: ParsedScan) {
     setLastScanned(parsed);
@@ -25,6 +27,11 @@ export function ScannerPanel() {
     // LOC: no redirigir; mostramos acciones debajo
   }
 
+  const locCode = lastScanned?.kind === "vento" ? lastScanned.code : lastScanned?.kind === "raw" ? lastScanned.raw : "";
+  const withdrawHref =
+    `/inventory/withdraw?loc=${encodeURIComponent(locCode)}` +
+    (currentSiteId ? `&site_id=${encodeURIComponent(currentSiteId)}` : "");
+
   return (
     <div className="space-y-4">
       <ScanInput onScan={handleScan} />
@@ -35,13 +42,13 @@ export function ScannerPanel() {
           <p className="mt-1 font-mono text-sm font-medium text-[var(--ui-text)]">{lastScanned.code}</p>
           <div className="mt-4 flex flex-wrap gap-3">
             <Link
-              href={`/inventory/locations?code=${encodeURIComponent(lastScanned.code)}`}
+              href={`/inventory/locations?code=${encodeURIComponent(lastScanned.code)}${currentSiteId ? `&site_id=${encodeURIComponent(currentSiteId)}` : ""}`}
               className="ui-btn ui-btn--ghost"
             >
               Ver ubicación
             </Link>
             <Link
-              href={`/inventory/withdraw?loc=${encodeURIComponent(lastScanned.code)}`}
+              href={withdrawHref}
               className="ui-btn ui-btn--brand"
             >
               Abrir retiro

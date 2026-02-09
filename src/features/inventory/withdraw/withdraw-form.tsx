@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState } from "react";
 
 type LocOption = { id: string; code: string | null; zone: string | null };
@@ -54,10 +55,15 @@ export function WithdrawForm({
 
   if (locations.length === 0) {
     return (
-      <div className="ui-panel">
+      <div className="ui-panel space-y-3">
         <p className="ui-body-muted">
-          No hay LOCs en esta sede. Crea ubicaciones en Ubicaciones (LOC) y vuelve aquí.
+          No hay LOCs en esta sede. Puede que la sede activa no tenga ubicaciones, o que el LOC
+          escaneado pertenezca a otra sede. Crea ubicaciones, cambia la sede activa en el menú, o
+          escanea un QR de un LOC de tu sede actual.
         </p>
+        <Link href="/inventory/locations" className="ui-btn ui-btn--ghost ui-btn--sm">
+          Ir a Ubicaciones (LOC)
+        </Link>
       </div>
     );
   }

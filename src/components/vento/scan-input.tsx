@@ -48,6 +48,7 @@ export function ScanInput(props: {
   const [value, setValue] = useState("");
   const [cameraOpen, setCameraOpen] = useState(false);
   const [cameraError, setCameraError] = useState<string | null>(null);
+  const [cameraLoading, setCameraLoading] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
@@ -70,12 +71,28 @@ export function ScanInput(props: {
 
     async function startCamera() {
       setCameraError(null);
+      setCameraLoading(true);
 
-      const BarcodeDetectorImpl = (window as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector;
-      if (typeof window === "undefined" || !BarcodeDetectorImpl) {
-        setCameraError("Tu navegador no soporta escaneo por cámara.");
+      let BarcodeDetectorImpl = (window as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector;
+      if (typeof window === "undefined") {
+        setCameraError("Error de entorno.");
+        setCameraLoading(false);
         return;
       }
+      if (!BarcodeDetectorImpl) {
+        try {
+          const mod = await import("barcode-detector-api-polyfill");
+          BarcodeDetectorImpl = mod.BarcodeDetector as BarcodeDetectorCtor;
+          (window as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector = BarcodeDetectorImpl;
+        } catch {
+          setCameraError(
+            "Tu navegador no soporta escaneo por cámara. Usa Chrome o Edge, o pega el código manualmente."
+          );
+          setCameraLoading(false);
+          return;
+        }
+      }
+      setCameraLoading(false);
 
       try {
         const detector = new BarcodeDetectorImpl({
@@ -263,6 +280,10 @@ export function ScanInput(props: {
 
             {cameraError ? (
               <div className="ui-alert ui-alert--error">{cameraError}</div>
+            ) : cameraLoading ? (
+              <div className="flex items-center justify-center py-16 ui-body-muted">
+                Cargando detector de códigos…
+              </div>
             ) : (
               <div className="relative overflow-hidden rounded-2xl border border-[var(--ui-border)] bg-black">
                 <video
