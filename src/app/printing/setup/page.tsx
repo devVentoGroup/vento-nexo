@@ -110,27 +110,64 @@ export default function PrintingSetupPage() {
           </div>
         </section>
 
-        {/* Paso 2: Emparejar Bluetooth (si aplica) */}
+        {/* Paso 2A: Bluetooth — activar descubrimiento */}
         <section className="ui-panel space-y-4">
-          <div className="ui-h3">Paso 2: Emparejar impresora Bluetooth (si usas Bluetooth)</div>
-          <p className="ui-body-muted">
-            Si tu impresora Zebra es Bluetooth, debes emparejarla primero con Windows. El navegador no puede hacer el pairing directamente.
-          </p>
+          <div className="ui-h3">Paso 2: Conectar impresora por Bluetooth</div>
+          <div className="ui-alert ui-alert--warn">
+            <strong>Importante:</strong> Las impresoras Zebra NO son visibles por Bluetooth de fabrica. Primero debes activar el modo descubrimiento conectandola por USB y usando Zebra Setup Utility.
+          </div>
+          <div className="ui-h3 mt-4">A. Activar Bluetooth en la impresora (una sola vez)</div>
           <ol className="list-decimal list-inside space-y-2 ui-body-muted">
             <li>
-              <strong>Enciende la impresora</strong> y ponla en modo emparejamiento (en muchos modelos Zebra: mantén pulsado el botón FEED unos 5 segundos hasta que parpadee el LED azul).
+              <strong>Conecta la impresora por USB</strong> al PC con un cable USB.
             </li>
             <li>
-              En Windows, ve a <strong>Configuración → Bluetooth y dispositivos</strong> (o el icono de Bluetooth en la bandeja).
+              Descarga e instala{" "}
+              <a href="https://www.zebra.com/us/en/support-downloads/printer-software/printer-setup-utilities.html" target="_blank" rel="noopener noreferrer" className="font-medium underline text-[var(--ui-brand-600)]">
+                Zebra Setup Utility (ZSU)
+              </a>{" "}
+              si no lo tienes. Es gratuito.
             </li>
-            <li>Pulsa &quot;Agregar dispositivo&quot; o &quot;Agregar dispositivo Bluetooth u otro&quot;.</li>
-            <li>Selecciona &quot;Bluetooth&quot; y espera a que aparezca tu impresora (ej. &quot;ZDxxxx&quot;, &quot;Zebra ZD...&quot;).</li>
-            <li>Haz clic en la impresora para emparejar. Si pide PIN, prueba <strong>0000</strong> o <strong>1234</strong>.</li>
-            <li>Cuando Windows indique &quot;Conectado&quot;, la impresora ya está disponible para Zebra Browser Print.</li>
+            <li>Abre <strong>Zebra Setup Utility</strong>. Tu impresora deberia aparecer en la lista (conectada por USB).</li>
+            <li>Selecciona la impresora y haz clic en <strong>&quot;Configure Printer Connectivity&quot;</strong>.</li>
+            <li>Selecciona <strong>Bluetooth</strong> en el wizard.</li>
+            <li>Configura un <strong>friendly name</strong> (ej. &quot;Zebra-Bodega&quot;) y un <strong>PIN</strong> (ej. &quot;1234&quot;).</li>
+            <li>Haz clic en <strong>&quot;Apply&quot;</strong>. La impresora se reiniciara (es normal).</li>
+            <li><strong>Desconecta el cable USB.</strong></li>
           </ol>
-          <div className="ui-alert ui-alert--warn">
-            <strong>USB / Red:</strong> Si usas USB o impresora de red, no necesitas Bluetooth. Conéctala por cable o asegúrate de que esté en la misma red y accesible.
+
+          <div className="ui-h3 mt-4">B. Emparejar en Windows</div>
+          <ol className="list-decimal list-inside space-y-2 ui-body-muted">
+            <li>Enciende la impresora (sin USB).</li>
+            <li>En Windows: <strong>Configuracion → Bluetooth y dispositivos → Agregar dispositivo</strong>.</li>
+            <li>Selecciona <strong>&quot;Bluetooth&quot;</strong>.</li>
+            <li>Espera a que aparezca la impresora con el friendly name que configuraste (ej. &quot;Zebra-Bodega&quot;).</li>
+            <li>Haz clic para emparejar. Ingresa el <strong>PIN</strong> que configuraste (ej. 1234).</li>
+            <li>Windows muestra &quot;Conectado&quot; — listo.</li>
+          </ol>
+
+          <div className="ui-alert ui-alert--neutral mt-4">
+            <strong>Troubleshooting:</strong>
+            <ul className="mt-2 list-disc list-inside space-y-1">
+              <li>Si la impresora no aparece: reiniciala y espera 30 segundos antes de buscar.</li>
+              <li>Si ya fue emparejada antes y falla: ve a &quot;Bluetooth y dispositivos&quot;, elimina la impresora y repite desde el paso B.1.</li>
+              <li>Si ZSU no detecta la impresora por USB: instala el driver <strong>zDesigner</strong> desde la pagina de Zebra.</li>
+              <li>Algunos modelos (ZD220, ZD230 basicos) NO tienen Bluetooth integrado — verifica el modelo exacto.</li>
+            </ul>
           </div>
+        </section>
+
+        {/* Paso 2B: Alternativa USB */}
+        <section className="ui-panel space-y-4">
+          <div className="ui-h3">Alternativa: USB directo (sin Bluetooth)</div>
+          <p className="ui-body-muted">
+            Si no necesitas Bluetooth, conecta la impresora por USB directamente. Es mas rapido y estable.
+          </p>
+          <ol className="list-decimal list-inside space-y-2 ui-body-muted">
+            <li>Conecta el cable USB entre la impresora y el PC.</li>
+            <li>Windows instalara el driver automaticamente (o instala el driver zDesigner manualmente).</li>
+            <li>Zebra Browser Print la detectara como dispositivo USB.</li>
+          </ol>
         </section>
 
         {/* Paso 3: Detectar y conectar */}
@@ -206,23 +243,23 @@ export default function PrintingSetupPage() {
           <div className="ui-caption font-semibold text-[var(--ui-text)]">Enlaces útiles</div>
           <ul className="mt-2 space-y-1 ui-caption text-[var(--ui-muted)]">
             <li>
-              <a
-                href="https://www.zebra.com/us/en/support-downloads/software/printer-software/zebra-browser-print.html"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-[var(--ui-text)]"
-              >
+              <a href="https://www.zebra.com/us/en/support-downloads/software/printer-software/zebra-browser-print.html" target="_blank" rel="noopener noreferrer" className="underline hover:text-[var(--ui-text)]">
                 Zebra Browser Print (descarga)
               </a>
             </li>
             <li>
-              <a
-                href="https://docs.zebra.com/us/en/software/zebra-print-ug/adding-a-printer/adding-a-printer-via-bluetooth.html"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-[var(--ui-text)]"
-              >
-                Guía Zebra: agregar impresora vía Bluetooth
+              <a href="https://www.zebra.com/us/en/support-downloads/printer-software/printer-setup-utilities.html" target="_blank" rel="noopener noreferrer" className="underline hover:text-[var(--ui-text)]">
+                Zebra Setup Utility (para configurar Bluetooth)
+              </a>
+            </li>
+            <li>
+              <a href="https://docs.zebra.com/us/en/software/zebra-print-ug/adding-a-printer/adding-a-printer-via-bluetooth.html" target="_blank" rel="noopener noreferrer" className="underline hover:text-[var(--ui-text)]">
+                Guia Zebra: agregar impresora via Bluetooth
+              </a>
+            </li>
+            <li>
+              <a href="https://supportcommunity.zebra.com/articles/en_US/Knowledge/Windows-10-Bluetooth-Setup-with-Zebra-Printers" target="_blank" rel="noopener noreferrer" className="underline hover:text-[var(--ui-text)]">
+                Guia: Bluetooth en Windows 10/11 con Zebra
               </a>
             </li>
           </ul>

@@ -4,6 +4,9 @@ import { notFound, redirect } from "next/navigation";
 import { ProductImageUpload } from "@/features/inventory/catalog/product-image-upload";
 import { ProductSiteSettingsEditor } from "@/features/inventory/catalog/product-site-settings-editor";
 import { ProductSuppliersEditor } from "@/features/inventory/catalog/product-suppliers-editor";
+import { RecipeIngredientsEditor } from "@/features/inventory/catalog/recipe-ingredients-editor";
+import { RecipeMetadataFields } from "@/features/inventory/catalog/recipe-metadata-fields";
+import { RecipeStepsEditor } from "@/features/inventory/catalog/recipe-steps-editor";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
@@ -187,6 +190,84 @@ async function updateProduct(formData: FormData) {
     }
   }
 
+  // Recipe card upsert
+  const ingredientRaw = formData.get("ingredient_lines");
+  const stepsRaw = formData.get("recipe_steps");
+  const hasRecipeData = typeof ingredientRaw === "string" && ingredientRaw;
+
+  if (hasRecipeData) {
+    const yieldQty = formData.get("yield_qty") ? Number(formData.get("yield_qty")) : 1;
+    const yieldUnit = asText(formData.get("yield_unit")) || "un";
+
+    const { data: existingCard } = await supabase
+      .from("recipe_cards")
+      .select("id")
+      .eq("product_id", productId)
+      .maybeSingle();
+
+    let recipeCardId: string;
+    if (existingCard) {
+      recipeCardId = existingCard.id;
+      await supabase.from("recipe_cards").update({
+        yield_qty: yieldQty,
+        yield_unit: yieldUnit,
+        portion_size: formData.get("portion_size") ? Number(formData.get("portion_size")) : null,
+        portion_unit: asText(formData.get("portion_unit")) || null,
+        prep_time_minutes: formData.get("prep_time_minutes") ? Number(formData.get("prep_time_minutes")) : null,
+        shelf_life_days: formData.get("shelf_life_days") ? Number(formData.get("shelf_life_days")) : null,
+        difficulty: asText(formData.get("difficulty")) || null,
+        recipe_description: asText(formData.get("recipe_description")) || null,
+      }).eq("id", recipeCardId);
+    } else {
+      const { data: newCard } = await supabase.from("recipe_cards").insert({
+        product_id: productId,
+        yield_qty: yieldQty,
+        yield_unit: yieldUnit,
+        portion_size: formData.get("portion_size") ? Number(formData.get("portion_size")) : null,
+        portion_unit: asText(formData.get("portion_unit")) || null,
+        prep_time_minutes: formData.get("prep_time_minutes") ? Number(formData.get("prep_time_minutes")) : null,
+        shelf_life_days: formData.get("shelf_life_days") ? Number(formData.get("shelf_life_days")) : null,
+        difficulty: asText(formData.get("difficulty")) || null,
+        recipe_description: asText(formData.get("recipe_description")) || null,
+        status: "draft",
+      }).select("id").single();
+      recipeCardId = newCard?.id ?? "";
+    }
+
+    // Replace BOM lines
+    try {
+      const ingredientLines = JSON.parse(ingredientRaw as string) as Array<Record<string, unknown>>;
+      await supabase.from("recipes").delete().eq("product_id", productId);
+      for (const line of ingredientLines) {
+        if ((line._delete as boolean) || !line.ingredient_product_id) continue;
+        await supabase.from("recipes").insert({
+          product_id: productId,
+          ingredient_product_id: line.ingredient_product_id as string,
+          quantity: (line.quantity as number) ?? 0,
+          is_active: true,
+        });
+      }
+    } catch { /* skip */ }
+
+    // Replace steps
+    if (recipeCardId && typeof stepsRaw === "string" && stepsRaw) {
+      try {
+        const stepLines = JSON.parse(stepsRaw) as Array<Record<string, unknown>>;
+        await supabase.from("recipe_steps").delete().eq("recipe_card_id", recipeCardId);
+        for (const step of stepLines) {
+          if ((step._delete as boolean) || !step.description) continue;
+          await supabase.from("recipe_steps").insert({
+            recipe_card_id: recipeCardId,
+            step_number: (step.step_number as number) ?? 1,
+            description: step.description as string,
+            tip: (step.tip as string) || null,
+            time_minutes: (step.time_minutes as number) ?? null,
+          });
+        }
+      } catch { /* skip */ }
+    }
+  }
+
   redirect(`/inventory/catalog/${productId}?ok=1`);
 }
 
@@ -262,6 +343,64 @@ export default async function ProductCatalogDetailPage({
 
   const { data: suppliersData } = await supabase.from("suppliers").select("id,name").eq("is_active", true).order("name");
   const suppliersList = (suppliersData ?? []) as { id: string; name: string | null }[];
+
+  // Recipe data (for preparacion and venta)
+  const productType = (product as ProductRow).product_type;
+  const hasRecipe = productType === "preparacion" || productType === "venta";
+
+  type RecipeCardRow = {
+    id: string;
+    yield_qty: number | null;
+    yield_unit: string | null;
+    portion_size: number | null;
+    portion_unit: string | null;
+    prep_time_minutes: number | null;
+    shelf_life_days: number | null;
+    difficulty: string | null;
+    recipe_description: string | null;
+  };
+  type RecipeBomRow = { id: string; ingredient_product_id: string; quantity: number };
+  type RecipeStepRow = { id: string; step_number: number; description: string; tip: string | null; time_minutes: number | null };
+  type IngredientProductRow = { id: string; name: string | null; sku: string | null; unit: string | null; cost: number | null };
+
+  let recipeCard: RecipeCardRow | null = null;
+  let recipeBomRows: RecipeBomRow[] = [];
+  let recipeStepRows: RecipeStepRow[] = [];
+  let ingredientProducts: IngredientProductRow[] = [];
+
+  if (hasRecipe) {
+    const { data: rc } = await supabase
+      .from("recipe_cards")
+      .select("id,yield_qty,yield_unit,portion_size,portion_unit,prep_time_minutes,shelf_life_days,difficulty,recipe_description")
+      .eq("product_id", id)
+      .maybeSingle();
+    recipeCard = rc as RecipeCardRow | null;
+
+    const { data: bom } = await supabase
+      .from("recipes")
+      .select("id,ingredient_product_id,quantity")
+      .eq("product_id", id)
+      .eq("is_active", true);
+    recipeBomRows = (bom ?? []) as RecipeBomRow[];
+
+    if (recipeCard) {
+      const { data: steps } = await supabase
+        .from("recipe_steps")
+        .select("id,step_number,description,tip,time_minutes")
+        .eq("recipe_card_id", recipeCard.id)
+        .order("step_number", { ascending: true });
+      recipeStepRows = (steps ?? []) as RecipeStepRow[];
+    }
+
+    const { data: ingProds } = await supabase
+      .from("products")
+      .select("id,name,sku,unit,cost")
+      .in("product_type", ["insumo", "preparacion"])
+      .eq("is_active", true)
+      .order("name", { ascending: true })
+      .limit(1000);
+    ingredientProducts = (ingProds ?? []) as IngredientProductRow[];
+  }
 
   const { data: employee } = await supabase.from("employees").select("role").eq("id", user.id).maybeSingle();
   const role = String(employee?.role ?? "").toLowerCase();
@@ -377,6 +516,72 @@ export default async function ProductCatalogDetailPage({
               />
             </div>
           </section>
+
+          {/* ——— Receta (solo preparacion y venta) ——— */}
+          {hasRecipe && (
+            <>
+              <section className="ui-panel space-y-6">
+                <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">R</span>
+                  <div>
+                    <h2 className="ui-h3">Receta: ingredientes</h2>
+                    <p className="text-sm text-[var(--ui-muted)]">
+                      Insumos y/o preparaciones que componen este producto, con cantidades.
+                    </p>
+                  </div>
+                </div>
+                <RecipeIngredientsEditor
+                  name="ingredient_lines"
+                  initialRows={recipeBomRows.map((r) => ({
+                    id: r.id,
+                    ingredient_product_id: r.ingredient_product_id,
+                    quantity: r.quantity,
+                  }))}
+                  products={ingredientProducts}
+                />
+              </section>
+
+              <section className="ui-panel space-y-6">
+                <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">F</span>
+                  <div>
+                    <h2 className="ui-h3">Ficha de receta</h2>
+                    <p className="text-sm text-[var(--ui-muted)]">Rendimiento, tiempos, dificultad.</p>
+                  </div>
+                </div>
+                <RecipeMetadataFields
+                  yieldQty={recipeCard?.yield_qty ?? undefined}
+                  yieldUnit={recipeCard?.yield_unit ?? undefined}
+                  portionSize={recipeCard?.portion_size ?? undefined}
+                  portionUnit={recipeCard?.portion_unit ?? undefined}
+                  prepTimeMinutes={recipeCard?.prep_time_minutes ?? undefined}
+                  shelfLifeDays={recipeCard?.shelf_life_days ?? undefined}
+                  difficulty={recipeCard?.difficulty ?? undefined}
+                  recipeDescription={recipeCard?.recipe_description ?? undefined}
+                />
+              </section>
+
+              <section className="ui-panel space-y-6">
+                <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
+                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">P</span>
+                  <div>
+                    <h2 className="ui-h3">Pasos de preparacion</h2>
+                    <p className="text-sm text-[var(--ui-muted)]">Instrucciones paso a paso.</p>
+                  </div>
+                </div>
+                <RecipeStepsEditor
+                  name="recipe_steps"
+                  initialRows={recipeStepRows.map((s) => ({
+                    id: s.id,
+                    step_number: s.step_number,
+                    description: s.description,
+                    tip: s.tip ?? "",
+                    time_minutes: s.time_minutes ?? undefined,
+                  }))}
+                />
+              </section>
+            </>
+          )}
 
           {/* ——— Bloque 2: Almacenamiento ——— */}
           <section className="ui-panel space-y-6">

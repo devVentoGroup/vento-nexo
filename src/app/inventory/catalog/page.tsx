@@ -202,7 +202,18 @@ export default async function InventoryCatalogPage({
         ))}
       </div>
 
-      <div className="mt-6 ui-panel">
+      <div className="mt-4 flex justify-end">
+        <Link
+          href={`/inventory/catalog/new?type=${
+            activeTab === "insumos" ? "insumo" : activeTab === "preparaciones" ? "preparacion" : activeTab === "equipos" ? "asset" : "venta"
+          }`}
+          className="ui-btn ui-btn--brand ui-btn--sm"
+        >
+          + Crear {activeTab === "insumos" ? "insumo" : activeTab === "preparaciones" ? "preparacion" : activeTab === "equipos" ? "equipo" : "producto"}
+        </Link>
+      </div>
+
+      <div className="mt-4 ui-panel">
         <div className="ui-h3">Filtros</div>
         <form method="get" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <input type="hidden" name="tab" value={activeTab} />

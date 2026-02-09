@@ -468,9 +468,14 @@ function PrintingJobsContent() {
             vista previa e imprime.
           </p>
         </div>
-        <Link href="/printing/setup" className="ui-btn ui-btn--ghost ui-btn--sm">
-          Configurar impresora
-        </Link>
+        <div className="flex gap-2">
+          <Link href="/printing/designer" className="ui-btn ui-btn--ghost ui-btn--sm">
+            Diseñador
+          </Link>
+          <Link href="/printing/setup" className="ui-btn ui-btn--ghost ui-btn--sm">
+            Configurar impresora
+          </Link>
+        </div>
       </div>
 
       {!browserPrintOk && (

@@ -159,6 +159,13 @@ const NAV_GROUPS: NavGroup[] = [
         icon: "printer",
       },
       {
+        href: "/printing/designer",
+        label: "Diseñador",
+        description: "Diseña etiquetas visual",
+        anyOf: ["inventory.production_batches", "inventory.locations"],
+        icon: "layers",
+      },
+      {
         href: "/printing/setup",
         label: "Config. impresora",
         description: "Instalación, Bluetooth, detección",
