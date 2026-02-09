@@ -8,10 +8,18 @@ export const dynamic = "force-dynamic";
 const APP_ID = "nexo";
 const PERMISSION = "inventory.stock";
 
+const TAB_OPTIONS = [
+  { value: "insumos", label: "Insumos" },
+  { value: "preparaciones", label: "Preparaciones" },
+  { value: "productos", label: "Productos" },
+  { value: "equipos", label: "Equipos y activos" },
+] as const;
+
+type TabValue = (typeof TAB_OPTIONS)[number]["value"];
+
 type SearchParams = {
   q?: string;
-  product_type?: string;
-  inventory_kind?: string;
+  tab?: string;
   category_id?: string;
   category_domain?: string;
 };
@@ -43,8 +51,8 @@ export default async function InventoryCatalogPage({
 }) {
   const sp = (await searchParams) ?? {};
   const searchQuery = String(sp.q ?? "").trim();
-  const productType = String(sp.product_type ?? "").trim();
-  const inventoryKind = String(sp.inventory_kind ?? "").trim();
+  const tabRaw = String(sp.tab ?? "insumos").trim().toLowerCase();
+  const activeTab: TabValue = TAB_OPTIONS.some((t) => t.value === tabRaw) ? (tabRaw as TabValue) : "insumos";
   const categoryId = String(sp.category_id ?? "").trim();
   const categoryDomain = String(sp.category_domain ?? "").trim();
 
@@ -104,22 +112,6 @@ export default async function InventoryCatalogPage({
     }))
     .sort((a, b) => a.path.localeCompare(b.path, "es"));
 
-  const productTypeOptions = [
-    { value: "", label: "Todos los tipos" },
-    { value: "insumo", label: "Insumo" },
-    { value: "preparacion", label: "Preparacion" },
-    { value: "venta", label: "Venta" },
-  ];
-
-  const inventoryKindOptions = [
-    { value: "", label: "Todos los tipos de inventario" },
-    { value: "ingredient", label: "Insumo" },
-    { value: "finished", label: "Producto terminado" },
-    { value: "resale", label: "Reventa" },
-    { value: "packaging", label: "Empaque" },
-    { value: "asset", label: "Activo (maquinaria/utensilios)" },
-  ];
-
   const categoryDomainOptions = [
     { value: "", label: "Todas las marcas" },
     { value: "SAU", label: "Saudo" },
@@ -142,30 +134,49 @@ export default async function InventoryCatalogPage({
     productsQuery = productsQuery.or(`name.ilike.${pattern},sku.ilike.${pattern}`);
   }
 
-  if (productType) {
-    productsQuery = productsQuery.eq("product_type", productType);
-  }
-
   if (categoryId) {
     productsQuery = productsQuery.eq("category_id", categoryId);
   } else if (categoryDomain && filteredCategoryIds.length > 0) {
     productsQuery = productsQuery.in("category_id", filteredCategoryIds);
   }
 
-  if (inventoryKind) {
-    productsQuery = productsQuery.eq("product_inventory_profiles.inventory_kind", inventoryKind);
+  if (activeTab === "equipos") {
+    productsQuery = productsQuery.eq("product_inventory_profiles.inventory_kind", "asset");
+  } else {
+    const typeMap: Record<Exclude<TabValue, "equipos">, string> = {
+      insumos: "insumo",
+      preparaciones: "preparacion",
+      productos: "venta",
+    };
+    productsQuery = productsQuery.eq("product_type", typeMap[activeTab]);
   }
 
   const { data: products } = await productsQuery;
-  const productRows = (products ?? []) as unknown as ProductRow[];
+  let productRows = (products ?? []) as unknown as ProductRow[];
+
+  if (activeTab !== "equipos") {
+    productRows = productRows.filter((p) => {
+      const kind = p.product_inventory_profiles?.inventory_kind;
+      return kind !== "asset";
+    });
+  }
+
+  const buildUrl = (newTab?: TabValue) => {
+    const params = new URLSearchParams();
+    if (searchQuery) params.set("q", searchQuery);
+    params.set("tab", newTab ?? activeTab);
+    if (categoryId) params.set("category_id", categoryId);
+    if (categoryDomain) params.set("category_domain", categoryDomain);
+    return `/inventory/catalog?${params.toString()}`;
+  };
 
   return (
     <div className="w-full">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="ui-h1">Catálogo de inventario</h1>
+          <h1 className="ui-h1">Catálogo</h1>
           <p className="mt-2 ui-body-muted">
-            Vista completa del maestro de productos. Abre cualquier item para ver toda su ficha.
+            Abre cualquier item para ver su ficha.
           </p>
         </div>
         <Link href="/inventory/stock" className="ui-btn ui-btn--ghost">
@@ -173,9 +184,26 @@ export default async function InventoryCatalogPage({
         </Link>
       </div>
 
+      <div className="mt-6 flex gap-1 overflow-x-auto rounded-xl border border-zinc-200/80 bg-zinc-50/50 p-1">
+        {TAB_OPTIONS.map((tab) => (
+          <Link
+            key={tab.value}
+            href={buildUrl(tab.value)}
+            className={`rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
+              activeTab === tab.value
+                ? "bg-white text-zinc-900 shadow-sm"
+                : "text-zinc-600 hover:bg-white/60 hover:text-zinc-900"
+            }`}
+          >
+            {tab.label}
+          </Link>
+        ))}
+      </div>
+
       <div className="mt-6 ui-panel">
         <div className="ui-h3">Filtros</div>
         <form method="get" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <input type="hidden" name="tab" value={activeTab} />
           <label className="flex flex-col gap-1 sm:col-span-2 lg:col-span-4">
             <span className="ui-label">Buscar SKU o nombre</span>
             <input
@@ -184,28 +212,6 @@ export default async function InventoryCatalogPage({
               placeholder="SKU o nombre de producto"
               className="ui-input"
             />
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Tipo inventario</span>
-            <select name="inventory_kind" defaultValue={inventoryKind} className="ui-input">
-              {inventoryKindOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Tipo de producto</span>
-            <select name="product_type" defaultValue={productType} className="ui-input">
-              {productTypeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
           </label>
 
           <label className="flex flex-col gap-1">
@@ -240,8 +246,8 @@ export default async function InventoryCatalogPage({
       <div className="mt-6 ui-panel">
         <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="ui-h3">Productos</div>
-            <div className="mt-1 ui-body-muted">Mostrando hasta 1200 productos.</div>
+            <div className="ui-h3">{TAB_OPTIONS.find((t) => t.value === activeTab)?.label ?? "Productos"}</div>
+            <div className="mt-1 ui-body-muted">Mostrando hasta 1200 items.</div>
           </div>
           <div className="ui-caption">Items: {productRows.length}</div>
         </div>

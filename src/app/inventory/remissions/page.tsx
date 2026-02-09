@@ -345,11 +345,12 @@ export default async function RemissionsPage({
   const { data: remissions } = await remissionsQuery;
   const remissionRows = (remissions ?? []) as RemissionRow[];
 
-  const { data: areas } = selectedFromSiteId
+  const areaFilterSiteId = canCreate ? activeSiteId : selectedFromSiteId;
+  const { data: areas } = areaFilterSiteId
     ? await supabase
         .from("areas")
         .select("id,name,kind,site_id")
-        .eq("site_id", selectedFromSiteId)
+        .eq("site_id", areaFilterSiteId)
         .order("name", { ascending: true })
     : { data: [] as AreaRow[] };
 
@@ -368,11 +369,14 @@ export default async function RemissionsPage({
     }, new Map<string, { value: string; label: string }>())
   ).map(([, value]) => value);
 
-  const { data: productSites } = selectedFromSiteId
+  // Insumos por satélite: filtrar por sede DESTINO (Saudo), no por sede origen (Centro).
+  // Cuando el satélite solicita, solo debe ver productos configurados para su sede.
+  const productFilterSiteId = canCreate ? activeSiteId : selectedFromSiteId;
+  const { data: productSites } = productFilterSiteId
     ? await supabase
         .from("product_site_settings")
         .select("product_id,is_active,default_area_kind")
-        .eq("site_id", selectedFromSiteId)
+        .eq("site_id", productFilterSiteId)
         .eq("is_active", true)
     : { data: [] as ProductSiteRow[] };
 
@@ -502,14 +506,7 @@ export default async function RemissionsPage({
 
           <div className="grid gap-3 md:grid-cols-2">
             <label className="flex flex-col gap-1">
-              <span className="ui-label">Sede origen (satélite)</span>
-              <div className="ui-input flex h-11 items-center">
-                <span className="ui-body">{activeSiteName}</span>
-              </div>
-            </label>
-
-            <label className="flex flex-col gap-1">
-              <span className="ui-label">Sede destino (Centro de producción / Bodega)</span>
+              <span className="ui-label">Sede origen (Centro / Bodega)</span>
               <RemissionsDestinationSelect
                 name="from_site_id"
                 activeSiteId={activeSiteId}
@@ -520,6 +517,12 @@ export default async function RemissionsPage({
                 }))}
                 placeholder="Selecciona centro de producción / bodega"
               />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Sede destino (tu sede satélite)</span>
+              <div className="ui-input flex h-11 items-center">
+                <span className="ui-body">{activeSiteName}</span>
+              </div>
             </label>
           </div>
 
@@ -543,8 +546,13 @@ export default async function RemissionsPage({
             </label>
           </div>
 
-          <div className="mt-4 text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
-            Items solicitados
+          <div className="mt-4">
+            <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
+              Items solicitados
+            </div>
+            <p className="mt-1 text-xs text-[var(--ui-muted)]">
+              Insumos destinados a {activeSiteName}. Configúralos en Catálogo → ficha del producto → Sedes.
+            </p>
           </div>
           <RemissionsItems products={productRows} areaOptions={areaOptions} />
           <button className="ui-btn ui-btn--brand">
