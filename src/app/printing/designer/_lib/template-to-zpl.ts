@@ -28,13 +28,17 @@ function elementToZpl(el: LabelElement, dpi: number): string {
       ].join("\n");
     }
     case "barcode_dm": {
-      // Module size: target ~8 for 15mm, scale down for smaller
-      const targetModules = 26; // DM has ~26 modules for typical data
-      const moduleDots = Math.max(2, Math.min(10, Math.round(h / targetModules)));
+      // Codificar solo el código para LOC (menos módulos = impresión más nítida)
+      let dmPayload = text;
+      if (dmPayload.startsWith("VENTO|LOC|")) {
+        dmPayload = dmPayload.replace(/^VENTO\|LOC\|/, "");
+      }
+      const targetModules = 20;
+      const moduleDots = Math.max(4, Math.min(10, Math.round(h / targetModules)));
       return [
         `^FO${x},${y}`,
         `^BXN,${moduleDots},200,0,0,6`,
-        `^FD${text}^FS`,
+        `^FD${dmPayload}^FS`,
       ].join("\n");
     }
     case "barcode_c128": {

@@ -1,7 +1,7 @@
 import Link from "next/link";
 
+import { CategoryCascadeFilter } from "@/components/inventory/CategoryCascadeFilter";
 import { requireAppAccess } from "@/lib/auth/guard";
-import { getCategoryDomainLabel } from "@/lib/constants";
 
 export const dynamic = "force-dynamic";
 
@@ -20,9 +20,44 @@ type TabValue = (typeof TAB_OPTIONS)[number]["value"];
 type SearchParams = {
   q?: string;
   tab?: string;
-  category_id?: string;
+  category_l1?: string;
+  category_l2?: string;
+  category_l3?: string;
   category_domain?: string;
 };
+
+function getDescendantIds(
+  categoryMap: Map<string, CategoryRow>,
+  rootId: string
+): Set<string> {
+  const result = new Set<string>([rootId]);
+  const queue = [rootId];
+  while (queue.length > 0) {
+    const current = queue.shift()!;
+    for (const [id, row] of categoryMap) {
+      if (row.parent_id === current) {
+        result.add(id);
+        queue.push(id);
+      }
+    }
+  }
+  return result;
+}
+
+function getAncestorIds(
+  categoryMap: Map<string, CategoryRow>,
+  categoryId: string
+): Set<string> {
+  const result = new Set<string>([categoryId]);
+  let current = categoryMap.get(categoryId);
+  let safety = 0;
+  while (current?.parent_id && safety < 10) {
+    result.add(current.parent_id);
+    current = categoryMap.get(current.parent_id);
+    safety += 1;
+  }
+  return result;
+}
 
 type CategoryRow = {
   id: string;
@@ -53,7 +88,9 @@ export default async function InventoryCatalogPage({
   const searchQuery = String(sp.q ?? "").trim();
   const tabRaw = String(sp.tab ?? "insumos").trim().toLowerCase();
   const activeTab: TabValue = TAB_OPTIONS.some((t) => t.value === tabRaw) ? (tabRaw as TabValue) : "insumos";
-  const categoryId = String(sp.category_id ?? "").trim();
+  const categoryL1 = String(sp.category_l1 ?? "").trim();
+  const categoryL2 = String(sp.category_l2 ?? "").trim();
+  const categoryL3 = String(sp.category_l3 ?? "").trim();
   const categoryDomain = String(sp.category_domain ?? "").trim();
 
   const { supabase } = await requireAppAccess({
@@ -83,7 +120,7 @@ export default async function InventoryCatalogPage({
     return parts.join(" / ");
   };
 
-  const categoryRows = (() => {
+  const categoryRowsByDomain = (() => {
     if (!categoryDomain) return allCategoryRows;
     const withDomain = allCategoryRows.filter((row) => row.domain === categoryDomain);
     const ancestorIds = new Set<string>();
@@ -99,18 +136,46 @@ export default async function InventoryCatalogPage({
     return allCategoryRows.filter((row) => row.domain === categoryDomain || ancestorIds.has(row.id));
   })();
 
-  const displayPath = (row: CategoryRow) => {
-    const path = categoryPath(row.id);
-    const label = row.domain ? getCategoryDomainLabel(row.domain) : "";
-    return label ? `${path} (${label})` : path;
-  };
+  let categoriesForTabQuery = supabase
+    .from("products")
+    .select("category_id,product_inventory_profiles(inventory_kind)")
+    .not("category_id", "is", null);
 
-  const orderedCategories = categoryRows
-    .map((row) => ({
-      id: row.id,
-      path: displayPath(row),
-    }))
-    .sort((a, b) => a.path.localeCompare(b.path, "es"));
+  if (activeTab === "equipos") {
+    categoriesForTabQuery = categoriesForTabQuery.eq(
+      "product_inventory_profiles.inventory_kind",
+      "asset"
+    );
+  } else {
+    const typeMap: Record<Exclude<TabValue, "equipos">, string> = {
+      insumos: "insumo",
+      preparaciones: "preparacion",
+      productos: "venta",
+    };
+    categoriesForTabQuery = categoriesForTabQuery.eq(
+      "product_type",
+      typeMap[activeTab]
+    );
+  }
+
+  const { data: productsForTab } = await categoriesForTabQuery;
+  const productsForTabRows = (productsForTab ?? []) as { category_id: string }[];
+
+  const categoryIdsWithProducts = new Set<string>();
+  for (const row of productsForTabRows) {
+    categoryIdsWithProducts.add(row.category_id);
+  }
+
+  const relevantCategoryIds = new Set<string>();
+  for (const id of categoryIdsWithProducts) {
+    for (const aid of getAncestorIds(categoryMap, id)) {
+      relevantCategoryIds.add(aid);
+    }
+  }
+
+  const categoryRows = categoryRowsByDomain.filter((row) =>
+    relevantCategoryIds.has(row.id)
+  );
 
   const categoryDomainOptions = [
     { value: "", label: "Todas las marcas" },
@@ -118,8 +183,15 @@ export default async function InventoryCatalogPage({
     { value: "VCF", label: "Vento Café" },
   ];
 
-  const filteredCategoryIds =
-    categoryDomain ? allCategoryRows.filter((r) => r.domain === categoryDomain).map((r) => r.id) : [];
+  const effectiveCategoryIds = (() => {
+    if (categoryL3) return [categoryL3];
+    if (categoryL2) return Array.from(getDescendantIds(categoryMap, categoryL2));
+    if (categoryL1) return Array.from(getDescendantIds(categoryMap, categoryL1));
+    if (categoryDomain) {
+      return allCategoryRows.filter((r) => r.domain === categoryDomain).map((r) => r.id);
+    }
+    return null;
+  })();
 
   let productsQuery = supabase
     .from("products")
@@ -134,10 +206,8 @@ export default async function InventoryCatalogPage({
     productsQuery = productsQuery.or(`name.ilike.${pattern},sku.ilike.${pattern}`);
   }
 
-  if (categoryId) {
-    productsQuery = productsQuery.eq("category_id", categoryId);
-  } else if (categoryDomain && filteredCategoryIds.length > 0) {
-    productsQuery = productsQuery.in("category_id", filteredCategoryIds);
+  if (effectiveCategoryIds && effectiveCategoryIds.length > 0) {
+    productsQuery = productsQuery.in("category_id", effectiveCategoryIds);
   }
 
   if (activeTab === "equipos") {
@@ -167,7 +237,9 @@ export default async function InventoryCatalogPage({
     const params = new URLSearchParams();
     if (searchQuery) params.set("q", searchQuery);
     params.set("tab", newTab ?? activeTab);
-    if (categoryId) params.set("category_id", categoryId);
+    if (categoryL1) params.set("category_l1", categoryL1);
+    if (categoryL2) params.set("category_l2", categoryL2);
+    if (categoryL3) params.set("category_l3", categoryL3);
     if (categoryDomain) params.set("category_domain", categoryDomain);
     return `/inventory/catalog?${params.toString()}`;
   };
@@ -238,17 +310,12 @@ export default async function InventoryCatalogPage({
             </select>
           </label>
 
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Categoria</span>
-            <select name="category_id" defaultValue={categoryId} className="ui-input">
-              <option value="">Todas</option>
-              {orderedCategories.map((row) => (
-                <option key={row.id} value={row.id}>
-                  {row.path}
-                </option>
-              ))}
-            </select>
-          </label>
+          <CategoryCascadeFilter
+            categories={categoryRows}
+            categoryL1={categoryL1}
+            categoryL2={categoryL2}
+            categoryL3={categoryL3}
+          />
 
           <div className="sm:col-span-2 lg:col-span-4">
             <button className="ui-btn ui-btn--brand">Aplicar filtros</button>

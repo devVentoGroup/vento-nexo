@@ -238,6 +238,25 @@ export default function PrintingSetupPage() {
           </Link>
         </div>
 
+        {/* Solución de problemas: DataMatrix borroso */}
+        <section className="ui-panel space-y-3">
+          <div className="ui-h3">DataMatrix borroso o no escaneable</div>
+          <p className="ui-body-muted">
+            Si el DataMatrix imprime como si la tinta se corriera y el QR sale bien, prueba:
+          </p>
+          <ul className="list-inside list-disc space-y-1 ui-body-muted">
+            <li>
+              <strong>Usa el preset LOC QR grande</strong> en lugar de DataMatrix – el QR imprime más limpio y abre el retiro igual.
+            </li>
+            <li>
+              <strong>Reduce la oscuridad</strong> en la impresora (Zebra Setup Utility → Print Darkness / ^MD) si el DataMatrix sangra.
+            </li>
+            <li>
+              <strong>Ajusta el módulo</strong> en Ajustes avanzados (DPI y Módulo DM) – prueba valores entre 6 y 10.
+            </li>
+          </ul>
+        </section>
+
         {/* Enlaces útiles */}
         <div className="ui-panel-soft p-4">
           <div className="ui-caption font-semibold text-[var(--ui-text)]">Enlaces útiles</div>

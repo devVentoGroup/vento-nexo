@@ -11,7 +11,7 @@ export const PRESETS: Preset[] = [
     columns: 1,
     defaultBarcodeKind: "datamatrix",
     defaultCode128HeightDots: 120,
-    defaultDmModuleDots: 12,
+    defaultDmModuleDots: 8,
     defaultType: "LOC",
   },
   {

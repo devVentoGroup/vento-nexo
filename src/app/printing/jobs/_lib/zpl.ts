@@ -53,9 +53,14 @@ export function buildDataMatrixField(opts: {
   y: number;
   moduleDots: number;
   data: string;
+  /** Si true, codifica solo el código (ej. LOC-CP-BOD-MAIN) para DataMatrix más simple y mejor impresión */
+  shortForLoc?: boolean;
 }): string {
-  const { x, y, moduleDots, data } = opts;
-  const payload = safeText(data);
+  const { x, y, moduleDots, data, shortForLoc } = opts;
+  let payload = safeText(data);
+  if (shortForLoc && payload.startsWith("VENTO|LOC|")) {
+    payload = payload.replace(/^VENTO\|LOC\|/, "");
+  }
   return [`^FO${x},${y}`, `^BXN,${moduleDots},200,0,0,6`, `^FD${payload}^FS`].join("\n");
 }
 
@@ -159,12 +164,13 @@ export function buildSingleLabelZpl(opts: {
       parts.push(buildTextBlock({ x: marginX, y: 48, h: 22, w: 22, maxWidthDots: maxTextWidth, lines: 2, align: "L", text: note }));
     }
 
-    // DataMatrix grande centrado verticalmente
-    const dmMod = Math.min(dmModuleDots, 14);
+    // DataMatrix: codificamos solo el código (LOC-xxx) para menos módulos = impresión más nítida
+    // Módulo 8-10 evita sangrado en térmicas; el escáner reconoce LOC-xxx directamente
+    const dmMod = Math.max(6, Math.min(10, dmModuleDots));
     const dmSize = dmMod * 26;
     const dmX = Math.max(0, Math.floor((widthDots - dmSize) / 2));
     const yBarcode = Math.round(heightDots * 0.28);
-    parts.push(buildDataMatrixField({ x: dmX, y: yBarcode, moduleDots: dmMod, data: ventoCode }));
+    parts.push(buildDataMatrixField({ x: dmX, y: yBarcode, moduleDots: dmMod, data: ventoCode, shortForLoc: true }));
 
     // Code at bottom, big and centered
     parts.push(buildTextBlock({ x: marginX, y: heightDots - 50, h: 32, w: 28, maxWidthDots: maxTextWidth, lines: 1, align: "C", text: code }));
