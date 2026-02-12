@@ -24,6 +24,7 @@ type SearchParams = {
   category_l2?: string;
   category_l3?: string;
   category_domain?: string;
+  ok?: string;
 };
 
 function getDescendantIds(
@@ -85,6 +86,7 @@ export default async function InventoryCatalogPage({
   searchParams?: Promise<SearchParams>;
 }) {
   const sp = (await searchParams) ?? {};
+  const okMsg = sp.ok ? "Cambios guardados." : "";
   const searchQuery = String(sp.q ?? "").trim();
   const tabRaw = String(sp.tab ?? "insumos").trim().toLowerCase();
   const activeTab: TabValue = TAB_OPTIONS.some((t) => t.value === tabRaw) ? (tabRaw as TabValue) : "insumos";
@@ -136,30 +138,35 @@ export default async function InventoryCatalogPage({
     return allCategoryRows.filter((row) => row.domain === categoryDomain || ancestorIds.has(row.id));
   })();
 
-  let categoriesForTabQuery = supabase
-    .from("products")
-    .select("category_id,product_inventory_profiles(inventory_kind)")
-    .not("category_id", "is", null);
+  let productsForTabRows: { category_id: string }[] = [];
 
   if (activeTab === "equipos") {
-    categoriesForTabQuery = categoriesForTabQuery.eq(
-      "product_inventory_profiles.inventory_kind",
-      "asset"
-    );
+    const { data: assetProfiles } = await supabase
+      .from("product_inventory_profiles")
+      .select("product_id")
+      .eq("inventory_kind", "asset");
+    const assetProductIds = (assetProfiles ?? []).map((p) => p.product_id).filter(Boolean);
+    if (assetProductIds.length > 0) {
+      const { data: assetProducts } = await supabase
+        .from("products")
+        .select("category_id")
+        .in("id", assetProductIds)
+        .not("category_id", "is", null);
+      productsForTabRows = (assetProducts ?? []) as { category_id: string }[];
+    }
   } else {
     const typeMap: Record<Exclude<TabValue, "equipos">, string> = {
       insumos: "insumo",
       preparaciones: "preparacion",
       productos: "venta",
     };
-    categoriesForTabQuery = categoriesForTabQuery.eq(
-      "product_type",
-      typeMap[activeTab]
-    );
+    const { data } = await supabase
+      .from("products")
+      .select("category_id")
+      .eq("product_type", typeMap[activeTab])
+      .not("category_id", "is", null);
+    productsForTabRows = (data ?? []) as { category_id: string }[];
   }
-
-  const { data: productsForTab } = await categoriesForTabQuery;
-  const productsForTabRows = (productsForTab ?? []) as { category_id: string }[];
 
   const categoryIdsWithProducts = new Set<string>();
   for (const row of productsForTabRows) {
@@ -244,6 +251,8 @@ export default async function InventoryCatalogPage({
     return `/inventory/catalog?${params.toString()}`;
   };
 
+  const catalogReturnUrl = buildUrl();
+
   return (
     <div className="w-full">
       <div className="flex items-start justify-between gap-4">
@@ -257,6 +266,8 @@ export default async function InventoryCatalogPage({
           Ver stock
         </Link>
       </div>
+
+      {okMsg ? <div className="mt-6 ui-alert ui-alert--success">{okMsg}</div> : null}
 
       <div className="mt-6 flex gap-1 overflow-x-auto ui-panel-soft p-1">
         {TAB_OPTIONS.map((tab) => (
@@ -300,7 +311,7 @@ export default async function InventoryCatalogPage({
           </label>
 
           <label className="flex flex-col gap-1">
-            <span className="ui-label">Marca / punto de venta</span>
+            <span className="ui-label">Marca / punto de venta (dominio de categoria)</span>
             <select name="category_domain" defaultValue={categoryDomain} className="ui-input">
               {categoryDomainOptions.map((opt) => (
                 <option key={opt.value} value={opt.value}>
@@ -308,6 +319,10 @@ export default async function InventoryCatalogPage({
                 </option>
               ))}
             </select>
+            <span className="ui-caption">
+              Filtra por dominio de categoria (ej. SAU o VCF). La pestana define si ves insumos, preparaciones,
+              productos o equipos.
+            </span>
           </label>
 
           <CategoryCascadeFilter
@@ -359,7 +374,7 @@ export default async function InventoryCatalogPage({
                     <td className="py-3 pr-4">{product.unit ?? "-"}</td>
                     <td className="py-3 pr-4">
                       <Link
-                        href={`/inventory/catalog/${product.id}`}
+                        href={`/inventory/catalog/${product.id}?from=${encodeURIComponent(catalogReturnUrl)}`}
                         className="font-semibold underline decoration-zinc-200 underline-offset-4"
                       >
                         Ver ficha

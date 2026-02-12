@@ -66,10 +66,38 @@ type SupplierRow = {
   is_primary: boolean;
 };
 
-type SearchParams = { ok?: string; error?: string };
+type SearchParams = { ok?: string; error?: string; from?: string };
 
 function asText(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+type CatalogTab = "insumos" | "preparaciones" | "productos" | "equipos";
+
+function sanitizeCatalogReturnPath(value: string): string {
+  return value.startsWith("/inventory/catalog") ? value : "";
+}
+
+function decodeCatalogReturnParam(value: string | undefined): string {
+  if (!value) return "";
+  try {
+    return sanitizeCatalogReturnPath(decodeURIComponent(value));
+  } catch {
+    return "";
+  }
+}
+
+function appendQueryParam(path: string, key: string, value: string): string {
+  return `${path}${path.includes("?") ? "&" : "?"}${key}=${encodeURIComponent(value)}`;
+}
+
+function resolveCatalogTab(productTypeRaw: string, inventoryKindRaw: string): CatalogTab {
+  const productType = productTypeRaw.trim().toLowerCase();
+  const inventoryKind = inventoryKindRaw.trim().toLowerCase();
+  if (inventoryKind === "asset") return "equipos";
+  if (productType === "preparacion") return "preparaciones";
+  if (productType === "venta") return "productos";
+  return "insumos";
 }
 
 async function updateProduct(formData: FormData) {
@@ -89,6 +117,14 @@ async function updateProduct(formData: FormData) {
   const productId = asText(formData.get("product_id"));
   if (!productId) redirect("/inventory/catalog?error=" + encodeURIComponent("Producto inválido."));
 
+  const returnTo = sanitizeCatalogReturnPath(asText(formData.get("return_to")));
+  const detailBase = returnTo
+    ? `/inventory/catalog/${productId}?from=${encodeURIComponent(returnTo)}`
+    : `/inventory/catalog/${productId}`;
+  const redirectWithError = (message: string) => {
+    redirect(appendQueryParam(detailBase, "error", message));
+  };
+
   const categoryId = asText(formData.get("category_id"));
   const payload: Record<string, unknown> = {
     name: asText(formData.get("name")),
@@ -105,7 +141,7 @@ async function updateProduct(formData: FormData) {
   if (categoryId) payload.category_id = categoryId;
 
   const { error: updateErr } = await supabase.from("products").update(payload).eq("id", productId);
-  if (updateErr) redirect(`/inventory/catalog/${productId}?error=${encodeURIComponent(updateErr.message)}`);
+  if (updateErr) redirectWithError(updateErr.message);
 
   const profilePayload = {
     product_id: productId,
@@ -118,7 +154,7 @@ async function updateProduct(formData: FormData) {
   const { error: profileErr } = await supabase
     .from("product_inventory_profiles")
     .upsert(profilePayload, { onConflict: "product_id" });
-  if (profileErr) redirect(`/inventory/catalog/${productId}?error=${encodeURIComponent(profileErr.message)}`);
+  if (profileErr) redirectWithError(profileErr.message);
 
   const supplierLinesRaw = formData.get("supplier_lines");
   if (typeof supplierLinesRaw === "string" && supplierLinesRaw) {
@@ -179,10 +215,10 @@ async function updateProduct(formData: FormData) {
         };
         if (line.id) {
           const { error: upErr } = await supabase.from("product_site_settings").update(row).eq("id", line.id);
-          if (upErr) redirect(`/inventory/catalog/${productId}?error=${encodeURIComponent(upErr.message)}`);
+          if (upErr) redirectWithError(upErr.message);
         } else {
           const { error: insErr } = await supabase.from("product_site_settings").insert(row);
-          if (insErr) redirect(`/inventory/catalog/${productId}?error=${encodeURIComponent(insErr.message)}`);
+          if (insErr) redirectWithError(insErr.message);
         }
       }
     } catch {
@@ -268,7 +304,14 @@ async function updateProduct(formData: FormData) {
     }
   }
 
-  redirect(`/inventory/catalog/${productId}?ok=1`);
+  if (returnTo) {
+    redirect(appendQueryParam(returnTo, "ok", "1"));
+  }
+  const fallbackTab = resolveCatalogTab(
+    asText(formData.get("product_type")),
+    asText(formData.get("inventory_kind"))
+  );
+  redirect(`/inventory/catalog?tab=${fallbackTab}&ok=1`);
 }
 
 export default async function ProductCatalogDetailPage({
@@ -282,6 +325,7 @@ export default async function ProductCatalogDetailPage({
   const sp = (await searchParams) ?? {};
   const okMsg = sp.ok ? "Cambios guardados." : "";
   const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
+  const from = decodeCatalogReturnParam(sp.from);
 
   const { supabase, user } = await requireAppAccess({
     appId: APP_ID,
@@ -431,7 +475,7 @@ export default async function ProductCatalogDetailPage({
             Catálogo del insumo o producto: compra, almacenamiento y distribución.
           </p>
         </div>
-        <Link href="/inventory/catalog" className="ui-btn ui-btn--ghost">
+        <Link href={from || "/inventory/catalog"} className="ui-btn ui-btn--ghost">
           Volver al catálogo
         </Link>
       </div>
@@ -442,6 +486,7 @@ export default async function ProductCatalogDetailPage({
       {canEdit ? (
         <form action={updateProduct} className="space-y-8">
           <input type="hidden" name="product_id" value={productRow.id} />
+          <input type="hidden" name="return_to" value={from} />
 
           {/* ——— Bloque 1: Compra y proveedor ——— */}
           <section className="ui-panel space-y-6">
