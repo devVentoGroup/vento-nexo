@@ -6,6 +6,7 @@ import { requireAppAccess } from "@/lib/auth/guard";
 import { checkPermissionWithRoleOverride } from "@/lib/auth/role-override";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
+import { ProductionBatchForm } from "@/components/vento/production-batch-form";
 
 export const dynamic = "force-dynamic";
 
@@ -333,67 +334,14 @@ export default async function ProductionBatchesPage({
         ) : null}
 
         {canRegister ? (
-          <form action={createBatch} className="mt-4 space-y-4">
-            <input type="hidden" name="site_id" value={activeSiteId} />
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Producto</span>
-                <select
-                  name="product_id"
-                  className="ui-input"
-                >
-                  <option value="">Selecciona producto</option>
-                  {productRows.map((product) => (
-                    <option key={product.id} value={product.id}>
-                      {product.name ?? product.id}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Cantidad producida</span>
-                <input
-                  name="produced_qty"
-                  placeholder="Cantidad"
-                  className="ui-input"
-                />
-              </label>
-            </div>
-
-            <div className="grid gap-3 md:grid-cols-2">
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Unidad</span>
-                <input
-                  name="produced_unit"
-                  placeholder="ej: kg, un"
-                  className="ui-input"
-                />
-              </label>
-
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Fecha expiracion</span>
-                <input
-                  type="date"
-                  name="expires_at"
-                  className="ui-input"
-                />
-              </label>
-            </div>
-
-            <label className="flex flex-col gap-1">
-              <span className="ui-label">Notas</span>
-              <input
-                name="notes"
-                placeholder="Notas de producción"
-                className="ui-input"
-              />
-            </label>
-
-            <button className="ui-btn ui-btn--brand">
-              Registrar lote
-            </button>
-          </form>
+          <div className="mt-4">
+            <ProductionBatchForm
+              siteId={activeSiteId}
+              siteName={activeSiteName}
+              products={productRows}
+              action={createBatch}
+            />
+          </div>
         ) : null}
       </div>
 
@@ -456,7 +404,5 @@ export default async function ProductionBatchesPage({
     </div>
   );
 }
-
-
 
 

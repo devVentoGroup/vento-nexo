@@ -20,6 +20,15 @@ export const CATEGORY_DOMAIN_DEFAULT_ORDER = [
   "VGR",
 ] as const;
 
+const CATEGORY_DOMAIN_MEANINGS: Record<string, string> = {
+  MENU: "Venta general en menu.",
+  INVENTORY: "Abastecimiento interno.",
+  SAU: "Solo para Saudo.",
+  VCF: "Solo para Vento Cafe.",
+  CP: "Solo para Centro de Produccion.",
+  VGR: "Solo para Vento Group.",
+};
+
 export function normalizeCategoryDomain(domain: string | null | undefined): string {
   return String(domain ?? "").trim().toUpperCase();
 }
@@ -36,6 +45,14 @@ export function getCategoryDomainBusinessLabel(domain: string | null | undefined
   if (normalized === "MENU") return "Venta";
   if (normalized === "INVENTORY") return "Abastecimiento";
   return getCategoryDomainLabel(normalized);
+}
+
+export function getCategoryDomainMeaning(domain: string | null | undefined): string {
+  const normalized = normalizeCategoryDomain(domain);
+  if (!normalized) {
+    return "Sin canal: usable en cualquier flujo de venta.";
+  }
+  return CATEGORY_DOMAIN_MEANINGS[normalized] ?? `Solo para ${getCategoryDomainBusinessLabel(normalized)}.`;
 }
 
 export function getCategoryDomainOptions(domains: string[]): Array<{ value: string; label: string }> {

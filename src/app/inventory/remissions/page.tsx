@@ -5,8 +5,7 @@ import { redirect } from "next/navigation";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { checkPermissionWithRoleOverride } from "@/lib/auth/role-override";
 import { createClient } from "@/lib/supabase/server";
-import { RemissionsDestinationSelect } from "@/components/vento/remissions-destination-select";
-import { RemissionsItems } from "@/components/vento/remissions-items";
+import { RemissionsCreateForm } from "@/components/vento/remissions-create-form";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { normalizeUnitCode, roundQuantity } from "@/lib/inventory/uom";
 
@@ -566,64 +565,20 @@ export default async function RemissionsPage({
         ) : null}
 
         {canCreate ? (
-        <form action={createRemission} className="mt-4 space-y-4">
-          {activeSiteId ? <input type="hidden" name="to_site_id" value={activeSiteId} /> : null}
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="flex flex-col gap-1">
-              <span className="ui-label">Sede origen (Centro / Bodega)</span>
-              <RemissionsDestinationSelect
-                name="from_site_id"
-                activeSiteId={activeSiteId}
-                value={selectedFromSiteId}
-                options={fulfillmentSiteRows.map((site) => ({
-                  id: site.id,
-                  name: site.name ?? site.id,
-                }))}
-                placeholder="Selecciona centro de producción / bodega"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="ui-label">Sede destino (tu sede satélite)</span>
-              <div className="ui-input flex h-11 items-center">
-                <span className="ui-body">{activeSiteName}</span>
-              </div>
-            </label>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <label className="flex flex-col gap-1">
-              <span className="ui-label">Fecha esperada</span>
-              <input
-                type="date"
-                name="expected_date"
-                className="ui-input"
-              />
-            </label>
-
-            <label className="flex flex-col gap-1">
-              <span className="ui-label">Notas</span>
-              <input
-                name="notes"
-                placeholder="Notas para bodega"
-                className="ui-input"
-              />
-            </label>
-          </div>
-
           <div className="mt-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
-              Items solicitados
-            </div>
-            <p className="mt-1 text-xs text-[var(--ui-muted)]">
-              Insumos destinados a {activeSiteName}. Configúralos en Catálogo → ficha del producto → Sedes.
-            </p>
+            <RemissionsCreateForm
+              action={createRemission}
+              toSiteId={activeSiteId}
+              toSiteName={activeSiteName}
+              fromSiteOptions={fulfillmentSiteRows.map((site) => ({
+                id: site.id,
+                name: site.name ?? site.id,
+              }))}
+              defaultFromSiteId={selectedFromSiteId}
+              products={productRows}
+              areaOptions={areaOptions}
+            />
           </div>
-          <RemissionsItems products={productRows} areaOptions={areaOptions} />
-          <button className="ui-btn ui-btn--brand">
-            Crear remisión
-          </button>
-        </form>
         ) : null}
       </div>
 
@@ -694,4 +649,3 @@ export default async function RemissionsPage({
     </div>
   );
 }
-

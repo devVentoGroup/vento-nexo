@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
+import { CategorySettingsForm } from "@/components/inventory/CategorySettingsForm";
 import { CategoryTreeFilter } from "@/components/inventory/CategoryTreeFilter";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
@@ -9,6 +10,13 @@ import {
   CATEGORY_DOMAIN_LABELS,
   getCategoryDomainOptions,
 } from "@/lib/constants";
+import {
+  clearDraft,
+  loadDraft,
+  saveDraft,
+  type SupabaseLike,
+} from "@/lib/inventory/forms/drafts";
+import type { FormDraftKey } from "@/lib/inventory/forms/types";
 import { createClient } from "@/lib/supabase/server";
 import {
   CATEGORY_KINDS,
@@ -36,6 +44,7 @@ type SearchParams = {
   ok?: string;
   error?: string;
   view?: string;
+  step?: string;
   q?: string;
   category_kind?: string;
   category_domain?: string;
@@ -79,6 +88,8 @@ const CATEGORY_KIND_LABELS: Record<CategoryKind, string> = {
   venta: "Venta",
   equipo: "Equipo",
 };
+
+const CATEGORY_SETTINGS_DRAFT_KEY: FormDraftKey = "inventory.category.settings";
 
 function asText(value: FormDataEntryValue | string | null | undefined): string {
   if (typeof value === "string") return value.trim();
@@ -200,7 +211,7 @@ async function requireCategoryManager() {
     );
   }
 
-  return supabase;
+  return { supabase, user };
 }
 
 function buildReturnUrl(
@@ -208,19 +219,20 @@ function buildReturnUrl(
   returnView: string,
   statusKey: "ok" | "error",
   message: string,
-  extra?: { editId?: string }
+  extra?: { editId?: string; stepId?: string }
 ): string {
   const params = new URLSearchParams(returnQs);
   params.set("view", normalizeView(returnView));
   params.set(statusKey, message);
   if (extra?.editId) params.set("edit_id", extra.editId);
+  if (extra?.stepId) params.set("step", extra.stepId);
   return buildPageUrl(params);
 }
 
 async function saveCategoryAction(formData: FormData) {
   "use server";
 
-  const supabase = await requireCategoryManager();
+  const { supabase, user } = await requireCategoryManager();
   const returnQs = asText(formData.get("_return_qs"));
   const returnView = asText(formData.get("_return_view")) || "ficha";
 
@@ -268,6 +280,13 @@ async function saveCategoryAction(formData: FormData) {
     if (error) {
       redirect(buildReturnUrl(returnQs, returnView, "error", error.message, { editId: id }));
     }
+    await clearDraft({
+      supabase: supabase as unknown as SupabaseLike,
+      userId: user.id,
+      formKey: CATEGORY_SETTINGS_DRAFT_KEY,
+      entityId: id,
+      siteId,
+    });
     revalidatePath("/inventory/settings/categories");
     revalidatePath("/inventory/catalog");
     revalidatePath("/inventory/stock");
@@ -285,6 +304,21 @@ async function saveCategoryAction(formData: FormData) {
     redirect(buildReturnUrl(returnQs, returnView, "error", error?.message ?? "No fue posible crear la categoria."));
   }
 
+  await clearDraft({
+    supabase: supabase as unknown as SupabaseLike,
+    userId: user.id,
+    formKey: CATEGORY_SETTINGS_DRAFT_KEY,
+    entityId: "",
+    siteId,
+  });
+  await clearDraft({
+    supabase: supabase as unknown as SupabaseLike,
+    userId: user.id,
+    formKey: CATEGORY_SETTINGS_DRAFT_KEY,
+    entityId: created.id,
+    siteId,
+  });
+
   revalidatePath("/inventory/settings/categories");
   revalidatePath("/inventory/catalog");
   revalidatePath("/inventory/stock");
@@ -292,10 +326,59 @@ async function saveCategoryAction(formData: FormData) {
   redirect(buildReturnUrl(returnQs, returnView, "ok", "category_created", { editId: created.id }));
 }
 
+async function saveCategoryDraftAction(formData: FormData) {
+  "use server";
+
+  const { supabase, user } = await requireCategoryManager();
+  const returnQs = asText(formData.get("_return_qs"));
+  const returnView = asText(formData.get("_return_view")) || "ficha";
+  const draftEntityId = asText(formData.get("_draft_entity_id")) || asText(formData.get("id"));
+  const siteId = asText(formData.get("site_id")) || null;
+  const stepId = asText(formData.get("_current_step")) || null;
+  const kinds = parseKindsFromForm(formData);
+
+  const payload = {
+    name: asText(formData.get("name")),
+    slug: asText(formData.get("slug")),
+    parent_id: asText(formData.get("parent_id")) || "",
+    site_id: siteId || "",
+    domain: normalizeCategoryDomain(asText(formData.get("domain")) || ""),
+    is_active: formData.get("is_active") === "on",
+    applies_to_kinds: kinds,
+    step: stepId ?? "",
+  };
+
+  const result = await saveDraft({
+    supabase: supabase as unknown as SupabaseLike,
+    userId: user.id,
+    formKey: CATEGORY_SETTINGS_DRAFT_KEY,
+    entityId: draftEntityId || "",
+    siteId,
+    stepId,
+    payload,
+  });
+
+  if (!result.ok) {
+    redirect(
+      buildReturnUrl(returnQs, returnView, "error", result.error, {
+        editId: draftEntityId || undefined,
+        stepId: stepId || undefined,
+      })
+    );
+  }
+
+  redirect(
+    buildReturnUrl(returnQs, returnView, "ok", "draft_saved", {
+      editId: draftEntityId || undefined,
+      stepId: stepId || undefined,
+    })
+  );
+}
+
 async function toggleCategoryActiveAction(formData: FormData) {
   "use server";
 
-  const supabase = await requireCategoryManager();
+  const { supabase } = await requireCategoryManager();
   const returnQs = asText(formData.get("_return_qs"));
   const returnView = asText(formData.get("_return_view")) || "explorar";
   const returnEditId = asText(formData.get("_return_edit_id"));
@@ -351,6 +434,8 @@ export default async function InventoryCategorySettingsPage({
         ? "Categoria actualizada."
         : sp.ok === "category_status_updated"
           ? "Estado de categoria actualizado."
+          : sp.ok === "draft_saved"
+            ? "Borrador guardado."
           : "Cambios guardados."
     : "";
   const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
@@ -514,6 +599,11 @@ export default async function InventoryCategorySettingsPage({
     const params = new URLSearchParams(filterParams);
     params.set("view", nextView);
     if (editId) params.set("edit_id", editId);
+    if (nextView === "ficha" && asText(sp.step ?? "")) {
+      params.set("step", asText(sp.step ?? ""));
+    } else {
+      params.delete("step");
+    }
     return buildPageUrl(params);
   };
 
@@ -521,18 +611,46 @@ export default async function InventoryCategorySettingsPage({
   const clearHref = buildPageUrl(new URLSearchParams([["view", "explorar"]]));
 
   const editId = asText(sp.edit_id ?? "");
+  const requestedStepId = asText(sp.step ?? "");
   const editingCategory = allCategoryRows.find((row) => row.id === editId) ?? null;
-  const editKindValues = editingCategory
+  const draftSiteId = (editingCategory?.site_id ?? categorySiteId) || null;
+  const categoryDraft = canManage
+    ? await loadDraft({
+        supabase: supabase as unknown as SupabaseLike,
+        userId: user.id,
+        formKey: CATEGORY_SETTINGS_DRAFT_KEY,
+        entityId: editId || "",
+        siteId: draftSiteId,
+      })
+    : null;
+  const draftPayload = (categoryDraft?.payload_json ?? {}) as Record<string, unknown>;
+  const draftName = asText(draftPayload.name as string | null | undefined);
+  const draftSlug = asText(draftPayload.slug as string | null | undefined);
+  const draftParentId = asText(draftPayload.parent_id as string | null | undefined);
+  const draftDomainValue = normalizeCategoryDomain(
+    asText(draftPayload.domain as string | null | undefined)
+  );
+  const draftKinds = parseCategoryKinds(
+    Array.isArray(draftPayload.applies_to_kinds)
+      ? draftPayload.applies_to_kinds.map((value) => String(value))
+      : []
+  );
+  const draftIsActiveRaw = draftPayload.is_active;
+  const draftIsActive =
+    typeof draftIsActiveRaw === "boolean" ? draftIsActiveRaw : editingCategory?.is_active !== false;
+  const draftStepId = asText(categoryDraft?.step_id ?? "");
+  const editKindValues: CategoryKind[] = editingCategory
     ? parseCategoryKinds(editingCategory.applies_to_kinds)
     : categoryKind
       ? [categoryKind]
       : ["insumo"];
-  const editKindSet = new Set(editKindValues);
+  const effectiveKinds = draftKinds.length > 0 ? draftKinds : editKindValues;
   const editDomainValue = editingCategory
     ? normalizeCategoryDomain(editingCategory.domain)
     : shouldShowCategoryDomain(categoryKind)
       ? categoryDomain
       : "";
+  const effectiveDomainValue = draftDomainValue || editDomainValue;
 
   const blockedParentIds = editingCategory
     ? collectDescendantIds(categoryMap, editingCategory.id)
@@ -542,6 +660,13 @@ export default async function InventoryCategorySettingsPage({
     .sort((a, b) =>
       getCategoryPath(a.id, categoryMap).localeCompare(getCategoryPath(b.id, categoryMap), "es")
     );
+  const parentFormOptions = parentOptions.map((row) => ({
+    id: row.id,
+    name: row.name,
+    path: getCategoryPath(row.id, categoryMap),
+    isRoot: !row.parent_id,
+  }));
+  const channelOptions = domainOptions.filter((option) => option.value);
 
   const currentCategoryUsage = editingCategory ? usageCountByCategory.get(editingCategory.id) ?? 0 : 0;
   const currentCategoryIssues = editingCategory
@@ -782,95 +907,23 @@ export default async function InventoryCategorySettingsPage({
 
             {canManage ? (
               <div className="space-y-3">
-                <form action={saveCategoryAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                  <input type="hidden" name="_return_qs" value={filterReturnQs} />
-                  <input type="hidden" name="_return_view" value="ficha" />
-                  {editingCategory ? <input type="hidden" name="id" value={editingCategory.id} /> : null}
-
-                <label className="flex flex-col gap-1 sm:col-span-2">
-                  <span className="ui-label">Nombre</span>
-                  <input
-                    name="name"
-                    defaultValue={editingCategory?.name ?? ""}
-                    className="ui-input"
-                    placeholder="Ej. Bebidas frias"
-                    required
-                  />
-                </label>
-
-                <label className="flex flex-col gap-1">
-                  <span className="ui-label">Slug</span>
-                  <input
-                    name="slug"
-                    defaultValue={editingCategory ? slugify(editingCategory.name) : ""}
-                    className="ui-input"
-                    placeholder="bebidas-frias"
-                  />
-                </label>
-
-                <CategoryTreeFilter
-                  categories={parentOptions}
-                  selectedCategoryId={editingCategory?.parent_id ?? ""}
-                  siteNamesById={siteNamesById}
-                  className="sm:col-span-2 lg:col-span-4"
-                  label="Categoria padre"
-                  name="parent_id"
-                  emptyOptionLabel="Sin padre (raiz)"
-                  maxVisibleOptions={8}
-                  showMeta={false}
+                <CategorySettingsForm
+                  action={saveCategoryAction}
+                  saveDraftAction={saveCategoryDraftAction}
+                  returnQs={filterReturnQs}
+                  editingCategoryId={editingCategory?.id ?? ""}
+                  defaultName={draftName || (editingCategory?.name ?? "")}
+                  defaultSlug={draftSlug || (editingCategory ? slugify(editingCategory.name) : "")}
+                  defaultParentId={draftParentId || (editingCategory?.parent_id ?? "")}
+                  defaultKinds={effectiveKinds}
+                  defaultSiteId={asText((draftPayload.site_id as string | null | undefined) ?? editingCategory?.site_id ?? "")}
+                  defaultDomain={effectiveDomainValue}
+                  defaultIsActive={draftIsActive}
+                  sites={sites}
+                  parentOptions={parentFormOptions}
+                  channelOptions={channelOptions}
+                  initialStepId={requestedStepId || draftStepId}
                 />
-
-                <div className="sm:col-span-2">
-                  <div className="ui-label mb-2">Uso</div>
-                  <div className="flex flex-wrap gap-3">
-                    {CATEGORY_KINDS.map((kind) => (
-                      <label key={kind} className="flex items-center gap-2 rounded-md border border-[var(--ui-border)] px-3 py-2">
-                        <input
-                          type="checkbox"
-                          name="applies_to_kinds"
-                          value={kind}
-                          defaultChecked={editKindSet.has(kind)}
-                        />
-                        <span className="text-sm">{CATEGORY_KIND_LABELS[kind]}</span>
-                      </label>
-                    ))}
-                  </div>
-                  <span className="ui-caption mt-2 block">Define donde puede usarse esta categoria.</span>
-                </div>
-
-                <label className="flex flex-col gap-1">
-                  <span className="ui-label">Alcance</span>
-                  <select name="site_id" defaultValue={editingCategory?.site_id ?? ""} className="ui-input">
-                    <option value="">Global</option>
-                    {sites.map((site) => (
-                      <option key={site.id} value={site.id}>{site.name ?? site.id}</option>
-                    ))}
-                  </select>
-                  <span className="ui-caption">Global se ve en todas las sedes.</span>
-                </label>
-
-                <label className="flex flex-col gap-1">
-                  <span className="ui-label">Canal</span>
-                  <select name="domain" defaultValue={editDomainValue} className="ui-input">
-                    <option value="">Sin canal</option>
-                    {domainOptions.map((option) => (
-                      <option key={option.value} value={option.value}>{option.label}</option>
-                    ))}
-                  </select>
-                  <span className="ui-caption">Canal solo aplica cuando el uso incluye Venta.</span>
-                </label>
-
-                <label className="flex items-end gap-2">
-                  <input type="checkbox" name="is_active" defaultChecked={editingCategory?.is_active !== false} />
-                  <span className="ui-label">Categoria activa</span>
-                </label>
-
-                  <div className="sm:col-span-2 lg:col-span-4 flex flex-wrap gap-2">
-                    <button type="submit" className="ui-btn ui-btn--brand">
-                      {editingCategory ? "Guardar cambios" : "Crear categoria"}
-                    </button>
-                  </div>
-                </form>
 
                 {editingCategory ? (
                   <form action={toggleCategoryActiveAction} className="flex">
