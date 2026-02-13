@@ -24,6 +24,9 @@ type CategoryTreeFilterProps = {
   emptyOptionLabel?: string;
   className?: string;
   maxVisibleOptions?: number;
+  showMeta?: boolean;
+  metaDomainLabelMode?: "domain" | "channel";
+  metaUseBusinessDomainLabel?: boolean;
 };
 
 function toSearchLabel(value: string): string {
@@ -40,6 +43,9 @@ export function CategoryTreeFilter({
   emptyOptionLabel = "Todas",
   className = "",
   maxVisibleOptions = 12,
+  showMeta = true,
+  metaDomainLabelMode = "domain",
+  metaUseBusinessDomainLabel = false,
 }: CategoryTreeFilterProps) {
   const [query, setQuery] = useState("");
   const [value, setValue] = useState(selectedCategoryId);
@@ -61,7 +67,12 @@ export function CategoryTreeFilter({
   const options = useMemo(() => {
     const rows: CategoryOption[] = categories.map((row) => {
       const path = getCategoryPath(row.id, categoryMap);
-      const meta = buildCategoryMetaLabel(row, siteNameMap);
+      const meta = showMeta
+        ? buildCategoryMetaLabel(row, siteNameMap, {
+            domainLabelMode: metaDomainLabelMode,
+            useBusinessDomainLabel: metaUseBusinessDomainLabel,
+          })
+        : "";
       const label = meta ? `${path} (${meta})` : path;
       return {
         id: row.id,
@@ -71,7 +82,14 @@ export function CategoryTreeFilter({
     });
 
     return rows.sort((a, b) => a.label.localeCompare(b.label, "es"));
-  }, [categories, categoryMap, siteNameMap]);
+  }, [
+    categories,
+    categoryMap,
+    siteNameMap,
+    showMeta,
+    metaDomainLabelMode,
+    metaUseBusinessDomainLabel,
+  ]);
 
   const normalizedQuery = toSearchLabel(query);
 

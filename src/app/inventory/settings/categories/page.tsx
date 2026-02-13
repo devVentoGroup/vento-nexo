@@ -5,7 +5,10 @@ import { revalidatePath } from "next/cache";
 import { CategoryTreeFilter } from "@/components/inventory/CategoryTreeFilter";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
-import { CATEGORY_DOMAIN_LABELS, getCategoryDomainLabel, getCategoryDomainOptions } from "@/lib/constants";
+import {
+  CATEGORY_DOMAIN_LABELS,
+  getCategoryDomainOptions,
+} from "@/lib/constants";
 import { createClient } from "@/lib/supabase/server";
 import {
   CATEGORY_KINDS,
@@ -13,6 +16,7 @@ import {
   categorySupportsKind,
   collectDescendantIds,
   filterCategoryRows,
+  getCategoryChannelLabel,
   getCategoryPath,
   normalizeCategoryDomain,
   normalizeCategoryKind,
@@ -26,10 +30,12 @@ import {
 export const dynamic = "force-dynamic";
 
 type CategoryRow = InventoryCategoryRow;
+type CategorySettingsView = "explorar" | "ficha" | "salud";
 
 type SearchParams = {
   ok?: string;
   error?: string;
+  view?: string;
   q?: string;
   category_kind?: string;
   category_domain?: string;
@@ -59,6 +65,21 @@ type SiteRow = {
   name: string | null;
 };
 
+type InconsistentAssignment = {
+  product_id: string;
+  product_name: string;
+  category_id: string;
+  reason: string;
+  category_path: string;
+};
+
+const CATEGORY_KIND_LABELS: Record<CategoryKind, string> = {
+  insumo: "Insumo",
+  preparacion: "Preparacion",
+  venta: "Venta",
+  equipo: "Equipo",
+};
+
 function asText(value: FormDataEntryValue | string | null | undefined): string {
   if (typeof value === "string") return value.trim();
   if (typeof value === "undefined" || value === null) return "";
@@ -79,6 +100,13 @@ function slugify(value: string): string {
 function buildPageUrl(params: URLSearchParams): string {
   const qs = params.toString();
   return qs ? `/inventory/settings/categories?${qs}` : "/inventory/settings/categories";
+}
+
+function normalizeView(value: string | null | undefined): CategorySettingsView {
+  const normalized = asText(value).toLowerCase();
+  if (normalized === "ficha") return "ficha";
+  if (normalized === "salud") return "salud";
+  return "explorar";
 }
 
 function toSearchValue(value: string): string {
@@ -151,7 +179,6 @@ async function loadProductAuditRows(
 
   return allRows;
 }
-
 async function requireCategoryManager() {
   const supabase = await createClient();
   const { data: authRes } = await supabase.auth.getUser();
@@ -176,18 +203,26 @@ async function requireCategoryManager() {
   return supabase;
 }
 
+function buildReturnUrl(
+  returnQs: string,
+  returnView: string,
+  statusKey: "ok" | "error",
+  message: string,
+  extra?: { editId?: string }
+): string {
+  const params = new URLSearchParams(returnQs);
+  params.set("view", normalizeView(returnView));
+  params.set(statusKey, message);
+  if (extra?.editId) params.set("edit_id", extra.editId);
+  return buildPageUrl(params);
+}
+
 async function saveCategoryAction(formData: FormData) {
   "use server";
 
   const supabase = await requireCategoryManager();
   const returnQs = asText(formData.get("_return_qs"));
-  const baseParams = new URLSearchParams(returnQs);
-
-  const toUrl = (statusKey: "ok" | "error", message: string) => {
-    const nextParams = new URLSearchParams(baseParams);
-    nextParams.set(statusKey, message);
-    return buildPageUrl(nextParams);
-  };
+  const returnView = asText(formData.get("_return_view")) || "ficha";
 
   const id = asText(formData.get("id"));
   const name = asText(formData.get("name"));
@@ -200,16 +235,19 @@ async function saveCategoryAction(formData: FormData) {
   const requestedDomain = normalizeCategoryDomain(asText(formData.get("domain")));
 
   if (!name) {
-    redirect(toUrl("error", "El nombre de categoria es obligatorio."));
+    redirect(buildReturnUrl(returnQs, returnView, "error", "El nombre de categoria es obligatorio.", { editId: id }));
   }
   if (!kinds.length) {
-    redirect(toUrl("error", "Selecciona al menos un tipo aplicable."));
+    redirect(buildReturnUrl(returnQs, returnView, "error", "Selecciona al menos un uso.", { editId: id }));
   }
   if (requestedDomain && !kinds.includes("venta")) {
     redirect(
-      toUrl(
+      buildReturnUrl(
+        returnQs,
+        returnView,
         "error",
-        "El dominio solo puede definirse para categorias aplicables a venta."
+        "Canal solo aplica cuando el uso incluye Venta.",
+        { editId: id }
       )
     );
   }
@@ -228,25 +266,30 @@ async function saveCategoryAction(formData: FormData) {
   if (id) {
     const { error } = await supabase.from("product_categories").update(payload).eq("id", id);
     if (error) {
-      redirect(toUrl("error", error.message));
+      redirect(buildReturnUrl(returnQs, returnView, "error", error.message, { editId: id }));
     }
     revalidatePath("/inventory/settings/categories");
     revalidatePath("/inventory/catalog");
     revalidatePath("/inventory/stock");
     revalidatePath("/inventory/catalog/new");
-    redirect(toUrl("ok", "category_updated"));
+    redirect(buildReturnUrl(returnQs, returnView, "ok", "category_updated", { editId: id }));
   }
 
-  const { error } = await supabase.from("product_categories").insert(payload);
-  if (error) {
-    redirect(toUrl("error", error.message));
+  const { data: created, error } = await supabase
+    .from("product_categories")
+    .insert(payload)
+    .select("id")
+    .single();
+
+  if (error || !created) {
+    redirect(buildReturnUrl(returnQs, returnView, "error", error?.message ?? "No fue posible crear la categoria."));
   }
 
   revalidatePath("/inventory/settings/categories");
   revalidatePath("/inventory/catalog");
   revalidatePath("/inventory/stock");
   revalidatePath("/inventory/catalog/new");
-  redirect(toUrl("ok", "category_created"));
+  redirect(buildReturnUrl(returnQs, returnView, "ok", "category_created", { editId: created.id }));
 }
 
 async function toggleCategoryActiveAction(formData: FormData) {
@@ -254,13 +297,17 @@ async function toggleCategoryActiveAction(formData: FormData) {
 
   const supabase = await requireCategoryManager();
   const returnQs = asText(formData.get("_return_qs"));
+  const returnView = asText(formData.get("_return_view")) || "explorar";
+  const returnEditId = asText(formData.get("_return_edit_id"));
   const categoryId = asText(formData.get("category_id"));
   const nextIsActive = asText(formData.get("next_is_active")) === "1";
-  const baseParams = new URLSearchParams(returnQs);
 
   if (!categoryId) {
-    baseParams.set("error", "Categoria invalida.");
-    redirect(buildPageUrl(baseParams));
+    redirect(
+      buildReturnUrl(returnQs, returnView, "error", "Categoria invalida.", {
+        editId: returnEditId,
+      })
+    );
   }
 
   const { error } = await supabase
@@ -272,15 +319,21 @@ async function toggleCategoryActiveAction(formData: FormData) {
     .eq("id", categoryId);
 
   if (error) {
-    baseParams.set("error", error.message);
-    redirect(buildPageUrl(baseParams));
+    redirect(
+      buildReturnUrl(returnQs, returnView, "error", error.message, {
+        editId: returnEditId,
+      })
+    );
   }
 
   revalidatePath("/inventory/settings/categories");
   revalidatePath("/inventory/catalog");
   revalidatePath("/inventory/stock");
-  baseParams.set("ok", "category_status_updated");
-  redirect(buildPageUrl(baseParams));
+  redirect(
+    buildReturnUrl(returnQs, returnView, "ok", "category_status_updated", {
+      editId: returnEditId,
+    })
+  );
 }
 
 export default async function InventoryCategorySettingsPage({
@@ -289,6 +342,8 @@ export default async function InventoryCategorySettingsPage({
   searchParams?: Promise<SearchParams>;
 }) {
   const sp = (await searchParams) ?? {};
+  const view = normalizeView(sp.view ?? "explorar");
+
   const okMsg = sp.ok
     ? sp.ok === "category_created"
       ? "Categoria creada."
@@ -319,7 +374,11 @@ export default async function InventoryCategorySettingsPage({
       .select("selected_site_id")
       .eq("employee_id", user.id)
       .maybeSingle(),
-    supabase.from("sites").select("id,name").eq("is_active", true).order("name", { ascending: true }),
+    supabase
+      .from("sites")
+      .select("id,name")
+      .eq("is_active", true)
+      .order("name", { ascending: true }),
     loadCategoryRows(supabase),
     loadProductAuditRows(supabase),
   ]);
@@ -363,8 +422,8 @@ export default async function InventoryCategorySettingsPage({
     visibleRows = visibleRows.filter((row) => {
       const path = getCategoryPath(row.id, categoryMap);
       const scopeLabel = row.site_id ? siteNamesById[row.site_id] ?? row.site_id : "global";
-      const domainLabel = getCategoryDomainLabel(row.domain);
-      const searchText = `${row.name} ${path} ${scopeLabel} ${domainLabel}`;
+      const channelLabel = getCategoryChannelLabel(row.domain);
+      const searchText = `${row.name} ${path} ${scopeLabel} ${channelLabel}`;
       return toSearchValue(searchText).includes(normalizedQuery);
     });
   }
@@ -374,25 +433,21 @@ export default async function InventoryCategorySettingsPage({
   );
 
   const usageCountByCategory = new Map<string, number>();
-  const inconsistentAssignments: Array<{
-    product_id: string;
-    product_name: string;
-    reason: string;
-    category_path: string;
-  }> = [];
+  const inconsistentAssignments: InconsistentAssignment[] = [];
 
   for (const product of productAuditRows) {
-    const categoryId = asText(product.category_id ?? "");
-    if (!categoryId) continue;
+    const linkedCategoryId = asText(product.category_id ?? "");
+    if (!linkedCategoryId) continue;
 
-    usageCountByCategory.set(categoryId, (usageCountByCategory.get(categoryId) ?? 0) + 1);
-    const category = categoryMap.get(categoryId);
+    usageCountByCategory.set(linkedCategoryId, (usageCountByCategory.get(linkedCategoryId) ?? 0) + 1);
+    const category = categoryMap.get(linkedCategoryId);
     if (!category) {
       inconsistentAssignments.push({
         product_id: product.id,
         product_name: product.name ?? product.id,
+        category_id: linkedCategoryId,
         reason: "Categoria inexistente",
-        category_path: categoryId,
+        category_path: linkedCategoryId,
       });
       continue;
     }
@@ -406,7 +461,8 @@ export default async function InventoryCategorySettingsPage({
       inconsistentAssignments.push({
         product_id: product.id,
         product_name: product.name ?? product.id,
-        reason: `Categoria no aplica a ${productKind}`,
+        category_id: category.id,
+        reason: `Categoria no aplica al uso ${CATEGORY_KIND_LABELS[productKind]}`,
         category_path: getCategoryPath(category.id, categoryMap),
       });
     }
@@ -415,7 +471,8 @@ export default async function InventoryCategorySettingsPage({
       inconsistentAssignments.push({
         product_id: product.id,
         product_name: product.name ?? product.id,
-        reason: "Categoria con dominio asignada a no-venta",
+        category_id: category.id,
+        reason: "Canal definido en categoria que no es de Venta",
         category_path: getCategoryPath(category.id, categoryMap),
       });
     }
@@ -430,9 +487,6 @@ export default async function InventoryCategorySettingsPage({
   );
   const orphanCategories = allCategoryRows.filter(
     (row) => Boolean(row.parent_id) && !categoryMap.has(String(row.parent_id))
-  );
-  const unresolvedKinds = allCategoryRows.filter(
-    (row) => parseCategoryKinds(row.applies_to_kinds).length === 0
   );
 
   const topImpactRows = [...allCategoryRows]
@@ -455,7 +509,16 @@ export default async function InventoryCategorySettingsPage({
   if (categorySiteId) filterParams.set("category_site_id", categorySiteId);
   if (categoryDomain) filterParams.set("category_domain", categoryDomain);
   if (selectedCategoryId) filterParams.set("category_id", selectedCategoryId);
-  const returnQs = filterParams.toString();
+
+  const buildViewHref = (nextView: CategorySettingsView, editId?: string) => {
+    const params = new URLSearchParams(filterParams);
+    params.set("view", nextView);
+    if (editId) params.set("edit_id", editId);
+    return buildPageUrl(params);
+  };
+
+  const filterReturnQs = filterParams.toString();
+  const clearHref = buildPageUrl(new URLSearchParams([["view", "explorar"]]));
 
   const editId = asText(sp.edit_id ?? "");
   const editingCategory = allCategoryRows.find((row) => row.id === editId) ?? null;
@@ -480,18 +543,19 @@ export default async function InventoryCategorySettingsPage({
       getCategoryPath(a.id, categoryMap).localeCompare(getCategoryPath(b.id, categoryMap), "es")
     );
 
-  const clearEditParams = new URLSearchParams(filterParams);
-  clearEditParams.delete("edit_id");
-  const clearEditHref = buildPageUrl(clearEditParams);
+  const currentCategoryUsage = editingCategory ? usageCountByCategory.get(editingCategory.id) ?? 0 : 0;
+  const currentCategoryIssues = editingCategory
+    ? inconsistentAssignments.filter((item) => item.category_id === editingCategory.id)
+    : [];
+  const noProductsLoaded = productAuditRows.length === 0;
 
   return (
     <div className="w-full space-y-6">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="ui-h1">Categorias de inventario</h1>
+          <h1 className="ui-h1">Categorias</h1>
           <p className="mt-2 ui-body-muted">
-            Gobernanza unica para categorias globales y por sede. Define aplicabilidad por tipo,
-            dominio de venta y jerarquia.
+            Flujo guiado para explorar, editar ficha y revisar salud del catalogo.
           </p>
         </div>
         <Link href="/inventory/catalog" className="ui-btn ui-btn--ghost">
@@ -499,370 +563,448 @@ export default async function InventoryCategorySettingsPage({
         </Link>
       </div>
 
+      <div className="ui-panel-soft p-2">
+        <div className="flex flex-wrap gap-2">
+          <Link
+            href={buildViewHref("explorar")}
+            className={view === "explorar" ? "ui-btn ui-btn--brand ui-btn--sm" : "ui-btn ui-btn--ghost ui-btn--sm"}
+          >
+            1. Explorar
+          </Link>
+          <Link
+            href={buildViewHref("ficha", editId || undefined)}
+            className={view === "ficha" ? "ui-btn ui-btn--brand ui-btn--sm" : "ui-btn ui-btn--ghost ui-btn--sm"}
+          >
+            2. Ficha
+          </Link>
+          <Link
+            href={buildViewHref("salud")}
+            className={view === "salud" ? "ui-btn ui-btn--brand ui-btn--sm" : "ui-btn ui-btn--ghost ui-btn--sm"}
+          >
+            3. Salud
+          </Link>
+        </div>
+      </div>
+
       {errorMsg ? <div className="ui-alert ui-alert--error">Error: {errorMsg}</div> : null}
       {okMsg ? <div className="ui-alert ui-alert--success">{okMsg}</div> : null}
 
-      <section className="ui-panel space-y-4">
-        <div className="ui-h3">Filtros estandar</div>
-        <form method="get" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="flex flex-col gap-1 sm:col-span-2 lg:col-span-4">
-            <span className="ui-label">Buscar categoria</span>
-            <input
-              name="q"
-              defaultValue={query}
-              className="ui-input"
-              placeholder="Nombre, ruta, dominio o sede"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Aplica a</span>
-            <select name="category_kind" defaultValue={categoryKind ?? ""} className="ui-input">
-              <option value="">Todas</option>
-              <option value="insumo">Insumo</option>
-              <option value="preparacion">Preparacion</option>
-              <option value="venta">Venta</option>
-              <option value="equipo">Equipo/activo</option>
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Alcance</span>
-            <select name="category_scope" defaultValue={categoryScope} className="ui-input">
-              <option value="all">Todas</option>
-              <option value="global">Globales</option>
-              <option value="site">Sede activa</option>
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Sede para categorias</span>
-            <select name="category_site_id" defaultValue={categorySiteId} className="ui-input">
-              <option value="">Seleccionar sede</option>
-              {sites.map((site) => (
-                <option key={site.id} value={site.id}>
-                  {site.name ?? site.id}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {shouldShowCategoryDomain(categoryKind) ? (
-            <label className="flex flex-col gap-1">
-              <span className="ui-label">Dominio</span>
-              <select name="category_domain" defaultValue={categoryDomain} className="ui-input">
-                <option value="">Todos</option>
-                {domainOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : (
-            <input type="hidden" name="category_domain" value="" />
-          )}
-
-          <CategoryTreeFilter
-            categories={baseFilteredRows}
-            selectedCategoryId={selectedCategoryId}
-            siteNamesById={siteNamesById}
-            className="sm:col-span-2 lg:col-span-4"
-            label="Arbol de categorias"
-            emptyOptionLabel="Todas"
-            maxVisibleOptions={8}
-          />
-
-          <div className="sm:col-span-2 lg:col-span-4 flex gap-2">
-            <button type="submit" className="ui-btn ui-btn--brand">
-              Aplicar filtros
-            </button>
-            <Link href="/inventory/settings/categories" className="ui-btn ui-btn--ghost">
-              Limpiar
-            </Link>
-          </div>
-        </form>
-      </section>
-
-      <section className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <div className="ui-panel-soft p-4">
-          <div className="ui-caption">Productos sin categoria</div>
-          <div className="mt-1 text-2xl font-semibold">{uncategorizedProductsCount}</div>
-        </div>
-        <div className="ui-panel-soft p-4">
-          <div className="ui-caption">Categorias sin uso</div>
-          <div className="mt-1 text-2xl font-semibold">{categoriesWithoutUsage.length}</div>
-        </div>
-        <div className="ui-panel-soft p-4">
-          <div className="ui-caption">Jerarquia huerfana</div>
-          <div className="mt-1 text-2xl font-semibold">{orphanCategories.length}</div>
-        </div>
-        <div className="ui-panel-soft p-4">
-          <div className="ui-caption">Inconsistencias tipo/dominio</div>
-          <div className="mt-1 text-2xl font-semibold">{inconsistentAssignments.length}</div>
-        </div>
-      </section>
-
-      <section className="ui-panel">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="ui-h3">Arbol de categorias</div>
-            <div className="mt-1 ui-body-muted">
-              {visibleRows.length} categoria(s) visibles con los filtros actuales.
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-4 overflow-x-auto">
-          <table className="ui-table min-w-full text-sm">
-            <thead className="text-left text-[var(--ui-muted)]">
-              <tr>
-                <th className="py-2 pr-4">Ruta</th>
-                <th className="py-2 pr-4">Aplica a</th>
-                <th className="py-2 pr-4">Dominio</th>
-                <th className="py-2 pr-4">Alcance</th>
-                <th className="py-2 pr-4">Productos</th>
-                <th className="py-2 pr-4">Estado</th>
-                <th className="py-2 pr-4">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleRows.map((row) => {
-                const kinds = parseCategoryKinds(row.applies_to_kinds);
-                const params = new URLSearchParams(filterParams);
-                params.set("edit_id", row.id);
-                const editHref = buildPageUrl(params);
-                const usageCount = usageCountByCategory.get(row.id) ?? 0;
-                return (
-                  <tr key={row.id} className="border-t border-zinc-200/60">
-                    <td className="py-3 pr-4">{getCategoryPath(row.id, categoryMap)}</td>
-                    <td className="py-3 pr-4">{kinds.length ? kinds.join(", ") : "Sin definir"}</td>
-                    <td className="py-3 pr-4">{getCategoryDomainLabel(row.domain) || "-"}</td>
-                    <td className="py-3 pr-4">
-                      {row.site_id ? `Sede: ${siteNamesById[row.site_id] ?? row.site_id}` : "Global"}
-                    </td>
-                    <td className="py-3 pr-4 font-mono">{usageCount}</td>
-                    <td className="py-3 pr-4">{row.is_active === false ? "Inactiva" : "Activa"}</td>
-                    <td className="py-3 pr-4">
-                      <div className="flex gap-2">
-                        <Link href={editHref} className="ui-btn ui-btn--ghost ui-btn--sm">
-                          Editar
-                        </Link>
-                        {canManage ? (
-                          <form action={toggleCategoryActiveAction}>
-                            <input type="hidden" name="_return_qs" value={returnQs} />
-                            <input type="hidden" name="category_id" value={row.id} />
-                            <input
-                              type="hidden"
-                              name="next_is_active"
-                              value={row.is_active === false ? "1" : "0"}
-                            />
-                            <button type="submit" className="ui-btn ui-btn--ghost ui-btn--sm">
-                              {row.is_active === false ? "Activar" : "Desactivar"}
-                            </button>
-                          </form>
-                        ) : null}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {!visibleRows.length ? (
-                <tr>
-                  <td className="py-4 text-[var(--ui-muted)]" colSpan={7}>
-                    No hay categorias para mostrar.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <section className="grid gap-4 lg:grid-cols-2">
-        <div className="ui-panel">
-          <div className="ui-h3">Impacto por categoria</div>
-          <div className="mt-4 overflow-x-auto">
-            <table className="ui-table min-w-full text-sm">
-              <thead className="text-left text-[var(--ui-muted)]">
-                <tr>
-                  <th className="py-2 pr-4">Categoria</th>
-                  <th className="py-2 pr-4">Productos</th>
-                </tr>
-              </thead>
-              <tbody>
-                {topImpactRows.map(({ row, count }) => (
-                  <tr key={row.id} className="border-t border-zinc-200/60">
-                    <td className="py-3 pr-4">{getCategoryPath(row.id, categoryMap)}</td>
-                    <td className="py-3 pr-4 font-mono">{count}</td>
-                  </tr>
-                ))}
-                {!topImpactRows.length ? (
-                  <tr>
-                    <td className="py-4 text-[var(--ui-muted)]" colSpan={2}>
-                      No hay datos de impacto.
-                    </td>
-                  </tr>
-                ) : null}
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <div className="ui-panel">
-          <div className="ui-h3">Panel de salud</div>
-          <ul className="mt-4 space-y-2 text-sm">
-            <li>
-              <span className="font-medium">Categorias sin uso:</span> {categoriesWithoutUsage.length}
-            </li>
-            <li>
-              <span className="font-medium">Categorias con tipo sin definir:</span> {unresolvedKinds.length}
-            </li>
-            <li>
-              <span className="font-medium">Categorias huerfanas en arbol:</span> {orphanCategories.length}
-            </li>
-            <li>
-              <span className="font-medium">Productos sin categoria:</span> {uncategorizedProductsCount}
-            </li>
-            <li>
-              <span className="font-medium">Asignaciones inconsistentes:</span>{" "}
-              {inconsistentAssignments.length}
-            </li>
-          </ul>
-          {inconsistentAssignments.length > 0 ? (
-            <div className="mt-4 max-h-56 overflow-auto rounded-lg border border-[var(--ui-border)] p-3 text-sm">
-              {inconsistentAssignments.slice(0, 20).map((item) => (
-                <div key={`${item.product_id}-${item.reason}`} className="py-1">
-                  <span className="font-medium">{item.product_name}</span>: {item.reason} (
-                  {item.category_path})
-                </div>
-              ))}
-              {inconsistentAssignments.length > 20 ? (
-                <div className="pt-2 text-[var(--ui-muted)]">
-                  +{inconsistentAssignments.length - 20} inconsistencia(s) adicional(es)
-                </div>
-              ) : null}
-            </div>
-          ) : null}
-        </div>
-      </section>
-
-      {!canManage ? (
-        <div className="ui-alert ui-alert--warn">
-          Solo propietarios y gerentes generales pueden crear o editar categorias.
-        </div>
-      ) : (
-        <section className="ui-panel space-y-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="ui-h3">
-              {editingCategory ? "Editar categoria" : "Crear categoria"}
-            </div>
-            {editingCategory ? (
-              <Link href={clearEditHref} className="ui-btn ui-btn--ghost ui-btn--sm">
-                Limpiar edicion
+      {view === "explorar" ? (
+        <>
+          <section className="ui-panel space-y-4">
+            <div className="ui-h3">Que quieres hacer?</div>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Link href={buildViewHref("ficha")} className="ui-panel-soft p-4 hover:bg-[var(--ui-surface)] transition-colors">
+                <div className="font-semibold">Crear categoria</div>
+                <div className="ui-caption mt-1">Abre una ficha vacia para crear.</div>
               </Link>
-            ) : null}
-          </div>
+              <div className="ui-panel-soft p-4">
+                <div className="font-semibold">Editar categoria</div>
+                <div className="ui-caption mt-1">Usa la tabla para abrir la ficha de una categoria existente.</div>
+              </div>
+              <Link href={buildViewHref("salud")} className="ui-panel-soft p-4 hover:bg-[var(--ui-surface)] transition-colors">
+                <div className="font-semibold">Ver salud</div>
+                <div className="ui-caption mt-1">Revisa calidad y consistencia del catalogo.</div>
+              </Link>
+            </div>
+          </section>
 
-          <form action={saveCategoryAction} className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <input type="hidden" name="_return_qs" value={returnQs} />
-            {editingCategory ? <input type="hidden" name="id" value={editingCategory.id} /> : null}
+          <section className="ui-panel space-y-4">
+            <div className="ui-h3">Filtros</div>
+            <form method="get" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <input type="hidden" name="view" value="explorar" />
 
-            <label className="flex flex-col gap-1 sm:col-span-2">
-              <span className="ui-label">Nombre</span>
-              <input
-                name="name"
-                defaultValue={editingCategory?.name ?? ""}
-                className="ui-input"
-                placeholder="Ej. Bebidas frias"
-                required
+              <label className="flex flex-col gap-1 sm:col-span-2 lg:col-span-4">
+                <span className="ui-label">Buscar categoria</span>
+                <input
+                  name="q"
+                  defaultValue={query}
+                  className="ui-input"
+                  placeholder="Nombre o ruta"
+                />
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="ui-label">Uso</span>
+                <select name="category_kind" defaultValue={categoryKind ?? ""} className="ui-input">
+                  <option value="">Todos</option>
+                  {CATEGORY_KINDS.map((kind) => (
+                    <option key={kind} value={kind}>{CATEGORY_KIND_LABELS[kind]}</option>
+                  ))}
+                </select>
+                <span className="ui-caption">Filtra por donde se usa la categoria.</span>
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="ui-label">Alcance</span>
+                <select name="category_scope" defaultValue={categoryScope} className="ui-input">
+                  <option value="all">Todas</option>
+                  <option value="global">Globales</option>
+                  <option value="site">Sede activa</option>
+                </select>
+                <span className="ui-caption">Global se comparte entre sedes.</span>
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="ui-label">Sede</span>
+                <select name="category_site_id" defaultValue={categorySiteId} className="ui-input">
+                  <option value="">Seleccionar sede</option>
+                  {sites.map((site) => (
+                    <option key={site.id} value={site.id}>{site.name ?? site.id}</option>
+                  ))}
+                </select>
+              </label>
+
+              {shouldShowCategoryDomain(categoryKind) ? (
+                <label className="flex flex-col gap-1">
+                  <span className="ui-label">Canal</span>
+                  <select name="category_domain" defaultValue={categoryDomain} className="ui-input">
+                    <option value="">Todos</option>
+                    {domainOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <span className="ui-caption">Canal solo aplica para uso Venta.</span>
+                </label>
+              ) : (
+                <input type="hidden" name="category_domain" value="" />
+              )}
+
+              <CategoryTreeFilter
+                categories={baseFilteredRows}
+                selectedCategoryId={selectedCategoryId}
+                siteNamesById={siteNamesById}
+                className="sm:col-span-2 lg:col-span-4"
+                label="Categorias"
+                emptyOptionLabel="Todas"
+                maxVisibleOptions={8}
+                showMeta={false}
+                searchPlaceholder="Busca categoria por nombre o ruta"
               />
-            </label>
 
-            <label className="flex flex-col gap-1">
-              <span className="ui-label">Slug</span>
-              <input
-                name="slug"
-                defaultValue={editingCategory ? slugify(editingCategory.name) : ""}
-                className="ui-input"
-                placeholder="bebidas-frias"
-              />
-            </label>
+              <div className="sm:col-span-2 lg:col-span-4 flex gap-2">
+                <button type="submit" className="ui-btn ui-btn--brand">Aplicar</button>
+                <Link href={clearHref} className="ui-btn ui-btn--ghost">Limpiar</Link>
+              </div>
+            </form>
+          </section>
 
-            <label className="flex flex-col gap-1">
-              <span className="ui-label">Alcance</span>
-              <select
-                name="site_id"
-                defaultValue={editingCategory?.site_id ?? ""}
-                className="ui-input"
-              >
-                <option value="">Global</option>
-                {sites.map((site) => (
-                  <option key={site.id} value={site.id}>
-                    {site.name ?? site.id}
-                  </option>
-                ))}
-              </select>
-            </label>
+          <section className="ui-panel">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <div className="ui-h3">Categorias</div>
+                <div className="ui-body-muted mt-1">{visibleRows.length} categoria(s) visibles.</div>
+              </div>
+            </div>
+            <div className="mt-4 overflow-x-auto">
+              <table className="ui-table min-w-full text-sm">
+                <thead className="text-left text-[var(--ui-muted)]">
+                  <tr>
+                    <th className="py-2 pr-4">Categoria</th>
+                    <th className="py-2 pr-4">Uso</th>
+                    <th className="py-2 pr-4">Alcance</th>
+                    <th className="py-2 pr-4">Canal</th>
+                    <th className="py-2 pr-4">Estado</th>
+                    <th className="py-2 pr-4">Accion</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visibleRows.map((row) => {
+                    const kinds = parseCategoryKinds(row.applies_to_kinds);
+                    return (
+                      <tr key={row.id} className="border-t border-zinc-200/60">
+                        <td className="py-3 pr-4">{getCategoryPath(row.id, categoryMap)}</td>
+                        <td className="py-3 pr-4">{kinds.map((k) => CATEGORY_KIND_LABELS[k]).join(", ") || "Sin definir"}</td>
+                        <td className="py-3 pr-4">{row.site_id ? `Sede: ${siteNamesById[row.site_id] ?? row.site_id}` : "Global"}</td>
+                        <td className="py-3 pr-4">{getCategoryChannelLabel(row.domain) || "-"}</td>
+                        <td className="py-3 pr-4">{row.is_active === false ? "Inactiva" : "Activa"}</td>
+                        <td className="py-3 pr-4">
+                          <Link href={buildViewHref("ficha", row.id)} className="ui-btn ui-btn--ghost ui-btn--sm">
+                            Abrir ficha
+                          </Link>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                  {!visibleRows.length ? (
+                    <tr>
+                      <td className="py-4 text-[var(--ui-muted)]" colSpan={6}>
+                        No hay categorias para este filtro.
+                      </td>
+                    </tr>
+                  ) : null}
+                </tbody>
+              </table>
+            </div>
+          </section>
+        </>
+      ) : null}
 
-            <CategoryTreeFilter
-              categories={parentOptions}
-              selectedCategoryId={editingCategory?.parent_id ?? ""}
-              siteNamesById={siteNamesById}
-              className="sm:col-span-2 lg:col-span-4"
-              label="Categoria padre"
-              name="parent_id"
-              emptyOptionLabel="Sin padre (raiz)"
-              maxVisibleOptions={8}
-            />
-
-            <label className="flex flex-col gap-1 sm:col-span-2">
-              <span className="ui-label">Dominio de venta</span>
-              <select name="domain" defaultValue={editDomainValue} className="ui-input">
-                <option value="">Sin dominio</option>
-                {domainOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <span className="ui-caption">Solo aplica cuando la categoria incluye tipo venta.</span>
-            </label>
-
-            <div className="sm:col-span-2">
-              <div className="ui-label mb-2">Aplica a</div>
-              <div className="flex flex-wrap gap-3">
-                {CATEGORY_KINDS.map((kind) => (
-                  <label key={kind} className="flex items-center gap-2 rounded-md border border-[var(--ui-border)] px-3 py-2">
-                    <input
-                      type="checkbox"
-                      name="applies_to_kinds"
-                      value={kind}
-                      defaultChecked={editKindSet.has(kind)}
-                    />
-                    <span className="text-sm">{kind}</span>
-                  </label>
-                ))}
+      {view === "ficha" ? (
+        <>
+          <section className="ui-panel space-y-4">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <div className="ui-caption">Ficha de categoria</div>
+                <div className="ui-h3 mt-1">{editingCategory ? editingCategory.name : "Nueva categoria"}</div>
+                <div className="ui-body-muted mt-1">
+                  {editingCategory ? getCategoryPath(editingCategory.id, categoryMap) : "Completa los campos para crear una categoria."}
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Link href={buildViewHref("explorar")} className="ui-btn ui-btn--ghost ui-btn--sm">Volver a explorar</Link>
+                <Link href={buildViewHref("salud")} className="ui-btn ui-btn--ghost ui-btn--sm">Ver salud</Link>
               </div>
             </div>
 
-            <label className="flex items-end gap-2">
-              <input
-                type="checkbox"
-                name="is_active"
-                defaultChecked={editingCategory?.is_active !== false}
-              />
-              <span className="ui-label">Categoria activa</span>
-            </label>
+            {editingCategory ? (
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="ui-panel-soft p-3">
+                  <div className="ui-caption">Estado</div>
+                  <div className="font-semibold mt-1">{editingCategory.is_active === false ? "Inactiva" : "Activa"}</div>
+                </div>
+                <div className="ui-panel-soft p-3">
+                  <div className="ui-caption">Productos vinculados</div>
+                  <div className="font-semibold mt-1">{currentCategoryUsage}</div>
+                </div>
+                <div className="ui-panel-soft p-3">
+                  <div className="ui-caption">Advertencias</div>
+                  <div className="font-semibold mt-1">{currentCategoryIssues.length}</div>
+                </div>
+              </div>
+            ) : null}
 
-            <div className="flex items-end">
-              <button type="submit" className="ui-btn ui-btn--brand">
-                {editingCategory ? "Guardar cambios" : "Crear categoria"}
-              </button>
+            {!canManage ? (
+              <div className="ui-alert ui-alert--warn">
+                Solo propietarios y gerentes generales pueden editar categorias.
+              </div>
+            ) : null}
+
+            {canManage ? (
+              <div className="space-y-3">
+                <form action={saveCategoryAction} className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                  <input type="hidden" name="_return_qs" value={filterReturnQs} />
+                  <input type="hidden" name="_return_view" value="ficha" />
+                  {editingCategory ? <input type="hidden" name="id" value={editingCategory.id} /> : null}
+
+                <label className="flex flex-col gap-1 sm:col-span-2">
+                  <span className="ui-label">Nombre</span>
+                  <input
+                    name="name"
+                    defaultValue={editingCategory?.name ?? ""}
+                    className="ui-input"
+                    placeholder="Ej. Bebidas frias"
+                    required
+                  />
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  <span className="ui-label">Slug</span>
+                  <input
+                    name="slug"
+                    defaultValue={editingCategory ? slugify(editingCategory.name) : ""}
+                    className="ui-input"
+                    placeholder="bebidas-frias"
+                  />
+                </label>
+
+                <CategoryTreeFilter
+                  categories={parentOptions}
+                  selectedCategoryId={editingCategory?.parent_id ?? ""}
+                  siteNamesById={siteNamesById}
+                  className="sm:col-span-2 lg:col-span-4"
+                  label="Categoria padre"
+                  name="parent_id"
+                  emptyOptionLabel="Sin padre (raiz)"
+                  maxVisibleOptions={8}
+                  showMeta={false}
+                />
+
+                <div className="sm:col-span-2">
+                  <div className="ui-label mb-2">Uso</div>
+                  <div className="flex flex-wrap gap-3">
+                    {CATEGORY_KINDS.map((kind) => (
+                      <label key={kind} className="flex items-center gap-2 rounded-md border border-[var(--ui-border)] px-3 py-2">
+                        <input
+                          type="checkbox"
+                          name="applies_to_kinds"
+                          value={kind}
+                          defaultChecked={editKindSet.has(kind)}
+                        />
+                        <span className="text-sm">{CATEGORY_KIND_LABELS[kind]}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <span className="ui-caption mt-2 block">Define donde puede usarse esta categoria.</span>
+                </div>
+
+                <label className="flex flex-col gap-1">
+                  <span className="ui-label">Alcance</span>
+                  <select name="site_id" defaultValue={editingCategory?.site_id ?? ""} className="ui-input">
+                    <option value="">Global</option>
+                    {sites.map((site) => (
+                      <option key={site.id} value={site.id}>{site.name ?? site.id}</option>
+                    ))}
+                  </select>
+                  <span className="ui-caption">Global se ve en todas las sedes.</span>
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  <span className="ui-label">Canal</span>
+                  <select name="domain" defaultValue={editDomainValue} className="ui-input">
+                    <option value="">Sin canal</option>
+                    {domainOptions.map((option) => (
+                      <option key={option.value} value={option.value}>{option.label}</option>
+                    ))}
+                  </select>
+                  <span className="ui-caption">Canal solo aplica cuando el uso incluye Venta.</span>
+                </label>
+
+                <label className="flex items-end gap-2">
+                  <input type="checkbox" name="is_active" defaultChecked={editingCategory?.is_active !== false} />
+                  <span className="ui-label">Categoria activa</span>
+                </label>
+
+                  <div className="sm:col-span-2 lg:col-span-4 flex flex-wrap gap-2">
+                    <button type="submit" className="ui-btn ui-btn--brand">
+                      {editingCategory ? "Guardar cambios" : "Crear categoria"}
+                    </button>
+                  </div>
+                </form>
+
+                {editingCategory ? (
+                  <form action={toggleCategoryActiveAction} className="flex">
+                    <input type="hidden" name="_return_qs" value={filterReturnQs} />
+                    <input type="hidden" name="_return_view" value="ficha" />
+                    <input type="hidden" name="_return_edit_id" value={editingCategory.id} />
+                    <input type="hidden" name="category_id" value={editingCategory.id} />
+                    <input
+                      type="hidden"
+                      name="next_is_active"
+                      value={editingCategory.is_active === false ? "1" : "0"}
+                    />
+                    <button type="submit" className="ui-btn ui-btn--ghost">
+                      {editingCategory.is_active === false ? "Activar" : "Desactivar"}
+                    </button>
+                  </form>
+                ) : null}
+              </div>
+            ) : null}
+
+            {editingCategory && currentCategoryIssues.length > 0 ? (
+              <div className="ui-alert ui-alert--warn">
+                Esta categoria tiene {currentCategoryIssues.length} advertencia(s). Revisa la pestana de Salud.
+              </div>
+            ) : null}
+          </section>
+        </>
+      ) : null}
+
+      {view === "salud" ? (
+        <>
+          <section className="ui-panel space-y-4">
+            <div className="ui-h3">Salud del catalogo</div>
+            {noProductsLoaded ? (
+              <div className="ui-alert ui-alert--warn">
+                Aun no hay productos creados. Estos indicadores son referenciales hasta cargar productos.
+              </div>
+            ) : null}
+
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="ui-panel-soft p-4">
+                <div className="ui-caption">Productos sin categoria</div>
+                <div className="mt-1 text-2xl font-semibold">{uncategorizedProductsCount}</div>
+              </div>
+              <div className="ui-panel-soft p-4">
+                <div className="ui-caption">Categorias sin uso</div>
+                <div className="mt-1 text-2xl font-semibold">{categoriesWithoutUsage.length}</div>
+              </div>
+              <div className="ui-panel-soft p-4">
+                <div className="ui-caption">Categorias huerfanas</div>
+                <div className="mt-1 text-2xl font-semibold">{orphanCategories.length}</div>
+              </div>
+              <div className="ui-panel-soft p-4">
+                <div className="ui-caption">Inconsistencias</div>
+                <div className="mt-1 text-2xl font-semibold">{inconsistentAssignments.length}</div>
+              </div>
             </div>
-          </form>
-        </section>
-      )}
+          </section>
+
+          <section className="grid gap-4 lg:grid-cols-2">
+            <div className="ui-panel">
+              <div className="ui-h3">Impacto por categoria</div>
+              <div className="mt-4 overflow-x-auto">
+                <table className="ui-table min-w-full text-sm">
+                  <thead className="text-left text-[var(--ui-muted)]">
+                    <tr>
+                      <th className="py-2 pr-4">Categoria</th>
+                      <th className="py-2 pr-4">Productos</th>
+                      <th className="py-2 pr-4">Accion</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {topImpactRows.map(({ row, count }) => (
+                      <tr key={row.id} className="border-t border-zinc-200/60">
+                        <td className="py-3 pr-4">{getCategoryPath(row.id, categoryMap)}</td>
+                        <td className="py-3 pr-4 font-mono">{count}</td>
+                        <td className="py-3 pr-4">
+                          <Link href={buildViewHref("ficha", row.id)} className="ui-btn ui-btn--ghost ui-btn--sm">
+                            Abrir ficha
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                    {!topImpactRows.length ? (
+                      <tr>
+                        <td className="py-4 text-[var(--ui-muted)]" colSpan={3}>
+                          No hay datos de impacto.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <div className="ui-panel">
+              <div className="ui-h3">Inconsistencias</div>
+              <div className="mt-4 overflow-x-auto">
+                <table className="ui-table min-w-full text-sm">
+                  <thead className="text-left text-[var(--ui-muted)]">
+                    <tr>
+                      <th className="py-2 pr-4">Producto</th>
+                      <th className="py-2 pr-4">Detalle</th>
+                      <th className="py-2 pr-4">Categoria</th>
+                      <th className="py-2 pr-4">Accion</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inconsistentAssignments.slice(0, 50).map((item) => (
+                      <tr key={`${item.product_id}-${item.reason}`} className="border-t border-zinc-200/60">
+                        <td className="py-3 pr-4">{item.product_name}</td>
+                        <td className="py-3 pr-4">{item.reason}</td>
+                        <td className="py-3 pr-4">{item.category_path}</td>
+                        <td className="py-3 pr-4">
+                          <Link href={buildViewHref("ficha", item.category_id)} className="ui-btn ui-btn--ghost ui-btn--sm">
+                            Abrir ficha
+                          </Link>
+                        </td>
+                      </tr>
+                    ))}
+                    {!inconsistentAssignments.length ? (
+                      <tr>
+                        <td className="py-4 text-[var(--ui-muted)]" colSpan={4}>
+                          No hay inconsistencias detectadas.
+                        </td>
+                      </tr>
+                    ) : null}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </section>
+        </>
+      ) : null}
     </div>
   );
 }

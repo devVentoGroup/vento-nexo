@@ -3,13 +3,22 @@
  * The value identifies the brand/POS where the category is specific.
  */
 export const CATEGORY_DOMAIN_LABELS: Record<string, string> = {
+  MENU: "Venta",
+  INVENTORY: "Abastecimiento",
   SAU: "Saudo",
   VCF: "Vento Cafe",
   CP: "Centro de Produccion",
   VGR: "Vento Group",
 };
 
-export const CATEGORY_DOMAIN_DEFAULT_ORDER = ["SAU", "VCF", "CP", "VGR"] as const;
+export const CATEGORY_DOMAIN_DEFAULT_ORDER = [
+  "MENU",
+  "INVENTORY",
+  "SAU",
+  "VCF",
+  "CP",
+  "VGR",
+] as const;
 
 export function normalizeCategoryDomain(domain: string | null | undefined): string {
   return String(domain ?? "").trim().toUpperCase();
@@ -19,6 +28,14 @@ export function getCategoryDomainLabel(domain: string | null | undefined): strin
   const normalized = normalizeCategoryDomain(domain);
   if (!normalized) return "";
   return CATEGORY_DOMAIN_LABELS[normalized] ?? normalized;
+}
+
+export function getCategoryDomainBusinessLabel(domain: string | null | undefined): string {
+  const normalized = normalizeCategoryDomain(domain);
+  if (!normalized) return "";
+  if (normalized === "MENU") return "Venta";
+  if (normalized === "INVENTORY") return "Abastecimiento";
+  return getCategoryDomainLabel(normalized);
 }
 
 export function getCategoryDomainOptions(domains: string[]): Array<{ value: string; label: string }> {

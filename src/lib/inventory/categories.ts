@@ -1,4 +1,4 @@
-import { getCategoryDomainLabel } from "@/lib/constants";
+import { getCategoryDomainBusinessLabel, getCategoryDomainLabel } from "@/lib/constants";
 
 export const CATEGORY_KINDS = ["insumo", "preparacion", "venta", "equipo"] as const;
 
@@ -16,6 +16,11 @@ export type InventoryCategoryRow = {
   site_id: string | null;
   applies_to_kinds?: string[] | null;
   is_active?: boolean | null;
+};
+
+type CategoryMetaLabelOptions = {
+  domainLabelMode?: "domain" | "channel";
+  useBusinessDomainLabel?: boolean;
 };
 
 const ROOT_UUID = "00000000-0000-0000-0000-000000000000";
@@ -164,7 +169,8 @@ export function getCategoryPath(
 
 export function buildCategoryMetaLabel(
   row: InventoryCategoryRow,
-  siteNameMap?: Map<string, string>
+  siteNameMap?: Map<string, string>,
+  options?: CategoryMetaLabelOptions
 ): string {
   const badges: string[] = [];
   const siteId = normalizeValue(row.site_id);
@@ -177,10 +183,19 @@ export function buildCategoryMetaLabel(
   }
 
   if (domain) {
-    badges.push(`Dominio: ${getCategoryDomainLabel(domain)}`);
+    const useBusinessDomainLabel = Boolean(options?.useBusinessDomainLabel);
+    const domainLabel = useBusinessDomainLabel
+      ? getCategoryDomainBusinessLabel(domain)
+      : getCategoryDomainLabel(domain);
+    const prefix = options?.domainLabelMode === "channel" ? "Canal" : "Dominio";
+    badges.push(`${prefix}: ${domainLabel}`);
   }
 
   return badges.join(" | ");
+}
+
+export function getCategoryChannelLabel(domain: string | null | undefined): string {
+  return getCategoryDomainBusinessLabel(domain);
 }
 
 export function buildCategoryFilterState(params: {
