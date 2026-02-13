@@ -1,8 +1,22 @@
 import Link from "next/link";
+import { CategoryTreeFilter } from "@/components/inventory/CategoryTreeFilter";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 
 import { requireAppAccess } from "@/lib/auth/guard";
-import { getCategoryDomainLabel } from "@/lib/constants";
+import { getCategoryDomainOptions } from "@/lib/constants";
+import {
+  categoryKindFromProduct,
+  collectDescendantIds,
+  filterCategoryRows,
+  filterCategoryRowsDirect,
+  getCategoryDomainCodes,
+  getCategoryPath,
+  normalizeCategoryDomain,
+  normalizeCategoryKind,
+  normalizeCategoryScope,
+  shouldShowCategoryDomain,
+  type InventoryCategoryRow,
+} from "@/lib/inventory/categories";
 
 export const dynamic = "force-dynamic";
 
@@ -14,8 +28,11 @@ type SearchParams = {
   q?: string;
   product_type?: string;
   inventory_kind?: string;
+  category_kind?: string;
   category_id?: string;
   category_domain?: string;
+  category_scope?: string;
+  category_site_id?: string;
   location_id?: string;
   zone?: string;
   error?: string;
@@ -35,12 +52,7 @@ type SiteRow = {
   name: string | null;
 };
 
-type CategoryRow = {
-  id: string;
-  name: string;
-  parent_id: string | null;
-  domain: string | null;
-};
+type CategoryRow = InventoryCategoryRow;
 
 type StockRow = {
   site_id: string;
@@ -88,6 +100,28 @@ function formatDate(value?: string | null) {
   return value;
 }
 
+async function loadCategoryRows(
+  supabase: Awaited<ReturnType<typeof requireAppAccess>>["supabase"]
+): Promise<CategoryRow[]> {
+  const query = await supabase
+    .from("product_categories")
+    .select("id,name,parent_id,domain,site_id,is_active,applies_to_kinds")
+    .order("name", { ascending: true });
+
+  if (!query.error) {
+    return (query.data ?? []) as CategoryRow[];
+  }
+
+  const fallback = await supabase
+    .from("product_categories")
+    .select("id,name,parent_id,domain,site_id,is_active")
+    .order("name", { ascending: true });
+
+  return ((fallback.data ?? []) as Array<Omit<CategoryRow, "applies_to_kinds">>).map(
+    (row) => ({ ...row, applies_to_kinds: [] })
+  );
+}
+
 export default async function InventoryStockPage({
   searchParams,
 }: {
@@ -125,8 +159,19 @@ export default async function InventoryStockPage({
   const searchQuery = String(sp.q ?? "").trim();
   const productType = String(sp.product_type ?? "").trim();
   const inventoryKind = String(sp.inventory_kind ?? "").trim();
+  const categoryKindFromQuery = normalizeCategoryKind(sp.category_kind ?? "");
+  const inferredCategoryKind =
+    productType || inventoryKind
+      ? categoryKindFromProduct({ productType, inventoryKind })
+      : null;
+  const categoryKind = categoryKindFromQuery ?? inferredCategoryKind;
   const categoryId = String(sp.category_id ?? "").trim();
-  const categoryDomain = String(sp.category_domain ?? "").trim();
+  const categoryDomain = shouldShowCategoryDomain(categoryKind)
+    ? normalizeCategoryDomain(sp.category_domain)
+    : "";
+  const categorySiteId = String(sp.category_site_id ?? siteId).trim();
+  const defaultCategoryScope = categorySiteId ? "site" : "all";
+  const categoryScope = normalizeCategoryScope(sp.category_scope ?? defaultCategoryScope);
   const locationIdFilter = String(sp.location_id ?? "").trim();
   const zoneFilter = String(sp.zone ?? "").trim();
   const viewByLoc = String(sp.view ?? "").trim() === "by_loc";
@@ -145,56 +190,42 @@ export default async function InventoryStockPage({
 
   const siteRows = (sites ?? []) as SiteRow[];
   const siteNameMap = new Map(siteRows.map((row) => [row.id, row.name ?? row.id]));
+  const siteNamesById = Object.fromEntries(
+    siteRows.map((row) => [row.id, row.name ?? row.id])
+  );
 
-  const { data: categories } = await supabase
-    .from("product_categories")
-    .select("id,name,parent_id,domain")
-    .order("name", { ascending: true });
-
-  const allCategoryRows = (categories ?? []) as CategoryRow[];
+  const allCategoryRows = await loadCategoryRows(supabase);
   const categoryMap = new Map(allCategoryRows.map((row) => [row.id, row]));
+  const categoryRows = filterCategoryRows(allCategoryRows, {
+    kind: categoryKind,
+    domain: categoryDomain,
+    scope: categoryScope,
+    siteId: categorySiteId,
+  });
+  const directCategoryRows = filterCategoryRowsDirect(allCategoryRows, {
+    kind: categoryKind,
+    domain: categoryDomain,
+    scope: categoryScope,
+    siteId: categorySiteId,
+  });
+  const directCategoryIds = new Set(directCategoryRows.map((row) => row.id));
 
-  const categoryPath = (id: string | null) => {
-    if (!id) return "Sin categoria";
-    const parts: string[] = [];
-    let current = categoryMap.get(id);
-    let safety = 0;
-    while (current && safety < 6) {
-      parts.unshift(current.name);
-      current = current.parent_id ? categoryMap.get(current.parent_id) : undefined;
-      safety += 1;
+  let filteredCategoryIds: string[] | null = null;
+  const hasCategoryFilterInputs =
+    Boolean(categoryId) ||
+    Boolean(categoryKind) ||
+    Boolean(categoryDomain) ||
+    categoryScope !== "all" ||
+    Boolean(categorySiteId);
+
+  if (hasCategoryFilterInputs) {
+    if (categoryId) {
+      const descendants = Array.from(collectDescendantIds(categoryMap, categoryId));
+      filteredCategoryIds = descendants.filter((id) => directCategoryIds.has(id));
+    } else {
+      filteredCategoryIds = directCategoryRows.map((row) => row.id);
     }
-    return parts.join(" / ");
-  };
-
-  const categoryRows = (() => {
-    if (!categoryDomain) return allCategoryRows;
-    const withDomain = allCategoryRows.filter((row) => row.domain === categoryDomain);
-    const ancestorIds = new Set<string>();
-    for (const row of withDomain) {
-      let current = row.parent_id ? categoryMap.get(row.parent_id) : null;
-      let safety = 0;
-      while (current && safety < 10) {
-        ancestorIds.add(current.id);
-        current = current.parent_id ? categoryMap.get(current.parent_id) : null;
-        safety += 1;
-      }
-    }
-    return allCategoryRows.filter((row) => row.domain === categoryDomain || ancestorIds.has(row.id));
-  })();
-
-  const displayPath = (row: CategoryRow) => {
-    const path = categoryPath(row.id);
-    const label = row.domain ? getCategoryDomainLabel(row.domain) : "";
-    return label ? `${path} (${label})` : path;
-  };
-
-  const orderedCategories = categoryRows
-    .map((row) => ({
-      id: row.id,
-      path: displayPath(row),
-    }))
-    .sort((a, b) => a.path.localeCompare(b.path, "es"));
+  }
 
   const productTypeOptions = [
     { value: "", label: "Todos los tipos" },
@@ -221,20 +252,32 @@ export default async function InventoryStockPage({
     { value: "asset", label: "Activos" },
   ];
 
-  const categoryDomainOptions = [
-    { value: "", label: "Todas las marcas" },
-    { value: "SAU", label: "Saudo" },
-    { value: "VCF", label: "Vento Café" },
+  const categoryKindOptions = [
+    { value: "", label: "Todas" },
+    { value: "insumo", label: "Insumo" },
+    { value: "preparacion", label: "Preparacion" },
+    { value: "venta", label: "Venta" },
+    { value: "equipo", label: "Equipo/activo" },
   ];
 
-  const filteredCategoryIds =
-    categoryDomain ? allCategoryRows.filter((r) => r.domain === categoryDomain).map((r) => r.id) : [];
+  const categoryScopeOptions = [
+    { value: "all", label: "Todas" },
+    { value: "global", label: "Globales" },
+    { value: "site", label: "Sede activa" },
+  ];
+
+  const categoryDomainOptions = getCategoryDomainOptions(
+    getCategoryDomainCodes(allCategoryRows, categoryKind)
+  );
 
   const buildKindHref = (kind: string) => {
     const params = new URLSearchParams();
     if (siteId) params.set("site_id", siteId);
     if (searchQuery) params.set("q", searchQuery);
     if (productType) params.set("product_type", productType);
+    if (categoryKind) params.set("category_kind", categoryKind);
+    if (categoryScope) params.set("category_scope", categoryScope);
+    if (categorySiteId) params.set("category_site_id", categorySiteId);
     if (categoryId) params.set("category_id", categoryId);
     if (categoryDomain) params.set("category_domain", categoryDomain);
     if (locationIdFilter) params.set("location_id", locationIdFilter);
@@ -273,10 +316,12 @@ export default async function InventoryStockPage({
     productsQuery = productsQuery.eq("product_type", productType);
   }
 
-  if (categoryId) {
-    productsQuery = productsQuery.eq("category_id", categoryId);
-  } else if (categoryDomain && filteredCategoryIds.length > 0) {
-    productsQuery = productsQuery.in("category_id", filteredCategoryIds);
+  if (filteredCategoryIds !== null) {
+    if (filteredCategoryIds.length === 0) {
+      productsQuery = productsQuery.eq("id", "00000000-0000-0000-0000-000000000000");
+    } else {
+      productsQuery = productsQuery.in("category_id", filteredCategoryIds);
+    }
   }
 
   if (inventoryKind) {
@@ -470,11 +515,7 @@ export default async function InventoryStockPage({
 
           <label className="flex flex-col gap-1">
             <span className="ui-label">Tipo inventario</span>
-            <select
-              name="inventory_kind"
-              defaultValue={inventoryKind}
-              className="ui-input"
-            >
+            <select name="inventory_kind" defaultValue={inventoryKind} className="ui-input">
               {inventoryKindOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
@@ -485,11 +526,7 @@ export default async function InventoryStockPage({
 
           <label className="flex flex-col gap-1">
             <span className="ui-label">Tipo de producto</span>
-            <select
-              name="product_type"
-              defaultValue={productType}
-              className="ui-input"
-            >
+            <select name="product_type" defaultValue={productType} className="ui-input">
               {productTypeOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
@@ -499,43 +536,68 @@ export default async function InventoryStockPage({
           </label>
 
           <label className="flex flex-col gap-1">
-            <span className="ui-label">Marca / punto de venta</span>
-            <select
-              name="category_domain"
-              defaultValue={categoryDomain}
-              className="ui-input"
-            >
-              {categoryDomainOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
+            <span className="ui-label">Categoria aplica a</span>
+            <select name="category_kind" defaultValue={categoryKind ?? ""} className="ui-input">
+              {categoryKindOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
                 </option>
               ))}
             </select>
           </label>
 
           <label className="flex flex-col gap-1">
-            <span className="ui-label">Categoria</span>
-            <select
-              name="category_id"
-              defaultValue={categoryId}
-              className="ui-input"
-            >
-              <option value="">Todas</option>
-              {orderedCategories.map((row) => (
-                <option key={row.id} value={row.id}>
-                  {row.path}
+            <span className="ui-label">Alcance de categoria</span>
+            <select name="category_scope" defaultValue={categoryScope} className="ui-input">
+              {categoryScopeOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
                 </option>
               ))}
             </select>
           </label>
 
+          <label className="flex flex-col gap-1 sm:col-span-2">
+            <span className="ui-label">Sede para categorias</span>
+            <select name="category_site_id" defaultValue={categorySiteId} className="ui-input">
+              <option value="">Seleccionar sede</option>
+              {siteIds.map((id) => (
+                <option key={id} value={id}>
+                  {siteNameMap.get(id) ?? id}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          {shouldShowCategoryDomain(categoryKind) ? (
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Dominio de venta</span>
+              <select name="category_domain" defaultValue={categoryDomain} className="ui-input">
+                <option value="">Todos</option>
+                {categoryDomainOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <input type="hidden" name="category_domain" value="" />
+          )}
+
+          <CategoryTreeFilter
+            categories={categoryRows}
+            selectedCategoryId={categoryId}
+            siteNamesById={siteNamesById}
+            className="sm:col-span-2 lg:col-span-4"
+            label="Categoria"
+            emptyOptionLabel="Todas"
+            maxVisibleOptions={10}
+          />
+
           <label className="flex flex-col gap-1 sm:col-span-2 lg:col-span-4">
             <span className="ui-label">Sede</span>
-            <select
-              name="site_id"
-              defaultValue={siteId}
-              className="ui-input"
-            >
+            <select name="site_id" defaultValue={siteId} className="ui-input">
               <option value="">Todas</option>
               {siteIds.map((id) => (
                 <option key={id} value={id}>
@@ -548,7 +610,7 @@ export default async function InventoryStockPage({
           {siteId && locList.length > 0 ? (
             <>
               <label className="flex flex-col gap-1">
-                <span className="ui-label">Ubicación (LOC)</span>
+                <span className="ui-label">Ubicacion (LOC)</span>
                 <select name="location_id" defaultValue={locationIdFilter} className="ui-input">
                   <option value="">Todas</option>
                   {locList.map((loc) => (
@@ -572,10 +634,11 @@ export default async function InventoryStockPage({
             </>
           ) : null}
 
-          <div className="sm:col-span-2 lg:col-span-4">
-            <button className="ui-btn ui-btn--brand">
-              Aplicar filtros
-            </button>
+          <div className="sm:col-span-2 lg:col-span-4 flex gap-2">
+            <button className="ui-btn ui-btn--brand">Aplicar filtros</button>
+            <Link href={`/inventory/stock?site_id=${encodeURIComponent(siteId)}`} className="ui-btn ui-btn--ghost">
+              Limpiar
+            </Link>
           </div>
         </form>
       </div>
@@ -716,7 +779,7 @@ export default async function InventoryStockPage({
                 const sku = product.sku ?? "-";
                 const unit = product.stock_unit_code ?? product.unit ?? "-";
                 const siteLabel = siteId ? siteNameMap.get(siteId) ?? siteId : "Todas";
-                const categoryLabel = categoryPath(product.category_id);
+                const categoryLabel = getCategoryPath(product.category_id, categoryMap);
                 const inventoryProfile = product.product_inventory_profiles;
                 const inventoryLabel = inventoryProfile?.inventory_kind ?? "unclassified";
                 const trackLabel = inventoryProfile?.track_inventory ? "si" : "no";
@@ -779,5 +842,7 @@ export default async function InventoryStockPage({
     </div>
   );
 }
+
+
 
 

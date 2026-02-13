@@ -206,6 +206,14 @@ const NAV_GROUPS: NavGroup[] = [
         allowedRoles: ["propietario", "gerente_general"],
         icon: "sliders",
       },
+      {
+        href: "/inventory/settings/categories",
+        label: "Categorias",
+        description: "Gobernanza de categorias",
+        required: ["inventory.stock"],
+        allowedRoles: ["propietario", "gerente_general"],
+        icon: "layers",
+      },
     ],
   },
 ];

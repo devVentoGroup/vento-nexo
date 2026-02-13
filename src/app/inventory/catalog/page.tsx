@@ -1,7 +1,20 @@
 import Link from "next/link";
 
-import { CategoryCascadeFilter } from "@/components/inventory/CategoryCascadeFilter";
+import { CategoryTreeFilter } from "@/components/inventory/CategoryTreeFilter";
 import { requireAppAccess } from "@/lib/auth/guard";
+import { getCategoryDomainOptions } from "@/lib/constants";
+import {
+  categoryKindFromCatalogTab,
+  collectDescendantIds,
+  filterCategoryRows,
+  filterCategoryRowsDirect,
+  getCategoryDomainCodes,
+  getCategoryPath,
+  normalizeCategoryDomain,
+  normalizeCategoryScope,
+  shouldShowCategoryDomain,
+  type InventoryCategoryRow,
+} from "@/lib/inventory/categories";
 
 export const dynamic = "force-dynamic";
 
@@ -20,51 +33,13 @@ type TabValue = (typeof TAB_OPTIONS)[number]["value"];
 type SearchParams = {
   q?: string;
   tab?: string;
-  category_l1?: string;
-  category_l2?: string;
-  category_l3?: string;
+  site_id?: string;
+  category_kind?: string;
   category_domain?: string;
+  category_scope?: string;
+  category_site_id?: string;
+  category_id?: string;
   ok?: string;
-};
-
-function getDescendantIds(
-  categoryMap: Map<string, CategoryRow>,
-  rootId: string
-): Set<string> {
-  const result = new Set<string>([rootId]);
-  const queue = [rootId];
-  while (queue.length > 0) {
-    const current = queue.shift()!;
-    for (const [id, row] of categoryMap) {
-      if (row.parent_id === current) {
-        result.add(id);
-        queue.push(id);
-      }
-    }
-  }
-  return result;
-}
-
-function getAncestorIds(
-  categoryMap: Map<string, CategoryRow>,
-  categoryId: string
-): Set<string> {
-  const result = new Set<string>([categoryId]);
-  let current = categoryMap.get(categoryId);
-  let safety = 0;
-  while (current?.parent_id && safety < 10) {
-    result.add(current.parent_id);
-    current = categoryMap.get(current.parent_id);
-    safety += 1;
-  }
-  return result;
-}
-
-type CategoryRow = {
-  id: string;
-  name: string;
-  parent_id: string | null;
-  domain: string | null;
 };
 
 type ProductRow = {
@@ -80,6 +55,39 @@ type ProductRow = {
   } | null;
 };
 
+type SiteRow = {
+  id: string;
+  name: string | null;
+};
+
+async function loadCategoryRows(
+  supabase: Awaited<ReturnType<typeof requireAppAccess>>["supabase"]
+): Promise<InventoryCategoryRow[]> {
+  const query = await supabase
+    .from("product_categories")
+    .select("id,name,parent_id,domain,site_id,is_active,applies_to_kinds")
+    .order("name", { ascending: true });
+
+  if (!query.error) {
+    return (query.data ?? []) as InventoryCategoryRow[];
+  }
+
+  const fallback = await supabase
+    .from("product_categories")
+    .select("id,name,parent_id,domain,site_id,is_active")
+    .order("name", { ascending: true });
+
+  return ((fallback.data ?? []) as Array<Omit<InventoryCategoryRow, "applies_to_kinds">>).map(
+    (row) => ({ ...row, applies_to_kinds: [] })
+  );
+}
+
+function tabTypeValue(tab: TabValue): string {
+  if (tab === "preparaciones") return "preparacion";
+  if (tab === "productos") return "venta";
+  return "insumo";
+}
+
 export default async function InventoryCatalogPage({
   searchParams,
 }: {
@@ -88,166 +96,133 @@ export default async function InventoryCatalogPage({
   const sp = (await searchParams) ?? {};
   const okMsg = sp.ok ? "Cambios guardados." : "";
   const searchQuery = String(sp.q ?? "").trim();
-  const tabRaw = String(sp.tab ?? "insumos").trim().toLowerCase();
-  const activeTab: TabValue = TAB_OPTIONS.some((t) => t.value === tabRaw) ? (tabRaw as TabValue) : "insumos";
-  const categoryL1 = String(sp.category_l1 ?? "").trim();
-  const categoryL2 = String(sp.category_l2 ?? "").trim();
-  const categoryL3 = String(sp.category_l3 ?? "").trim();
-  const categoryDomain = String(sp.category_domain ?? "").trim();
 
-  const { supabase } = await requireAppAccess({
+  const tabRaw = String(sp.tab ?? "insumos").trim().toLowerCase();
+  const activeTab: TabValue = TAB_OPTIONS.some((t) => t.value === tabRaw)
+    ? (tabRaw as TabValue)
+    : "insumos";
+
+  const categoryKind = categoryKindFromCatalogTab(activeTab);
+  const categoryId = String(sp.category_id ?? "").trim();
+
+  const { supabase, user } = await requireAppAccess({
     appId: APP_ID,
     returnTo: "/inventory/catalog",
     permissionCode: PERMISSION,
   });
 
-  const { data: categories } = await supabase
-    .from("product_categories")
-    .select("id,name,parent_id,domain")
-    .order("name", { ascending: true });
+  const [{ data: employee }, { data: settings }, { data: sites }] = await Promise.all([
+    supabase.from("employees").select("site_id").eq("id", user.id).maybeSingle(),
+    supabase
+      .from("employee_settings")
+      .select("selected_site_id")
+      .eq("employee_id", user.id)
+      .maybeSingle(),
+    supabase.from("sites").select("id,name").eq("is_active", true).order("name", { ascending: true }),
+  ]);
 
-  const allCategoryRows = (categories ?? []) as CategoryRow[];
+  const siteRows = (sites ?? []) as SiteRow[];
+  const siteNamesById = Object.fromEntries(siteRows.map((row) => [row.id, row.name ?? row.id]));
+
+  const siteId = String(
+    sp.site_id ??
+      (settings as { selected_site_id?: string | null } | null)?.selected_site_id ??
+      (employee as { site_id?: string | null } | null)?.site_id ??
+      ""
+  ).trim();
+  const activeSiteId = String(sp.category_site_id ?? siteId).trim();
+
+  const defaultScope = activeSiteId ? "site" : "all";
+  const categoryScope = normalizeCategoryScope(sp.category_scope ?? defaultScope);
+
+  const categoryDomain = shouldShowCategoryDomain(categoryKind)
+    ? normalizeCategoryDomain(sp.category_domain)
+    : "";
+
+  const allCategoryRows = await loadCategoryRows(supabase);
+
+  const categoryRows = filterCategoryRows(allCategoryRows, {
+    kind: categoryKind,
+    domain: categoryDomain,
+    scope: categoryScope,
+    siteId: activeSiteId,
+  });
+
+  const directCategoryRows = filterCategoryRowsDirect(allCategoryRows, {
+    kind: categoryKind,
+    domain: categoryDomain,
+    scope: categoryScope,
+    siteId: activeSiteId,
+  });
+
+  const directCategoryIds = new Set(directCategoryRows.map((row) => row.id));
   const categoryMap = new Map(allCategoryRows.map((row) => [row.id, row]));
 
-  const categoryPath = (id: string | null) => {
-    if (!id) return "Sin categoria";
-    const parts: string[] = [];
-    let current = categoryMap.get(id);
-    let safety = 0;
-    while (current && safety < 6) {
-      parts.unshift(current.name);
-      current = current.parent_id ? categoryMap.get(current.parent_id) : undefined;
-      safety += 1;
-    }
-    return parts.join(" / ");
-  };
-
-  const categoryRowsByDomain = (() => {
-    if (!categoryDomain) return allCategoryRows;
-    const withDomain = allCategoryRows.filter((row) => row.domain === categoryDomain);
-    const ancestorIds = new Set<string>();
-    for (const row of withDomain) {
-      let current = row.parent_id ? categoryMap.get(row.parent_id) : null;
-      let safety = 0;
-      while (current && safety < 10) {
-        ancestorIds.add(current.id);
-        current = current.parent_id ? categoryMap.get(current.parent_id) : null;
-        safety += 1;
-      }
-    }
-    return allCategoryRows.filter((row) => row.domain === categoryDomain || ancestorIds.has(row.id));
-  })();
-
-  let productsForTabRows: { category_id: string }[] = [];
-
-  if (activeTab === "equipos") {
-    const { data: assetProfiles } = await supabase
-      .from("product_inventory_profiles")
-      .select("product_id")
-      .eq("inventory_kind", "asset");
-    const assetProductIds = (assetProfiles ?? []).map((p) => p.product_id).filter(Boolean);
-    if (assetProductIds.length > 0) {
-      const { data: assetProducts } = await supabase
-        .from("products")
-        .select("category_id")
-        .in("id", assetProductIds)
-        .not("category_id", "is", null);
-      productsForTabRows = (assetProducts ?? []) as { category_id: string }[];
-    }
-  } else {
-    const typeMap: Record<Exclude<TabValue, "equipos">, string> = {
-      insumos: "insumo",
-      preparaciones: "preparacion",
-      productos: "venta",
-    };
-    const { data } = await supabase
-      .from("products")
-      .select("category_id")
-      .eq("product_type", typeMap[activeTab])
-      .not("category_id", "is", null);
-    productsForTabRows = (data ?? []) as { category_id: string }[];
+  let effectiveCategoryIds: string[] | null = null;
+  if (categoryId) {
+    const descendantIds = Array.from(collectDescendantIds(categoryMap, categoryId));
+    effectiveCategoryIds = descendantIds.filter((id) => directCategoryIds.has(id));
+  } else if (directCategoryRows.length > 0) {
+    effectiveCategoryIds = directCategoryRows.map((row) => row.id);
   }
 
-  const categoryIdsWithProducts = new Set<string>();
-  for (const row of productsForTabRows) {
-    categoryIdsWithProducts.add(row.category_id);
-  }
-
-  const relevantCategoryIds = new Set<string>();
-  for (const id of categoryIdsWithProducts) {
-    for (const aid of getAncestorIds(categoryMap, id)) {
-      relevantCategoryIds.add(aid);
-    }
-  }
-
-  const categoryRows = categoryRowsByDomain.filter((row) =>
-    relevantCategoryIds.has(row.id)
+  const categoryDomainOptions = getCategoryDomainOptions(
+    getCategoryDomainCodes(allCategoryRows, categoryKind)
   );
 
-  const categoryDomainOptions = [
-    { value: "", label: "Todas las marcas" },
-    { value: "SAU", label: "Saudo" },
-    { value: "VCF", label: "Vento Café" },
-  ];
+  let productRows: ProductRow[] = [];
+  if (effectiveCategoryIds !== null && effectiveCategoryIds.length === 0) {
+    productRows = [];
+  } else {
+    let productsQuery = supabase
+      .from("products")
+      .select(
+        "id,name,sku,unit,product_type,category_id,product_inventory_profiles(track_inventory,inventory_kind)"
+      )
+      .order("name", { ascending: true })
+      .limit(1200);
 
-  const effectiveCategoryIds = (() => {
-    if (categoryL3) return [categoryL3];
-    if (categoryL2) return Array.from(getDescendantIds(categoryMap, categoryL2));
-    if (categoryL1) return Array.from(getDescendantIds(categoryMap, categoryL1));
-    if (categoryDomain) {
-      return allCategoryRows.filter((r) => r.domain === categoryDomain).map((r) => r.id);
+    if (searchQuery) {
+      const pattern = `%${searchQuery}%`;
+      productsQuery = productsQuery.or(`name.ilike.${pattern},sku.ilike.${pattern}`);
     }
-    return null;
-  })();
 
-  let productsQuery = supabase
-    .from("products")
-    .select(
-      "id,name,sku,unit,product_type,category_id,product_inventory_profiles(track_inventory,inventory_kind)"
-    )
-    .order("name", { ascending: true })
-    .limit(1200);
+    if (effectiveCategoryIds && effectiveCategoryIds.length > 0) {
+      productsQuery = productsQuery.in("category_id", effectiveCategoryIds);
+    }
 
-  if (searchQuery) {
-    const pattern = `%${searchQuery}%`;
-    productsQuery = productsQuery.or(`name.ilike.${pattern},sku.ilike.${pattern}`);
-  }
+    if (activeTab === "equipos") {
+      productsQuery = productsQuery
+        .eq("product_type", "insumo")
+        .eq("product_inventory_profiles.inventory_kind", "asset");
+    } else {
+      productsQuery = productsQuery.eq("product_type", tabTypeValue(activeTab));
+    }
 
-  if (effectiveCategoryIds && effectiveCategoryIds.length > 0) {
-    productsQuery = productsQuery.in("category_id", effectiveCategoryIds);
-  }
+    const { data: products } = await productsQuery;
+    productRows = (products ?? []) as unknown as ProductRow[];
 
-  if (activeTab === "equipos") {
-    productsQuery = productsQuery.eq("product_inventory_profiles.inventory_kind", "asset");
-  } else {
-    const typeMap: Record<Exclude<TabValue, "equipos">, string> = {
-      insumos: "insumo",
-      preparaciones: "preparacion",
-      productos: "venta",
-    };
-    productsQuery = productsQuery.eq("product_type", typeMap[activeTab]);
-  }
-
-  const { data: products } = await productsQuery;
-  let productRows = (products ?? []) as unknown as ProductRow[];
-
-  if (activeTab === "equipos") {
-    productRows = productRows.filter((p) => p.product_inventory_profiles?.inventory_kind === "asset");
-  } else {
-    productRows = productRows.filter((p) => {
-      const kind = p.product_inventory_profiles?.inventory_kind;
-      return kind !== "asset";
-    });
+    if (activeTab === "insumos") {
+      productRows = productRows.filter(
+        (product) => product.product_inventory_profiles?.inventory_kind !== "asset"
+      );
+    }
   }
 
   const buildUrl = (newTab?: TabValue) => {
+    const tab = newTab ?? activeTab;
+    const tabKind = categoryKindFromCatalogTab(tab);
     const params = new URLSearchParams();
     if (searchQuery) params.set("q", searchQuery);
-    params.set("tab", newTab ?? activeTab);
-    if (categoryL1) params.set("category_l1", categoryL1);
-    if (categoryL2) params.set("category_l2", categoryL2);
-    if (categoryL3) params.set("category_l3", categoryL3);
-    if (categoryDomain) params.set("category_domain", categoryDomain);
+    params.set("tab", tab);
+    if (siteId) params.set("site_id", siteId);
+    params.set("category_kind", tabKind);
+    params.set("category_scope", categoryScope);
+    if (activeSiteId) params.set("category_site_id", activeSiteId);
+    if (categoryId) params.set("category_id", categoryId);
+    if (shouldShowCategoryDomain(tabKind) && categoryDomain) {
+      params.set("category_domain", categoryDomain);
+    }
     return `/inventory/catalog?${params.toString()}`;
   };
 
@@ -257,10 +232,8 @@ export default async function InventoryCatalogPage({
     <div className="w-full">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="ui-h1">Catálogo</h1>
-          <p className="mt-2 ui-body-muted">
-            Abre cualquier item para ver su ficha.
-          </p>
+          <h1 className="ui-h1">Catalogo</h1>
+          <p className="mt-2 ui-body-muted">Abre cualquier item para ver su ficha.</p>
         </div>
         <Link href="/inventory/stock" className="ui-btn ui-btn--ghost">
           Ver stock
@@ -288,7 +261,13 @@ export default async function InventoryCatalogPage({
       <div className="mt-4 flex justify-end">
         <Link
           href={`/inventory/catalog/new?type=${
-            activeTab === "insumos" ? "insumo" : activeTab === "preparaciones" ? "preparacion" : activeTab === "equipos" ? "asset" : "venta"
+            activeTab === "insumos"
+              ? "insumo"
+              : activeTab === "preparaciones"
+                ? "preparacion"
+                : activeTab === "equipos"
+                  ? "asset"
+                  : "venta"
           }`}
           className="ui-btn ui-btn--brand ui-btn--sm"
         >
@@ -300,6 +279,9 @@ export default async function InventoryCatalogPage({
         <div className="ui-h3">Filtros</div>
         <form method="get" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <input type="hidden" name="tab" value={activeTab} />
+          <input type="hidden" name="site_id" value={siteId} />
+          <input type="hidden" name="category_kind" value={categoryKind} />
+
           <label className="flex flex-col gap-1 sm:col-span-2 lg:col-span-4">
             <span className="ui-label">Buscar SKU o nombre</span>
             <input
@@ -311,29 +293,60 @@ export default async function InventoryCatalogPage({
           </label>
 
           <label className="flex flex-col gap-1">
-            <span className="ui-label">Marca / punto de venta (dominio de categoria)</span>
-            <select name="category_domain" defaultValue={categoryDomain} className="ui-input">
-              {categoryDomainOptions.map((opt) => (
-                <option key={opt.value} value={opt.value}>
-                  {opt.label}
+            <span className="ui-label">Alcance de categoria</span>
+            <select name="category_scope" defaultValue={categoryScope} className="ui-input">
+              <option value="all">Todas</option>
+              <option value="global">Globales</option>
+              <option value="site">Sede activa</option>
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1">
+            <span className="ui-label">Sede para categorias</span>
+            <select name="category_site_id" defaultValue={activeSiteId} className="ui-input">
+              <option value="">Seleccionar sede</option>
+              {siteRows.map((site) => (
+                <option key={site.id} value={site.id}>
+                  {site.name ?? site.id}
                 </option>
               ))}
             </select>
-            <span className="ui-caption">
-              Filtra por dominio de categoria (ej. SAU o VCF). La pestana define si ves insumos, preparaciones,
-              productos o equipos.
-            </span>
           </label>
 
-          <CategoryCascadeFilter
+          {shouldShowCategoryDomain(categoryKind) ? (
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Dominio de venta</span>
+              <select name="category_domain" defaultValue={categoryDomain} className="ui-input">
+                <option value="">Todos</option>
+                {categoryDomainOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <input type="hidden" name="category_domain" value="" />
+          )}
+
+          <CategoryTreeFilter
             categories={categoryRows}
-            categoryL1={categoryL1}
-            categoryL2={categoryL2}
-            categoryL3={categoryL3}
+            selectedCategoryId={categoryId}
+            siteNamesById={siteNamesById}
+            className="sm:col-span-2 lg:col-span-4"
+            label="Categoria"
+            emptyOptionLabel="Todas"
+            maxVisibleOptions={10}
           />
 
-          <div className="sm:col-span-2 lg:col-span-4">
+          <div className="sm:col-span-2 lg:col-span-4 flex gap-2">
             <button className="ui-btn ui-btn--brand">Aplicar filtros</button>
+            <Link
+              href={`/inventory/catalog?tab=${activeTab}${siteId ? `&site_id=${encodeURIComponent(siteId)}` : ""}&category_kind=${categoryKind}`}
+              className="ui-btn ui-btn--ghost"
+            >
+              Limpiar
+            </Link>
           </div>
         </form>
       </div>
@@ -368,7 +381,7 @@ export default async function InventoryCatalogPage({
                   <tr key={product.id} className="border-t border-zinc-200/60">
                     <td className="py-3 pr-4">{product.name}</td>
                     <td className="py-3 pr-4 font-mono">{product.sku ?? "-"}</td>
-                    <td className="py-3 pr-4">{categoryPath(product.category_id)}</td>
+                    <td className="py-3 pr-4">{getCategoryPath(product.category_id, categoryMap)}</td>
                     <td className="py-3 pr-4">{product.product_type}</td>
                     <td className="py-3 pr-4">{inventoryLabel}</td>
                     <td className="py-3 pr-4">{product.unit ?? "-"}</td>
