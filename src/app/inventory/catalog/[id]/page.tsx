@@ -7,6 +7,14 @@ import { ProductSuppliersEditor } from "@/features/inventory/catalog/product-sup
 import { RecipeIngredientsEditor } from "@/features/inventory/catalog/recipe-ingredients-editor";
 import { RecipeMetadataFields } from "@/features/inventory/catalog/recipe-metadata-fields";
 import { RecipeStepsEditor } from "@/features/inventory/catalog/recipe-steps-editor";
+import {
+  convertQuantity,
+  createUnitMap,
+  inferFamilyFromUnitCode,
+  normalizeUnitCode,
+  type InventoryUnit,
+} from "@/lib/inventory/uom";
+import { computeAutoCostFromPrimarySupplier } from "@/lib/inventory/costing";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
@@ -15,6 +23,7 @@ export const dynamic = "force-dynamic";
 
 const APP_ID = "nexo";
 const PERMISSION = "inventory.stock";
+const STOCK_UNIT_FIELD_ID = "stock_unit_code";
 
 type ProductRow = {
   id: string;
@@ -22,6 +31,7 @@ type ProductRow = {
   description: string | null;
   sku: string | null;
   unit: string | null;
+  stock_unit_code: string | null;
   product_type: string | null;
   category_id: string | null;
   price: number | null;
@@ -36,6 +46,8 @@ type InventoryProfileRow = {
   track_inventory: boolean;
   inventory_kind: string;
   default_unit: string | null;
+  unit_family: string | null;
+  costing_mode: "auto_primary_supplier" | "manual" | null;
   lot_tracking: boolean;
   expiry_tracking: boolean;
 };
@@ -52,6 +64,7 @@ type SiteSettingRow = {
 
 type AreaKindRow = { code: string; name: string | null };
 type SiteOptionRow = { id: string; name: string | null };
+type UnitRow = InventoryUnit;
 
 type SupplierRow = {
   id: string;
@@ -59,6 +72,8 @@ type SupplierRow = {
   supplier_sku: string | null;
   purchase_unit: string | null;
   purchase_unit_size: number | null;
+  purchase_pack_qty: number | null;
+  purchase_pack_unit_code: string | null;
   purchase_price: number | null;
   currency: string | null;
   lead_time_days: number | null;
@@ -70,6 +85,14 @@ type SearchParams = { ok?: string; error?: string; from?: string };
 
 function asText(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function asNullableNumber(value: FormDataEntryValue | null): number | null {
+  if (value == null) return null;
+  const raw = typeof value === "string" ? value.trim() : String(value);
+  if (!raw) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 type CatalogTab = "insumos" | "preparaciones" | "productos" | "equipos";
@@ -125,15 +148,33 @@ async function updateProduct(formData: FormData) {
     redirect(appendQueryParam(detailBase, "error", message));
   };
 
+  const { data: unitsData } = await supabase
+    .from("inventory_units")
+    .select("code,name,family,factor_to_base,symbol,display_decimals,is_active")
+    .eq("is_active", true)
+    .limit(500);
+  const units = (unitsData ?? []) as UnitRow[];
+  const unitMap = createUnitMap(units);
+
+  const stockUnitCode = normalizeUnitCode(
+    asText(formData.get("stock_unit_code")) || asText(formData.get("unit")) || "un"
+  );
+  const costingModeRaw = asText(formData.get("costing_mode"));
+  const costingMode: "auto_primary_supplier" | "manual" =
+    costingModeRaw === "manual" ? "manual" : "auto_primary_supplier";
+  const unitFamily = inferFamilyFromUnitCode(stockUnitCode, unitMap) ?? null;
+  const manualCost = asNullableNumber(formData.get("cost"));
+
   const categoryId = asText(formData.get("category_id"));
   const payload: Record<string, unknown> = {
     name: asText(formData.get("name")),
     description: asText(formData.get("description")) || null,
     sku: asText(formData.get("sku")) || null,
-    unit: asText(formData.get("unit")) || null,
+    unit: stockUnitCode,
+    stock_unit_code: stockUnitCode,
     product_type: asText(formData.get("product_type")) || null,
-    price: formData.get("price") ? Number(formData.get("price")) : null,
-    cost: formData.get("cost") ? Number(formData.get("cost")) : null,
+    price: asNullableNumber(formData.get("price")),
+    cost: manualCost,
     is_active: Boolean(formData.get("is_active")),
     image_url: asText(formData.get("image_url")) || null,
     catalog_image_url: asText(formData.get("catalog_image_url")) || null,
@@ -147,7 +188,9 @@ async function updateProduct(formData: FormData) {
     product_id: productId,
     track_inventory: Boolean(formData.get("track_inventory")),
     inventory_kind: asText(formData.get("inventory_kind")) || "unclassified",
-    default_unit: asText(formData.get("default_unit")) || null,
+    default_unit: normalizeUnitCode(asText(formData.get("default_unit")) || stockUnitCode),
+    unit_family: unitFamily,
+    costing_mode: costingMode,
     lot_tracking: Boolean(formData.get("lot_tracking")),
     expiry_tracking: Boolean(formData.get("expiry_tracking")),
   };
@@ -156,6 +199,7 @@ async function updateProduct(formData: FormData) {
     .upsert(profilePayload, { onConflict: "product_id" });
   if (profileErr) redirectWithError(profileErr.message);
 
+  let autoCostFromPrimary: number | null = null;
   const supplierLinesRaw = formData.get("supplier_lines");
   if (typeof supplierLinesRaw === "string" && supplierLinesRaw) {
     try {
@@ -165,6 +209,8 @@ async function updateProduct(formData: FormData) {
         supplier_sku?: string;
         purchase_unit?: string;
         purchase_unit_size?: number;
+        purchase_pack_qty?: number;
+        purchase_pack_unit_code?: string;
         purchase_price?: number;
         currency?: string;
         lead_time_days?: number;
@@ -175,22 +221,72 @@ async function updateProduct(formData: FormData) {
       await supabase.from("product_suppliers").delete().eq("product_id", productId);
       for (const line of lines) {
         if (line._delete || !line.supplier_id) continue;
-        await supabase.from("product_suppliers").insert({
+        const packQty = Number(line.purchase_pack_qty ?? line.purchase_unit_size ?? 0) || 0;
+        const packUnitCode = normalizeUnitCode(
+          (line.purchase_pack_unit_code as string) || stockUnitCode
+        );
+        let purchaseUnitSizeLegacy: number | null = null;
+        if (packQty > 0 && packUnitCode) {
+          try {
+            const { quantity } = convertQuantity({
+              quantity: packQty,
+              fromUnitCode: packUnitCode,
+              toUnitCode: stockUnitCode,
+              unitMap,
+            });
+            purchaseUnitSizeLegacy = quantity;
+          } catch {
+            purchaseUnitSizeLegacy = null;
+          }
+        }
+        const purchasePrice = Number(line.purchase_price ?? 0) || null;
+        if (
+          costingMode === "auto_primary_supplier" &&
+          Boolean(line.is_primary) &&
+          purchasePrice != null &&
+          purchasePrice > 0 &&
+          packQty > 0 &&
+          packUnitCode
+        ) {
+          try {
+            autoCostFromPrimary = computeAutoCostFromPrimarySupplier({
+              packPrice: purchasePrice,
+              packQty,
+              packUnitCode,
+              stockUnitCode,
+              unitMap,
+            });
+          } catch {
+            // Keep previous/manual cost when conversion is not valid
+          }
+        }
+        const { error: supplierErr } = await supabase.from("product_suppliers").insert({
           product_id: productId,
           supplier_id: line.supplier_id,
           supplier_sku: line.supplier_sku || null,
           purchase_unit: line.purchase_unit || null,
-          purchase_unit_size: line.purchase_unit_size ?? null,
-          purchase_price: line.purchase_price ?? null,
+          purchase_unit_size: purchaseUnitSizeLegacy,
+          purchase_pack_qty: packQty > 0 ? packQty : null,
+          purchase_pack_unit_code: packUnitCode || null,
+          purchase_price: purchasePrice,
           currency: line.currency || "COP",
           lead_time_days: line.lead_time_days ?? null,
           min_order_qty: line.min_order_qty ?? null,
           is_primary: Boolean(line.is_primary),
         });
+        if (supplierErr) redirectWithError(supplierErr.message);
       }
     } catch {
       // ignore invalid JSON
     }
+  }
+
+  if (costingMode === "auto_primary_supplier" && manualCost == null && autoCostFromPrimary != null) {
+    const { error: costErr } = await supabase
+      .from("products")
+      .update({ cost: autoCostFromPrimary, updated_at: new Date().toISOString() })
+      .eq("id", productId);
+    if (costErr) redirectWithError(costErr.message);
   }
 
   const siteSettingsRaw = formData.get("site_settings_lines");
@@ -335,7 +431,7 @@ export default async function ProductCatalogDetailPage({
 
   const { data: product } = await supabase
     .from("products")
-    .select("id,name,description,sku,unit,product_type,category_id,price,cost,is_active,image_url,catalog_image_url")
+    .select("id,name,description,sku,unit,stock_unit_code,product_type,category_id,price,cost,is_active,image_url,catalog_image_url")
     .eq("id", id)
     .maybeSingle();
 
@@ -343,7 +439,7 @@ export default async function ProductCatalogDetailPage({
 
   const { data: profile } = await supabase
     .from("product_inventory_profiles")
-    .select("product_id,track_inventory,inventory_kind,default_unit,lot_tracking,expiry_tracking")
+    .select("product_id,track_inventory,inventory_kind,default_unit,unit_family,costing_mode,lot_tracking,expiry_tracking")
     .eq("product_id", id)
     .maybeSingle();
 
@@ -378,9 +474,18 @@ export default async function ProductCatalogDetailPage({
   const { data: areaKindsData } = await supabase.from("area_kinds").select("code,name").order("name", { ascending: true });
   const areaKindsList = (areaKindsData ?? []) as AreaKindRow[];
 
+  const { data: unitsData } = await supabase
+    .from("inventory_units")
+    .select("code,name,family,factor_to_base,symbol,display_decimals,is_active")
+    .eq("is_active", true)
+    .order("family", { ascending: true })
+    .order("factor_to_base", { ascending: true })
+    .limit(500);
+  const unitsList = (unitsData ?? []) as UnitRow[];
+
   const { data: supplierLinks } = await supabase
     .from("product_suppliers")
-    .select("id,supplier_id,supplier_sku,purchase_unit,purchase_unit_size,purchase_price,currency,lead_time_days,min_order_qty,is_primary")
+    .select("id,supplier_id,supplier_sku,purchase_unit,purchase_unit_size,purchase_pack_qty,purchase_pack_unit_code,purchase_price,currency,lead_time_days,min_order_qty,is_primary")
     .eq("product_id", id)
     .order("is_primary", { ascending: false });
   const supplierRows = (supplierLinks ?? []) as SupplierRow[];
@@ -452,6 +557,8 @@ export default async function ProductCatalogDetailPage({
 
   const productRow = product as ProductRow;
   const profileRow = (profile ?? null) as InventoryProfileRow | null;
+  const stockUnitCode = normalizeUnitCode(productRow.stock_unit_code || productRow.unit || "un");
+  const resolvedDefaultUnit = normalizeUnitCode(profileRow?.default_unit || stockUnitCode);
 
   const supplierInitialRows = supplierRows.map((r) => ({
     id: r.id,
@@ -459,6 +566,8 @@ export default async function ProductCatalogDetailPage({
     supplier_sku: r.supplier_sku ?? "",
     purchase_unit: r.purchase_unit ?? "",
     purchase_unit_size: r.purchase_unit_size ?? undefined,
+    purchase_pack_qty: r.purchase_pack_qty ?? r.purchase_unit_size ?? undefined,
+    purchase_pack_unit_code: r.purchase_pack_unit_code ?? stockUnitCode,
     purchase_price: r.purchase_price ?? undefined,
     currency: r.currency ?? "COP",
     lead_time_days: r.lead_time_days ?? undefined,
@@ -535,12 +644,19 @@ export default async function ProductCatalogDetailPage({
             <div>
               <p className="mb-2 text-sm font-medium text-[var(--ui-text)]">Proveedores del insumo</p>
               <p className="mb-3 text-sm text-[var(--ui-muted)]">
-                Asigna uno o más proveedores. En cada fila: SKU del proveedor, unidad de compra, tamaño (p. ej. cuántas unidades base por bulto) y precio. Marca uno como primario.
+                Define empaque y unidad de compra. El sistema calcula costo por unidad canonica cuando la familia es compatible.
               </p>
               <ProductSuppliersEditor
                 name="supplier_lines"
                 initialRows={supplierInitialRows}
                 suppliers={suppliersList.map((s) => ({ id: s.id, name: s.name }))}
+                units={unitsList.map((unit) => ({
+                  code: unit.code,
+                  family: unit.family,
+                  factor_to_base: unit.factor_to_base,
+                }))}
+                stockUnitCode={stockUnitCode}
+                stockUnitCodeFieldId={STOCK_UNIT_FIELD_ID}
               />
             </div>
 
@@ -642,12 +758,30 @@ export default async function ProductCatalogDetailPage({
 
             <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
               <label className="flex flex-col gap-1">
-                <span className="ui-label">Unidad de almacenamiento</span>
-                <input name="unit" defaultValue={productRow.unit ?? ""} className="ui-input" placeholder="kg, L, un, etc." required />
+                <span className="ui-label">Unidad canonica de almacenamiento</span>
+                <select
+                  id={STOCK_UNIT_FIELD_ID}
+                  name="stock_unit_code"
+                  defaultValue={stockUnitCode}
+                  className="ui-input"
+                  required
+                >
+                  {unitsList.map((unit) => (
+                    <option key={unit.code} value={unit.code}>
+                      {unit.code} - {unit.name} ({unit.family})
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="flex flex-col gap-1">
                 <span className="ui-label">Unidad por defecto (inventario)</span>
-                <input name="default_unit" defaultValue={profileRow?.default_unit ?? ""} className="ui-input" placeholder="Igual que arriba si se deja vacío" />
+                <select name="default_unit" defaultValue={resolvedDefaultUnit} className="ui-input">
+                  {unitsList.map((unit) => (
+                    <option key={unit.code} value={unit.code}>
+                      {unit.code} - {unit.name}
+                    </option>
+                  ))}
+                </select>
               </label>
               <label className="flex flex-col gap-1">
                 <span className="ui-label">Tipo de inventario</span>
@@ -667,6 +801,17 @@ export default async function ProductCatalogDetailPage({
               <label className="flex flex-col gap-1">
                 <span className="ui-label">Costo (inventario)</span>
                 <input name="cost" type="number" step="0.01" defaultValue={productRow.cost ?? ""} className="ui-input" placeholder="Costo actual" />
+              </label>
+              <label className="flex flex-col gap-1">
+                <span className="ui-label">Politica de costo</span>
+                <select
+                  name="costing_mode"
+                  defaultValue={profileRow?.costing_mode ?? "auto_primary_supplier"}
+                  className="ui-input"
+                >
+                  <option value="auto_primary_supplier">Auto proveedor primario</option>
+                  <option value="manual">Manual</option>
+                </select>
               </label>
             </div>
 
@@ -738,3 +883,4 @@ export default async function ProductCatalogDetailPage({
     </div>
   );
 }
+

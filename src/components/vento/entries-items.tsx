@@ -6,6 +6,12 @@ type ProductOption = {
   id: string;
   name: string | null;
   unit: string | null;
+  stock_unit_code?: string | null;
+};
+
+type UnitOption = {
+  code: string;
+  name: string;
 };
 
 type LocationOption = {
@@ -17,6 +23,7 @@ type LocationOption = {
 
 type Props = {
   products: ProductOption[];
+  units: UnitOption[];
   locations: LocationOption[];
   defaultLocationId?: string;
 };
@@ -27,11 +34,11 @@ type Row = {
   locationId: string;
   declared: string;
   received: string;
-  unit: string;
+  inputUnitCode: string;
   notes: string;
 };
 
-export function EntriesItems({ products, locations, defaultLocationId }: Props) {
+export function EntriesItems({ products, units, locations, defaultLocationId }: Props) {
   const initialLocationId =
     defaultLocationId || locations.find((loc) => loc.id)?.id || "";
   const [rows, setRows] = useState<Row[]>([
@@ -41,7 +48,7 @@ export function EntriesItems({ products, locations, defaultLocationId }: Props) 
       locationId: initialLocationId,
       declared: "",
       received: "",
-      unit: "",
+      inputUnitCode: "",
       notes: "",
     },
   ]);
@@ -55,7 +62,7 @@ export function EntriesItems({ products, locations, defaultLocationId }: Props) 
         locationId: initialLocationId,
         declared: "",
         received: "",
-        unit: "",
+        inputUnitCode: "",
         notes: "",
       },
     ]);
@@ -93,10 +100,15 @@ export function EntriesItems({ products, locations, defaultLocationId }: Props) 
                 onChange={(e) => {
                   const next = e.target.value;
                   const product = products.find((p) => p.id === next);
+                  const stockUnit = product?.stock_unit_code ?? product?.unit ?? "";
                   setRows((prev) =>
                     prev.map((r) =>
                       r.id === row.id
-                        ? { ...r, productId: next, unit: product?.unit ?? r.unit }
+                        ? {
+                            ...r,
+                            productId: next,
+                            inputUnitCode: stockUnit || r.inputUnitCode,
+                          }
                         : r
                     )
                   );
@@ -139,19 +151,26 @@ export function EntriesItems({ products, locations, defaultLocationId }: Props) 
                 }
               />
 
-              <input
-                name="item_unit"
-                placeholder="Unidad"
+              <select
+                name="item_input_unit_code"
                 className="ui-input"
-                value={row.unit}
+                value={row.inputUnitCode}
                 onChange={(e) =>
                   setRows((prev) =>
                     prev.map((r) =>
-                      r.id === row.id ? { ...r, unit: e.target.value } : r
+                      r.id === row.id ? { ...r, inputUnitCode: e.target.value } : r
                     )
                   )
                 }
-              />
+                required
+              >
+                <option value="">Unidad captura</option>
+                {units.map((unit) => (
+                  <option key={unit.code} value={unit.code}>
+                    {unit.code} - {unit.name}
+                  </option>
+                ))}
+              </select>
 
               <select
                 name="item_location_id"
@@ -193,6 +212,13 @@ export function EntriesItems({ products, locations, defaultLocationId }: Props) 
                     Quitar
                   </button>
                 ) : null}
+              </div>
+              <div className="md:col-span-7 text-xs text-[var(--ui-muted)]">
+                Unidad canónica:
+                {" "}
+                {products.find((p) => p.id === row.productId)?.stock_unit_code ??
+                  products.find((p) => p.id === row.productId)?.unit ??
+                  "-"}
               </div>
             </div>
 

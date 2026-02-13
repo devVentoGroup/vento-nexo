@@ -13,7 +13,13 @@ type SearchParams = { site_id?: string; zone?: string; location_id?: string };
 
 type EmployeeSiteRow = { site_id: string | null; is_primary: boolean | null };
 type SiteRow = { id: string; name: string | null };
-type ProductRow = { id: string; name: string; sku: string | null; unit: string | null };
+type ProductRow = {
+  id: string;
+  name: string;
+  sku: string | null;
+  unit: string | null;
+  stock_unit_code: string | null;
+};
 type ProductSiteRow = { product_id: string; is_active: boolean | null };
 
 export default async function InventoryCountInitialPage({
@@ -136,7 +142,7 @@ export default async function InventoryCountInitialPage({
 
   let productsQuery = supabase
     .from("products")
-    .select("id,name,sku,unit,product_inventory_profiles(track_inventory)")
+    .select("id,name,sku,unit,stock_unit_code,product_inventory_profiles(track_inventory)")
     .eq("product_inventory_profiles.track_inventory", true)
     .order("name", { ascending: true })
     .limit(500);
@@ -302,7 +308,12 @@ export default async function InventoryCountInitialPage({
           ) : null}
 
           <CountInitialForm
-            products={productRows.map((p) => ({ id: p.id, name: p.name, sku: p.sku, unit: p.unit }))}
+            products={productRows.map((p) => ({
+              id: p.id,
+              name: p.name,
+              sku: p.sku,
+              unit: p.stock_unit_code ?? p.unit,
+            }))}
             siteId={siteId}
             siteName={siteName}
             countScopeLabel={countScopeLabel}
@@ -313,5 +324,4 @@ export default async function InventoryCountInitialPage({
     </div>
   );
 }
-
 

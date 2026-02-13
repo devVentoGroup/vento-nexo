@@ -68,7 +68,7 @@ export function CountInitialForm({ products, siteId, siteName, countScopeLabel, 
       }
       router.push(`/inventory/stock?site_id=${encodeURIComponent(siteId)}&count_initial=1`);
       return;
-    } catch (e) {
+    } catch {
       setError("Error de red al guardar.");
       setLoading(false);
     }
@@ -196,5 +196,4 @@ export function CountInitialForm({ products, siteId, siteName, countScopeLabel, 
     </div>
   );
 }
-
 

@@ -4,6 +4,13 @@ import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { EntriesForm } from "@/components/vento/entries-form";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
+import {
+  convertQuantity,
+  createUnitMap,
+  normalizeUnitCode,
+  roundQuantity,
+  type InventoryUnit,
+} from "@/lib/inventory/uom";
 
 export const dynamic = "force-dynamic";
 
@@ -11,12 +18,15 @@ type ProductRow = {
   id: string;
   name: string | null;
   unit: string | null;
+  stock_unit_code: string | null;
 };
 
 type ProductProfileWithProduct = {
   product_id: string;
   products: ProductRow | null;
 };
+
+type UnitRow = InventoryUnit;
 
 type LocRow = {
   id: string;
@@ -105,18 +115,74 @@ async function createEntry(formData: FormData) {
   const locationIds = formData.getAll("item_location_id").map((v) => String(v).trim());
   const declared = formData.getAll("item_quantity_declared").map((v) => String(v).trim());
   const received = formData.getAll("item_quantity_received").map((v) => String(v).trim());
-  const units = formData.getAll("item_unit").map((v) => String(v).trim());
+  const inputUnits = formData
+    .getAll("item_input_unit_code")
+    .map((v) => normalizeUnitCode(String(v).trim()));
   const itemNotes = formData.getAll("item_notes").map((v) => String(v).trim());
 
+  const productIdsForLookup = Array.from(new Set(productIds.filter(Boolean)));
+  const { data: productsData } = productIdsForLookup.length
+    ? await supabase
+        .from("products")
+        .select("id,unit,stock_unit_code")
+        .in("id", productIdsForLookup)
+    : { data: [] as ProductRow[] };
+  const productMap = new Map(
+    ((productsData ?? []) as ProductRow[]).map((product) => [product.id, product])
+  );
+
+  const { data: unitsData } = await supabase
+    .from("inventory_units")
+    .select("code,name,family,factor_to_base,symbol,display_decimals,is_active")
+    .eq("is_active", true)
+    .limit(500);
+  const unitMap = createUnitMap((unitsData ?? []) as UnitRow[]);
+
   const items = productIds
-    .map((productId, idx) => ({
-      product_id: productId,
-      location_id: locationIds[idx] || "",
-      quantity_declared: parseNumber(declared[idx] ?? "0"),
-      quantity_received: parseNumber(received[idx] ?? "0"),
-      unit: units[idx] || null,
-      notes: itemNotes[idx] || null,
-    }))
+    .map((productId, idx) => {
+      const inputDeclared = parseNumber(declared[idx] ?? "0");
+      const inputReceived = parseNumber(received[idx] ?? "0");
+      const product = productMap.get(productId);
+      const stockUnitCode = normalizeUnitCode(
+        product?.stock_unit_code || product?.unit || inputUnits[idx] || "un"
+      );
+      const inputUnitCode = normalizeUnitCode(inputUnits[idx] || stockUnitCode);
+
+      let quantityDeclared = inputDeclared;
+      let quantityReceived = inputReceived;
+      let conversionFactorToStock = 1;
+      try {
+        const factorRes = convertQuantity({
+          quantity: 1,
+          fromUnitCode: inputUnitCode,
+          toUnitCode: stockUnitCode,
+          unitMap,
+        });
+        conversionFactorToStock = factorRes.quantity;
+        quantityDeclared = roundQuantity(inputDeclared * conversionFactorToStock);
+        quantityReceived = roundQuantity(inputReceived * conversionFactorToStock);
+      } catch {
+        redirect(
+          "/inventory/entries?error=" +
+            encodeURIComponent(
+              `Conversion invalida para producto ${productId}. Verifica unidad de captura y unidad canonica.`
+            )
+        );
+      }
+
+      return {
+        product_id: productId,
+        location_id: locationIds[idx] || "",
+        input_qty_declared: inputDeclared,
+        input_qty_received: inputReceived,
+        input_unit_code: inputUnitCode,
+        quantity_declared: quantityDeclared,
+        quantity_received: quantityReceived,
+        conversion_factor_to_stock: conversionFactorToStock,
+        stock_unit_code: stockUnitCode,
+        notes: itemNotes[idx] || null,
+      };
+    })
     .filter((item) => item.product_id && item.quantity_declared > 0);
 
   let supplierName = supplierCustom;
@@ -179,7 +245,11 @@ async function createEntry(formData: FormData) {
     location_id: item.location_id,
     quantity_declared: item.quantity_declared,
     quantity_received: item.quantity_received,
-    unit: item.unit,
+    unit: item.stock_unit_code,
+    input_qty: item.input_qty_received > 0 ? item.input_qty_received : item.input_qty_declared,
+    input_unit_code: item.input_unit_code,
+    conversion_factor_to_stock: item.conversion_factor_to_stock,
+    stock_unit_code: item.stock_unit_code,
     notes: item.notes,
   }));
 
@@ -198,6 +268,10 @@ async function createEntry(formData: FormData) {
       product_id: item.product_id,
       movement_type: "receipt_in",
       quantity: item.quantity_received,
+      input_qty: item.input_qty_received,
+      input_unit_code: item.input_unit_code,
+      conversion_factor_to_stock: item.conversion_factor_to_stock,
+      stock_unit_code: item.stock_unit_code,
       note: `Entrada ${entry.id}`,
     }));
 
@@ -209,14 +283,31 @@ async function createEntry(formData: FormData) {
       redirect("/inventory/entries?error=" + encodeURIComponent(moveErr.message));
     }
 
+    const productIdsWithReceipt = Array.from(
+      new Set(movementRows.map((item) => item.product_id))
+    );
+    const { data: existingSiteStocks } = await supabase
+      .from("inventory_stock_by_site")
+      .select("product_id,current_qty")
+      .eq("site_id", siteId)
+      .in("product_id", productIdsWithReceipt);
+    const siteQtyMap = new Map(
+      (existingSiteStocks ?? []).map((row: { product_id: string; current_qty: number | null }) => [
+        row.product_id,
+        Number(row.current_qty ?? 0),
+      ])
+    );
     for (const item of movementRows) {
+      const currentQty = siteQtyMap.get(item.product_id) ?? 0;
+      const nextQty = roundQuantity(currentQty + item.quantity);
+      siteQtyMap.set(item.product_id, nextQty);
       const { error: stockErr } = await supabase
         .from("inventory_stock_by_site")
         .upsert(
           {
             site_id: item.site_id,
             product_id: item.product_id,
-            current_qty: item.quantity,
+            current_qty: nextQty,
             updated_at: new Date().toISOString(),
           },
           { onConflict: "site_id,product_id" }
@@ -260,7 +351,7 @@ export default async function EntriesPage({
 
   const { data: products } = await supabase
     .from("product_inventory_profiles")
-    .select("product_id, products(id,name,unit)")
+    .select("product_id, products(id,name,unit,stock_unit_code)")
     .eq("track_inventory", true)
     .in("inventory_kind", ["ingredient", "finished", "resale", "packaging"])
     .order("name", { foreignTable: "products", ascending: true })
@@ -273,12 +364,21 @@ export default async function EntriesPage({
   if (productRows.length === 0) {
     const { data: fallbackProducts } = await supabase
       .from("products")
-      .select("id,name,unit")
+      .select("id,name,unit,stock_unit_code")
       .eq("is_active", true)
       .order("name", { ascending: true })
       .limit(400);
     productRows = (fallbackProducts ?? []) as unknown as ProductRow[];
   }
+
+  const { data: unitsData } = await supabase
+    .from("inventory_units")
+    .select("code,name,family,factor_to_base,symbol,display_decimals,is_active")
+    .eq("is_active", true)
+    .order("family", { ascending: true })
+    .order("factor_to_base", { ascending: true })
+    .limit(500);
+  const unitsList = (unitsData ?? []) as UnitRow[];
 
   const { data: employee } = await supabase
     .from("employees")
@@ -356,6 +456,7 @@ export default async function EntriesPage({
 
       <EntriesForm
         products={productRows}
+        units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
         locations={(locations ?? []) as LocRow[]}
         defaultLocationId={pickDefaultLocationId((locations ?? []) as LocRow[])}
         suppliers={supplierRows}

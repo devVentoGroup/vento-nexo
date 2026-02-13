@@ -4,6 +4,7 @@ import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { TransfersForm } from "@/components/vento/transfers-form";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
+import { normalizeUnitCode, roundQuantity } from "@/lib/inventory/uom";
 
 export const dynamic = "force-dynamic";
 
@@ -11,6 +12,7 @@ type ProductRow = {
   id: string;
   name: string | null;
   unit: string | null;
+  stock_unit_code: string | null;
 };
 
 type ProductProfileWithProduct = {
@@ -97,16 +99,34 @@ async function createTransfer(formData: FormData) {
 
   const productIds = formData.getAll("item_product_id").map((v) => String(v).trim());
   const quantities = formData.getAll("item_quantity").map((v) => String(v).trim());
-  const units = formData.getAll("item_unit").map((v) => String(v).trim());
+  const inputUnits = formData
+    .getAll("item_input_unit_code")
+    .map((v) => normalizeUnitCode(String(v).trim()));
   const itemNotes = formData.getAll("item_notes").map((v) => String(v).trim());
 
+  const productIdsForLookup = Array.from(new Set(productIds.filter(Boolean)));
+  const { data: productsData } = productIdsForLookup.length
+    ? await supabase
+        .from("products")
+        .select("id,unit,stock_unit_code")
+        .in("id", productIdsForLookup)
+    : { data: [] as ProductRow[] };
+  const productMap = new Map(
+    ((productsData ?? []) as ProductRow[]).map((product) => [product.id, product])
+  );
+
   const items = productIds
-    .map((productId, idx) => ({
-      product_id: productId,
-      quantity: parseNumber(quantities[idx] ?? "0"),
-      unit: units[idx] || null,
-      notes: itemNotes[idx] || null,
-    }))
+    .map((productId, idx) => {
+      const product = productMap.get(productId);
+      const stockUnitCode = normalizeUnitCode(product?.stock_unit_code || product?.unit || "un");
+      return {
+        product_id: productId,
+        quantity: roundQuantity(parseNumber(quantities[idx] ?? "0")),
+        input_unit_code: normalizeUnitCode(inputUnits[idx] || stockUnitCode),
+        stock_unit_code: stockUnitCode,
+        notes: itemNotes[idx] || null,
+      };
+    })
     .filter((item) => item.product_id && item.quantity > 0);
 
   if (items.length === 0) {
@@ -159,7 +179,11 @@ async function createTransfer(formData: FormData) {
     transfer_id: transfer.id,
     product_id: item.product_id,
     quantity: item.quantity,
-    unit: item.unit,
+    unit: item.stock_unit_code,
+    input_qty: item.quantity,
+    input_unit_code: item.input_unit_code,
+    conversion_factor_to_stock: 1,
+    stock_unit_code: item.stock_unit_code,
     notes: item.notes,
   }));
 
@@ -184,6 +208,10 @@ async function createTransfer(formData: FormData) {
     product_id: item.product_id,
     movement_type: "transfer_internal",
     quantity: item.quantity,
+    input_qty: item.quantity,
+    input_unit_code: item.input_unit_code,
+    conversion_factor_to_stock: 1,
+    stock_unit_code: item.stock_unit_code,
     note: `Traslado ${transfer.id} ${fromCode} -> ${toCode}`,
   }));
 
@@ -259,7 +287,7 @@ export default async function TransfersPage({
 
   const { data: products } = await supabase
     .from("product_inventory_profiles")
-    .select("product_id, products(id,name,unit)")
+    .select("product_id, products(id,name,unit,stock_unit_code)")
     .eq("track_inventory", true)
     .in("inventory_kind", ["ingredient", "finished", "resale", "packaging"])
     .order("name", { foreignTable: "products", ascending: true })

@@ -7,6 +7,7 @@ type ProductOption = {
   id: string;
   name: string | null;
   unit: string | null;
+  stock_unit_code?: string | null;
 };
 
 type LocationOption = {
@@ -21,15 +22,28 @@ type SupplierOption = {
   name: string | null;
 };
 
+type UnitOption = {
+  code: string;
+  name: string;
+};
+
 type Props = {
   products: ProductOption[];
+  units: UnitOption[];
   locations: LocationOption[];
   suppliers: SupplierOption[];
   defaultLocationId?: string;
   action: (formData: FormData) => void | Promise<void>;
 };
 
-export function EntriesForm({ products, locations, suppliers, defaultLocationId, action }: Props) {
+export function EntriesForm({
+  products,
+  units,
+  locations,
+  suppliers,
+  defaultLocationId,
+  action,
+}: Props) {
   const [supplierId, setSupplierId] = useState(
     suppliers[0]?.id ?? "__new__"
   );
@@ -92,6 +106,7 @@ export function EntriesForm({ products, locations, suppliers, defaultLocationId,
         <div className="mt-4">
           <EntriesItems
             products={products}
+            units={units}
             locations={locations}
             defaultLocationId={defaultLocationId}
           />

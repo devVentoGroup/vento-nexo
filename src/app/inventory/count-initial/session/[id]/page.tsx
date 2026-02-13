@@ -33,9 +33,14 @@ async function closeCountAction(formData: FormData) {
   const sess = session as { site_id: string; scope_type: string | null; scope_location_id: string | null };
   const { data: lines } = await supabase
     .from("inventory_count_lines")
-    .select("id,product_id,quantity_counted")
+    .select("id,product_id,quantity_counted,current_qty_at_open")
     .eq("session_id", sessionId);
-  const lineRows = (lines ?? []) as { id: string; product_id: string; quantity_counted: number | null }[];
+  const lineRows = (lines ?? []) as {
+    id: string;
+    product_id: string;
+    quantity_counted: number | null;
+    current_qty_at_open: number | null;
+  }[];
 
   const productIds = lineRows.map((l) => l.product_id);
   let currentByProduct: Map<string, number> = new Map();
@@ -60,9 +65,10 @@ async function closeCountAction(formData: FormData) {
   }
 
   for (const line of lineRows) {
-    const current = currentByProduct.get(line.product_id) ?? 0;
+    const currentAtOpen = Number(line.current_qty_at_open ?? 0);
+    const current = currentByProduct.get(line.product_id) ?? currentAtOpen;
     const counted = Number(line.quantity_counted ?? 0);
-    const delta = counted - current;
+    const delta = counted - currentAtOpen;
     await supabase
       .from("inventory_count_lines")
       .update({ current_qty_at_close: current, quantity_delta: delta })
@@ -102,15 +108,27 @@ async function approveAdjustmentsAction(formData: FormData) {
     .eq("session_id", sessionId);
   const lineRows = (lines ?? []) as { id: string; product_id: string; quantity_delta: number | null; adjustment_applied_at: string | null }[];
   const toApply = lineRows.filter((l) => Number(l.quantity_delta ?? 0) !== 0 && !l.adjustment_applied_at);
+  const productIds = Array.from(new Set(toApply.map((line) => line.product_id)));
+  const { data: productsData } = productIds.length
+    ? await supabase.from("products").select("id,unit,stock_unit_code").in("id", productIds)
+    : { data: [] as Array<{ id: string; unit: string | null; stock_unit_code: string | null }> };
+  const productUnitMap = new Map(
+    (productsData ?? []).map((product) => [product.id, product.stock_unit_code ?? product.unit ?? "un"])
+  );
 
   for (const line of toApply) {
     const delta = Number(line.quantity_delta ?? 0);
+    const stockUnitCode = productUnitMap.get(line.product_id) ?? "un";
     const note = `Ajuste por conteo sesión ${sessionId}`;
     await supabase.from("inventory_movements").insert({
       site_id: sess.site_id,
       product_id: line.product_id,
       movement_type: "adjustment",
       quantity: delta,
+      input_qty: Math.abs(delta),
+      input_unit_code: stockUnitCode,
+      conversion_factor_to_stock: 1,
+      stock_unit_code: stockUnitCode,
       note,
       created_by: user.id,
     });
@@ -167,6 +185,7 @@ type LineRow = {
   id: string;
   product_id: string;
   quantity_counted: number | null;
+  current_qty_at_open: number | null;
   current_qty_at_close: number | null;
   quantity_delta: number | null;
   adjustment_applied_at: string | null;
@@ -222,40 +241,10 @@ export default async function CountSessionPage({
 
   const { data: lines } = await supabase
     .from("inventory_count_lines")
-    .select("id,product_id,quantity_counted,current_qty_at_close,quantity_delta,adjustment_applied_at,product:products(name,unit)")
+    .select("id,product_id,quantity_counted,current_qty_at_open,current_qty_at_close,quantity_delta,adjustment_applied_at,product:products(name,unit)")
     .eq("session_id", id)
     .order("product_id", { ascending: true });
   const lineRows = (lines ?? []) as unknown as LineRow[];
-
-  let currentQtyByProduct: Map<string, number> = new Map();
-  if (isOpen && lineRows.length > 0) {
-    const productIds = lineRows.map((l) => l.product_id);
-    if (sess.scope_type === "loc" && sess.scope_location_id) {
-      const { data: stockLoc } = await supabase
-        .from("inventory_stock_by_location")
-        .select("product_id,current_qty")
-        .eq("location_id", sess.scope_location_id)
-        .in("product_id", productIds);
-      currentQtyByProduct = new Map(
-        (stockLoc ?? []).map((r: { product_id: string; current_qty: number | null }) => [
-          r.product_id,
-          Number(r.current_qty ?? 0),
-        ])
-      );
-    } else {
-      const { data: stockSite } = await supabase
-        .from("inventory_stock_by_site")
-        .select("product_id,current_qty")
-        .eq("site_id", siteId)
-        .in("product_id", productIds);
-      currentQtyByProduct = new Map(
-        (stockSite ?? []).map((r: { product_id: string; current_qty: number | null }) => [
-          r.product_id,
-          Number(r.current_qty ?? 0),
-        ])
-      );
-    }
-  }
 
   const scopeLabel =
     sess.scope_type === "loc" && sess.scope_location_id
@@ -323,7 +312,7 @@ export default async function CountSessionPage({
             <tbody>
               {lineRows.map((line) => {
                 const current = isOpen
-                  ? currentQtyByProduct.get(line.product_id) ?? 0
+                  ? Number(line.current_qty_at_open ?? 0)
                   : Number(line.current_qty_at_close ?? 0);
                 const counted = Number(line.quantity_counted ?? 0);
                 const delta = isOpen ? counted - current : Number(line.quantity_delta ?? 0);

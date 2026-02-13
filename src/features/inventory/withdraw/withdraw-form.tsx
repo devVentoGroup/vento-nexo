@@ -4,13 +4,18 @@ import Link from "next/link";
 import { useState } from "react";
 
 type LocOption = { id: string; code: string | null; zone: string | null };
-type ProductOption = { id: string; name: string | null; unit: string | null };
+type ProductOption = {
+  id: string;
+  name: string | null;
+  unit: string | null;
+  stock_unit_code?: string | null;
+};
 
 type Row = {
   id: number;
   productId: string;
   quantity: string;
-  unit: string;
+  inputUnitCode: string;
   notes: string;
 };
 
@@ -31,13 +36,13 @@ export function WithdrawForm({
 }: Props) {
   const [locationId, setLocationId] = useState((defaultLocationId || locations[0]?.id) ?? "");
   const [rows, setRows] = useState<Row[]>([
-    { id: 0, productId: "", quantity: "", unit: "", notes: "" },
+    { id: 0, productId: "", quantity: "", inputUnitCode: "", notes: "" },
   ]);
 
   const addRow = () => {
     setRows((prev) => [
       ...prev,
-      { id: prev.length, productId: "", quantity: "", unit: "", notes: "" },
+      { id: prev.length, productId: "", quantity: "", inputUnitCode: "", notes: "" },
     ]);
   };
 
@@ -108,10 +113,15 @@ export function WithdrawForm({
                       onChange={(e) => {
                         const next = e.target.value;
                         const p = products.find((x) => x.id === next);
+                        const stockUnit = p?.stock_unit_code ?? p?.unit ?? "";
                         setRows((prev) =>
                           prev.map((r) =>
                             r.id === row.id
-                              ? { ...r, productId: next, unit: p?.unit ?? r.unit }
+                              ? {
+                                  ...r,
+                                  productId: next,
+                                  inputUnitCode: stockUnit || r.inputUnitCode,
+                                }
                               : r
                           )
                         );
@@ -144,19 +154,27 @@ export function WithdrawForm({
                       className="ui-input mt-1 h-10 min-w-0"
                     />
                   </label>
-                  <label className="flex w-20 flex-col gap-1">
+                  <label className="flex w-24 flex-col gap-1">
                     <span className="text-[11px] text-zinc-500">Unidad</span>
-                    <input
-                      name="item_unit"
-                      placeholder={product?.unit ?? "—"}
-                      value={row.unit}
+                    <select
+                      name="item_input_unit_code"
+                      value={row.inputUnitCode}
                       onChange={(e) =>
                         setRows((prev) =>
-                          prev.map((r) => (r.id === row.id ? { ...r, unit: e.target.value } : r))
+                          prev.map((r) =>
+                            r.id === row.id ? { ...r, inputUnitCode: e.target.value } : r
+                          )
                         )
                       }
                       className="ui-input mt-1 h-10 min-w-0"
-                    />
+                      required
+                    >
+                      <option value="">-</option>
+                      {(() => {
+                        const unitCode = product?.stock_unit_code ?? product?.unit ?? "";
+                        return unitCode ? <option value={unitCode}>{unitCode}</option> : null;
+                      })()}
+                    </select>
                   </label>
                   <label className="min-w-[120px] flex-1 flex-col gap-1 md:flex-initial">
                     <span className="text-[11px] text-zinc-500">Nota (opcional)</span>

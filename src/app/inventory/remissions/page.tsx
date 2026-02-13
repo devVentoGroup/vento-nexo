@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { RemissionsDestinationSelect } from "@/components/vento/remissions-destination-select";
 import { RemissionsItems } from "@/components/vento/remissions-items";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
+import { normalizeUnitCode, roundQuantity } from "@/lib/inventory/uom";
 
 export const dynamic = "force-dynamic";
 
@@ -56,6 +57,7 @@ type ProductRow = {
   id: string;
   name: string | null;
   unit: string | null;
+  stock_unit_code: string | null;
 };
 
 type ProductSiteRow = {
@@ -124,16 +126,35 @@ async function createRemission(formData: FormData) {
 
   const productIds = formData.getAll("item_product_id").map((v) => String(v).trim());
   const quantities = formData.getAll("item_quantity").map((v) => String(v).trim());
-  const units = formData.getAll("item_unit").map((v) => String(v).trim());
+  const inputUnits = formData
+    .getAll("item_input_unit_code")
+    .map((v) => normalizeUnitCode(String(v).trim()));
   const areaKinds = formData.getAll("item_area_kind").map((v) => String(v).trim());
 
+  const productIdsForLookup = Array.from(new Set(productIds.filter(Boolean)));
+  const { data: productsData } = productIdsForLookup.length
+    ? await supabase
+        .from("products")
+        .select("id,unit,stock_unit_code")
+        .in("id", productIdsForLookup)
+    : { data: [] as ProductRow[] };
+  const productMap = new Map(
+    ((productsData ?? []) as ProductRow[]).map((product) => [product.id, product])
+  );
+
   const items = productIds
-    .map((productId, idx) => ({
-      product_id: productId,
-      quantity: parseNumber(quantities[idx] ?? "0"),
-      unit: units[idx] || null,
-      production_area_kind: areaKinds[idx] || null,
-    }))
+    .map((productId, idx) => {
+      const product = productMap.get(productId);
+      const stockUnitCode = normalizeUnitCode(product?.stock_unit_code || product?.unit || "un");
+      return {
+        product_id: productId,
+        quantity: roundQuantity(parseNumber(quantities[idx] ?? "0")),
+        unit: stockUnitCode,
+        input_unit_code: normalizeUnitCode(inputUnits[idx] || stockUnitCode),
+        stock_unit_code: stockUnitCode,
+        production_area_kind: areaKinds[idx] || null,
+      };
+    })
     .filter((item) => item.product_id && item.quantity > 0);
 
   if (!toSiteId || !fromSiteId) {
@@ -203,6 +224,10 @@ async function createRemission(formData: FormData) {
     product_id: item.product_id,
     quantity: item.quantity,
     unit: item.unit,
+    input_qty: item.quantity,
+    input_unit_code: item.input_unit_code,
+    conversion_factor_to_stock: 1,
+    stock_unit_code: item.stock_unit_code,
     production_area_kind: item.production_area_kind,
   }));
 
@@ -408,7 +433,7 @@ export default async function RemissionsPage({
 
   let productsQuery = supabase
     .from("product_inventory_profiles")
-    .select("product_id, products(id,name,unit)")
+    .select("product_id, products(id,name,unit,stock_unit_code)")
     .eq("track_inventory", true)
     .in("inventory_kind", ["ingredient", "finished", "resale", "packaging"])
     .order("name", { foreignTable: "products", ascending: true })
@@ -426,7 +451,7 @@ export default async function RemissionsPage({
   if (productRows.length === 0) {
     let fallbackQuery = supabase
       .from("products")
-      .select("id,name,unit")
+      .select("id,name,unit,stock_unit_code")
       .eq("is_active", true)
       .order("name", { ascending: true })
       .limit(400);
@@ -669,7 +694,4 @@ export default async function RemissionsPage({
     </div>
   );
 }
-
-
-
 

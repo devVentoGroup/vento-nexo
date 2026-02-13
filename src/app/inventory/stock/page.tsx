@@ -68,6 +68,7 @@ type ProductRow = {
   name: string;
   sku: string | null;
   unit: string | null;
+  stock_unit_code: string | null;
   product_type: string;
   category_id: string | null;
   product_inventory_profiles?: {
@@ -258,7 +259,7 @@ export default async function InventoryStockPage({
   let productsQuery = supabase
     .from("products")
     .select(
-      "id,name,sku,unit,product_type,category_id,product_inventory_profiles(track_inventory,inventory_kind)"
+      "id,name,sku,unit,stock_unit_code,product_type,category_id,product_inventory_profiles(track_inventory,inventory_kind)"
     )
     .order("name", { ascending: true })
     .limit(1000);
@@ -623,7 +624,7 @@ export default async function InventoryStockPage({
                     <tr key={product.id} className="ui-body">
                       <TableCell>{product.name}</TableCell>
                       <TableCell className="font-mono">{product.sku ?? "-"}</TableCell>
-                      <TableCell>{product.unit ?? "-"}</TableCell>
+                      <TableCell>{product.stock_unit_code ?? product.unit ?? "-"}</TableCell>
                       {locList.map((loc) => {
                         const qty = matrixByProductLoc.get(`${product.id}|${loc.id}`) ?? 0;
                         return (
@@ -713,7 +714,7 @@ export default async function InventoryStockPage({
                     ? "text-red-600 font-semibold"
                     : "text-zinc-800";
                 const sku = product.sku ?? "-";
-                const unit = product.unit ?? "-";
+                const unit = product.stock_unit_code ?? product.unit ?? "-";
                 const siteLabel = siteId ? siteNameMap.get(siteId) ?? siteId : "Todas";
                 const categoryLabel = categoryPath(product.category_id);
                 const inventoryProfile = product.product_inventory_profiles;

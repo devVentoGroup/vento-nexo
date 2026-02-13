@@ -7,6 +7,7 @@ import {
   checkPermissionWithRoleOverride,
   getRoleOverrideFromCookies,
 } from "@/lib/auth/role-override";
+import { normalizeUnitCode, roundQuantity } from "@/lib/inventory/uom";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 
@@ -58,6 +59,10 @@ type RestockItemRow = {
   product_id: string;
   quantity: number;
   unit: string | null;
+  input_qty: number | null;
+  input_unit_code: string | null;
+  stock_unit_code: string | null;
+  source_location_id: string | null;
   prepared_quantity: number | null;
   shipped_quantity: number | null;
   received_quantity: number | null;
@@ -67,8 +72,11 @@ type RestockItemRow = {
   product: {
     name: string | null;
     unit: string | null;
+    stock_unit_code?: string | null;
   } | null;
 };
+
+type LocRow = { id: string; code: string | null };
 
 function formatStatus(status?: string | null) {
   const value = String(status ?? "").trim();
@@ -204,7 +212,7 @@ async function updateItems(formData: FormData) {
 
   const { data: request } = await supabase
     .from("restock_requests")
-    .select("from_site_id,to_site_id")
+    .select("from_site_id,to_site_id,status")
     .eq("id", requestId)
     .single();
 
@@ -221,8 +229,12 @@ async function updateItems(formData: FormData) {
   const shortage = formData.getAll("shortage_quantity").map((v) => String(v).trim());
   const statuses = formData.getAll("item_status").map((v) => String(v).trim());
   const areaKinds = formData.getAll("item_area_kind").map((v) => String(v).trim());
+  const sourceLocationIds = formData
+    .getAll("source_location_id")
+    .map((v) => String(v).trim());
 
   const fromSiteId = request?.from_site_id ?? "";
+  const allowSourceLocation = allowPrepared && access.fromSiteType === "production_center";
   if (allowPrepared && fromSiteId) {
     const { data: stockRows } = await supabase
       .from("inventory_stock_by_site")
@@ -239,6 +251,26 @@ async function updateItems(formData: FormData) {
       .select("id,product_id")
       .eq("request_id", requestId);
     const productById = new Map((itemsRows ?? []).map((r: { id: string; product_id: string }) => [r.id, r.product_id]));
+
+    const selectedLocIds = Array.from(
+      new Set(sourceLocationIds.filter(Boolean))
+    );
+    const selectedProductIds = Array.from(new Set(productById.values()));
+    const { data: locStockRows } =
+      allowSourceLocation && selectedLocIds.length > 0 && selectedProductIds.length > 0
+        ? await supabase
+            .from("inventory_stock_by_location")
+            .select("location_id,product_id,current_qty")
+            .in("location_id", selectedLocIds)
+            .in("product_id", selectedProductIds)
+        : { data: [] as { location_id: string; product_id: string; current_qty: number | null }[] };
+    const locStockMap = new Map(
+      (locStockRows ?? []).map((row) => [
+        `${row.location_id}|${row.product_id}`,
+        Number(row.current_qty ?? 0),
+      ])
+    );
+
     for (let i = 0; i < itemIds.length; i += 1) {
       const itemId = itemIds[i];
       const productId = productById.get(itemId);
@@ -255,6 +287,24 @@ async function updateItems(formData: FormData) {
             )
         );
       }
+      if (allowSourceLocation && maxQty > 0) {
+        const sourceLocId = sourceLocationIds[i] || "";
+        if (!sourceLocId) {
+          redirect(
+            `/inventory/remissions/${requestId}?error=` +
+              encodeURIComponent("Selecciona LOC origen para todos los items preparados/enviados.")
+          );
+        }
+        const availableAtLoc = locStockMap.get(`${sourceLocId}|${productId}`) ?? 0;
+        if (maxQty > availableAtLoc) {
+          redirect(
+            `/inventory/remissions/${requestId}?error=` +
+              encodeURIComponent(
+                `Cantidad preparada/enviada (${maxQty}) mayor que disponible en LOC origen (${availableAtLoc}).`
+              )
+          );
+        }
+      }
     }
   }
 
@@ -267,6 +317,7 @@ async function updateItems(formData: FormData) {
     if (allowPrepared) {
       updates.prepared_quantity = parseNumber(prepared[i] ?? "0");
       updates.shipped_quantity = parseNumber(shipped[i] ?? "0");
+      updates.source_location_id = sourceLocationIds[i] || null;
     }
 
     if (allowReceived) {
@@ -316,11 +367,12 @@ async function updateStatus(formData: FormData) {
 
   const { data: request } = await supabase
     .from("restock_requests")
-    .select("from_site_id,to_site_id")
+    .select("from_site_id,to_site_id,status")
     .eq("id", requestId)
     .single();
 
   const access = await loadAccessContext(supabase, user.id, request);
+  const currentStatus = String(request?.status ?? "");
 
   if (action === "prepare" && !access.canPrepare) {
     redirect(`/inventory/remissions/${requestId}?error=` + encodeURIComponent("No puedes preparar."));
@@ -347,6 +399,107 @@ async function updateStatus(formData: FormData) {
       `/inventory/remissions/${requestId}?error=` +
         encodeURIComponent("No tienes permiso para cancelar.")
     );
+  }
+
+  if (action === "prepare" && !["pending", "partial"].includes(currentStatus)) {
+    redirect(
+      `/inventory/remissions/${requestId}?error=` +
+        encodeURIComponent("Solo puedes preparar una remision pendiente/parcial.")
+    );
+  }
+  if (action === "transit" && !["pending", "preparing", "partial"].includes(currentStatus)) {
+    redirect(
+      `/inventory/remissions/${requestId}?error=` +
+        encodeURIComponent("Solo puedes enviar una remision pendiente/preparando/parcial.")
+    );
+  }
+  if (
+    (action === "receive" || action === "receive_partial") &&
+    !["in_transit", "partial", "preparing"].includes(currentStatus)
+  ) {
+    redirect(
+      `/inventory/remissions/${requestId}?error=` +
+        encodeURIComponent("La remision debe estar en transito/parcial para recibir.")
+    );
+  }
+
+  const sourceLocDeductions: Array<{
+    locationId: string;
+    productId: string;
+    qty: number;
+    unitCode: string;
+  }> = [];
+  if (action === "transit") {
+    const { data: itemsData } = await supabase
+      .from("restock_request_items")
+      .select("id,product_id,quantity,prepared_quantity,shipped_quantity,source_location_id,stock_unit_code,unit")
+      .eq("request_id", requestId);
+    const itemRows = (itemsData ?? []) as Array<{
+      id: string;
+      product_id: string;
+      quantity: number | null;
+      prepared_quantity: number | null;
+      shipped_quantity: number | null;
+      source_location_id: string | null;
+      stock_unit_code: string | null;
+      unit: string | null;
+    }>;
+
+    if (access.fromSiteType === "production_center") {
+      const locIds = Array.from(
+        new Set(itemRows.map((row) => row.source_location_id).filter(Boolean) as string[])
+      );
+      const productIds = Array.from(new Set(itemRows.map((row) => row.product_id).filter(Boolean)));
+      const { data: locStockRows } =
+        locIds.length > 0 && productIds.length > 0
+          ? await supabase
+              .from("inventory_stock_by_location")
+              .select("location_id,product_id,current_qty")
+              .in("location_id", locIds)
+              .in("product_id", productIds)
+          : { data: [] as { location_id: string; product_id: string; current_qty: number | null }[] };
+      const locStockMap = new Map(
+        (locStockRows ?? []).map((row) => [
+          `${row.location_id}|${row.product_id}`,
+          Number(row.current_qty ?? 0),
+        ])
+      );
+
+      for (const row of itemRows) {
+        const qty = roundQuantity(
+          Number(
+            (row.shipped_quantity ?? 0) > 0
+              ? row.shipped_quantity
+              : (row.prepared_quantity ?? 0) > 0
+                ? row.prepared_quantity
+                : row.quantity ?? 0
+          )
+        );
+        if (qty <= 0) continue;
+        const sourceLocId = row.source_location_id ?? "";
+        if (!sourceLocId) {
+          redirect(
+            `/inventory/remissions/${requestId}?error=` +
+              encodeURIComponent("Falta LOC origen en uno o mas items para enviar.")
+          );
+        }
+        const availableAtLoc = locStockMap.get(`${sourceLocId}|${row.product_id}`) ?? 0;
+        if (qty > availableAtLoc) {
+          redirect(
+            `/inventory/remissions/${requestId}?error=` +
+              encodeURIComponent(
+                `Cantidad enviada (${qty}) supera stock disponible en LOC origen (${availableAtLoc}).`
+              )
+          );
+        }
+        sourceLocDeductions.push({
+          locationId: sourceLocId,
+          productId: row.product_id,
+          qty,
+          unitCode: normalizeUnitCode(row.stock_unit_code || row.unit || "un"),
+        });
+      }
+    }
   }
   const updates: Record<string, string | null> = {
     status_updated_at: new Date().toISOString(),
@@ -386,17 +539,52 @@ async function updateStatus(formData: FormData) {
     updates.cancelled_at = new Date().toISOString();
   }
 
-  const { error } = await supabase.from("restock_requests").update(updates).eq("id", requestId);
-  if (error) {
-    redirect(`/inventory/remissions/${requestId}?error=` + encodeURIComponent(error.message));
-  }
-
   if (action === "transit") {
     const { error: moveErr } = await supabase.rpc("apply_restock_shipment", {
       p_request_id: requestId,
     });
     if (moveErr) {
       redirect(`/inventory/remissions/${requestId}?error=` + encodeURIComponent(moveErr.message));
+    }
+    const fromSiteIdForMovement = request?.from_site_id ?? "";
+    if (!fromSiteIdForMovement) {
+      redirect(
+        `/inventory/remissions/${requestId}?error=` +
+          encodeURIComponent("No se encontro sede origen para la remision.")
+      );
+    }
+
+    for (const deduction of sourceLocDeductions) {
+      const { error: locErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
+        p_location_id: deduction.locationId,
+        p_product_id: deduction.productId,
+        p_delta: -deduction.qty,
+      });
+      if (locErr) {
+        redirect(
+          `/inventory/remissions/${requestId}?error=` +
+            encodeURIComponent(`No se pudo descontar LOC origen: ${locErr.message}`)
+        );
+      }
+
+      const { error: moveLocErr } = await supabase.from("inventory_movements").insert({
+        site_id: fromSiteIdForMovement,
+        product_id: deduction.productId,
+        movement_type: "transfer_out",
+        quantity: -deduction.qty,
+        input_qty: deduction.qty,
+        input_unit_code: deduction.unitCode,
+        conversion_factor_to_stock: 1,
+        stock_unit_code: deduction.unitCode,
+        note: `Remision ${requestId} desde LOC ${deduction.locationId}`,
+        created_by: user.id,
+      });
+      if (moveLocErr) {
+        redirect(
+          `/inventory/remissions/${requestId}?error=` +
+            encodeURIComponent(`No se pudo registrar movimiento LOC: ${moveLocErr.message}`)
+        );
+      }
     }
   }
 
@@ -407,6 +595,11 @@ async function updateStatus(formData: FormData) {
     if (moveErr) {
       redirect(`/inventory/remissions/${requestId}?error=` + encodeURIComponent(moveErr.message));
     }
+  }
+
+  const { error } = await supabase.from("restock_requests").update(updates).eq("id", requestId);
+  if (error) {
+    redirect(`/inventory/remissions/${requestId}?error=` + encodeURIComponent(error.message));
   }
 
   redirect(`/inventory/remissions/${requestId}?ok=status_updated`);
@@ -450,7 +643,7 @@ export default async function RemissionDetailPage({
   const { data: items } = await supabase
     .from("restock_request_items")
     .select(
-      "id, product_id, quantity, unit, prepared_quantity, shipped_quantity, received_quantity, shortage_quantity, item_status, production_area_kind, product:products(name,unit)"
+      "id, product_id, quantity, unit, input_qty, input_unit_code, stock_unit_code, source_location_id, prepared_quantity, shipped_quantity, received_quantity, shortage_quantity, item_status, production_area_kind, product:products(name,unit,stock_unit_code)"
     )
     .eq("request_id", id)
     .order("created_at", { ascending: true });
@@ -462,6 +655,8 @@ export default async function RemissionDetailPage({
 
   const itemRows = (items ?? []) as unknown as RestockItemRow[];
   const areaKindRows = (areaKinds ?? []) as AreaKindRow[];
+  const showSourceLocSelector =
+    access.canPrepare && access.fromSiteType === "production_center";
 
   // Fase 2.1: stock disponible por sede y por LOC en origen (solo lectura al preparar)
   const fromSiteId = request?.from_site_id ?? "";
@@ -481,11 +676,14 @@ export default async function RemissionDetailPage({
   const { data: locsFromSite } = fromSiteId
     ? await supabase
         .from("inventory_locations")
-        .select("id")
+        .select("id,code")
         .eq("site_id", fromSiteId)
+        .order("code", { ascending: true })
         .limit(500)
-    : { data: [] as { id: string }[] };
-  locIdsFromSite = (locsFromSite ?? []).map((r: { id: string }) => r.id);
+    : { data: [] as LocRow[] };
+  const originLocRows = (locsFromSite ?? []) as LocRow[];
+  const originLocMap = new Map(originLocRows.map((loc) => [loc.id, loc.code ?? loc.id]));
+  locIdsFromSite = originLocRows.map((row) => row.id);
 
   const { data: stockByLocData } =
     fromSiteId && locIdsFromSite.length > 0
@@ -658,13 +856,18 @@ export default async function RemissionDetailPage({
               const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
               const locLines = stockByLocByProduct.get(item.product_id) ?? [];
               const stockOk = availableSite >= (item.quantity ?? 0);
+              const sourceLocLabel = item.source_location_id
+                ? originLocMap.get(item.source_location_id) ?? item.source_location_id.slice(0, 8)
+                : "-";
               return (
               <div key={item.id} className="ui-panel-soft p-4">
                 <div className="ui-h3">
                   {item.product?.name ?? item.product_id}
                 </div>
                 <div className="mt-1 ui-caption">
-                  Producto: <span className="font-mono">{item.product_id}</span> Solicitado: {item.quantity} {item.unit ?? item.product?.unit ?? ""}
+                  Producto: <span className="font-mono">{item.product_id}</span>
+                  {" "}Solicitado: {item.quantity} {item.stock_unit_code ?? item.unit ?? item.product?.unit ?? ""}
+                  {" "}· LOC origen: {sourceLocLabel}
                 </div>
                 {access.canPrepare && fromSiteId ? (
                   <div className="mt-2 ui-panel-soft px-3 py-2 text-sm">
@@ -682,7 +885,26 @@ export default async function RemissionDetailPage({
 
                 <input type="hidden" name="item_id" value={item.id} />
 
-                                <div className="mt-3 grid gap-3 md:grid-cols-6">
+                <div className="mt-3 grid gap-3 md:grid-cols-6">
+                  {showSourceLocSelector ? (
+                    <label className="flex flex-col gap-1">
+                      <span className="ui-caption">LOC origen</span>
+                      <select
+                        name="source_location_id"
+                        defaultValue={item.source_location_id ?? ""}
+                        className="ui-input h-10 min-w-0"
+                      >
+                        <option value="">Selecciona LOC</option>
+                        {originLocRows.map((loc) => (
+                          <option key={loc.id} value={loc.id}>
+                            {loc.code ?? loc.id}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                  ) : (
+                    <input type="hidden" name="source_location_id" value={item.source_location_id ?? ""} />
+                  )}
                   {access.canPrepare ? (
                     <label className="flex flex-col gap-1">
                       <span className="ui-caption">Preparado</span>
@@ -770,8 +992,3 @@ export default async function RemissionDetailPage({
     </div>
   );
 }
-
-
-
-
-

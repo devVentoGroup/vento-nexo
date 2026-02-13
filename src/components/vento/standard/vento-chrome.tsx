@@ -198,6 +198,14 @@ const NAV_GROUPS: NavGroup[] = [
         required: ["access"],
         icon: "map",
       },
+      {
+        href: "/inventory/settings/units",
+        label: "Unidades",
+        description: "Catalogo de unidades y aliases",
+        required: ["inventory.stock"],
+        allowedRoles: ["propietario", "gerente_general"],
+        icon: "sliders",
+      },
     ],
   },
 ];

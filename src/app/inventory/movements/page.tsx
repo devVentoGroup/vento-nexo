@@ -41,6 +41,7 @@ type ProductRow = {
   name: string | null;
   sku: string | null;
   unit: string | null;
+  stock_unit_code?: string | null;
 };
 
 function startOfDayIso(dateStr: string) {
@@ -120,6 +121,10 @@ export default async function InventoryMovementsPage({
     product_id: string;
     movement_type: string;
     quantity: number;
+    input_qty?: number | null;
+    input_unit_code?: string | null;
+    conversion_factor_to_stock?: number | null;
+    stock_unit_code?: string | null;
     note?: string | null;
     created_at?: string | null;
     product?: ProductRow | null;
@@ -132,7 +137,7 @@ export default async function InventoryMovementsPage({
   let q = supabase
     .from("inventory_movements")
     .select(
-      "id,site_id,product_id,movement_type,quantity,note,created_at, product:products(id,name,sku,unit)"
+      "id,site_id,product_id,movement_type,quantity,input_qty,input_unit_code,conversion_factor_to_stock,stock_unit_code,note,created_at, product:products(id,name,sku,unit,stock_unit_code)"
     )
     .order("created_at", { ascending: false })
     .limit(200);
@@ -290,6 +295,7 @@ export default async function InventoryMovementsPage({
                 <TableHeaderCell>Producto</TableHeaderCell>
                 <TableHeaderCell>Qty</TableHeaderCell>
                 <TableHeaderCell>Unidad</TableHeaderCell>
+                <TableHeaderCell>Captura</TableHeaderCell>
                 <TableHeaderCell>Ref</TableHeaderCell>
               </tr>
             </thead>
@@ -302,8 +308,15 @@ export default async function InventoryMovementsPage({
                 const productLabel = product?.name ?? row.product_id ?? "";
                 const productSku = product?.sku ?? "";
                 const qty = String(row.quantity ?? "");
-                const unit = String(product?.unit ?? "");
+                const unit = String(row.stock_unit_code ?? product?.stock_unit_code ?? product?.unit ?? "");
+                const inputQty = row.input_qty;
+                const inputUnit = row.input_unit_code ?? "";
+                const factor = row.conversion_factor_to_stock;
                 const ref = String((row as { note?: string | null }).note ?? "");
+                const captureLabel =
+                  inputQty != null && inputUnit
+                    ? `${inputQty} ${inputUnit}${factor && factor !== 1 ? ` (x${factor})` : ""}`
+                    : "-";
 
                 return (
                   <tr key={String(row.id ?? `${createdAt}-${product}-${qty}`)} className="ui-body">
@@ -316,6 +329,7 @@ export default async function InventoryMovementsPage({
                     </TableCell>
                     <TableCell className="font-mono">{qty}</TableCell>
                     <TableCell>{unit}</TableCell>
+                    <TableCell className="font-mono">{captureLabel}</TableCell>
                     <TableCell className="font-mono">{ref}</TableCell>
                   </tr>
                 );
@@ -323,7 +337,7 @@ export default async function InventoryMovementsPage({
 
               {!error && movements.length === 0 ? (
                 <tr>
-                  <TableCell colSpan={7} className="ui-empty">
+                  <TableCell colSpan={8} className="ui-empty">
                     No hay movimientos para mostrar (o RLS no te permite verlos).
                   </TableCell>
                 </tr>

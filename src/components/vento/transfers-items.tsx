@@ -6,6 +6,7 @@ type ProductOption = {
   id: string;
   name: string | null;
   unit: string | null;
+  stock_unit_code?: string | null;
 };
 
 type Props = {
@@ -16,19 +17,19 @@ type Row = {
   id: number;
   productId: string;
   quantity: string;
-  unit: string;
+  inputUnitCode: string;
   notes: string;
 };
 
 export function TransfersItems({ products }: Props) {
   const [rows, setRows] = useState<Row[]>([
-    { id: 0, productId: "", quantity: "", unit: "", notes: "" },
+    { id: 0, productId: "", quantity: "", inputUnitCode: "", notes: "" },
   ]);
 
   const addRow = () => {
     setRows((prev) => [
       ...prev,
-      { id: prev.length, productId: "", quantity: "", unit: "", notes: "" },
+      { id: prev.length, productId: "", quantity: "", inputUnitCode: "", notes: "" },
     ]);
   };
 
@@ -50,9 +51,12 @@ export function TransfersItems({ products }: Props) {
                 onChange={(e) => {
                   const next = e.target.value;
                   const product = products.find((p) => p.id === next);
+                  const stockUnit = product?.stock_unit_code ?? product?.unit ?? "";
                   setRows((prev) =>
                     prev.map((r) =>
-                      r.id === row.id ? { ...r, productId: next, unit: product?.unit ?? r.unit } : r
+                      r.id === row.id
+                        ? { ...r, productId: next, inputUnitCode: stockUnit || r.inputUnitCode }
+                        : r
                     )
                   );
                 }}
@@ -78,17 +82,30 @@ export function TransfersItems({ products }: Props) {
                 }
               />
 
-              <input
-                name="item_unit"
-                placeholder="Unidad"
+              <select
+                name="item_input_unit_code"
                 className="ui-input"
-                value={row.unit}
+                value={row.inputUnitCode}
                 onChange={(e) =>
                   setRows((prev) =>
-                    prev.map((r) => (r.id === row.id ? { ...r, unit: e.target.value } : r))
+                    prev.map((r) =>
+                      r.id === row.id ? { ...r, inputUnitCode: e.target.value } : r
+                    )
                   )
                 }
-              />
+                required
+              >
+                <option value="">Unidad</option>
+                {(() => {
+                  const product = products.find((p) => p.id === row.productId);
+                  const unitCode = product?.stock_unit_code ?? product?.unit ?? "";
+                  return unitCode ? (
+                    <option value={unitCode}>{unitCode}</option>
+                  ) : (
+                    <option value="">-</option>
+                  );
+                })()}
+              </select>
 
               <div className="flex gap-2">
                 <input
