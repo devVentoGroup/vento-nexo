@@ -123,6 +123,23 @@ function resolveCatalogTab(productTypeRaw: string, inventoryKindRaw: string): Ca
   return "insumos";
 }
 
+function resolveCompatibleDefaultUnit(params: {
+  requestedDefaultUnit: string;
+  stockUnitCode: string;
+  unitMap: ReturnType<typeof createUnitMap>;
+}) {
+  const stockUnitCode = normalizeUnitCode(params.stockUnitCode || "un");
+  const requestedDefaultUnit = normalizeUnitCode(
+    params.requestedDefaultUnit || stockUnitCode
+  );
+  const stockFamily = inferFamilyFromUnitCode(stockUnitCode, params.unitMap);
+  const defaultFamily = inferFamilyFromUnitCode(requestedDefaultUnit, params.unitMap);
+  if (stockFamily && defaultFamily && stockFamily !== defaultFamily) {
+    return stockUnitCode;
+  }
+  return requestedDefaultUnit || stockUnitCode;
+}
+
 async function updateProduct(formData: FormData) {
   "use server";
 
@@ -163,6 +180,14 @@ async function updateProduct(formData: FormData) {
   const costingMode: "auto_primary_supplier" | "manual" =
     costingModeRaw === "manual" ? "manual" : "auto_primary_supplier";
   const unitFamily = inferFamilyFromUnitCode(stockUnitCode, unitMap) ?? null;
+  const requestedDefaultUnit = normalizeUnitCode(
+    asText(formData.get("default_unit")) || stockUnitCode
+  );
+  const resolvedDefaultUnit = resolveCompatibleDefaultUnit({
+    requestedDefaultUnit,
+    stockUnitCode,
+    unitMap,
+  });
   const manualCost = asNullableNumber(formData.get("cost"));
 
   const categoryId = asText(formData.get("category_id"));
@@ -188,7 +213,7 @@ async function updateProduct(formData: FormData) {
     product_id: productId,
     track_inventory: Boolean(formData.get("track_inventory")),
     inventory_kind: asText(formData.get("inventory_kind")) || "unclassified",
-    default_unit: normalizeUnitCode(asText(formData.get("default_unit")) || stockUnitCode),
+    default_unit: resolvedDefaultUnit,
     unit_family: unitFamily,
     costing_mode: costingMode,
     lot_tracking: Boolean(formData.get("lot_tracking")),
@@ -558,7 +583,26 @@ export default async function ProductCatalogDetailPage({
   const productRow = product as ProductRow;
   const profileRow = (profile ?? null) as InventoryProfileRow | null;
   const stockUnitCode = normalizeUnitCode(productRow.stock_unit_code || productRow.unit || "un");
-  const resolvedDefaultUnit = normalizeUnitCode(profileRow?.default_unit || stockUnitCode);
+  const inventoryUnitMap = createUnitMap(unitsList);
+  const stockUnitMeta = inventoryUnitMap.get(stockUnitCode) ?? null;
+  const requestedDefaultUnit = normalizeUnitCode(profileRow?.default_unit || stockUnitCode);
+  const resolvedDefaultUnit = resolveCompatibleDefaultUnit({
+    requestedDefaultUnit,
+    stockUnitCode,
+    unitMap: inventoryUnitMap,
+  });
+
+  const filteredDefaultUnitOptions = stockUnitMeta
+    ? unitsList.filter((unit) => unit.family === stockUnitMeta.family)
+    : unitsList;
+  const hasResolvedDefaultInOptions = filteredDefaultUnitOptions.some(
+    (unit) => normalizeUnitCode(unit.code) === resolvedDefaultUnit
+  );
+  const defaultUnitOptionFallback =
+    hasResolvedDefaultInOptions
+      ? []
+      : unitsList.filter((unit) => normalizeUnitCode(unit.code) === resolvedDefaultUnit);
+  const defaultUnitOptions = [...filteredDefaultUnitOptions, ...defaultUnitOptionFallback];
 
   const supplierInitialRows = supplierRows.map((r) => ({
     id: r.id,
@@ -644,7 +688,7 @@ export default async function ProductCatalogDetailPage({
             <div>
               <p className="mb-2 text-sm font-medium text-[var(--ui-text)]">Proveedores del insumo</p>
               <p className="mb-3 text-sm text-[var(--ui-muted)]">
-                Define empaque y unidad de compra. El sistema calcula costo por unidad canonica cuando la familia es compatible.
+                Captura el empaque de compra y usa la calculadora para ver la conversion a unidad base y costo por unidad de inventario.
               </p>
               <ProductSuppliersEditor
                 name="supplier_lines"
@@ -652,6 +696,7 @@ export default async function ProductCatalogDetailPage({
                 suppliers={suppliersList.map((s) => ({ id: s.id, name: s.name }))}
                 units={unitsList.map((unit) => ({
                   code: unit.code,
+                  name: unit.name,
                   family: unit.family,
                   factor_to_base: unit.factor_to_base,
                 }))}
@@ -756,9 +801,15 @@ export default async function ProductCatalogDetailPage({
               </div>
             </div>
 
+            <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
+              <p className="font-medium text-[var(--ui-text)]">Regla simple de unidades</p>
+              <p className="mt-1">Unidad base: donde se guarda TODO el stock y todos los movimientos.</p>
+              <p>Unidad operativa: sugerencia para formularios; debe ser de la misma familia.</p>
+            </div>
+
             <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
               <label className="flex flex-col gap-1">
-                <span className="ui-label">Unidad canonica de almacenamiento</span>
+                <span className="ui-label">Unidad base de stock</span>
                 <select
                   id={STOCK_UNIT_FIELD_ID}
                   name="stock_unit_code"
@@ -772,16 +823,22 @@ export default async function ProductCatalogDetailPage({
                     </option>
                   ))}
                 </select>
+                <span className="text-xs text-[var(--ui-muted)]">
+                  Esta unidad es la referencia canonica para entradas, salidas y conteos.
+                </span>
               </label>
               <label className="flex flex-col gap-1">
-                <span className="ui-label">Unidad por defecto (inventario)</span>
+                <span className="ui-label">Unidad operativa (formularios)</span>
                 <select name="default_unit" defaultValue={resolvedDefaultUnit} className="ui-input">
-                  {unitsList.map((unit) => (
+                  {defaultUnitOptions.map((unit) => (
                     <option key={unit.code} value={unit.code}>
-                      {unit.code} - {unit.name}
+                      {unit.code} - {unit.name} ({unit.family})
                     </option>
                   ))}
                 </select>
+                <span className="text-xs text-[var(--ui-muted)]">
+                  Si no coincide con la familia de la unidad base, se guardara automaticamente la unidad base.
+                </span>
               </label>
               <label className="flex flex-col gap-1">
                 <span className="ui-label">Tipo de inventario</span>
@@ -801,6 +858,9 @@ export default async function ProductCatalogDetailPage({
               <label className="flex flex-col gap-1">
                 <span className="ui-label">Costo (inventario)</span>
                 <input name="cost" type="number" step="0.01" defaultValue={productRow.cost ?? ""} className="ui-input" placeholder="Costo actual" />
+                <span className="text-xs text-[var(--ui-muted)]">
+                  En modo automatico, se calcula desde el proveedor primario.
+                </span>
               </label>
               <label className="flex flex-col gap-1">
                 <span className="ui-label">Politica de costo</span>

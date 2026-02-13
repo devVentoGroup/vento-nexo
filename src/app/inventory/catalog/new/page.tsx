@@ -30,6 +30,23 @@ function asText(v: FormDataEntryValue | null) {
   return typeof v === "string" ? v.trim() : "";
 }
 
+function resolveCompatibleDefaultUnit(params: {
+  requestedDefaultUnit: string;
+  stockUnitCode: string;
+  unitMap: ReturnType<typeof createUnitMap>;
+}) {
+  const stockUnitCode = normalizeUnitCode(params.stockUnitCode || "un");
+  const requestedDefaultUnit = normalizeUnitCode(
+    params.requestedDefaultUnit || stockUnitCode
+  );
+  const stockFamily = inferFamilyFromUnitCode(stockUnitCode, params.unitMap);
+  const defaultFamily = inferFamilyFromUnitCode(requestedDefaultUnit, params.unitMap);
+  if (stockFamily && defaultFamily && stockFamily !== defaultFamily) {
+    return stockUnitCode;
+  }
+  return requestedDefaultUnit || stockUnitCode;
+}
+
 const TYPE_CONFIG = {
   insumo: {
     title: "Nuevo insumo",
@@ -116,6 +133,14 @@ async function createProduct(formData: FormData) {
   const costingMode =
     costingModeRaw === "manual" ? "manual" : "auto_primary_supplier";
   const unitFamily = inferFamilyFromUnitCode(stockUnitCode, unitMap) ?? null;
+  const requestedDefaultUnit = normalizeUnitCode(
+    asText(formData.get("default_unit")) || stockUnitCode
+  );
+  const resolvedDefaultUnit = resolveCompatibleDefaultUnit({
+    requestedDefaultUnit,
+    stockUnitCode,
+    unitMap,
+  });
 
   const productPayload: Record<string, unknown> = {
     name,
@@ -149,7 +174,7 @@ async function createProduct(formData: FormData) {
       product_id: productId,
       track_inventory: Boolean(formData.get("track_inventory")),
       inventory_kind: invKind,
-      default_unit: asText(formData.get("default_unit")) || stockUnitCode,
+      default_unit: resolvedDefaultUnit,
       unit_family: unitFamily,
       costing_mode: costingMode,
       lot_tracking: Boolean(formData.get("lot_tracking")),
@@ -162,7 +187,7 @@ async function createProduct(formData: FormData) {
         product_id: productId,
         track_inventory: false,
         inventory_kind: invKind,
-        default_unit: stockUnitCode,
+        default_unit: resolvedDefaultUnit,
         unit_family: unitFamily,
         costing_mode: costingMode,
       },
@@ -386,6 +411,11 @@ export default async function NewProductPage({
   const unitsList = (unitsData ?? []) as UnitRow[];
 
   const defaultStockUnitCode = unitsList[0]?.code ?? "un";
+  const inventoryUnitMap = createUnitMap(unitsList);
+  const defaultStockUnit = inventoryUnitMap.get(defaultStockUnitCode) ?? null;
+  const defaultUnitOptions = defaultStockUnit
+    ? unitsList.filter((unit) => unit.family === defaultStockUnit.family)
+    : unitsList;
 
   // For recipe: load insumos + preparaciones as ingredient options
   let ingredientProducts: { id: string; name: string | null; sku: string | null; unit: string | null; cost: number | null }[] = [];
@@ -402,7 +432,7 @@ export default async function NewProductPage({
 
   if (!canCreate) {
     return (
-      <div className="w-full max-w-3xl">
+      <div className="w-full max-w-6xl">
         <h1 className="ui-h1">{config.title}</h1>
         <div className="mt-6 ui-alert ui-alert--warn">
           Solo propietarios y gerentes generales pueden crear productos.
@@ -418,7 +448,7 @@ export default async function NewProductPage({
   }
 
   return (
-    <div className="w-full max-w-3xl space-y-8">
+    <div className="w-full max-w-6xl space-y-8">
       <div className="flex items-start justify-between gap-4">
         <div>
           <Link href="/inventory/catalog" className="ui-caption underline">
@@ -442,7 +472,9 @@ export default async function NewProductPage({
             </span>
             <div>
               <h2 className="ui-h3">Datos basicos</h2>
-              <p className="text-sm text-[var(--ui-muted)]">Nombre, codigo y clasificacion.</p>
+              <p className="text-sm text-[var(--ui-muted)]">
+                Nombre, codigo y clasificacion. Las unidades se definen en la seccion de almacenamiento.
+              </p>
             </div>
           </div>
 
@@ -455,22 +487,9 @@ export default async function NewProductPage({
               <span className="ui-label">SKU / Codigo</span>
               <input name="sku" className="ui-input font-mono" placeholder="Codigo unico" />
             </label>
-            <label className="flex flex-col gap-1">
-              <span className="ui-label">Unidad canonica de almacenamiento <span className="text-[var(--ui-danger)]">*</span></span>
-              <select
-                id={STOCK_UNIT_FIELD_ID}
-                name="stock_unit_code"
-                className="ui-input"
-                defaultValue={defaultStockUnitCode}
-                required
-              >
-                {unitsList.map((unit) => (
-                  <option key={unit.code} value={unit.code}>
-                    {unit.code} - {unit.name} ({unit.family})
-                  </option>
-                ))}
-              </select>
-            </label>
+            <div className="ui-panel-soft p-3 text-sm text-[var(--ui-muted)]">
+              Configura unidad base y unidad operativa en la seccion de almacenamiento.
+            </div>
             {typeKey !== "asset" && (
               <label className="flex flex-col gap-1 sm:col-span-2">
                 <span className="ui-label">Categoria</span>
@@ -516,7 +535,9 @@ export default async function NewProductPage({
               </span>
               <div>
                 <h2 className="ui-h3">Proveedores</h2>
-                <p className="text-sm text-[var(--ui-muted)]">De quien se compra este insumo, precio y condiciones.</p>
+                <p className="text-sm text-[var(--ui-muted)]">
+                  Define empaque de compra y usa la calculadora para convertir costo a unidad base.
+                </p>
               </div>
             </div>
             <ProductSuppliersEditor
@@ -525,6 +546,7 @@ export default async function NewProductPage({
               suppliers={suppliersList.map((s) => ({ id: s.id, name: s.name }))}
               units={unitsList.map((unit) => ({
                 code: unit.code,
+                name: unit.name,
                 family: unit.family,
                 factor_to_base: unit.factor_to_base,
               }))}
@@ -596,17 +618,49 @@ export default async function NewProductPage({
                 <p className="text-sm text-[var(--ui-muted)]">Control de stock, lotes y vencimiento.</p>
               </div>
             </div>
-            <div className="grid gap-4 sm:grid-cols-2">
+            <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
+              <p className="font-medium text-[var(--ui-text)]">Regla simple de unidades</p>
+              <p className="mt-1">Unidad base: donde se guarda todo el stock y todos los movimientos.</p>
+              <p>Unidad operativa: sugerencia para formularios; debe ser de la misma familia.</p>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <label className="flex flex-col gap-1">
-                <span className="ui-label">Unidad inventario (default)</span>
-                <select name="default_unit" className="ui-input" defaultValue={defaultStockUnitCode}>
+                <span className="ui-label">
+                  Unidad base de stock <span className="text-[var(--ui-danger)]">*</span>
+                </span>
+                <select
+                  id={STOCK_UNIT_FIELD_ID}
+                  name="stock_unit_code"
+                  className="ui-input"
+                  defaultValue={defaultStockUnitCode}
+                  required
+                >
                   {unitsList.map((unit) => (
                     <option key={unit.code} value={unit.code}>
-                      {unit.code} - {unit.name}
+                      {unit.code} - {unit.name} ({unit.family})
                     </option>
                   ))}
                 </select>
+                <span className="text-xs text-[var(--ui-muted)]">
+                  Unidad canonica en la que vivira el inventario de este producto.
+                </span>
               </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="ui-label">Unidad operativa (formularios)</span>
+                <select name="default_unit" className="ui-input" defaultValue={defaultStockUnitCode}>
+                  {defaultUnitOptions.map((unit) => (
+                    <option key={unit.code} value={unit.code}>
+                      {unit.code} - {unit.name} ({unit.family})
+                    </option>
+                  ))}
+                </select>
+                <span className="text-xs text-[var(--ui-muted)]">
+                  Si eliges una unidad incompatible, se guardara automaticamente la unidad base.
+                </span>
+              </label>
+
               <label className="flex flex-col gap-1">
                 <span className="ui-label">Politica de costo</span>
                 <select name="costing_mode" className="ui-input" defaultValue="auto_primary_supplier">
