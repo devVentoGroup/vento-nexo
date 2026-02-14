@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import { AppSwitcher } from "./app-switcher";
 import { ProfileMenu } from "./profile-menu";
@@ -354,6 +354,20 @@ function SidebarLink({ item, active, onNavigate }: { item: NavItem; active: bool
   );
 }
 
+function isRefreshSessionError(error: unknown) {
+  const message =
+    error instanceof Error ? error.message : String(error ?? "");
+  const normalized = message.toLowerCase();
+
+  return (
+    normalized.includes("invalid refresh token") ||
+    normalized.includes("refresh token") ||
+    normalized.includes("already used") ||
+    normalized.includes("authapierror") ||
+    normalized.includes("status of 429")
+  );
+}
+
 export function VentoChrome({
   children,
   displayName,
@@ -367,6 +381,7 @@ export function VentoChrome({
   const [menuOpen, setMenuOpen] = useState(false);
   const [permMap, setPermMap] = useState<Record<string, boolean>>({});
   const [permissionsReady, setPermissionsReady] = useState(false);
+  const authRecoveryRef = useRef(false);
 
   const currentSiteId = searchParams.get("site_id") ?? activeSiteId ?? "";
   const currentSite = useMemo(
@@ -424,8 +439,27 @@ export function VentoChrome({
         setPermMap(nextMap);
         setPermissionsReady(true);
       })
-      .catch(() => {
+      .catch((error) => {
         if (!isActiveRequest) return;
+        if (!authRecoveryRef.current && isRefreshSessionError(error)) {
+          authRecoveryRef.current = true;
+          Promise.resolve()
+            .then(async () => {
+              try {
+                await supabase.auth.signOut({ scope: "local" });
+              } catch {
+                // Ignore sign-out errors and force a clean login.
+              }
+            })
+            .finally(() => {
+              const shellLoginUrl =
+                process.env.NEXT_PUBLIC_SHELL_LOGIN_URL ||
+                "https://os.ventogroup.co/login";
+              const returnTo = encodeURIComponent(window.location.href);
+              window.location.assign(`${shellLoginUrl}?returnTo=${returnTo}`);
+            });
+          return;
+        }
         setPermMap({});
         setPermissionsReady(true);
       });
