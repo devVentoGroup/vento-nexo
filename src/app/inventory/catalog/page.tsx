@@ -1,9 +1,13 @@
-﻿import Link from "next/link";
+import Link from "next/link";
+import { redirect } from "next/navigation";
+import { revalidatePath } from "next/cache";
 
 import { CategoryTreeFilter } from "@/components/inventory/CategoryTreeFilter";
 import { PageHeader } from "@/components/vento/standard/page-header";
 import { requireAppAccess } from "@/lib/auth/guard";
+import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { getCategoryDomainOptions } from "@/lib/constants";
+import { createClient } from "@/lib/supabase/server";
 import {
   categoryKindFromCatalogTab,
   collectDescendantIds,
@@ -41,6 +45,7 @@ type SearchParams = {
   category_site_id?: string;
   category_id?: string;
   ok?: string;
+  error?: string;
 };
 
 type ProductRow = {
@@ -50,6 +55,7 @@ type ProductRow = {
   unit: string | null;
   product_type: string;
   category_id: string | null;
+  is_active: boolean | null;
   product_inventory_profiles?: {
     track_inventory: boolean;
     inventory_kind: string;
@@ -89,13 +95,178 @@ function tabTypeValue(tab: TabValue): string {
   return "insumo";
 }
 
+function sanitizeCatalogListReturnPath(value: string): string {
+  const trimmed = value.trim();
+  return trimmed.startsWith("/inventory/catalog") ? trimmed : "/inventory/catalog";
+}
+
+function buildCatalogListReturnUrl(
+  basePath: string,
+  status: { ok?: string; error?: string }
+): string {
+  const [pathname, qs] = basePath.split("?");
+  const params = new URLSearchParams(qs ?? "");
+  if (status.ok) params.set("ok", status.ok);
+  if (status.error) params.set("error", status.error);
+  const query = params.toString();
+  return query ? `${pathname}?${query}` : pathname;
+}
+
+async function requireCatalogManager() {
+  const supabase = await createClient();
+  const { data: authRes } = await supabase.auth.getUser();
+  const user = authRes.user ?? null;
+  if (!user) {
+    redirect(await buildShellLoginUrl("/inventory/catalog"));
+  }
+
+  const { data: employee } = await supabase
+    .from("employees")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+  const role = String(employee?.role ?? "").toLowerCase();
+  if (!["propietario", "gerente_general"].includes(role)) {
+    redirect(
+      buildCatalogListReturnUrl("/inventory/catalog", {
+        error: "No tienes permisos para editar productos.",
+      })
+    );
+  }
+
+  return { supabase };
+}
+
+async function toggleProductActiveFromListAction(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireCatalogManager();
+  const productId = String(formData.get("product_id") ?? "").trim();
+  const nextIsActive = String(formData.get("next_is_active") ?? "") === "1";
+  const returnTo = sanitizeCatalogListReturnPath(String(formData.get("return_to") ?? ""));
+
+  if (!productId) {
+    redirect(buildCatalogListReturnUrl(returnTo, { error: "Producto invalido." }));
+  }
+
+  const { error } = await supabase
+    .from("products")
+    .update({
+      is_active: nextIsActive,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", productId);
+
+  if (error) {
+    redirect(buildCatalogListReturnUrl(returnTo, { error: error.message }));
+  }
+
+  revalidatePath("/inventory/catalog");
+  revalidatePath("/inventory/stock");
+  redirect(buildCatalogListReturnUrl(returnTo, { ok: "product_status_updated" }));
+}
+
+async function deleteProductFromListAction(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireCatalogManager();
+  const productId = String(formData.get("product_id") ?? "").trim();
+  const returnTo = sanitizeCatalogListReturnPath(String(formData.get("return_to") ?? ""));
+
+  if (!productId) {
+    redirect(buildCatalogListReturnUrl(returnTo, { error: "Producto invalido." }));
+  }
+
+  const { count: ingredientUsageCount } = await supabase
+    .from("recipes")
+    .select("id", { head: true, count: "exact" })
+    .eq("ingredient_product_id", productId);
+  if ((ingredientUsageCount ?? 0) > 0) {
+    redirect(
+      buildCatalogListReturnUrl(returnTo, {
+        error: "No se puede eliminar: este producto se usa como ingrediente en recetas.",
+      })
+    );
+  }
+
+  const { count: movementCount } = await supabase
+    .from("inventory_movements")
+    .select("id", { head: true, count: "exact" })
+    .eq("product_id", productId);
+  if ((movementCount ?? 0) > 0) {
+    redirect(
+      buildCatalogListReturnUrl(returnTo, {
+        error: "No se puede eliminar: el producto tiene historial de movimientos. Deshabilitalo.",
+      })
+    );
+  }
+
+  const { count: stockCount } = await supabase
+    .from("inventory_stock_by_site")
+    .select("product_id", { head: true, count: "exact" })
+    .eq("product_id", productId)
+    .gt("current_qty", 0);
+  if ((stockCount ?? 0) > 0) {
+    redirect(
+      buildCatalogListReturnUrl(returnTo, {
+        error: "No se puede eliminar: el producto tiene stock disponible. Dejalo en 0 o deshabilitalo.",
+      })
+    );
+  }
+
+  const { data: recipeCards } = await supabase
+    .from("recipe_cards")
+    .select("id")
+    .eq("product_id", productId);
+  const recipeCardIds = (recipeCards ?? []).map((row) => row.id as string);
+  if (recipeCardIds.length > 0) {
+    const { error: stepsDeleteError } = await supabase
+      .from("recipe_steps")
+      .delete()
+      .in("recipe_card_id", recipeCardIds);
+    if (stepsDeleteError) {
+      redirect(buildCatalogListReturnUrl(returnTo, { error: stepsDeleteError.message }));
+    }
+  }
+
+  const cleanupStatements = [
+    supabase.from("recipe_cards").delete().eq("product_id", productId),
+    supabase.from("recipes").delete().eq("product_id", productId),
+    supabase.from("product_suppliers").delete().eq("product_id", productId),
+    supabase.from("product_site_settings").delete().eq("product_id", productId),
+    supabase.from("product_inventory_profiles").delete().eq("product_id", productId),
+  ];
+  for (const statement of cleanupStatements) {
+    const { error } = await statement;
+    if (error) {
+      redirect(buildCatalogListReturnUrl(returnTo, { error: error.message }));
+    }
+  }
+
+  const { error: deleteError } = await supabase.from("products").delete().eq("id", productId);
+  if (deleteError) {
+    redirect(buildCatalogListReturnUrl(returnTo, { error: deleteError.message }));
+  }
+
+  revalidatePath("/inventory/catalog");
+  revalidatePath("/inventory/stock");
+  redirect(buildCatalogListReturnUrl(returnTo, { ok: "product_deleted" }));
+}
+
 export default async function InventoryCatalogPage({
   searchParams,
 }: {
   searchParams?: Promise<SearchParams>;
 }) {
   const sp = (await searchParams) ?? {};
-  const okMsg = sp.ok ? "Cambios guardados." : "";
+  const okMsg = sp.ok
+    ? sp.ok === "product_deleted"
+      ? "Producto eliminado."
+      : sp.ok === "product_status_updated"
+        ? "Estado del producto actualizado."
+        : "Cambios guardados."
+    : "";
+  const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
   const searchQuery = String(sp.q ?? "").trim();
 
   const tabRaw = String(sp.tab ?? "insumos").trim().toLowerCase();
@@ -113,7 +284,7 @@ export default async function InventoryCatalogPage({
   });
 
   const [{ data: employee }, { data: settings }, { data: sites }] = await Promise.all([
-    supabase.from("employees").select("site_id").eq("id", user.id).maybeSingle(),
+    supabase.from("employees").select("site_id,role").eq("id", user.id).maybeSingle(),
     supabase
       .from("employee_settings")
       .select("selected_site_id")
@@ -124,6 +295,9 @@ export default async function InventoryCatalogPage({
 
   const siteRows = (sites ?? []) as SiteRow[];
   const siteNamesById = Object.fromEntries(siteRows.map((row) => [row.id, row.name ?? row.id]));
+  const canManageProducts = ["propietario", "gerente_general"].includes(
+    String((employee as { role?: string | null } | null)?.role ?? "").toLowerCase()
+  );
 
   const siteId = String(
     sp.site_id ??
@@ -182,7 +356,7 @@ export default async function InventoryCatalogPage({
     let productsQuery = supabase
       .from("products")
       .select(
-        "id,name,sku,unit,product_type,category_id,product_inventory_profiles(track_inventory,inventory_kind)"
+        "id,name,sku,unit,product_type,category_id,is_active,product_inventory_profiles(track_inventory,inventory_kind)"
       )
       .order("name", { ascending: true })
       .limit(1200);
@@ -246,6 +420,7 @@ export default async function InventoryCatalogPage({
       />
 
       {okMsg ? <div className="mt-6 ui-alert ui-alert--success">{okMsg}</div> : null}
+      {errorMsg ? <div className="mt-6 ui-alert ui-alert--error">Error: {errorMsg}</div> : null}
 
       <div className="mt-6 flex gap-1 overflow-x-auto ui-panel-soft p-1">
         {TAB_OPTIONS.map((tab) => (
@@ -380,7 +555,8 @@ export default async function InventoryCatalogPage({
                 <th className="py-2 pr-4">Tipo</th>
                 <th className="py-2 pr-4">Inventario</th>
                 <th className="py-2 pr-4">Unidad</th>
-                <th className="py-2 pr-4">Ficha</th>
+                <th className="py-2 pr-4">Estado</th>
+                <th className="py-2 pr-4">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -396,19 +572,47 @@ export default async function InventoryCatalogPage({
                     <td className="py-3 pr-4">{inventoryLabel}</td>
                     <td className="py-3 pr-4">{product.unit ?? "-"}</td>
                     <td className="py-3 pr-4">
-                      <Link
-                        href={`/inventory/catalog/${product.id}?from=${encodeURIComponent(catalogReturnUrl)}`}
-                        className="font-semibold underline decoration-zinc-200 underline-offset-4"
-                      >
-                        Ver ficha
-                      </Link>
+                      {product.is_active === false ? "Inactivo" : "Activo"}
+                    </td>
+                    <td className="py-3 pr-4">
+                      <div className="flex flex-wrap gap-2">
+                        <Link
+                          href={`/inventory/catalog/${product.id}?from=${encodeURIComponent(catalogReturnUrl)}`}
+                          className="ui-btn ui-btn--ghost ui-btn--sm"
+                        >
+                          Ficha
+                        </Link>
+                        {canManageProducts ? (
+                          <form action={toggleProductActiveFromListAction}>
+                            <input type="hidden" name="product_id" value={product.id} />
+                            <input type="hidden" name="return_to" value={catalogReturnUrl} />
+                            <input
+                              type="hidden"
+                              name="next_is_active"
+                              value={product.is_active === false ? "1" : "0"}
+                            />
+                            <button type="submit" className="ui-btn ui-btn--ghost ui-btn--sm">
+                              {product.is_active === false ? "Habilitar" : "Deshabilitar"}
+                            </button>
+                          </form>
+                        ) : null}
+                        {canManageProducts ? (
+                          <form action={deleteProductFromListAction}>
+                            <input type="hidden" name="product_id" value={product.id} />
+                            <input type="hidden" name="return_to" value={catalogReturnUrl} />
+                            <button type="submit" className="ui-btn ui-btn--danger ui-btn--sm">
+                              Eliminar
+                            </button>
+                          </form>
+                        ) : null}
+                      </div>
                     </td>
                   </tr>
                 );
               })}
               {!productRows.length ? (
                 <tr>
-                  <td className="py-4 text-[var(--ui-muted)]" colSpan={7}>
+                  <td className="py-4 text-[var(--ui-muted)]" colSpan={8}>
                     No hay productos para mostrar.
                   </td>
                 </tr>

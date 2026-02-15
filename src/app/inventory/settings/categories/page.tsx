@@ -415,6 +415,72 @@ async function toggleCategoryActiveAction(formData: FormData) {
   );
 }
 
+async function deleteCategoryAction(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireCategoryManager();
+  const returnQs = asText(formData.get("_return_qs"));
+  const returnView = asText(formData.get("_return_view")) || "explorar";
+  const returnEditId = asText(formData.get("_return_edit_id"));
+  const categoryId = asText(formData.get("category_id"));
+
+  if (!categoryId) {
+    redirect(
+      buildReturnUrl(returnQs, returnView, "error", "Categoria invalida.", {
+        editId: returnEditId,
+      })
+    );
+  }
+
+  const { count: childCount } = await supabase
+    .from("product_categories")
+    .select("id", { head: true, count: "exact" })
+    .eq("parent_id", categoryId);
+
+  if ((childCount ?? 0) > 0) {
+    redirect(
+      buildReturnUrl(
+        returnQs,
+        returnView,
+        "error",
+        "No se puede eliminar una categoria con subcategorias. Deshabilitala o mueve las hijas.",
+        { editId: returnEditId }
+      )
+    );
+  }
+
+  const { count: linkedProductsCount } = await supabase
+    .from("products")
+    .select("id", { head: true, count: "exact" })
+    .eq("category_id", categoryId);
+
+  if ((linkedProductsCount ?? 0) > 0) {
+    redirect(
+      buildReturnUrl(
+        returnQs,
+        returnView,
+        "error",
+        "No se puede eliminar una categoria con productos vinculados. Primero reasignalos o deshabilita.",
+        { editId: returnEditId }
+      )
+    );
+  }
+
+  const { error } = await supabase.from("product_categories").delete().eq("id", categoryId);
+  if (error) {
+    redirect(
+      buildReturnUrl(returnQs, returnView, "error", error.message, {
+        editId: returnEditId,
+      })
+    );
+  }
+
+  revalidatePath("/inventory/settings/categories");
+  revalidatePath("/inventory/catalog");
+  revalidatePath("/inventory/stock");
+  redirect(buildReturnUrl(returnQs, returnView, "ok", "category_deleted"));
+}
+
 export default async function InventoryCategorySettingsPage({
   searchParams,
 }: {
@@ -430,6 +496,8 @@ export default async function InventoryCategorySettingsPage({
         ? "Categoria actualizada."
         : sp.ok === "category_status_updated"
           ? "Estado de categoria actualizado."
+          : sp.ok === "category_deleted"
+            ? "Categoria eliminada."
           : sp.ok === "draft_saved"
             ? "Borrador guardado."
           : "Cambios guardados."
@@ -830,9 +898,38 @@ export default async function InventoryCategorySettingsPage({
                         <td className="py-3 pr-4">{getCategoryChannelLabel(row.domain) || "-"}</td>
                         <td className="py-3 pr-4">{row.is_active === false ? "Inactiva" : "Activa"}</td>
                         <td className="py-3 pr-4">
-                          <Link href={buildViewHref("ficha", row.id)} className="ui-btn ui-btn--ghost ui-btn--sm">
-                            Abrir ficha
-                          </Link>
+                          <div className="flex flex-wrap gap-2">
+                            <Link href={buildViewHref("ficha", row.id)} className="ui-btn ui-btn--ghost ui-btn--sm">
+                              Ficha
+                            </Link>
+                            {canManage ? (
+                              <form action={toggleCategoryActiveAction}>
+                                <input type="hidden" name="_return_qs" value={filterReturnQs} />
+                                <input type="hidden" name="_return_view" value="explorar" />
+                                <input type="hidden" name="_return_edit_id" value={row.id} />
+                                <input type="hidden" name="category_id" value={row.id} />
+                                <input
+                                  type="hidden"
+                                  name="next_is_active"
+                                  value={row.is_active === false ? "1" : "0"}
+                                />
+                                <button type="submit" className="ui-btn ui-btn--ghost ui-btn--sm">
+                                  {row.is_active === false ? "Habilitar" : "Deshabilitar"}
+                                </button>
+                              </form>
+                            ) : null}
+                            {canManage ? (
+                              <form action={deleteCategoryAction}>
+                                <input type="hidden" name="_return_qs" value={filterReturnQs} />
+                                <input type="hidden" name="_return_view" value="explorar" />
+                                <input type="hidden" name="_return_edit_id" value={row.id} />
+                                <input type="hidden" name="category_id" value={row.id} />
+                                <button type="submit" className="ui-btn ui-btn--danger ui-btn--sm">
+                                  Eliminar
+                                </button>
+                              </form>
+                            ) : null}
+                          </div>
                         </td>
                       </tr>
                     );
@@ -987,9 +1084,38 @@ export default async function InventoryCategorySettingsPage({
                         <td className="py-3 pr-4">{getCategoryPath(row.id, categoryMap)}</td>
                         <td className="py-3 pr-4 font-mono">{count}</td>
                         <td className="py-3 pr-4">
-                          <Link href={buildViewHref("ficha", row.id)} className="ui-btn ui-btn--ghost ui-btn--sm">
-                            Abrir ficha
-                          </Link>
+                          <div className="flex flex-wrap gap-2">
+                            <Link href={buildViewHref("ficha", row.id)} className="ui-btn ui-btn--ghost ui-btn--sm">
+                              Ficha
+                            </Link>
+                            {canManage ? (
+                              <form action={toggleCategoryActiveAction}>
+                                <input type="hidden" name="_return_qs" value={filterReturnQs} />
+                                <input type="hidden" name="_return_view" value="salud" />
+                                <input type="hidden" name="_return_edit_id" value={row.id} />
+                                <input type="hidden" name="category_id" value={row.id} />
+                                <input
+                                  type="hidden"
+                                  name="next_is_active"
+                                  value={row.is_active === false ? "1" : "0"}
+                                />
+                                <button type="submit" className="ui-btn ui-btn--ghost ui-btn--sm">
+                                  {row.is_active === false ? "Habilitar" : "Deshabilitar"}
+                                </button>
+                              </form>
+                            ) : null}
+                            {canManage ? (
+                              <form action={deleteCategoryAction}>
+                                <input type="hidden" name="_return_qs" value={filterReturnQs} />
+                                <input type="hidden" name="_return_view" value="salud" />
+                                <input type="hidden" name="_return_edit_id" value={row.id} />
+                                <input type="hidden" name="category_id" value={row.id} />
+                                <button type="submit" className="ui-btn ui-btn--danger ui-btn--sm">
+                                  Eliminar
+                                </button>
+                              </form>
+                            ) : null}
+                          </div>
                         </td>
                       </tr>
                     ))}
@@ -1024,9 +1150,38 @@ export default async function InventoryCategorySettingsPage({
                         <td className="py-3 pr-4">{item.reason}</td>
                         <td className="py-3 pr-4">{item.category_path}</td>
                         <td className="py-3 pr-4">
-                          <Link href={buildViewHref("ficha", item.category_id)} className="ui-btn ui-btn--ghost ui-btn--sm">
-                            Abrir ficha
-                          </Link>
+                          <div className="flex flex-wrap gap-2">
+                            <Link href={buildViewHref("ficha", item.category_id)} className="ui-btn ui-btn--ghost ui-btn--sm">
+                              Ficha
+                            </Link>
+                            {canManage && categoryMap.has(item.category_id) ? (
+                              <form action={toggleCategoryActiveAction}>
+                                <input type="hidden" name="_return_qs" value={filterReturnQs} />
+                                <input type="hidden" name="_return_view" value="salud" />
+                                <input type="hidden" name="_return_edit_id" value={item.category_id} />
+                                <input type="hidden" name="category_id" value={item.category_id} />
+                                <input
+                                  type="hidden"
+                                  name="next_is_active"
+                                  value={categoryMap.get(item.category_id)?.is_active === false ? "1" : "0"}
+                                />
+                                <button type="submit" className="ui-btn ui-btn--ghost ui-btn--sm">
+                                  {categoryMap.get(item.category_id)?.is_active === false ? "Habilitar" : "Deshabilitar"}
+                                </button>
+                              </form>
+                            ) : null}
+                            {canManage && categoryMap.has(item.category_id) ? (
+                              <form action={deleteCategoryAction}>
+                                <input type="hidden" name="_return_qs" value={filterReturnQs} />
+                                <input type="hidden" name="_return_view" value="salud" />
+                                <input type="hidden" name="_return_edit_id" value={item.category_id} />
+                                <input type="hidden" name="category_id" value={item.category_id} />
+                                <button type="submit" className="ui-btn ui-btn--danger ui-btn--sm">
+                                  Eliminar
+                                </button>
+                              </form>
+                            ) : null}
+                          </div>
                         </td>
                       </tr>
                     ))}
