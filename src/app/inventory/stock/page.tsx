@@ -165,13 +165,14 @@ export default async function InventoryStockPage({
       ? categoryKindFromProduct({ productType, inventoryKind })
       : null;
   const categoryKind = categoryKindFromQuery ?? inferredCategoryKind;
-  const categoryId = String(sp.category_id ?? "").trim();
+  const requestedCategoryId = String(sp.category_id ?? "").trim();
   const categoryDomain = shouldShowCategoryDomain(categoryKind)
     ? normalizeCategoryDomain(sp.category_domain)
     : "";
-  const categorySiteId = String(sp.category_site_id ?? siteId).trim();
-  const defaultCategoryScope = categorySiteId ? "site" : "all";
+  const requestedCategorySiteId = String(sp.category_site_id ?? siteId).trim();
+  const defaultCategoryScope = requestedCategorySiteId ? "site" : "all";
   const categoryScope = normalizeCategoryScope(sp.category_scope ?? defaultCategoryScope);
+  const categorySiteId = categoryScope === "site" ? requestedCategorySiteId : "";
   const locationIdFilter = String(sp.location_id ?? "").trim();
   const zoneFilter = String(sp.zone ?? "").trim();
   const viewByLoc = String(sp.view ?? "").trim() === "by_loc";
@@ -209,18 +210,22 @@ export default async function InventoryStockPage({
     siteId: categorySiteId,
   });
   const directCategoryIds = new Set(directCategoryRows.map((row) => row.id));
+  const effectiveCategoryId =
+    requestedCategoryId && categoryRows.some((row) => row.id === requestedCategoryId)
+      ? requestedCategoryId
+      : "";
 
   let filteredCategoryIds: string[] | null = null;
   const hasCategoryFilterInputs =
-    Boolean(categoryId) ||
+    Boolean(effectiveCategoryId) ||
     Boolean(categoryKind) ||
     Boolean(categoryDomain) ||
     categoryScope !== "all" ||
     Boolean(categorySiteId);
 
   if (hasCategoryFilterInputs) {
-    if (categoryId) {
-      const descendants = Array.from(collectDescendantIds(categoryMap, categoryId));
+    if (effectiveCategoryId) {
+      const descendants = Array.from(collectDescendantIds(categoryMap, effectiveCategoryId));
       filteredCategoryIds = descendants.filter((id) => directCategoryIds.has(id));
     } else {
       filteredCategoryIds = directCategoryRows.map((row) => row.id);
@@ -277,8 +282,8 @@ export default async function InventoryStockPage({
     if (productType) params.set("product_type", productType);
     if (categoryKind) params.set("category_kind", categoryKind);
     if (categoryScope) params.set("category_scope", categoryScope);
-    if (categorySiteId) params.set("category_site_id", categorySiteId);
-    if (categoryId) params.set("category_id", categoryId);
+    if (categoryScope === "site" && categorySiteId) params.set("category_site_id", categorySiteId);
+    if (effectiveCategoryId) params.set("category_id", effectiveCategoryId);
     if (categoryDomain) params.set("category_domain", categoryDomain);
     if (locationIdFilter) params.set("location_id", locationIdFilter);
     if (zoneFilter) params.set("zone", zoneFilter);
@@ -557,17 +562,22 @@ export default async function InventoryStockPage({
             </select>
           </label>
 
-          <label className="flex flex-col gap-1 sm:col-span-2">
-            <span className="ui-label">Sede para categorias</span>
-            <select name="category_site_id" defaultValue={categorySiteId} className="ui-input">
-              <option value="">Seleccionar sede</option>
-              {siteIds.map((id) => (
-                <option key={id} value={id}>
-                  {siteNameMap.get(id) ?? id}
-                </option>
-              ))}
-            </select>
-          </label>
+          {categoryScope === "site" ? (
+            <label className="flex flex-col gap-1 sm:col-span-2">
+              <span className="ui-label">Sede para categorias</span>
+              <select name="category_site_id" defaultValue={categorySiteId} className="ui-input">
+                <option value="">Seleccionar sede</option>
+                {siteIds.map((id) => (
+                  <option key={id} value={id}>
+                    {siteNameMap.get(id) ?? id}
+                  </option>
+                ))}
+              </select>
+              <span className="ui-caption">Solo aplica cuando el alcance es Sede activa.</span>
+            </label>
+          ) : (
+            <input type="hidden" name="category_site_id" value="" />
+          )}
 
           {shouldShowCategoryDomain(categoryKind) ? (
             <label className="flex flex-col gap-1">
@@ -587,7 +597,7 @@ export default async function InventoryStockPage({
 
           <CategoryTreeFilter
             categories={categoryRows}
-            selectedCategoryId={categoryId}
+            selectedCategoryId={effectiveCategoryId}
             siteNamesById={siteNamesById}
             className="sm:col-span-2 lg:col-span-4"
             label="Categoria"

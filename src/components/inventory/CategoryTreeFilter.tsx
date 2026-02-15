@@ -124,6 +124,14 @@ export function CategoryTreeFilter({
     [options, value]
   );
 
+  useEffect(() => {
+    if (!value) return;
+    const stillAvailable = options.some((option) => option.id === value);
+    if (!stillAvailable) {
+      setValue("");
+    }
+  }, [options, value]);
+
   const selectedInFiltered = Boolean(filtered.find((option) => option.id === value));
   const visibleOptions =
     selectedOption && !selectedInFiltered ? [selectedOption, ...filtered] : filtered;

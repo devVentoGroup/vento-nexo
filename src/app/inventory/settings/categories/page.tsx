@@ -46,7 +46,6 @@ type SearchParams = {
   error?: string;
   view?: string;
   step?: string;
-  q?: string;
   category_kind?: string;
   category_domain?: string;
   category_scope?: string;
@@ -119,10 +118,6 @@ function normalizeView(value: string | null | undefined): CategorySettingsView {
   if (normalized === "ficha") return "ficha";
   if (normalized === "salud") return "salud";
   return "explorar";
-}
-
-function toSearchValue(value: string): string {
-  return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
 function extractInventoryKind(row: ProductAuditRow): string | null {
@@ -476,18 +471,20 @@ export default async function InventoryCategorySettingsPage({
   const categoryMap = new Map(allCategoryRows.map((row) => [row.id, row]));
 
   const categoryKind = normalizeCategoryKind(sp.category_kind ?? "");
-  const categorySiteId = asText(
+  const requestedCategorySiteId = asText(
     sp.category_site_id ??
       (settings as { selected_site_id?: string | null } | null)?.selected_site_id ??
       (employee as { site_id?: string | null } | null)?.site_id ??
       ""
   );
-  const categoryScope = normalizeCategoryScope(sp.category_scope ?? (categorySiteId ? "site" : "all"));
+  const categoryScope = normalizeCategoryScope(
+    sp.category_scope ?? (requestedCategorySiteId ? "site" : "all")
+  );
+  const categorySiteId = categoryScope === "site" ? requestedCategorySiteId : "";
   const categoryDomain = shouldShowCategoryDomain(categoryKind)
     ? normalizeCategoryDomain(sp.category_domain ?? "")
     : "";
   const selectedCategoryId = asText(sp.category_id ?? "");
-  const query = asText(sp.q ?? "");
 
   const baseFilteredRows = filterCategoryRows(allCategoryRows, {
     kind: categoryKind,
@@ -497,21 +494,17 @@ export default async function InventoryCategorySettingsPage({
     includeInactive: true,
   });
 
-  let visibleRows = baseFilteredRows;
-  if (selectedCategoryId) {
-    const subtreeIds = collectDescendantIds(categoryMap, selectedCategoryId);
-    visibleRows = visibleRows.filter((row) => subtreeIds.has(row.id) || row.id === selectedCategoryId);
-  }
+  const effectiveSelectedCategoryId =
+    selectedCategoryId && baseFilteredRows.some((row) => row.id === selectedCategoryId)
+      ? selectedCategoryId
+      : "";
 
-  if (query) {
-    const normalizedQuery = toSearchValue(query);
-    visibleRows = visibleRows.filter((row) => {
-      const path = getCategoryPath(row.id, categoryMap);
-      const scopeLabel = row.site_id ? siteNamesById[row.site_id] ?? row.site_id : "global";
-      const channelLabel = getCategoryChannelLabel(row.domain);
-      const searchText = `${row.name} ${path} ${scopeLabel} ${channelLabel}`;
-      return toSearchValue(searchText).includes(normalizedQuery);
-    });
+  let visibleRows = baseFilteredRows;
+  if (effectiveSelectedCategoryId) {
+    const subtreeIds = collectDescendantIds(categoryMap, effectiveSelectedCategoryId);
+    visibleRows = visibleRows.filter(
+      (row) => subtreeIds.has(row.id) || row.id === effectiveSelectedCategoryId
+    );
   }
 
   visibleRows = [...visibleRows].sort((a, b) =>
@@ -589,12 +582,11 @@ export default async function InventoryCategorySettingsPage({
   ]);
 
   const filterParams = new URLSearchParams();
-  if (query) filterParams.set("q", query);
   if (categoryKind) filterParams.set("category_kind", categoryKind);
   if (categoryScope) filterParams.set("category_scope", categoryScope);
-  if (categorySiteId) filterParams.set("category_site_id", categorySiteId);
+  if (categoryScope === "site" && categorySiteId) filterParams.set("category_site_id", categorySiteId);
   if (categoryDomain) filterParams.set("category_domain", categoryDomain);
-  if (selectedCategoryId) filterParams.set("category_id", selectedCategoryId);
+  if (effectiveSelectedCategoryId) filterParams.set("category_id", effectiveSelectedCategoryId);
 
   const buildViewHref = (nextView: CategorySettingsView, editId?: string) => {
     const params = new URLSearchParams(filterParams);
@@ -738,16 +730,6 @@ export default async function InventoryCategorySettingsPage({
             <form method="get" className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <input type="hidden" name="view" value="explorar" />
 
-              <label className="flex flex-col gap-1 sm:col-span-2 lg:col-span-4">
-                <span className="ui-label">Buscar categoria</span>
-                <input
-                  name="q"
-                  defaultValue={query}
-                  className="ui-input"
-                  placeholder="Nombre o ruta"
-                />
-              </label>
-
               <label className="flex flex-col gap-1">
                 <span className="ui-label">Uso</span>
                 <select name="category_kind" defaultValue={categoryKind ?? ""} className="ui-input">
@@ -769,15 +751,20 @@ export default async function InventoryCategorySettingsPage({
                 <span className="ui-caption">Global se comparte entre sedes.</span>
               </label>
 
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Sede</span>
-                <select name="category_site_id" defaultValue={categorySiteId} className="ui-input">
-                  <option value="">Seleccionar sede</option>
-                  {sites.map((site) => (
-                    <option key={site.id} value={site.id}>{site.name ?? site.id}</option>
-                  ))}
-                </select>
-              </label>
+              {categoryScope === "site" ? (
+                <label className="flex flex-col gap-1">
+                  <span className="ui-label">Sede</span>
+                  <select name="category_site_id" defaultValue={categorySiteId} className="ui-input">
+                    <option value="">Seleccionar sede</option>
+                    {sites.map((site) => (
+                      <option key={site.id} value={site.id}>{site.name ?? site.id}</option>
+                    ))}
+                  </select>
+                  <span className="ui-caption">Solo aplica cuando el alcance es Sede activa.</span>
+                </label>
+              ) : (
+                <input type="hidden" name="category_site_id" value="" />
+              )}
 
               {shouldShowCategoryDomain(categoryKind) ? (
                 <label className="flex flex-col gap-1">
@@ -796,14 +783,14 @@ export default async function InventoryCategorySettingsPage({
 
               <CategoryTreeFilter
                 categories={baseFilteredRows}
-                selectedCategoryId={selectedCategoryId}
+                selectedCategoryId={effectiveSelectedCategoryId}
                 siteNamesById={siteNamesById}
                 className="sm:col-span-2 lg:col-span-4"
                 label="Categorías"
                 emptyOptionLabel="Todas"
                 maxVisibleOptions={8}
                 showMeta={false}
-                searchPlaceholder="Busca categoria por nombre o ruta"
+                searchPlaceholder="Buscar categoria por nombre o ruta"
               />
 
               <div className="sm:col-span-2 lg:col-span-4 flex gap-2">
