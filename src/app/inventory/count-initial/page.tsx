@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { requireAppAccess } from "@/lib/auth/guard";
+import { PageHeader } from "@/components/vento/standard/page-header";
 
 import { CountInitialForm } from "@/features/inventory/count-initial/count-initial-form";
 
@@ -67,13 +68,10 @@ export default async function InventoryCountInitialPage({
   if (!siteId) {
     return (
       <div className="w-full">
-        <div>
-          <h1 className="ui-h1">Conteos</h1>
-          <p className="mt-2 ui-body-muted">
-            Wizard por sede: elige la sede, ingresa cantidades contadas y confirma. No bloquea operación.
-            Se generan movimientos tipo &quot;count&quot; y se actualiza el stock.
-          </p>
-        </div>
+        <PageHeader
+          title="Conteos"
+          subtitle="Wizard por sede: elige la sede, ingresa cantidades contadas y confirma. No bloquea operacion. Se generan movimientos tipo count y se actualiza el stock."
+        />
 
         <div className="mt-6 ui-panel">
           <div className="ui-h3">Paso 1: elegir sede</div>
@@ -206,20 +204,15 @@ export default async function InventoryCountInitialPage({
 
   return (
     <div className="w-full">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="ui-h1">Conteos</h1>
-          <p className="mt-2 ui-body-muted">
-            Sede: <strong>{siteName}</strong>. Ingresa las cantidades contadas y confirma.
-          </p>
-        </div>
-        <Link
-          href="/inventory/stock"
-          className="ui-btn ui-btn--ghost"
-        >
-          Ver stock
-        </Link>
-      </div>
+      <PageHeader
+        title="Conteos"
+        subtitle={"Sede: " + siteName + ". Ingresa las cantidades contadas y confirma."}
+        actions={
+          <Link href="/inventory/stock" className="ui-btn ui-btn--ghost">
+            Ver stock
+          </Link>
+        }
+      />
 
       {openSessions.length > 0 ? (
         <div className="mt-6 ui-panel">

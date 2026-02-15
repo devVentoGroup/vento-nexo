@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { LocCreateForm } from "@/features/inventory/locations/loc-create-form";
 import { LocDeleteButton } from "@/features/inventory/locations/loc-delete-button";
 import { LocEditForm } from "@/features/inventory/locations/loc-edit-form";
+import { PageHeader } from "@/components/vento/standard/page-header";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 
@@ -359,21 +360,15 @@ export default async function InventoryLocationsPage({
 
   return (
     <div className="w-full">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="ui-h1">Ubicaciones</h1>
-          <p className="mt-2 ui-body-muted">
-            Ubicaciones físicas (LOC). Convención: <span className="font-mono">LOC-SEDE-ZONA-PASILLO</span>.
-          </p>
-        </div>
-
-        <Link
-          href="/scanner"
-          className="ui-btn ui-btn--ghost"
-        >
-          Ir a Scanner
-        </Link>
-      </div>
+      <PageHeader
+        title="Ubicaciones"
+        subtitle="Ubicaciones fisicas (LOC). Convencion: LOC-SEDE-ZONA-PASILLO."
+        actions={
+          <Link href="/scanner" className="ui-btn ui-btn--ghost">
+            Ir a Scanner
+          </Link>
+        }
+      />
 
       {created === "1" ? (
         <div className="mt-6 ui-alert ui-alert--success">Ubicación creada correctamente.</div>

@@ -5,6 +5,7 @@ import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { WithdrawForm } from "@/features/inventory/withdraw/withdraw-form";
+import { PageHeader } from "@/components/vento/standard/page-header";
 import { normalizeUnitCode, roundQuantity } from "@/lib/inventory/uom";
 
 export const dynamic = "force-dynamic";
@@ -287,17 +288,15 @@ export default async function WithdrawPage({
 
   return (
     <div className="w-full">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="ui-h1">Retirar insumos</h1>
-          <p className="mt-2 ui-body-muted">
-            Registra consumo desde un LOC (ej. bodega, cuarto frío). Usa el QR de la zona para abrir con el LOC ya elegido.
-          </p>
-        </div>
-        <Link href="/inventory/stock" className="ui-btn ui-btn--ghost">
-          Ver stock
-        </Link>
-      </div>
+      <PageHeader
+        title="Retirar insumos"
+        subtitle="Registra consumo desde un LOC (ej. bodega, cuarto frio). Usa el QR de la zona para abrir con el LOC ya elegido."
+        actions={
+          <Link href="/inventory/stock" className="ui-btn ui-btn--ghost">
+            Ver stock
+          </Link>
+        }
+      />
 
       {errorMsg ? (
         <div className="mt-6 ui-alert ui-alert--error">

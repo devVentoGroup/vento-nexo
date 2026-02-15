@@ -1,8 +1,10 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { GuidedFormShell } from "@/components/inventory/forms/GuidedFormShell";
+import { WizardFooter } from "@/components/inventory/forms/WizardFooter";
 import type { GuidedStep } from "@/lib/inventory/forms/types";
 
 type LocRow = {
@@ -58,6 +60,7 @@ export function LocEditForm({ loc, action, cancelHref }: Props) {
   };
 
   const canSubmit = useMemo(() => Boolean(code.trim()) && Boolean(zone.trim()), [code, zone]);
+  const canSubmitFromCurrentStep = canSubmit && (activeStepId !== "resumen" || confirmed);
 
   return (
     <GuidedFormShell
@@ -165,32 +168,26 @@ export function LocEditForm({ loc, action, cancelHref }: Props) {
           </label>
         </section>
 
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex gap-2">
-            {!atFirstStep ? (
-              <button type="button" className="ui-btn ui-btn--ghost" onClick={() => moveStep(-1)}>
-                Anterior
+        <WizardFooter
+          canGoPrevious={!atFirstStep}
+          canGoNext={!atLastStep}
+          onPrevious={() => moveStep(-1)}
+          onNext={() => moveStep(1)}
+          rightActions={
+            <>
+              <Link href={cancelHref} className="ui-btn ui-btn--ghost">
+                Cancelar
+              </Link>
+              <button
+                type="submit"
+                className="ui-btn ui-btn--brand"
+                disabled={!canSubmitFromCurrentStep}
+              >
+                Guardar
               </button>
-            ) : null}
-            {!atLastStep ? (
-              <button type="button" className="ui-btn ui-btn--ghost" onClick={() => moveStep(1)}>
-                Siguiente
-              </button>
-            ) : null}
-          </div>
-          <div className="flex items-center gap-2">
-            <a href={cancelHref} className="ui-btn ui-btn--ghost">
-              Cancelar
-            </a>
-            <button
-              type="submit"
-              className="ui-btn ui-btn--brand"
-              disabled={!canSubmit || !confirmed || activeStepId !== "resumen"}
-            >
-              Guardar
-            </button>
-          </div>
-        </div>
+            </>
+          }
+        />
       </form>
     </GuidedFormShell>
   );

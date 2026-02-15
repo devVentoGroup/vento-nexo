@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { EntriesForm } from "@/components/vento/entries-form";
+import { PageHeader } from "@/components/vento/standard/page-header";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import {
   convertQuantity,
@@ -440,12 +441,10 @@ export default async function EntriesPage({
 
   return (
     <div className="w-full space-y-6">
-      <div>
-        <h1 className="ui-h1">Entradas</h1>
-        <p className="mt-2 ui-body-muted">
-          Recepción de insumos por factura. Permite recepción parcial por ítem.
-        </p>
-      </div>
+      <PageHeader
+        title="Entradas"
+        subtitle="Recepcion de insumos por factura. Permite recepcion parcial por item."
+      />
 
       {errorMsg ? (
         <div className="ui-alert ui-alert--error">Error: {errorMsg}</div>

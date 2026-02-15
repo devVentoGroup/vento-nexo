@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { TransfersForm } from "@/components/vento/transfers-form";
+import { PageHeader } from "@/components/vento/standard/page-header";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { normalizeUnitCode, roundQuantity } from "@/lib/inventory/uom";
 
@@ -310,12 +311,10 @@ export default async function TransfersPage({
 
   return (
     <div className="w-full space-y-6">
-      <div>
-        <h1 className="ui-h1">Traslados internos</h1>
-        <p className="mt-2 ui-body-muted">
-          Movimientos entre LOCs dentro de la misma sede.
-        </p>
-      </div>
+      <PageHeader
+        title="Traslados internos"
+        subtitle="Movimientos entre LOCs dentro de la misma sede."
+      />
 
       {errorMsg ? (
         <div className="ui-alert ui-alert--error">Error: {errorMsg}</div>

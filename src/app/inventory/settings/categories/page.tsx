@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { CategorySettingsForm } from "@/components/inventory/CategorySettingsForm";
 import { CategoryTreeFilter } from "@/components/inventory/CategoryTreeFilter";
+import { PageHeader } from "@/components/vento/standard/page-header";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import {
@@ -676,17 +677,15 @@ export default async function InventoryCategorySettingsPage({
 
   return (
     <div className="w-full space-y-6">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="ui-h1">Categorias</h1>
-          <p className="mt-2 ui-body-muted">
-            Flujo guiado para explorar, editar ficha y revisar salud del catalogo.
-          </p>
-        </div>
-        <Link href="/inventory/catalog" className="ui-btn ui-btn--ghost">
-          Volver a catalogo
-        </Link>
-      </div>
+      <PageHeader
+        title="Categorias"
+        subtitle="Flujo guiado para explorar, editar ficha y revisar salud del catalogo."
+        actions={
+          <Link href="/inventory/catalog" className="ui-btn ui-btn--ghost">
+            Volver a catalogo
+          </Link>
+        }
+      />
 
       <div className="ui-panel-soft p-2">
         <div className="flex flex-wrap gap-2">

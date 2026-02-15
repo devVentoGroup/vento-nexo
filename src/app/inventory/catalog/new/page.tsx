@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { CategoryTreeFilter } from "@/components/inventory/CategoryTreeFilter";
+import { PageHeader } from "@/components/vento/standard/page-header";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
@@ -522,9 +523,9 @@ export default async function NewProductPage({
 
   if (!canCreate) {
     return (
-      <div className="w-full max-w-6xl">
-        <h1 className="ui-h1">{config.title}</h1>
-        <div className="mt-6 ui-alert ui-alert--warn">
+      <div className="w-full max-w-6xl space-y-6">
+        <PageHeader title={config.title} subtitle={config.subtitle} />
+        <div className="ui-alert ui-alert--warn">
           Solo propietarios y gerentes generales pueden crear productos.
         </div>
       </div>
@@ -539,15 +540,15 @@ export default async function NewProductPage({
 
   return (
     <div className="w-full max-w-6xl space-y-8">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <Link href="/inventory/catalog" className="ui-caption underline">
+      <PageHeader
+        title={config.title}
+        subtitle={config.subtitle}
+        actions={
+          <Link href="/inventory/catalog" className="ui-btn ui-btn--ghost">
             Volver al catalogo
           </Link>
-          <h1 className="mt-2 ui-h1">{config.title}</h1>
-          <p className="mt-2 ui-body-muted">{config.subtitle}</p>
-        </div>
-      </div>
+        }
+      />
 
       {errorMsg && <div className="ui-alert ui-alert--error">Error: {errorMsg}</div>}
 

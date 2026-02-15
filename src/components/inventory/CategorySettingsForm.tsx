@@ -3,7 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { GuidedFormShell } from "@/components/inventory/forms/GuidedFormShell";
+import { StepHelp } from "@/components/inventory/forms/StepHelp";
+import { WizardFooter } from "@/components/inventory/forms/WizardFooter";
 import { getCategoryDomainMeaning } from "@/lib/constants";
+import { normalizeGuidedStepId, setGuidedStepQuery } from "@/lib/inventory/forms/step-routing";
 import type { GuidedStep } from "@/lib/inventory/forms/types";
 import type { CategoryKind } from "@/lib/inventory/categories";
 
@@ -79,45 +82,6 @@ const WIZARD_STEPS: GuidedStep[] = [
   },
 ];
 
-function normalizeStepId(stepId: string | null | undefined, steps: GuidedStep[]): string {
-  const normalized = String(stepId ?? "").trim().toLowerCase();
-  if (steps.some((step) => step.id === normalized)) return normalized;
-  return steps[0]?.id ?? "";
-}
-
-function setStepInUrl(stepId: string) {
-  if (typeof window === "undefined") return;
-  const next = new URL(window.location.href);
-  next.searchParams.set("step", stepId);
-  window.history.replaceState(null, "", next.toString());
-}
-
-function StepHelp(props: {
-  meaning: string;
-  whenToUse: string;
-  example: string;
-  impact?: string;
-}) {
-  return (
-    <div className="ui-panel-soft space-y-1 p-3">
-      <div className="ui-caption">
-        <strong>Que significa:</strong> {props.meaning}
-      </div>
-      <div className="ui-caption">
-        <strong>Cuando usarlo:</strong> {props.whenToUse}
-      </div>
-      <div className="ui-caption">
-        <strong>Ejemplo:</strong> {props.example}
-      </div>
-      {props.impact ? (
-        <div className="ui-caption">
-          <strong>Impacto:</strong> {props.impact}
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
 export function CategorySettingsForm({
   action,
   saveDraftAction,
@@ -137,7 +101,7 @@ export function CategorySettingsForm({
 }: CategorySettingsFormProps) {
   const initialKinds: CategoryKind[] = defaultKinds.length > 0 ? defaultKinds : ["insumo"];
   const [activeStepId, setActiveStepId] = useState<string>(
-    normalizeStepId(initialStepId, WIZARD_STEPS)
+    normalizeGuidedStepId({ stepId: initialStepId, steps: WIZARD_STEPS })
   );
   const [name, setName] = useState(defaultName);
   const [slug, setSlug] = useState(defaultSlug);
@@ -155,11 +119,15 @@ export function CategorySettingsForm({
   const currentStepId =
     activeStepId === "canal" && !showChannel
       ? "resumen"
-      : normalizeStepId(activeStepId, wizardSteps);
+      : normalizeGuidedStepId({ stepId: activeStepId, steps: wizardSteps });
   const summaryStepNumber = showChannel ? 5 : 4;
 
   useEffect(() => {
-    setStepInUrl(currentStepId);
+    if (typeof window === "undefined") return;
+    const next = new URL(window.location.href);
+    const nextParams = setGuidedStepQuery(next.searchParams, currentStepId);
+    next.search = nextParams.toString();
+    window.history.replaceState(null, "", next.toString());
   }, [currentStepId]);
 
   const selectedSiteName = useMemo(() => {
@@ -211,6 +179,9 @@ export function CategorySettingsForm({
   const stepIndex = wizardSteps.findIndex((step) => step.id === currentStepId);
   const atFirstStep = stepIndex <= 0;
   const atLastStep = stepIndex >= wizardSteps.length - 1;
+  const canSubmitFromCurrentStep = editingCategoryId
+    ? isFormComplete
+    : isFormComplete && currentStepId === "resumen";
 
   const moveStep = (offset: -1 | 1) => {
     const nextIndex = Math.min(wizardSteps.length - 1, Math.max(0, stepIndex + offset));
@@ -438,39 +409,24 @@ export function CategorySettingsForm({
           ) : null}
         </section>
 
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex gap-2">
-            {!atFirstStep ? (
-              <button
-                type="button"
-                className="ui-btn ui-btn--ghost"
-                onClick={() => moveStep(-1)}
-              >
-                Anterior
+        <WizardFooter
+          canGoPrevious={!atFirstStep}
+          canGoNext={!atLastStep}
+          onPrevious={() => moveStep(-1)}
+          onNext={() => moveStep(1)}
+          rightActions={
+            <>
+              {saveDraftAction ? (
+                <button type="submit" formAction={saveDraftAction} className="ui-btn ui-btn--ghost">
+                  Guardar borrador
+                </button>
+              ) : null}
+              <button type="submit" className="ui-btn ui-btn--brand" disabled={!canSubmitFromCurrentStep}>
+                {editingCategoryId ? "Guardar cambios" : "Crear categoria"}
               </button>
-            ) : null}
-            {!atLastStep ? (
-              <button
-                type="button"
-                className="ui-btn ui-btn--ghost"
-                onClick={() => moveStep(1)}
-              >
-                Siguiente
-              </button>
-            ) : null}
-          </div>
-
-          <div className="flex gap-2">
-            {saveDraftAction ? (
-              <button type="submit" formAction={saveDraftAction} className="ui-btn ui-btn--ghost">
-                Guardar borrador
-              </button>
-            ) : null}
-            <button type="submit" className="ui-btn ui-btn--brand" disabled={!isFormComplete || currentStepId !== "resumen"}>
-              {editingCategoryId ? "Guardar cambios" : "Crear categoria"}
-            </button>
-          </div>
-        </div>
+            </>
+          }
+        />
       </form>
     </GuidedFormShell>
   );

@@ -7,6 +7,7 @@ import { checkPermissionWithRoleOverride } from "@/lib/auth/role-override";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { ProductionBatchForm } from "@/components/vento/production-batch-form";
+import { PageHeader } from "@/components/vento/standard/page-header";
 
 export const dynamic = "force-dynamic";
 
@@ -269,21 +270,15 @@ export default async function ProductionBatchesPage({
 
   return (
     <div className="w-full">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="ui-h1">Producción manual</h1>
-          <p className="mt-2 ui-body-muted">
-            Registra lotes terminados y genera etiquetas de producción.
-          </p>
-        </div>
-
-        <Link
-          href="/inventory/remissions"
-          className="ui-btn ui-btn--ghost"
-        >
-          Ver remisiones
-        </Link>
-      </div>
+      <PageHeader
+        title="Produccion manual"
+        subtitle="Registra lotes terminados y genera etiquetas de produccion."
+        actions={
+          <Link href="/inventory/remissions" className="ui-btn ui-btn--ghost">
+            Ver remisiones
+          </Link>
+        }
+      />
 
       {errorMsg ? (
         <div className="mt-6 ui-alert ui-alert--error">

@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { requireAppAccess } from "@/lib/auth/guard";
+import { PageHeader } from "@/components/vento/standard/page-header";
 
 import { AdjustForm } from "@/features/inventory/adjust/adjust-form";
 
@@ -61,12 +62,10 @@ export default async function InventoryAdjustPage({
   if (!siteId) {
     return (
       <div className="w-full">
-        <div>
-          <h1 className="ui-h1">Ajustes</h1>
-          <p className="mt-2 ui-body-muted">
-            Ajustes manuales con motivo, permisos y evidencia opcional.
-          </p>
-        </div>
+        <PageHeader
+          title="Ajustes"
+          subtitle="Ajustes manuales con motivo, permisos y evidencia opcional."
+        />
 
         <div className="mt-6 ui-panel">
           <div className="ui-h3">Paso 1: elegir sede</div>
@@ -154,20 +153,15 @@ export default async function InventoryAdjustPage({
 
   return (
     <div className="w-full">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="ui-h1">Ajustes</h1>
-          <p className="mt-2 ui-body-muted">
-            Sede: <strong>{siteName}</strong>. Registra ajustes manuales con motivo y trazabilidad.
-          </p>
-        </div>
-        <Link
-          href="/inventory/stock"
-          className="ui-btn ui-btn--ghost"
-        >
-          Ver stock
-        </Link>
-      </div>
+      <PageHeader
+        title="Ajustes"
+        subtitle={`Sede: ${siteName}. Registra ajustes manuales con motivo y trazabilidad.`}
+        actions={
+          <Link href="/inventory/stock" className="ui-btn ui-btn--ghost">
+            Ver stock
+          </Link>
+        }
+      />
 
       {productError ? (
         <div className="mt-6 ui-alert ui-alert--error">
@@ -189,5 +183,4 @@ export default async function InventoryAdjustPage({
     </div>
   );
 }
-
 

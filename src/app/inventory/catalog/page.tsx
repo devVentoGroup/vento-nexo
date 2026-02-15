@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { CategoryTreeFilter } from "@/components/inventory/CategoryTreeFilter";
+import { PageHeader } from "@/components/vento/standard/page-header";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { getCategoryDomainOptions } from "@/lib/constants";
 import {
@@ -230,15 +231,15 @@ export default async function InventoryCatalogPage({
 
   return (
     <div className="w-full">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="ui-h1">Catalogo</h1>
-          <p className="mt-2 ui-body-muted">Abre cualquier item para ver su ficha.</p>
-        </div>
-        <Link href="/inventory/stock" className="ui-btn ui-btn--ghost">
-          Ver stock
-        </Link>
-      </div>
+      <PageHeader
+        title="Catalogo"
+        subtitle="Abre cualquier item para ver su ficha."
+        actions={
+          <Link href="/inventory/stock" className="ui-btn ui-btn--ghost">
+            Ver stock
+          </Link>
+        }
+      />
 
       {okMsg ? <div className="mt-6 ui-alert ui-alert--success">{okMsg}</div> : null}
 

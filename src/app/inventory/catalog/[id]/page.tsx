@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { CategoryTreeFilter } from "@/components/inventory/CategoryTreeFilter";
+import { PageHeader } from "@/components/vento/standard/page-header";
 import { ProductImageUpload } from "@/features/inventory/catalog/product-image-upload";
 import { ProductSiteSettingsEditor } from "@/features/inventory/catalog/product-site-settings-editor";
 import { ProductSuppliersEditor } from "@/features/inventory/catalog/product-suppliers-editor";
@@ -714,17 +715,15 @@ export default async function ProductCatalogDetailPage({
 
   return (
     <div className="w-full space-y-8">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="ui-h1">{productRow.name ?? "Ficha maestra"}</h1>
-          <p className="mt-2 ui-body-muted">
-            Catálogo del insumo o producto: compra, almacenamiento y distribución.
-          </p>
-        </div>
-        <Link href={from || "/inventory/catalog"} className="ui-btn ui-btn--ghost">
-          Volver al catálogo
-        </Link>
-      </div>
+      <PageHeader
+        title={productRow.name ?? "Ficha maestra"}
+        subtitle="Catalogo del insumo o producto: compra, almacenamiento y distribucion."
+        actions={
+          <Link href={from || "/inventory/catalog"} className="ui-btn ui-btn--ghost">
+            Volver al catalogo
+          </Link>
+        }
+      />
 
       {errorMsg ? <div className="ui-alert ui-alert--error">Error: {errorMsg}</div> : null}
       {okMsg ? <div className="ui-alert ui-alert--success">{okMsg}</div> : null}

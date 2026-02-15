@@ -6,6 +6,7 @@ import { requireAppAccess } from "@/lib/auth/guard";
 import { checkPermissionWithRoleOverride } from "@/lib/auth/role-override";
 import { createClient } from "@/lib/supabase/server";
 import { RemissionsCreateForm } from "@/components/vento/remissions-create-form";
+import { PageHeader } from "@/components/vento/standard/page-header";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { normalizeUnitCode, roundQuantity } from "@/lib/inventory/uom";
 
@@ -463,22 +464,17 @@ export default async function RemissionsPage({
 
   return (
     <div className="w-full">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="ui-h1">Remisiones</h1>
-          <p className="mt-2 ui-body-muted">
-            Flujo interno entre sedes. Satélites solicitan, bodega prepara y se recibe en destino.
-          </p>
-        </div>
-        {isProductionCenter ? (
-          <Link
-            href="/inventory/remissions/prepare"
-            className="ui-btn ui-btn--brand"
-          >
-            Preparar remisiones
-          </Link>
-        ) : null}
-      </div>
+      <PageHeader
+        title="Remisiones"
+        subtitle="Flujo interno entre sedes. Satelites solicitan, bodega prepara y se recibe en destino."
+        actions={
+          isProductionCenter ? (
+            <Link href="/inventory/remissions/prepare" className="ui-btn ui-btn--brand">
+              Preparar remisiones
+            </Link>
+          ) : null
+        }
+      />
 
       {errorMsg ? (
         <div className="mt-6 ui-alert ui-alert--error">

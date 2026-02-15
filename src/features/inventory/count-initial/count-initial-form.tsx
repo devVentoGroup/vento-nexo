@@ -1,9 +1,14 @@
 "use client";
 
-import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
-
-import { useState } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useState } from "react";
+
+import { GuidedFormShell } from "@/components/inventory/forms/GuidedFormShell";
+import { StepHelp } from "@/components/inventory/forms/StepHelp";
+import { WizardFooter } from "@/components/inventory/forms/WizardFooter";
+import { Table, TableCell, TableHeaderCell } from "@/components/vento/standard/table";
+import type { GuidedStep } from "@/lib/inventory/forms/types";
 
 type Product = {
   id: string;
@@ -20,9 +25,28 @@ type Props = {
   zoneOrLocNote?: string;
 };
 
-export function CountInitialForm({ products, siteId, siteName, countScopeLabel, zoneOrLocNote }: Props) {
+const STEPS: GuidedStep[] = [
+  {
+    id: "captura",
+    title: "Captura",
+    objective: "Ingresa cantidades contadas por producto.",
+  },
+  {
+    id: "resumen",
+    title: "Resumen",
+    objective: "Revisa y confirma el conteo antes de guardar.",
+  },
+];
+
+export function CountInitialForm({
+  products,
+  siteId,
+  siteName,
+  countScopeLabel,
+  zoneOrLocNote,
+}: Props) {
   const router = useRouter();
-  const [step, setStep] = useState<2 | 3>(2);
+  const [activeStepId, setActiveStepId] = useState(STEPS[0].id);
   const [qty, setQty] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -36,11 +60,15 @@ export function CountInitialForm({ products, siteId, siteName, countScopeLabel, 
 
   const lines = products
     .map((p) => ({ product_id: p.id, quantity: getVal(p.id) }))
-    .filter((l) => l.quantity > 0);
+    .filter((line) => line.quantity > 0);
 
-  const handleRevisar = () => {
-    setError("");
-    setStep(3);
+  const stepIndex = STEPS.findIndex((step) => step.id === activeStepId);
+  const atFirstStep = stepIndex <= 0;
+  const atLastStep = stepIndex >= STEPS.length - 1;
+
+  const moveStep = (offset: -1 | 1) => {
+    const nextIndex = Math.min(STEPS.length - 1, Math.max(0, stepIndex + offset));
+    setActiveStepId(STEPS[nextIndex].id);
   };
 
   const handleConfirm = async () => {
@@ -75,124 +103,122 @@ export function CountInitialForm({ products, siteId, siteName, countScopeLabel, 
   };
 
   return (
-    <div className="mt-6 flex flex-col gap-6">
-      {error ? (
-        <div className="ui-alert ui-alert--error">
-          {error}
-        </div>
-      ) : null}
+    <div className="mt-6 space-y-4">
+      {error ? <div className="ui-alert ui-alert--error">{error}</div> : null}
 
-      {step === 2 ? (
-        <>
-          <div className="ui-panel">
-            <div className="ui-body font-semibold">Cantidad contada por producto</div>
-            <div className="mt-1 ui-body-muted">
-              Sede: {siteName}
-              {countScopeLabel && countScopeLabel !== "Toda la sede" ? ` · ${countScopeLabel}` : ""}. Deja en blanco o 0 los que no cuentes.
-            </div>
-            <div className="mt-4 overflow-x-auto">
-              <Table>
-                <thead>
-                  <tr>
-                    <TableHeaderCell>Producto</TableHeaderCell>
-                    <TableHeaderCell>SKU</TableHeaderCell>
-                    <TableHeaderCell>Unidad</TableHeaderCell>
-                    <TableHeaderCell className="w-36">Cantidad</TableHeaderCell>
+      <GuidedFormShell
+        title="Conteo inicial"
+        subtitle={`Sede: ${siteName}${countScopeLabel && countScopeLabel !== "Toda la sede" ? ` · ${countScopeLabel}` : ""}.`}
+        steps={STEPS}
+        currentStepId={activeStepId}
+        onStepChange={setActiveStepId}
+      >
+        <section className={activeStepId === "captura" ? "ui-panel space-y-4" : "hidden"}>
+          <div className="ui-h3">Paso 1. Captura de cantidades</div>
+          <div className="ui-body-muted">
+            Ingresa cantidad contada por producto. Deja 0 o vacio los productos no contados.
+          </div>
+          <div className="overflow-x-auto">
+            <Table>
+              <thead>
+                <tr>
+                  <TableHeaderCell>Producto</TableHeaderCell>
+                  <TableHeaderCell>SKU</TableHeaderCell>
+                  <TableHeaderCell>Unidad</TableHeaderCell>
+                  <TableHeaderCell className="w-36">Cantidad</TableHeaderCell>
+                </tr>
+              </thead>
+              <tbody>
+                {products.map((product) => (
+                  <tr key={product.id} className="ui-body">
+                    <TableCell>{product.name}</TableCell>
+                    <TableCell className="font-mono">{product.sku ?? "-"}</TableCell>
+                    <TableCell>{product.unit ?? "-"}</TableCell>
+                    <TableCell>
+                      <input
+                        type="number"
+                        min={0}
+                        step="any"
+                        value={qty[product.id] ?? ""}
+                        onChange={(event) => setQty((state) => ({ ...state, [product.id]: event.target.value }))}
+                        placeholder="0"
+                        className="ui-input"
+                      />
+                    </TableCell>
                   </tr>
-                </thead>
-                <tbody>
-                  {products.map((p) => (
-                    <tr key={p.id} className="ui-body">
-                      <TableCell>{p.name}</TableCell>
-                      <TableCell className="font-mono">{p.sku ?? "-"}</TableCell>
-                      <TableCell>{p.unit ?? "-"}</TableCell>
-                      <TableCell>
-                        <input
-                          type="number"
-                          min={0}
-                          step="any"
-                          value={qty[p.id] ?? ""}
-                          onChange={(e) => setQty((s) => ({ ...s, [p.id]: e.target.value }))}
-                          placeholder="0"
-                          className="ui-input"
-                        />
-                      </TableCell>
+                ))}
+              </tbody>
+            </Table>
+          </div>
+          <StepHelp
+            meaning="Capturas el inventario contado fisicamente para cada producto."
+            whenToUse="Cuando inicias conteo de una sede, zona o LOC."
+            example="Harina 12, Leche 8.5, Vasos 120."
+            impact="Define la base para ajustar diferencias contra el stock actual."
+          />
+        </section>
+
+        <section className={activeStepId === "resumen" ? "ui-panel space-y-4" : "hidden"}>
+          <div className="ui-h3">Paso 2. Resumen</div>
+          <div className="ui-body-muted">
+            {lines.length} producto(s) con cantidad. Al confirmar se crean movimientos tipo
+            {" "}
+            <span className="font-mono">count</span>
+            {zoneOrLocNote
+              ? " y el ajuste de stock se aplicara al cerrar el conteo."
+              : " y se actualiza stock inmediatamente."}
+          </div>
+          <div className="overflow-x-auto">
+            <Table>
+              <thead>
+                <tr>
+                  <TableHeaderCell>Producto</TableHeaderCell>
+                  <TableHeaderCell>SKU</TableHeaderCell>
+                  <TableHeaderCell>Unidad</TableHeaderCell>
+                  <TableHeaderCell>Cantidad</TableHeaderCell>
+                </tr>
+              </thead>
+              <tbody>
+                {lines.map((line) => {
+                  const product = products.find((row) => row.id === line.product_id);
+                  return (
+                    <tr key={line.product_id} className="ui-body">
+                      <TableCell>{product?.name ?? line.product_id}</TableCell>
+                      <TableCell className="font-mono">{product?.sku ?? "-"}</TableCell>
+                      <TableCell>{product?.unit ?? "-"}</TableCell>
+                      <TableCell className="font-mono">{line.quantity}</TableCell>
                     </tr>
-                  ))}
-                </tbody>
-              </Table>
-            </div>
+                  );
+                })}
+              </tbody>
+            </Table>
           </div>
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={handleRevisar}
-              className="ui-btn ui-btn--brand"
-            >
-              Revisar y confirmar
-            </button>
-            <a
-              href="/inventory/count-initial"
-              className="ui-btn ui-btn--ghost"
-            >
-              Cambiar sede
-            </a>
-          </div>
-        </>
-      ) : (
-        <>
-          <div className="ui-panel">
-            <div className="ui-body font-semibold">Resumen del conteo</div>
-            <div className="mt-1 ui-body-muted">
-              {lines.length} producto(s) con cantidad. Al confirmar se crean movimientos tipo &quot;count&quot;
-              {zoneOrLocNote ? " (conteo por zona/LOC; el ajuste de stock se aplicará al cerrar el conteo)." : " y se actualiza el stock."}
-            </div>
-            <div className="mt-4 overflow-x-auto">
-              <Table>
-                <thead>
-                  <tr>
-                    <TableHeaderCell>Producto</TableHeaderCell>
-                    <TableHeaderCell>SKU</TableHeaderCell>
-                    <TableHeaderCell>Unidad</TableHeaderCell>
-                    <TableHeaderCell>Cantidad</TableHeaderCell>
-                  </tr>
-                </thead>
-                <tbody>
-                  {lines.map((l) => {
-                    const p = products.find((x) => x.id === l.product_id);
-                    return (
-                      <tr key={l.product_id} className="ui-body">
-                        <TableCell>{p?.name ?? l.product_id}</TableCell>
-                        <TableCell className="font-mono">{p?.sku ?? "-"}</TableCell>
-                        <TableCell>{p?.unit ?? "-"}</TableCell>
-                        <TableCell className="font-mono">{l.quantity}</TableCell>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </Table>
-            </div>
-          </div>
-          <div className="flex gap-3">
-            <button
-              type="button"
-              onClick={() => setStep(2)}
-              disabled={loading}
-              className="ui-btn ui-btn--ghost disabled:opacity-50"
-            >
-              Editar
-            </button>
-            <button
-              type="button"
-              onClick={handleConfirm}
-              disabled={loading}
-              className="ui-btn ui-btn--brand disabled:opacity-50"
-            >
-              {loading ? "Guardando…" : "Confirmar conteo"}
-            </button>
-          </div>
-        </>
-      )}
+        </section>
+
+        <WizardFooter
+          canGoPrevious={!atFirstStep}
+          canGoNext={!atLastStep}
+          onPrevious={() => moveStep(-1)}
+          onNext={() => moveStep(1)}
+          rightActions={
+            <>
+              <Link href={`/inventory/count-initial?site_id=${encodeURIComponent(siteId)}`} className="ui-btn ui-btn--ghost">
+                Limpiar
+              </Link>
+              {activeStepId === "resumen" ? (
+                <button
+                  type="button"
+                  onClick={handleConfirm}
+                  disabled={loading}
+                  className="ui-btn ui-btn--brand disabled:opacity-50"
+                >
+                  {loading ? "Guardando..." : "Confirmar conteo"}
+                </button>
+              ) : null}
+            </>
+          }
+        />
+      </GuidedFormShell>
     </div>
   );
 }

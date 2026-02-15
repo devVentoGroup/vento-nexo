@@ -2,6 +2,8 @@
 
 import { useCallback, useState } from "react";
 
+import { Table, TableCell, TableHeaderCell } from "@/components/vento/standard/table";
+
 export type SiteSettingLine = {
   id?: string;
   site_id: string;
@@ -32,14 +34,10 @@ export function ProductSiteSettingsEditor({
   sites,
   areaKinds,
 }: Props) {
-  const [lines, setLines] = useState<SiteSettingLine[]>(
-    initialRows.length ? initialRows : [emptyLine()]
-  );
+  const [lines, setLines] = useState<SiteSettingLine[]>(initialRows.length ? initialRows : [emptyLine()]);
 
   const updateLine = useCallback((index: number, patch: Partial<SiteSettingLine>) => {
-    setLines((prev) =>
-      prev.map((line, i) => (i === index ? { ...line, ...patch } : line))
-    );
+    setLines((prev) => prev.map((line, i) => (i === index ? { ...line, ...patch } : line)));
   }, []);
 
   const addLine = useCallback(() => {
@@ -50,79 +48,79 @@ export function ProductSiteSettingsEditor({
     setLines((prev) => {
       const line = prev[index];
       if (line?.id) {
-        return prev.map((l, i) => (i === index ? { ...l, _delete: true } : l));
+        return prev.map((current, i) => (i === index ? { ...current, _delete: true } : current));
       }
       return prev.filter((_, i) => i !== index);
     });
   }, []);
 
-  const visibleLines = lines.filter((l) => !l._delete);
+  const visibleLines = lines.filter((line) => !line._delete);
 
   return (
     <div className="space-y-3">
       <input type="hidden" name={name} value={JSON.stringify(lines)} />
       <div className="flex items-center justify-between">
-        <span className="ui-label">Configuración por sede</span>
+        <span className="ui-label">Configuracion por sede</span>
         <button type="button" onClick={addLine} className="ui-btn ui-btn--ghost text-sm">
           + Agregar sede
         </button>
       </div>
       <div className="overflow-x-auto">
-        <table className="min-w-full text-sm">
-          <thead className="text-left text-[var(--ui-muted)]">
+        <Table>
+          <thead>
             <tr>
-              <th className="py-2 pr-2">Sede</th>
-              <th className="py-2 pr-2">Activo</th>
-              <th className="py-2 pr-2">Área default</th>
-              <th className="py-2 w-10" />
+              <TableHeaderCell>Sede</TableHeaderCell>
+              <TableHeaderCell>Activo</TableHeaderCell>
+              <TableHeaderCell>Area default</TableHeaderCell>
+              <TableHeaderCell className="w-10" />
             </tr>
           </thead>
           <tbody>
             {visibleLines.map((line, index) => {
-              const realIndex = lines.findIndex((l) => l === line);
+              const realIndex = lines.findIndex((current) => current === line);
               return (
-                <tr key={line.id ?? `new-${index}`} className="border-t border-zinc-200/60">
-                  <td className="py-2 pr-2">
+                <tr key={line.id ?? `new-${index}`} className="ui-body">
+                  <TableCell>
                     <select
                       value={line.site_id}
-                      onChange={(e) => updateLine(realIndex, { site_id: e.target.value })}
+                      onChange={(event) => updateLine(realIndex, { site_id: event.target.value })}
                       className="ui-input min-w-[180px]"
                     >
                       <option value="">Seleccionar sede</option>
-                      {sites.map((s) => (
-                        <option key={s.id} value={s.id}>
-                          {s.name ?? s.id}
+                      {sites.map((site) => (
+                        <option key={site.id} value={site.id}>
+                          {site.name ?? site.id}
                         </option>
                       ))}
                     </select>
-                  </td>
-                  <td className="py-2 pr-2">
+                  </TableCell>
+                  <TableCell>
                     <label className="flex items-center gap-2">
                       <input
                         type="checkbox"
                         checked={line.is_active}
-                        onChange={(e) => updateLine(realIndex, { is_active: e.target.checked })}
+                        onChange={(event) => updateLine(realIndex, { is_active: event.target.checked })}
                       />
                       <span className="text-xs">Activo</span>
                     </label>
-                  </td>
-                  <td className="py-2 pr-2">
+                  </TableCell>
+                  <TableCell>
                     <select
                       value={line.default_area_kind ?? ""}
-                      onChange={(e) =>
-                        updateLine(realIndex, { default_area_kind: e.target.value || undefined })
+                      onChange={(event) =>
+                        updateLine(realIndex, { default_area_kind: event.target.value || undefined })
                       }
                       className="ui-input min-w-[120px]"
                     >
                       <option value="">Sin definir</option>
-                      {areaKinds.map((a) => (
-                        <option key={a.code} value={a.code}>
-                          {a.name}
+                      {areaKinds.map((area) => (
+                        <option key={area.code} value={area.code}>
+                          {area.name}
                         </option>
                       ))}
                     </select>
-                  </td>
-                  <td className="py-2">
+                  </TableCell>
+                  <TableCell>
                     <button
                       type="button"
                       onClick={() => removeLine(realIndex)}
@@ -131,13 +129,14 @@ export function ProductSiteSettingsEditor({
                     >
                       Quitar
                     </button>
-                  </td>
+                  </TableCell>
                 </tr>
               );
             })}
           </tbody>
-        </table>
+        </Table>
       </div>
     </div>
   );
 }
+

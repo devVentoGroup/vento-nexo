@@ -4,6 +4,8 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { GuidedFormShell } from "@/components/inventory/forms/GuidedFormShell";
+import { StepHelp } from "@/components/inventory/forms/StepHelp";
+import { WizardFooter } from "@/components/inventory/forms/WizardFooter";
 import type { GuidedStep } from "@/lib/inventory/forms/types";
 
 type LocOption = { id: string; code: string | null; zone: string | null };
@@ -52,27 +54,6 @@ const STEPS: GuidedStep[] = [
     objective: "Confirma el retiro y guarda el movimiento.",
   },
 ];
-
-function StepHelp(props: { meaning: string; whenToUse: string; example: string; impact?: string }) {
-  return (
-    <div className="ui-panel-soft space-y-1 p-3">
-      <div className="ui-caption">
-        <strong>Que significa:</strong> {props.meaning}
-      </div>
-      <div className="ui-caption">
-        <strong>Cuando usarlo:</strong> {props.whenToUse}
-      </div>
-      <div className="ui-caption">
-        <strong>Ejemplo:</strong> {props.example}
-      </div>
-      {props.impact ? (
-        <div className="ui-caption">
-          <strong>Impacto:</strong> {props.impact}
-        </div>
-      ) : null}
-    </div>
-  );
-}
 
 export function WithdrawForm({
   locations,
@@ -361,35 +342,21 @@ export function WithdrawForm({
           </p>
         </section>
 
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <div className="flex gap-2">
-            {!atFirstStep ? (
-              <button
-                type="button"
-                className="ui-btn ui-btn--ghost"
-                onClick={() => moveStep(-1)}
-              >
-                Anterior
-              </button>
-            ) : null}
-            {!atLastStep ? (
-              <button
-                type="button"
-                className="ui-btn ui-btn--ghost"
-                onClick={() => moveStep(1)}
-              >
-                Siguiente
-              </button>
-            ) : null}
-          </div>
-          <button
-            type="submit"
-            className="ui-btn ui-btn--brand"
-            disabled={!confirmed || activeStepId !== "confirmacion"}
-          >
-            Registrar retiro
-          </button>
-        </div>
+        <WizardFooter
+          canGoPrevious={!atFirstStep}
+          canGoNext={!atLastStep}
+          onPrevious={() => moveStep(-1)}
+          onNext={() => moveStep(1)}
+          rightActions={
+            <button
+              type="submit"
+              className="ui-btn ui-btn--brand"
+              disabled={!confirmed || activeStepId !== "confirmacion"}
+            >
+              Registrar retiro
+            </button>
+          }
+        />
       </form>
     </GuidedFormShell>
   );
