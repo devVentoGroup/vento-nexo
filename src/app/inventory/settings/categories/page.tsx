@@ -234,7 +234,7 @@ async function saveCategoryAction(formData: FormData) {
 
   const { supabase, user } = await requireCategoryManager();
   const returnQs = asText(formData.get("_return_qs"));
-  const returnView = asText(formData.get("_return_view")) || "ficha";
+  const returnView: CategorySettingsView = "explorar";
 
   const id = asText(formData.get("id"));
   const name = asText(formData.get("name"));

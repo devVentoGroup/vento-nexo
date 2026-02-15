@@ -216,22 +216,24 @@ export function EntriesForm({
 
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex gap-2">
-            <button
-              type="button"
-              className="ui-btn ui-btn--ghost"
-              onClick={() => moveStep(-1)}
-              disabled={atFirstStep}
-            >
-              Anterior
-            </button>
-            <button
-              type="button"
-              className="ui-btn ui-btn--ghost"
-              onClick={() => moveStep(1)}
-              disabled={atLastStep}
-            >
-              Siguiente
-            </button>
+            {!atFirstStep ? (
+              <button
+                type="button"
+                className="ui-btn ui-btn--ghost"
+                onClick={() => moveStep(-1)}
+              >
+                Anterior
+              </button>
+            ) : null}
+            {!atLastStep ? (
+              <button
+                type="button"
+                className="ui-btn ui-btn--ghost"
+                onClick={() => moveStep(1)}
+              >
+                Siguiente
+              </button>
+            ) : null}
           </div>
           <button type="submit" className="ui-btn ui-btn--brand" disabled={!confirmed || activeStepId !== "confirmacion"}>
             Guardar entrada
@@ -241,4 +243,3 @@ export function EntriesForm({
     </GuidedFormShell>
   );
 }
-

@@ -67,26 +67,19 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    label: "Operación",
+    label: "Operacion diaria",
     items: [
       {
         href: "/inventory/remissions",
         label: "Remisiones",
-        description: "Solicitar, preparar y recibir",
-        required: ["inventory.remissions"],
-        icon: "package",
-      },
-      {
-        href: "/inventory/remissions/prepare",
-        label: "Preparar remisiones",
-        description: "Vista bodega: marcar y enviar",
+        description: "Flujo completo de remisiones",
         required: ["inventory.remissions"],
         icon: "package",
       },
       {
         href: "/inventory/entries",
         label: "Entradas",
-        description: "Recepción de insumos",
+        description: "Recepcion de insumos",
         required: ["inventory.entries"],
         icon: "layers",
       },
@@ -100,14 +93,14 @@ const NAV_GROUPS: NavGroup[] = [
       {
         href: "/inventory/withdraw",
         label: "Retiros",
-        description: "Consumo desde LOC (QR por zona)",
+        description: "Consumo desde LOC",
         required: ["inventory.withdraw"],
         icon: "boxes",
       },
     ],
   },
   {
-    label: "Control",
+    label: "Control y conciliacion",
     items: [
       {
         href: "/inventory/stock",
@@ -115,22 +108,6 @@ const NAV_GROUPS: NavGroup[] = [
         description: "Saldo por sede",
         required: ["inventory.stock"],
         icon: "boxes",
-      },
-      {
-        href: "/inventory/locations",
-        label: "Ubicaciones",
-        description: "Locaciones (LOC)",
-        required: ["inventory.locations"],
-        allowedRoles: ["propietario", "gerente_general"],
-        icon: "map",
-      },
-      {
-        href: "/inventory/catalog",
-        label: "Catálogo",
-        description: "Maestro de productos",
-        required: ["inventory.stock"],
-        allowedRoles: ["propietario", "gerente_general"],
-        icon: "sliders",
       },
       {
         href: "/inventory/movements",
@@ -142,52 +119,94 @@ const NAV_GROUPS: NavGroup[] = [
       {
         href: "/inventory/count-initial",
         label: "Conteos",
-        description: "Ciclos y ajustes",
+        description: "Ciclos de conteo",
         required: ["inventory.counts"],
         icon: "clipboard",
+      },
+      {
+        href: "/inventory/adjust",
+        label: "Ajustes",
+        description: "Ajustes de inventario",
+        required: ["inventory.adjustments"],
+        icon: "sliders",
       },
     ],
   },
   {
-    label: "Impresión",
+    label: "Maestro de inventario",
     items: [
       {
+        href: "/inventory/catalog",
+        label: "Catalogo",
+        description: "Maestro de productos",
+        required: ["inventory.stock"],
+        allowedRoles: ["propietario", "gerente_general"],
+        icon: "sliders",
+      },
+      {
+        href: "/inventory/locations",
+        label: "Ubicaciones (LOC)",
+        description: "Zonas y ubicaciones",
+        required: ["inventory.locations"],
+        allowedRoles: ["propietario", "gerente_general"],
+        icon: "map",
+      },
+      {
+        href: "/inventory/production-batches",
+        label: "Produccion manual",
+        description: "Lotes de produccion",
+        required: ["inventory.production_batches"],
+        icon: "sparkles",
+      },
+    ],
+  },
+  {
+    label: "Herramientas",
+    items: [
+      {
+        href: "/scanner",
+        label: "Scanner",
+        description: "Escaneo de codigos",
+        required: ["access"],
+        icon: "scan",
+      },
+      {
         href: "/printing/jobs",
-        label: "Impresión",
+        label: "Impresion",
         description: "Etiquetas Zebra",
         anyOf: ["inventory.production_batches", "inventory.locations"],
         icon: "printer",
       },
       {
         href: "/printing/designer",
-        label: "Diseñador",
-        description: "Diseña etiquetas visual",
+        label: "Disenador",
+        description: "Diseno de etiquetas",
         anyOf: ["inventory.production_batches", "inventory.locations"],
         icon: "layers",
       },
       {
         href: "/printing/setup",
         label: "Config. impresora",
-        description: "Instalación, Bluetooth, detección",
+        description: "Instalacion y conexion",
         anyOf: ["inventory.production_batches", "inventory.locations"],
         icon: "sliders",
       },
     ],
   },
   {
-    label: "Configuración",
+    label: "Configuracion",
     items: [
       {
         href: "/inventory/settings/checklist",
-        label: "Configuración inicial",
-        description: "Checklist para inventario y remisiones",
+        label: "Configuracion inicial",
+        description: "Checklist operativo",
         required: ["access"],
         icon: "clipboard",
       },
       {
         href: "/inventory/settings/supply-routes",
         label: "Rutas de abastecimiento",
-        description: "Satélite → Centro (remisiones)",
+        description: "Reglas de reabastecimiento",
         required: ["access"],
         icon: "sliders",
       },
@@ -201,7 +220,7 @@ const NAV_GROUPS: NavGroup[] = [
       {
         href: "/inventory/settings/units",
         label: "Unidades",
-        description: "Catalogo de unidades y aliases",
+        description: "Catalogo de unidades y alias",
         required: ["inventory.stock"],
         allowedRoles: ["propietario", "gerente_general"],
         icon: "sliders",
@@ -399,14 +418,13 @@ export function VentoChrome({
     () => [
       "access",
       "inventory.remissions",
-      "inventory.remissions.request",
-      "inventory.remissions.receive",
-      "inventory.stock",
-      "inventory.movements",
-      "inventory.counts",
       "inventory.entries",
       "inventory.transfers",
       "inventory.withdraw",
+      "inventory.stock",
+      "inventory.movements",
+      "inventory.counts",
+      "inventory.adjustments",
       "inventory.locations",
       "inventory.production_batches",
     ],
@@ -596,3 +614,4 @@ export function VentoChrome({
     </div>
   );
 }
+
