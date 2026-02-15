@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SearchableSingleSelect } from "@/components/inventory/forms/SearchableSingleSelect";
 
 type Option = {
   id: string;
@@ -49,6 +50,14 @@ export function RemissionsItems({ products, areaOptions }: Props) {
     setRows((prev) => (prev.length === 1 ? prev : prev.filter((row) => row.id !== rowId)));
   };
 
+  const productOptions = products.map((item) => ({
+    value: item.id,
+    label: `${item.name ?? item.id}${
+      item.stock_unit_code ? ` (${item.stock_unit_code})` : item.unit ? ` (${item.unit})` : ""
+    }`,
+    searchText: `${item.name ?? ""} ${item.unit ?? ""} ${item.stock_unit_code ?? ""}`,
+  }));
+
   return (
     <div className="space-y-3">
       {rows.map((row, idx) => {
@@ -58,12 +67,10 @@ export function RemissionsItems({ products, areaOptions }: Props) {
         return (
           <div key={row.id} className="space-y-3">
             <div className="ui-card grid gap-3 md:grid-cols-4">
-              <select
+              <SearchableSingleSelect
                 name="item_product_id"
-                className="ui-input"
                 value={row.productId}
-                onChange={(event) => {
-                  const nextProductId = event.target.value;
+                onValueChange={(nextProductId) => {
                   const nextProduct = products.find((item) => item.id === nextProductId);
                   const nextStockUnitCode =
                     nextProduct?.stock_unit_code ?? nextProduct?.unit ?? "";
@@ -79,19 +86,10 @@ export function RemissionsItems({ products, areaOptions }: Props) {
                     )
                   );
                 }}
-              >
-                <option value="">Selecciona producto</option>
-                {products.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name ?? item.id}
-                    {item.stock_unit_code
-                      ? ` (${item.stock_unit_code})`
-                      : item.unit
-                        ? ` (${item.unit})`
-                        : ""}
-                  </option>
-                ))}
-              </select>
+                options={productOptions}
+                placeholder="Selecciona producto"
+                searchPlaceholder="Buscar producto..."
+              />
 
               <input
                 name="item_quantity"

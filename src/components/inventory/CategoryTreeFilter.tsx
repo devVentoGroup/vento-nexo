@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 import {
   buildCategoryMetaLabel,
@@ -23,6 +23,7 @@ type CategoryTreeFilterProps = {
   searchPlaceholder?: string;
   emptyOptionLabel?: string;
   className?: string;
+  // Kept for backward compatibility with existing call sites.
   maxVisibleOptions?: number;
   showMeta?: boolean;
   metaDomainLabelMode?: "domain" | "channel";
@@ -39,7 +40,7 @@ export function CategoryTreeFilter({
   siteNamesById,
   name = "category_id",
   label = "Categoria",
-  searchPlaceholder = "Buscar por nombre o ruta",
+  searchPlaceholder = "Buscar categoria por nombre o ruta",
   emptyOptionLabel = "Todas",
   className = "",
   maxVisibleOptions = 12,
@@ -49,10 +50,30 @@ export function CategoryTreeFilter({
 }: CategoryTreeFilterProps) {
   const [query, setQuery] = useState("");
   const [value, setValue] = useState(selectedCategoryId);
+  const [isOpen, setIsOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     setValue(selectedCategoryId);
   }, [selectedCategoryId]);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (!rootRef.current) return;
+      const target = event.target as Node | null;
+      if (target && !rootRef.current.contains(target)) {
+        setIsOpen(false);
+      }
+    }
+
+    if (isOpen) {
+      document.addEventListener("mousedown", handleClickOutside);
+    }
+
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+    };
+  }, [isOpen]);
 
   const siteNameMap = useMemo(
     () => new Map(Object.entries(siteNamesById ?? {})),
@@ -73,10 +94,10 @@ export function CategoryTreeFilter({
             useBusinessDomainLabel: metaUseBusinessDomainLabel,
           })
         : "";
-      const label = meta ? `${path} (${meta})` : path;
+      const optionLabel = meta ? `${path} (${meta})` : path;
       return {
         id: row.id,
-        label,
+        label: optionLabel,
         searchLabel: toSearchLabel(`${path} ${row.name} ${meta}`),
       };
     });
@@ -104,37 +125,79 @@ export function CategoryTreeFilter({
   );
 
   const selectedInFiltered = Boolean(filtered.find((option) => option.id === value));
-  const visibleOptions = selectedOption && !selectedInFiltered
-    ? [selectedOption, ...filtered]
-    : filtered;
+  const visibleOptions =
+    selectedOption && !selectedInFiltered ? [selectedOption, ...filtered] : filtered;
+
+  const selectedLabel = selectedOption?.label ?? emptyOptionLabel;
+  const maxListHeightClass =
+    maxVisibleOptions <= 6 ? "max-h-48" : maxVisibleOptions <= 10 ? "max-h-64" : "max-h-80";
 
   return (
-    <label className={`flex flex-col gap-1 ${className}`.trim()}>
+    <div className={`flex flex-col gap-1 ${className}`.trim()} ref={rootRef}>
       <span className="ui-label">{label}</span>
-      <input
-        type="search"
-        value={query}
-        onChange={(event) => setQuery(event.target.value)}
-        placeholder={searchPlaceholder}
-        className="ui-input"
-      />
       <input type="hidden" name={name} value={value} />
-      <select
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        className="ui-input"
-        size={maxVisibleOptions}
+
+      <button
+        type="button"
+        className="ui-input flex h-11 items-center justify-between text-left"
+        onClick={() => setIsOpen((prev) => !prev)}
+        aria-expanded={isOpen}
+        aria-haspopup="listbox"
       >
-        <option value="">{emptyOptionLabel}</option>
-        {visibleOptions.map((option) => (
-          <option key={option.id} value={option.id}>
-            {option.label}
-          </option>
-        ))}
-      </select>
-      <span className="ui-caption">
-        {visibleOptions.length} categoria(s) visibles
-      </span>
-    </label>
+        <span className="truncate">{selectedLabel}</span>
+        <span className="ui-caption">{isOpen ? "Ocultar" : "Elegir"}</span>
+      </button>
+
+      {isOpen ? (
+        <div className="ui-panel-soft space-y-2 p-2">
+          <input
+            type="search"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder={searchPlaceholder}
+            className="ui-input"
+          />
+
+          <div className={`overflow-auto rounded-lg border border-[var(--ui-border)] ${maxListHeightClass}`}>
+            <button
+              type="button"
+              onClick={() => {
+                setValue("");
+                setIsOpen(false);
+              }}
+              className={`block w-full border-b border-[var(--ui-border)] px-3 py-2 text-left text-sm hover:bg-[var(--ui-surface)] ${
+                value === "" ? "bg-[var(--ui-surface)] font-semibold" : ""
+              }`}
+            >
+              {emptyOptionLabel}
+            </button>
+
+            {visibleOptions.length > 0 ? (
+              visibleOptions.map((option) => (
+                <button
+                  key={option.id}
+                  type="button"
+                  onClick={() => {
+                    setValue(option.id);
+                    setIsOpen(false);
+                  }}
+                  className={`block w-full border-b border-[var(--ui-border)] px-3 py-2 text-left text-sm last:border-b-0 hover:bg-[var(--ui-surface)] ${
+                    value === option.id ? "bg-[var(--ui-surface)] font-semibold" : ""
+                  }`}
+                >
+                  {option.label}
+                </button>
+              ))
+            ) : (
+              <div className="px-3 py-2 text-sm text-[var(--ui-muted)]">
+                Sin resultados para el filtro actual
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
+
+      <span className="ui-caption">{visibleOptions.length} categoria(s) visibles</span>
+    </div>
   );
 }

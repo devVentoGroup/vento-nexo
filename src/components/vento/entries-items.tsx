@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { SearchableSingleSelect } from "@/components/inventory/forms/SearchableSingleSelect";
 
 type ProductOption = {
   id: string;
@@ -86,6 +87,26 @@ export function EntriesItems({ products, units, locations, defaultLocationId }: 
     return totals;
   }, [rows]);
 
+  const productOptions = useMemo(
+    () =>
+      products.map((product) => ({
+        value: product.id,
+        label: `${product.name ?? product.id}${product.unit ? ` (${product.unit})` : ""}`,
+        searchText: `${product.name ?? ""} ${product.unit ?? ""} ${product.stock_unit_code ?? ""}`,
+      })),
+    [products]
+  );
+
+  const locationOptions = useMemo(
+    () =>
+      locations.map((loc) => ({
+        value: loc.id,
+        label: loc.code ?? loc.description ?? loc.zone ?? loc.id,
+        searchText: `${loc.code ?? ""} ${loc.zone ?? ""} ${loc.description ?? ""}`,
+      })),
+    [locations]
+  );
+
   return (
     <div className="space-y-4">
       {rows.map((row, idx) => {
@@ -93,12 +114,11 @@ export function EntriesItems({ products, units, locations, defaultLocationId }: 
         return (
           <div key={row.id} className="space-y-3">
             <div className="ui-card grid gap-3 md:grid-cols-7">
-              <select
+              <SearchableSingleSelect
                 name="item_product_id"
-                className="ui-input md:col-span-2"
+                className="md:col-span-2"
                 value={row.productId}
-                onChange={(e) => {
-                  const next = e.target.value;
+                onValueChange={(next) => {
                   const product = products.find((p) => p.id === next);
                   const stockUnit = product?.stock_unit_code ?? product?.unit ?? "";
                   setRows((prev) =>
@@ -113,15 +133,10 @@ export function EntriesItems({ products, units, locations, defaultLocationId }: 
                     )
                   );
                 }}
-              >
-                <option value="">Selecciona producto</option>
-                {products.map((product) => (
-                  <option key={product.id} value={product.id}>
-                    {product.name ?? product.id}
-                    {product.unit ? ` (${product.unit})` : ""}
-                  </option>
-                ))}
-              </select>
+                options={productOptions}
+                placeholder="Selecciona producto"
+                searchPlaceholder="Buscar producto..."
+              />
 
               <input
                 name="item_quantity_declared"
@@ -172,26 +187,21 @@ export function EntriesItems({ products, units, locations, defaultLocationId }: 
                 ))}
               </select>
 
-              <select
+              <SearchableSingleSelect
                 name="item_location_id"
-                className="ui-input md:col-span-2"
+                className="md:col-span-2"
                 value={row.locationId}
-                required
-                onChange={(e) =>
+                onValueChange={(next) =>
                   setRows((prev) =>
                     prev.map((r) =>
-                      r.id === row.id ? { ...r, locationId: e.target.value } : r
+                      r.id === row.id ? { ...r, locationId: next } : r
                     )
                   )
                 }
-              >
-                <option value="">Selecciona LOC</option>
-                {locations.map((loc) => (
-                  <option key={loc.id} value={loc.id}>
-                    {loc.code ?? loc.description ?? loc.zone ?? loc.id}
-                  </option>
-                ))}
-              </select>
+                options={locationOptions}
+                placeholder="Selecciona LOC"
+                searchPlaceholder="Buscar LOC..."
+              />
 
               <div className="flex gap-2 md:col-span-2">
                 <input

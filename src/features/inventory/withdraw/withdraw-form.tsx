@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useMemo, useState } from "react";
 
 import { GuidedFormShell } from "@/components/inventory/forms/GuidedFormShell";
+import { SearchableSingleSelect } from "@/components/inventory/forms/SearchableSingleSelect";
 import { StepHelp } from "@/components/inventory/forms/StepHelp";
 import { WizardFooter } from "@/components/inventory/forms/WizardFooter";
 import type { GuidedStep } from "@/lib/inventory/forms/types";
@@ -94,6 +95,26 @@ export function WithdrawForm({
     [locationId, locations]
   );
 
+  const locationOptions = useMemo(
+    () =>
+      locations.map((loc) => ({
+        value: loc.id,
+        label: loc.code ?? loc.zone ?? loc.id,
+        searchText: `${loc.code ?? ""} ${loc.zone ?? ""}`,
+      })),
+    [locations]
+  );
+
+  const productOptions = useMemo(
+    () =>
+      products.map((item) => ({
+        value: item.id,
+        label: `${item.name ?? item.id}${item.unit ? ` (${item.unit})` : ""}`,
+        searchText: `${item.name ?? ""} ${item.unit ?? ""} ${item.stock_unit_code ?? ""}`,
+      })),
+    [products]
+  );
+
   const linesWithQty = useMemo(
     () =>
       rows.filter((row) => {
@@ -146,18 +167,14 @@ export function WithdrawForm({
           <div className="ui-h3">Paso 1. LOC y contexto</div>
           <label className="flex flex-col gap-1">
             <span className="ui-label">Ubicacion (LOC)</span>
-            <select
+            <SearchableSingleSelect
               name="location_id"
               value={locationId}
-              onChange={(event) => setLocationId(event.target.value)}
-              className="ui-input"
-            >
-              {locations.map((loc) => (
-                <option key={loc.id} value={loc.id}>
-                  {loc.code ?? loc.zone ?? loc.id}
-                </option>
-              ))}
-            </select>
+              onValueChange={setLocationId}
+              options={locationOptions}
+              placeholder="Selecciona LOC"
+              searchPlaceholder="Buscar LOC..."
+            />
             <span className="ui-caption">
               El retiro siempre descuenta de este LOC y de la sede activa.
             </span>
@@ -180,11 +197,10 @@ export function WithdrawForm({
                 <div key={row.id} className="flex flex-wrap items-end gap-3 ui-panel-soft p-3">
                   <label className="min-w-[180px] flex-1 flex-col gap-1 md:flex-initial">
                     <span className="text-[11px] text-zinc-500">Producto</span>
-                    <select
+                    <SearchableSingleSelect
                       name="item_product_id"
                       value={row.productId}
-                      onChange={(event) => {
-                        const next = event.target.value;
+                      onValueChange={(next) => {
                         const selectedProduct = products.find((item) => item.id === next);
                         const stockUnit = selectedProduct?.stock_unit_code ?? selectedProduct?.unit ?? "";
                         setRows((prev) =>
@@ -199,16 +215,11 @@ export function WithdrawForm({
                           )
                         );
                       }}
-                      className="ui-input mt-1 h-10 w-full min-w-0"
-                    >
-                      <option value="">Selecciona</option>
-                      {products.map((item) => (
-                        <option key={item.id} value={item.id}>
-                          {item.name ?? item.id}
-                          {item.unit ? ` (${item.unit})` : ""}
-                        </option>
-                      ))}
-                    </select>
+                      className="mt-1"
+                      options={productOptions}
+                      placeholder="Selecciona producto"
+                      searchPlaceholder="Buscar producto..."
+                    />
                   </label>
                   <label className="flex w-24 flex-col gap-1">
                     <span className="text-[11px] text-zinc-500">Cantidad</span>
