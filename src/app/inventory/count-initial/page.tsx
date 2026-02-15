@@ -70,7 +70,7 @@ export default async function InventoryCountInitialPage({
       <div className="w-full">
         <PageHeader
           title="Conteos"
-          subtitle="Wizard por sede: elige la sede, ingresa cantidades contadas y confirma. No bloquea operacion. Se generan movimientos tipo count y se actualiza el stock."
+          subtitle="Wizard por sede: elige la sede, ingresa cantidades contadas y confirma. No bloquea operación. Se generan movimientos tipo count y se actualiza el stock."
         />
 
         <div className="mt-6 ui-panel">
@@ -317,4 +317,3 @@ export default async function InventoryCountInitialPage({
     </div>
   );
 }
-

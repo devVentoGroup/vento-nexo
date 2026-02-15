@@ -232,7 +232,7 @@ export default async function InventoryCatalogPage({
   return (
     <div className="w-full">
       <PageHeader
-        title="Catalogo"
+        title="Catálogo"
         subtitle="Abre cualquier item para ver su ficha."
         actions={
           <Link href="/inventory/stock" className="ui-btn ui-btn--ghost">
@@ -303,7 +303,7 @@ export default async function InventoryCatalogPage({
           </label>
 
           <label className="flex flex-col gap-1">
-            <span className="ui-label">Sede para categorias</span>
+            <span className="ui-label">Sede para categorías</span>
             <select name="category_site_id" defaultValue={activeSiteId} className="ui-input">
               <option value="">Seleccionar sede</option>
               {siteRows.map((site) => (

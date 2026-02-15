@@ -443,7 +443,7 @@ export default async function EntriesPage({
     <div className="w-full space-y-6">
       <PageHeader
         title="Entradas"
-        subtitle="Recepcion de insumos por factura. Permite recepcion parcial por item."
+        subtitle="Recepción de insumos por factura. Permite recepción parcial por ítem."
       />
 
       {errorMsg ? (

@@ -137,7 +137,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       {
         href: "/inventory/catalog",
-        label: "Catalogo",
+        label: "Catálogo",
         description: "Maestro de productos",
         required: ["inventory.stock"],
         allowedRoles: ["propietario", "gerente_general"],
@@ -220,15 +220,15 @@ const NAV_GROUPS: NavGroup[] = [
       {
         href: "/inventory/settings/units",
         label: "Unidades",
-        description: "Catalogo de unidades y alias",
+        description: "Catálogo de unidades y alias",
         required: ["inventory.stock"],
         allowedRoles: ["propietario", "gerente_general"],
         icon: "sliders",
       },
       {
         href: "/inventory/settings/categories",
-        label: "Categorias",
-        description: "Gobernanza de categorias",
+        label: "Categorías",
+        description: "Gobernanza de categorías",
         required: ["inventory.stock"],
         allowedRoles: ["propietario", "gerente_general"],
         icon: "layers",
@@ -614,4 +614,3 @@ export function VentoChrome({
     </div>
   );
 }
-

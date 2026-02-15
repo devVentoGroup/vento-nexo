@@ -362,7 +362,7 @@ export default async function InventoryLocationsPage({
     <div className="w-full">
       <PageHeader
         title="Ubicaciones"
-        subtitle="Ubicaciones fisicas (LOC). Convencion: LOC-SEDE-ZONA-PASILLO."
+        subtitle="Ubicaciones físicas (LOC). Convención: LOC-SEDE-ZONA-PASILLO."
         actions={
           <Link href="/scanner" className="ui-btn ui-btn--ghost">
             Ir a Scanner
@@ -532,7 +532,3 @@ export default async function InventoryLocationsPage({
     </div>
   );
 }
-
-
-
-

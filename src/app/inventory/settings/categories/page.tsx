@@ -208,7 +208,7 @@ async function requireCategoryManager() {
   if (!["propietario", "gerente_general"].includes(role)) {
     redirect(
       "/inventory/settings/categories?error=" +
-        encodeURIComponent("Solo propietarios y gerentes generales pueden gestionar categorias.")
+        encodeURIComponent("Solo propietarios y gerentes generales pueden gestionar categorías.")
     );
   }
 
@@ -678,11 +678,11 @@ export default async function InventoryCategorySettingsPage({
   return (
     <div className="w-full space-y-6">
       <PageHeader
-        title="Categorias"
-        subtitle="Flujo guiado para explorar, editar ficha y revisar salud del catalogo."
+        title="Categorías"
+        subtitle="Flujo guiado para explorar, editar ficha y revisar salud del catálogo."
         actions={
           <Link href="/inventory/catalog" className="ui-btn ui-btn--ghost">
-            Volver a catalogo
+            Volver a catálogo
           </Link>
         }
       />
@@ -728,7 +728,7 @@ export default async function InventoryCategorySettingsPage({
               </div>
               <Link href={buildViewHref("salud")} className="ui-panel-soft p-4 hover:bg-[var(--ui-surface)] transition-colors">
                 <div className="font-semibold">Ver salud</div>
-                <div className="ui-caption mt-1">Revisa calidad y consistencia del catalogo.</div>
+                <div className="ui-caption mt-1">Revisa calidad y consistencia del catálogo.</div>
               </Link>
             </div>
           </section>
@@ -799,7 +799,7 @@ export default async function InventoryCategorySettingsPage({
                 selectedCategoryId={selectedCategoryId}
                 siteNamesById={siteNamesById}
                 className="sm:col-span-2 lg:col-span-4"
-                label="Categorias"
+                label="Categorías"
                 emptyOptionLabel="Todas"
                 maxVisibleOptions={8}
                 showMeta={false}
@@ -816,7 +816,7 @@ export default async function InventoryCategorySettingsPage({
           <section className="ui-panel">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <div className="ui-h3">Categorias</div>
+                <div className="ui-h3">Categorías</div>
                 <div className="ui-body-muted mt-1">{visibleRows.length} categoria(s) visibles.</div>
               </div>
             </div>
@@ -853,7 +853,7 @@ export default async function InventoryCategorySettingsPage({
                   {!visibleRows.length ? (
                     <tr>
                       <td className="py-4 text-[var(--ui-muted)]" colSpan={6}>
-                        No hay categorias para este filtro.
+                        No hay categorías para este filtro.
                       </td>
                     </tr>
                   ) : null}
@@ -900,7 +900,7 @@ export default async function InventoryCategorySettingsPage({
 
             {!canManage ? (
               <div className="ui-alert ui-alert--warn">
-                Solo propietarios y gerentes generales pueden editar categorias.
+                Solo propietarios y gerentes generales pueden editar categorías.
               </div>
             ) : null}
 
@@ -955,7 +955,7 @@ export default async function InventoryCategorySettingsPage({
       {view === "salud" ? (
         <>
           <section className="ui-panel space-y-4">
-            <div className="ui-h3">Salud del catalogo</div>
+            <div className="ui-h3">Salud del catálogo</div>
             {noProductsLoaded ? (
               <div className="ui-alert ui-alert--warn">
                 Aun no hay productos creados. Estos indicadores son referenciales hasta cargar productos.
@@ -968,11 +968,11 @@ export default async function InventoryCategorySettingsPage({
                 <div className="mt-1 text-2xl font-semibold">{uncategorizedProductsCount}</div>
               </div>
               <div className="ui-panel-soft p-4">
-                <div className="ui-caption">Categorias sin uso</div>
+                <div className="ui-caption">Categorías sin uso</div>
                 <div className="mt-1 text-2xl font-semibold">{categoriesWithoutUsage.length}</div>
               </div>
               <div className="ui-panel-soft p-4">
-                <div className="ui-caption">Categorias huerfanas</div>
+                <div className="ui-caption">Categorías huérfanas</div>
                 <div className="mt-1 text-2xl font-semibold">{orphanCategories.length}</div>
               </div>
               <div className="ui-panel-soft p-4">

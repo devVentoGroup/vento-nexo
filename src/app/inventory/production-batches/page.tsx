@@ -271,8 +271,8 @@ export default async function ProductionBatchesPage({
   return (
     <div className="w-full">
       <PageHeader
-        title="Produccion manual"
-        subtitle="Registra lotes terminados y genera etiquetas de produccion."
+        title="Producción manual"
+        subtitle="Registra lotes terminados y genera etiquetas de producción."
         actions={
           <Link href="/inventory/remissions" className="ui-btn ui-btn--ghost">
             Ver remisiones
@@ -399,5 +399,3 @@ export default async function ProductionBatchesPage({
     </div>
   );
 }
-
-

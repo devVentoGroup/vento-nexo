@@ -18,10 +18,10 @@ export function StepHelp({
   return (
     <div className={`ui-panel-soft space-y-1 p-3 ${className}`.trim()}>
       <div className="ui-caption">
-        <strong>Que significa:</strong> {meaning}
+        <strong>Qué significa:</strong> {meaning}
       </div>
       <div className="ui-caption">
-        <strong>Cuando usarlo:</strong> {whenToUse}
+        <strong>Cuándo usarlo:</strong> {whenToUse}
       </div>
       <div className="ui-caption">
         <strong>Ejemplo:</strong> {example}
@@ -34,4 +34,3 @@ export function StepHelp({
     </div>
   );
 }
-

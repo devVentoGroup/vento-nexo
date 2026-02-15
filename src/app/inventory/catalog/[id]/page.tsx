@@ -264,7 +264,7 @@ async function updateProduct(formData: FormData) {
       redirectWithError("La categoria no aplica al tipo de item seleccionado.");
     }
     if (categoryKind !== "venta" && normalizeCategoryDomain(category.domain)) {
-      redirectWithError("Las categorias con dominio solo se permiten para productos de venta.");
+      redirectWithError("Las categorías con dominio solo se permiten para productos de venta.");
     }
   }
   const payload: Record<string, unknown> = {
@@ -717,10 +717,10 @@ export default async function ProductCatalogDetailPage({
     <div className="w-full space-y-8">
       <PageHeader
         title={productRow.name ?? "Ficha maestra"}
-        subtitle="Catalogo del insumo o producto: compra, almacenamiento y distribucion."
+        subtitle="Catálogo del insumo o producto: compra, almacenamiento y distribución."
         actions={
           <Link href={from || "/inventory/catalog"} className="ui-btn ui-btn--ghost">
-            Volver al catalogo
+            Volver al catálogo
           </Link>
         }
       />
@@ -741,7 +741,7 @@ export default async function ProductCatalogDetailPage({
             </select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="ui-label">Sede para categorias</span>
+            <span className="ui-label">Sede para categorías</span>
             <select name="category_site_id" defaultValue={categorySiteId} className="ui-input">
               <option value="">Seleccionar sede</option>
               {sitesList.map((site) => (
@@ -765,7 +765,7 @@ export default async function ProductCatalogDetailPage({
             </label>
           ) : null}
           <div className="flex items-end">
-            <button className="ui-btn ui-btn--ghost">Actualizar categorias</button>
+            <button className="ui-btn ui-btn--ghost">Actualizar categorías</button>
           </div>
         </form>
 
@@ -1067,7 +1067,7 @@ export default async function ProductCatalogDetailPage({
       )}
 
       <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
-        <strong className="text-[var(--ui-text)]">Ubicaciones (LOCs)</strong> — Crealas en{" "}
+        <strong className="text-[var(--ui-text)]">Ubicaciones (LOCs)</strong> — Créalas en{" "}
         <Link href="/inventory/locations" className="font-medium underline decoration-[var(--ui-border)] underline-offset-2">
           Inventario → Ubicaciones
         </Link>
@@ -1076,6 +1076,3 @@ export default async function ProductCatalogDetailPage({
     </div>
   );
 }
-
-
-

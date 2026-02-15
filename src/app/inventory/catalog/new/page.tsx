@@ -186,7 +186,7 @@ async function createProduct(formData: FormData) {
     if (categoryKind !== "venta" && normalizeCategoryDomain(category.domain)) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}&error=` +
-          encodeURIComponent("Las categorias con dominio solo se permiten para productos de venta.")
+          encodeURIComponent("Las categorías con dominio solo se permiten para productos de venta.")
       );
     }
   }
@@ -545,7 +545,7 @@ export default async function NewProductPage({
         subtitle={config.subtitle}
         actions={
           <Link href="/inventory/catalog" className="ui-btn ui-btn--ghost">
-            Volver al catalogo
+            Volver al catálogo
           </Link>
         }
       />
@@ -563,7 +563,7 @@ export default async function NewProductPage({
           </select>
         </label>
         <label className="flex flex-col gap-1">
-          <span className="ui-label">Sede para categorias</span>
+          <span className="ui-label">Sede para categorías</span>
           <select name="category_site_id" defaultValue={categorySiteId} className="ui-input">
             <option value="">Seleccionar sede</option>
             {sitesList.map((site) => (
@@ -587,7 +587,7 @@ export default async function NewProductPage({
           </label>
         ) : null}
         <div className="flex items-end">
-          <button className="ui-btn ui-btn--ghost">Actualizar categorias</button>
+          <button className="ui-btn ui-btn--ghost">Actualizar categorías</button>
         </div>
       </form>
 
