@@ -21,16 +21,19 @@ import type { FormDraftKey } from "@/lib/inventory/forms/types";
 import { createClient } from "@/lib/supabase/server";
 import {
   CATEGORY_KINDS,
+  buildCategorySuggestedDescription,
   categoryKindFromProduct,
   categorySupportsKind,
   collectDescendantIds,
   filterCategoryRows,
   getCategoryChannelLabel,
   getCategoryPath,
+  isSalesOnlyCategoryKinds,
   normalizeCategoryDomain,
   normalizeCategoryKind,
   normalizeCategoryScope,
   parseCategoryKinds,
+  resolveCategoryDescription,
   shouldShowCategoryDomain,
   type CategoryKind,
   type InventoryCategoryRow,
@@ -90,6 +93,10 @@ const CATEGORY_KIND_LABELS: Record<CategoryKind, string> = {
 };
 
 const CATEGORY_SETTINGS_DRAFT_KEY: FormDraftKey = "inventory.category.settings";
+const TABLE_ACTION_BUTTON_CLASS =
+  "ui-btn ui-btn--ghost ui-btn--sm min-w-[104px] justify-center shrink-0";
+const TABLE_DELETE_BUTTON_CLASS =
+  "ui-btn ui-btn--ghost ui-btn--sm min-w-[104px] justify-center shrink-0 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700";
 
 function asText(value: FormDataEntryValue | string | null | undefined): string {
   if (typeof value === "string") return value.trim();
@@ -142,7 +149,7 @@ async function loadCategoryRows(
 ): Promise<CategoryRow[]> {
   const query = await supabase
     .from("product_categories")
-    .select("id,name,parent_id,domain,site_id,is_active,applies_to_kinds")
+    .select("id,name,description,parent_id,domain,site_id,is_active,applies_to_kinds")
     .order("name", { ascending: true });
 
   if (!query.error) {
@@ -151,7 +158,7 @@ async function loadCategoryRows(
 
   const fallback = await supabase
     .from("product_categories")
-    .select("id,name,parent_id,domain,site_id,is_active")
+    .select("id,name,description,parent_id,domain,site_id,is_active")
     .order("name", { ascending: true });
 
   return ((fallback.data ?? []) as Array<Omit<CategoryRow, "applies_to_kinds">>).map(
@@ -240,7 +247,11 @@ async function saveCategoryAction(formData: FormData) {
   const slug = slugify(asText(formData.get("slug")) || name);
   const isActive = formData.get("is_active") === "on";
   const kinds = parseKindsFromForm(formData);
+  const rawDescription = asText(formData.get("description"));
   const requestedDomain = normalizeCategoryDomain(asText(formData.get("domain")));
+  const resolvedDescription = isSalesOnlyCategoryKinds(kinds)
+    ? ""
+    : rawDescription || buildCategorySuggestedDescription({ name, kinds });
 
   if (!name) {
     redirect(buildReturnUrl(returnQs, returnView, "error", "El nombre de categoria es obligatorio.", { editId: id }));
@@ -266,6 +277,7 @@ async function saveCategoryAction(formData: FormData) {
     parent_id: parentId,
     site_id: siteId,
     domain: requestedDomain || null,
+    description: resolvedDescription || null,
     is_active: isActive,
     applies_to_kinds: kinds,
     updated_at: new Date().toISOString(),
@@ -337,6 +349,7 @@ async function saveCategoryDraftAction(formData: FormData) {
     name: asText(formData.get("name")),
     slug: asText(formData.get("slug")),
     parent_id: asText(formData.get("parent_id")) || "",
+    description: asText(formData.get("description")),
     site_id: siteId || "",
     domain: normalizeCategoryDomain(asText(formData.get("domain")) || ""),
     is_active: formData.get("is_active") === "on",
@@ -368,6 +381,66 @@ async function saveCategoryDraftAction(formData: FormData) {
       editId: draftEntityId || undefined,
       stepId: stepId || undefined,
     })
+  );
+}
+
+async function autofillCategoryDescriptionsAction(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireCategoryManager();
+  const returnQs = asText(formData.get("_return_qs"));
+  const returnView = asText(formData.get("_return_view")) || "explorar";
+
+  const { data: categoryRows, error: categoryError } = await supabase
+    .from("product_categories")
+    .select("id,name,description,applies_to_kinds");
+
+  if (categoryError) {
+    redirect(buildReturnUrl(returnQs, returnView, "error", categoryError.message));
+  }
+
+  const rows = (categoryRows ?? []) as Array<{
+    id: string;
+    name: string | null;
+    description: string | null;
+    applies_to_kinds?: string[] | null;
+  }>;
+
+  let updatedCount = 0;
+  for (const row of rows) {
+    if (asText(row.description)) continue;
+
+    const kinds = parseCategoryKinds(row.applies_to_kinds);
+    if (isSalesOnlyCategoryKinds(kinds)) continue;
+
+    const suggestedDescription = buildCategorySuggestedDescription({
+      name: asText(row.name) || "esta categoria",
+      kinds,
+    });
+    if (!suggestedDescription) continue;
+
+    const { error } = await supabase
+      .from("product_categories")
+      .update({
+        description: suggestedDescription,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", row.id);
+
+    if (error) {
+      redirect(buildReturnUrl(returnQs, returnView, "error", error.message));
+    }
+    updatedCount += 1;
+  }
+
+  revalidatePath("/inventory/settings/categories");
+  redirect(
+    buildReturnUrl(
+      returnQs,
+      returnView,
+      "ok",
+      updatedCount > 0 ? "descriptions_autofilled" : "descriptions_up_to_date"
+    )
   );
 }
 
@@ -500,6 +573,10 @@ export default async function InventoryCategorySettingsPage({
             ? "Categoria eliminada."
           : sp.ok === "draft_saved"
             ? "Borrador guardado."
+          : sp.ok === "descriptions_autofilled"
+            ? "Descripciones faltantes completadas."
+          : sp.ok === "descriptions_up_to_date"
+            ? "No habia descripciones pendientes por completar."
           : "Cambios guardados."
     : "";
   const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
@@ -688,6 +765,7 @@ export default async function InventoryCategorySettingsPage({
   const draftName = asText(draftPayload.name as string | null | undefined);
   const draftSlug = asText(draftPayload.slug as string | null | undefined);
   const draftParentId = asText(draftPayload.parent_id as string | null | undefined);
+  const draftDescription = asText(draftPayload.description as string | null | undefined);
   const draftDomainValue = normalizeCategoryDomain(
     asText(draftPayload.domain as string | null | undefined)
   );
@@ -712,6 +790,14 @@ export default async function InventoryCategorySettingsPage({
       ? categoryDomain
       : "";
   const effectiveDomainValue = draftDomainValue || editDomainValue;
+  const editDescription = editingCategory
+    ? resolveCategoryDescription({
+        description: editingCategory.description,
+        name: editingCategory.name,
+        kinds: effectiveKinds,
+      })
+    : "";
+  const effectiveDescription = draftDescription || editDescription;
 
   const blockedParentIds = editingCategory
     ? collectDescendantIds(categoryMap, editingCategory.id)
@@ -864,6 +950,15 @@ export default async function InventoryCategorySettingsPage({
               <div className="sm:col-span-2 lg:col-span-4 flex gap-2">
                 <button type="submit" className="ui-btn ui-btn--brand">Aplicar</button>
                 <Link href={clearHref} className="ui-btn ui-btn--ghost">Limpiar</Link>
+                {canManage ? (
+                  <form action={autofillCategoryDescriptionsAction}>
+                    <input type="hidden" name="_return_qs" value={filterReturnQs} />
+                    <input type="hidden" name="_return_view" value="explorar" />
+                    <button type="submit" className="ui-btn ui-btn--ghost">
+                      Completar descripciones faltantes
+                    </button>
+                  </form>
+                ) : null}
               </div>
             </form>
           </section>
@@ -884,22 +979,46 @@ export default async function InventoryCategorySettingsPage({
                     <th className="py-2 pr-4">Alcance</th>
                     <th className="py-2 pr-4">Canal</th>
                     <th className="py-2 pr-4">Estado</th>
-                    <th className="py-2 pr-4">Accion</th>
+                    <th className="py-2 pr-4 w-[340px]">Acciones</th>
                   </tr>
                 </thead>
                 <tbody>
                   {visibleRows.map((row) => {
                     const kinds = parseCategoryKinds(row.applies_to_kinds);
+                    const resolvedDescription = resolveCategoryDescription({
+                      description: row.description,
+                      name: row.name,
+                      kinds,
+                    });
                     return (
                       <tr key={row.id} className="border-t border-zinc-200/60">
-                        <td className="py-3 pr-4">{getCategoryPath(row.id, categoryMap)}</td>
+                        <td className="py-3 pr-4">
+                          <div className="group relative inline-flex max-w-[680px] items-start gap-2">
+                            <span>{getCategoryPath(row.id, categoryMap)}</span>
+                            {resolvedDescription ? (
+                              <span
+                                tabIndex={0}
+                                className="inline-flex h-5 w-5 shrink-0 cursor-help items-center justify-center rounded-full border border-[var(--ui-border)] text-[10px] font-semibold text-[var(--ui-muted)]"
+                                aria-label="Ver descripcion de la categoria"
+                              >
+                                i
+                              </span>
+                            ) : null}
+                            {resolvedDescription ? (
+                              <div className="pointer-events-none absolute left-0 top-full z-20 mt-2 hidden w-[360px] rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 text-xs text-[var(--ui-text)] shadow-lg group-hover:block group-focus-within:block">
+                                <div className="font-semibold">Descripcion sugerida</div>
+                                <div className="mt-1 leading-relaxed">{resolvedDescription}</div>
+                              </div>
+                            ) : null}
+                          </div>
+                        </td>
                         <td className="py-3 pr-4">{kinds.map((k) => CATEGORY_KIND_LABELS[k]).join(", ") || "Sin definir"}</td>
                         <td className="py-3 pr-4">{row.site_id ? `Sede: ${siteNamesById[row.site_id] ?? row.site_id}` : "Global"}</td>
                         <td className="py-3 pr-4">{getCategoryChannelLabel(row.domain) || "-"}</td>
                         <td className="py-3 pr-4">{row.is_active === false ? "Inactiva" : "Activa"}</td>
-                        <td className="py-3 pr-4">
-                          <div className="flex flex-wrap gap-2">
-                            <Link href={buildViewHref("ficha", row.id)} className="ui-btn ui-btn--ghost ui-btn--sm">
+                        <td className="py-3 pr-4 align-top">
+                          <div className="flex flex-nowrap items-center gap-2">
+                            <Link href={buildViewHref("ficha", row.id)} className={TABLE_ACTION_BUTTON_CLASS}>
                               Ficha
                             </Link>
                             {canManage ? (
@@ -913,7 +1032,7 @@ export default async function InventoryCategorySettingsPage({
                                   name="next_is_active"
                                   value={row.is_active === false ? "1" : "0"}
                                 />
-                                <button type="submit" className="ui-btn ui-btn--ghost ui-btn--sm">
+                                <button type="submit" className={TABLE_ACTION_BUTTON_CLASS}>
                                   {row.is_active === false ? "Habilitar" : "Deshabilitar"}
                                 </button>
                               </form>
@@ -924,7 +1043,7 @@ export default async function InventoryCategorySettingsPage({
                                 <input type="hidden" name="_return_view" value="explorar" />
                                 <input type="hidden" name="_return_edit_id" value={row.id} />
                                 <input type="hidden" name="category_id" value={row.id} />
-                                <button type="submit" className="ui-btn ui-btn--danger ui-btn--sm">
+                                <button type="submit" className={TABLE_DELETE_BUTTON_CLASS}>
                                   Eliminar
                                 </button>
                               </form>
@@ -998,6 +1117,7 @@ export default async function InventoryCategorySettingsPage({
                   defaultName={draftName || (editingCategory?.name ?? "")}
                   defaultSlug={draftSlug || (editingCategory ? slugify(editingCategory.name) : "")}
                   defaultParentId={draftParentId || (editingCategory?.parent_id ?? "")}
+                  defaultDescription={effectiveDescription}
                   defaultKinds={effectiveKinds}
                   defaultSiteId={asText((draftPayload.site_id as string | null | undefined) ?? editingCategory?.site_id ?? "")}
                   defaultDomain={effectiveDomainValue}
@@ -1075,50 +1195,78 @@ export default async function InventoryCategorySettingsPage({
                     <tr>
                       <th className="py-2 pr-4">Categoria</th>
                       <th className="py-2 pr-4">Productos</th>
-                      <th className="py-2 pr-4">Accion</th>
+                      <th className="py-2 pr-4 w-[340px]">Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {topImpactRows.map(({ row, count }) => (
-                      <tr key={row.id} className="border-t border-zinc-200/60">
-                        <td className="py-3 pr-4">{getCategoryPath(row.id, categoryMap)}</td>
-                        <td className="py-3 pr-4 font-mono">{count}</td>
-                        <td className="py-3 pr-4">
-                          <div className="flex flex-wrap gap-2">
-                            <Link href={buildViewHref("ficha", row.id)} className="ui-btn ui-btn--ghost ui-btn--sm">
-                              Ficha
-                            </Link>
-                            {canManage ? (
-                              <form action={toggleCategoryActiveAction}>
-                                <input type="hidden" name="_return_qs" value={filterReturnQs} />
-                                <input type="hidden" name="_return_view" value="salud" />
-                                <input type="hidden" name="_return_edit_id" value={row.id} />
-                                <input type="hidden" name="category_id" value={row.id} />
-                                <input
-                                  type="hidden"
-                                  name="next_is_active"
-                                  value={row.is_active === false ? "1" : "0"}
-                                />
-                                <button type="submit" className="ui-btn ui-btn--ghost ui-btn--sm">
-                                  {row.is_active === false ? "Habilitar" : "Deshabilitar"}
-                                </button>
-                              </form>
-                            ) : null}
-                            {canManage ? (
-                              <form action={deleteCategoryAction}>
-                                <input type="hidden" name="_return_qs" value={filterReturnQs} />
-                                <input type="hidden" name="_return_view" value="salud" />
-                                <input type="hidden" name="_return_edit_id" value={row.id} />
-                                <input type="hidden" name="category_id" value={row.id} />
-                                <button type="submit" className="ui-btn ui-btn--danger ui-btn--sm">
-                                  Eliminar
-                                </button>
-                              </form>
-                            ) : null}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                    {topImpactRows.map(({ row, count }) => {
+                      const rowKinds = parseCategoryKinds(row.applies_to_kinds);
+                      const rowDescription = resolveCategoryDescription({
+                        description: row.description,
+                        name: row.name,
+                        kinds: rowKinds,
+                      });
+
+                      return (
+                        <tr key={row.id} className="border-t border-zinc-200/60">
+                          <td className="py-3 pr-4">
+                            <div className="group relative inline-flex max-w-[520px] items-start gap-2">
+                              <span>{getCategoryPath(row.id, categoryMap)}</span>
+                              {rowDescription ? (
+                                <span
+                                  tabIndex={0}
+                                  className="inline-flex h-5 w-5 shrink-0 cursor-help items-center justify-center rounded-full border border-[var(--ui-border)] text-[10px] font-semibold text-[var(--ui-muted)]"
+                                  aria-label="Ver descripcion de la categoria"
+                                >
+                                  i
+                                </span>
+                              ) : null}
+                              {rowDescription ? (
+                                <div className="pointer-events-none absolute left-0 top-full z-20 mt-2 hidden w-[360px] rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 text-xs text-[var(--ui-text)] shadow-lg group-hover:block group-focus-within:block">
+                                  <div className="font-semibold">Descripcion sugerida</div>
+                                  <div className="mt-1 leading-relaxed">{rowDescription}</div>
+                                </div>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="py-3 pr-4 font-mono">{count}</td>
+                          <td className="py-3 pr-4 align-top">
+                            <div className="flex flex-nowrap items-center gap-2">
+                              <Link href={buildViewHref("ficha", row.id)} className={TABLE_ACTION_BUTTON_CLASS}>
+                                Ficha
+                              </Link>
+                              {canManage ? (
+                                <form action={toggleCategoryActiveAction}>
+                                  <input type="hidden" name="_return_qs" value={filterReturnQs} />
+                                  <input type="hidden" name="_return_view" value="salud" />
+                                  <input type="hidden" name="_return_edit_id" value={row.id} />
+                                  <input type="hidden" name="category_id" value={row.id} />
+                                  <input
+                                    type="hidden"
+                                    name="next_is_active"
+                                    value={row.is_active === false ? "1" : "0"}
+                                  />
+                                  <button type="submit" className={TABLE_ACTION_BUTTON_CLASS}>
+                                    {row.is_active === false ? "Habilitar" : "Deshabilitar"}
+                                  </button>
+                                </form>
+                              ) : null}
+                              {canManage ? (
+                                <form action={deleteCategoryAction}>
+                                  <input type="hidden" name="_return_qs" value={filterReturnQs} />
+                                  <input type="hidden" name="_return_view" value="salud" />
+                                  <input type="hidden" name="_return_edit_id" value={row.id} />
+                                  <input type="hidden" name="category_id" value={row.id} />
+                                  <button type="submit" className={TABLE_DELETE_BUTTON_CLASS}>
+                                    Eliminar
+                                  </button>
+                                </form>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                     {!topImpactRows.length ? (
                       <tr>
                         <td className="py-4 text-[var(--ui-muted)]" colSpan={3}>
@@ -1140,51 +1288,84 @@ export default async function InventoryCategorySettingsPage({
                       <th className="py-2 pr-4">Producto</th>
                       <th className="py-2 pr-4">Detalle</th>
                       <th className="py-2 pr-4">Categoria</th>
-                      <th className="py-2 pr-4">Accion</th>
+                      <th className="py-2 pr-4 w-[340px]">Acciones</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {inconsistentAssignments.slice(0, 50).map((item) => (
-                      <tr key={`${item.product_id}-${item.reason}`} className="border-t border-zinc-200/60">
-                        <td className="py-3 pr-4">{item.product_name}</td>
-                        <td className="py-3 pr-4">{item.reason}</td>
-                        <td className="py-3 pr-4">{item.category_path}</td>
-                        <td className="py-3 pr-4">
-                          <div className="flex flex-wrap gap-2">
-                            <Link href={buildViewHref("ficha", item.category_id)} className="ui-btn ui-btn--ghost ui-btn--sm">
-                              Ficha
-                            </Link>
-                            {canManage && categoryMap.has(item.category_id) ? (
-                              <form action={toggleCategoryActiveAction}>
-                                <input type="hidden" name="_return_qs" value={filterReturnQs} />
-                                <input type="hidden" name="_return_view" value="salud" />
-                                <input type="hidden" name="_return_edit_id" value={item.category_id} />
-                                <input type="hidden" name="category_id" value={item.category_id} />
-                                <input
-                                  type="hidden"
-                                  name="next_is_active"
-                                  value={categoryMap.get(item.category_id)?.is_active === false ? "1" : "0"}
-                                />
-                                <button type="submit" className="ui-btn ui-btn--ghost ui-btn--sm">
-                                  {categoryMap.get(item.category_id)?.is_active === false ? "Habilitar" : "Deshabilitar"}
-                                </button>
-                              </form>
-                            ) : null}
-                            {canManage && categoryMap.has(item.category_id) ? (
-                              <form action={deleteCategoryAction}>
-                                <input type="hidden" name="_return_qs" value={filterReturnQs} />
-                                <input type="hidden" name="_return_view" value="salud" />
-                                <input type="hidden" name="_return_edit_id" value={item.category_id} />
-                                <input type="hidden" name="category_id" value={item.category_id} />
-                                <button type="submit" className="ui-btn ui-btn--danger ui-btn--sm">
-                                  Eliminar
-                                </button>
-                              </form>
-                            ) : null}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
+                    {inconsistentAssignments.slice(0, 50).map((item) => {
+                      const linkedCategory = categoryMap.get(item.category_id) ?? null;
+                      const linkedKinds = linkedCategory
+                        ? parseCategoryKinds(linkedCategory.applies_to_kinds)
+                        : [];
+                      const linkedDescription = linkedCategory
+                        ? resolveCategoryDescription({
+                            description: linkedCategory.description,
+                            name: linkedCategory.name,
+                            kinds: linkedKinds,
+                          })
+                        : "";
+
+                      return (
+                        <tr key={`${item.product_id}-${item.reason}`} className="border-t border-zinc-200/60">
+                          <td className="py-3 pr-4">{item.product_name}</td>
+                          <td className="py-3 pr-4">{item.reason}</td>
+                          <td className="py-3 pr-4">
+                            <div className="group relative inline-flex max-w-[440px] items-start gap-2">
+                              <span>{item.category_path}</span>
+                              {linkedDescription ? (
+                                <span
+                                  tabIndex={0}
+                                  className="inline-flex h-5 w-5 shrink-0 cursor-help items-center justify-center rounded-full border border-[var(--ui-border)] text-[10px] font-semibold text-[var(--ui-muted)]"
+                                  aria-label="Ver descripcion de la categoria"
+                                >
+                                  i
+                                </span>
+                              ) : null}
+                              {linkedDescription ? (
+                                <div className="pointer-events-none absolute left-0 top-full z-20 mt-2 hidden w-[360px] rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 text-xs text-[var(--ui-text)] shadow-lg group-hover:block group-focus-within:block">
+                                  <div className="font-semibold">Descripcion sugerida</div>
+                                  <div className="mt-1 leading-relaxed">{linkedDescription}</div>
+                                </div>
+                              ) : null}
+                            </div>
+                          </td>
+                          <td className="py-3 pr-4 align-top">
+                            <div className="flex flex-nowrap items-center gap-2">
+                              <Link href={buildViewHref("ficha", item.category_id)} className={TABLE_ACTION_BUTTON_CLASS}>
+                                Ficha
+                              </Link>
+                              {canManage && categoryMap.has(item.category_id) ? (
+                                <form action={toggleCategoryActiveAction}>
+                                  <input type="hidden" name="_return_qs" value={filterReturnQs} />
+                                  <input type="hidden" name="_return_view" value="salud" />
+                                  <input type="hidden" name="_return_edit_id" value={item.category_id} />
+                                  <input type="hidden" name="category_id" value={item.category_id} />
+                                  <input
+                                    type="hidden"
+                                    name="next_is_active"
+                                    value={categoryMap.get(item.category_id)?.is_active === false ? "1" : "0"}
+                                  />
+                                  <button type="submit" className={TABLE_ACTION_BUTTON_CLASS}>
+                                    {categoryMap.get(item.category_id)?.is_active === false ? "Habilitar" : "Deshabilitar"}
+                                  </button>
+                                </form>
+                              ) : null}
+                              {canManage && categoryMap.has(item.category_id) ? (
+                                <form action={deleteCategoryAction}>
+                                  <input type="hidden" name="_return_qs" value={filterReturnQs} />
+                                  <input type="hidden" name="_return_view" value="salud" />
+                                  <input type="hidden" name="_return_edit_id" value={item.category_id} />
+                                  <input type="hidden" name="category_id" value={item.category_id} />
+                                  <button type="submit" className={TABLE_DELETE_BUTTON_CLASS}>
+                                    Eliminar
+                                  </button>
+                                </form>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
                     {!inconsistentAssignments.length ? (
                       <tr>
                         <td className="py-4 text-[var(--ui-muted)]" colSpan={4}>

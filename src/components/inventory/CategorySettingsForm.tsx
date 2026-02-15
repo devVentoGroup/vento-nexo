@@ -8,7 +8,11 @@ import { WizardFooter } from "@/components/inventory/forms/WizardFooter";
 import { getCategoryDomainMeaning } from "@/lib/constants";
 import { normalizeGuidedStepId, setGuidedStepQuery } from "@/lib/inventory/forms/step-routing";
 import type { GuidedStep } from "@/lib/inventory/forms/types";
-import type { CategoryKind } from "@/lib/inventory/categories";
+import {
+  buildCategorySuggestedDescription,
+  isSalesOnlyCategoryKinds,
+  type CategoryKind,
+} from "@/lib/inventory/categories";
 
 type SiteOption = {
   id: string;
@@ -35,6 +39,7 @@ type CategorySettingsFormProps = {
   defaultName?: string;
   defaultSlug?: string;
   defaultParentId?: string;
+  defaultDescription?: string;
   defaultKinds: CategoryKind[];
   defaultSiteId?: string;
   defaultDomain?: string;
@@ -90,6 +95,7 @@ export function CategorySettingsForm({
   defaultName = "",
   defaultSlug = "",
   defaultParentId = "",
+  defaultDescription = "",
   defaultKinds,
   defaultSiteId = "",
   defaultDomain = "",
@@ -106,12 +112,14 @@ export function CategorySettingsForm({
   const [name, setName] = useState(defaultName);
   const [slug, setSlug] = useState(defaultSlug);
   const [selectedParentId, setSelectedParentId] = useState(defaultParentId);
+  const [description, setDescription] = useState(defaultDescription);
   const [selectedKinds, setSelectedKinds] = useState<CategoryKind[]>(initialKinds);
   const [selectedSiteId, setSelectedSiteId] = useState(defaultSiteId);
   const [selectedDomain, setSelectedDomain] = useState(defaultDomain);
   const [isActive, setIsActive] = useState(defaultIsActive);
 
   const showChannel = selectedKinds.includes("venta");
+  const showDescriptionEditor = !isSalesOnlyCategoryKinds(selectedKinds);
 
   const wizardSteps = showChannel
     ? WIZARD_STEPS
@@ -196,6 +204,9 @@ export function CategorySettingsForm({
       if (!next.includes("venta")) {
         setSelectedDomain("");
       }
+      if (isSalesOnlyCategoryKinds(next)) {
+        setDescription("");
+      }
       return next;
     });
   };
@@ -219,6 +230,7 @@ export function CategorySettingsForm({
         <input type="hidden" name="name" value={name} />
         <input type="hidden" name="slug" value={slug} />
         <input type="hidden" name="parent_id" value={selectedParentId} />
+        <input type="hidden" name="description" value={showDescriptionEditor ? description : ""} />
         <input type="hidden" name="site_id" value={selectedSiteId} />
         <input type="hidden" name="domain" value={showChannel ? selectedDomain : ""} />
         <input type="hidden" name="is_active" value={isActive ? "on" : ""} />
@@ -274,9 +286,33 @@ export function CategorySettingsForm({
                 ) : null}
               </select>
             </label>
+            {showDescriptionEditor ? (
+              <label className="flex flex-col gap-1 sm:col-span-2">
+                <span className="ui-label">Descripcion operativa</span>
+                <textarea
+                  value={description}
+                  onChange={(event) => setDescription(event.target.value)}
+                  className="ui-input min-h-[96px]"
+                  placeholder={buildCategorySuggestedDescription({
+                    name: name || "esta categoria",
+                    kinds: selectedKinds,
+                  })}
+                />
+                <span className="ui-caption">
+                  Describe que items entran aqui para que el equipo clasifique sin dudas.
+                </span>
+              </label>
+            ) : (
+              <div className="ui-panel-soft p-3 sm:col-span-2">
+                <div className="ui-caption font-semibold">Descripcion</div>
+                <div className="ui-caption mt-1">
+                  No aplica para categorias solo de venta.
+                </div>
+              </div>
+            )}
           </div>
           <StepHelp
-            meaning="El nombre identifica la categoria y el padre define su jerarquia."
+            meaning="El nombre identifica la categoria, el padre define su jerarquia y la descripcion orienta al equipo."
             whenToUse="Usa categoria padre cuando quieras agrupar subcategorias bajo un nodo principal."
             example="Padre: Bebidas. Hija: Bebidas frias."
             impact="Mejora busqueda, filtros y orden del catalogo."
@@ -391,6 +427,14 @@ export function CategorySettingsForm({
               <div className="ui-caption">Canal</div>
               <div className="font-semibold">
                 {showChannel ? selectedDomain || "Sin canal" : "No aplica"}
+              </div>
+            </div>
+            <div className="ui-panel-soft p-3 sm:col-span-2">
+              <div className="ui-caption">Descripcion</div>
+              <div className="font-semibold">
+                {showDescriptionEditor
+                  ? description || "Se completara automaticamente al guardar."
+                  : "No aplica para categorias solo de venta"}
               </div>
             </div>
             <label className="ui-panel-soft flex items-center gap-2 p-3">

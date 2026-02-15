@@ -67,6 +67,11 @@ type SiteRow = {
   name: string | null;
 };
 
+const TABLE_ACTION_BUTTON_CLASS =
+  "ui-btn ui-btn--ghost ui-btn--sm min-w-[104px] justify-center shrink-0";
+const TABLE_DELETE_BUTTON_CLASS =
+  "ui-btn ui-btn--ghost ui-btn--sm min-w-[104px] justify-center shrink-0 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700";
+
 async function loadCategoryRows(
   supabase: Awaited<ReturnType<typeof requireAppAccess>>["supabase"]
 ): Promise<InventoryCategoryRow[]> {
@@ -556,7 +561,7 @@ export default async function InventoryCatalogPage({
                 <th className="py-2 pr-4">Inventario</th>
                 <th className="py-2 pr-4">Unidad</th>
                 <th className="py-2 pr-4">Estado</th>
-                <th className="py-2 pr-4">Acciones</th>
+                <th className="py-2 pr-4 w-[340px]">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -574,11 +579,11 @@ export default async function InventoryCatalogPage({
                     <td className="py-3 pr-4">
                       {product.is_active === false ? "Inactivo" : "Activo"}
                     </td>
-                    <td className="py-3 pr-4">
-                      <div className="flex flex-wrap gap-2">
+                    <td className="py-3 pr-4 align-top">
+                      <div className="flex flex-nowrap items-center gap-2">
                         <Link
                           href={`/inventory/catalog/${product.id}?from=${encodeURIComponent(catalogReturnUrl)}`}
-                          className="ui-btn ui-btn--ghost ui-btn--sm"
+                          className={TABLE_ACTION_BUTTON_CLASS}
                         >
                           Ficha
                         </Link>
@@ -591,7 +596,7 @@ export default async function InventoryCatalogPage({
                               name="next_is_active"
                               value={product.is_active === false ? "1" : "0"}
                             />
-                            <button type="submit" className="ui-btn ui-btn--ghost ui-btn--sm">
+                            <button type="submit" className={TABLE_ACTION_BUTTON_CLASS}>
                               {product.is_active === false ? "Habilitar" : "Deshabilitar"}
                             </button>
                           </form>
@@ -600,7 +605,7 @@ export default async function InventoryCatalogPage({
                           <form action={deleteProductFromListAction}>
                             <input type="hidden" name="product_id" value={product.id} />
                             <input type="hidden" name="return_to" value={catalogReturnUrl} />
-                            <button type="submit" className="ui-btn ui-btn--danger ui-btn--sm">
+                            <button type="submit" className={TABLE_DELETE_BUTTON_CLASS}>
                               Eliminar
                             </button>
                           </form>

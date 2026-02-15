@@ -11,6 +11,7 @@ export type CategoryScope = (typeof CATEGORY_SCOPES)[number];
 export type InventoryCategoryRow = {
   id: string;
   name: string;
+  description?: string | null;
   parent_id: string | null;
   domain: string | null;
   site_id: string | null;
@@ -316,4 +317,45 @@ export function categoryScopeUniqKey(row: InventoryCategoryRow): string {
 
 export function categoryKindsToText(kinds: CategoryKind[]): string {
   return kinds.join(", ");
+}
+
+export function isSalesOnlyCategoryKinds(kinds: CategoryKind[]): boolean {
+  return kinds.length > 0 && kinds.every((kind) => kind === "venta");
+}
+
+export function buildCategorySuggestedDescription(params: {
+  name: string;
+  kinds: CategoryKind[];
+}): string {
+  const cleanName = normalizeValue(params.name);
+  if (!cleanName) return "";
+  if (isSalesOnlyCategoryKinds(params.kinds)) return "";
+
+  const examples: string[] = [];
+  if (params.kinds.includes("insumo")) {
+    examples.push("materias primas, insumos de uso diario y consumibles");
+  }
+  if (params.kinds.includes("preparacion")) {
+    examples.push("bases, premezclas, salsas y mise en place");
+  }
+  if (params.kinds.includes("equipo")) {
+    examples.push("utensilios, herramientas y activos operativos");
+  }
+
+  const detail =
+    examples.length > 0
+      ? examples.join("; ")
+      : "insumos o preparaciones relacionadas con la operacion";
+
+  return `Categoria orientativa para ${cleanName}. Puede incluir ${detail}.`;
+}
+
+export function resolveCategoryDescription(params: {
+  description?: string | null;
+  name: string;
+  kinds: CategoryKind[];
+}): string {
+  const explicitDescription = normalizeValue(params.description ?? "");
+  if (explicitDescription) return explicitDescription;
+  return buildCategorySuggestedDescription({ name: params.name, kinds: params.kinds });
 }
