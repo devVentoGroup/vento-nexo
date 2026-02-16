@@ -12,6 +12,7 @@ import { getCategoryDomainOptions } from "@/lib/constants";
 
 import { ProductSuppliersEditor } from "@/features/inventory/catalog/product-suppliers-editor";
 import { ProductSiteSettingsEditor } from "@/features/inventory/catalog/product-site-settings-editor";
+import { ProductImageUpload } from "@/features/inventory/catalog/product-image-upload";
 import { RecipeIngredientsEditor } from "@/features/inventory/catalog/recipe-ingredients-editor";
 import { RecipeMetadataFields } from "@/features/inventory/catalog/recipe-metadata-fields";
 import { RecipeStepsEditor } from "@/features/inventory/catalog/recipe-steps-editor";
@@ -243,6 +244,8 @@ async function createProduct(formData: FormData) {
     category_id: categoryId || null,
     price: formData.get("price") ? Number(formData.get("price")) : null,
     cost: explicitCost,
+    image_url: asText(formData.get("image_url")) || null,
+    catalog_image_url: asText(formData.get("catalog_image_url")) || null,
     is_active: true,
   };
 
@@ -783,6 +786,39 @@ export default async function NewProductPage({
                 </div>
               </div>
               <RecipeStepsEditor name="recipe_steps" initialRows={[]} />
+            </section>
+
+            <section className="ui-panel space-y-6">
+              <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">
+                  {nextSection()}
+                </span>
+                <div>
+                  <h2 className="ui-h3">Fotos del producto</h2>
+                  <p className="text-sm text-[var(--ui-muted)]">
+                    Imagen operativa y foto de catalogo para mostrar el producto de forma clara.
+                  </p>
+                </div>
+              </div>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <ProductImageUpload
+                  name="image_url"
+                  label="Imagen operativa"
+                  currentUrl={null}
+                  productId={`draft-${typeKey}`}
+                  kind="product"
+                />
+                <ProductImageUpload
+                  name="catalog_image_url"
+                  label="Imagen de catalogo"
+                  currentUrl={null}
+                  productId={`draft-${typeKey}`}
+                  kind="catalog"
+                />
+              </div>
+              <div className="text-xs text-[var(--ui-muted)]">
+                Si no subes fotos ahora, puedes cargarlas despues desde la ficha de edicion.
+              </div>
             </section>
           </>
         )}
