@@ -45,3 +45,14 @@ export function computeAutoCostFromPrimarySupplier(params: {
     unitMap: params.unitMap,
   });
 }
+
+export function computeStockUnitCostFromInput(params: {
+  inputUnitCost: number;
+  conversionFactorToStock: number;
+}): number {
+  const inputUnitCost = Number(params.inputUnitCost);
+  const factor = Number(params.conversionFactorToStock);
+  if (!Number.isFinite(inputUnitCost) || inputUnitCost < 0) return 0;
+  if (!Number.isFinite(factor) || factor <= 0) return 0;
+  return roundQuantity(inputUnitCost / factor, 6);
+}

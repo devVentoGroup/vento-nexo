@@ -12,6 +12,10 @@ import {
   roundQuantity,
   type InventoryUnit,
 } from "@/lib/inventory/uom";
+import {
+  computeStockUnitCostFromInput,
+  computeWeightedAverageCost,
+} from "@/lib/inventory/costing";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +24,7 @@ type ProductRow = {
   name: string | null;
   unit: string | null;
   stock_unit_code: string | null;
+  cost: number | null;
 };
 
 type ProductProfileWithProduct = {
@@ -44,6 +49,29 @@ type SupplierRow = {
 type SearchParams = {
   error?: string;
   ok?: string;
+  purchase_order_id?: string;
+};
+
+type ProductProfileRow = {
+  product_id: string;
+  track_inventory: boolean;
+  costing_mode: "auto_primary_supplier" | "manual" | null;
+};
+
+type PurchaseOrderRow = {
+  id: string;
+  supplier_id: string | null;
+  site_id: string | null;
+  notes: string | null;
+};
+
+type PurchaseOrderItemRow = {
+  id: string;
+  product_id: string;
+  quantity_ordered: number | null;
+  quantity_received: number | null;
+  unit_cost: number | null;
+  unit: string | null;
 };
 
 type EntryRow = {
@@ -119,18 +147,34 @@ async function createEntry(formData: FormData) {
   const inputUnits = formData
     .getAll("item_input_unit_code")
     .map((v) => normalizeUnitCode(String(v).trim()));
+  const inputUnitCosts = formData.getAll("item_input_unit_cost").map((v) => String(v).trim());
+  const purchaseOrderItemIds = formData
+    .getAll("item_purchase_order_item_id")
+    .map((v) => String(v).trim());
   const itemNotes = formData.getAll("item_notes").map((v) => String(v).trim());
 
   const productIdsForLookup = Array.from(new Set(productIds.filter(Boolean)));
   const { data: productsData } = productIdsForLookup.length
     ? await supabase
         .from("products")
-        .select("id,unit,stock_unit_code")
+        .select("id,unit,stock_unit_code,cost")
         .in("id", productIdsForLookup)
     : { data: [] as ProductRow[] };
   const productMap = new Map(
     ((productsData ?? []) as ProductRow[]).map((product) => [product.id, product])
   );
+
+  const { data: profileData } = productIdsForLookup.length
+    ? await supabase
+        .from("product_inventory_profiles")
+        .select("product_id,track_inventory,costing_mode")
+        .in("product_id", productIdsForLookup)
+    : { data: [] as ProductProfileRow[] };
+  const productProfileMap = new Map(
+    ((profileData ?? []) as ProductProfileRow[]).map((row) => [row.product_id, row])
+  );
+
+  const purchaseOrderId = asText(formData.get("purchase_order_id")) || null;
 
   const { data: unitsData } = await supabase
     .from("inventory_units")
@@ -144,10 +188,19 @@ async function createEntry(formData: FormData) {
       const inputDeclared = parseNumber(declared[idx] ?? "0");
       const inputReceived = parseNumber(received[idx] ?? "0");
       const product = productMap.get(productId);
+      const profile = productProfileMap.get(productId);
       const stockUnitCode = normalizeUnitCode(
         product?.stock_unit_code || product?.unit || inputUnits[idx] || "un"
       );
       const inputUnitCode = normalizeUnitCode(inputUnits[idx] || stockUnitCode);
+      const rawInputUnitCost = parseNumber(inputUnitCosts[idx] ?? "");
+      const fallbackCost = Number(product?.cost ?? 0);
+      const hasManualCost = Number.isFinite(rawInputUnitCost) && rawInputUnitCost > 0;
+      const safeInputUnitCost = hasManualCost ? rawInputUnitCost : fallbackCost;
+      const stockUnitCost = computeStockUnitCostFromInput({
+        inputUnitCost: safeInputUnitCost,
+        conversionFactorToStock: 1,
+      });
 
       let quantityDeclared = inputDeclared;
       let quantityReceived = inputReceived;
@@ -162,6 +215,35 @@ async function createEntry(formData: FormData) {
         conversionFactorToStock = factorRes.quantity;
         quantityDeclared = roundQuantity(inputDeclared * conversionFactorToStock);
         quantityReceived = roundQuantity(inputReceived * conversionFactorToStock);
+        const convertedCost = computeStockUnitCostFromInput({
+          inputUnitCost: safeInputUnitCost,
+          conversionFactorToStock,
+        });
+        return {
+          product_id: productId,
+          location_id: locationIds[idx] || "",
+          input_qty_declared: inputDeclared,
+          input_qty_received: inputReceived,
+          input_unit_code: inputUnitCode,
+          input_unit_cost: hasManualCost ? rawInputUnitCost : null,
+          fallback_unit_cost: hasManualCost ? null : fallbackCost,
+          quantity_declared: quantityDeclared,
+          quantity_received: quantityReceived,
+          conversion_factor_to_stock: conversionFactorToStock,
+          stock_unit_code: stockUnitCode,
+          stock_unit_cost: convertedCost > 0 ? convertedCost : 0,
+          line_total_cost: roundQuantity(quantityReceived * (convertedCost > 0 ? convertedCost : 0), 6),
+          purchase_order_item_id: purchaseOrderItemIds[idx] || null,
+          cost_source: hasManualCost
+            ? purchaseOrderItemIds[idx]
+              ? "po_prefill"
+              : "manual"
+            : "fallback_product_cost",
+          apply_auto_cost:
+            Boolean(profile?.track_inventory) &&
+            profile?.costing_mode === "auto_primary_supplier",
+          notes: itemNotes[idx] || null,
+        };
       } catch {
         redirect(
           "/inventory/entries?error=" +
@@ -170,17 +252,29 @@ async function createEntry(formData: FormData) {
             )
         );
       }
-
       return {
         product_id: productId,
         location_id: locationIds[idx] || "",
         input_qty_declared: inputDeclared,
         input_qty_received: inputReceived,
         input_unit_code: inputUnitCode,
+        input_unit_cost: hasManualCost ? rawInputUnitCost : null,
+        fallback_unit_cost: hasManualCost ? null : fallbackCost,
         quantity_declared: quantityDeclared,
         quantity_received: quantityReceived,
         conversion_factor_to_stock: conversionFactorToStock,
         stock_unit_code: stockUnitCode,
+        stock_unit_cost: stockUnitCost > 0 ? stockUnitCost : 0,
+        line_total_cost: roundQuantity(quantityReceived * (stockUnitCost > 0 ? stockUnitCost : 0), 6),
+        purchase_order_item_id: purchaseOrderItemIds[idx] || null,
+        cost_source: hasManualCost
+          ? purchaseOrderItemIds[idx]
+            ? "po_prefill"
+            : "manual"
+          : "fallback_product_cost",
+        apply_auto_cost:
+          Boolean(profile?.track_inventory) &&
+          profile?.costing_mode === "auto_primary_supplier",
         notes: itemNotes[idx] || null,
       };
     })
@@ -229,6 +323,7 @@ async function createEntry(formData: FormData) {
       status,
       notes: notes || null,
       created_by: user.id,
+      purchase_order_id: purchaseOrderId,
     })
     .select("id")
     .single();
@@ -251,6 +346,12 @@ async function createEntry(formData: FormData) {
     input_unit_code: item.input_unit_code,
     conversion_factor_to_stock: item.conversion_factor_to_stock,
     stock_unit_code: item.stock_unit_code,
+    input_unit_cost: item.input_unit_cost,
+    stock_unit_cost: item.stock_unit_cost,
+    line_total_cost: item.line_total_cost,
+    cost_source: item.cost_source,
+    currency: "COP",
+    purchase_order_item_id: item.purchase_order_item_id,
     notes: item.notes,
   }));
 
@@ -273,6 +374,8 @@ async function createEntry(formData: FormData) {
       input_unit_code: item.input_unit_code,
       conversion_factor_to_stock: item.conversion_factor_to_stock,
       stock_unit_code: item.stock_unit_code,
+      stock_unit_cost: item.stock_unit_cost,
+      line_total_cost: item.line_total_cost,
       note: `Entrada ${entry.id}`,
     }));
 
@@ -287,6 +390,15 @@ async function createEntry(formData: FormData) {
     const productIdsWithReceipt = Array.from(
       new Set(movementRows.map((item) => item.product_id))
     );
+    const { data: globalStockRows } = await supabase
+      .from("inventory_stock_by_site")
+      .select("product_id,current_qty")
+      .in("product_id", productIdsWithReceipt);
+    const globalQtyBeforeMap = new Map<string, number>();
+    for (const row of (globalStockRows ?? []) as Array<{ product_id: string; current_qty: number | null }>) {
+      const prev = globalQtyBeforeMap.get(row.product_id) ?? 0;
+      globalQtyBeforeMap.set(row.product_id, prev + Number(row.current_qty ?? 0));
+    }
     const { data: existingSiteStocks } = await supabase
       .from("inventory_stock_by_site")
       .select("product_id,current_qty")
@@ -328,6 +440,123 @@ async function createEntry(formData: FormData) {
         redirect("/inventory/entries?error=" + encodeURIComponent(locErr.message));
       }
     }
+
+    const { data: policyRow } = await supabase
+      .from("inventory_cost_policies")
+      .select("cost_basis,is_active")
+      .eq("site_id", siteId)
+      .maybeSingle();
+    const basis =
+      policyRow && policyRow.is_active === false
+        ? "net"
+        : (String(policyRow?.cost_basis ?? "net") as "net" | "gross");
+
+    const receiptByProduct = new Map<
+      string,
+      { qtyIn: number; lineCostTotal: number; applyAutoCost: boolean }
+    >();
+    for (const row of items.filter((item) => item.quantity_received > 0)) {
+      const prev = receiptByProduct.get(row.product_id) ?? {
+        qtyIn: 0,
+        lineCostTotal: 0,
+        applyAutoCost: false,
+      };
+      receiptByProduct.set(row.product_id, {
+        qtyIn: prev.qtyIn + Number(row.quantity_received ?? 0),
+        lineCostTotal: prev.lineCostTotal + Number(row.line_total_cost ?? 0),
+        applyAutoCost: prev.applyAutoCost || Boolean(row.apply_auto_cost),
+      });
+    }
+
+    for (const [productId, receipt] of receiptByProduct.entries()) {
+      if (!receipt.applyAutoCost || receipt.qtyIn <= 0) continue;
+      const costBefore = Number(productMap.get(productId)?.cost ?? 0);
+      const qtyBefore = Number(globalQtyBeforeMap.get(productId) ?? 0);
+      const costIn =
+        receipt.qtyIn > 0 ? Number(receipt.lineCostTotal ?? 0) / Number(receipt.qtyIn) : 0;
+      const costAfter = computeWeightedAverageCost({
+        currentQty: qtyBefore,
+        currentUnitCost: costBefore,
+        receivedQty: receipt.qtyIn,
+        receivedUnitCost: costIn,
+      });
+
+      const { error: updateCostErr } = await supabase
+        .from("products")
+        .update({ cost: costAfter, updated_at: new Date().toISOString() })
+        .eq("id", productId);
+      if (updateCostErr) {
+        redirect("/inventory/entries?error=" + encodeURIComponent(updateCostErr.message));
+      }
+
+      const { error: costEventErr } = await supabase.from("product_cost_events").insert({
+        product_id: productId,
+        site_id: siteId,
+        source: "entry",
+        source_entry_id: entry.id,
+        qty_before: qtyBefore,
+        qty_in: receipt.qtyIn,
+        cost_before: costBefore,
+        cost_in: costIn,
+        cost_after: costAfter,
+        basis,
+        created_by: user.id,
+      });
+      if (costEventErr) {
+        redirect("/inventory/entries?error=" + encodeURIComponent(costEventErr.message));
+      }
+    }
+
+    if (purchaseOrderId) {
+      const receivedByPoItem = new Map<string, number>();
+      for (const row of items) {
+        if (!row.purchase_order_item_id || row.quantity_received <= 0) continue;
+        const prev = receivedByPoItem.get(row.purchase_order_item_id) ?? 0;
+        receivedByPoItem.set(row.purchase_order_item_id, prev + Number(row.quantity_received));
+      }
+
+      for (const [poItemId, qtyReceived] of receivedByPoItem.entries()) {
+        const { data: poItem, error: poItemErr } = await supabase
+          .from("purchase_order_items")
+          .select("quantity_received")
+          .eq("id", poItemId)
+          .maybeSingle();
+        if (poItemErr) {
+          redirect("/inventory/entries?error=" + encodeURIComponent(poItemErr.message));
+        }
+        const currentReceived = Number(poItem?.quantity_received ?? 0);
+        const nextReceived = roundQuantity(currentReceived + qtyReceived, 6);
+        const { error: poItemUpdateErr } = await supabase
+          .from("purchase_order_items")
+          .update({ quantity_received: nextReceived })
+          .eq("id", poItemId);
+        if (poItemUpdateErr) {
+          redirect("/inventory/entries?error=" + encodeURIComponent(poItemUpdateErr.message));
+        }
+      }
+
+      const { data: poAllItems, error: poItemsErr } = await supabase
+        .from("purchase_order_items")
+        .select("quantity_ordered,quantity_received")
+        .eq("purchase_order_id", purchaseOrderId);
+      if (poItemsErr) {
+        redirect("/inventory/entries?error=" + encodeURIComponent(poItemsErr.message));
+      }
+      const allReceived = (poAllItems ?? []).every((row) => {
+        const ordered = Number(row.quantity_ordered ?? 0);
+        const received = Number(row.quantity_received ?? 0);
+        return ordered > 0 && received >= ordered;
+      });
+      if (allReceived && (poAllItems ?? []).length > 0) {
+        const { error: poStatusErr } = await supabase
+          .from("purchase_orders")
+          .update({ status: "received", received_at: new Date().toISOString() })
+          .eq("id", purchaseOrderId);
+        if (poStatusErr) {
+          redirect("/inventory/entries?error=" + encodeURIComponent(poStatusErr.message));
+        }
+      }
+    }
   }
 
   redirect("/inventory/entries?ok=created");
@@ -352,7 +581,7 @@ export default async function EntriesPage({
 
   const { data: products } = await supabase
     .from("product_inventory_profiles")
-    .select("product_id, products(id,name,unit,stock_unit_code)")
+    .select("product_id, products(id,name,unit,stock_unit_code,cost)")
     .eq("track_inventory", true)
     .in("inventory_kind", ["ingredient", "finished", "resale", "packaging"])
     .order("name", { foreignTable: "products", ascending: true })
@@ -365,7 +594,7 @@ export default async function EntriesPage({
   if (productRows.length === 0) {
     const { data: fallbackProducts } = await supabase
       .from("products")
-      .select("id,name,unit,stock_unit_code")
+      .select("id,name,unit,stock_unit_code,cost")
       .eq("is_active", true)
       .order("name", { ascending: true })
       .limit(400);
@@ -436,6 +665,58 @@ export default async function EntriesPage({
     .limit(300);
 
   const supplierRows = (suppliers ?? []) as SupplierRow[];
+  const purchaseOrderId = String(sp.purchase_order_id ?? "").trim();
+  let prefillSupplierId = "";
+  let prefillInvoiceNumber = "";
+  let prefillNotes = "";
+  let prefillRows: Array<{
+    product_id: string;
+    quantity_declared: number;
+    quantity_received: number;
+    input_unit_code: string;
+    input_unit_cost: number;
+    purchase_order_item_id: string;
+    cost_source: "po_prefill";
+    notes: string;
+  }> = [];
+
+  if (purchaseOrderId) {
+    const { data: poRow } = await supabase
+      .from("purchase_orders")
+      .select("id,supplier_id,site_id,notes")
+      .eq("id", purchaseOrderId)
+      .maybeSingle();
+    const purchaseOrder = poRow as PurchaseOrderRow | null;
+    if (purchaseOrder?.site_id && purchaseOrder.site_id === siteId) {
+      prefillSupplierId = purchaseOrder.supplier_id ?? "";
+      prefillInvoiceNumber = purchaseOrder.id;
+      prefillNotes = purchaseOrder.notes ?? "";
+      const { data: poItems } = await supabase
+        .from("purchase_order_items")
+        .select("id,product_id,quantity_ordered,quantity_received,unit_cost,unit")
+        .eq("purchase_order_id", purchaseOrderId)
+        .order("created_at", { ascending: true });
+      const rawRows = (poItems ?? []) as PurchaseOrderItemRow[];
+      prefillRows = rawRows
+        .map((row) => {
+          const ordered = Number(row.quantity_ordered ?? 0);
+          const receivedQty = Number(row.quantity_received ?? 0);
+          const pending = roundQuantity(Math.max(ordered - receivedQty, 0), 6);
+          if (!row.product_id || pending <= 0) return null;
+          return {
+            product_id: row.product_id,
+            quantity_declared: pending,
+            quantity_received: pending,
+            input_unit_code: normalizeUnitCode(row.unit || "un"),
+            input_unit_cost: Number(row.unit_cost ?? 0),
+            purchase_order_item_id: row.id,
+            cost_source: "po_prefill" as const,
+            notes: "",
+          };
+        })
+        .filter((row): row is NonNullable<typeof row> => Boolean(row));
+    }
+  }
 
   const entryRows = (entries ?? []) as EntryRow[];
 
@@ -454,11 +735,22 @@ export default async function EntriesPage({
       ) : null}
 
       <EntriesForm
-        products={productRows}
+        products={productRows.map((row) => ({
+          id: row.id,
+          name: row.name,
+          unit: row.unit,
+          stock_unit_code: row.stock_unit_code,
+          default_unit_cost: row.cost,
+        }))}
         units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
         locations={(locations ?? []) as LocRow[]}
         defaultLocationId={pickDefaultLocationId((locations ?? []) as LocRow[])}
         suppliers={supplierRows}
+        defaultSupplierId={prefillSupplierId || undefined}
+        defaultInvoiceNumber={prefillInvoiceNumber || undefined}
+        defaultNotes={prefillNotes || undefined}
+        purchaseOrderId={purchaseOrderId || undefined}
+        initialRows={prefillRows}
         action={createEntry}
       />
 

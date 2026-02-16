@@ -48,6 +48,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
   const [quantityDelta, setQuantityDelta] = useState<string>("");
   const [reason, setReason] = useState<string>("");
   const [evidence, setEvidence] = useState<string>("");
+  const [unitCostForAdjust, setUnitCostForAdjust] = useState<string>("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -91,6 +92,10 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
           site_id: siteId,
           product_id: productId,
           quantity_delta: deltaNum,
+          unit_cost_for_adjust:
+            deltaNum != null && deltaNum > 0 && unitCostForAdjust.trim() !== ""
+              ? Number(unitCostForAdjust)
+              : undefined,
           reason: reason.trim(),
           evidence: evidence.trim() || undefined,
         }),
@@ -207,6 +212,21 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
               />
             </label>
 
+            {deltaNum != null && deltaNum > 0 ? (
+              <label className="flex flex-col gap-1">
+                <span className="ui-label">Costo unitario del ajuste (opcional)</span>
+                <input
+                  type="number"
+                  step="0.01"
+                  min="0"
+                  value={unitCostForAdjust}
+                  onChange={(event) => setUnitCostForAdjust(event.target.value)}
+                  placeholder="Si lo dejas vacio, no cambia costo promedio"
+                  className="ui-input"
+                />
+              </label>
+            ) : null}
+
             <label className="flex flex-col gap-1">
               <span className="ui-label">Evidencia (opcional)</span>
               <textarea
@@ -281,4 +301,3 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
     </div>
   );
 }
-

@@ -14,6 +14,7 @@ type ProductOption = {
   name: string | null;
   unit: string | null;
   stock_unit_code?: string | null;
+  default_unit_cost?: number | null;
 };
 
 type LocationOption = {
@@ -39,6 +40,21 @@ type Props = {
   locations: LocationOption[];
   suppliers: SupplierOption[];
   defaultLocationId?: string;
+  defaultSupplierId?: string;
+  defaultInvoiceNumber?: string;
+  defaultNotes?: string;
+  purchaseOrderId?: string;
+  initialRows?: Array<{
+    product_id?: string;
+    location_id?: string;
+    quantity_declared?: number | null;
+    quantity_received?: number | null;
+    input_unit_code?: string | null;
+    input_unit_cost?: number | null;
+    purchase_order_item_id?: string | null;
+    cost_source?: "manual" | "po_prefill" | "fallback_product_cost";
+    notes?: string | null;
+  }>;
   action: (formData: FormData) => void | Promise<void>;
 };
 
@@ -71,9 +87,14 @@ export function EntriesForm({
   locations,
   suppliers,
   defaultLocationId,
+  defaultSupplierId,
+  defaultInvoiceNumber,
+  defaultNotes,
+  purchaseOrderId,
+  initialRows,
   action,
 }: Props) {
-  const [supplierId, setSupplierId] = useState(suppliers[0]?.id ?? "__new__");
+  const [supplierId, setSupplierId] = useState(defaultSupplierId ?? suppliers[0]?.id ?? "__new__");
   const [activeStepId, setActiveStepId] = useState(STEPS[0].id);
   const [confirmed, setConfirmed] = useState(false);
   const showCustomSupplier = supplierId === "__new__";
@@ -97,6 +118,7 @@ export function EntriesForm({
     >
       <form className="space-y-4" action={action}>
         <input type="hidden" name="_wizard_step" value={activeStepId} />
+        <input type="hidden" name="purchase_order_id" value={purchaseOrderId ?? ""} />
 
         <section className={activeStepId === "proveedor" ? "ui-panel space-y-4" : "hidden"}>
           <div className="ui-h3">Paso 1. Proveedor y documento</div>
@@ -125,7 +147,12 @@ export function EntriesForm({
             ) : null}
             <label className="flex flex-col gap-1">
               <span className="ui-label">Factura (opcional)</span>
-              <input name="invoice_number" className="ui-input" placeholder="FAC-0001" />
+              <input
+                name="invoice_number"
+                className="ui-input"
+                placeholder="FAC-0001"
+                defaultValue={defaultInvoiceNumber ?? ""}
+              />
             </label>
             <label className="flex flex-col gap-1">
               <span className="ui-label">Fecha de recepcion</span>
@@ -133,7 +160,12 @@ export function EntriesForm({
             </label>
             <label className="flex flex-col gap-1 md:col-span-2">
               <span className="ui-label">Notas</span>
-              <input name="notes" className="ui-input" placeholder="Observaciones" />
+              <input
+                name="notes"
+                className="ui-input"
+                placeholder="Observaciones"
+                defaultValue={defaultNotes ?? ""}
+              />
             </label>
           </div>
           <StepHelp
@@ -149,11 +181,15 @@ export function EntriesForm({
           <div className="ui-body-muted">
             Declara cantidades y lo recibido. El sistema calcula estado pendiente/parcial/recibida.
           </div>
+          <div className="ui-panel-soft p-3 text-sm text-[var(--ui-muted)]">
+            Si dejas costo unitario vacio en una linea, se usara el costo actual del producto.
+          </div>
           <EntriesItems
             products={products}
             units={units}
             locations={locations}
             defaultLocationId={defaultLocationId}
+            initialRows={initialRows}
           />
           <StepHelp
             meaning="Cada item registra cantidad, unidad de captura y LOC destino."
