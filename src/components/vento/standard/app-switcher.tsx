@@ -48,43 +48,40 @@ function StatusPill({ status }: { status: AppStatus }) {
 function AppTile({ app, onNavigate }: { app: AppLink; onNavigate: () => void }) {
   const isActive = app.status === "active";
   const [logoError, setLogoError] = useState(false);
-  const tileStyle = { ["--app-color" as string]: app.brandColor };
   const fallback = app.name.slice(0, 1);
 
   const logoNode = logoError ? (
-    <div className="ui-app-logo-fallback">{fallback}</div>
+    <div className="ui-app-icon-fallback">{fallback}</div>
   ) : (
     <Image
       src={app.logoSrc}
       alt={`Logo ${app.name}`}
-      className="ui-app-logo"
-      width={28}
-      height={28}
+      className="ui-app-icon"
+      width={40}
+      height={40}
       onError={() => setLogoError(true)}
     />
   );
 
   if (!isActive) {
     return (
-      <div className="ui-app-tile ui-app-tile--soon" style={tileStyle}>
-        <div className="flex items-start justify-between gap-2">
-          {logoNode}
+      <div className="ui-app-glyph ui-app-glyph--soon">
+        <div className="ui-app-glyph-icon-wrap">{logoNode}</div>
+        <div className="ui-app-glyph-name">{app.name}</div>
+        <div className="mt-1">
           <StatusPill status={app.status} />
         </div>
-        <div className="mt-3 text-sm font-semibold text-[var(--ui-text)]">{app.name}</div>
-        <div className="mt-1 line-clamp-1 text-xs text-[var(--ui-muted)]">{app.description}</div>
       </div>
     );
   }
 
   return (
-    <a href={app.href} onClick={onNavigate} className="ui-app-tile ui-app-tile--active" style={tileStyle}>
-      <div className="flex items-start justify-between gap-2">
-        {logoNode}
+    <a href={app.href} onClick={onNavigate} className="ui-app-glyph ui-app-glyph--active">
+      <div className="ui-app-glyph-icon-wrap">{logoNode}</div>
+      <div className="ui-app-glyph-name">{app.name}</div>
+      <div className="mt-1">
         <StatusPill status={app.status} />
       </div>
-      <div className="mt-3 text-sm font-semibold text-[var(--ui-text)]">{app.name}</div>
-      <div className="mt-1 line-clamp-1 text-xs text-[var(--ui-muted)]">{app.description}</div>
     </a>
   );
 }
@@ -219,11 +216,11 @@ export function AppSwitcher({ sites = [], activeSiteId = "" }: AppSwitcherProps)
       </button>
 
       {open ? (
-        <div className="ui-app-launcher absolute right-0 z-50 mt-2 w-[420px] max-w-[calc(100vw-24px)] animate-[launcherIn_160ms_ease-out] rounded-2xl">
+        <div className="ui-app-launcher absolute right-0 z-50 mt-2 w-[min(92vw,380px)] animate-[launcherIn_160ms_ease-out] rounded-2xl">
           <div className="ui-app-launcher-header">
             <div>
               <div className="text-sm font-semibold text-[var(--ui-text)]">Apps del ecosistema</div>
-              <div className="text-xs text-[var(--ui-muted)]">Cambia de modulo rapido por sede activa.</div>
+              <div className="text-xs text-[var(--ui-muted)]">Accede rapido por sede activa.</div>
             </div>
             {sites.length ? (
               <div className="mt-3">
@@ -248,7 +245,7 @@ export function AppSwitcher({ sites = [], activeSiteId = "" }: AppSwitcherProps)
             ) : null}
           </div>
 
-          <div className="ui-app-launcher-scroll ui-scrollbar-subtle max-h-[min(78vh,620px)] space-y-4 overflow-y-auto p-4">
+          <div className="ui-app-launcher-scroll ui-scrollbar-subtle max-h-[min(74vh,560px)] space-y-5 overflow-y-auto p-4">
             {workspace.length > 0 ? (
               <section>
                 <div className="mb-2 text-xs font-semibold tracking-wide text-[var(--ui-muted)]">WORKSPACE</div>

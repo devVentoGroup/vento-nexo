@@ -515,64 +515,102 @@ body {
 
 .ui-app-launcher-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
 }
 
-.ui-app-tile {
-  border-radius: 14px;
-  border: 1px solid rgba(229, 231, 235, 0.95);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(247, 248, 250, 0.94) 100%);
-  padding: 12px;
-  min-height: 104px;
-  transition: transform 140ms ease, box-shadow 140ms ease, border-color 140ms ease, opacity 140ms ease;
+.ui-app-glyph {
+  min-height: 114px;
+  border-radius: 12px;
+  padding: 8px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: center;
+  transition: background-color 140ms ease, transform 140ms ease, opacity 140ms ease;
 }
 
-.ui-app-tile--active {
+.ui-app-glyph--active {
   cursor: pointer;
 }
 
-.ui-app-tile--active:hover {
-  transform: translateY(-2px);
-  border-color: color-mix(in srgb, var(--app-color, var(--ui-brand)) 34%, white);
-  box-shadow: 0 8px 22px color-mix(in srgb, var(--app-color, var(--ui-brand)) 24%, transparent);
+.ui-app-glyph--active:hover {
+  background: rgba(17, 24, 39, 0.06);
+  transform: translateY(-1px);
 }
 
-.ui-app-tile--soon {
-  opacity: 0.72;
-  filter: saturate(0.6);
+.ui-app-glyph--soon {
+  opacity: 0.65;
+  filter: saturate(0.55);
+}
+
+.ui-app-glyph-icon-wrap {
+  width: 44px;
+  height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ui-app-glyph-name {
+  margin-top: 8px;
+  font-size: 0.95rem;
+  line-height: 1.2;
+  font-weight: 600;
+  color: var(--ui-text);
 }
 
 .ui-app-logo,
 .ui-app-logo-fallback {
-  width: 28px;
-  height: 28px;
-  border-radius: 8px;
+  width: 40px;
+  height: 40px;
   flex: 0 0 auto;
 }
 
 .ui-app-logo {
-  object-fit: cover;
-  border: 1px solid rgba(229, 231, 235, 0.8);
-  background: #fff;
+  object-fit: contain;
 }
 
 .ui-app-logo-fallback {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 0.82rem;
+  font-size: 0.9rem;
   font-weight: 700;
   color: #fff;
-  background: var(--app-color, var(--ui-brand));
+  background: var(--ui-brand);
+  border-radius: 10px;
+}
+
+.ui-app-icon,
+.ui-app-icon-fallback {
+  width: 40px;
+  height: 40px;
+  flex: 0 0 auto;
+}
+
+.ui-app-icon {
+  object-fit: contain;
+}
+
+.ui-app-icon-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 10px;
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: #fff;
+  background: var(--ui-brand);
 }
 
 .ui-app-status {
   display: inline-flex;
   align-items: center;
   border-radius: 999px;
-  padding: 3px 8px;
-  font-size: 0.68rem;
+  padding: 2px 8px;
+  font-size: 0.7rem;
   font-weight: 600;
   line-height: 1;
   border: 1px solid transparent;
