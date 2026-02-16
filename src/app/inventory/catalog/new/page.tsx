@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { CategoryTreeFilter } from "@/components/inventory/CategoryTreeFilter";
+import { SkuField } from "@/components/inventory/SkuField";
 import { PageHeader } from "@/components/vento/standard/page-header";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
@@ -32,6 +33,7 @@ import {
   type InventoryUnit,
 } from "@/lib/inventory/uom";
 import { computeAutoCostFromPrimarySupplier } from "@/lib/inventory/costing";
+import { generateNextSku, isSkuConflictError } from "@/lib/inventory/sku";
 
 export const dynamic = "force-dynamic";
 
@@ -191,6 +193,26 @@ async function createProduct(formData: FormData) {
     }
   }
 
+  if (categoryId) {
+    const { count: activeChildrenCount, error: activeChildrenError } = await supabase
+      .from("product_categories")
+      .select("id", { head: true, count: "exact" })
+      .eq("parent_id", categoryId)
+      .eq("is_active", true);
+    if (activeChildrenError) {
+      redirect(
+        `/inventory/catalog/new?type=${typeKey}&error=` +
+          encodeURIComponent(activeChildrenError.message)
+      );
+    }
+    if ((activeChildrenCount ?? 0) > 0) {
+      redirect(
+        `/inventory/catalog/new?type=${typeKey}&error=` +
+          encodeURIComponent("Selecciona una categoria del ultimo nivel (categoria hoja).")
+      );
+    }
+  }
+
   const stockUnitCode = normalizeUnitCode(
     asText(formData.get("stock_unit_code")) || asText(formData.get("unit")) || "un"
   );
@@ -215,7 +237,6 @@ async function createProduct(formData: FormData) {
   const productPayload: Record<string, unknown> = {
     name,
     description: asText(formData.get("description")) || null,
-    sku: asText(formData.get("sku")) || null,
     unit: stockUnitCode,
     stock_unit_code: stockUnitCode,
     product_type: config.productType,
@@ -225,17 +246,45 @@ async function createProduct(formData: FormData) {
     is_active: true,
   };
 
-  const { data: newProduct, error: insertErr } = await supabase
-    .from("products")
-    .insert(productPayload)
-    .select("id")
-    .single();
+  let createdProductId = "";
+  let attempts = 0;
+  let lastInsertErrorMessage = "";
+  while (!createdProductId && attempts < 2) {
+    attempts += 1;
+    const autoSku = await generateNextSku({
+      supabase,
+      productType: config.productType,
+      inventoryKind: config.inventoryKind,
+      name,
+    });
 
-  if (insertErr || !newProduct) {
-    redirect(`/inventory/catalog/new?type=${typeKey}&error=` + encodeURIComponent(insertErr?.message ?? "Error al crear."));
+    const { data: newProduct, error: insertErr } = await supabase
+      .from("products")
+      .insert({ ...productPayload, sku: autoSku })
+      .select("id")
+      .single();
+
+    if (!insertErr && newProduct?.id) {
+      createdProductId = newProduct.id;
+      break;
+    }
+
+    lastInsertErrorMessage = insertErr?.message ?? "Error al crear.";
+    if (!isSkuConflictError(insertErr)) {
+      break;
+    }
   }
 
-  const productId = newProduct.id;
+  if (!createdProductId) {
+    redirect(
+      `/inventory/catalog/new?type=${typeKey}&error=` +
+        encodeURIComponent(
+          lastInsertErrorMessage || "No se pudo asignar un SKU automatico. Intenta de nuevo."
+        )
+    );
+  }
+
+  const productId = createdProductId;
 
   // Inventory profile
   const invKind = config.inventoryKind as string;
@@ -613,10 +662,12 @@ export default async function NewProductPage({
               <span className="ui-label">Nombre <span className="text-[var(--ui-danger)]">*</span></span>
               <input name="name" className="ui-input" placeholder={typeKey === "asset" ? "Ej. Horno industrial" : "Ej. Harina 000"} required />
             </label>
-            <label className="flex flex-col gap-1">
-              <span className="ui-label">SKU / Codigo</span>
-              <input name="sku" className="ui-input font-mono" placeholder="Codigo unico" />
-            </label>
+            <SkuField
+              mode="create"
+              initialProductType={config.productType}
+              initialInventoryKind={config.inventoryKind}
+              className="flex flex-col gap-1"
+            />
             <div className="ui-panel-soft p-3 text-sm text-[var(--ui-muted)]">
               Configura unidad base y unidad operativa en la seccion de almacenamiento.
             </div>
@@ -628,6 +679,8 @@ export default async function NewProductPage({
               label="Categoria"
               emptyOptionLabel="Sin categoria"
               maxVisibleOptions={8}
+              selectionMode="leaf_only"
+              nonSelectableHint="Categoria padre"
             />
             <label className="flex flex-col gap-1 sm:col-span-2">
               <span className="ui-label">Descripcion</span>

@@ -12,6 +12,7 @@ type CategoryOption = {
   id: string;
   label: string;
   searchLabel: string;
+  selectable: boolean;
 };
 
 type CategoryTreeFilterProps = {
@@ -28,6 +29,8 @@ type CategoryTreeFilterProps = {
   showMeta?: boolean;
   metaDomainLabelMode?: "domain" | "channel";
   metaUseBusinessDomainLabel?: boolean;
+  selectionMode?: "all" | "leaf_only";
+  nonSelectableHint?: string;
 };
 
 function toSearchLabel(value: string): string {
@@ -47,6 +50,8 @@ export function CategoryTreeFilter({
   showMeta = true,
   metaDomainLabelMode = "domain",
   metaUseBusinessDomainLabel = false,
+  selectionMode = "all",
+  nonSelectableHint = "Solo informativa",
 }: CategoryTreeFilterProps) {
   const [query, setQuery] = useState("");
   const [value, setValue] = useState(selectedCategoryId);
@@ -86,6 +91,12 @@ export function CategoryTreeFilter({
   );
 
   const options = useMemo(() => {
+    const parentIds = new Set<string>();
+    for (const row of categories) {
+      const parentId = row.parent_id ? String(row.parent_id).trim() : "";
+      if (parentId) parentIds.add(parentId);
+    }
+
     const rows: CategoryOption[] = categories.map((row) => {
       const path = getCategoryPath(row.id, categoryMap);
       const meta = showMeta
@@ -95,10 +106,13 @@ export function CategoryTreeFilter({
           })
         : "";
       const optionLabel = meta ? `${path} (${meta})` : path;
+      const hasChildren = parentIds.has(row.id);
+      const selectable = selectionMode === "leaf_only" ? !hasChildren : true;
       return {
         id: row.id,
         label: optionLabel,
         searchLabel: toSearchLabel(`${path} ${row.name} ${meta}`),
+        selectable,
       };
     });
 
@@ -110,6 +124,7 @@ export function CategoryTreeFilter({
     showMeta,
     metaDomainLabelMode,
     metaUseBusinessDomainLabel,
+    selectionMode,
   ]);
 
   const normalizedQuery = toSearchLabel(query);
@@ -185,15 +200,28 @@ export function CategoryTreeFilter({
                 <button
                   key={option.id}
                   type="button"
+                  disabled={!option.selectable}
                   onClick={() => {
+                    if (!option.selectable) return;
                     setValue(option.id);
                     setIsOpen(false);
                   }}
-                  className={`block w-full border-b border-[var(--ui-border)] px-3 py-2 text-left text-sm last:border-b-0 hover:bg-[var(--ui-surface)] ${
+                  className={`flex w-full items-center justify-between border-b border-[var(--ui-border)] px-3 py-2 text-left text-sm last:border-b-0 ${
                     value === option.id ? "bg-[var(--ui-surface)] font-semibold" : ""
+                  } ${
+                    option.selectable
+                      ? "hover:bg-[var(--ui-surface)]"
+                      : "cursor-not-allowed bg-zinc-50 text-[var(--ui-text)] font-semibold"
                   }`}
                 >
-                  {option.label}
+                  <span className={`truncate ${option.selectable ? "" : "tracking-[0.01em]"}`}>
+                    {option.label}
+                  </span>
+                  {!option.selectable ? (
+                    <span className="ml-3 shrink-0 rounded-full border border-zinc-300 bg-white px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
+                      {nonSelectableHint}
+                    </span>
+                  ) : null}
                 </button>
               ))
             ) : (

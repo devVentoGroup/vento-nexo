@@ -1,7 +1,6 @@
 import { redirect } from "next/navigation";
 
 import { createClient } from "@/lib/supabase/server";
-import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { normalizePermissionCode } from "@/lib/auth/permissions";
 import {
   canUseRoleOverride,
@@ -28,7 +27,9 @@ export async function requireAppAccess({
   const user = userRes.user ?? null;
 
   if (!user) {
-    redirect(await buildShellLoginUrl(returnTo));
+    const qs = new URLSearchParams();
+    qs.set("returnTo", returnTo);
+    redirect(`/login?${qs.toString()}`);
   }
 
   const { data: canAccess, error: accessErr } = await client.rpc("has_permission", {

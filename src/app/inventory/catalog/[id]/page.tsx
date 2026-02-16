@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { CategoryTreeFilter } from "@/components/inventory/CategoryTreeFilter";
+import { SkuField } from "@/components/inventory/SkuField";
 import { PageHeader } from "@/components/vento/standard/page-header";
 import { ProductImageUpload } from "@/features/inventory/catalog/product-image-upload";
 import { ProductSiteSettingsEditor } from "@/features/inventory/catalog/product-site-settings-editor";
@@ -32,6 +33,12 @@ import {
   type CategoryKind,
   type InventoryCategoryRow,
 } from "@/lib/inventory/categories";
+import {
+  generateNextSku,
+  isSkuConflictError,
+  isValidSkuFormat,
+  sanitizeManualSku,
+} from "@/lib/inventory/sku";
 
 export const dynamic = "force-dynamic";
 
@@ -218,6 +225,17 @@ async function updateProduct(formData: FormData) {
     redirect(appendQueryParam(detailBase, "error", message));
   };
 
+  const { data: existingProduct, error: existingProductError } = await supabase
+    .from("products")
+    .select("id,sku,product_type")
+    .eq("id", productId)
+    .maybeSingle();
+  if (existingProductError || !existingProduct) {
+    redirectWithError("No se encontro el producto a editar.");
+  }
+  const existingSku = String(existingProduct?.sku ?? "").trim();
+  const existingProductType = String(existingProduct?.product_type ?? "").trim();
+
   const { data: unitsData } = await supabase
     .from("inventory_units")
     .select("code,name,family,factor_to_base,symbol,display_decimals,is_active")
@@ -267,10 +285,23 @@ async function updateProduct(formData: FormData) {
       redirectWithError("Las categorías con dominio solo se permiten para productos de venta.");
     }
   }
+  if (categoryId) {
+    const { count: activeChildrenCount, error: activeChildrenError } = await supabase
+      .from("product_categories")
+      .select("id", { head: true, count: "exact" })
+      .eq("parent_id", categoryId)
+      .eq("is_active", true);
+    if (activeChildrenError) {
+      redirectWithError(activeChildrenError.message);
+    }
+    if ((activeChildrenCount ?? 0) > 0) {
+      redirectWithError("Selecciona una categoria del ultimo nivel (categoria hoja).");
+    }
+  }
+
   const payload: Record<string, unknown> = {
     name: asText(formData.get("name")),
     description: asText(formData.get("description")) || null,
-    sku: asText(formData.get("sku")) || null,
     unit: stockUnitCode,
     stock_unit_code: stockUnitCode,
     product_type: productTypeValue,
@@ -280,10 +311,39 @@ async function updateProduct(formData: FormData) {
     image_url: asText(formData.get("image_url")) || null,
     catalog_image_url: asText(formData.get("catalog_image_url")) || null,
   };
+  const allowSkuOverride = asText(formData.get("allow_sku_override")) === "true";
+  const submittedSku = sanitizeManualSku(asText(formData.get("sku")));
+  const hasCurrentSku = Boolean(existingSku);
+  const assignAutoSku = asText(formData.get("assign_auto_sku")) === "true";
+
+  if (allowSkuOverride) {
+    let nextSku = "";
+    if (submittedSku) {
+      if (!isValidSkuFormat(submittedSku)) {
+        redirectWithError("SKU invalido. Usa letras, numeros y guiones.");
+      }
+      nextSku = submittedSku;
+    } else if (!hasCurrentSku && assignAutoSku) {
+      nextSku = await generateNextSku({
+        supabase,
+        productType: productTypeValue || existingProductType,
+        inventoryKind: inventoryKindValue,
+        name: asText(formData.get("name")),
+      });
+    } else {
+      redirectWithError("Ingresa SKU manual o desactiva override.");
+    }
+    payload.sku = nextSku;
+  }
   if (categoryId) payload.category_id = categoryId;
 
   const { error: updateErr } = await supabase.from("products").update(payload).eq("id", productId);
-  if (updateErr) redirectWithError(updateErr.message);
+  if (updateErr) {
+    if (isSkuConflictError(updateErr)) {
+      redirectWithError("El SKU ya existe. Usa otro codigo.");
+    }
+    redirectWithError(updateErr.message);
+  }
 
   const profilePayload = {
     product_id: productId,
@@ -790,10 +850,13 @@ export default async function ProductCatalogDetailPage({
                 <span className="ui-label">Nombre del producto / insumo</span>
                 <input name="name" defaultValue={productRow.name ?? ""} className="ui-input" placeholder="Ej. Harina 000" required />
               </label>
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">SKU (codigo interno)</span>
-                <input name="sku" defaultValue={productRow.sku ?? ""} className="ui-input font-mono" placeholder="Codigo unico" />
-              </label>
+              <SkuField
+                mode="edit"
+                currentSku={productRow.sku}
+                initialProductType={productRow.product_type}
+                initialInventoryKind={profileRow?.inventory_kind ?? ""}
+                className="flex flex-col gap-1"
+              />
               <label className="flex flex-col gap-1">
                 <span className="ui-label">Tipo</span>
                 <select name="product_type" defaultValue={productRow.product_type ?? "insumo"} className="ui-input">
@@ -814,6 +877,8 @@ export default async function ProductCatalogDetailPage({
                 label="Categoria"
                 emptyOptionLabel="Sin categoria"
                 maxVisibleOptions={8}
+                selectionMode="leaf_only"
+                nonSelectableHint="Categoria padre"
               />
             </div>
 

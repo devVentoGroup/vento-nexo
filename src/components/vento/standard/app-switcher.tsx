@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import Image from "next/image";
 
 type AppStatus = "active" | "soon";
@@ -86,12 +85,10 @@ function AppTile({ app, onNavigate }: { app: AppLink; onNavigate: () => void }) 
   );
 }
 
-export function AppSwitcher({ sites = [], activeSiteId = "" }: AppSwitcherProps) {
+export function AppSwitcher(props: AppSwitcherProps) {
+  void props;
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
 
   const apps = useMemo<AppLink[]>(
     () => [
@@ -173,24 +170,6 @@ export function AppSwitcher({ sites = [], activeSiteId = "" }: AppSwitcherProps)
   const operacion = apps.filter((a) => a.group === "Operacion");
   const proximamente = apps.filter((a) => a.group === "Proximamente");
 
-  const currentSiteId = searchParams.get("site_id") ?? activeSiteId ?? "";
-  const currentSite = useMemo(
-    () => sites.find((site) => site.id === currentSiteId),
-    [sites, currentSiteId]
-  );
-  const currentSiteLabel = currentSite?.name ?? currentSiteId ?? "";
-
-  const navigateWithSite = (nextId: string) => {
-    const params = new URLSearchParams(searchParams.toString());
-    if (nextId) {
-      params.set("site_id", nextId);
-    } else {
-      params.delete("site_id");
-    }
-    const qs = params.toString();
-    router.push(qs ? `${pathname}?${qs}` : pathname);
-  };
-
   useEffect(() => {
     const onDocClick = (e: MouseEvent) => {
       if (!open) return;
@@ -220,29 +199,8 @@ export function AppSwitcher({ sites = [], activeSiteId = "" }: AppSwitcherProps)
           <div className="ui-app-launcher-header">
             <div>
               <div className="text-sm font-semibold text-[var(--ui-text)]">Apps del ecosistema</div>
-              <div className="text-xs text-[var(--ui-muted)]">Accede rapido por sede activa.</div>
+              <div className="text-xs text-[var(--ui-muted)]">Accede rapido a cada modulo del ecosistema.</div>
             </div>
-            {sites.length ? (
-              <div className="mt-3">
-                <div className="mb-1 text-xs font-semibold tracking-wide text-[var(--ui-muted)]">SEDE</div>
-                <select
-                  className="ui-input h-11 rounded-xl px-3 text-sm"
-                  value={currentSiteId}
-                  onChange={(e) => {
-                    navigateWithSite(e.target.value);
-                    setOpen(false);
-                  }}
-                >
-                  <option value="">Sin sede</option>
-                  {sites.map((site) => (
-                    <option key={site.id} value={site.id}>
-                      {site.name ?? site.id}
-                    </option>
-                  ))}
-                </select>
-                <div className="mt-1 text-xs text-[var(--ui-muted)]">Activa: {currentSiteLabel || "Sin sede"}</div>
-              </div>
-            ) : null}
           </div>
 
           <div className="ui-app-launcher-scroll ui-scrollbar-subtle max-h-[min(74vh,560px)] space-y-5 overflow-y-auto p-4">

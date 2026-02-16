@@ -1,12 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
-const LOGIN_URL =
-  process.env.NEXT_PUBLIC_SHELL_LOGIN_URL || "https://os.ventogroup.co/login";
 const DEBUG_AUTH = process.env.NEXT_PUBLIC_DEBUG_AUTH === "1";
 
 function buildLoginRedirect(request: NextRequest) {
-  const target = new URL(LOGIN_URL);
+  const target = new URL("/login", request.url);
   target.searchParams.set("returnTo", request.url);
   return NextResponse.redirect(target);
 }
