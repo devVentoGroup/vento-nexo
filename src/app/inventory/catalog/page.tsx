@@ -415,7 +415,7 @@ export default async function InventoryCatalogPage({
   return (
     <div className="w-full">
       <PageHeader
-        title="CatÃ¡logo"
+        title="Catalogo"
         subtitle="Abre cualquier item para ver su ficha."
         actions={
           <Link href="/inventory/stock" className="ui-btn ui-btn--ghost">
