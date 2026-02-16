@@ -1,7 +1,9 @@
-"use client";
+﻿"use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+
 import { SearchableSingleSelect } from "@/components/inventory/forms/SearchableSingleSelect";
+import { normalizeUnitCode, type ProductUomProfile } from "@/lib/inventory/uom";
 
 type ProductOption = {
   id: string;
@@ -12,6 +14,7 @@ type ProductOption = {
 
 type Props = {
   products: ProductOption[];
+  defaultUomProfiles?: ProductUomProfile[];
 };
 
 type Row = {
@@ -19,18 +22,43 @@ type Row = {
   productId: string;
   quantity: string;
   inputUnitCode: string;
+  inputUomProfileId: string;
   notes: string;
 };
 
-export function TransfersItems({ products }: Props) {
+export function TransfersItems({ products, defaultUomProfiles = [] }: Props) {
   const [rows, setRows] = useState<Row[]>([
-    { id: 0, productId: "", quantity: "", inputUnitCode: "", notes: "" },
+    {
+      id: 0,
+      productId: "",
+      quantity: "",
+      inputUnitCode: "",
+      inputUomProfileId: "",
+      notes: "",
+    },
   ]);
+
+  const defaultProfileByProduct = useMemo(
+    () =>
+      new Map(
+        defaultUomProfiles
+          .filter((p) => p.is_active && p.is_default)
+          .map((profile) => [profile.product_id, profile])
+      ),
+    [defaultUomProfiles]
+  );
 
   const addRow = () => {
     setRows((prev) => [
       ...prev,
-      { id: prev.length, productId: "", quantity: "", inputUnitCode: "", notes: "" },
+      {
+        id: prev.length,
+        productId: "",
+        quantity: "",
+        inputUnitCode: "",
+        inputUomProfileId: "",
+        notes: "",
+      },
     ]);
   };
 
@@ -48,6 +76,13 @@ export function TransfersItems({ products }: Props) {
     <div className="space-y-4">
       {rows.map((row, idx) => {
         const isLast = idx === rows.length - 1;
+        const product = products.find((item) => item.id === row.productId);
+        const stockUnitCode = normalizeUnitCode(product?.stock_unit_code ?? product?.unit ?? "");
+        const defaultProfile = row.productId ? defaultProfileByProduct.get(row.productId) ?? null : null;
+        const conversionLabel = defaultProfile
+          ? `${defaultProfile.qty_in_input_unit} ${defaultProfile.input_unit_code} = ${defaultProfile.qty_in_stock_unit} ${stockUnitCode || "un"}`
+          : "";
+
         return (
           <div key={row.id} className="space-y-3">
             <div className="ui-card grid gap-3 md:grid-cols-5">
@@ -57,11 +92,20 @@ export function TransfersItems({ products }: Props) {
                 value={row.productId}
                 onValueChange={(next) => {
                   const product = products.find((p) => p.id === next);
-                  const stockUnit = product?.stock_unit_code ?? product?.unit ?? "";
+                  const stockUnit = normalizeUnitCode(product?.stock_unit_code ?? product?.unit ?? "");
+                  const nextProfile = defaultProfileByProduct.get(next) ?? null;
                   setRows((prev) =>
                     prev.map((r) =>
                       r.id === row.id
-                        ? { ...r, productId: next, inputUnitCode: stockUnit || r.inputUnitCode }
+                        ? {
+                            ...r,
+                            productId: next,
+                            inputUnitCode:
+                              normalizeUnitCode(nextProfile?.input_unit_code ?? "") ||
+                              stockUnit ||
+                              r.inputUnitCode,
+                            inputUomProfileId: nextProfile?.id ?? "",
+                          }
                         : r
                     )
                   );
@@ -90,22 +134,31 @@ export function TransfersItems({ products }: Props) {
                 onChange={(e) =>
                   setRows((prev) =>
                     prev.map((r) =>
-                      r.id === row.id ? { ...r, inputUnitCode: e.target.value } : r
+                      r.id === row.id
+                        ? {
+                            ...r,
+                            inputUnitCode: normalizeUnitCode(e.target.value),
+                            inputUomProfileId:
+                              defaultProfile &&
+                              normalizeUnitCode(defaultProfile.input_unit_code) ===
+                                normalizeUnitCode(e.target.value)
+                                ? defaultProfile.id
+                                : "",
+                          }
+                        : r
                     )
                   )
                 }
                 required
               >
                 <option value="">Unidad</option>
-                {(() => {
-                  const product = products.find((p) => p.id === row.productId);
-                  const unitCode = product?.stock_unit_code ?? product?.unit ?? "";
-                  return unitCode ? (
-                    <option value={unitCode}>{unitCode}</option>
-                  ) : (
-                    <option value="">-</option>
-                  );
-                })()}
+                {stockUnitCode ? <option value={stockUnitCode}>{stockUnitCode}</option> : null}
+                {defaultProfile &&
+                normalizeUnitCode(defaultProfile.input_unit_code) !== normalizeUnitCode(stockUnitCode) ? (
+                  <option value={normalizeUnitCode(defaultProfile.input_unit_code)}>
+                    {normalizeUnitCode(defaultProfile.input_unit_code)} ({defaultProfile.label})
+                  </option>
+                ) : null}
               </select>
 
               <div className="flex gap-2">
@@ -126,11 +179,20 @@ export function TransfersItems({ products }: Props) {
                   </button>
                 ) : null}
               </div>
+
+              <input type="hidden" name="item_input_uom_profile_id" value={row.inputUomProfileId} />
+              <input type="hidden" name="item_quantity_in_input" value={row.quantity} />
+
+              {conversionLabel ? (
+                <div className="md:col-span-5 text-xs text-[var(--ui-muted)]">
+                  Conversion aplicada: {conversionLabel}
+                </div>
+              ) : null}
             </div>
 
             {isLast ? (
               <button type="button" className="ui-btn ui-btn--ghost w-fit" onClick={addRow}>
-                + Agregar otro ítem
+                + Agregar otro item
               </button>
             ) : null}
           </div>

@@ -12,6 +12,18 @@ export type InventoryUnit = {
 
 export type UnitMap = Map<string, InventoryUnit>;
 
+export type ProductUomProfile = {
+  id: string;
+  product_id: string;
+  label: string;
+  input_unit_code: string;
+  qty_in_input_unit: number;
+  qty_in_stock_unit: number;
+  is_default: boolean;
+  is_active: boolean;
+  source: "manual" | "supplier_primary";
+};
+
 export function normalizeUnitCode(code: string | null | undefined): string {
   return String(code ?? "")
     .trim()
@@ -105,4 +117,56 @@ export function inferFamilyFromUnitCode(
   unitMap: UnitMap
 ): UnitFamily | null {
   return unitMap.get(normalizeUnitCode(unitCode))?.family ?? null;
+}
+
+export function convertByProductProfile(params: {
+  quantityInInput: number;
+  inputUnitCode: string;
+  stockUnitCode: string;
+  profile?: ProductUomProfile | null;
+}): { quantityInStock: number; factorToStock: number } {
+  const quantityInInput = Number(params.quantityInInput);
+  const inputUnitCode = normalizeUnitCode(params.inputUnitCode);
+  const stockUnitCode = normalizeUnitCode(params.stockUnitCode);
+  const profile = params.profile ?? null;
+
+  if (!Number.isFinite(quantityInInput) || quantityInInput < 0) {
+    throw new Error("Cantidad invalida para conversion.");
+  }
+
+  if (!inputUnitCode || !stockUnitCode) {
+    throw new Error("Unidad de captura o unidad base invalida.");
+  }
+
+  if (!profile) {
+    if (inputUnitCode !== stockUnitCode) {
+      throw new Error("No existe conversion operativa configurada para esta unidad.");
+    }
+    return {
+      quantityInStock: roundQuantity(quantityInInput),
+      factorToStock: 1,
+    };
+  }
+
+  const profileInputUnitCode = normalizeUnitCode(profile.input_unit_code);
+  if (profileInputUnitCode !== inputUnitCode) {
+    throw new Error("La unidad de captura no coincide con el perfil operativo del producto.");
+  }
+
+  const qtyInInputUnit = Number(profile.qty_in_input_unit);
+  const qtyInStockUnit = Number(profile.qty_in_stock_unit);
+  if (
+    !Number.isFinite(qtyInInputUnit) ||
+    !Number.isFinite(qtyInStockUnit) ||
+    qtyInInputUnit <= 0 ||
+    qtyInStockUnit <= 0
+  ) {
+    throw new Error("Perfil operativo invalido para conversion.");
+  }
+
+  const factorToStock = qtyInStockUnit / qtyInInputUnit;
+  return {
+    quantityInStock: roundQuantity(quantityInInput * factorToStock),
+    factorToStock: roundQuantity(factorToStock),
+  };
 }

@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 
 import { SearchableSingleSelect } from "@/components/inventory/forms/SearchableSingleSelect";
+import { normalizeUnitCode, type ProductUomProfile } from "@/lib/inventory/uom";
 
 type ProductOption = {
   id: string;
@@ -41,6 +42,7 @@ type Props = {
   units: UnitOption[];
   locations: LocationOption[];
   defaultLocationId?: string;
+  defaultUomProfiles?: ProductUomProfile[];
   initialRows?: InitialRow[];
 };
 
@@ -53,6 +55,7 @@ type Row = {
   inputUnitCode: string;
   inputUnitCost: string;
   purchaseOrderItemId: string;
+  inputUomProfileId: string;
   costSource: "manual" | "po_prefill" | "fallback_product_cost";
   notes: string;
 };
@@ -62,6 +65,7 @@ export function EntriesItems({
   units,
   locations,
   defaultLocationId,
+  defaultUomProfiles = [],
   initialRows = [],
 }: Props) {
   const initialLocationId = defaultLocationId || locations.find((loc) => loc.id)?.id || "";
@@ -78,6 +82,7 @@ export function EntriesItems({
           inputUnitCode: "",
           inputUnitCost: "",
           purchaseOrderItemId: "",
+          inputUomProfileId: "",
           costSource: "fallback_product_cost",
           notes: "",
         },
@@ -92,6 +97,7 @@ export function EntriesItems({
       inputUnitCode: String(row.input_unit_code ?? "").trim(),
       inputUnitCost: row.input_unit_cost == null ? "" : String(Number(row.input_unit_cost)),
       purchaseOrderItemId: String(row.purchase_order_item_id ?? "").trim(),
+      inputUomProfileId: "",
       costSource: row.cost_source ?? "po_prefill",
       notes: String(row.notes ?? "").trim(),
     }));
@@ -109,6 +115,7 @@ export function EntriesItems({
         inputUnitCode: "",
         inputUnitCost: "",
         purchaseOrderItemId: "",
+        inputUomProfileId: "",
         costSource: "fallback_product_cost",
         notes: "",
       },
@@ -151,11 +158,24 @@ export function EntriesItems({
       })),
     [locations]
   );
+  const defaultProfileByProduct = useMemo(
+    () =>
+      new Map(
+        defaultUomProfiles
+          .filter((p) => p.is_active && p.is_default)
+          .map((profile) => [profile.product_id, profile])
+      ),
+    [defaultUomProfiles]
+  );
 
   return (
     <div className="space-y-4">
       {rows.map((row, idx) => {
         const isLast = idx === rows.length - 1;
+        const defaultProfile = row.productId ? defaultProfileByProduct.get(row.productId) ?? null : null;
+        const conversionLabel = defaultProfile
+          ? `${defaultProfile.qty_in_input_unit} ${defaultProfile.input_unit_code} = ${defaultProfile.qty_in_stock_unit} ${products.find((p) => p.id === row.productId)?.stock_unit_code ?? products.find((p) => p.id === row.productId)?.unit ?? "un"}`
+          : "";
         return (
           <div key={row.id} className="space-y-3">
             <div className="ui-card grid gap-3 md:grid-cols-8">
@@ -174,7 +194,11 @@ export function EntriesItems({
                         : {
                             ...current,
                             productId: next,
-                            inputUnitCode: stockUnit || current.inputUnitCode,
+                            inputUnitCode:
+                              normalizeUnitCode(defaultProfileByProduct.get(next)?.input_unit_code ?? "") ||
+                              stockUnit ||
+                              current.inputUnitCode,
+                            inputUomProfileId: defaultProfileByProduct.get(next)?.id ?? "",
                             inputUnitCost:
                               current.purchaseOrderItemId || current.inputUnitCost
                                 ? current.inputUnitCost
@@ -254,7 +278,18 @@ export function EntriesItems({
                 onChange={(event) =>
                   setRows((prev) =>
                     prev.map((current) =>
-                      current.id === row.id ? { ...current, inputUnitCode: event.target.value } : current
+                      current.id === row.id
+                        ? {
+                            ...current,
+                            inputUnitCode: normalizeUnitCode(event.target.value),
+                            inputUomProfileId:
+                              defaultProfile &&
+                              normalizeUnitCode(defaultProfile.input_unit_code) ===
+                                normalizeUnitCode(event.target.value)
+                                ? defaultProfile.id
+                                : "",
+                          }
+                        : current
                     )
                   )
                 }
@@ -314,6 +349,7 @@ export function EntriesItems({
                 name="item_purchase_order_item_id"
                 value={row.purchaseOrderItemId}
               />
+              <input type="hidden" name="item_input_uom_profile_id" value={row.inputUomProfileId} />
               <input type="hidden" name="item_cost_source" value={row.costSource} />
 
               <div className="md:col-span-8 text-xs text-[var(--ui-muted)]">
@@ -325,6 +361,11 @@ export function EntriesItems({
               <div className="md:col-span-8 text-xs text-[var(--ui-muted)]">
                 Si dejas costo vacio, se usa el costo actual del producto para el promedio.
               </div>
+              {conversionLabel ? (
+                <div className="md:col-span-8 text-xs text-[var(--ui-muted)]">
+                  Unidad operativa sugerida: {conversionLabel}
+                </div>
+              ) : null}
             </div>
 
             {isLast ? (
@@ -350,4 +391,3 @@ export function EntriesItems({
     </div>
   );
 }
-

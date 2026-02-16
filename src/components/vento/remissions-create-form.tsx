@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { GuidedFormShell } from "@/components/inventory/forms/GuidedFormShell";
 import { StepHelp } from "@/components/inventory/forms/StepHelp";
 import { WizardFooter } from "@/components/inventory/forms/WizardFooter";
+import { type ProductUomProfile } from "@/lib/inventory/uom";
 import type { GuidedStep } from "@/lib/inventory/forms/types";
 
 import { RemissionsItems } from "./remissions-items";
@@ -33,6 +34,7 @@ type Props = {
   fromSiteOptions: SiteOption[];
   defaultFromSiteId: string;
   products: ProductOption[];
+  defaultUomProfiles?: ProductUomProfile[];
   areaOptions: AreaOption[];
 };
 
@@ -66,6 +68,7 @@ export function RemissionsCreateForm({
   fromSiteOptions,
   defaultFromSiteId,
   products,
+  defaultUomProfiles = [],
   areaOptions,
 }: Props) {
   const [activeStepId, setActiveStepId] = useState(STEPS[0].id);
@@ -165,7 +168,11 @@ export function RemissionsCreateForm({
               Agrega solo productos activos para esta sede y define cantidad real requerida.
             </p>
           </div>
-          <RemissionsItems products={products} areaOptions={areaOptions} />
+          <RemissionsItems
+            products={products}
+            areaOptions={areaOptions}
+            defaultUomProfiles={defaultUomProfiles}
+          />
         </section>
 
         <section className={activeStepId === "revision" ? "ui-panel space-y-4" : "hidden"}>

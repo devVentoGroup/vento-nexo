@@ -25,6 +25,24 @@ const HELP_CONTENT: Record<string, GuidedFieldHelp> = {
     example: "Stock en g, captura en kg.",
     impact: "Mejora usabilidad sin perder consistencia tecnica.",
   },
+  base_vs_operational_unit: {
+    meaning: "Separa la unidad de consumo/costo de la unidad practica de captura.",
+    when_to_use: "Configura unidad base para receta/costo y empaque operativo para entradas/salidas.",
+    example: "Queso: base=un(lonja), empaque=paquete (1 paquete = 10 un).",
+    impact: "Evita calculos manuales y mantiene costos precisos por unidad de consumo.",
+  },
+  operational_pack_profile: {
+    meaning: "Perfil de conversion por producto para operar en empaque.",
+    when_to_use: "Activalo cuando compras o mueves en caja/paquete pero consumes en unidad menor.",
+    example: "1 caja = 24 un, 1 paquete = 10 lonjas.",
+    impact: "Permite capturar '2 paquetes' y descontar automaticamente en unidad base.",
+  },
+  supplier_pack_conversion: {
+    meaning: "Relacion entre unidad de compra del proveedor y unidad base del inventario.",
+    when_to_use: "Define esta relacion en proveedor primario para precarga operativa.",
+    example: "Precio paquete 8,300 con 10 un por paquete -> costo base 830 por un.",
+    impact: "Mejora costo promedio y reduce errores de conversion en operacion.",
+  },
   track_inventory: {
     meaning: "Habilita control de existencias.",
     when_to_use: "Activado para insumos, preparaciones y productos con control de stock.",
@@ -45,4 +63,3 @@ export function getGuidedHelpSnapshot(fieldIds: string[]): Record<string, Guided
   }
   return result;
 }
-

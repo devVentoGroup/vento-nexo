@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { GuidedFormShell } from "@/components/inventory/forms/GuidedFormShell";
 import { StepHelp } from "@/components/inventory/forms/StepHelp";
 import { WizardFooter } from "@/components/inventory/forms/WizardFooter";
+import { type ProductUomProfile } from "@/lib/inventory/uom";
 import type { GuidedStep } from "@/lib/inventory/forms/types";
 
 import { TransfersItems } from "./transfers-items";
@@ -25,6 +26,7 @@ type LocOption = {
 type Props = {
   locations: LocOption[];
   products: ProductOption[];
+  defaultUomProfiles?: ProductUomProfile[];
   action: (formData: FormData) => void | Promise<void>;
 };
 
@@ -51,7 +53,7 @@ const STEPS: GuidedStep[] = [
   },
 ];
 
-export function TransfersForm({ locations, products, action }: Props) {
+export function TransfersForm({ locations, products, defaultUomProfiles = [], action }: Props) {
   const [activeStepId, setActiveStepId] = useState(STEPS[0].id);
   const [confirmed, setConfirmed] = useState(false);
   const [fromLocId, setFromLocId] = useState("");
@@ -139,7 +141,7 @@ export function TransfersForm({ locations, products, action }: Props) {
         <section className={activeStepId === "items" ? "ui-panel space-y-4" : "hidden"}>
           <div className="ui-h3">Paso 2. Items</div>
           <div className="ui-body-muted">Captura productos y cantidades que se moveran.</div>
-          <TransfersItems products={products} />
+          <TransfersItems products={products} defaultUomProfiles={defaultUomProfiles} />
           <StepHelp
             meaning="Cada fila representa un producto a trasladar."
             whenToUse="Agrega una fila por cada producto y cantidad."

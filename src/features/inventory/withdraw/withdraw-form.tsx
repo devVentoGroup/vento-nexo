@@ -7,6 +7,7 @@ import { GuidedFormShell } from "@/components/inventory/forms/GuidedFormShell";
 import { SearchableSingleSelect } from "@/components/inventory/forms/SearchableSingleSelect";
 import { StepHelp } from "@/components/inventory/forms/StepHelp";
 import { WizardFooter } from "@/components/inventory/forms/WizardFooter";
+import { normalizeUnitCode, type ProductUomProfile } from "@/lib/inventory/uom";
 import type { GuidedStep } from "@/lib/inventory/forms/types";
 
 type LocOption = { id: string; code: string | null; zone: string | null };
@@ -22,6 +23,7 @@ type Row = {
   productId: string;
   quantity: string;
   inputUnitCode: string;
+  inputUomProfileId: string;
   notes: string;
 };
 
@@ -29,6 +31,7 @@ type Props = {
   locations: LocOption[];
   defaultLocationId: string;
   products: ProductOption[];
+  defaultUomProfiles?: ProductUomProfile[];
   siteId: string;
   action: (formData: FormData) => void | Promise<void>;
 };
@@ -60,6 +63,7 @@ export function WithdrawForm({
   locations,
   defaultLocationId,
   products,
+  defaultUomProfiles = [],
   siteId,
   action,
 }: Props) {
@@ -67,13 +71,29 @@ export function WithdrawForm({
   const [activeStepId, setActiveStepId] = useState(STEPS[0].id);
   const [confirmed, setConfirmed] = useState(false);
   const [rows, setRows] = useState<Row[]>([
-    { id: 0, productId: "", quantity: "", inputUnitCode: "", notes: "" },
+    { id: 0, productId: "", quantity: "", inputUnitCode: "", inputUomProfileId: "", notes: "" },
   ]);
+  const defaultProfileByProduct = useMemo(
+    () =>
+      new Map(
+        defaultUomProfiles
+          .filter((p) => p.is_active && p.is_default)
+          .map((profile) => [profile.product_id, profile])
+      ),
+    [defaultUomProfiles]
+  );
 
   const addRow = () => {
     setRows((prev) => [
       ...prev,
-      { id: prev.length, productId: "", quantity: "", inputUnitCode: "", notes: "" },
+      {
+        id: prev.length,
+        productId: "",
+        quantity: "",
+        inputUnitCode: "",
+        inputUomProfileId: "",
+        notes: "",
+      },
     ]);
   };
 
@@ -192,6 +212,11 @@ export function WithdrawForm({
           <div className="space-y-3">
             {rows.map((row, idx) => {
               const product = products.find((p) => p.id === row.productId);
+              const stockUnitCode = normalizeUnitCode(product?.stock_unit_code ?? product?.unit ?? "");
+              const defaultProfile = row.productId ? defaultProfileByProduct.get(row.productId) ?? null : null;
+              const conversionLabel = defaultProfile
+                ? `${defaultProfile.qty_in_input_unit} ${defaultProfile.input_unit_code} = ${defaultProfile.qty_in_stock_unit} ${stockUnitCode || "un"}`
+                : "";
               const isLast = idx === rows.length - 1;
               return (
                 <div key={row.id} className="flex flex-wrap items-end gap-3 ui-panel-soft p-3">
@@ -202,14 +227,21 @@ export function WithdrawForm({
                       value={row.productId}
                       onValueChange={(next) => {
                         const selectedProduct = products.find((item) => item.id === next);
-                        const stockUnit = selectedProduct?.stock_unit_code ?? selectedProduct?.unit ?? "";
+                        const stockUnit = normalizeUnitCode(
+                          selectedProduct?.stock_unit_code ?? selectedProduct?.unit ?? ""
+                        );
+                        const nextProfile = defaultProfileByProduct.get(next) ?? null;
                         setRows((prev) =>
                           prev.map((current) =>
                             current.id === row.id
                               ? {
                                   ...current,
                                   productId: next,
-                                  inputUnitCode: stockUnit || current.inputUnitCode,
+                                  inputUnitCode:
+                                    normalizeUnitCode(nextProfile?.input_unit_code ?? "") ||
+                                    stockUnit ||
+                                    current.inputUnitCode,
+                                  inputUomProfileId: nextProfile?.id ?? "",
                                 }
                               : current
                           )
@@ -251,7 +283,16 @@ export function WithdrawForm({
                         setRows((prev) =>
                           prev.map((current) =>
                             current.id === row.id
-                              ? { ...current, inputUnitCode: event.target.value }
+                              ? {
+                                  ...current,
+                                  inputUnitCode: normalizeUnitCode(event.target.value),
+                                  inputUomProfileId:
+                                    defaultProfile &&
+                                    normalizeUnitCode(defaultProfile.input_unit_code) ===
+                                      normalizeUnitCode(event.target.value)
+                                      ? defaultProfile.id
+                                      : "",
+                                }
                               : current
                           )
                         )
@@ -261,9 +302,16 @@ export function WithdrawForm({
                     >
                       <option value="">-</option>
                       {(() => {
-                        const unitCode = product?.stock_unit_code ?? product?.unit ?? "";
+                        const unitCode = stockUnitCode;
                         return unitCode ? <option value={unitCode}>{unitCode}</option> : null;
                       })()}
+                      {defaultProfile &&
+                      normalizeUnitCode(defaultProfile.input_unit_code) !==
+                        normalizeUnitCode(stockUnitCode) ? (
+                        <option value={normalizeUnitCode(defaultProfile.input_unit_code)}>
+                          {normalizeUnitCode(defaultProfile.input_unit_code)} ({defaultProfile.label})
+                        </option>
+                      ) : null}
                     </select>
                   </label>
                   <label className="min-w-[120px] flex-1 flex-col gap-1 md:flex-initial">
@@ -299,6 +347,17 @@ export function WithdrawForm({
                     >
                       + Otro item
                     </button>
+                  ) : null}
+                  <input
+                    type="hidden"
+                    name="item_input_uom_profile_id"
+                    value={row.inputUomProfileId}
+                  />
+                  <input type="hidden" name="item_quantity_in_input" value={row.quantity} />
+                  {conversionLabel ? (
+                    <div className="w-full text-xs text-[var(--ui-muted)]">
+                      Conversion aplicada: {conversionLabel}
+                    </div>
                   ) : null}
                 </div>
               );

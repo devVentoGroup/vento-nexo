@@ -1,7 +1,9 @@
-"use client";
+﻿"use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
+
 import { SearchableSingleSelect } from "@/components/inventory/forms/SearchableSingleSelect";
+import { normalizeUnitCode, type ProductUomProfile } from "@/lib/inventory/uom";
 
 type Option = {
   id: string;
@@ -20,18 +22,37 @@ type Row = {
   productId: string;
   quantity: string;
   inputUnitCode: string;
+  inputUomProfileId: string;
   areaKind: string;
 };
 
 type Props = {
   products: Option[];
   areaOptions: AreaOption[];
+  defaultUomProfiles?: ProductUomProfile[];
 };
 
-export function RemissionsItems({ products, areaOptions }: Props) {
+export function RemissionsItems({ products, areaOptions, defaultUomProfiles = [] }: Props) {
   const [rows, setRows] = useState<Row[]>([
-    { id: 0, productId: "", quantity: "", inputUnitCode: "", areaKind: "" },
+    {
+      id: 0,
+      productId: "",
+      quantity: "",
+      inputUnitCode: "",
+      inputUomProfileId: "",
+      areaKind: "",
+    },
   ]);
+
+  const defaultProfileByProduct = useMemo(
+    () =>
+      new Map(
+        defaultUomProfiles
+          .filter((p) => p.is_active && p.is_default)
+          .map((profile) => [profile.product_id, profile])
+      ),
+    [defaultUomProfiles]
+  );
 
   const addRow = () => {
     setRows((prev) => [
@@ -41,6 +62,7 @@ export function RemissionsItems({ products, areaOptions }: Props) {
         productId: "",
         quantity: "",
         inputUnitCode: "",
+        inputUomProfileId: "",
         areaKind: "",
       },
     ]);
@@ -63,7 +85,13 @@ export function RemissionsItems({ products, areaOptions }: Props) {
       {rows.map((row, idx) => {
         const isLast = idx === rows.length - 1;
         const product = products.find((item) => item.id === row.productId);
-        const stockUnitCode = product?.stock_unit_code ?? product?.unit ?? "";
+        const stockUnitCode = normalizeUnitCode(product?.stock_unit_code ?? product?.unit ?? "");
+        const defaultProfile = row.productId ? defaultProfileByProduct.get(row.productId) ?? null : null;
+
+        const conversionLabel = defaultProfile
+          ? `${defaultProfile.qty_in_input_unit} ${defaultProfile.input_unit_code} = ${defaultProfile.qty_in_stock_unit} ${stockUnitCode || "un"}`
+          : "";
+
         return (
           <div key={row.id} className="space-y-3">
             <div className="ui-card grid gap-3 md:grid-cols-4">
@@ -72,15 +100,21 @@ export function RemissionsItems({ products, areaOptions }: Props) {
                 value={row.productId}
                 onValueChange={(nextProductId) => {
                   const nextProduct = products.find((item) => item.id === nextProductId);
-                  const nextStockUnitCode =
-                    nextProduct?.stock_unit_code ?? nextProduct?.unit ?? "";
+                  const nextStockUnitCode = normalizeUnitCode(
+                    nextProduct?.stock_unit_code ?? nextProduct?.unit ?? ""
+                  );
+                  const nextProfile = defaultProfileByProduct.get(nextProductId) ?? null;
                   setRows((prev) =>
                     prev.map((current) =>
                       current.id === row.id
                         ? {
                             ...current,
                             productId: nextProductId,
-                            inputUnitCode: nextStockUnitCode || current.inputUnitCode,
+                            inputUnitCode:
+                              normalizeUnitCode(nextProfile?.input_unit_code ?? "") ||
+                              nextStockUnitCode ||
+                              current.inputUnitCode,
+                            inputUomProfileId: nextProfile?.id ?? "",
                           }
                         : current
                     )
@@ -99,9 +133,7 @@ export function RemissionsItems({ products, areaOptions }: Props) {
                 onChange={(event) =>
                   setRows((prev) =>
                     prev.map((current) =>
-                      current.id === row.id
-                        ? { ...current, quantity: event.target.value }
-                        : current
+                      current.id === row.id ? { ...current, quantity: event.target.value } : current
                     )
                   )
                 }
@@ -115,7 +147,16 @@ export function RemissionsItems({ products, areaOptions }: Props) {
                   setRows((prev) =>
                     prev.map((current) =>
                       current.id === row.id
-                        ? { ...current, inputUnitCode: event.target.value }
+                        ? {
+                            ...current,
+                            inputUnitCode: normalizeUnitCode(event.target.value),
+                            inputUomProfileId:
+                              defaultProfile &&
+                              normalizeUnitCode(defaultProfile.input_unit_code) ===
+                                normalizeUnitCode(event.target.value)
+                                ? defaultProfile.id
+                                : "",
+                          }
                         : current
                     )
                   )
@@ -124,6 +165,12 @@ export function RemissionsItems({ products, areaOptions }: Props) {
               >
                 <option value="">Unidad</option>
                 {stockUnitCode ? <option value={stockUnitCode}>{stockUnitCode}</option> : null}
+                {defaultProfile &&
+                normalizeUnitCode(defaultProfile.input_unit_code) !== normalizeUnitCode(stockUnitCode) ? (
+                  <option value={normalizeUnitCode(defaultProfile.input_unit_code)}>
+                    {normalizeUnitCode(defaultProfile.input_unit_code)} ({defaultProfile.label})
+                  </option>
+                ) : null}
               </select>
 
               <div className="flex gap-2">
@@ -134,9 +181,7 @@ export function RemissionsItems({ products, areaOptions }: Props) {
                   onChange={(event) =>
                     setRows((prev) =>
                       prev.map((current) =>
-                        current.id === row.id
-                          ? { ...current, areaKind: event.target.value }
-                          : current
+                        current.id === row.id ? { ...current, areaKind: event.target.value } : current
                       )
                     )
                   }
@@ -158,6 +203,15 @@ export function RemissionsItems({ products, areaOptions }: Props) {
                   </button>
                 ) : null}
               </div>
+
+              <input type="hidden" name="item_input_uom_profile_id" value={row.inputUomProfileId} />
+              <input type="hidden" name="item_quantity_in_input" value={row.quantity} />
+
+              {conversionLabel ? (
+                <div className="md:col-span-4 text-xs text-[var(--ui-muted)]">
+                  Conversion aplicada: {conversionLabel}
+                </div>
+              ) : null}
             </div>
 
             {isLast ? (

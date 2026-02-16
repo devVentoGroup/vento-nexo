@@ -6,7 +6,12 @@ import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { WithdrawForm } from "@/features/inventory/withdraw/withdraw-form";
 import { PageHeader } from "@/components/vento/standard/page-header";
-import { normalizeUnitCode, roundQuantity } from "@/lib/inventory/uom";
+import {
+  convertByProductProfile,
+  normalizeUnitCode,
+  roundQuantity,
+  type ProductUomProfile,
+} from "@/lib/inventory/uom";
 
 export const dynamic = "force-dynamic";
 
@@ -58,6 +63,12 @@ async function submitWithdraw(formData: FormData) {
   const inputUnits = formData
     .getAll("item_input_unit_code")
     .map((v) => normalizeUnitCode(String(v).trim()));
+  const inputUomProfileIds = formData
+    .getAll("item_input_uom_profile_id")
+    .map((v) => String(v).trim());
+  const inputQuantities = formData
+    .getAll("item_quantity_in_input")
+    .map((v) => String(v).trim());
   const notes = formData.getAll("item_notes").map((v) => String(v).trim());
 
   const productIdsForLookup = Array.from(new Set(productIds.filter(Boolean)));
@@ -70,20 +81,65 @@ async function submitWithdraw(formData: FormData) {
   const productMap = new Map(
     ((productsData ?? []) as ProductRow[]).map((product) => [product.id, product])
   );
+  const requestedUomProfileIds = Array.from(new Set(inputUomProfileIds.filter(Boolean)));
+  const { data: uomProfilesData } = requestedUomProfileIds.length
+    ? await supabase
+        .from("product_uom_profiles")
+        .select(
+          "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source"
+        )
+        .in("id", requestedUomProfileIds)
+    : { data: [] as ProductUomProfile[] };
+  const uomProfileById = new Map(
+    ((uomProfilesData ?? []) as ProductUomProfile[]).map((profile) => [profile.id, profile])
+  );
 
-  const items = productIds
-    .map((productId, idx) => {
-      const product = productMap.get(productId);
-      const stockUnitCode = normalizeUnitCode(product?.stock_unit_code || product?.unit || "un");
-      return {
-        product_id: productId,
-        quantity: roundQuantity(parseNumber(quantities[idx] ?? "0")),
-        input_unit_code: normalizeUnitCode(inputUnits[idx] || stockUnitCode),
-        stock_unit_code: stockUnitCode,
-        note: notes[idx] || null,
-      };
-    })
-    .filter((item) => item.product_id && item.quantity > 0);
+  let items: Array<{
+    product_id: string;
+    quantity: number;
+    input_qty: number;
+    input_unit_code: string;
+    conversion_factor_to_stock: number;
+    stock_unit_code: string;
+    note: string | null;
+  }> = [];
+  try {
+    items = productIds
+      .map((productId, idx) => {
+        const product = productMap.get(productId);
+        const stockUnitCode = normalizeUnitCode(product?.stock_unit_code || product?.unit || "un");
+        const quantityInInput = roundQuantity(
+          parseNumber(inputQuantities[idx] ?? quantities[idx] ?? "0")
+        );
+        const inputUomProfileId = inputUomProfileIds[idx] || "";
+        const selectedProfile = inputUomProfileId
+          ? uomProfileById.get(inputUomProfileId) ?? null
+          : null;
+        const conversion = convertByProductProfile({
+          quantityInInput,
+          inputUnitCode: normalizeUnitCode(inputUnits[idx] || stockUnitCode),
+          stockUnitCode,
+          profile: selectedProfile,
+        });
+        return {
+          product_id: productId,
+          quantity: conversion.quantityInStock,
+          input_qty: quantityInInput,
+          input_unit_code: normalizeUnitCode(inputUnits[idx] || stockUnitCode),
+          conversion_factor_to_stock: conversion.factorToStock,
+          stock_unit_code: stockUnitCode,
+          note: notes[idx] || null,
+        };
+      })
+      .filter((item) => item.product_id && item.quantity > 0);
+  } catch (error) {
+    redirect(
+      "/inventory/withdraw?error=" +
+        encodeURIComponent(
+          error instanceof Error ? error.message : "Error en conversion de unidades."
+        )
+    );
+  }
 
   if (items.length === 0) {
     redirect("/inventory/withdraw?error=" + encodeURIComponent("Agrega al menos un ítem con cantidad > 0."));
@@ -114,7 +170,7 @@ async function submitWithdraw(formData: FormData) {
       redirect(
         "/inventory/withdraw?error=" +
           encodeURIComponent(
-            `Cantidad a retirar (${item.quantity}) mayor que disponible en LOC (${availableAtLoc}). Ajusta o usa otro LOC.`
+            `No alcanza stock: solicitaste ${item.input_qty} ${item.input_unit_code} (${item.quantity} ${item.stock_unit_code}), disponibles ${availableAtLoc} ${item.stock_unit_code}.`
           )
       );
     }
@@ -130,9 +186,9 @@ async function submitWithdraw(formData: FormData) {
       product_id: item.product_id,
       movement_type: MOVEMENT_TYPE,
       quantity: -item.quantity,
-      input_qty: item.quantity,
+      input_qty: item.input_qty,
       input_unit_code: item.input_unit_code,
-      conversion_factor_to_stock: 1,
+      conversion_factor_to_stock: item.conversion_factor_to_stock,
       stock_unit_code: item.stock_unit_code,
       note,
       created_by: user.id,
@@ -285,6 +341,18 @@ export default async function WithdrawPage({
       .limit(400);
     productRows = (fallback ?? []) as unknown as ProductRow[];
   }
+  const productIds = productRows.map((row) => row.id);
+  const { data: uomProfilesDataForPage } = productIds.length
+    ? await supabase
+        .from("product_uom_profiles")
+        .select(
+          "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source"
+        )
+        .in("product_id", productIds)
+        .eq("is_default", true)
+        .eq("is_active", true)
+    : { data: [] as ProductUomProfile[] };
+  const defaultUomProfiles = (uomProfilesDataForPage ?? []) as ProductUomProfile[];
 
   return (
     <div className="w-full">
@@ -313,6 +381,7 @@ export default async function WithdrawPage({
           locations={locations}
           defaultLocationId={defaultLocationId}
           products={productRows}
+          defaultUomProfiles={defaultUomProfiles}
           siteId={siteId}
           action={submitWithdraw}
         />

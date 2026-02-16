@@ -8,7 +8,12 @@ import { createClient } from "@/lib/supabase/server";
 import { RemissionsCreateForm } from "@/components/vento/remissions-create-form";
 import { PageHeader } from "@/components/vento/standard/page-header";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
-import { normalizeUnitCode, roundQuantity } from "@/lib/inventory/uom";
+import {
+  convertByProductProfile,
+  normalizeUnitCode,
+  roundQuantity,
+  type ProductUomProfile,
+} from "@/lib/inventory/uom";
 
 export const dynamic = "force-dynamic";
 
@@ -129,6 +134,12 @@ async function createRemission(formData: FormData) {
   const inputUnits = formData
     .getAll("item_input_unit_code")
     .map((v) => normalizeUnitCode(String(v).trim()));
+  const inputUomProfileIds = formData
+    .getAll("item_input_uom_profile_id")
+    .map((v) => String(v).trim());
+  const inputQuantities = formData
+    .getAll("item_quantity_in_input")
+    .map((v) => String(v).trim());
   const areaKinds = formData.getAll("item_area_kind").map((v) => String(v).trim());
 
   const productIdsForLookup = Array.from(new Set(productIds.filter(Boolean)));
@@ -141,21 +152,67 @@ async function createRemission(formData: FormData) {
   const productMap = new Map(
     ((productsData ?? []) as ProductRow[]).map((product) => [product.id, product])
   );
+  const requestedUomProfileIds = Array.from(new Set(inputUomProfileIds.filter(Boolean)));
+  const { data: uomProfilesData } = requestedUomProfileIds.length
+    ? await supabase
+        .from("product_uom_profiles")
+        .select(
+          "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source"
+        )
+        .in("id", requestedUomProfileIds)
+    : { data: [] as ProductUomProfile[] };
+  const uomProfileById = new Map(
+    ((uomProfilesData ?? []) as ProductUomProfile[]).map((profile) => [profile.id, profile])
+  );
 
-  const items = productIds
-    .map((productId, idx) => {
-      const product = productMap.get(productId);
-      const stockUnitCode = normalizeUnitCode(product?.stock_unit_code || product?.unit || "un");
-      return {
-        product_id: productId,
-        quantity: roundQuantity(parseNumber(quantities[idx] ?? "0")),
-        unit: stockUnitCode,
-        input_unit_code: normalizeUnitCode(inputUnits[idx] || stockUnitCode),
-        stock_unit_code: stockUnitCode,
-        production_area_kind: areaKinds[idx] || null,
-      };
-    })
-    .filter((item) => item.product_id && item.quantity > 0);
+  let items: Array<{
+    product_id: string;
+    quantity: number;
+    input_qty: number;
+    unit: string;
+    input_unit_code: string;
+    conversion_factor_to_stock: number;
+    stock_unit_code: string;
+    production_area_kind: string | null;
+  }> = [];
+  try {
+    items = productIds
+      .map((productId, idx) => {
+        const product = productMap.get(productId);
+        const stockUnitCode = normalizeUnitCode(product?.stock_unit_code || product?.unit || "un");
+        const quantityInInput = roundQuantity(
+          parseNumber(inputQuantities[idx] ?? quantities[idx] ?? "0")
+        );
+        const inputUomProfileId = inputUomProfileIds[idx] || "";
+        const selectedProfile = inputUomProfileId
+          ? uomProfileById.get(inputUomProfileId) ?? null
+          : null;
+        const conversion = convertByProductProfile({
+          quantityInInput,
+          inputUnitCode: normalizeUnitCode(inputUnits[idx] || stockUnitCode),
+          stockUnitCode,
+          profile: selectedProfile,
+        });
+        return {
+          product_id: productId,
+          quantity: conversion.quantityInStock,
+          input_qty: quantityInInput,
+          unit: stockUnitCode,
+          input_unit_code: normalizeUnitCode(inputUnits[idx] || stockUnitCode),
+          conversion_factor_to_stock: conversion.factorToStock,
+          stock_unit_code: stockUnitCode,
+          production_area_kind: areaKinds[idx] || null,
+        };
+      })
+      .filter((item) => item.product_id && item.quantity > 0);
+  } catch (error) {
+    redirect(
+      "/inventory/remissions?error=" +
+        encodeURIComponent(
+          error instanceof Error ? error.message : "Error en conversion de unidades."
+        )
+    );
+  }
 
   if (!toSiteId || !fromSiteId) {
     redirect("/inventory/remissions?error=" + encodeURIComponent("Debes definir origen y destino."));
@@ -224,9 +281,9 @@ async function createRemission(formData: FormData) {
     product_id: item.product_id,
     quantity: item.quantity,
     unit: item.unit,
-    input_qty: item.quantity,
+    input_qty: item.input_qty,
     input_unit_code: item.input_unit_code,
-    conversion_factor_to_stock: 1,
+    conversion_factor_to_stock: item.conversion_factor_to_stock,
     stock_unit_code: item.stock_unit_code,
     production_area_kind: item.production_area_kind,
   }));
@@ -461,6 +518,18 @@ export default async function RemissionsPage({
     const { data: fallbackProducts } = await fallbackQuery;
     productRows = (fallbackProducts ?? []) as unknown as ProductRow[];
   }
+  const productIds = productRows.map((row) => row.id);
+  const { data: uomProfilesData } = productIds.length
+    ? await supabase
+        .from("product_uom_profiles")
+        .select(
+          "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source"
+        )
+        .in("product_id", productIds)
+        .eq("is_default", true)
+        .eq("is_active", true)
+    : { data: [] as ProductUomProfile[] };
+  const defaultUomProfiles = (uomProfilesData ?? []) as ProductUomProfile[];
 
   return (
     <div className="w-full">
@@ -572,6 +641,7 @@ export default async function RemissionsPage({
               }))}
               defaultFromSiteId={selectedFromSiteId}
               products={productRows}
+              defaultUomProfiles={defaultUomProfiles}
               areaOptions={areaOptions}
             />
           </div>

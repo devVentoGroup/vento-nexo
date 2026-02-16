@@ -15,6 +15,7 @@ export type SupplierLine = {
   lead_time_days?: number;
   min_order_qty?: number;
   is_primary: boolean;
+  use_in_operations?: boolean;
   _delete?: boolean;
 };
 
@@ -54,6 +55,7 @@ function buildEmptyLine(stockUnitCode?: string): SupplierLine {
     lead_time_days: undefined,
     min_order_qty: undefined,
     is_primary: false,
+    use_in_operations: false,
   };
 }
 
@@ -150,9 +152,9 @@ export function ProductSuppliersEditor({
     setLines((prev) =>
       prev.map((line, i) =>
         i === index
-          ? { ...line, is_primary: nextValue }
+          ? { ...line, is_primary: nextValue, use_in_operations: nextValue ? line.use_in_operations : false }
           : nextValue
-            ? { ...line, is_primary: false }
+            ? { ...line, is_primary: false, use_in_operations: false }
             : line
       )
     );
@@ -251,6 +253,20 @@ export function ProductSuppliersEditor({
                         onChange={(event) => setPrimary(realIndex, event.target.checked)}
                       />
                       Primario
+                    </label>
+                    <label
+                      className="flex items-center gap-1 text-xs text-[var(--ui-muted)]"
+                      title="Permite usar este empaque en remisiones, traslados y retiros sin hacer conversion manual."
+                    >
+                      <input
+                        type="checkbox"
+                        checked={Boolean(line.use_in_operations)}
+                        disabled={!line.is_primary}
+                        onChange={(event) =>
+                          updateLine(realIndex, { use_in_operations: event.target.checked })
+                        }
+                      />
+                      Usar empaque en operacion
                     </label>
                     <button
                       type="button"

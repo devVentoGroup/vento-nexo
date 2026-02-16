@@ -102,6 +102,18 @@ type SupplierRow = {
   is_primary: boolean;
 };
 
+type ProductUomProfileRow = {
+  id: string;
+  product_id: string;
+  label: string;
+  input_unit_code: string;
+  qty_in_input_unit: number;
+  qty_in_stock_unit: number;
+  is_default: boolean;
+  is_active: boolean;
+  source: "manual" | "supplier_primary";
+};
+
 type SearchParams = {
   ok?: string;
   error?: string;
@@ -361,6 +373,14 @@ async function updateProduct(formData: FormData) {
   if (profileErr) redirectWithError(profileErr.message);
 
   let autoCostFromPrimary: number | null = null;
+  let operationalUomFromSupplier:
+    | {
+        label: string;
+        inputUnitCode: string;
+        qtyInInputUnit: number;
+        qtyInStockUnit: number;
+      }
+    | null = null;
   const supplierLinesRaw = formData.get("supplier_lines");
   if (typeof supplierLinesRaw === "string" && supplierLinesRaw) {
     try {
@@ -377,6 +397,7 @@ async function updateProduct(formData: FormData) {
         lead_time_days?: number;
         min_order_qty?: number;
         is_primary?: boolean;
+        use_in_operations?: boolean;
         _delete?: boolean;
       }>;
       await supabase.from("product_suppliers").delete().eq("product_id", productId);
@@ -421,6 +442,31 @@ async function updateProduct(formData: FormData) {
             // Keep previous/manual cost when conversion is not valid
           }
         }
+        if (
+          Boolean(line.is_primary) &&
+          Boolean(line.use_in_operations) &&
+          packQty > 0 &&
+          packUnitCode
+        ) {
+          try {
+            const { quantity: qtyInStockUnit } = convertQuantity({
+              quantity: packQty,
+              fromUnitCode: packUnitCode,
+              toUnitCode: stockUnitCode,
+              unitMap,
+            });
+            if (qtyInStockUnit > 0) {
+              operationalUomFromSupplier = {
+                label: String(line.purchase_unit || "Empaque"),
+                inputUnitCode: packUnitCode,
+                qtyInInputUnit: 1,
+                qtyInStockUnit,
+              };
+            }
+          } catch {
+            // Keep previous profile if conversion is invalid.
+          }
+        }
         const { error: supplierErr } = await supabase.from("product_suppliers").insert({
           product_id: productId,
           supplier_id: line.supplier_id,
@@ -440,6 +486,30 @@ async function updateProduct(formData: FormData) {
     } catch {
       // ignore invalid JSON
     }
+  }
+
+  if (operationalUomFromSupplier) {
+    const now = new Date().toISOString();
+    await supabase
+      .from("product_uom_profiles")
+      .update({
+        is_default: false,
+        updated_at: now,
+      })
+      .eq("product_id", productId)
+      .eq("is_default", true);
+
+    await supabase.from("product_uom_profiles").insert({
+      product_id: productId,
+      label: operationalUomFromSupplier.label,
+      input_unit_code: operationalUomFromSupplier.inputUnitCode,
+      qty_in_input_unit: operationalUomFromSupplier.qtyInInputUnit,
+      qty_in_stock_unit: operationalUomFromSupplier.qtyInStockUnit,
+      is_default: true,
+      is_active: true,
+      source: "supplier_primary",
+      updated_at: now,
+    });
   }
 
   if (costingMode === "auto_primary_supplier" && manualCost == null && autoCostFromPrimary != null) {
@@ -633,6 +703,14 @@ export default async function ProductCatalogDetailPage({
     .eq("product_id", id)
     .order("is_primary", { ascending: false });
   const supplierRows = (supplierLinks ?? []) as SupplierRow[];
+  const { data: uomProfileData } = await supabase
+    .from("product_uom_profiles")
+    .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source")
+    .eq("product_id", id)
+    .eq("is_active", true)
+    .eq("is_default", true)
+    .limit(1);
+  const defaultOperationalUom = ((uomProfileData ?? []) as ProductUomProfileRow[])[0] ?? null;
 
   const { data: suppliersData } = await supabase.from("suppliers").select("id,name").eq("is_active", true).order("name");
   const suppliersList = (suppliersData ?? []) as { id: string; name: string | null }[];
@@ -771,6 +849,11 @@ export default async function ProductCatalogDetailPage({
     lead_time_days: r.lead_time_days ?? undefined,
     min_order_qty: r.min_order_qty ?? undefined,
     is_primary: Boolean(r.is_primary),
+    use_in_operations:
+      Boolean(r.is_primary) &&
+      Boolean(defaultOperationalUom) &&
+      normalizeUnitCode(defaultOperationalUom.input_unit_code) ===
+        normalizeUnitCode(r.purchase_pack_unit_code ?? stockUnitCode),
   }));
 
   return (
@@ -1003,6 +1086,20 @@ export default async function ProductCatalogDetailPage({
               <p className="mt-1">Unidad base: donde se guarda TODO el stock y todos los movimientos.</p>
               <p>Unidad operativa: sugerencia para formularios; debe ser de la misma familia.</p>
             </div>
+            {defaultOperationalUom ? (
+              <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
+                <p>
+                  <strong className="text-[var(--ui-text)]">Unidad base (consumo y costo):</strong>{" "}
+                  {stockUnitCode}
+                </p>
+                <p>
+                  <strong className="text-[var(--ui-text)]">Empaque operativo:</strong>{" "}
+                  {defaultOperationalUom.label} ({defaultOperationalUom.qty_in_input_unit}{" "}
+                  {defaultOperationalUom.input_unit_code} ={" "}
+                  {defaultOperationalUom.qty_in_stock_unit} {stockUnitCode})
+                </p>
+              </div>
+            ) : null}
 
             <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
               <label className="flex flex-col gap-1">

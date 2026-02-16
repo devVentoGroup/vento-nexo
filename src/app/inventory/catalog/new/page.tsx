@@ -319,6 +319,14 @@ async function createProduct(formData: FormData) {
 
   // Suppliers
   let autoCostFromPrimary: number | null = null;
+  let operationalUomFromSupplier:
+    | {
+        label: string;
+        inputUnitCode: string;
+        qtyInInputUnit: number;
+        qtyInStockUnit: number;
+      }
+    | null = null;
   if (config.hasSuppliers) {
     const supplierRaw = formData.get("supplier_lines");
     if (typeof supplierRaw === "string" && supplierRaw) {
@@ -367,6 +375,32 @@ async function createProduct(formData: FormData) {
             }
           }
 
+          if (
+            Boolean(line.is_primary) &&
+            Boolean(line.use_in_operations) &&
+            packQty > 0 &&
+            packUnitCode
+          ) {
+            try {
+              const { quantity: qtyInStockUnit } = convertQuantity({
+                quantity: packQty,
+                fromUnitCode: packUnitCode,
+                toUnitCode: stockUnitCode,
+                unitMap,
+              });
+              if (qtyInStockUnit > 0) {
+                operationalUomFromSupplier = {
+                  label: String(line.purchase_unit || "Empaque"),
+                  inputUnitCode: packUnitCode,
+                  qtyInInputUnit: 1,
+                  qtyInStockUnit,
+                };
+              }
+            } catch {
+              // keep without operational profile when conversion is invalid
+            }
+          }
+
           await supabase.from("product_suppliers").insert({
             product_id: productId,
             supplier_id: line.supplier_id as string,
@@ -384,6 +418,28 @@ async function createProduct(formData: FormData) {
         }
       } catch { /* skip */ }
     }
+  }
+
+  if (operationalUomFromSupplier) {
+    await supabase
+      .from("product_uom_profiles")
+      .update({
+        is_default: false,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("product_id", productId)
+      .eq("is_default", true);
+
+    await supabase.from("product_uom_profiles").insert({
+      product_id: productId,
+      label: operationalUomFromSupplier.label,
+      input_unit_code: operationalUomFromSupplier.inputUnitCode,
+      qty_in_input_unit: operationalUomFromSupplier.qtyInInputUnit,
+      qty_in_stock_unit: operationalUomFromSupplier.qtyInStockUnit,
+      is_default: true,
+      is_active: true,
+      source: "supplier_primary",
+    });
   }
 
   if (costingMode === "auto_primary_supplier" && explicitCost == null && autoCostFromPrimary != null) {

@@ -10,6 +10,7 @@ import {
   createUnitMap,
   normalizeUnitCode,
   roundQuantity,
+  type ProductUomProfile,
   type InventoryUnit,
 } from "@/lib/inventory/uom";
 import {
@@ -600,6 +601,18 @@ export default async function EntriesPage({
       .limit(400);
     productRows = (fallbackProducts ?? []) as unknown as ProductRow[];
   }
+  const productIds = productRows.map((row) => row.id);
+  const { data: uomProfilesData } = productIds.length
+    ? await supabase
+        .from("product_uom_profiles")
+        .select(
+          "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source"
+        )
+        .in("product_id", productIds)
+        .eq("is_default", true)
+        .eq("is_active", true)
+    : { data: [] as ProductUomProfile[] };
+  const defaultUomProfiles = (uomProfilesData ?? []) as ProductUomProfile[];
 
   const { data: unitsData } = await supabase
     .from("inventory_units")
@@ -746,6 +759,7 @@ export default async function EntriesPage({
         locations={(locations ?? []) as LocRow[]}
         defaultLocationId={pickDefaultLocationId((locations ?? []) as LocRow[])}
         suppliers={supplierRows}
+        defaultUomProfiles={defaultUomProfiles}
         defaultSupplierId={prefillSupplierId || undefined}
         defaultInvoiceNumber={prefillInvoiceNumber || undefined}
         defaultNotes={prefillNotes || undefined}

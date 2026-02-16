@@ -5,6 +5,7 @@ import { useState } from "react";
 import { GuidedFormShell } from "@/components/inventory/forms/GuidedFormShell";
 import { StepHelp } from "@/components/inventory/forms/StepHelp";
 import { WizardFooter } from "@/components/inventory/forms/WizardFooter";
+import { type ProductUomProfile } from "@/lib/inventory/uom";
 import type { GuidedStep } from "@/lib/inventory/forms/types";
 
 import { EntriesItems } from "./entries-items";
@@ -39,6 +40,7 @@ type Props = {
   units: UnitOption[];
   locations: LocationOption[];
   suppliers: SupplierOption[];
+  defaultUomProfiles?: ProductUomProfile[];
   defaultLocationId?: string;
   defaultSupplierId?: string;
   defaultInvoiceNumber?: string;
@@ -86,6 +88,7 @@ export function EntriesForm({
   units,
   locations,
   suppliers,
+  defaultUomProfiles = [],
   defaultLocationId,
   defaultSupplierId,
   defaultInvoiceNumber,
@@ -189,6 +192,7 @@ export function EntriesForm({
             units={units}
             locations={locations}
             defaultLocationId={defaultLocationId}
+            defaultUomProfiles={defaultUomProfiles}
             initialRows={initialRows}
           />
           <StepHelp
