@@ -1,9 +1,16 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 import { SearchableSingleSelect } from "@/components/inventory/forms/SearchableSingleSelect";
-import { normalizeUnitCode, type ProductUomProfile } from "@/lib/inventory/uom";
+import { computeAutoCostFromPrimarySupplier } from "@/lib/inventory/costing";
+import {
+  convertQuantity,
+  createUnitMap,
+  normalizeUnitCode,
+  roundQuantity,
+  type ProductUomProfile,
+} from "@/lib/inventory/uom";
 
 type ProductOption = {
   id: string;
@@ -16,6 +23,8 @@ type ProductOption = {
 type UnitOption = {
   code: string;
   name: string;
+  family?: "volume" | "mass" | "count";
+  factor_to_base?: number;
 };
 
 type LocationOption = {
@@ -41,9 +50,20 @@ type Props = {
   products: ProductOption[];
   units: UnitOption[];
   locations: LocationOption[];
+  selectedSupplierId?: string;
+  supplierCostRows?: SupplierCostRow[];
   defaultLocationId?: string;
   defaultUomProfiles?: ProductUomProfile[];
   initialRows?: InitialRow[];
+};
+
+type SupplierCostRow = {
+  product_id: string;
+  supplier_id: string;
+  is_primary: boolean | null;
+  purchase_pack_qty: number | null;
+  purchase_pack_unit_code: string | null;
+  purchase_price: number | null;
 };
 
 type Row = {
@@ -56,7 +76,7 @@ type Row = {
   inputUnitCost: string;
   purchaseOrderItemId: string;
   inputUomProfileId: string;
-  costSource: "manual" | "po_prefill" | "fallback_product_cost";
+  costSource: "manual" | "po_prefill" | "fallback_product_cost" | "supplier_prefill";
   notes: string;
 };
 
@@ -64,6 +84,8 @@ export function EntriesItems({
   products,
   units,
   locations,
+  selectedSupplierId = "",
+  supplierCostRows = [],
   defaultLocationId,
   defaultUomProfiles = [],
   initialRows = [],
@@ -167,6 +189,83 @@ export function EntriesItems({
       ),
     [defaultUomProfiles]
   );
+  const supplierCostsByProduct = useMemo(() => {
+    const map = new Map<string, SupplierCostRow[]>();
+    for (const row of supplierCostRows) {
+      if (!row.product_id) continue;
+      const current = map.get(row.product_id) ?? [];
+      current.push(row);
+      map.set(row.product_id, current);
+    }
+    return map;
+  }, [supplierCostRows]);
+  const unitMap = useMemo(
+    () =>
+      createUnitMap(
+        units.map((unit) => ({
+          code: unit.code,
+          name: unit.name,
+          family: unit.family ?? "count",
+          factor_to_base: Number(unit.factor_to_base ?? 1),
+          symbol: null,
+          display_decimals: null,
+          is_active: true,
+        }))
+      ),
+    [units]
+  );
+
+  const resolveSupplierSuggestedInputCost = useCallback((params: {
+    productId: string;
+    stockUnitCode: string;
+    inputUnitCode: string;
+  }): number | null => {
+    const productSupplierRows = supplierCostsByProduct.get(params.productId) ?? [];
+    if (!productSupplierRows.length) return null;
+
+    const normalizedSelectedSupplierId = String(selectedSupplierId).trim();
+    const isRowValid = (row: SupplierCostRow) => {
+      const packQty = Number(row.purchase_pack_qty ?? 0);
+      const packPrice = Number(row.purchase_price ?? 0);
+      return (
+        Boolean(normalizeUnitCode(row.purchase_pack_unit_code)) &&
+        Number.isFinite(packQty) &&
+        packQty > 0 &&
+        Number.isFinite(packPrice) &&
+        packPrice > 0
+      );
+    };
+
+    const selectedSupplierRow =
+      normalizedSelectedSupplierId && normalizedSelectedSupplierId !== "__new__"
+        ? productSupplierRows.find(
+            (row) => row.supplier_id === normalizedSelectedSupplierId && isRowValid(row)
+          ) ?? null
+        : null;
+    const primaryRow =
+      productSupplierRows.find((row) => Boolean(row.is_primary) && isRowValid(row)) ?? null;
+    const chosenRow = selectedSupplierRow ?? primaryRow;
+    if (!chosenRow) return null;
+
+    try {
+      const stockUnitCost = computeAutoCostFromPrimarySupplier({
+        packPrice: Number(chosenRow.purchase_price ?? 0),
+        packQty: Number(chosenRow.purchase_pack_qty ?? 0),
+        packUnitCode: normalizeUnitCode(chosenRow.purchase_pack_unit_code),
+        stockUnitCode: normalizeUnitCode(params.stockUnitCode),
+        unitMap,
+      });
+      const converted = convertQuantity({
+        quantity: 1,
+        fromUnitCode: normalizeUnitCode(params.inputUnitCode),
+        toUnitCode: normalizeUnitCode(params.stockUnitCode),
+        unitMap,
+      });
+      return roundQuantity(stockUnitCost * converted.quantity, 6);
+    } catch {
+      return null;
+    }
+  }, [selectedSupplierId, supplierCostsByProduct, unitMap]);
 
   return (
     <div className="space-y-4">
@@ -187,6 +286,15 @@ export function EntriesItems({
                   const product = products.find((p) => p.id === next);
                   const stockUnit = product?.stock_unit_code ?? product?.unit ?? "";
                   const defaultCost = product?.default_unit_cost;
+                  const defaultInputUnitCode =
+                    normalizeUnitCode(defaultProfileByProduct.get(next)?.input_unit_code ?? "") ||
+                    normalizeUnitCode(stockUnit) ||
+                    "";
+                  const supplierSuggestedCost = resolveSupplierSuggestedInputCost({
+                    productId: next,
+                    stockUnitCode: normalizeUnitCode(stockUnit) || defaultInputUnitCode,
+                    inputUnitCode: defaultInputUnitCode || normalizeUnitCode(stockUnit),
+                  });
                   setRows((prev) =>
                     prev.map((current) =>
                       current.id !== row.id
@@ -194,21 +302,22 @@ export function EntriesItems({
                         : {
                             ...current,
                             productId: next,
-                            inputUnitCode:
-                              normalizeUnitCode(defaultProfileByProduct.get(next)?.input_unit_code ?? "") ||
-                              stockUnit ||
-                              current.inputUnitCode,
+                            inputUnitCode: defaultInputUnitCode || current.inputUnitCode,
                             inputUomProfileId: defaultProfileByProduct.get(next)?.id ?? "",
                             inputUnitCost:
-                              current.purchaseOrderItemId || current.inputUnitCost
+                              current.purchaseOrderItemId || current.costSource === "manual"
                                 ? current.inputUnitCost
-                                : defaultCost != null
-                                  ? String(Number(defaultCost))
-                                  : "",
+                                : supplierSuggestedCost != null
+                                  ? String(Number(supplierSuggestedCost))
+                                  : defaultCost != null
+                                    ? String(Number(defaultCost))
+                                    : "",
                             costSource:
-                              current.purchaseOrderItemId || current.inputUnitCost
+                              current.purchaseOrderItemId || current.costSource === "manual"
                                 ? current.costSource
-                                : "fallback_product_cost",
+                                : supplierSuggestedCost != null
+                                  ? "supplier_prefill"
+                                  : "fallback_product_cost",
                           }
                     )
                   );
@@ -359,7 +468,9 @@ export function EntriesItems({
                   "-"}
               </div>
               <div className="md:col-span-8 text-xs text-[var(--ui-muted)]">
-                Si dejas costo vacio, se usa el costo actual del producto para el promedio.
+                {row.costSource === "supplier_prefill"
+                  ? "Costo sugerido desde proveedor para esta linea."
+                  : "Si dejas costo vacio, se intenta proveedor y luego costo actual del producto."}
               </div>
               {conversionLabel ? (
                 <div className="md:col-span-8 text-xs text-[var(--ui-muted)]">

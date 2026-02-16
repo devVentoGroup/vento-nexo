@@ -7,6 +7,7 @@ import { PageHeader } from "@/components/vento/standard/page-header";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { getCategoryDomainOptions } from "@/lib/constants";
+import { getAutoCostReadinessReason } from "@/lib/inventory/costing";
 import { createClient } from "@/lib/supabase/server";
 import {
   categoryKindFromCatalogTab,
@@ -20,6 +21,7 @@ import {
   shouldShowCategoryDomain,
   type InventoryCategoryRow,
 } from "@/lib/inventory/categories";
+import { createUnitMap, normalizeUnitCode, type InventoryUnit } from "@/lib/inventory/uom";
 
 export const dynamic = "force-dynamic";
 
@@ -53,12 +55,14 @@ type ProductRow = {
   name: string;
   sku: string | null;
   unit: string | null;
+  stock_unit_code: string | null;
   product_type: string;
   category_id: string | null;
   is_active: boolean | null;
   product_inventory_profiles?: {
     track_inventory: boolean;
     inventory_kind: string;
+    costing_mode: "auto_primary_supplier" | "manual" | null;
   } | null;
 };
 
@@ -66,6 +70,16 @@ type SiteRow = {
   id: string;
   name: string | null;
 };
+
+type ProductSupplierCostRow = {
+  product_id: string;
+  is_primary: boolean | null;
+  purchase_pack_qty: number | null;
+  purchase_pack_unit_code: string | null;
+  purchase_price: number | null;
+};
+
+type UnitRow = InventoryUnit;
 
 const TABLE_ACTION_BUTTON_CLASS =
   "ui-btn ui-btn--ghost ui-btn--sm min-w-[104px] justify-center shrink-0";
@@ -361,7 +375,7 @@ export default async function InventoryCatalogPage({
     let productsQuery = supabase
       .from("products")
       .select(
-        "id,name,sku,unit,product_type,category_id,is_active,product_inventory_profiles(track_inventory,inventory_kind)"
+        "id,name,sku,unit,stock_unit_code,product_type,category_id,is_active,product_inventory_profiles(track_inventory,inventory_kind,costing_mode)"
       )
       .order("name", { ascending: true })
       .limit(1200);
@@ -391,6 +405,40 @@ export default async function InventoryCatalogPage({
         (product) => product.product_inventory_profiles?.inventory_kind !== "asset"
       );
     }
+  }
+
+  const productIds = productRows.map((product) => product.id);
+  const [{ data: unitsData }, { data: supplierCostData }] = await Promise.all([
+    supabase
+      .from("inventory_units")
+      .select("code,name,family,factor_to_base,symbol,display_decimals,is_active")
+      .eq("is_active", true)
+      .limit(500),
+    productIds.length
+      ? supabase
+          .from("product_suppliers")
+          .select(
+            "product_id,is_primary,purchase_pack_qty,purchase_pack_unit_code,purchase_price"
+          )
+          .in("product_id", productIds)
+      : Promise.resolve({ data: [] as ProductSupplierCostRow[] }),
+  ]);
+  const unitMap = createUnitMap((unitsData ?? []) as UnitRow[]);
+  const primarySupplierByProduct = new Map<string, ProductSupplierCostRow>();
+  for (const row of (supplierCostData ?? []) as ProductSupplierCostRow[]) {
+    if (!row.product_id || !row.is_primary || primarySupplierByProduct.has(row.product_id)) continue;
+    primarySupplierByProduct.set(row.product_id, row);
+  }
+  const autoCostReasonByProduct = new Map<string, string | null>();
+  for (const product of productRows) {
+    const profile = product.product_inventory_profiles;
+    const reason = getAutoCostReadinessReason({
+      costingMode: profile?.costing_mode ?? "manual",
+      stockUnitCode: normalizeUnitCode(product.stock_unit_code || product.unit || ""),
+      primarySupplier: primarySupplierByProduct.get(product.id) ?? null,
+      unitMap,
+    });
+    autoCostReasonByProduct.set(product.id, reason);
   }
 
   const buildUrl = (newTab?: TabValue) => {
@@ -560,6 +608,7 @@ export default async function InventoryCatalogPage({
                 <th className="py-2 pr-4">Tipo</th>
                 <th className="py-2 pr-4">Inventario</th>
                 <th className="py-2 pr-4">Unidad</th>
+                <th className="py-2 pr-4">Auto-costo</th>
                 <th className="py-2 pr-4">Estado</th>
                 <th className="py-2 pr-4 w-[340px]">Acciones</th>
               </tr>
@@ -568,6 +617,8 @@ export default async function InventoryCatalogPage({
               {productRows.map((product) => {
                 const inventoryProfile = product.product_inventory_profiles;
                 const inventoryLabel = inventoryProfile?.inventory_kind ?? "unclassified";
+                const autoCostMode = inventoryProfile?.costing_mode ?? "auto_primary_supplier";
+                const autoCostReason = autoCostReasonByProduct.get(product.id) ?? null;
                 return (
                   <tr key={product.id} className="border-t border-zinc-200/60">
                     <td className="py-3 pr-4">{product.name}</td>
@@ -576,6 +627,18 @@ export default async function InventoryCatalogPage({
                     <td className="py-3 pr-4">{product.product_type}</td>
                     <td className="py-3 pr-4">{inventoryLabel}</td>
                     <td className="py-3 pr-4">{product.unit ?? "-"}</td>
+                    <td className="py-3 pr-4">
+                      {autoCostMode === "manual" ? (
+                        <span className="ui-chip">Manual</span>
+                      ) : autoCostReason ? (
+                        <div className="space-y-1">
+                          <span className="ui-chip ui-chip--warn">Incompleto</span>
+                          <div className="text-xs text-[var(--ui-muted)]">{autoCostReason}</div>
+                        </div>
+                      ) : (
+                        <span className="ui-chip ui-chip--success">Listo</span>
+                      )}
+                    </td>
                     <td className="py-3 pr-4">
                       {product.is_active === false ? "Inactivo" : "Activo"}
                     </td>
@@ -617,7 +680,7 @@ export default async function InventoryCatalogPage({
               })}
               {!productRows.length ? (
                 <tr>
-                  <td className="py-4 text-[var(--ui-muted)]" colSpan={8}>
+                  <td className="py-4 text-[var(--ui-muted)]" colSpan={9}>
                     No hay productos para mostrar.
                   </td>
                 </tr>

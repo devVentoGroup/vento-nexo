@@ -279,7 +279,7 @@ export function ProductSuppliersEditor({
                   </div>
                 </div>
 
-                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
                   <label className="flex flex-col gap-1">
                     <span className="ui-label">Proveedor</span>
                     <select
@@ -296,19 +296,6 @@ export function ProductSuppliersEditor({
                         </option>
                       ))}
                     </select>
-                  </label>
-
-                  <label className="flex flex-col gap-1">
-                    <span className="ui-label">SKU proveedor</span>
-                    <input
-                      type="text"
-                      value={line.supplier_sku ?? ""}
-                      onChange={(event) =>
-                        updateLine(realIndex, { supplier_sku: event.target.value })
-                      }
-                      className="ui-input"
-                      placeholder="SKU"
-                    />
                   </label>
 
                   <label className="flex flex-col gap-1">
@@ -382,55 +369,75 @@ export function ProductSuppliersEditor({
                       placeholder="-"
                     />
                   </label>
-
-                  <label className="flex flex-col gap-1">
-                    <span className="ui-label">Moneda</span>
-                    <input
-                      type="text"
-                      value={line.currency ?? "COP"}
-                      onChange={(event) =>
-                        updateLine(realIndex, { currency: event.target.value })
-                      }
-                      className="ui-input"
-                      placeholder="COP"
-                    />
-                  </label>
-
-                  <label className="flex flex-col gap-1">
-                    <span className="ui-label">Lead time (dias)</span>
-                    <input
-                      type="number"
-                      value={line.lead_time_days ?? ""}
-                      onChange={(event) =>
-                        updateLine(realIndex, {
-                          lead_time_days: event.target.value
-                            ? Number(event.target.value)
-                            : undefined,
-                        })
-                      }
-                      className="ui-input"
-                      placeholder="-"
-                    />
-                  </label>
-
-                  <label className="flex flex-col gap-1">
-                    <span className="ui-label">Minimo de orden</span>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={line.min_order_qty ?? ""}
-                      onChange={(event) =>
-                        updateLine(realIndex, {
-                          min_order_qty: event.target.value
-                            ? Number(event.target.value)
-                            : undefined,
-                        })
-                      }
-                      className="ui-input"
-                      placeholder="-"
-                    />
-                  </label>
                 </div>
+
+                <details className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3 text-sm">
+                  <summary className="cursor-pointer font-medium text-[var(--ui-text)]">
+                    Campos avanzados
+                  </summary>
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    <label className="flex flex-col gap-1">
+                      <span className="ui-label">SKU proveedor</span>
+                      <input
+                        type="text"
+                        value={line.supplier_sku ?? ""}
+                        onChange={(event) =>
+                          updateLine(realIndex, { supplier_sku: event.target.value })
+                        }
+                        className="ui-input"
+                        placeholder="SKU"
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-1">
+                      <span className="ui-label">Moneda</span>
+                      <input
+                        type="text"
+                        value={line.currency ?? "COP"}
+                        onChange={(event) =>
+                          updateLine(realIndex, { currency: event.target.value })
+                        }
+                        className="ui-input"
+                        placeholder="COP"
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-1">
+                      <span className="ui-label">Lead time (dias)</span>
+                      <input
+                        type="number"
+                        value={line.lead_time_days ?? ""}
+                        onChange={(event) =>
+                          updateLine(realIndex, {
+                            lead_time_days: event.target.value
+                              ? Number(event.target.value)
+                              : undefined,
+                          })
+                        }
+                        className="ui-input"
+                        placeholder="-"
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-1">
+                      <span className="ui-label">Minimo de orden</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        value={line.min_order_qty ?? ""}
+                        onChange={(event) =>
+                          updateLine(realIndex, {
+                            min_order_qty: event.target.value
+                              ? Number(event.target.value)
+                              : undefined,
+                          })
+                        }
+                        className="ui-input"
+                        placeholder="-"
+                      />
+                    </label>
+                  </div>
+                </details>
 
                 <div className="mt-4 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3 text-sm">
                   <p className="font-medium text-[var(--ui-text)]">

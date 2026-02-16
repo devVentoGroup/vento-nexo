@@ -745,24 +745,27 @@ export default async function NewProductPage({
               <span className="ui-label">Descripcion</span>
               <input name="description" className="ui-input" placeholder="Opcional" />
             </label>
-            {config.hasPrice && (
-              <>
-                <label className="flex flex-col gap-1">
-                  <span className="ui-label">Precio de venta</span>
-                  <input name="price" type="number" step="0.01" className="ui-input" placeholder="0.00" />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="ui-label">Costo</span>
-                  <input name="cost" type="number" step="0.01" className="ui-input" placeholder="0.00" />
-                </label>
-              </>
-            )}
-            {!config.hasPrice && typeKey !== "asset" && (
+            {config.hasPrice ? (
               <label className="flex flex-col gap-1">
-                <span className="ui-label">Costo unitario</span>
-                <input name="cost" type="number" step="0.01" className="ui-input" placeholder="0.00" />
+                <span className="ui-label">Precio de venta</span>
+                <input name="price" type="number" step="0.01" className="ui-input" placeholder="0.00" />
               </label>
-            )}
+            ) : null}
+            {typeKey !== "asset" ? (
+              <>
+                <input type="hidden" name="cost" value="" />
+                <div className="ui-panel-soft p-3 text-sm text-[var(--ui-muted)] sm:col-span-2">
+                  <p className="font-medium text-[var(--ui-text)]">Costo automatico</p>
+                  <p className="mt-1">
+                    El costo unitario se calcula automaticamente desde proveedor primario y entradas.
+                  </p>
+                  <p>
+                    Si faltan datos de proveedor, el producto se guarda y quedara marcado como
+                    incompleto para terminar configuracion.
+                  </p>
+                </div>
+              </>
+            ) : null}
           </div>
         </section>
 

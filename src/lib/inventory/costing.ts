@@ -1,8 +1,23 @@
 import {
   computeCostPerStockUnit,
+  normalizeUnitCode,
   type UnitMap,
   roundQuantity,
 } from "@/lib/inventory/uom";
+
+export type AutoCostPrimarySupplierInput = {
+  is_primary?: boolean | null;
+  purchase_pack_qty?: number | null;
+  purchase_pack_unit_code?: string | null;
+  purchase_price?: number | null;
+};
+
+export type AutoCostReadinessInput = {
+  costingMode?: "auto_primary_supplier" | "manual" | null;
+  stockUnitCode?: string | null;
+  primarySupplier?: AutoCostPrimarySupplierInput | null;
+  unitMap?: UnitMap | null;
+};
 
 export function computeWeightedAverageCost(params: {
   currentQty: number;
@@ -55,4 +70,54 @@ export function computeStockUnitCostFromInput(params: {
   if (!Number.isFinite(inputUnitCost) || inputUnitCost < 0) return 0;
   if (!Number.isFinite(factor) || factor <= 0) return 0;
   return roundQuantity(inputUnitCost / factor, 6);
+}
+
+export function getAutoCostReadinessReason(params: AutoCostReadinessInput): string | null {
+  const costingMode = params.costingMode ?? "auto_primary_supplier";
+  if (costingMode !== "auto_primary_supplier") return null;
+
+  const supplier = params.primarySupplier ?? null;
+  if (!supplier || supplier.is_primary === false) {
+    return "Falta proveedor primario.";
+  }
+
+  const packQty = Number(supplier.purchase_pack_qty ?? 0);
+  if (!Number.isFinite(packQty) || packQty <= 0) {
+    return "Falta cantidad por empaque del proveedor primario.";
+  }
+
+  const packUnitCode = normalizeUnitCode(supplier.purchase_pack_unit_code);
+  if (!packUnitCode) {
+    return "Falta unidad de compra del proveedor primario.";
+  }
+
+  const packPrice = Number(supplier.purchase_price ?? 0);
+  if (!Number.isFinite(packPrice) || packPrice <= 0) {
+    return "Falta precio de compra del proveedor primario.";
+  }
+
+  const stockUnitCode = normalizeUnitCode(params.stockUnitCode);
+  if (!stockUnitCode) {
+    return "Falta unidad base de stock del producto.";
+  }
+
+  if (params.unitMap) {
+    try {
+      computeAutoCostFromPrimarySupplier({
+        packPrice,
+        packQty,
+        packUnitCode,
+        stockUnitCode,
+        unitMap: params.unitMap,
+      });
+    } catch {
+      return "Unidad de compra incompatible con la unidad base.";
+    }
+  }
+
+  return null;
+}
+
+export function isAutoCostReady(params: AutoCostReadinessInput): boolean {
+  return getAutoCostReadinessReason(params) === null;
 }

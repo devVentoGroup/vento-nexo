@@ -17,7 +17,11 @@ import {
   normalizeUnitCode,
   type InventoryUnit,
 } from "@/lib/inventory/uom";
-import { computeAutoCostFromPrimarySupplier } from "@/lib/inventory/costing";
+import {
+  computeAutoCostFromPrimarySupplier,
+  getAutoCostReadinessReason,
+  isAutoCostReady,
+} from "@/lib/inventory/costing";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
@@ -318,11 +322,13 @@ async function updateProduct(formData: FormData) {
     stock_unit_code: stockUnitCode,
     product_type: productTypeValue,
     price: asNullableNumber(formData.get("price")),
-    cost: manualCost,
     is_active: Boolean(formData.get("is_active")),
     image_url: asText(formData.get("image_url")) || null,
     catalog_image_url: asText(formData.get("catalog_image_url")) || null,
   };
+  if (manualCost != null) {
+    payload.cost = manualCost;
+  }
   const allowSkuOverride = asText(formData.get("allow_sku_override")) === "true";
   const submittedSku = sanitizeManualSku(asText(formData.get("sku")));
   const hasCurrentSku = Boolean(existingSku);
@@ -835,6 +841,19 @@ export default async function ProductCatalogDetailPage({
       ? []
       : unitsList.filter((unit) => normalizeUnitCode(unit.code) === resolvedDefaultUnit);
   const defaultUnitOptions = [...filteredDefaultUnitOptions, ...defaultUnitOptionFallback];
+  const primarySupplier = supplierRows.find((row) => Boolean(row.is_primary)) ?? null;
+  const autoCostReadinessReason = getAutoCostReadinessReason({
+    costingMode: profileRow?.costing_mode ?? "manual",
+    stockUnitCode,
+    primarySupplier,
+    unitMap: inventoryUnitMap,
+  });
+  const autoCostReady = isAutoCostReady({
+    costingMode: profileRow?.costing_mode ?? "manual",
+    stockUnitCode,
+    primarySupplier,
+    unitMap: inventoryUnitMap,
+  });
 
   const supplierInitialRows = supplierRows.map((r) => ({
     id: r.id,
@@ -870,6 +889,11 @@ export default async function ProductCatalogDetailPage({
 
       {errorMsg ? <div className="ui-alert ui-alert--error">Error: {errorMsg}</div> : null}
       {okMsg ? <div className="ui-alert ui-alert--success">{okMsg}</div> : null}
+      {profileRow?.costing_mode === "auto_primary_supplier" && autoCostReadinessReason ? (
+        <div className="ui-alert ui-alert--warn">
+          Auto-costo incompleto: {autoCostReadinessReason}
+        </div>
+      ) : null}
 
       {canEdit ? (
         <>
@@ -1149,13 +1173,7 @@ export default async function ProductCatalogDetailPage({
                 <span className="ui-label">Precio de venta</span>
                 <input name="price" type="number" step="0.01" defaultValue={productRow.price ?? ""} className="ui-input" placeholder="0.00" />
               </label>
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Costo (inventario)</span>
-                <input name="cost" type="number" step="0.01" defaultValue={productRow.cost ?? ""} className="ui-input" placeholder="Costo actual" />
-                <span className="text-xs text-[var(--ui-muted)]">
-                  En modo automatico, se calcula desde el proveedor primario.
-                </span>
-              </label>
+              <input type="hidden" name="cost" value="" />
               <label className="flex flex-col gap-1">
                 <span className="ui-label">Politica de costo</span>
                 <select
@@ -1167,6 +1185,33 @@ export default async function ProductCatalogDetailPage({
                   <option value="manual">Manual</option>
                 </select>
               </label>
+              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3 text-sm text-[var(--ui-muted)] md:col-span-2">
+                <p className="font-medium text-[var(--ui-text)]">
+                  Estado de costo:{" "}
+                  {profileRow?.costing_mode === "manual"
+                    ? "Manual"
+                    : autoCostReady
+                      ? "Listo"
+                      : "Incompleto"}
+                </p>
+                <p className="mt-1">
+                  Costo actual:{" "}
+                  <strong className="text-[var(--ui-text)]">
+                    {productRow.cost != null ? `$${Number(productRow.cost).toLocaleString("es-CO")}` : "Sin calcular"}
+                  </strong>
+                </p>
+                {profileRow?.costing_mode === "auto_primary_supplier" ? (
+                  <p className="mt-1">
+                    {autoCostReadinessReason
+                      ? `Falta completar: ${autoCostReadinessReason}`
+                      : "Se actualiza automaticamente con proveedor primario y entradas."}
+                  </p>
+                ) : (
+                  <p className="mt-1">
+                    Modo manual activo. Puedes volver a automatico cuando quieras.
+                  </p>
+                )}
+              </div>
             </div>
 
             <div className="flex flex-wrap gap-6">

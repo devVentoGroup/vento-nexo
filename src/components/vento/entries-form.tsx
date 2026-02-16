@@ -33,6 +33,17 @@ type SupplierOption = {
 type UnitOption = {
   code: string;
   name: string;
+  family?: "volume" | "mass" | "count";
+  factor_to_base?: number;
+};
+
+type SupplierCostRow = {
+  product_id: string;
+  supplier_id: string;
+  is_primary: boolean | null;
+  purchase_pack_qty: number | null;
+  purchase_pack_unit_code: string | null;
+  purchase_price: number | null;
 };
 
 type Props = {
@@ -40,6 +51,7 @@ type Props = {
   units: UnitOption[];
   locations: LocationOption[];
   suppliers: SupplierOption[];
+  supplierCostRows?: SupplierCostRow[];
   defaultUomProfiles?: ProductUomProfile[];
   defaultLocationId?: string;
   defaultSupplierId?: string;
@@ -88,6 +100,7 @@ export function EntriesForm({
   units,
   locations,
   suppliers,
+  supplierCostRows = [],
   defaultUomProfiles = [],
   defaultLocationId,
   defaultSupplierId,
@@ -185,12 +198,14 @@ export function EntriesForm({
             Declara cantidades y lo recibido. El sistema calcula estado pendiente/parcial/recibida.
           </div>
           <div className="ui-panel-soft p-3 text-sm text-[var(--ui-muted)]">
-            Si dejas costo unitario vacio en una linea, se usara el costo actual del producto.
+            Si dejas costo unitario vacio, se intenta precargar desde proveedor; si no aplica, se usa costo actual del producto.
           </div>
           <EntriesItems
             products={products}
             units={units}
             locations={locations}
+            selectedSupplierId={supplierId}
+            supplierCostRows={supplierCostRows}
             defaultLocationId={defaultLocationId}
             defaultUomProfiles={defaultUomProfiles}
             initialRows={initialRows}

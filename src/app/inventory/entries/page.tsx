@@ -14,6 +14,7 @@ import {
   type InventoryUnit,
 } from "@/lib/inventory/uom";
 import {
+  computeAutoCostFromPrimarySupplier,
   computeStockUnitCostFromInput,
   computeWeightedAverageCost,
 } from "@/lib/inventory/costing";
@@ -57,6 +58,15 @@ type ProductProfileRow = {
   product_id: string;
   track_inventory: boolean;
   costing_mode: "auto_primary_supplier" | "manual" | null;
+};
+
+type ProductSupplierCostRow = {
+  product_id: string;
+  supplier_id: string;
+  is_primary: boolean | null;
+  purchase_pack_qty: number | null;
+  purchase_pack_unit_code: string | null;
+  purchase_price: number | null;
 };
 
 type PurchaseOrderRow = {
@@ -176,6 +186,23 @@ async function createEntry(formData: FormData) {
   );
 
   const purchaseOrderId = asText(formData.get("purchase_order_id")) || null;
+  const normalizedSupplierId =
+    supplierId && supplierId !== "__new__" ? supplierId : "";
+  const { data: supplierCostData } = productIdsForLookup.length
+    ? await supabase
+        .from("product_suppliers")
+        .select(
+          "product_id,supplier_id,is_primary,purchase_pack_qty,purchase_pack_unit_code,purchase_price"
+        )
+        .in("product_id", productIdsForLookup)
+    : { data: [] as ProductSupplierCostRow[] };
+  const supplierCostByProduct = new Map<string, ProductSupplierCostRow[]>();
+  for (const row of (supplierCostData ?? []) as ProductSupplierCostRow[]) {
+    if (!row.product_id) continue;
+    const current = supplierCostByProduct.get(row.product_id) ?? [];
+    current.push(row);
+    supplierCostByProduct.set(row.product_id, current);
+  }
 
   const { data: unitsData } = await supabase
     .from("inventory_units")
@@ -183,6 +210,46 @@ async function createEntry(formData: FormData) {
     .eq("is_active", true)
     .limit(500);
   const unitMap = createUnitMap((unitsData ?? []) as UnitRow[]);
+
+  function resolveSupplierStockUnitCost(productId: string, stockUnitCode: string): number | null {
+    const supplierRows = supplierCostByProduct.get(productId) ?? [];
+    if (!supplierRows.length) return null;
+
+    const isValid = (row: ProductSupplierCostRow) => {
+      const packQty = Number(row.purchase_pack_qty ?? 0);
+      const packPrice = Number(row.purchase_price ?? 0);
+      return (
+        Boolean(normalizeUnitCode(row.purchase_pack_unit_code)) &&
+        Number.isFinite(packQty) &&
+        packQty > 0 &&
+        Number.isFinite(packPrice) &&
+        packPrice > 0
+      );
+    };
+
+    const selectedSupplierRow =
+      normalizedSupplierId && normalizedSupplierId !== "__new__"
+        ? supplierRows.find(
+            (row) => row.supplier_id === normalizedSupplierId && isValid(row)
+          ) ?? null
+        : null;
+    const primaryRow =
+      supplierRows.find((row) => Boolean(row.is_primary) && isValid(row)) ?? null;
+    const chosenRow = selectedSupplierRow ?? primaryRow;
+    if (!chosenRow) return null;
+
+    try {
+      return computeAutoCostFromPrimarySupplier({
+        packPrice: Number(chosenRow.purchase_price ?? 0),
+        packQty: Number(chosenRow.purchase_pack_qty ?? 0),
+        packUnitCode: normalizeUnitCode(chosenRow.purchase_pack_unit_code),
+        stockUnitCode: normalizeUnitCode(stockUnitCode),
+        unitMap,
+      });
+    } catch {
+      return null;
+    }
+  }
 
   const items = productIds
     .map((productId, idx) => {
@@ -195,13 +262,13 @@ async function createEntry(formData: FormData) {
       );
       const inputUnitCode = normalizeUnitCode(inputUnits[idx] || stockUnitCode);
       const rawInputUnitCost = parseNumber(inputUnitCosts[idx] ?? "");
-      const fallbackCost = Number(product?.cost ?? 0);
+      const suggestedSupplierStockCost = resolveSupplierStockUnitCost(productId, stockUnitCode);
+      const fallbackCost =
+        suggestedSupplierStockCost != null
+          ? suggestedSupplierStockCost
+          : Number(product?.cost ?? 0);
       const hasManualCost = Number.isFinite(rawInputUnitCost) && rawInputUnitCost > 0;
-      const safeInputUnitCost = hasManualCost ? rawInputUnitCost : fallbackCost;
-      const stockUnitCost = computeStockUnitCostFromInput({
-        inputUnitCost: safeInputUnitCost,
-        conversionFactorToStock: 1,
-      });
+      const fallbackCostSource = suggestedSupplierStockCost != null ? "manual" : "fallback_product_cost";
 
       let quantityDeclared = inputDeclared;
       let quantityReceived = inputReceived;
@@ -216,8 +283,10 @@ async function createEntry(formData: FormData) {
         conversionFactorToStock = factorRes.quantity;
         quantityDeclared = roundQuantity(inputDeclared * conversionFactorToStock);
         quantityReceived = roundQuantity(inputReceived * conversionFactorToStock);
+        const autoInputUnitCost = roundQuantity(fallbackCost * conversionFactorToStock, 6);
+        const effectiveInputUnitCost = hasManualCost ? rawInputUnitCost : autoInputUnitCost;
         const convertedCost = computeStockUnitCostFromInput({
-          inputUnitCost: safeInputUnitCost,
+          inputUnitCost: effectiveInputUnitCost,
           conversionFactorToStock,
         });
         return {
@@ -226,7 +295,11 @@ async function createEntry(formData: FormData) {
           input_qty_declared: inputDeclared,
           input_qty_received: inputReceived,
           input_unit_code: inputUnitCode,
-          input_unit_cost: hasManualCost ? rawInputUnitCost : null,
+          input_unit_cost: hasManualCost
+            ? rawInputUnitCost
+            : suggestedSupplierStockCost != null
+              ? autoInputUnitCost
+              : null,
           fallback_unit_cost: hasManualCost ? null : fallbackCost,
           quantity_declared: quantityDeclared,
           quantity_received: quantityReceived,
@@ -239,7 +312,7 @@ async function createEntry(formData: FormData) {
             ? purchaseOrderItemIds[idx]
               ? "po_prefill"
               : "manual"
-            : "fallback_product_cost",
+            : fallbackCostSource,
           apply_auto_cost:
             Boolean(profile?.track_inventory) &&
             profile?.costing_mode === "auto_primary_supplier",
@@ -259,20 +332,24 @@ async function createEntry(formData: FormData) {
         input_qty_declared: inputDeclared,
         input_qty_received: inputReceived,
         input_unit_code: inputUnitCode,
-        input_unit_cost: hasManualCost ? rawInputUnitCost : null,
+        input_unit_cost: hasManualCost
+          ? rawInputUnitCost
+          : suggestedSupplierStockCost != null
+            ? fallbackCost
+            : null,
         fallback_unit_cost: hasManualCost ? null : fallbackCost,
         quantity_declared: quantityDeclared,
         quantity_received: quantityReceived,
         conversion_factor_to_stock: conversionFactorToStock,
         stock_unit_code: stockUnitCode,
-        stock_unit_cost: stockUnitCost > 0 ? stockUnitCost : 0,
-        line_total_cost: roundQuantity(quantityReceived * (stockUnitCost > 0 ? stockUnitCost : 0), 6),
+        stock_unit_cost: fallbackCost > 0 ? fallbackCost : 0,
+        line_total_cost: roundQuantity(quantityReceived * (fallbackCost > 0 ? fallbackCost : 0), 6),
         purchase_order_item_id: purchaseOrderItemIds[idx] || null,
         cost_source: hasManualCost
           ? purchaseOrderItemIds[idx]
             ? "po_prefill"
             : "manual"
-          : "fallback_product_cost",
+          : fallbackCostSource,
         apply_auto_cost:
           Boolean(profile?.track_inventory) &&
           profile?.costing_mode === "auto_primary_supplier",
@@ -613,6 +690,15 @@ export default async function EntriesPage({
         .eq("is_active", true)
     : { data: [] as ProductUomProfile[] };
   const defaultUomProfiles = (uomProfilesData ?? []) as ProductUomProfile[];
+  const { data: supplierCostRowsData } = productIds.length
+    ? await supabase
+        .from("product_suppliers")
+        .select(
+          "product_id,supplier_id,is_primary,purchase_pack_qty,purchase_pack_unit_code,purchase_price"
+        )
+        .in("product_id", productIds)
+    : { data: [] as ProductSupplierCostRow[] };
+  const supplierCostRows = (supplierCostRowsData ?? []) as ProductSupplierCostRow[];
 
   const { data: unitsData } = await supabase
     .from("inventory_units")
@@ -755,10 +841,16 @@ export default async function EntriesPage({
           stock_unit_code: row.stock_unit_code,
           default_unit_cost: row.cost,
         }))}
-        units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
+        units={unitsList.map((unit) => ({
+          code: unit.code,
+          name: unit.name,
+          family: unit.family,
+          factor_to_base: unit.factor_to_base,
+        }))}
         locations={(locations ?? []) as LocRow[]}
         defaultLocationId={pickDefaultLocationId((locations ?? []) as LocRow[])}
         suppliers={supplierRows}
+        supplierCostRows={supplierCostRows}
         defaultUomProfiles={defaultUomProfiles}
         defaultSupplierId={prefillSupplierId || undefined}
         defaultInvoiceNumber={prefillInvoiceNumber || undefined}
