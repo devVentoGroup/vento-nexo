@@ -9,6 +9,7 @@ import {
   createUnitMap,
   normalizeUnitCode,
   roundQuantity,
+  selectProductUomProfileForContext,
   type ProductUomProfile,
 } from "@/lib/inventory/uom";
 
@@ -180,15 +181,26 @@ export function EntriesItems({
       })),
     [locations]
   );
-  const defaultProfileByProduct = useMemo(
-    () =>
-      new Map(
-        defaultUomProfiles
-          .filter((p) => p.is_active && p.is_default)
-          .map((profile) => [profile.product_id, profile])
-      ),
-    [defaultUomProfiles]
-  );
+  const defaultProfileByProduct = useMemo(() => {
+    const profilesByProduct = new Map<string, ProductUomProfile[]>();
+    for (const profile of defaultUomProfiles) {
+      if (!profile.is_active || !profile.is_default) continue;
+      const productId = String(profile.product_id).trim();
+      const current = profilesByProduct.get(productId) ?? [];
+      current.push(profile);
+      profilesByProduct.set(productId, current);
+    }
+    const selected = new Map<string, ProductUomProfile>();
+    for (const [productId, profiles] of profilesByProduct.entries()) {
+      const preferred = selectProductUomProfileForContext({
+        profiles,
+        productId,
+        context: "purchase",
+      });
+      if (preferred) selected.set(productId, preferred);
+    }
+    return selected;
+  }, [defaultUomProfiles]);
   const supplierCostsByProduct = useMemo(() => {
     const map = new Map<string, SupplierCostRow[]>();
     for (const row of supplierCostRows) {

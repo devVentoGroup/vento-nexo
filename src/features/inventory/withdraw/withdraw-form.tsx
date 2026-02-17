@@ -7,7 +7,11 @@ import { GuidedFormShell } from "@/components/inventory/forms/GuidedFormShell";
 import { SearchableSingleSelect } from "@/components/inventory/forms/SearchableSingleSelect";
 import { StepHelp } from "@/components/inventory/forms/StepHelp";
 import { WizardFooter } from "@/components/inventory/forms/WizardFooter";
-import { normalizeUnitCode, type ProductUomProfile } from "@/lib/inventory/uom";
+import {
+  normalizeUnitCode,
+  selectProductUomProfileForContext,
+  type ProductUomProfile,
+} from "@/lib/inventory/uom";
 import type { GuidedStep } from "@/lib/inventory/forms/types";
 
 type LocOption = { id: string; code: string | null; zone: string | null };
@@ -73,15 +77,26 @@ export function WithdrawForm({
   const [rows, setRows] = useState<Row[]>([
     { id: 0, productId: "", quantity: "", inputUnitCode: "", inputUomProfileId: "", notes: "" },
   ]);
-  const defaultProfileByProduct = useMemo(
-    () =>
-      new Map(
-        defaultUomProfiles
-          .filter((p) => p.is_active && p.is_default)
-          .map((profile) => [profile.product_id, profile])
-      ),
-    [defaultUomProfiles]
-  );
+  const defaultProfileByProduct = useMemo(() => {
+    const profilesByProduct = new Map<string, ProductUomProfile[]>();
+    for (const profile of defaultUomProfiles) {
+      if (!profile.is_active || !profile.is_default) continue;
+      const productId = String(profile.product_id).trim();
+      const current = profilesByProduct.get(productId) ?? [];
+      current.push(profile);
+      profilesByProduct.set(productId, current);
+    }
+    const selected = new Map<string, ProductUomProfile>();
+    for (const [productId, profiles] of profilesByProduct.entries()) {
+      const preferred = selectProductUomProfileForContext({
+        profiles,
+        productId,
+        context: "remission",
+      });
+      if (preferred) selected.set(productId, preferred);
+    }
+    return selected;
+  }, [defaultUomProfiles]);
 
   const addRow = () => {
     setRows((prev) => [

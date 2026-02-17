@@ -87,7 +87,7 @@ async function submitWithdraw(formData: FormData) {
     ? await supabase
         .from("product_uom_profiles")
         .select(
-          "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source"
+          "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
         )
         .in("id", requestedUomProfileIds)
     : { data: [] as ProductUomProfile[] };
@@ -347,7 +347,7 @@ export default async function WithdrawPage({
     ? await supabase
         .from("product_uom_profiles")
         .select(
-          "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source"
+          "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
         )
         .in("product_id", productIds)
         .eq("is_default", true)

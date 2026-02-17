@@ -22,7 +22,47 @@ export type ProductUomProfile = {
   is_default: boolean;
   is_active: boolean;
   source: "manual" | "supplier_primary";
+  usage_context?: "general" | "purchase" | "remission" | null;
 };
+
+export type ProductUomUsageContext = "general" | "purchase" | "remission";
+
+export function normalizeProductUomUsageContext(
+  value: string | null | undefined
+): ProductUomUsageContext {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "purchase") return "purchase";
+  if (normalized === "remission") return "remission";
+  return "general";
+}
+
+export function selectProductUomProfileForContext(params: {
+  profiles: ProductUomProfile[];
+  productId: string;
+  context: ProductUomUsageContext;
+}): ProductUomProfile | null {
+  const productId = String(params.productId).trim();
+  if (!productId) return null;
+
+  const candidates = params.profiles.filter(
+    (profile) =>
+      profile.is_active &&
+      profile.is_default &&
+      String(profile.product_id).trim() === productId
+  );
+  if (!candidates.length) return null;
+
+  const byContext = candidates.find(
+    (profile) =>
+      normalizeProductUomUsageContext(profile.usage_context) === params.context
+  );
+  if (byContext) return byContext;
+
+  const general = candidates.find(
+    (profile) => normalizeProductUomUsageContext(profile.usage_context) === "general"
+  );
+  return general ?? candidates[0] ?? null;
+}
 
 export function normalizeUnitCode(code: string | null | undefined): string {
   return String(code ?? "")

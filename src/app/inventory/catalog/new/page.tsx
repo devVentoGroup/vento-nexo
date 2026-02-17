@@ -322,7 +322,15 @@ async function createProduct(formData: FormData) {
 
   // Suppliers
   let autoCostFromPrimary: number | null = null;
-  let operationalUomFromSupplier:
+  let purchaseUomFromSupplier:
+    | {
+        label: string;
+        inputUnitCode: string;
+        qtyInInputUnit: number;
+        qtyInStockUnit: number;
+      }
+    | null = null;
+  let remissionUomFromSupplier:
     | {
         label: string;
         inputUnitCode: string;
@@ -380,7 +388,6 @@ async function createProduct(formData: FormData) {
 
           if (
             Boolean(line.is_primary) &&
-            Boolean(line.use_in_operations) &&
             packQty > 0 &&
             packUnitCode
           ) {
@@ -392,12 +399,20 @@ async function createProduct(formData: FormData) {
                 unitMap,
               });
               if (qtyInStockUnit > 0) {
-                operationalUomFromSupplier = {
+                purchaseUomFromSupplier = {
                   label: String(line.purchase_unit || "Empaque"),
                   inputUnitCode: packUnitCode,
                   qtyInInputUnit: 1,
                   qtyInStockUnit,
                 };
+                if (Boolean(line.use_in_operations)) {
+                  remissionUomFromSupplier = {
+                    label: String(line.purchase_unit || "Empaque operativo"),
+                    inputUnitCode: packUnitCode,
+                    qtyInInputUnit: 1,
+                    qtyInStockUnit,
+                  };
+                }
               }
             } catch {
               // keep without operational profile when conversion is invalid
@@ -423,24 +438,71 @@ async function createProduct(formData: FormData) {
     }
   }
 
-  if (operationalUomFromSupplier) {
-    await supabase
+  async function upsertContextProfile(params: {
+    usageContext: "purchase" | "remission";
+    label: string;
+    inputUnitCode: string;
+    qtyInInputUnit: number;
+    qtyInStockUnit: number;
+    source: "manual" | "supplier_primary";
+  }) {
+    const now = new Date().toISOString();
+    const { data: existing } = await supabase
       .from("product_uom_profiles")
-      .update({
-        is_default: false,
-        updated_at: new Date().toISOString(),
-      })
+      .select("id")
       .eq("product_id", productId)
-      .eq("is_default", true);
+      .eq("usage_context", params.usageContext)
+      .eq("is_default", true)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (existing?.id) {
+      await supabase
+        .from("product_uom_profiles")
+        .update({
+          label: params.label,
+          input_unit_code: params.inputUnitCode,
+          qty_in_input_unit: params.qtyInInputUnit,
+          qty_in_stock_unit: params.qtyInStockUnit,
+          source: params.source,
+          updated_at: now,
+        })
+        .eq("id", existing.id);
+      return;
+    }
 
     await supabase.from("product_uom_profiles").insert({
       product_id: productId,
-      label: operationalUomFromSupplier.label,
-      input_unit_code: operationalUomFromSupplier.inputUnitCode,
-      qty_in_input_unit: operationalUomFromSupplier.qtyInInputUnit,
-      qty_in_stock_unit: operationalUomFromSupplier.qtyInStockUnit,
+      label: params.label,
+      input_unit_code: params.inputUnitCode,
+      qty_in_input_unit: params.qtyInInputUnit,
+      qty_in_stock_unit: params.qtyInStockUnit,
+      usage_context: params.usageContext,
       is_default: true,
       is_active: true,
+      source: params.source,
+      updated_at: now,
+    });
+  }
+
+  if (purchaseUomFromSupplier) {
+    await upsertContextProfile({
+      usageContext: "purchase",
+      label: purchaseUomFromSupplier.label,
+      inputUnitCode: purchaseUomFromSupplier.inputUnitCode,
+      qtyInInputUnit: purchaseUomFromSupplier.qtyInInputUnit,
+      qtyInStockUnit: purchaseUomFromSupplier.qtyInStockUnit,
+      source: "supplier_primary",
+    });
+  }
+
+  if (remissionUomFromSupplier) {
+    await upsertContextProfile({
+      usageContext: "remission",
+      label: remissionUomFromSupplier.label,
+      inputUnitCode: remissionUomFromSupplier.inputUnitCode,
+      qtyInInputUnit: remissionUomFromSupplier.qtyInInputUnit,
+      qtyInStockUnit: remissionUomFromSupplier.qtyInStockUnit,
       source: "supplier_primary",
     });
   }
@@ -621,11 +683,7 @@ export default async function NewProductPage({
   const unitsList = (unitsData ?? []) as UnitRow[];
 
   const defaultStockUnitCode = unitsList[0]?.code ?? "un";
-  const inventoryUnitMap = createUnitMap(unitsList);
-  const defaultStockUnit = inventoryUnitMap.get(defaultStockUnitCode) ?? null;
-  const defaultUnitOptions = defaultStockUnit
-    ? unitsList.filter((unit) => unit.family === defaultStockUnit.family)
-    : unitsList;
+  const defaultUnitOptions = unitsList;
 
   // For recipe: load insumos + preparaciones as ingredient options
   let ingredientProducts: { id: string; name: string | null; sku: string | null; unit: string | null; cost: number | null }[] = [];
@@ -905,8 +963,9 @@ export default async function NewProductPage({
             </div>
             <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
               <p className="font-medium text-[var(--ui-text)]">Regla simple de unidades</p>
-              <p className="mt-1">Unidad base: donde se guarda todo el stock y todos los movimientos.</p>
-              <p>Unidad operativa: sugerencia para formularios; debe ser de la misma familia.</p>
+              <p className="mt-1">Unidad base: donde se guarda stock, costo y recetas.</p>
+              <p>Unidad de compra (en Proveedor): como compra/factura el proveedor.</p>
+              <p>Unidad operativa: como capturan formularios; debe ser de la misma familia.</p>
             </div>
 
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">

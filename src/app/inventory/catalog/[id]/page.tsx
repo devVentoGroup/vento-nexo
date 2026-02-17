@@ -118,6 +118,7 @@ type ProductUomProfileRow = {
   is_default: boolean;
   is_active: boolean;
   source: "manual" | "supplier_primary";
+  usage_context: "general" | "purchase" | "remission" | null;
 };
 
 type SearchParams = {
@@ -383,7 +384,15 @@ async function updateProduct(formData: FormData) {
   if (profileErr) redirectWithError(profileErr.message);
 
   let autoCostFromPrimary: number | null = null;
-  let operationalUomFromSupplier:
+  let purchaseUomFromSupplier:
+    | {
+        label: string;
+        inputUnitCode: string;
+        qtyInInputUnit: number;
+        qtyInStockUnit: number;
+      }
+    | null = null;
+  let remissionUomFromSupplier:
     | {
         label: string;
         inputUnitCode: string;
@@ -452,12 +461,7 @@ async function updateProduct(formData: FormData) {
             // Keep previous/manual cost when conversion is not valid
           }
         }
-        if (
-          Boolean(line.is_primary) &&
-          Boolean(line.use_in_operations) &&
-          packQty > 0 &&
-          packUnitCode
-        ) {
+        if (Boolean(line.is_primary) && packQty > 0 && packUnitCode) {
           try {
             const { quantity: qtyInStockUnit } = convertQuantity({
               quantity: packQty,
@@ -466,12 +470,20 @@ async function updateProduct(formData: FormData) {
               unitMap,
             });
             if (qtyInStockUnit > 0) {
-              operationalUomFromSupplier = {
+              purchaseUomFromSupplier = {
                 label: String(line.purchase_unit || "Empaque"),
                 inputUnitCode: packUnitCode,
                 qtyInInputUnit: 1,
                 qtyInStockUnit,
               };
+              if (Boolean(line.use_in_operations)) {
+                remissionUomFromSupplier = {
+                  label: String(line.purchase_unit || "Empaque operativo"),
+                  inputUnitCode: packUnitCode,
+                  qtyInInputUnit: 1,
+                  qtyInStockUnit,
+                };
+              }
             }
           } catch {
             // Keep previous profile if conversion is invalid.
@@ -498,27 +510,72 @@ async function updateProduct(formData: FormData) {
     }
   }
 
-  if (operationalUomFromSupplier) {
+  async function upsertContextProfile(params: {
+    usageContext: "purchase" | "remission";
+    label: string;
+    inputUnitCode: string;
+    qtyInInputUnit: number;
+    qtyInStockUnit: number;
+    source: "manual" | "supplier_primary";
+  }) {
     const now = new Date().toISOString();
-    await supabase
+    const { data: existing } = await supabase
       .from("product_uom_profiles")
-      .update({
-        is_default: false,
-        updated_at: now,
-      })
+      .select("id")
       .eq("product_id", productId)
-      .eq("is_default", true);
+      .eq("usage_context", params.usageContext)
+      .eq("is_default", true)
+      .eq("is_active", true)
+      .maybeSingle();
+
+    if (existing?.id) {
+      await supabase
+        .from("product_uom_profiles")
+        .update({
+          label: params.label,
+          input_unit_code: params.inputUnitCode,
+          qty_in_input_unit: params.qtyInInputUnit,
+          qty_in_stock_unit: params.qtyInStockUnit,
+          source: params.source,
+          updated_at: now,
+        })
+        .eq("id", existing.id);
+      return;
+    }
 
     await supabase.from("product_uom_profiles").insert({
       product_id: productId,
-      label: operationalUomFromSupplier.label,
-      input_unit_code: operationalUomFromSupplier.inputUnitCode,
-      qty_in_input_unit: operationalUomFromSupplier.qtyInInputUnit,
-      qty_in_stock_unit: operationalUomFromSupplier.qtyInStockUnit,
+      label: params.label,
+      input_unit_code: params.inputUnitCode,
+      qty_in_input_unit: params.qtyInInputUnit,
+      qty_in_stock_unit: params.qtyInStockUnit,
+      usage_context: params.usageContext,
       is_default: true,
       is_active: true,
-      source: "supplier_primary",
+      source: params.source,
       updated_at: now,
+    });
+  }
+
+  if (purchaseUomFromSupplier) {
+    await upsertContextProfile({
+      usageContext: "purchase",
+      label: purchaseUomFromSupplier.label,
+      inputUnitCode: purchaseUomFromSupplier.inputUnitCode,
+      qtyInInputUnit: purchaseUomFromSupplier.qtyInInputUnit,
+      qtyInStockUnit: purchaseUomFromSupplier.qtyInStockUnit,
+      source: "supplier_primary",
+    });
+  }
+
+  if (remissionUomFromSupplier) {
+    await upsertContextProfile({
+      usageContext: "remission",
+      label: remissionUomFromSupplier.label,
+      inputUnitCode: remissionUomFromSupplier.inputUnitCode,
+      qtyInInputUnit: remissionUomFromSupplier.qtyInInputUnit,
+      qtyInStockUnit: remissionUomFromSupplier.qtyInStockUnit,
+      source: "supplier_primary",
     });
   }
 
@@ -736,12 +793,21 @@ export default async function ProductCatalogDetailPage({
   const supplierRows = (supplierLinks ?? []) as SupplierRow[];
   const { data: uomProfileData } = await supabase
     .from("product_uom_profiles")
-    .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source")
+    .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context")
     .eq("product_id", id)
     .eq("is_active", true)
-    .eq("is_default", true)
-    .limit(1);
-  const defaultOperationalUom = ((uomProfileData ?? []) as ProductUomProfileRow[])[0] ?? null;
+    .eq("is_default", true);
+  const defaultUomProfiles = (uomProfileData ?? []) as ProductUomProfileRow[];
+  const profileByContext = new Map(
+    defaultUomProfiles.map((profile) => [
+      String(profile.usage_context ?? "general").trim().toLowerCase() || "general",
+      profile,
+    ])
+  );
+  const purchaseUomProfile =
+    profileByContext.get("purchase") ?? profileByContext.get("general") ?? null;
+  const remissionUomProfile =
+    profileByContext.get("remission") ?? profileByContext.get("general") ?? null;
 
   const { data: suppliersData } = await supabase.from("suppliers").select("id,name").eq("is_active", true).order("name");
   const suppliersList = (suppliersData ?? []) as { id: string; name: string | null }[];
@@ -855,7 +921,6 @@ export default async function ProductCatalogDetailPage({
 
   const stockUnitCode = normalizeUnitCode(productRow.stock_unit_code || productRow.unit || "un");
   const inventoryUnitMap = createUnitMap(unitsList);
-  const stockUnitMeta = inventoryUnitMap.get(stockUnitCode) ?? null;
   const requestedDefaultUnit = normalizeUnitCode(profileRow?.default_unit || stockUnitCode);
   const resolvedDefaultUnit = resolveCompatibleDefaultUnit({
     requestedDefaultUnit,
@@ -863,17 +928,7 @@ export default async function ProductCatalogDetailPage({
     unitMap: inventoryUnitMap,
   });
 
-  const filteredDefaultUnitOptions = stockUnitMeta
-    ? unitsList.filter((unit) => unit.family === stockUnitMeta.family)
-    : unitsList;
-  const hasResolvedDefaultInOptions = filteredDefaultUnitOptions.some(
-    (unit) => normalizeUnitCode(unit.code) === resolvedDefaultUnit
-  );
-  const defaultUnitOptionFallback =
-    hasResolvedDefaultInOptions
-      ? []
-      : unitsList.filter((unit) => normalizeUnitCode(unit.code) === resolvedDefaultUnit);
-  const defaultUnitOptions = [...filteredDefaultUnitOptions, ...defaultUnitOptionFallback];
+  const defaultUnitOptions = unitsList;
   const primarySupplier = supplierRows.find((row) => Boolean(row.is_primary)) ?? null;
   const autoCostReadinessReason = getAutoCostReadinessReason({
     costingMode: profileRow?.costing_mode ?? "manual",
@@ -887,6 +942,9 @@ export default async function ProductCatalogDetailPage({
     primarySupplier,
     unitMap: inventoryUnitMap,
   });
+  const remissionInputUnitCode = remissionUomProfile
+    ? normalizeUnitCode(remissionUomProfile.input_unit_code)
+    : "";
 
   const supplierInitialRows = supplierRows.map((r) => ({
     id: r.id,
@@ -903,8 +961,8 @@ export default async function ProductCatalogDetailPage({
     is_primary: Boolean(r.is_primary),
     use_in_operations:
       Boolean(r.is_primary) &&
-      Boolean(defaultOperationalUom) &&
-      normalizeUnitCode(defaultOperationalUom.input_unit_code) ===
+      Boolean(remissionInputUnitCode) &&
+      remissionInputUnitCode ===
         normalizeUnitCode(r.purchase_pack_unit_code ?? stockUnitCode),
   }));
 
@@ -1136,21 +1194,32 @@ export default async function ProductCatalogDetailPage({
 
             <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
               <p className="font-medium text-[var(--ui-text)]">Regla simple de unidades</p>
-              <p className="mt-1">Unidad base: donde se guarda TODO el stock y todos los movimientos.</p>
-              <p>Unidad operativa: sugerencia para formularios; debe ser de la misma familia.</p>
+              <p className="mt-1">Unidad base: donde se guarda stock, costo y recetas.</p>
+              <p>Unidad de compra (en Proveedor): como compra/factura el proveedor.</p>
+              <p>Unidad operativa: como capturan formularios; debe ser de la misma familia.</p>
             </div>
-            {defaultOperationalUom ? (
+            {purchaseUomProfile || remissionUomProfile ? (
               <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
                 <p>
                   <strong className="text-[var(--ui-text)]">Unidad base (consumo y costo):</strong>{" "}
                   {stockUnitCode}
                 </p>
-                <p>
-                  <strong className="text-[var(--ui-text)]">Empaque operativo:</strong>{" "}
-                  {defaultOperationalUom.label} ({defaultOperationalUom.qty_in_input_unit}{" "}
-                  {defaultOperationalUom.input_unit_code} ={" "}
-                  {defaultOperationalUom.qty_in_stock_unit} {stockUnitCode})
-                </p>
+                {purchaseUomProfile ? (
+                  <p>
+                    <strong className="text-[var(--ui-text)]">Presentacion compra:</strong>{" "}
+                    {purchaseUomProfile.label} ({purchaseUomProfile.qty_in_input_unit}{" "}
+                    {purchaseUomProfile.input_unit_code} ={" "}
+                    {purchaseUomProfile.qty_in_stock_unit} {stockUnitCode})
+                  </p>
+                ) : null}
+                {remissionUomProfile ? (
+                  <p>
+                    <strong className="text-[var(--ui-text)]">Presentacion remision:</strong>{" "}
+                    {remissionUomProfile.label} ({remissionUomProfile.qty_in_input_unit}{" "}
+                    {remissionUomProfile.input_unit_code} ={" "}
+                    {remissionUomProfile.qty_in_stock_unit} {stockUnitCode})
+                  </p>
+                ) : null}
               </div>
             ) : null}
 
