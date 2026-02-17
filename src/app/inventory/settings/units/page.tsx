@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
+import { safeDecodeURIComponent } from "@/lib/url";
 
 export const dynamic = "force-dynamic";
 
@@ -165,7 +166,7 @@ export default async function UnitsSettingsPage({
   searchParams?: Promise<{ ok?: string; error?: string }>;
 }) {
   const sp = (await searchParams) ?? {};
-  const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
+  const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
   const okMsg = sp.ok
     ? sp.ok === "unit_saved"
       ? "Unidad guardada."

@@ -9,6 +9,7 @@ import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { getCategoryDomainOptions } from "@/lib/constants";
+import { safeDecodeURIComponent } from "@/lib/url";
 
 import { ProductSuppliersEditor } from "@/features/inventory/catalog/product-suppliers-editor";
 import { ProductSiteSettingsEditor } from "@/features/inventory/catalog/product-site-settings-editor";
@@ -544,7 +545,7 @@ export default async function NewProductPage({
   const sp = (await searchParams) ?? {};
   const typeKey = (sp.type ?? "insumo") as ProductTypeKey;
   const config = TYPE_CONFIG[typeKey] ?? TYPE_CONFIG.insumo;
-  const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
+  const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
 
   const { supabase, user } = await requireAppAccess({
     appId: "nexo",

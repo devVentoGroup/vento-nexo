@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 import { requireAppAccess } from "@/lib/auth/guard";
+import { safeDecodeURIComponent } from "@/lib/url";
 
 export const dynamic = "force-dynamic";
 
@@ -58,7 +59,7 @@ export default async function InventoryMovementsPage({
   searchParams?: Promise<SearchParams>;
 }) {
   const sp = (await searchParams) ?? {};
-  const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
+  const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
 
   const returnTo = "/inventory/movements";
   const { supabase, user } = await requireAppAccess({

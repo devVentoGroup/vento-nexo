@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { RemissionsCreateForm } from "@/components/vento/remissions-create-form";
 import { PageHeader } from "@/components/vento/standard/page-header";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
+import { safeDecodeURIComponent } from "@/lib/url";
 import {
   convertByProductProfile,
   normalizeUnitCode,
@@ -327,8 +328,8 @@ export default async function RemissionsPage({
   searchParams?: Promise<SearchParams>;
 }) {
   const sp = (await searchParams) ?? {};
-  const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
-  const okMsg = sp.ok ? decodeURIComponent(sp.ok) : "";
+  const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
+  const okMsg = sp.ok ? safeDecodeURIComponent(sp.ok) : "";
 
   const { supabase, user } = await requireAppAccess({
     appId: APP_ID,

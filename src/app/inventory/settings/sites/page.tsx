@@ -4,6 +4,7 @@ import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/t
 
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
+import { safeDecodeURIComponent } from "@/lib/url";
 
 export const dynamic = "force-dynamic";
 
@@ -60,7 +61,7 @@ export default async function SitesPage({
 }) {
   const sp = (await searchParams) ?? {};
   const okMsg = sp.ok === "created" ? "Sede creada." : "";
-  const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
+  const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
 
   const { supabase, user } = await requireAppAccess({
     appId: "nexo",

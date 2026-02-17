@@ -5,6 +5,7 @@ import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/t
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { CloseCountForm } from "@/features/inventory/count-initial/close-count-form";
+import { safeDecodeURIComponent } from "@/lib/url";
 
 export const dynamic = "force-dynamic";
 
@@ -291,7 +292,7 @@ export default async function CountSessionPage({
       ) : null}
       {sp.error ? (
         <div className="ui-alert ui-alert--error">
-          {decodeURIComponent(sp.error)}
+          {safeDecodeURIComponent(sp.error)}
         </div>
       ) : null}
 

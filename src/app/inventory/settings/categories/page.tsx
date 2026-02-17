@@ -19,6 +19,7 @@ import {
 } from "@/lib/inventory/forms/drafts";
 import type { FormDraftKey } from "@/lib/inventory/forms/types";
 import { createClient } from "@/lib/supabase/server";
+import { safeDecodeURIComponent } from "@/lib/url";
 import {
   CATEGORY_KINDS,
   buildCategorySuggestedDescription,
@@ -579,7 +580,7 @@ export default async function InventoryCategorySettingsPage({
             ? "No habia descripciones pendientes por completar."
           : "Cambios guardados."
     : "";
-  const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
+  const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
 
   const { supabase, user } = await requireAppAccess({
     appId: "nexo",

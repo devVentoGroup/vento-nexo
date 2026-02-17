@@ -4,6 +4,7 @@ import { redirect } from "next/navigation";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
+import { safeDecodeURIComponent } from "@/lib/url";
 import { WithdrawForm } from "@/features/inventory/withdraw/withdraw-form";
 import { PageHeader } from "@/components/vento/standard/page-header";
 import {
@@ -247,7 +248,7 @@ export default async function WithdrawPage({
   const locIdParam = sp.loc_id ? String(sp.loc_id).trim() : "";
   const locCodeParam = sp.loc ? String(sp.loc).trim().toUpperCase() : "";
   const siteIdParam = sp.site_id ? String(sp.site_id).trim() : "";
-  const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
+  const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
   const okMsg = sp.ok ? "Retiro registrado." : "";
 
   const { supabase, user } = await requireAppAccess({

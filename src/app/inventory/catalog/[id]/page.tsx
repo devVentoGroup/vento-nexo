@@ -26,6 +26,7 @@ import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { getCategoryDomainOptions } from "@/lib/constants";
+import { safeDecodeURIComponent } from "@/lib/url";
 import {
   categoryKindFromProduct,
   categorySupportsKind,
@@ -148,7 +149,7 @@ function sanitizeCatalogReturnPath(value: string): string {
 function decodeCatalogReturnParam(value: string | undefined): string {
   if (!value) return "";
   try {
-    return sanitizeCatalogReturnPath(decodeURIComponent(value));
+    return sanitizeCatalogReturnPath(safeDecodeURIComponent(value));
   } catch {
     return "";
   }
@@ -657,7 +658,7 @@ export default async function ProductCatalogDetailPage({
   const { id } = await params;
   const sp = (await searchParams) ?? {};
   const okMsg = sp.ok ? "Cambios guardados." : "";
-  const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
+  const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
   const from = decodeCatalogReturnParam(sp.from);
 
   const { supabase, user } = await requireAppAccess({

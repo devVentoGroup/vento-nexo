@@ -4,6 +4,7 @@ import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/t
 
 import { requireAppAccess } from "@/lib/auth/guard";
 import { getCategoryDomainOptions } from "@/lib/constants";
+import { safeDecodeURIComponent } from "@/lib/url";
 import {
   categoryKindFromProduct,
   collectDescendantIds,
@@ -128,7 +129,7 @@ export default async function InventoryStockPage({
   searchParams?: Promise<SearchParams>;
 }) {
   const sp = (await searchParams) ?? {};
-  const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
+  const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
 
   const returnTo = "/inventory/stock";
   const { supabase, user } = await requireAppAccess({

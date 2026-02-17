@@ -9,6 +9,7 @@ import { LocEditForm } from "@/features/inventory/locations/loc-edit-form";
 import { PageHeader } from "@/components/vento/standard/page-header";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
+import { safeDecodeURIComponent } from "@/lib/url";
 
 export const dynamic = "force-dynamic";
 
@@ -62,7 +63,7 @@ export default async function InventoryLocationsPage({
   const deleted = String(sp.deleted ?? "");
   const updated = String(sp.updated ?? "");
   const editId = String(sp.edit ?? "").trim();
-  const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
+  const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
   const filterSiteId = String(sp.site_id ?? "").trim();
   const filterZone = String(sp.zone ?? "").trim().toUpperCase();
   const filterCode = String(sp.code ?? "").trim();

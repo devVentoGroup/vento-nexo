@@ -8,6 +8,7 @@ import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { ProductionBatchForm } from "@/components/vento/production-batch-form";
 import { PageHeader } from "@/components/vento/standard/page-header";
+import { safeDecodeURIComponent } from "@/lib/url";
 
 export const dynamic = "force-dynamic";
 
@@ -198,8 +199,8 @@ export default async function ProductionBatchesPage({
   searchParams?: Promise<SearchParams>;
 }) {
   const sp = (await searchParams) ?? {};
-  const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
-  const okMsg = sp.ok ? decodeURIComponent(sp.ok) : "";
+  const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
+  const okMsg = sp.ok ? safeDecodeURIComponent(sp.ok) : "";
 
   const { supabase, user } = await requireAppAccess({
     appId: APP_ID,

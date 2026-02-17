@@ -9,6 +9,7 @@ import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { getCategoryDomainOptions } from "@/lib/constants";
 import { getAutoCostReadinessReason } from "@/lib/inventory/costing";
 import { createClient } from "@/lib/supabase/server";
+import { safeDecodeURIComponent } from "@/lib/url";
 import {
   categoryKindFromCatalogTab,
   collectDescendantIds,
@@ -285,7 +286,7 @@ export default async function InventoryCatalogPage({
         ? "Estado del producto actualizado."
         : "Cambios guardados."
     : "";
-  const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
+  const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
   const searchQuery = String(sp.q ?? "").trim();
 
   const tabRaw = String(sp.tab ?? "insumos").trim().toLowerCase();

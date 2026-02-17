@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { EntriesForm } from "@/components/vento/entries-form";
 import { PageHeader } from "@/components/vento/standard/page-header";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
+import { safeDecodeURIComponent } from "@/lib/url";
 import {
   convertQuantity,
   createUnitMap,
@@ -646,8 +647,8 @@ export default async function EntriesPage({
   searchParams?: Promise<SearchParams>;
 }) {
   const sp = (await searchParams) ?? {};
-  const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
-  const okMsg = sp.ok ? decodeURIComponent(sp.ok) : "";
+  const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
+  const okMsg = sp.ok ? safeDecodeURIComponent(sp.ok) : "";
 
   const access = await requireAppAccess({
     appId: "nexo",

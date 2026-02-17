@@ -6,6 +6,7 @@ import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/t
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { DeleteRouteForm } from "@/components/vento/delete-route-form";
+import { safeDecodeURIComponent } from "@/lib/url";
 
 export const dynamic = "force-dynamic";
 
@@ -87,7 +88,7 @@ export default async function SupplyRoutesPage({
 }) {
   const sp = (await searchParams) ?? {};
   const okMsg = sp.ok === "added" ? "Ruta añadida." : sp.ok === "toggled" ? "Estado actualizado." : sp.ok === "deleted" ? "Ruta eliminada." : "";
-  const errorMsg = sp.error ? decodeURIComponent(sp.error) : "";
+  const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
 
   const { supabase, user } = await requireAppAccess({
     appId: "nexo",
