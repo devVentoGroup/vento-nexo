@@ -190,7 +190,7 @@ async function createProduct(formData: FormData) {
     if (categoryKind !== "venta" && normalizeCategoryDomain(category.domain)) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}&error=` +
-          encodeURIComponent("Las categorías con dominio solo se permiten para productos de venta.")
+          encodeURIComponent("Las categorias con dominio solo se permiten para productos de venta.")
       );
     }
   }
@@ -722,7 +722,7 @@ export default async function NewProductPage({
         subtitle={config.subtitle}
         actions={
           <Link href="/inventory/catalog" className="ui-btn ui-btn--ghost">
-            Volver al catálogo
+            Volver al catalogo
           </Link>
         }
       />
@@ -740,7 +740,7 @@ export default async function NewProductPage({
           </select>
         </label>
         <label className="flex flex-col gap-1">
-          <span className="ui-label">Sede para categorías</span>
+          <span className="ui-label">Sede para categorias</span>
           <select name="category_site_id" defaultValue={categorySiteId} className="ui-input">
             <option value="">Seleccionar sede</option>
             {sitesList.map((site) => (
@@ -764,14 +764,14 @@ export default async function NewProductPage({
           </label>
         ) : null}
         <div className="flex items-end">
-          <button className="ui-btn ui-btn--ghost">Actualizar categorías</button>
+          <button className="ui-btn ui-btn--ghost">Actualizar categorias</button>
         </div>
       </form>
 
       <form action={createProduct} className="space-y-8">
         <input type="hidden" name="_type_key" value={typeKey} />
 
-        {/* ——— Datos basicos ——— */}
+        {/* Paso 1: Datos basicos */}
         <section className="ui-panel space-y-6">
           <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">
@@ -838,7 +838,118 @@ export default async function NewProductPage({
           </div>
         </section>
 
-        {/* ——— Proveedores (solo insumo) ——— */}
+        {/* --- Unidades y almacenamiento (definir antes de proveedores) --- */}
+        {config.hasStorage && (
+          <section className="ui-panel space-y-6">
+            <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">
+                {nextSection()}
+              </span>
+              <div>
+                <h2 className="ui-h3">Unidades y almacenamiento</h2>
+                <p className="text-sm text-[var(--ui-muted)]">
+                  Define unidad base, unidad operativa y politica de costo para inventario.
+                </p>
+              </div>
+            </div>
+            <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
+              <p className="font-medium text-[var(--ui-text)]">Regla clara de unidades</p>
+              <p className="mt-1">
+                <strong className="text-[var(--ui-text)]">Unidad base:</strong> stock, costo y recetas.
+              </p>
+              <p>
+                <strong className="text-[var(--ui-text)]">Unidad de compra:</strong> la defines en Proveedores.
+              </p>
+              <p>
+                <strong className="text-[var(--ui-text)]">Unidad operativa:</strong> captura en formularios si no usas empaque.
+              </p>
+            </div>
+
+            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+              <label className="flex flex-col gap-1">
+                <span className="ui-label">
+                  Unidad base de stock <span className="text-[var(--ui-danger)]">*</span>
+                </span>
+                <select
+                  id={STOCK_UNIT_FIELD_ID}
+                  name="stock_unit_code"
+                  className="ui-input"
+                  defaultValue={defaultStockUnitCode}
+                  required
+                >
+                  {unitsList.map((unit) => (
+                    <option key={unit.code} value={unit.code}>
+                      {unit.code} - {unit.name} ({unit.family})
+                    </option>
+                  ))}
+                </select>
+                <span className="text-xs text-[var(--ui-muted)]">
+                  Ejemplo jugo: base = ml. Ejemplo queso: base = un/lonja.
+                </span>
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="ui-label">Unidad operativa (formularios)</span>
+                <select name="default_unit" className="ui-input" defaultValue={defaultStockUnitCode}>
+                  {defaultUnitOptions.map((unit) => (
+                    <option key={unit.code} value={unit.code}>
+                      {unit.code} - {unit.name} ({unit.family})
+                    </option>
+                  ))}
+                </select>
+                <span className="text-xs text-[var(--ui-muted)]">
+                  Se usa para captura rapida en formularios cuando no hay empaque operativo.
+                </span>
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="ui-label">Politica de costo</span>
+                <select name="costing_mode" className="ui-input" defaultValue="auto_primary_supplier">
+                  <option value="auto_primary_supplier">Auto desde proveedor primario</option>
+                  <option value="manual">Manual</option>
+                </select>
+              </label>
+            </div>
+
+            <details className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3 text-sm">
+              <summary className="cursor-pointer font-medium text-[var(--ui-text)]">
+                Opciones avanzadas de almacenamiento
+              </summary>
+              <div className="mt-3 flex flex-wrap gap-6">
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" name="track_inventory" defaultChecked />
+                  <span className="ui-label">Controlar stock</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" name="lot_tracking" />
+                  <span className="ui-label">Lotes</span>
+                </label>
+                <label className="flex items-center gap-2">
+                  <input type="checkbox" name="expiry_tracking" />
+                  <span className="ui-label">Vencimiento</span>
+                </label>
+              </div>
+            </details>
+          </section>
+        )}
+
+        {/* Guia: proveedores (solo insumo) */}
+        {config.hasSuppliers ? (
+          <section className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)] space-y-2">
+            <p className="font-semibold text-[var(--ui-text)]">Guia rapida de unidades (casos reales)</p>
+            <p>
+              <strong className="text-[var(--ui-text)]">Queso gouda:</strong> base = lonja/un, compra = 1 paquete de 10 un, receta = 2 un.
+            </p>
+            <p>
+              <strong className="text-[var(--ui-text)]">Jugo de naranja:</strong> base = ml, compra = 1 botella de 1 l, receta = ml.
+            </p>
+            <p>
+              <strong className="text-[var(--ui-text)]">Cloro:</strong> base = ml, compra = galon, remision = botella 1 l, uso final = taza (convertida a ml).
+            </p>
+            <p>Regla: el sistema guarda stock y costo en unidad base; compra/remision se convierten automaticamente.</p>
+          </section>
+        ) : null}
+
         {config.hasSuppliers && (
           <section className="ui-panel space-y-6">
             <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
@@ -846,9 +957,9 @@ export default async function NewProductPage({
                 {nextSection()}
               </span>
               <div>
-                <h2 className="ui-h3">Proveedores</h2>
+                <h2 className="ui-h3">Compra principal (proveedor)</h2>
                 <p className="text-sm text-[var(--ui-muted)]">
-                  Define empaque de compra y usa la calculadora para convertir costo a unidad base.
+                  Aqui defines como compra/factura el proveedor. El sistema convierte automaticamente a la unidad base.
                 </p>
               </div>
             </div>
@@ -864,11 +975,12 @@ export default async function NewProductPage({
               }))}
               stockUnitCode={defaultStockUnitCode}
               stockUnitCodeFieldId={STOCK_UNIT_FIELD_ID}
+              mode="simple"
             />
           </section>
         )}
 
-        {/* ——— Receta (preparacion y venta) ——— */}
+        {/* Secciones de receta (preparacion y venta) */}
         {config.hasRecipe && (
           <>
             <section className="ui-panel space-y-6">
@@ -949,88 +1061,7 @@ export default async function NewProductPage({
           </div>
         </section>
 
-        {/* ——— Almacenamiento (no para asset) ——— */}
-        {config.hasStorage && (
-          <section className="ui-panel space-y-6">
-            <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">
-                {nextSection()}
-              </span>
-              <div>
-                <h2 className="ui-h3">Almacenamiento</h2>
-                <p className="text-sm text-[var(--ui-muted)]">Control de stock, lotes y vencimiento.</p>
-              </div>
-            </div>
-            <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
-              <p className="font-medium text-[var(--ui-text)]">Regla simple de unidades</p>
-              <p className="mt-1">Unidad base: donde se guarda stock, costo y recetas.</p>
-              <p>Unidad de compra (en Proveedor): como compra/factura el proveedor.</p>
-              <p>Unidad operativa: como capturan formularios; debe ser de la misma familia.</p>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">
-                  Unidad base de stock <span className="text-[var(--ui-danger)]">*</span>
-                </span>
-                <select
-                  id={STOCK_UNIT_FIELD_ID}
-                  name="stock_unit_code"
-                  className="ui-input"
-                  defaultValue={defaultStockUnitCode}
-                  required
-                >
-                  {unitsList.map((unit) => (
-                    <option key={unit.code} value={unit.code}>
-                      {unit.code} - {unit.name} ({unit.family})
-                    </option>
-                  ))}
-                </select>
-                <span className="text-xs text-[var(--ui-muted)]">
-                  Unidad canonica en la que vivira el inventario de este producto.
-                </span>
-              </label>
-
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Unidad operativa (formularios)</span>
-                <select name="default_unit" className="ui-input" defaultValue={defaultStockUnitCode}>
-                  {defaultUnitOptions.map((unit) => (
-                    <option key={unit.code} value={unit.code}>
-                      {unit.code} - {unit.name} ({unit.family})
-                    </option>
-                  ))}
-                </select>
-                <span className="text-xs text-[var(--ui-muted)]">
-                  Si eliges una unidad incompatible, se guardara automaticamente la unidad base.
-                </span>
-              </label>
-
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Politica de costo</span>
-                <select name="costing_mode" className="ui-input" defaultValue="auto_primary_supplier">
-                  <option value="auto_primary_supplier">Auto desde proveedor primario</option>
-                  <option value="manual">Manual</option>
-                </select>
-              </label>
-            </div>
-            <div className="flex flex-wrap gap-6">
-              <label className="flex items-center gap-2">
-                <input type="checkbox" name="track_inventory" defaultChecked />
-                <span className="ui-label">Controlar stock</span>
-              </label>
-              <label className="flex items-center gap-2">
-                <input type="checkbox" name="lot_tracking" />
-                <span className="ui-label">Lotes</span>
-              </label>
-              <label className="flex items-center gap-2">
-                <input type="checkbox" name="expiry_tracking" />
-                <span className="ui-label">Vencimiento</span>
-              </label>
-            </div>
-          </section>
-        )}
-
-        {/* ——— Sedes ——— */}
+        {/* Paso final: Disponibilidad por sede */}
         <section className="ui-panel space-y-6">
           <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">
@@ -1049,7 +1080,20 @@ export default async function NewProductPage({
           />
         </section>
 
-        {/* ——— Submit ——— */}
+        <section className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)] space-y-2">
+          <p className="font-semibold text-[var(--ui-text)]">Checklist rapido antes de guardar</p>
+          <p>1) Unidad base definida (donde vive stock, costo y recetas).</p>
+          <p>
+            2){" "}
+            {config.hasSuppliers
+              ? "Proveedor principal completo (empaque, cantidad, unidad y precio)."
+              : "Clasificacion y categoria revisadas para este tipo de item."}
+          </p>
+          <p>3) Sedes configuradas (disponible, area por defecto y uso en sede).</p>
+          <p>4) Si aplica, receta completa con ingredientes y pasos.</p>
+        </section>
+
+        {/* Accion final */}
         <div className="flex justify-end">
           <button type="submit" className="ui-btn ui-btn--brand">
             Crear {typeKey === "asset" ? "equipo" : typeKey === "venta" ? "producto" : typeKey}

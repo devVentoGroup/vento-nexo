@@ -35,6 +35,7 @@ type Props = {
   units: UnitOption[];
   stockUnitCode?: string;
   stockUnitCodeFieldId?: string;
+  mode?: "simple" | "full";
 };
 
 function normalizeCode(value: string | undefined | null): string {
@@ -87,10 +88,20 @@ export function ProductSuppliersEditor({
   units,
   stockUnitCode,
   stockUnitCodeFieldId,
+  mode = "full",
 }: Props) {
+  const isSimpleMode = mode === "simple";
   const normalizedInitialStockUnitCode = normalizeCode(stockUnitCode);
+  const normalizedInitialRows =
+    initialRows.length > 0
+      ? initialRows.map((line, index) =>
+          isSimpleMode && index === 0 ? { ...line, is_primary: true } : line
+        )
+      : [];
   const [lines, setLines] = useState<SupplierLine[]>(
-    initialRows.length ? initialRows : [buildEmptyLine(normalizedInitialStockUnitCode)]
+    normalizedInitialRows.length
+      ? normalizedInitialRows
+      : [{ ...buildEmptyLine(normalizedInitialStockUnitCode), is_primary: isSimpleMode }]
   );
   const [liveStockUnitCode, setLiveStockUnitCode] = useState(normalizedInitialStockUnitCode);
 
@@ -171,6 +182,12 @@ export function ProductSuppliersEditor({
         <p className="mt-1">1) Define empaque, cantidad y unidad de compra.</p>
         <p>2) El sistema convierte a la unidad base del producto.</p>
         <p>3) Calcula el costo por unidad base automaticamente.</p>
+        {isSimpleMode ? (
+          <p className="mt-2">
+            En este paso solo necesitas completar la <strong className="text-[var(--ui-text)]">compra principal</strong>.
+            Los proveedores extra son opcionales.
+          </p>
+        ) : null}
         {stockUnit ? (
           <p className="mt-2">
             Unidad base activa:{" "}
@@ -186,9 +203,9 @@ export function ProductSuppliersEditor({
       </div>
 
       <div className="flex items-center justify-between gap-3">
-        <span className="ui-label">Proveedores</span>
+        <span className="ui-label">{isSimpleMode ? "Compra principal" : "Proveedores"}</span>
         <button type="button" onClick={addLine} className="ui-btn ui-btn--ghost text-sm">
-          + Agregar proveedor
+          {isSimpleMode ? "+ Agregar proveedor adicional" : "+ Agregar proveedor"}
         </button>
       </div>
 
@@ -200,17 +217,30 @@ export function ProductSuppliersEditor({
         <div className="space-y-4">
           {visibleLines.map((line, index) => {
             const realIndex = lines.findIndex((current) => current === line);
+            const isMainSimpleRow = isSimpleMode && index === 0;
             const packUnitCode = normalizeCode(line.purchase_pack_unit_code);
             const packUnit = packUnitCode ? unitsByCode.get(packUnitCode) ?? null : null;
             const packQty = Number(line.purchase_pack_qty ?? 0);
             const price = Number(line.purchase_price ?? 0);
             const packLabel = line.purchase_unit?.trim() || "empaque";
             const currency = line.currency?.trim() || "COP";
+            const hasPurchaseData =
+              Boolean(line.supplier_id) &&
+              Boolean(line.purchase_unit?.trim()) &&
+              packQty > 0 &&
+              price > 0;
 
             const isFamilyCompatible =
               Boolean(stockUnit) &&
               Boolean(packUnit) &&
               stockUnit?.family === packUnit?.family;
+
+            const isReadyForAutoCost =
+              Boolean(line.is_primary) &&
+              hasPurchaseData &&
+              Boolean(stockUnit) &&
+              Boolean(packUnit) &&
+              isFamilyCompatible;
 
             const stockQty =
               isFamilyCompatible && stockUnit && packUnit && packQty > 0
@@ -236,46 +266,70 @@ export function ProductSuppliersEditor({
                 <div className="mb-4 flex flex-wrap items-center justify-between gap-3 border-b border-[var(--ui-border)] pb-3">
                   <div className="flex items-center gap-2">
                     <span className="text-sm font-semibold text-[var(--ui-text)]">
-                      Proveedor #{index + 1}
+                      {isSimpleMode
+                        ? index === 0
+                          ? "Proveedor principal"
+                          : `Proveedor adicional #${index}`
+                        : `Proveedor #${index + 1}`}
                     </span>
                     {line.is_primary ? (
                       <span className="rounded-full bg-[var(--ui-brand)]/15 px-2 py-0.5 text-xs font-medium text-[var(--ui-brand)]">
                         Primario
                       </span>
                     ) : null}
+                    {line.is_primary ? (
+                      <span
+                        className={
+                          isReadyForAutoCost
+                            ? "rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-medium text-emerald-700"
+                            : "rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700"
+                        }
+                      >
+                        {isReadyForAutoCost ? "Listo para auto-costo" : "Falta completar compra"}
+                      </span>
+                    ) : null}
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <label className="flex items-center gap-1 text-xs text-[var(--ui-muted)]">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(line.is_primary)}
-                        onChange={(event) => setPrimary(realIndex, event.target.checked)}
-                      />
-                      Primario
-                    </label>
-                    <label
-                      className="flex items-center gap-1 text-xs text-[var(--ui-muted)]"
-                      title="Permite usar este empaque en remisiones, traslados y retiros sin hacer conversion manual."
-                    >
-                      <input
-                        type="checkbox"
-                        checked={Boolean(line.use_in_operations)}
-                        disabled={!line.is_primary}
-                        onChange={(event) =>
-                          updateLine(realIndex, { use_in_operations: event.target.checked })
-                        }
-                      />
-                      Usar empaque en operacion
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => removeLine(realIndex)}
-                      className="text-xs text-[var(--ui-danger)] hover:underline"
-                      title="Quitar"
-                    >
-                      Quitar
-                    </button>
+                    {isMainSimpleRow ? (
+                      <span className="text-xs text-[var(--ui-muted)]">
+                        Este proveedor queda como primario por defecto.
+                      </span>
+                    ) : (
+                      <label className="flex items-center gap-1 text-xs text-[var(--ui-muted)]">
+                        <input
+                          type="checkbox"
+                          checked={Boolean(line.is_primary)}
+                          onChange={(event) => setPrimary(realIndex, event.target.checked)}
+                        />
+                        Primario
+                      </label>
+                    )}
+                    {line.is_primary ? (
+                      <label
+                        className="flex items-center gap-1 text-xs text-[var(--ui-muted)]"
+                        title="Permite usar este empaque en remisiones, traslados y retiros sin hacer conversion manual."
+                      >
+                        <input
+                          type="checkbox"
+                          checked={Boolean(line.use_in_operations)}
+                          onChange={(event) =>
+                            updateLine(realIndex, { use_in_operations: event.target.checked })
+                          }
+                        />
+                        Usar empaque en operacion
+                      </label>
+                    ) : null}
+                    {!isSimpleMode || index > 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => removeLine(realIndex)}
+                        className="text-xs text-[var(--ui-danger)] hover:underline"
+                        title="Quitar"
+                      >
+                        Quitar
+                      </button>
+                    ) : null}
                   </div>
                 </div>
 
@@ -350,6 +404,9 @@ export function ProductSuppliersEditor({
                         </option>
                       ))}
                     </select>
+                    <span className="text-xs text-[var(--ui-muted)]">
+                      Unidad en la que factura el proveedor. Para liquidos usa l/ml, para peso kg/g, para piezas un.
+                    </span>
                   </label>
 
                   <label className="flex flex-col gap-1">
@@ -368,6 +425,9 @@ export function ProductSuppliersEditor({
                       className="ui-input"
                       placeholder="-"
                     />
+                    <span className="text-xs text-[var(--ui-muted)]">
+                      Precio del empaque completo (no por unidad base).
+                    </span>
                   </label>
                 </div>
 

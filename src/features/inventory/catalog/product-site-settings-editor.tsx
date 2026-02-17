@@ -1,8 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
-
-import { Table, TableCell, TableHeaderCell } from "@/components/vento/standard/table";
+import { useCallback, useMemo, useState } from "react";
 
 export type SiteSettingLine = {
   id?: string;
@@ -37,6 +35,13 @@ export function ProductSiteSettingsEditor({
   areaKinds,
 }: Props) {
   const [lines, setLines] = useState<SiteSettingLine[]>(initialRows.length ? initialRows : [emptyLine()]);
+  const siteNameById = useMemo(
+    () =>
+      new Map(
+        sites.map((site) => [site.id, site.name?.trim() || site.id])
+      ),
+    [sites]
+  );
 
   const updateLine = useCallback((index: number, patch: Partial<SiteSettingLine>) => {
     setLines((prev) => prev.map((line, i) => (i === index ? { ...line, ...patch } : line)));
@@ -61,7 +66,7 @@ export function ProductSiteSettingsEditor({
   return (
     <div className="space-y-3">
       <input type="hidden" name={name} value={JSON.stringify(lines)} />
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="space-y-1">
           <span className="ui-label">Configuracion por sede</span>
           <p className="text-xs text-[var(--ui-muted)]">
@@ -71,7 +76,7 @@ export function ProductSiteSettingsEditor({
         <button
           type="button"
           onClick={addLine}
-          className="ui-btn ui-btn--ghost text-sm"
+          className="ui-btn ui-btn--ghost ui-btn--sm"
           title="Agrega otra sede donde este producto tambien estara disponible."
         >
           + Agregar sede
@@ -93,105 +98,119 @@ export function ProductSiteSettingsEditor({
           Saudo, Vento Cafe o ambos.
         </p>
       </div>
-      <div className="overflow-x-auto">
-        <Table>
-          <thead>
-            <tr>
-              <TableHeaderCell>Sede</TableHeaderCell>
-              <TableHeaderCell>Disponible</TableHeaderCell>
-              <TableHeaderCell>Area por defecto</TableHeaderCell>
-              <TableHeaderCell>Uso en sede</TableHeaderCell>
-              <TableHeaderCell className="w-10" />
-            </tr>
-          </thead>
-          <tbody>
-            {visibleLines.map((line, index) => {
-              const realIndex = lines.findIndex((current) => current === line);
-              return (
-                <tr key={line.id ?? `new-${index}`} className="ui-body">
-                  <TableCell>
-                    <div className="space-y-1">
-                      <select
-                        value={line.site_id}
-                        onChange={(event) => updateLine(realIndex, { site_id: event.target.value })}
-                        className="ui-input min-w-[180px]"
+      <div className="space-y-3">
+        {visibleLines.map((line, index) => {
+          const realIndex = lines.findIndex((current) => current === line);
+          const selectedSiteIds = new Set(
+            visibleLines
+              .map((current) => current.site_id.trim())
+              .filter(Boolean)
+          );
+          const selectedSiteName = line.site_id ? siteNameById.get(line.site_id) : null;
+          return (
+            <div
+              key={line.id ?? `new-${index}`}
+              className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm"
+            >
+              <div className="mb-3 flex items-center justify-between gap-2 border-b border-[var(--ui-border)] pb-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold text-[var(--ui-text)]">Sede #{index + 1}</span>
+                  <span className="rounded-full bg-[var(--ui-bg-soft)] px-2 py-0.5 text-xs text-[var(--ui-muted)]">
+                    {selectedSiteName ?? "Sin sede"}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => removeLine(realIndex)}
+                  className="ui-btn ui-btn--ghost ui-btn--sm text-[var(--ui-danger)] hover:text-[var(--ui-danger)]"
+                  title="Quitar sede de esta configuracion"
+                >
+                  Quitar sede
+                </button>
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-12">
+                <label className="flex flex-col gap-1 md:col-span-4">
+                  <span className="ui-label">Sede</span>
+                  <select
+                    value={line.site_id}
+                    onChange={(event) => updateLine(realIndex, { site_id: event.target.value })}
+                    className="ui-input"
+                  >
+                    <option value="">Seleccionar sede</option>
+                    {sites.map((site) => (
+                      <option
+                        key={site.id}
+                        value={site.id}
+                        disabled={site.id !== line.site_id && selectedSiteIds.has(site.id)}
                       >
-                        <option value="">Seleccionar sede</option>
-                        {sites.map((site) => (
-                          <option key={site.id} value={site.id}>
-                            {site.name ?? site.id}
-                          </option>
-                        ))}
-                      </select>
-                      <p className="text-xs text-[var(--ui-muted)]">Elige la sede donde este producto estara visible.</p>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <label className="flex items-center gap-2" title="Activa o desactiva el producto solo para esta sede.">
-                      <input
-                        type="checkbox"
-                        checked={line.is_active}
-                        onChange={(event) => updateLine(realIndex, { is_active: event.target.checked })}
-                      />
-                      <span className="text-xs">Disponible</span>
-                    </label>
-                  </TableCell>
-                  <TableCell>
-                    <div className="space-y-1">
-                      <select
-                        value={line.default_area_kind ?? ""}
-                        onChange={(event) =>
-                          updateLine(realIndex, { default_area_kind: event.target.value || undefined })
-                        }
-                        className="ui-input min-w-[120px]"
-                      >
-                        <option value="">Sin definir</option>
-                        {areaKinds.map((area) => (
-                          <option key={area.code} value={area.code}>
-                            {area.name}
-                          </option>
-                        ))}
-                      </select>
-                      <p className="text-xs text-[var(--ui-muted)]">
-                        Si no estas seguro, deja &quot;Sin definir&quot; y ajustalo despues.
-                      </p>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <div className="space-y-1">
-                      <select
-                        value={line.audience ?? "BOTH"}
-                        onChange={(event) =>
-                          updateLine(realIndex, {
-                            audience: event.target.value as SiteSettingLine["audience"],
-                          })
-                        }
-                        className="ui-input min-w-[180px]"
-                      >
-                        <option value="BOTH">Ambos (Saudo + Vento Cafe)</option>
-                        <option value="SAUDO">Solo Saudo</option>
-                        <option value="VCF">Solo Vento Cafe</option>
-                      </select>
-                      <p className="text-xs text-[var(--ui-muted)]">
-                        En remisiones, esta sede solo vera productos del uso seleccionado.
-                      </p>
-                    </div>
-                  </TableCell>
-                  <TableCell>
-                    <button
-                      type="button"
-                      onClick={() => removeLine(realIndex)}
-                      className="text-red-600 hover:underline text-xs"
-                      title="Quitar sede de esta configuracion"
-                    >
-                      Quitar sede
-                    </button>
-                  </TableCell>
-                </tr>
-              );
-            })}
-          </tbody>
-        </Table>
+                        {site.name ?? site.id}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-[var(--ui-muted)]">
+                    Elige la sede donde este producto estara visible.
+                  </p>
+                </label>
+
+                <div className="flex items-end md:col-span-2">
+                  <label
+                    className="flex items-center gap-2"
+                    title="Activa o desactiva el producto solo para esta sede."
+                  >
+                    <input
+                      type="checkbox"
+                      checked={line.is_active}
+                      onChange={(event) => updateLine(realIndex, { is_active: event.target.checked })}
+                    />
+                    <span className="ui-label">Disponible</span>
+                  </label>
+                </div>
+
+                <label className="flex flex-col gap-1 md:col-span-3">
+                  <span className="ui-label">Area por defecto</span>
+                  <select
+                    value={line.default_area_kind ?? ""}
+                    onChange={(event) =>
+                      updateLine(realIndex, { default_area_kind: event.target.value || undefined })
+                    }
+                    className="ui-input"
+                  >
+                    <option value="">Sin definir</option>
+                    {areaKinds.map((area) => (
+                      <option key={area.code} value={area.code}>
+                        {area.name}
+                      </option>
+                    ))}
+                  </select>
+                  <p className="text-xs text-[var(--ui-muted)]">
+                    Si no estas seguro, deja &quot;Sin definir&quot; y ajustalo despues.
+                  </p>
+                </label>
+
+                <label className="flex flex-col gap-1 md:col-span-3">
+                  <span className="ui-label">Uso en sede</span>
+                  <select
+                    value={line.audience ?? "BOTH"}
+                    onChange={(event) =>
+                      updateLine(realIndex, {
+                        audience: event.target.value as SiteSettingLine["audience"],
+                      })
+                    }
+                    className="ui-input"
+                  >
+                    <option value="BOTH">Ambos (Saudo + Vento Cafe)</option>
+                    <option value="SAUDO">Solo Saudo</option>
+                    <option value="VCF">Solo Vento Cafe</option>
+                  </select>
+                  <p className="text-xs text-[var(--ui-muted)]">
+                    En remisiones, esta sede solo vera productos del uso seleccionado.
+                  </p>
+                </label>
+              </div>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

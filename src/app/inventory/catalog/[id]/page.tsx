@@ -891,6 +891,12 @@ export default async function ProductCatalogDetailPage({
 
   const productRow = product as ProductRow;
   const profileRow = (profile ?? null) as InventoryProfileRow | null;
+  const hasSuppliers =
+    String(productRow.product_type ?? "").trim().toLowerCase() === "insumo" &&
+    String(profileRow?.inventory_kind ?? "").trim().toLowerCase() !== "asset";
+  const suppliersStepNumber = "3";
+  const photoStepNumber = hasSuppliers ? "4" : "3";
+  const distributionStepNumber = hasSuppliers ? "5" : "4";
   const siteNamesById = Object.fromEntries(
     sitesList.map((site) => [site.id, site.name ?? site.id])
   );
@@ -970,10 +976,10 @@ export default async function ProductCatalogDetailPage({
     <div className="w-full space-y-8">
       <PageHeader
         title={productRow.name ?? "Ficha maestra"}
-        subtitle="Catálogo del insumo o producto: compra, almacenamiento y distribución."
+        subtitle="Catalogo del insumo o producto: compra, almacenamiento y distribucion."
         actions={
           <Link href={from || "/inventory/catalog"} className="ui-btn ui-btn--ghost">
-            Volver al catálogo
+            Volver al catalogo
           </Link>
         }
       />
@@ -999,7 +1005,7 @@ export default async function ProductCatalogDetailPage({
             </select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="ui-label">Sede para categorías</span>
+            <span className="ui-label">Sede para categorias</span>
             <select name="category_site_id" defaultValue={categorySiteId} className="ui-input">
               <option value="">Seleccionar sede</option>
               {sitesList.map((site) => (
@@ -1023,7 +1029,7 @@ export default async function ProductCatalogDetailPage({
             </label>
           ) : null}
           <div className="flex items-end">
-            <button className="ui-btn ui-btn--ghost">Actualizar categorías</button>
+            <button className="ui-btn ui-btn--ghost">Actualizar categorias</button>
           </div>
         </form>
 
@@ -1031,14 +1037,14 @@ export default async function ProductCatalogDetailPage({
           <input type="hidden" name="product_id" value={productRow.id} />
           <input type="hidden" name="return_to" value={from} />
 
-          {/* ——— Bloque 1: Compra y proveedor ——— */}
+          {/* Paso 1: Datos basicos */}
           <section className="ui-panel space-y-6">
             <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">1</span>
               <div>
-                <h2 className="ui-h3">Compra y proveedor</h2>
+                <h2 className="ui-h3">Datos basicos</h2>
                 <p className="text-sm text-[var(--ui-muted)]">
-                  De quién se compra, cómo se identifica y en qué unidad. Foto de referencia del producto.
+                  Identidad del item: nombre, SKU, tipo fijo, categoria y descripcion.
                 </p>
               </div>
             </div>
@@ -1056,12 +1062,22 @@ export default async function ProductCatalogDetailPage({
                 className="flex flex-col gap-1"
               />
               <label className="flex flex-col gap-1">
-                <span className="ui-label">Tipo</span>
-                <select name="product_type" defaultValue={productRow.product_type ?? "insumo"} className="ui-input">
-                  <option value="insumo">Insumo</option>
-                  <option value="preparacion">Preparacion</option>
-                  <option value="venta">Venta</option>
-                </select>
+                <span className="ui-label">Tipo (bloqueado)</span>
+                <input
+                  className="ui-input"
+                  value={
+                    String(productRow.product_type ?? "").trim().toLowerCase() === "venta"
+                      ? "Venta"
+                      : String(productRow.product_type ?? "").trim().toLowerCase() === "preparacion"
+                        ? "Preparacion"
+                        : "Insumo"
+                  }
+                  readOnly
+                />
+                <input type="hidden" name="product_type" value={productRow.product_type ?? "insumo"} />
+                <span className="text-xs text-[var(--ui-muted)]">
+                  El tipo se define al crear y no se cambia en edicion.
+                </span>
               </label>
               <label className="flex flex-col gap-1 sm:col-span-2">
                 <span className="ui-label">Descripcion</span>
@@ -1080,38 +1096,9 @@ export default async function ProductCatalogDetailPage({
               />
             </div>
 
-            <div>
-              <p className="mb-2 text-sm font-medium text-[var(--ui-text)]">Proveedores del insumo</p>
-              <p className="mb-3 text-sm text-[var(--ui-muted)]">
-                Captura el empaque de compra y usa la calculadora para ver la conversion a unidad base y costo por unidad de inventario.
-              </p>
-              <ProductSuppliersEditor
-                name="supplier_lines"
-                initialRows={supplierInitialRows}
-                suppliers={suppliersList.map((s) => ({ id: s.id, name: s.name }))}
-                units={unitsList.map((unit) => ({
-                  code: unit.code,
-                  name: unit.name,
-                  family: unit.family,
-                  factor_to_base: unit.factor_to_base,
-                }))}
-                stockUnitCode={stockUnitCode}
-                stockUnitCodeFieldId={STOCK_UNIT_FIELD_ID}
-              />
-            </div>
-
-            <div className="grid gap-6">
-              <ProductImageUpload
-                name="image_url"
-                label="Foto del producto"
-                currentUrl={productRow.image_url}
-                productId={productRow.id}
-                kind="product"
-              />
-            </div>
           </section>
 
-          {/* ——— Receta (solo preparacion y venta) ——— */}
+          {/* Secciones de receta (solo preparacion y venta) */}
           {hasRecipe && (
             <>
               <section className="ui-panel space-y-6">
@@ -1180,23 +1167,23 @@ export default async function ProductCatalogDetailPage({
             </>
           )}
 
-          {/* ——— Bloque 2: Almacenamiento ——— */}
+          {/* Paso 2: Unidades y almacenamiento */}
           <section className="ui-panel space-y-6">
             <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">2</span>
               <div>
-                <h2 className="ui-h3">Almacenamiento</h2>
+                <h2 className="ui-h3">Unidades y almacenamiento</h2>
                 <p className="text-sm text-[var(--ui-muted)]">
-                  Unidad en bodega, control de stock, lotes y vencimiento. Precio y costo para inventario.
+                  Define unidad base, unidad operativa y politica de costo para inventario.
                 </p>
               </div>
             </div>
 
             <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
-              <p className="font-medium text-[var(--ui-text)]">Regla simple de unidades</p>
-              <p className="mt-1">Unidad base: donde se guarda stock, costo y recetas.</p>
-              <p>Unidad de compra (en Proveedor): como compra/factura el proveedor.</p>
-              <p>Unidad operativa: como capturan formularios; debe ser de la misma familia.</p>
+              <p className="font-medium text-[var(--ui-text)]">Regla clara de unidades</p>
+              <p className="mt-1">Unidad base: donde viven stock, costo y recetas.</p>
+              <p>Unidad de compra: se define en proveedor (empaque y precio).</p>
+              <p>Unidad operativa: sugerida para formularios cuando no hay empaque activo.</p>
             </div>
             {purchaseUomProfile || remissionUomProfile ? (
               <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
@@ -1267,10 +1254,21 @@ export default async function ProductCatalogDetailPage({
                   <option value="asset">Activo</option>
                 </select>
               </label>
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Precio de venta</span>
-                <input name="price" type="number" step="0.01" defaultValue={productRow.price ?? ""} className="ui-input" placeholder="0.00" />
-              </label>
+              {String(productRow.product_type ?? "").trim().toLowerCase() === "venta" ? (
+                <label className="flex flex-col gap-1">
+                  <span className="ui-label">Precio de venta</span>
+                  <input
+                    name="price"
+                    type="number"
+                    step="0.01"
+                    defaultValue={productRow.price ?? ""}
+                    className="ui-input"
+                    placeholder="0.00"
+                  />
+                </label>
+              ) : (
+                <input type="hidden" name="price" value={productRow.price ?? ""} />
+              )}
               <input type="hidden" name="cost" value="" />
               <label className="flex flex-col gap-1">
                 <span className="ui-label">Politica de costo</span>
@@ -1328,14 +1326,69 @@ export default async function ProductCatalogDetailPage({
             </div>
           </section>
 
-          {/* ——— Bloque 3: Distribución y venta interna ——— */}
+          {hasSuppliers ? (
+            <section className="ui-panel space-y-6">
+              <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">
+                  {suppliersStepNumber}
+                </span>
+                <div>
+                  <h2 className="ui-h3">Compra principal (proveedor)</h2>
+                  <p className="text-sm text-[var(--ui-muted)]">
+                    Define empaque, unidad y precio de compra. El sistema convierte todo a unidad base.
+                  </p>
+                </div>
+              </div>
+              <ProductSuppliersEditor
+                name="supplier_lines"
+                initialRows={supplierInitialRows}
+                suppliers={suppliersList.map((s) => ({ id: s.id, name: s.name }))}
+                units={unitsList.map((unit) => ({
+                  code: unit.code,
+                  name: unit.name,
+                  family: unit.family,
+                  factor_to_base: unit.factor_to_base,
+                }))}
+                stockUnitCode={stockUnitCode}
+                stockUnitCodeFieldId={STOCK_UNIT_FIELD_ID}
+                mode="simple"
+              />
+            </section>
+          ) : (
+            <input type="hidden" name="supplier_lines" value="[]" />
+          )}
+
           <section className="ui-panel space-y-6">
             <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">3</span>
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">
+                {photoStepNumber}
+              </span>
               <div>
-                <h2 className="ui-h3">Distribución y venta interna</h2>
+                <h2 className="ui-h3">Foto del producto</h2>
                 <p className="text-sm text-[var(--ui-muted)]">
-                  En qué sedes está disponible y a qué área se envía (remisiones, envío a satélite).
+                  Imagen principal para identificar rapidamente el item en catalogo y listados.
+                </p>
+              </div>
+            </div>
+            <ProductImageUpload
+              name="image_url"
+              label="Foto del producto"
+              currentUrl={productRow.image_url}
+              productId={productRow.id}
+              kind="product"
+            />
+          </section>
+
+          {/* Paso final: Distribucion por sede */}
+          <section className="ui-panel space-y-6">
+            <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">
+                {distributionStepNumber}
+              </span>
+              <div>
+                <h2 className="ui-h3">Disponibilidad por sede</h2>
+                <p className="text-sm text-[var(--ui-muted)]">
+                  Define en que sede se usa este producto, area sugerida y uso (Saudo / Vento Cafe).
                 </p>
               </div>
             </div>
@@ -1352,6 +1405,19 @@ export default async function ProductCatalogDetailPage({
               sites={sitesList.map((s) => ({ id: s.id, name: s.name }))}
               areaKinds={areaKindsList.map((a) => ({ code: a.code, name: a.name ?? a.code }))}
             />
+          </section>
+
+          <section className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)] space-y-2">
+            <p className="font-semibold text-[var(--ui-text)]">Checklist rapido antes de guardar</p>
+            <p>1) Unidad base definida (donde viven stock, costo y recetas).</p>
+            <p>
+              2){" "}
+              {hasSuppliers
+                ? "Proveedor principal completo (empaque, cantidad, unidad y precio)."
+                : "Clasificacion y categoria revisadas para este tipo de item."}
+            </p>
+            <p>3) Sedes configuradas (disponible, area por defecto y uso en sede).</p>
+            <p>4) Si aplica, receta completa con ingredientes y pasos.</p>
           </section>
 
           <section className="ui-panel border-t border-[var(--ui-border)] pt-6">
@@ -1373,11 +1439,11 @@ export default async function ProductCatalogDetailPage({
       )}
 
       <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
-        <strong className="text-[var(--ui-text)]">Ubicaciones (LOCs)</strong> — Créalas en{" "}
+        <strong className="text-[var(--ui-text)]">Ubicaciones (LOCs)</strong> - Crea las en{" "}
         <Link href="/inventory/locations" className="font-medium underline decoration-[var(--ui-border)] underline-offset-2">
-          Inventario → Ubicaciones
+          Inventario / Ubicaciones
         </Link>
-        . En Entradas asignas cada ítem a un LOC al recibir.
+        . En Entradas asignas cada item a un LOC al recibir.
       </div>
     </div>
   );
