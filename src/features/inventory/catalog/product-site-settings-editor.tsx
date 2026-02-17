@@ -9,6 +9,7 @@ export type SiteSettingLine = {
   site_id: string;
   is_active: boolean;
   default_area_kind?: string;
+  audience?: "SAUDO" | "VCF" | "BOTH";
   _delete?: boolean;
 };
 
@@ -26,6 +27,7 @@ const emptyLine = (): SiteSettingLine => ({
   site_id: "",
   is_active: true,
   default_area_kind: "",
+  audience: "BOTH",
 });
 
 export function ProductSiteSettingsEditor({
@@ -86,6 +88,10 @@ export function ProductSiteSettingsEditor({
           <strong className="text-[var(--ui-text)]">Area por defecto:</strong> destino sugerido para remisiones y
           distribucion interna.
         </p>
+        <p>
+          <strong className="text-[var(--ui-text)]">Uso en sede:</strong> limita si esta sede usa el producto para
+          Saudo, Vento Cafe o ambos.
+        </p>
       </div>
       <div className="overflow-x-auto">
         <Table>
@@ -94,6 +100,7 @@ export function ProductSiteSettingsEditor({
               <TableHeaderCell>Sede</TableHeaderCell>
               <TableHeaderCell>Disponible</TableHeaderCell>
               <TableHeaderCell>Area por defecto</TableHeaderCell>
+              <TableHeaderCell>Uso en sede</TableHeaderCell>
               <TableHeaderCell className="w-10" />
             </tr>
           </thead>
@@ -147,6 +154,26 @@ export function ProductSiteSettingsEditor({
                       </select>
                       <p className="text-xs text-[var(--ui-muted)]">
                         Si no estas seguro, deja &quot;Sin definir&quot; y ajustalo despues.
+                      </p>
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="space-y-1">
+                      <select
+                        value={line.audience ?? "BOTH"}
+                        onChange={(event) =>
+                          updateLine(realIndex, {
+                            audience: event.target.value as SiteSettingLine["audience"],
+                          })
+                        }
+                        className="ui-input min-w-[180px]"
+                      >
+                        <option value="BOTH">Ambos (Saudo + Vento Cafe)</option>
+                        <option value="SAUDO">Solo Saudo</option>
+                        <option value="VCF">Solo Vento Cafe</option>
+                      </select>
+                      <p className="text-xs text-[var(--ui-muted)]">
+                        En remisiones, esta sede solo vera productos del uso seleccionado.
                       </p>
                     </div>
                   </TableCell>

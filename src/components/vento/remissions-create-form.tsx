@@ -105,7 +105,7 @@ export function RemissionsCreateForm({
 
         <section className={activeStepId === "ruta" ? "ui-panel space-y-4" : "hidden"}>
           <div className="ui-h3">Paso 1. Ruta origen-destino</div>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 ui-mobile-stack md:grid-cols-2">
             <label className="flex flex-col gap-1">
               <span className="ui-label">Sede origen (centro/bodega)</span>
               <select
@@ -138,7 +138,7 @@ export function RemissionsCreateForm({
 
         <section className={activeStepId === "items" ? "ui-panel space-y-4" : "hidden"}>
           <div className="ui-h3">Paso 2. Items y contexto</div>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 ui-mobile-stack md:grid-cols-2">
             <label className="flex flex-col gap-1">
               <span className="ui-label">Fecha esperada</span>
               <input

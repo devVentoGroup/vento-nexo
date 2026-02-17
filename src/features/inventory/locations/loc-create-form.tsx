@@ -113,7 +113,7 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
 
         <section className={activeStepId === "sede-zona" ? "ui-panel space-y-4" : "hidden"}>
           <div className="ui-h3">Paso 1. Sede y zona</div>
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid gap-4 ui-mobile-stack sm:grid-cols-2">
             <label className="flex flex-col gap-1">
               <span className="ui-label">Sede</span>
               <select value={siteId} onChange={(event) => setSiteId(event.target.value)} className="ui-input" required>
@@ -145,7 +145,7 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
 
         <section className={activeStepId === "codigo" ? "ui-panel space-y-4" : "hidden"}>
           <div className="ui-h3">Paso 2. Codigo y metadatos</div>
-          <div className="grid gap-4 sm:grid-cols-3">
+          <div className="grid gap-4 ui-mobile-stack sm:grid-cols-3">
             <label className="flex flex-col gap-1">
               <span className="ui-label">Pasillo / identificador</span>
               <input
@@ -187,7 +187,7 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
 
         <section className={activeStepId === "resumen" ? "ui-panel space-y-4" : "hidden"}>
           <div className="ui-h3">Paso 3. Resumen</div>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 ui-mobile-stack sm:grid-cols-2">
             <div className="ui-panel-soft p-3">
               <div className="ui-caption">Sede</div>
               <div className="font-semibold mt-1">{selectedSite?.label ?? "Sin definir"}</div>

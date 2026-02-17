@@ -325,6 +325,7 @@ export function EntriesItems({
                 options={productOptions}
                 placeholder="Selecciona producto"
                 searchPlaceholder="Buscar producto..."
+                sheetTitle="Selecciona producto"
               />
 
               <input
@@ -426,9 +427,10 @@ export function EntriesItems({
                 options={locationOptions}
                 placeholder="Selecciona LOC"
                 searchPlaceholder="Buscar LOC..."
+                sheetTitle="Selecciona LOC"
               />
 
-              <div className="flex gap-2 md:col-span-2">
+              <div className="flex flex-col gap-2 sm:flex-row md:col-span-2">
                 <input
                   name="item_notes"
                   placeholder="Notas (opcional)"

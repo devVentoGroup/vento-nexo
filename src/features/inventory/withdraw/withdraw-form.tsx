@@ -194,6 +194,7 @@ export function WithdrawForm({
               options={locationOptions}
               placeholder="Selecciona LOC"
               searchPlaceholder="Buscar LOC..."
+              sheetTitle="Selecciona LOC"
             />
             <span className="ui-caption">
               El retiro siempre descuenta de este LOC y de la sede activa.
@@ -219,8 +220,8 @@ export function WithdrawForm({
                 : "";
               const isLast = idx === rows.length - 1;
               return (
-                <div key={row.id} className="flex flex-wrap items-end gap-3 ui-panel-soft p-3">
-                  <label className="min-w-[180px] flex-1 flex-col gap-1 md:flex-initial">
+                <div key={row.id} className="flex flex-col gap-3 ui-panel-soft p-3 sm:flex-row sm:flex-wrap sm:items-end">
+                  <label className="min-w-0 flex-1 flex-col gap-1 md:flex-initial">
                     <span className="text-[11px] text-zinc-500">Producto</span>
                     <SearchableSingleSelect
                       name="item_product_id"
@@ -251,9 +252,10 @@ export function WithdrawForm({
                       options={productOptions}
                       placeholder="Selecciona producto"
                       searchPlaceholder="Buscar producto..."
+                      sheetTitle="Selecciona producto"
                     />
                   </label>
-                  <label className="flex w-24 flex-col gap-1">
+                  <label className="flex w-full flex-col gap-1 sm:w-24">
                     <span className="text-[11px] text-zinc-500">Cantidad</span>
                     <input
                       name="item_quantity"
@@ -274,7 +276,7 @@ export function WithdrawForm({
                       className="ui-input mt-1 h-10 min-w-0"
                     />
                   </label>
-                  <label className="flex w-24 flex-col gap-1">
+                  <label className="flex w-full flex-col gap-1 sm:w-24">
                     <span className="text-[11px] text-zinc-500">Unidad</span>
                     <select
                       name="item_input_unit_code"
@@ -314,7 +316,7 @@ export function WithdrawForm({
                       ) : null}
                     </select>
                   </label>
-                  <label className="min-w-[120px] flex-1 flex-col gap-1 md:flex-initial">
+                  <label className="min-w-0 flex-1 flex-col gap-1 md:flex-initial">
                     <span className="text-[11px] text-zinc-500">Nota (opcional)</span>
                     <input
                       name="item_notes"
@@ -334,7 +336,7 @@ export function WithdrawForm({
                     <button
                       type="button"
                       onClick={() => removeRow(row.id)}
-                      className="ui-btn ui-btn--ghost h-10 text-sm"
+                      className="ui-btn ui-btn--ghost h-10 w-full text-sm sm:w-auto"
                     >
                       Quitar
                     </button>
@@ -343,7 +345,7 @@ export function WithdrawForm({
                     <button
                       type="button"
                       onClick={addRow}
-                      className="ui-btn ui-btn--ghost h-10 text-sm"
+                      className="ui-btn ui-btn--ghost h-10 w-full text-sm sm:w-auto"
                     >
                       + Otro item
                     </button>
@@ -373,7 +375,7 @@ export function WithdrawForm({
 
         <section className={activeStepId === "impacto" ? "ui-panel space-y-4" : "hidden"}>
           <div className="ui-h3">Paso 3. Impacto en stock</div>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 ui-mobile-stack sm:grid-cols-2">
             <div className="ui-panel-soft p-3">
               <div className="ui-caption">LOC seleccionado</div>
               <div className="font-semibold mt-1">

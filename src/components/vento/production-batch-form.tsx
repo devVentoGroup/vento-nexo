@@ -123,7 +123,7 @@ export function ProductionBatchForm({ siteId, siteName, products, action }: Prop
 
         <section className={activeStepId === "lote" ? "ui-panel space-y-4" : "hidden"}>
           <div className="ui-h3">Paso 2. Datos de lote</div>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 ui-mobile-stack md:grid-cols-2">
             <label className="flex flex-col gap-1">
               <span className="ui-label">Cantidad producida</span>
               <input
@@ -175,7 +175,7 @@ export function ProductionBatchForm({ siteId, siteName, products, action }: Prop
 
         <section className={activeStepId === "impacto" ? "ui-panel space-y-4" : "hidden"}>
           <div className="ui-h3">Paso 3. Impacto en inventario</div>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 ui-mobile-stack sm:grid-cols-2">
             <div className="ui-panel-soft p-3">
               <div className="ui-caption">Producto</div>
               <div className="font-semibold mt-1">{selectedProduct?.name ?? "Sin definir"}</div>

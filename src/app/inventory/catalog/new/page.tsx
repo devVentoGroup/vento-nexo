@@ -464,6 +464,12 @@ async function createProduct(formData: FormData) {
           site_id: line.site_id as string,
           is_active: Boolean(line.is_active),
           default_area_kind: (line.default_area_kind as string) || null,
+          audience:
+            String(line.audience ?? "BOTH").trim().toUpperCase() === "SAUDO"
+              ? "SAUDO"
+              : String(line.audience ?? "BOTH").trim().toUpperCase() === "VCF"
+                ? "VCF"
+                : "BOTH",
         });
       }
     } catch { /* skip */ }

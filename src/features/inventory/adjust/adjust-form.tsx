@@ -248,7 +248,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
 
           <section className={activeStepId === "confirmacion" ? "ui-panel space-y-4" : "hidden"}>
             <div className="ui-h3">Paso 3. Confirmacion</div>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 ui-mobile-stack sm:grid-cols-2">
               <div className="ui-panel-soft p-3">
                 <div className="ui-caption">Producto</div>
                 <div className="font-semibold mt-1">{selectedProduct?.name ?? "Sin definir"}</div>

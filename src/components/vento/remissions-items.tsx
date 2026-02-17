@@ -123,6 +123,7 @@ export function RemissionsItems({ products, areaOptions, defaultUomProfiles = []
                 options={productOptions}
                 placeholder="Selecciona producto"
                 searchPlaceholder="Buscar producto..."
+                sheetTitle="Selecciona producto"
               />
 
               <input
@@ -173,7 +174,7 @@ export function RemissionsItems({ products, areaOptions, defaultUomProfiles = []
                 ) : null}
               </select>
 
-              <div className="flex gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row">
                 <select
                   name="item_area_kind"
                   className="ui-input"

@@ -81,7 +81,7 @@ export function LocEditForm({ loc, action, cancelHref }: Props) {
 
         <section className={activeStepId === "identidad" ? "ui-panel space-y-4" : "hidden"}>
           <div className="ui-h3">Paso 1. Identidad del LOC</div>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 ui-mobile-stack md:grid-cols-2">
             <label className="flex flex-col gap-1">
               <span className="ui-label">Codigo</span>
               <input
@@ -108,7 +108,7 @@ export function LocEditForm({ loc, action, cancelHref }: Props) {
 
         <section className={activeStepId === "metadatos" ? "ui-panel space-y-4" : "hidden"}>
           <div className="ui-h3">Paso 2. Metadatos</div>
-          <div className="grid gap-3 md:grid-cols-3">
+          <div className="grid gap-3 ui-mobile-stack md:grid-cols-3">
             <label className="flex flex-col gap-1">
               <span className="ui-label">Pasillo</span>
               <input
@@ -144,7 +144,7 @@ export function LocEditForm({ loc, action, cancelHref }: Props) {
 
         <section className={activeStepId === "resumen" ? "ui-panel space-y-4" : "hidden"}>
           <div className="ui-h3">Paso 3. Resumen</div>
-          <div className="grid gap-3 sm:grid-cols-2">
+          <div className="grid gap-3 ui-mobile-stack sm:grid-cols-2">
             <div className="ui-panel-soft p-3">
               <div className="ui-caption">Codigo</div>
               <div className="font-mono font-semibold mt-1">{code || "-"}</div>

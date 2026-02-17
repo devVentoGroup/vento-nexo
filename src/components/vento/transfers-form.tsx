@@ -90,7 +90,7 @@ export function TransfersForm({ locations, products, defaultUomProfiles = [], ac
 
         <section className={activeStepId === "origen-destino" ? "ui-panel space-y-4" : "hidden"}>
           <div className="ui-h3">Paso 1. Origen y destino</div>
-          <div className="grid gap-3 md:grid-cols-2">
+          <div className="grid gap-3 ui-mobile-stack md:grid-cols-2">
             <label className="flex flex-col gap-1">
               <span className="ui-label">LOC origen</span>
               <select

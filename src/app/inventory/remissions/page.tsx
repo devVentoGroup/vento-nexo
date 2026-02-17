@@ -70,6 +70,7 @@ type ProductSiteRow = {
   product_id: string;
   is_active: boolean | null;
   default_area_kind: string | null;
+  audience?: string | null;
 };
 
 /** Filas de product_inventory_profiles con el join a products(id,name,unit) */
@@ -86,6 +87,58 @@ type RemissionRow = {
   to_site_id: string | null;
   notes: string | null;
 };
+
+type ProductAudience = "SAUDO" | "VCF" | "BOTH";
+
+function normalizeAudience(value: string | null | undefined): ProductAudience {
+  const normalized = String(value ?? "").trim().toUpperCase();
+  if (normalized === "SAUDO") return "SAUDO";
+  if (normalized === "VCF") return "VCF";
+  return "BOTH";
+}
+
+function inferAudienceFromSiteName(siteName: string | null | undefined): ProductAudience {
+  const normalized = String(siteName ?? "")
+    .trim()
+    .toLowerCase();
+  if (normalized.includes("saudo")) return "SAUDO";
+  if (normalized.includes("vento cafe") || normalized.includes("vento café")) return "VCF";
+  return "BOTH";
+}
+
+function supportsAudience(
+  configuredAudience: string | null | undefined,
+  requestedAudience: ProductAudience
+): boolean {
+  const normalized = normalizeAudience(configuredAudience);
+  return normalized === "BOTH" || requestedAudience === "BOTH" || normalized === requestedAudience;
+}
+
+async function loadProductSiteRows(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  siteId: string
+): Promise<ProductSiteRow[]> {
+  const withAudience = await supabase
+    .from("product_site_settings")
+    .select("product_id,is_active,default_area_kind,audience")
+    .eq("site_id", siteId)
+    .eq("is_active", true);
+
+  if (!withAudience.error) {
+    return (withAudience.data ?? []) as ProductSiteRow[];
+  }
+
+  const fallback = await supabase
+    .from("product_site_settings")
+    .select("product_id,is_active,default_area_kind")
+    .eq("site_id", siteId)
+    .eq("is_active", true);
+
+  return ((fallback.data ?? []) as ProductSiteRow[]).map((row) => ({
+    ...row,
+    audience: "BOTH",
+  }));
+}
 
 function formatStatus(status?: string | null) {
   const value = String(status ?? "").trim();
@@ -235,7 +288,7 @@ async function createRemission(formData: FormData) {
 
   const { data: toSite } = await supabase
     .from("sites")
-    .select("site_type")
+    .select("site_type,name")
     .eq("id", toSiteId)
     .single();
 
@@ -251,6 +304,25 @@ async function createRemission(formData: FormData) {
       "/inventory/remissions?error=" +
         encodeURIComponent("Agrega al menos un producto con cantidad mayor a 0.")
     );
+  }
+
+  const requestedAudience = inferAudienceFromSiteName(toSite?.name ?? "");
+  const configuredRows = await loadProductSiteRows(supabase, toSiteId);
+  if (configuredRows.length > 0) {
+    const allowedProductIds = new Set(
+      configuredRows
+        .filter((row) => supportsAudience(row.audience, requestedAudience))
+        .map((row) => row.product_id)
+    );
+    const invalidItems = items.filter((item) => !allowedProductIds.has(item.product_id));
+    if (invalidItems.length > 0) {
+      redirect(
+        "/inventory/remissions?error=" +
+          encodeURIComponent(
+            "Algunos productos no estan habilitados para esta sede o flujo operativo. Revisa disponibilidad por sede."
+          )
+      );
+    }
   }
 
   const { data: request, error: requestErr } = await supabase
@@ -477,16 +549,13 @@ export default async function RemissionsPage({
   // Insumos por satélite: filtrar por sede DESTINO (Saudo), no por sede origen (Centro).
   // Cuando el satélite solicita, solo debe ver productos configurados para su sede.
   const productFilterSiteId = canCreate ? activeSiteId : selectedFromSiteId;
-  const { data: productSites } = productFilterSiteId
-    ? await supabase
-        .from("product_site_settings")
-        .select("product_id,is_active,default_area_kind")
-        .eq("site_id", productFilterSiteId)
-        .eq("is_active", true)
-    : { data: [] as ProductSiteRow[] };
-
-  const productSiteRows = (productSites ?? []) as ProductSiteRow[];
-  const productSiteIds = productSiteRows.map((row) => row.product_id);
+  const requestedAudience = inferAudienceFromSiteName(activeSite?.name ?? "");
+  const productSiteRows = productFilterSiteId
+    ? await loadProductSiteRows(supabase, productFilterSiteId)
+    : [];
+  const productSiteIds = productSiteRows
+    .filter((row) => supportsAudience(row.audience, requestedAudience))
+    .map((row) => row.product_id);
   const hasProductSiteFilter = productSiteIds.length > 0;
 
   let productsQuery = supabase

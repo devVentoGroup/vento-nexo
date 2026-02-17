@@ -85,6 +85,7 @@ type SiteSettingRow = {
   site_id: string;
   is_active: boolean | null;
   default_area_kind: string | null;
+  audience: "SAUDO" | "VCF" | "BOTH" | null;
   sites?: { id: string; name: string | null } | null;
 };
 
@@ -537,6 +538,7 @@ async function updateProduct(formData: FormData) {
         site_id?: string;
         is_active?: boolean;
         default_area_kind?: string;
+        audience?: string;
         _delete?: boolean;
       }>;
       const toDelete = siteLines.filter((l) => l.id && l._delete).map((l) => l.id as string);
@@ -548,6 +550,12 @@ async function updateProduct(formData: FormData) {
           site_id: line.site_id,
           is_active: Boolean(line.is_active),
           default_area_kind: line.default_area_kind || null,
+          audience:
+            String(line.audience ?? "BOTH").trim().toUpperCase() === "SAUDO"
+              ? "SAUDO"
+              : String(line.audience ?? "BOTH").trim().toUpperCase() === "VCF"
+                ? "VCF"
+                : "BOTH",
         };
         if (line.id) {
           const { error: upErr } = await supabase.from("product_site_settings").update(row).eq("id", line.id);
@@ -687,11 +695,23 @@ export default async function ProductCatalogDetailPage({
 
   const allCategoryRows = await loadCategoryRows(supabase);
 
-  const { data: siteSettings } = await supabase
+  const { data: siteSettingsWithAudience, error: siteSettingsAudienceError } = await supabase
     .from("product_site_settings")
-    .select("id,site_id,is_active,default_area_kind,sites(id,name)")
+    .select("id,site_id,is_active,default_area_kind,audience,sites(id,name)")
     .eq("product_id", id);
-  const siteRows = (siteSettings ?? []) as unknown as SiteSettingRow[];
+  const siteSettings =
+    !siteSettingsAudienceError
+      ? siteSettingsWithAudience
+      : (
+          await supabase
+            .from("product_site_settings")
+            .select("id,site_id,is_active,default_area_kind,sites(id,name)")
+            .eq("product_id", id)
+        ).data;
+  const siteRows = ((siteSettings ?? []) as unknown as SiteSettingRow[]).map((row) => ({
+    ...row,
+    audience: row.audience ?? "BOTH",
+  }));
 
   const { data: sitesData } = await supabase.from("sites").select("id,name").eq("is_active", true).order("name", { ascending: true });
   const sitesList = (sitesData ?? []) as SiteOptionRow[];
@@ -1258,6 +1278,7 @@ export default async function ProductCatalogDetailPage({
                 site_id: r.site_id,
                 is_active: Boolean(r.is_active),
                 default_area_kind: r.default_area_kind ?? "",
+                audience: r.audience ?? "BOTH",
               }))}
               sites={sitesList.map((s) => ({ id: s.id, name: s.name }))}
               areaKinds={areaKindsList.map((a) => ({ code: a.code, name: a.name ?? a.code }))}

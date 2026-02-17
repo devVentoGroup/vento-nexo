@@ -24,7 +24,9 @@ export function WizardFooter({
   className = "",
 }: WizardFooterProps) {
   return (
-    <div className={`flex flex-wrap items-center justify-between gap-2 ${className}`.trim()}>
+    <div
+      className={`ui-mobile-sticky-footer flex flex-wrap items-center justify-between gap-2 ${className}`.trim()}
+    >
       <div className="flex gap-2">
         {canGoPrevious && onPrevious ? (
           <button type="button" className="ui-btn ui-btn--ghost" onClick={onPrevious}>
@@ -41,4 +43,3 @@ export function WizardFooter({
     </div>
   );
 }
-

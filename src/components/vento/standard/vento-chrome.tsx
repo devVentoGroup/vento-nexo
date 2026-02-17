@@ -580,12 +580,12 @@ export function VentoChrome({
 
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="ui-header sticky top-0 z-30">
-            <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-5">
-              <div className="flex items-center gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-3 sm:gap-3 sm:px-6 sm:py-5">
+              <div className="flex items-center gap-2 sm:gap-3">
                 <button
                   type="button"
                   onClick={() => setMenuOpen(true)}
-                  className="inline-flex items-center rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] h-12 px-4 text-base font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)] lg:hidden"
+                  className="inline-flex items-center rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] h-10 px-3 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)] sm:h-12 sm:px-4 sm:text-base lg:hidden"
                 >
                   Menú
                 </button>
@@ -601,7 +601,7 @@ export function VentoChrome({
                 </div>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 sm:gap-2">
                 <AppSwitcher sites={sites} activeSiteId={activeSiteId} />
                 <ProfileMenu name={displayName} role={role ?? undefined} email={email} sites={sites} />
               </div>

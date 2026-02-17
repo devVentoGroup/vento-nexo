@@ -113,6 +113,7 @@ export function TransfersItems({ products, defaultUomProfiles = [] }: Props) {
                 options={productOptions}
                 placeholder="Selecciona producto"
                 searchPlaceholder="Buscar producto..."
+                sheetTitle="Selecciona producto"
               />
 
               <input
@@ -161,7 +162,7 @@ export function TransfersItems({ products, defaultUomProfiles = [] }: Props) {
                 ) : null}
               </select>
 
-              <div className="flex gap-2">
+              <div className="flex flex-col gap-2 sm:flex-row">
                 <input
                   name="item_notes"
                   placeholder="Notas (opcional)"

@@ -118,7 +118,7 @@ export function CountInitialForm({
           <div className="ui-body-muted">
             Ingresa cantidad contada por producto. Deja 0 o vacio los productos no contados.
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto ui-scrollbar-subtle">
             <Table>
               <thead>
                 <tr>
@@ -168,7 +168,7 @@ export function CountInitialForm({
               ? " y el ajuste de stock se aplicara al cerrar el conteo."
               : " y se actualiza stock inmediatamente."}
           </div>
-          <div className="overflow-x-auto">
+          <div className="overflow-x-auto ui-scrollbar-subtle">
             <Table>
               <thead>
                 <tr>
@@ -222,4 +222,3 @@ export function CountInitialForm({
     </div>
   );
 }
-
