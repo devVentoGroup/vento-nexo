@@ -88,7 +88,7 @@ async function loadCategoryRows(
 
 function resolveTypeCategoryKind(typeKey: ProductTypeKey): CategoryKind {
   if (typeKey === "asset") return "equipo";
-  if (typeKey === "venta") return "venta";
+  if (typeKey === "venta" || typeKey === "reventa") return "venta";
   if (typeKey === "preparacion") return "preparacion";
   return "insumo";
 }
@@ -121,6 +121,17 @@ const TYPE_CONFIG = {
     inventoryKind: "finished",
     hasSuppliers: false,
     hasRecipe: true,
+    hasPrice: true,
+    hasStorage: true,
+  },
+  reventa: {
+    title: "Nuevo producto de reventa",
+    subtitle:
+      "Producto que se compra ya terminado y se revende. No lleva receta, si lleva proveedor.",
+    productType: "venta",
+    inventoryKind: "resale",
+    hasSuppliers: true,
+    hasRecipe: false,
     hasPrice: true,
     hasStorage: true,
   },
@@ -1096,7 +1107,14 @@ export default async function NewProductPage({
         {/* Accion final */}
         <div className="flex justify-end">
           <button type="submit" className="ui-btn ui-btn--brand">
-            Crear {typeKey === "asset" ? "equipo" : typeKey === "venta" ? "producto" : typeKey}
+            Crear{" "}
+            {typeKey === "asset"
+              ? "equipo"
+              : typeKey === "venta"
+                ? "producto"
+                : typeKey === "reventa"
+                  ? "producto de reventa"
+                  : typeKey}
           </button>
         </div>
       </form>

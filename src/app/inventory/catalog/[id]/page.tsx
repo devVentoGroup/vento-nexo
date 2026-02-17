@@ -814,7 +814,12 @@ export default async function ProductCatalogDetailPage({
 
   // Recipe data (for preparacion and venta)
   const productType = (product as ProductRow).product_type;
-  const hasRecipe = productType === "preparacion" || productType === "venta";
+  const hasRecipe =
+    productType === "preparacion" ||
+    (productType === "venta" &&
+      String((profile as InventoryProfileRow | null)?.inventory_kind ?? "")
+        .trim()
+        .toLowerCase() !== "resale");
 
   type RecipeCardRow = {
     id: string;
@@ -891,9 +896,11 @@ export default async function ProductCatalogDetailPage({
 
   const productRow = product as ProductRow;
   const profileRow = (profile ?? null) as InventoryProfileRow | null;
+  const normalizedProductType = String(productRow.product_type ?? "").trim().toLowerCase();
+  const normalizedInventoryKind = String(profileRow?.inventory_kind ?? "").trim().toLowerCase();
   const hasSuppliers =
-    String(productRow.product_type ?? "").trim().toLowerCase() === "insumo" &&
-    String(profileRow?.inventory_kind ?? "").trim().toLowerCase() !== "asset";
+    (normalizedProductType === "insumo" && normalizedInventoryKind !== "asset") ||
+    (normalizedProductType === "venta" && normalizedInventoryKind === "resale");
   const suppliersStepNumber = "3";
   const photoStepNumber = hasSuppliers ? "4" : "3";
   const distributionStepNumber = hasSuppliers ? "5" : "4";
