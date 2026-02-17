@@ -246,9 +246,11 @@ async function createProduct(formData: FormData) {
     price: formData.get("price") ? Number(formData.get("price")) : null,
     cost: explicitCost,
     image_url: asText(formData.get("image_url")) || null,
-    catalog_image_url: asText(formData.get("catalog_image_url")) || null,
     is_active: true,
   };
+  if (formData.has("catalog_image_url")) {
+    productPayload.catalog_image_url = asText(formData.get("catalog_image_url")) || null;
+  }
 
   let createdProductId = "";
   let attempts = 0;
@@ -520,6 +522,8 @@ async function createProduct(formData: FormData) {
               description: step.description as string,
               tip: (step.tip as string) || null,
               time_minutes: (step.time_minutes as number) ?? null,
+              step_image_url: (step.step_image_url as string) || null,
+              step_video_url: (step.step_video_url as string) || null,
             });
           }
         } catch { /* skip */ }
@@ -845,43 +849,41 @@ export default async function NewProductPage({
                   <p className="text-sm text-[var(--ui-muted)]">Instrucciones paso a paso para preparar este producto.</p>
                 </div>
               </div>
-              <RecipeStepsEditor name="recipe_steps" initialRows={[]} />
+              <RecipeStepsEditor
+                name="recipe_steps"
+                initialRows={[]}
+                mediaOwnerId={`draft-${typeKey}`}
+              />
             </section>
 
-            <section className="ui-panel space-y-6">
-              <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">
-                  {nextSection()}
-                </span>
-                <div>
-                  <h2 className="ui-h3">Fotos del producto</h2>
-                  <p className="text-sm text-[var(--ui-muted)]">
-                    Imagen operativa y foto de catalogo para mostrar el producto de forma clara.
-                  </p>
-                </div>
-              </div>
-              <div className="grid gap-4 sm:grid-cols-2">
-                <ProductImageUpload
-                  name="image_url"
-                  label="Imagen operativa"
-                  currentUrl={null}
-                  productId={`draft-${typeKey}`}
-                  kind="product"
-                />
-                <ProductImageUpload
-                  name="catalog_image_url"
-                  label="Imagen de catalogo"
-                  currentUrl={null}
-                  productId={`draft-${typeKey}`}
-                  kind="catalog"
-                />
-              </div>
-              <div className="text-xs text-[var(--ui-muted)]">
-                Si no subes fotos ahora, puedes cargarlas despues desde la ficha de edicion.
-              </div>
-            </section>
           </>
         )}
+
+        <section className="ui-panel space-y-6">
+          <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">
+              {nextSection()}
+            </span>
+            <div>
+              <h2 className="ui-h3">Foto del producto</h2>
+              <p className="text-sm text-[var(--ui-muted)]">
+                Imagen visual para identificar rapido el producto o insumo en listados y ficha.
+              </p>
+            </div>
+          </div>
+          <div className="grid gap-4">
+            <ProductImageUpload
+              name="image_url"
+              label="Foto del producto"
+              currentUrl={null}
+              productId={`draft-${typeKey}`}
+              kind="product"
+            />
+          </div>
+          <div className="text-xs text-[var(--ui-muted)]">
+            Si no subes fotos ahora, puedes cargarlas despues desde la ficha de edicion.
+          </div>
+        </section>
 
         {/* ——— Almacenamiento (no para asset) ——— */}
         {config.hasStorage && (

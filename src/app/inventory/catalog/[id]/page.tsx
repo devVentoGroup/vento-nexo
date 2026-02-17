@@ -325,8 +325,10 @@ async function updateProduct(formData: FormData) {
     price: asNullableNumber(formData.get("price")),
     is_active: Boolean(formData.get("is_active")),
     image_url: asText(formData.get("image_url")) || null,
-    catalog_image_url: asText(formData.get("catalog_image_url")) || null,
   };
+  if (formData.has("catalog_image_url")) {
+    payload.catalog_image_url = asText(formData.get("catalog_image_url")) || null;
+  }
   if (manualCost != null) {
     payload.cost = manualCost;
   }
@@ -632,6 +634,8 @@ async function updateProduct(formData: FormData) {
             description: step.description as string,
             tip: (step.tip as string) || null,
             time_minutes: (step.time_minutes as number) ?? null,
+            step_image_url: (step.step_image_url as string) || null,
+            step_video_url: (step.step_video_url as string) || null,
           });
         }
       } catch { /* skip */ }
@@ -738,7 +742,15 @@ export default async function ProductCatalogDetailPage({
     recipe_description: string | null;
   };
   type RecipeBomRow = { id: string; ingredient_product_id: string; quantity: number };
-  type RecipeStepRow = { id: string; step_number: number; description: string; tip: string | null; time_minutes: number | null };
+  type RecipeStepRow = {
+    id: string;
+    step_number: number;
+    description: string;
+    tip: string | null;
+    time_minutes: number | null;
+    step_image_url: string | null;
+    step_video_url: string | null;
+  };
   type IngredientProductRow = { id: string; name: string | null; sku: string | null; unit: string | null; cost: number | null };
 
   let recipeCard: RecipeCardRow | null = null;
@@ -764,7 +776,7 @@ export default async function ProductCatalogDetailPage({
     if (recipeCard) {
       const { data: steps } = await supabase
         .from("recipe_steps")
-        .select("id,step_number,description,tip,time_minutes")
+        .select("id,step_number,description,tip,time_minutes,step_image_url,step_video_url")
         .eq("recipe_card_id", recipeCard.id)
         .order("step_number", { ascending: true });
       recipeStepRows = (steps ?? []) as RecipeStepRow[];
@@ -948,7 +960,7 @@ export default async function ProductCatalogDetailPage({
               <div>
                 <h2 className="ui-h3">Compra y proveedor</h2>
                 <p className="text-sm text-[var(--ui-muted)]">
-                  De quién se compra, cómo se identifica y en qué unidad. Fotos para listados y catálogo.
+                  De quién se compra, cómo se identifica y en qué unidad. Foto de referencia del producto.
                 </p>
               </div>
             </div>
@@ -1010,20 +1022,13 @@ export default async function ProductCatalogDetailPage({
               />
             </div>
 
-            <div className="grid gap-6 sm:grid-cols-2">
+            <div className="grid gap-6">
               <ProductImageUpload
                 name="image_url"
                 label="Foto del producto"
                 currentUrl={productRow.image_url}
                 productId={productRow.id}
                 kind="product"
-              />
-              <ProductImageUpload
-                name="catalog_image_url"
-                label="Foto de catálogo"
-                currentUrl={productRow.catalog_image_url}
-                productId={productRow.id}
-                kind="catalog"
               />
             </div>
           </section>
@@ -1088,7 +1093,10 @@ export default async function ProductCatalogDetailPage({
                     description: s.description,
                     tip: s.tip ?? "",
                     time_minutes: s.time_minutes ?? undefined,
+                    step_image_url: s.step_image_url ?? "",
+                    step_video_url: s.step_video_url ?? "",
                   }))}
+                  mediaOwnerId={productRow.id}
                 />
               </section>
             </>

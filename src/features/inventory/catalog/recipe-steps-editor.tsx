@@ -8,12 +8,15 @@ export type RecipeStepLine = {
   description: string;
   tip: string;
   time_minutes: number | undefined;
+  step_image_url?: string;
+  step_video_url?: string;
   _delete?: boolean;
 };
 
 type Props = {
   name?: string;
   initialRows: RecipeStepLine[];
+  mediaOwnerId: string;
 };
 
 const emptyStep = (num: number): RecipeStepLine => ({
@@ -21,20 +24,70 @@ const emptyStep = (num: number): RecipeStepLine => ({
   description: "",
   tip: "",
   time_minutes: undefined,
+  step_image_url: "",
+  step_video_url: "",
 });
 
-export function RecipeStepsEditor({ name = "recipe_steps", initialRows }: Props) {
+export function RecipeStepsEditor({
+  name = "recipe_steps",
+  initialRows,
+  mediaOwnerId,
+}: Props) {
   const [steps, setSteps] = useState<RecipeStepLine[]>(
     initialRows.length ? initialRows : [emptyStep(1)]
   );
+  const [uploadingStep, setUploadingStep] = useState<number | null>(null);
+  const [uploadErrors, setUploadErrors] = useState<Record<number, string>>({});
 
   const visibleSteps = steps.filter((s) => !s._delete);
 
   const updateStep = useCallback((index: number, patch: Partial<RecipeStepLine>) => {
-    setSteps((prev) =>
-      prev.map((s, i) => (i === index ? { ...s, ...patch } : s))
-    );
+    setSteps((prev) => prev.map((s, i) => (i === index ? { ...s, ...patch } : s)));
   }, []);
+
+  const setUploadError = useCallback((index: number, message: string) => {
+    setUploadErrors((prev) => ({ ...prev, [index]: message }));
+  }, []);
+
+  const clearUploadError = useCallback((index: number) => {
+    setUploadErrors((prev) => {
+      if (!(index in prev)) return prev;
+      const next = { ...prev };
+      delete next[index];
+      return next;
+    });
+  }, []);
+
+  const uploadStepImage = useCallback(
+    async (index: number, file: File) => {
+      clearUploadError(index);
+      setUploadingStep(index);
+      const formData = new FormData();
+      formData.set("file", file);
+      formData.set("productId", mediaOwnerId || "recipe");
+      formData.set("kind", `recipe-step-${steps[index]?.step_number ?? index + 1}`);
+
+      try {
+        const res = await fetch("/api/inventory/catalog/upload-image", {
+          method: "POST",
+          body: formData,
+        });
+        const data = (await res.json()) as { url?: string; error?: string };
+        if (!res.ok || !data.url) {
+          setUploadError(index, data.error ?? "No se pudo subir la foto del paso.");
+          return;
+        }
+        updateStep(index, { step_image_url: data.url });
+      } catch (error) {
+        const msg =
+          error instanceof Error ? error.message : "No se pudo subir la foto del paso.";
+        setUploadError(index, msg);
+      } finally {
+        setUploadingStep(null);
+      }
+    },
+    [clearUploadError, mediaOwnerId, setUploadError, steps, updateStep]
+  );
 
   const addStep = useCallback(() => {
     const maxNum = visibleSteps.reduce((m, s) => Math.max(m, s.step_number), 0);
@@ -99,7 +152,7 @@ export function RecipeStepsEditor({ name = "recipe_steps", initialRows }: Props)
                     className="ui-btn ui-btn--ghost ui-btn--sm disabled:opacity-30"
                     title="Mover arriba"
                   >
-                    ↑
+                    Arriba
                   </button>
                   <button
                     type="button"
@@ -108,7 +161,7 @@ export function RecipeStepsEditor({ name = "recipe_steps", initialRows }: Props)
                     className="ui-btn ui-btn--ghost ui-btn--sm disabled:opacity-30"
                     title="Mover abajo"
                   >
-                    ↓
+                    Abajo
                   </button>
                   <button
                     type="button"
@@ -119,6 +172,7 @@ export function RecipeStepsEditor({ name = "recipe_steps", initialRows }: Props)
                   </button>
                 </div>
               </div>
+
               <label className="flex flex-col gap-1">
                 <span className="ui-caption font-semibold">Instruccion</span>
                 <textarea
@@ -129,6 +183,7 @@ export function RecipeStepsEditor({ name = "recipe_steps", initialRows }: Props)
                   placeholder="Describe que hacer en este paso..."
                 />
               </label>
+
               <div className="grid gap-3 sm:grid-cols-2">
                 <label className="flex flex-col gap-1">
                   <span className="ui-caption font-semibold">Tips / notas</span>
@@ -156,12 +211,72 @@ export function RecipeStepsEditor({ name = "recipe_steps", initialRows }: Props)
                   />
                 </label>
               </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="flex flex-col gap-2">
+                  <span className="ui-caption font-semibold">Foto del paso</span>
+                  {step.step_image_url ? (
+                    <div className="relative h-24 w-24 overflow-hidden rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface-2)]">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={step.step_image_url}
+                        alt={`Foto paso ${step.step_number}`}
+                        className="h-full w-full object-cover"
+                      />
+                    </div>
+                  ) : (
+                    <p className="text-xs text-[var(--ui-muted)]">Sin foto cargada.</p>
+                  )}
+
+                  <div className="flex items-center gap-2">
+                    <label className="ui-btn ui-btn--ghost ui-btn--sm cursor-pointer">
+                      <input
+                        type="file"
+                        accept="image/jpeg,image/png,image/webp,image/gif"
+                        className="sr-only"
+                        disabled={uploadingStep === realIndex}
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (!file) return;
+                          uploadStepImage(realIndex, file);
+                          e.currentTarget.value = "";
+                        }}
+                      />
+                      {uploadingStep === realIndex ? "Subiendo..." : "Subir foto"}
+                    </label>
+                    {step.step_image_url ? (
+                      <button
+                        type="button"
+                        className="ui-btn ui-btn--ghost ui-btn--sm"
+                        onClick={() => updateStep(realIndex, { step_image_url: "" })}
+                      >
+                        Quitar foto
+                      </button>
+                    ) : null}
+                  </div>
+                  {uploadErrors[realIndex] ? (
+                    <p className="text-xs text-[var(--ui-danger)]">{uploadErrors[realIndex]}</p>
+                  ) : null}
+                </div>
+
+                <label className="flex flex-col gap-1">
+                  <span className="ui-caption font-semibold">Video del paso (URL)</span>
+                  <input
+                    type="url"
+                    value={step.step_video_url ?? ""}
+                    onChange={(e) => updateStep(realIndex, { step_video_url: e.target.value })}
+                    className="ui-input"
+                    placeholder="https://..."
+                  />
+                  <span className="text-xs text-[var(--ui-muted)]">
+                    Puedes pegar enlace de YouTube, Drive o video interno.
+                  </span>
+                </label>
+              </div>
             </div>
           );
         })}
-        {sortedVisible.length === 0 && (
-          <div className="ui-empty-state">Sin pasos definidos.</div>
-        )}
+        {sortedVisible.length === 0 && <div className="ui-empty-state">Sin pasos definidos.</div>}
       </div>
     </div>
   );

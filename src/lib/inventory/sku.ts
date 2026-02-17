@@ -24,6 +24,15 @@ function toSafeText(value: string | null | undefined): string {
   return String(value ?? "").trim();
 }
 
+function buildFallbackSku(params: SkuPreviewParams): string {
+  const typeCode = getSkuTypeCode(params);
+  const token = normalizeSkuToken(toSafeText(params.name), 6);
+  const timePart = String(Date.now() % 1_000_000).padStart(6, "0");
+  const randomPart = String(Math.floor(Math.random() * 100)).padStart(2, "0");
+  const sequence = `${timePart}${randomPart}`.slice(-6);
+  return `${typeCode}-${token}-${sequence}`;
+}
+
 function normalizeText(value: string): string {
   return value
     .normalize("NFD")
@@ -82,12 +91,12 @@ export async function generateNextSku(params: GenerateNextSkuParams): Promise<st
   const { data, error } = (await rpcResult) as { data: unknown; error: PostgrestError | null };
 
   if (error) {
-    throw new Error(error.message || "No se pudo generar SKU automatico.");
+    return buildFallbackSku(params);
   }
 
   const sku = toSafeText(typeof data === "string" ? data : "");
   if (!sku) {
-    throw new Error("No se pudo generar SKU automatico.");
+    return buildFallbackSku(params);
   }
 
   return sku;

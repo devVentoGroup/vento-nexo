@@ -13,6 +13,16 @@ function getExt(mime: string): string {
   return "jpg";
 }
 
+function sanitizePathToken(value: string, fallback: string): string {
+  const sanitized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^-|-$/g, "");
+  return sanitized || fallback;
+}
+
 export async function POST(req: Request) {
   const supabase = await createClient();
   const { data: userData, error: userErr } = await supabase.auth.getUser();
@@ -47,12 +57,14 @@ export async function POST(req: Request) {
   }
 
   const mime = file.type?.toLowerCase() ?? "";
-  if (!mime.startsWith("image/")) {
+  if (!ALLOWED_TYPES.includes(mime)) {
     return NextResponse.json({ error: "Solo se permiten imágenes (JPEG, PNG, WebP, GIF)" }, { status: 400 });
   }
 
-  const productId = (formData.get("productId") as string)?.trim() || "shared";
-  const kind = (formData.get("kind") as string)?.trim() || "image";
+  const rawProductId = (formData.get("productId") as string)?.trim() || "shared";
+  const rawKind = (formData.get("kind") as string)?.trim() || "image";
+  const productId = sanitizePathToken(rawProductId, "shared");
+  const kind = sanitizePathToken(rawKind, "image");
   const ext = getExt(mime);
   const path = `${productId}/${kind}-${Date.now()}.${ext}`;
 
@@ -63,7 +75,24 @@ export async function POST(req: Request) {
     .upload(path, buffer, { contentType: mime, upsert: true });
 
   if (uploadErr) {
-    return NextResponse.json({ error: uploadErr.message }, { status: 500 });
+    const message = String(uploadErr.message ?? "");
+    const normalized = message.toLowerCase();
+
+    if (normalized.includes("bucket") && normalized.includes("not found")) {
+      return NextResponse.json(
+        { error: "No esta configurado el bucket de imagenes del catalogo. Ejecuta migraciones de Storage." },
+        { status: 500 }
+      );
+    }
+
+    if (normalized.includes("row-level security") || normalized.includes("policy")) {
+      return NextResponse.json(
+        { error: "No tienes permisos de Storage para subir imagenes. Revisa politicas del bucket." },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({ error: message || "Error de Storage al subir imagen." }, { status: 500 });
   }
 
   const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
