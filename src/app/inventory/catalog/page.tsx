@@ -144,6 +144,13 @@ function formatQty(value: number | null | undefined): string {
   return new Intl.NumberFormat("es-CO", { maximumFractionDigits: 3 }).format(value);
 }
 
+function getLastCategorySegment(path: string): string {
+  const normalized = String(path ?? "").trim();
+  if (!normalized) return "-";
+  const segments = normalized.split("/").map((segment) => segment.trim()).filter(Boolean);
+  return segments[segments.length - 1] ?? normalized;
+}
+
 function toBase64UrlJson(value: unknown): string {
   return Buffer.from(JSON.stringify(value), "utf-8").toString("base64url");
 }
@@ -844,21 +851,21 @@ export default async function InventoryCatalogPage({
           </div>
         ) : null}
 
-        <div className="mt-4 max-h-[70vh] overflow-auto">
-          <table className="ui-table min-w-full text-sm">
+        <div className="mt-4 max-h-[70vh] overflow-auto rounded-xl border border-[var(--ui-border)]">
+          <table className="ui-table min-w-[1280px] text-sm">
             <thead className="text-left text-[var(--ui-muted)]">
               <tr>
-                <th className="py-2 pr-4">Producto</th>
-                <th className="py-2 pr-4">SKU</th>
-                <th className="py-2 pr-4">Categoria</th>
-                <th className="py-2 pr-4">Inventario</th>
-                <th className="py-2 pr-4">Unidad</th>
-                <th className="py-2 pr-4">Stock (sede activa)</th>
-                <th className="py-2 pr-4">Stock minimo</th>
-                <th className="py-2 pr-4">Faltante compra</th>
-                <th className="py-2 pr-4">Auto-costo</th>
-                <th className="py-2 pr-4">Estado</th>
-                <th className="py-2 pr-4 w-[340px]">Acciones</th>
+                <th className="py-2 pr-4 whitespace-nowrap">Producto</th>
+                <th className="py-2 pr-4 whitespace-nowrap">SKU</th>
+                <th className="py-2 pr-4 whitespace-nowrap">Categoria</th>
+                <th className="py-2 pr-4 whitespace-nowrap">Inventario</th>
+                <th className="py-2 pr-4 whitespace-nowrap">Unidad</th>
+                <th className="py-2 pr-4 whitespace-nowrap">Stock sede</th>
+                <th className="py-2 pr-4 whitespace-nowrap">Minimo</th>
+                <th className="py-2 pr-4 whitespace-nowrap">Faltante</th>
+                <th className="py-2 pr-4 whitespace-nowrap">Auto-costo</th>
+                <th className="py-2 pr-4 whitespace-nowrap">Estado</th>
+                <th className="py-2 pr-4 w-[340px] whitespace-nowrap">Acciones</th>
               </tr>
             </thead>
             <tbody>
@@ -873,20 +880,30 @@ export default async function InventoryCatalogPage({
                   missingQty: null,
                   isLow: false,
                 };
+                const categoryPath = getCategoryPath(product.category_id, categoryMap);
+                const categoryLabel = getLastCategorySegment(categoryPath);
                 return (
                   <tr key={product.id} className="border-t border-zinc-200/60">
-                    <td className="py-3 pr-4">{product.name}</td>
-                    <td className="py-3 pr-4 font-mono">{product.sku ?? "-"}</td>
-                    <td className="py-3 pr-4">{getCategoryPath(product.category_id, categoryMap)}</td>
-                    <td className="py-3 pr-4">{inventoryLabel}</td>
-                    <td className="py-3 pr-4">{product.unit ?? "-"}</td>
-                    <td className="py-3 pr-4">
+                    <td className="py-2.5 pr-4">
+                      <div className="max-w-[220px] truncate" title={product.name ?? "-"}>
+                        {product.name}
+                      </div>
+                    </td>
+                    <td className="py-2.5 pr-4 font-mono whitespace-nowrap">{product.sku ?? "-"}</td>
+                    <td className="py-2.5 pr-4">
+                      <div className="max-w-[320px] truncate" title={categoryPath}>
+                        {categoryLabel}
+                      </div>
+                    </td>
+                    <td className="py-2.5 pr-4 whitespace-nowrap">{inventoryLabel}</td>
+                    <td className="py-2.5 pr-4 whitespace-nowrap">{product.unit ?? "-"}</td>
+                    <td className="py-2.5 pr-4 whitespace-nowrap">
                       <span className={stockMetrics.isLow ? "font-semibold text-amber-700" : ""}>
                         {formatQty(stockMetrics.currentQty)}
                       </span>
                     </td>
-                    <td className="py-3 pr-4">{formatQty(stockMetrics.minStock)}</td>
-                    <td className="py-3 pr-4">
+                    <td className="py-2.5 pr-4 whitespace-nowrap">{formatQty(stockMetrics.minStock)}</td>
+                    <td className="py-2.5 pr-4 whitespace-nowrap">
                       {stockMetrics.missingQty != null && stockMetrics.missingQty > 0 ? (
                         <span className="ui-chip ui-chip--warn">{formatQty(stockMetrics.missingQty)}</span>
                       ) : stockMetrics.minStock == null ? (
@@ -895,7 +912,7 @@ export default async function InventoryCatalogPage({
                         <span className="ui-chip ui-chip--success">OK</span>
                       )}
                     </td>
-                    <td className="py-3 pr-4">
+                    <td className="py-2.5 pr-4">
                       {autoCostMode === "manual" ? (
                         <span className="ui-chip">Manual</span>
                       ) : autoCostReason ? (
@@ -907,10 +924,10 @@ export default async function InventoryCatalogPage({
                         <span className="ui-chip ui-chip--success">Listo</span>
                       )}
                     </td>
-                    <td className="py-3 pr-4">
+                    <td className="py-2.5 pr-4 whitespace-nowrap">
                       {product.is_active === false ? "Inactivo" : "Activo"}
                     </td>
-                    <td className="py-3 pr-4 align-top">
+                    <td className="py-2.5 pr-4 align-top">
                       <div className="flex flex-nowrap items-center gap-2">
                         <Link
                           href={`/inventory/catalog/${product.id}?from=${encodeURIComponent(catalogReturnUrl)}`}
