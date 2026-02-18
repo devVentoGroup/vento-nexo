@@ -43,6 +43,7 @@ type SearchParams = {
   tab?: string;
   site_id?: string;
   stock_alert?: string;
+  view_mode?: string;
   category_kind?: string;
   category_domain?: string;
   category_scope?: string;
@@ -329,6 +330,7 @@ export default async function InventoryCatalogPage({
   const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
   const searchQuery = String(sp.q ?? "").trim();
   const stockAlert = String(sp.stock_alert ?? "all").trim().toLowerCase() === "low" ? "low" : "all";
+  const viewMode = String(sp.view_mode ?? "catalogo").trim().toLowerCase() === "compras" ? "compras" : "catalogo";
 
   const tabRaw = String(sp.tab ?? "insumos").trim().toLowerCase();
   const activeTab: TabValue = TAB_OPTIONS.some((t) => t.value === tabRaw)
@@ -536,16 +538,15 @@ export default async function InventoryCatalogPage({
     (product) => stockMetricsByProduct.get(product.id)?.isLow
   ).length;
 
-  const supplierIdsForLowStock = Array.from(
+  const primarySupplierIds = Array.from(
     new Set(
       productRows
-        .filter((product) => stockMetricsByProduct.get(product.id)?.isLow)
         .map((product) => primarySupplierByProduct.get(product.id)?.supplier_id ?? "")
         .filter(Boolean)
     )
   );
-  const { data: suppliersData } = supplierIdsForLowStock.length
-    ? await supabase.from("suppliers").select("id,name").in("id", supplierIdsForLowStock)
+  const { data: suppliersData } = primarySupplierIds.length
+    ? await supabase.from("suppliers").select("id,name").in("id", primarySupplierIds)
     : { data: [] as SupplierRow[] };
   const supplierNameById = new Map(
     ((suppliersData ?? []) as SupplierRow[]).map((row) => [row.id, row.name ?? row.id])
@@ -642,6 +643,7 @@ export default async function InventoryCatalogPage({
     params.set("tab", tab);
     if (siteId) params.set("site_id", siteId);
     if (stockAlert === "low") params.set("stock_alert", "low");
+    if (viewMode === "compras") params.set("view_mode", "compras");
     params.set("category_kind", tabKind);
     params.set("category_scope", categoryScope);
     if (categoryScope === "site" && activeSiteId) params.set("category_site_id", activeSiteId);
@@ -753,6 +755,14 @@ export default async function InventoryCatalogPage({
             </span>
           </label>
 
+          <label className="flex flex-col gap-1">
+            <span className="ui-label">Vista</span>
+            <select name="view_mode" defaultValue={viewMode} className="ui-input">
+              <option value="catalogo">Catalogo</option>
+              <option value="compras">Compras (ejecutiva)</option>
+            </select>
+          </label>
+
           {categoryScope === "site" ? (
             <label className="flex flex-col gap-1">
               <span className="ui-label">Sede para categorias</span>
@@ -856,15 +866,25 @@ export default async function InventoryCatalogPage({
             <thead className="text-left text-[var(--ui-muted)]">
               <tr>
                 <th className="py-2 pr-4 whitespace-nowrap">Producto</th>
-                <th className="py-2 pr-4 whitespace-nowrap">SKU</th>
-                <th className="py-2 pr-4 whitespace-nowrap">Categoria</th>
-                <th className="py-2 pr-4 whitespace-nowrap">Inventario</th>
-                <th className="py-2 pr-4 whitespace-nowrap">Unidad</th>
+                {viewMode === "catalogo" ? (
+                  <>
+                    <th className="py-2 pr-4 whitespace-nowrap">SKU</th>
+                    <th className="py-2 pr-4 whitespace-nowrap">Categoria</th>
+                    <th className="py-2 pr-4 whitespace-nowrap">Inventario</th>
+                    <th className="py-2 pr-4 whitespace-nowrap">Unidad</th>
+                  </>
+                ) : null}
                 <th className="py-2 pr-4 whitespace-nowrap">Stock sede</th>
                 <th className="py-2 pr-4 whitespace-nowrap">Minimo</th>
                 <th className="py-2 pr-4 whitespace-nowrap">Faltante</th>
-                <th className="py-2 pr-4 whitespace-nowrap">Auto-costo</th>
-                <th className="py-2 pr-4 whitespace-nowrap">Estado</th>
+                {viewMode === "catalogo" ? (
+                  <>
+                    <th className="py-2 pr-4 whitespace-nowrap">Auto-costo</th>
+                    <th className="py-2 pr-4 whitespace-nowrap">Estado</th>
+                  </>
+                ) : (
+                  <th className="py-2 pr-4 whitespace-nowrap">Proveedor primario</th>
+                )}
                 <th className="py-2 pr-4 w-[340px] whitespace-nowrap">Acciones</th>
               </tr>
             </thead>
@@ -874,6 +894,10 @@ export default async function InventoryCatalogPage({
                 const inventoryLabel = inventoryProfile?.inventory_kind ?? "unclassified";
                 const autoCostMode = inventoryProfile?.costing_mode ?? "auto_primary_supplier";
                 const autoCostReason = autoCostReasonByProduct.get(product.id) ?? null;
+                const primarySupplier = primarySupplierByProduct.get(product.id);
+                const primarySupplierName = primarySupplier?.supplier_id
+                  ? supplierNameById.get(primarySupplier.supplier_id) ?? primarySupplier.supplier_id
+                  : "Sin proveedor";
                 const stockMetrics = stockMetricsByProduct.get(product.id) ?? {
                   currentQty: 0,
                   minStock: null,
@@ -882,6 +906,27 @@ export default async function InventoryCatalogPage({
                 };
                 const categoryPath = getCategoryPath(product.category_id, categoryMap);
                 const categoryLabel = getLastCategorySegment(categoryPath);
+                const rowPrefill =
+                  siteId && primarySupplier?.supplier_id && stockMetrics.missingQty && stockMetrics.missingQty > 0
+                    ? toBase64UrlJson({
+                        supplier_id: primarySupplier.supplier_id,
+                        site_id: siteId,
+                        notes: "Borrador generado desde Nexo por bajo stock minimo.",
+                        lines: [
+                          {
+                            product_id: product.id,
+                            quantity: Math.max(0.001, Math.round(stockMetrics.missingQty * 1000) / 1000),
+                            unit_cost: asFiniteNumber(primarySupplier.purchase_price) ?? 0,
+                            unit: normalizeUnitCode(
+                              primarySupplier.purchase_pack_unit_code || product.stock_unit_code || product.unit || "un"
+                            ) || null,
+                          },
+                        ],
+                      })
+                    : "";
+                const rowOrigoHref = rowPrefill
+                  ? `https://origo.ventogroup.co/purchase-orders/new?prefill=${encodeURIComponent(rowPrefill)}`
+                  : "";
                 return (
                   <tr key={product.id} className="border-t border-zinc-200/60">
                     <td className="py-2.5 pr-4">
@@ -889,14 +934,18 @@ export default async function InventoryCatalogPage({
                         {product.name}
                       </div>
                     </td>
-                    <td className="py-2.5 pr-4 font-mono whitespace-nowrap">{product.sku ?? "-"}</td>
-                    <td className="py-2.5 pr-4">
-                      <div className="max-w-[320px] truncate" title={categoryPath}>
-                        {categoryLabel}
-                      </div>
-                    </td>
-                    <td className="py-2.5 pr-4 whitespace-nowrap">{inventoryLabel}</td>
-                    <td className="py-2.5 pr-4 whitespace-nowrap">{product.unit ?? "-"}</td>
+                    {viewMode === "catalogo" ? (
+                      <>
+                        <td className="py-2.5 pr-4 font-mono whitespace-nowrap">{product.sku ?? "-"}</td>
+                        <td className="py-2.5 pr-4">
+                          <div className="max-w-[320px] truncate" title={categoryPath}>
+                            {categoryLabel}
+                          </div>
+                        </td>
+                        <td className="py-2.5 pr-4 whitespace-nowrap">{inventoryLabel}</td>
+                        <td className="py-2.5 pr-4 whitespace-nowrap">{product.unit ?? "-"}</td>
+                      </>
+                    ) : null}
                     <td className="py-2.5 pr-4 whitespace-nowrap">
                       <span className={stockMetrics.isLow ? "font-semibold text-amber-700" : ""}>
                         {formatQty(stockMetrics.currentQty)}
@@ -912,21 +961,27 @@ export default async function InventoryCatalogPage({
                         <span className="ui-chip ui-chip--success">OK</span>
                       )}
                     </td>
-                    <td className="py-2.5 pr-4">
-                      {autoCostMode === "manual" ? (
-                        <span className="ui-chip">Manual</span>
-                      ) : autoCostReason ? (
-                        <div className="space-y-1">
-                          <span className="ui-chip ui-chip--warn">Incompleto</span>
-                          <div className="text-xs text-[var(--ui-muted)]">{autoCostReason}</div>
-                        </div>
-                      ) : (
-                        <span className="ui-chip ui-chip--success">Listo</span>
-                      )}
-                    </td>
-                    <td className="py-2.5 pr-4 whitespace-nowrap">
-                      {product.is_active === false ? "Inactivo" : "Activo"}
-                    </td>
+                    {viewMode === "catalogo" ? (
+                      <>
+                        <td className="py-2.5 pr-4">
+                          {autoCostMode === "manual" ? (
+                            <span className="ui-chip">Manual</span>
+                          ) : autoCostReason ? (
+                            <div className="space-y-1">
+                              <span className="ui-chip ui-chip--warn">Incompleto</span>
+                              <div className="text-xs text-[var(--ui-muted)]">{autoCostReason}</div>
+                            </div>
+                          ) : (
+                            <span className="ui-chip ui-chip--success">Listo</span>
+                          )}
+                        </td>
+                        <td className="py-2.5 pr-4 whitespace-nowrap">
+                          {product.is_active === false ? "Inactivo" : "Activo"}
+                        </td>
+                      </>
+                    ) : (
+                      <td className="py-2.5 pr-4 whitespace-nowrap">{primarySupplierName}</td>
+                    )}
                     <td className="py-2.5 pr-4 align-top">
                       <div className="flex flex-nowrap items-center gap-2">
                         <Link
@@ -958,6 +1013,11 @@ export default async function InventoryCatalogPage({
                             </button>
                           </form>
                         ) : null}
+                        {viewMode === "compras" && rowOrigoHref ? (
+                          <Link href={rowOrigoHref} className="ui-btn ui-btn--brand ui-btn--sm min-w-[120px] justify-center">
+                            OC proveedor
+                          </Link>
+                        ) : null}
                       </div>
                     </td>
                   </tr>
@@ -965,7 +1025,10 @@ export default async function InventoryCatalogPage({
               })}
               {!visibleProducts.length ? (
                 <tr>
-                  <td className="py-4 text-[var(--ui-muted)]" colSpan={11}>
+                  <td
+                    className="py-4 text-[var(--ui-muted)]"
+                    colSpan={viewMode === "catalogo" ? 11 : 8}
+                  >
                     No hay productos para mostrar con estos filtros.
                   </td>
                 </tr>
