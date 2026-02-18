@@ -85,6 +85,7 @@ type SiteSettingRow = {
   site_id: string;
   is_active: boolean | null;
   default_area_kind: string | null;
+  min_stock_qty: number | null;
   audience: "SAUDO" | "VCF" | "BOTH" | null;
   sites?: { id: string; name: string | null } | null;
 };
@@ -595,6 +596,7 @@ async function updateProduct(formData: FormData) {
         site_id?: string;
         is_active?: boolean;
         default_area_kind?: string;
+        min_stock_qty?: number | string;
         audience?: string;
         _delete?: boolean;
       }>;
@@ -607,6 +609,10 @@ async function updateProduct(formData: FormData) {
           site_id: line.site_id,
           is_active: Boolean(line.is_active),
           default_area_kind: line.default_area_kind || null,
+          min_stock_qty:
+            line.min_stock_qty == null || String(line.min_stock_qty).trim() === ""
+              ? null
+              : Number(line.min_stock_qty),
           audience:
             String(line.audience ?? "BOTH").trim().toUpperCase() === "SAUDO"
               ? "SAUDO"
@@ -754,7 +760,7 @@ export default async function ProductCatalogDetailPage({
 
   const { data: siteSettingsWithAudience, error: siteSettingsAudienceError } = await supabase
     .from("product_site_settings")
-    .select("id,site_id,is_active,default_area_kind,audience,sites(id,name)")
+    .select("id,site_id,is_active,default_area_kind,min_stock_qty,audience,sites(id,name)")
     .eq("product_id", id);
   const siteSettings =
     !siteSettingsAudienceError
@@ -762,7 +768,7 @@ export default async function ProductCatalogDetailPage({
       : (
           await supabase
             .from("product_site_settings")
-            .select("id,site_id,is_active,default_area_kind,sites(id,name)")
+            .select("id,site_id,is_active,default_area_kind,min_stock_qty,sites(id,name)")
             .eq("product_id", id)
         ).data;
   const siteRows = ((siteSettings ?? []) as unknown as SiteSettingRow[]).map((row) => ({
@@ -1407,10 +1413,12 @@ export default async function ProductCatalogDetailPage({
                 site_id: r.site_id,
                 is_active: Boolean(r.is_active),
                 default_area_kind: r.default_area_kind ?? "",
+                min_stock_qty: r.min_stock_qty ?? undefined,
                 audience: r.audience ?? "BOTH",
               }))}
               sites={sitesList.map((s) => ({ id: s.id, name: s.name }))}
               areaKinds={areaKindsList.map((a) => ({ code: a.code, name: a.name ?? a.code }))}
+              stockUnitCode={stockUnitCode}
             />
           </section>
 

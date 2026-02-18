@@ -537,6 +537,10 @@ async function createProduct(formData: FormData) {
           site_id: line.site_id as string,
           is_active: Boolean(line.is_active),
           default_area_kind: (line.default_area_kind as string) || null,
+          min_stock_qty:
+            line.min_stock_qty == null || line.min_stock_qty === ""
+              ? null
+              : Number(line.min_stock_qty),
           audience:
             String(line.audience ?? "BOTH").trim().toUpperCase() === "SAUDO"
               ? "SAUDO"
@@ -1088,6 +1092,7 @@ export default async function NewProductPage({
             initialRows={[]}
             sites={sitesList.map((s) => ({ id: s.id, name: s.name }))}
             areaKinds={areaKindsList.map((a) => ({ code: a.code, name: a.name ?? a.code }))}
+            stockUnitCode={defaultStockUnitCode}
           />
         </section>
 

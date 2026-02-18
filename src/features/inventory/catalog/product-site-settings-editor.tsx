@@ -7,6 +7,7 @@ export type SiteSettingLine = {
   site_id: string;
   is_active: boolean;
   default_area_kind?: string;
+  min_stock_qty?: number;
   audience?: "SAUDO" | "VCF" | "BOTH";
   _delete?: boolean;
 };
@@ -19,12 +20,14 @@ type Props = {
   initialRows: SiteSettingLine[];
   sites: SiteOption[];
   areaKinds: AreaKindOption[];
+  stockUnitCode?: string;
 };
 
 const emptyLine = (): SiteSettingLine => ({
   site_id: "",
   is_active: true,
   default_area_kind: "",
+  min_stock_qty: undefined,
   audience: "BOTH",
 });
 
@@ -33,6 +36,7 @@ export function ProductSiteSettingsEditor({
   initialRows,
   sites,
   areaKinds,
+  stockUnitCode,
 }: Props) {
   const [lines, setLines] = useState<SiteSettingLine[]>(initialRows.length ? initialRows : [emptyLine()]);
   const siteNameById = useMemo(
@@ -92,6 +96,9 @@ export function ProductSiteSettingsEditor({
         <p>
           <strong className="text-[var(--ui-text)]">Area por defecto:</strong> destino sugerido para remisiones y
           distribucion interna.
+        </p>
+        <p>
+          <strong className="text-[var(--ui-text)]">Stock minimo:</strong> umbral para alertar compra en la sede activa.
         </p>
         <p>
           <strong className="text-[var(--ui-text)]">Uso en sede:</strong> limita si esta sede usa el producto para
@@ -167,7 +174,7 @@ export function ProductSiteSettingsEditor({
                   </label>
                 </div>
 
-                <label className="flex flex-col gap-1 md:col-span-3">
+                <label className="flex flex-col gap-1 md:col-span-2">
                   <span className="ui-label">Area por defecto</span>
                   <select
                     value={line.default_area_kind ?? ""}
@@ -188,7 +195,32 @@ export function ProductSiteSettingsEditor({
                   </p>
                 </label>
 
-                <label className="flex flex-col gap-1 md:col-span-3">
+                <label className="flex flex-col gap-1 md:col-span-2">
+                  <span className="ui-label">
+                    Stock minimo {stockUnitCode ? `(${stockUnitCode})` : ""}
+                  </span>
+                  <input
+                    type="number"
+                    min={0}
+                    step="0.000001"
+                    value={line.min_stock_qty ?? ""}
+                    onChange={(event) =>
+                      updateLine(realIndex, {
+                        min_stock_qty:
+                          event.target.value.trim() === ""
+                            ? undefined
+                            : Number(event.target.value),
+                      })
+                    }
+                    className="ui-input"
+                    placeholder="Ej. 24"
+                  />
+                  <p className="text-xs text-[var(--ui-muted)]">
+                    Si el stock de esta sede baja de aqui, aparece en bajo minimo.
+                  </p>
+                </label>
+
+                <label className="flex flex-col gap-1 md:col-span-2">
                   <span className="ui-label">Uso en sede</span>
                   <select
                     value={line.audience ?? "BOTH"}

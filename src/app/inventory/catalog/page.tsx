@@ -22,7 +22,7 @@ import {
   shouldShowCategoryDomain,
   type InventoryCategoryRow,
 } from "@/lib/inventory/categories";
-import { createUnitMap, normalizeUnitCode, type InventoryUnit } from "@/lib/inventory/uom";
+import { convertQuantity, createUnitMap, normalizeUnitCode, type InventoryUnit } from "@/lib/inventory/uom";
 
 export const dynamic = "force-dynamic";
 
@@ -42,6 +42,7 @@ type SearchParams = {
   q?: string;
   tab?: string;
   site_id?: string;
+  stock_alert?: string;
   category_kind?: string;
   category_domain?: string;
   category_scope?: string;
@@ -74,10 +75,28 @@ type SiteRow = {
 
 type ProductSupplierCostRow = {
   product_id: string;
+  supplier_id: string | null;
   is_primary: boolean | null;
   purchase_pack_qty: number | null;
   purchase_pack_unit_code: string | null;
+  purchase_unit: string | null;
   purchase_price: number | null;
+};
+
+type ProductSiteSettingRow = {
+  product_id: string;
+  is_active: boolean | null;
+  min_stock_qty: number | null;
+};
+
+type StockBySiteRow = {
+  product_id: string;
+  current_qty: number | null;
+};
+
+type SupplierRow = {
+  id: string;
+  name: string | null;
 };
 
 type UnitRow = InventoryUnit;
@@ -113,6 +132,20 @@ function tabTypeValue(tab: TabValue): string {
   if (tab === "preparaciones") return "preparacion";
   if (tab === "productos") return "venta";
   return "insumo";
+}
+
+function asFiniteNumber(value: unknown): number | null {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatQty(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "-";
+  return new Intl.NumberFormat("es-CO", { maximumFractionDigits: 3 }).format(value);
+}
+
+function toBase64UrlJson(value: unknown): string {
+  return Buffer.from(JSON.stringify(value), "utf-8").toString("base64url");
 }
 
 function sanitizeCatalogListReturnPath(value: string): string {
@@ -288,6 +321,7 @@ export default async function InventoryCatalogPage({
     : "";
   const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
   const searchQuery = String(sp.q ?? "").trim();
+  const stockAlert = String(sp.stock_alert ?? "all").trim().toLowerCase() === "low" ? "low" : "all";
 
   const tabRaw = String(sp.tab ?? "insumos").trim().toLowerCase();
   const activeTab: TabValue = TAB_OPTIONS.some((t) => t.value === tabRaw)
@@ -409,7 +443,7 @@ export default async function InventoryCatalogPage({
   }
 
   const productIds = productRows.map((product) => product.id);
-  const [{ data: unitsData }, { data: supplierCostData }] = await Promise.all([
+  const [{ data: unitsData }, { data: supplierCostData }, { data: siteSettingsData }, { data: stockBySiteData }] = await Promise.all([
     supabase
       .from("inventory_units")
       .select("code,name,family,factor_to_base,symbol,display_decimals,is_active")
@@ -419,10 +453,24 @@ export default async function InventoryCatalogPage({
       ? supabase
           .from("product_suppliers")
           .select(
-            "product_id,is_primary,purchase_pack_qty,purchase_pack_unit_code,purchase_price"
+            "product_id,supplier_id,is_primary,purchase_pack_qty,purchase_pack_unit_code,purchase_unit,purchase_price"
           )
           .in("product_id", productIds)
       : Promise.resolve({ data: [] as ProductSupplierCostRow[] }),
+    siteId && productIds.length
+      ? supabase
+          .from("product_site_settings")
+          .select("product_id,is_active,min_stock_qty")
+          .eq("site_id", siteId)
+          .in("product_id", productIds)
+      : Promise.resolve({ data: [] as ProductSiteSettingRow[] }),
+    siteId && productIds.length
+      ? supabase
+          .from("inventory_stock_by_site")
+          .select("product_id,current_qty")
+          .eq("site_id", siteId)
+          .in("product_id", productIds)
+      : Promise.resolve({ data: [] as StockBySiteRow[] }),
   ]);
   const unitMap = createUnitMap((unitsData ?? []) as UnitRow[]);
   const primarySupplierByProduct = new Map<string, ProductSupplierCostRow>();
@@ -442,6 +490,143 @@ export default async function InventoryCatalogPage({
     autoCostReasonByProduct.set(product.id, reason);
   }
 
+  const siteSettingsByProduct = new Map<string, ProductSiteSettingRow>();
+  for (const row of (siteSettingsData ?? []) as ProductSiteSettingRow[]) {
+    if (!row.product_id || siteSettingsByProduct.has(row.product_id)) continue;
+    siteSettingsByProduct.set(row.product_id, row);
+  }
+
+  const stockByProduct = new Map<string, StockBySiteRow>();
+  for (const row of (stockBySiteData ?? []) as StockBySiteRow[]) {
+    if (!row.product_id || stockByProduct.has(row.product_id)) continue;
+    stockByProduct.set(row.product_id, row);
+  }
+
+  const stockMetricsByProduct = new Map<
+    string,
+    { currentQty: number; minStock: number | null; missingQty: number | null; isLow: boolean }
+  >();
+  for (const product of productRows) {
+    const stockRow = stockByProduct.get(product.id);
+    const siteSetting = siteSettingsByProduct.get(product.id);
+    const currentQty = asFiniteNumber(stockRow?.current_qty) ?? 0;
+    const siteActive = siteSetting?.is_active !== false;
+    const minStock = siteActive ? asFiniteNumber(siteSetting?.min_stock_qty) : null;
+    const missingQty = minStock == null ? null : Math.max(minStock - currentQty, 0);
+    stockMetricsByProduct.set(product.id, {
+      currentQty,
+      minStock,
+      missingQty,
+      isLow: minStock != null && currentQty < minStock,
+    });
+  }
+
+  const visibleProducts =
+    stockAlert === "low"
+      ? productRows.filter((product) => stockMetricsByProduct.get(product.id)?.isLow)
+      : productRows;
+  const lowStockCount = productRows.filter(
+    (product) => stockMetricsByProduct.get(product.id)?.isLow
+  ).length;
+
+  const supplierIdsForLowStock = Array.from(
+    new Set(
+      productRows
+        .filter((product) => stockMetricsByProduct.get(product.id)?.isLow)
+        .map((product) => primarySupplierByProduct.get(product.id)?.supplier_id ?? "")
+        .filter(Boolean)
+    )
+  );
+  const { data: suppliersData } = supplierIdsForLowStock.length
+    ? await supabase.from("suppliers").select("id,name").in("id", supplierIdsForLowStock)
+    : { data: [] as SupplierRow[] };
+  const supplierNameById = new Map(
+    ((suppliersData ?? []) as SupplierRow[]).map((row) => [row.id, row.name ?? row.id])
+  );
+
+  const lowStockPurchaseGroups = new Map<
+    string,
+    {
+      supplierId: string;
+      supplierName: string;
+      items: Array<{ productName: string; missingQtyBase: number; suggestedPurchaseQty: number; purchaseUnit: string }>;
+      prefillLines: Array<{ product_id: string; quantity: number; unit_cost: number; unit: string | null }>;
+    }
+  >();
+
+  for (const product of productRows) {
+    const stockMetrics = stockMetricsByProduct.get(product.id);
+    const supplier = primarySupplierByProduct.get(product.id);
+    if (!stockMetrics?.isLow || !supplier?.supplier_id || !stockMetrics.missingQty || stockMetrics.missingQty <= 0) {
+      continue;
+    }
+
+    const stockUnitCode = normalizeUnitCode(product.stock_unit_code || product.unit || "");
+    const purchasePackUnitCode = normalizeUnitCode(supplier.purchase_pack_unit_code || stockUnitCode);
+    const purchasePackQty = asFiniteNumber(supplier.purchase_pack_qty);
+    let qtyInStockPerPurchaseUnit = 1;
+    if (
+      purchasePackQty != null &&
+      purchasePackQty > 0 &&
+      purchasePackUnitCode &&
+      stockUnitCode &&
+      purchasePackUnitCode !== stockUnitCode
+    ) {
+      try {
+        const converted = convertQuantity({
+          quantity: purchasePackQty,
+          fromUnitCode: purchasePackUnitCode,
+          toUnitCode: stockUnitCode,
+          unitMap,
+        });
+        if (converted.quantity > 0) qtyInStockPerPurchaseUnit = converted.quantity;
+      } catch {
+        qtyInStockPerPurchaseUnit = purchasePackQty;
+      }
+    } else if (purchasePackQty != null && purchasePackQty > 0) {
+      qtyInStockPerPurchaseUnit = purchasePackQty;
+    }
+
+    const suggestedPurchaseQtyRaw = stockMetrics.missingQty / qtyInStockPerPurchaseUnit;
+    const suggestedPurchaseQty = Math.max(0.001, Math.round(suggestedPurchaseQtyRaw * 1000) / 1000);
+    const unitCost = asFiniteNumber(supplier.purchase_price) ?? 0;
+
+    const currentGroup = lowStockPurchaseGroups.get(supplier.supplier_id) ?? {
+      supplierId: supplier.supplier_id,
+      supplierName: supplierNameById.get(supplier.supplier_id) ?? supplier.supplier_id,
+      items: [],
+      prefillLines: [],
+    };
+    currentGroup.items.push({
+      productName: product.name,
+      missingQtyBase: stockMetrics.missingQty,
+      suggestedPurchaseQty,
+      purchaseUnit: purchasePackUnitCode || supplier.purchase_unit || "un",
+    });
+    currentGroup.prefillLines.push({
+      product_id: product.id,
+      quantity: suggestedPurchaseQty,
+      unit_cost: unitCost,
+      unit: purchasePackUnitCode || null,
+    });
+    lowStockPurchaseGroups.set(supplier.supplier_id, currentGroup);
+  }
+
+  const lowStockPurchaseGroupRows = Array.from(lowStockPurchaseGroups.values())
+    .map((group) => {
+      const prefill = toBase64UrlJson({
+        supplier_id: group.supplierId,
+        site_id: siteId || "",
+        notes: "Borrador generado desde Nexo por productos bajo stock minimo.",
+        lines: group.prefillLines.slice(0, 30),
+      });
+      return {
+        ...group,
+        href: `https://origo.ventogroup.co/purchase-orders/new?prefill=${encodeURIComponent(prefill)}`,
+      };
+    })
+    .sort((a, b) => a.supplierName.localeCompare(b.supplierName, "es"));
+
   const buildUrl = (newTab?: TabValue) => {
     const tab = newTab ?? activeTab;
     const tabKind = categoryKindFromCatalogTab(tab);
@@ -449,6 +634,7 @@ export default async function InventoryCatalogPage({
     if (searchQuery) params.set("q", searchQuery);
     params.set("tab", tab);
     if (siteId) params.set("site_id", siteId);
+    if (stockAlert === "low") params.set("stock_alert", "low");
     params.set("category_kind", tabKind);
     params.set("category_scope", categoryScope);
     if (categoryScope === "site" && activeSiteId) params.set("category_site_id", activeSiteId);
@@ -549,6 +735,17 @@ export default async function InventoryCatalogPage({
             </select>
           </label>
 
+          <label className="flex flex-col gap-1">
+            <span className="ui-label">Alerta de stock (sede activa)</span>
+            <select name="stock_alert" defaultValue={stockAlert} className="ui-input">
+              <option value="all">Todos</option>
+              <option value="low">Solo bajo minimo</option>
+            </select>
+            <span className="ui-caption">
+              Usa el stock de la sede activa para compras del centro de produccion.
+            </span>
+          </label>
+
           {categoryScope === "site" ? (
             <label className="flex flex-col gap-1">
               <span className="ui-label">Sede para categorias</span>
@@ -609,9 +806,43 @@ export default async function InventoryCatalogPage({
           <div>
             <div className="ui-h3">{TAB_OPTIONS.find((t) => t.value === activeTab)?.label ?? "Productos"}</div>
             <div className="mt-1 ui-body-muted">Mostrando hasta 1200 items.</div>
+            {siteId ? (
+              <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                Sede activa: {siteNamesById[siteId] ?? siteId}. Bajo minimo: {lowStockCount}.
+              </div>
+            ) : null}
           </div>
-          <div className="ui-caption">Items: {productRows.length}</div>
+          <div className="ui-caption">Items: {visibleProducts.length}</div>
         </div>
+
+        {siteId && lowStockPurchaseGroupRows.length > 0 ? (
+          <div className="mt-4 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
+            <div className="text-sm font-semibold text-[var(--ui-text)]">
+              Ordenes sugeridas por proveedor (bajo minimo)
+            </div>
+            <div className="mt-1 text-xs text-[var(--ui-muted)]">
+              Se arma una OC por proveedor primario usando faltante de la sede activa.
+            </div>
+            <div className="mt-3 grid gap-2">
+              {lowStockPurchaseGroupRows.map((group) => (
+                <div
+                  key={group.supplierId}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <div className="text-sm font-semibold text-[var(--ui-text)]">{group.supplierName}</div>
+                    <div className="text-xs text-[var(--ui-muted)]">
+                      {group.items.length} producto(s) bajo minimo
+                    </div>
+                  </div>
+                  <Link href={group.href} className="ui-btn ui-btn--brand ui-btn--sm">
+                    Crear OC en Origo
+                  </Link>
+                </div>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         <div className="mt-4 max-h-[70vh] overflow-auto">
           <table className="ui-table min-w-full text-sm">
@@ -620,28 +851,50 @@ export default async function InventoryCatalogPage({
                 <th className="py-2 pr-4">Producto</th>
                 <th className="py-2 pr-4">SKU</th>
                 <th className="py-2 pr-4">Categoria</th>
-                <th className="py-2 pr-4">Tipo</th>
                 <th className="py-2 pr-4">Inventario</th>
                 <th className="py-2 pr-4">Unidad</th>
+                <th className="py-2 pr-4">Stock (sede activa)</th>
+                <th className="py-2 pr-4">Stock minimo</th>
+                <th className="py-2 pr-4">Faltante compra</th>
                 <th className="py-2 pr-4">Auto-costo</th>
                 <th className="py-2 pr-4">Estado</th>
                 <th className="py-2 pr-4 w-[340px]">Acciones</th>
               </tr>
             </thead>
             <tbody>
-              {productRows.map((product) => {
+              {visibleProducts.map((product) => {
                 const inventoryProfile = product.product_inventory_profiles;
                 const inventoryLabel = inventoryProfile?.inventory_kind ?? "unclassified";
                 const autoCostMode = inventoryProfile?.costing_mode ?? "auto_primary_supplier";
                 const autoCostReason = autoCostReasonByProduct.get(product.id) ?? null;
+                const stockMetrics = stockMetricsByProduct.get(product.id) ?? {
+                  currentQty: 0,
+                  minStock: null,
+                  missingQty: null,
+                  isLow: false,
+                };
                 return (
                   <tr key={product.id} className="border-t border-zinc-200/60">
                     <td className="py-3 pr-4">{product.name}</td>
                     <td className="py-3 pr-4 font-mono">{product.sku ?? "-"}</td>
                     <td className="py-3 pr-4">{getCategoryPath(product.category_id, categoryMap)}</td>
-                    <td className="py-3 pr-4">{product.product_type}</td>
                     <td className="py-3 pr-4">{inventoryLabel}</td>
                     <td className="py-3 pr-4">{product.unit ?? "-"}</td>
+                    <td className="py-3 pr-4">
+                      <span className={stockMetrics.isLow ? "font-semibold text-amber-700" : ""}>
+                        {formatQty(stockMetrics.currentQty)}
+                      </span>
+                    </td>
+                    <td className="py-3 pr-4">{formatQty(stockMetrics.minStock)}</td>
+                    <td className="py-3 pr-4">
+                      {stockMetrics.missingQty != null && stockMetrics.missingQty > 0 ? (
+                        <span className="ui-chip ui-chip--warn">{formatQty(stockMetrics.missingQty)}</span>
+                      ) : stockMetrics.minStock == null ? (
+                        <span className="text-xs text-[var(--ui-muted)]">Sin minimo</span>
+                      ) : (
+                        <span className="ui-chip ui-chip--success">OK</span>
+                      )}
+                    </td>
                     <td className="py-3 pr-4">
                       {autoCostMode === "manual" ? (
                         <span className="ui-chip">Manual</span>
@@ -693,10 +946,10 @@ export default async function InventoryCatalogPage({
                   </tr>
                 );
               })}
-              {!productRows.length ? (
+              {!visibleProducts.length ? (
                 <tr>
-                  <td className="py-4 text-[var(--ui-muted)]" colSpan={9}>
-                    No hay productos para mostrar.
+                  <td className="py-4 text-[var(--ui-muted)]" colSpan={11}>
+                    No hay productos para mostrar con estos filtros.
                   </td>
                 </tr>
               ) : null}
