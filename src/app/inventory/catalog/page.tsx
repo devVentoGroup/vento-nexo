@@ -145,6 +145,12 @@ function formatQty(value: number | null | undefined): string {
   return new Intl.NumberFormat("es-CO", { maximumFractionDigits: 3 }).format(value);
 }
 
+function siteSettingRank(row: ProductSiteSettingRow): number {
+  const activeScore = row.is_active === false ? 0 : 2;
+  const minScore = row.min_stock_qty == null ? 0 : 1;
+  return activeScore + minScore;
+}
+
 function getLastCategorySegment(path: string): string {
   const normalized = String(path ?? "").trim();
   if (!normalized) return "-";
@@ -517,8 +523,11 @@ export default async function InventoryCatalogPage({
 
   const siteSettingsByProduct = new Map<string, ProductSiteSettingRow>();
   for (const row of (siteSettingsData ?? []) as ProductSiteSettingRow[]) {
-    if (!row.product_id || siteSettingsByProduct.has(row.product_id)) continue;
-    siteSettingsByProduct.set(row.product_id, row);
+    if (!row.product_id) continue;
+    const current = siteSettingsByProduct.get(row.product_id);
+    if (!current || siteSettingRank(row) >= siteSettingRank(current)) {
+      siteSettingsByProduct.set(row.product_id, row);
+    }
   }
 
   const stockByProduct = new Map<string, StockBySiteRow>();
@@ -529,12 +538,20 @@ export default async function InventoryCatalogPage({
 
   const stockMetricsByProduct = new Map<
     string,
-    { currentQty: number; minStock: number | null; missingQty: number | null; isLow: boolean }
+    {
+      currentQty: number;
+      minStock: number | null;
+      missingQty: number | null;
+      isLow: boolean;
+      hasSiteConfig: boolean;
+      siteActive: boolean;
+    }
   >();
   for (const product of productRows) {
     const stockRow = stockByProduct.get(product.id);
     const siteSetting = siteSettingsByProduct.get(product.id);
     const currentQty = asFiniteNumber(stockRow?.current_qty) ?? 0;
+    const hasSiteConfig = Boolean(siteSetting);
     const siteActive = siteSetting?.is_active !== false;
     const minStock = siteActive ? asFiniteNumber(siteSetting?.min_stock_qty) : null;
     const missingQty = minStock == null ? null : Math.max(minStock - currentQty, 0);
@@ -543,6 +560,8 @@ export default async function InventoryCatalogPage({
       minStock,
       missingQty,
       isLow: minStock != null && currentQty < minStock,
+      hasSiteConfig,
+      siteActive,
     });
   }
 
@@ -919,6 +938,8 @@ export default async function InventoryCatalogPage({
                   minStock: null,
                   missingQty: null,
                   isLow: false,
+                  hasSiteConfig: false,
+                  siteActive: true,
                 };
                 const categoryPath = getCategoryPath(product.category_id, categoryMap);
                 const categoryLabel = getLastCategorySegment(categoryPath);
@@ -971,6 +992,10 @@ export default async function InventoryCatalogPage({
                     <td className="py-2.5 pr-4 whitespace-nowrap">
                       {stockMetrics.missingQty != null && stockMetrics.missingQty > 0 ? (
                         <span className="ui-chip ui-chip--warn">{formatQty(stockMetrics.missingQty)}</span>
+                      ) : !stockMetrics.hasSiteConfig ? (
+                        <span className="text-xs text-[var(--ui-muted)]">Sin config sede</span>
+                      ) : !stockMetrics.siteActive ? (
+                        <span className="text-xs text-[var(--ui-muted)]">Sede inactiva</span>
                       ) : stockMetrics.minStock == null ? (
                         <span className="text-xs text-[var(--ui-muted)]">Sin minimo</span>
                       ) : (
