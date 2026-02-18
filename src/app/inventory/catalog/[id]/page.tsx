@@ -603,7 +603,16 @@ async function updateProduct(formData: FormData) {
       const toDelete = siteLines.filter((l) => l.id && l._delete).map((l) => l.id as string);
       for (const id of toDelete) await supabase.from("product_site_settings").delete().eq("id", id);
       for (const line of siteLines) {
-        if (line._delete || !line.site_id) continue;
+        if (line._delete) continue;
+        const hasMeaningfulData =
+          Boolean(String(line.site_id ?? "").trim()) ||
+          Boolean(String(line.default_area_kind ?? "").trim()) ||
+          Boolean(String(line.audience ?? "").trim()) ||
+          String(line.min_stock_qty ?? "").trim() !== "";
+        if (!line.site_id && hasMeaningfulData) {
+          redirectWithError("En disponibilidad por sede debes seleccionar una sede.");
+        }
+        if (!line.site_id) continue;
         const row = {
           product_id: productId,
           site_id: line.site_id,
@@ -621,10 +630,31 @@ async function updateProduct(formData: FormData) {
                 : "BOTH",
         };
         if (line.id) {
-          const { error: upErr } = await supabase.from("product_site_settings").update(row).eq("id", line.id);
+          let { error: upErr } = await supabase.from("product_site_settings").update(row).eq("id", line.id);
+          if (upErr && upErr.code === "42703") {
+            const legacyRow = {
+              product_id: productId,
+              site_id: line.site_id,
+              is_active: Boolean(line.is_active),
+              default_area_kind: line.default_area_kind || null,
+            };
+            ({ error: upErr } = await supabase
+              .from("product_site_settings")
+              .update(legacyRow)
+              .eq("id", line.id));
+          }
           if (upErr) redirectWithError(upErr.message);
         } else {
-          const { error: insErr } = await supabase.from("product_site_settings").insert(row);
+          let { error: insErr } = await supabase.from("product_site_settings").insert(row);
+          if (insErr && insErr.code === "42703") {
+            const legacyRow = {
+              product_id: productId,
+              site_id: line.site_id,
+              is_active: Boolean(line.is_active),
+              default_area_kind: line.default_area_kind || null,
+            };
+            ({ error: insErr } = await supabase.from("product_site_settings").insert(legacyRow));
+          }
           if (insErr) redirectWithError(insErr.message);
         }
       }
@@ -768,7 +798,13 @@ export default async function ProductCatalogDetailPage({
       : (
           await supabase
             .from("product_site_settings")
-            .select("id,site_id,is_active,default_area_kind,min_stock_qty,sites(id,name)")
+            .select("id,site_id,is_active,default_area_kind,audience,sites(id,name)")
+            .eq("product_id", id)
+        ).data ??
+        (
+          await supabase
+            .from("product_site_settings")
+            .select("id,site_id,is_active,default_area_kind,sites(id,name)")
             .eq("product_id", id)
         ).data;
   const siteRows = ((siteSettings ?? []) as unknown as SiteSettingRow[]).map((row) => ({

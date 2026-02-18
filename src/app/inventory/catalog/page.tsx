@@ -452,7 +452,7 @@ export default async function InventoryCatalogPage({
   }
 
   const productIds = productRows.map((product) => product.id);
-  const [{ data: unitsData }, { data: supplierCostData }, { data: siteSettingsData }, { data: stockBySiteData }] = await Promise.all([
+  const [{ data: unitsData }, { data: supplierCostData }, siteSettingsRes, { data: stockBySiteData }] = await Promise.all([
     supabase
       .from("inventory_units")
       .select("code,name,family,factor_to_base,symbol,display_decimals,is_active")
@@ -472,7 +472,7 @@ export default async function InventoryCatalogPage({
           .select("product_id,is_active,min_stock_qty")
           .eq("site_id", siteId)
           .in("product_id", productIds)
-      : Promise.resolve({ data: [] as ProductSiteSettingRow[] }),
+      : Promise.resolve({ data: [] as ProductSiteSettingRow[], error: null }),
     siteId && productIds.length
       ? supabase
           .from("inventory_stock_by_site")
@@ -482,6 +482,22 @@ export default async function InventoryCatalogPage({
       : Promise.resolve({ data: [] as StockBySiteRow[] }),
   ]);
   const unitMap = createUnitMap((unitsData ?? []) as UnitRow[]);
+  let siteSettingsData = (siteSettingsRes.data ?? []) as ProductSiteSettingRow[];
+  if (siteSettingsRes.error && siteId && productIds.length) {
+    const fallbackSiteSettingsRes = await supabase
+      .from("product_site_settings")
+      .select("product_id,is_active")
+      .eq("site_id", siteId)
+      .in("product_id", productIds);
+    siteSettingsData = ((fallbackSiteSettingsRes.data ?? []) as Array<{
+      product_id: string;
+      is_active: boolean | null;
+    }>).map((row) => ({
+      product_id: row.product_id,
+      is_active: row.is_active,
+      min_stock_qty: null,
+    }));
+  }
   const primarySupplierByProduct = new Map<string, ProductSupplierCostRow>();
   for (const row of (supplierCostData ?? []) as ProductSupplierCostRow[]) {
     if (!row.product_id || !row.is_primary || primarySupplierByProduct.has(row.product_id)) continue;

@@ -531,10 +531,24 @@ async function createProduct(formData: FormData) {
     try {
       const siteLines = JSON.parse(siteRaw) as Array<Record<string, unknown>>;
       for (const line of siteLines) {
-        if ((line._delete as boolean) || !line.site_id) continue;
-        await supabase.from("product_site_settings").insert({
+        if (line._delete as boolean) continue;
+        const siteIdFromLine = String(line.site_id ?? "").trim();
+        const hasMeaningfulData =
+          Boolean(siteIdFromLine) ||
+          Boolean(String(line.default_area_kind ?? "").trim()) ||
+          Boolean(String(line.audience ?? "").trim()) ||
+          String(line.min_stock_qty ?? "").trim() !== "";
+        if (!siteIdFromLine && hasMeaningfulData) {
+          redirect(
+            `/inventory/catalog/new?type=${typeKey}&error=${encodeURIComponent(
+              "En disponibilidad por sede debes seleccionar una sede."
+            )}`
+          );
+        }
+        if (!siteIdFromLine) continue;
+        let { error: siteInsertError } = await supabase.from("product_site_settings").insert({
           product_id: productId,
-          site_id: line.site_id as string,
+          site_id: siteIdFromLine,
           is_active: Boolean(line.is_active),
           default_area_kind: (line.default_area_kind as string) || null,
           min_stock_qty:
@@ -548,6 +562,22 @@ async function createProduct(formData: FormData) {
                 ? "VCF"
                 : "BOTH",
         });
+        if (siteInsertError && siteInsertError.code === "42703") {
+          const legacyRow = {
+            product_id: productId,
+            site_id: siteIdFromLine,
+            is_active: Boolean(line.is_active),
+            default_area_kind: (line.default_area_kind as string) || null,
+          };
+          ({ error: siteInsertError } = await supabase.from("product_site_settings").insert(legacyRow));
+        }
+        if (siteInsertError) {
+          redirect(
+            `/inventory/catalog/new?type=${typeKey}&error=${encodeURIComponent(
+              siteInsertError.message
+            )}`
+          );
+        }
       }
     } catch { /* skip */ }
   }
