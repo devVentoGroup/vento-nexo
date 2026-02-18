@@ -21,6 +21,12 @@ type Props = {
   sites: SiteOption[];
   areaKinds: AreaKindOption[];
   stockUnitCode?: string;
+  operationUnitHint?: {
+    label: string;
+    inputUnitCode: string;
+    qtyInInputUnit: number;
+    qtyInStockUnit: number;
+  } | null;
 };
 
 const emptyLine = (): SiteSettingLine => ({
@@ -37,6 +43,7 @@ export function ProductSiteSettingsEditor({
   sites,
   areaKinds,
   stockUnitCode,
+  operationUnitHint,
 }: Props) {
   const [lines, setLines] = useState<SiteSettingLine[]>(initialRows.length ? initialRows : [emptyLine()]);
   const siteNameById = useMemo(
@@ -66,6 +73,21 @@ export function ProductSiteSettingsEditor({
   }, []);
 
   const visibleLines = lines.filter((line) => !line._delete);
+  const operationFactorToStock =
+    operationUnitHint &&
+    Number.isFinite(operationUnitHint.qtyInInputUnit) &&
+    Number.isFinite(operationUnitHint.qtyInStockUnit) &&
+    operationUnitHint.qtyInInputUnit > 0 &&
+    operationUnitHint.qtyInStockUnit > 0
+      ? operationUnitHint.qtyInStockUnit / operationUnitHint.qtyInInputUnit
+      : null;
+  const formatEquivalent = (minStockQty?: number) => {
+    if (minStockQty == null || !Number.isFinite(minStockQty) || minStockQty < 0) return null;
+    if (!operationUnitHint || !operationFactorToStock) return null;
+    const inOperationUnits = minStockQty / operationFactorToStock;
+    const rounded = Math.round(inOperationUnits * 100) / 100;
+    return `${rounded} ${operationUnitHint.label.toLowerCase()}${rounded === 1 ? "" : "s"}`;
+  };
 
   return (
     <div className="space-y-3">
@@ -218,6 +240,16 @@ export function ProductSiteSettingsEditor({
                   <p className="text-xs text-[var(--ui-muted)]">
                     Si el stock de esta sede baja de aqui, aparece en bajo minimo.
                   </p>
+                  {operationUnitHint ? (
+                    <p className="text-xs text-[var(--ui-muted)]">
+                      Equivale aprox. a{" "}
+                      <strong className="text-[var(--ui-text)]">
+                        {formatEquivalent(line.min_stock_qty) ?? "-"}
+                      </strong>{" "}
+                      (1 {operationUnitHint.label.toLowerCase()} = {operationUnitHint.qtyInStockUnit}{" "}
+                      {stockUnitCode || "unidad base"}).
+                    </p>
+                  ) : null}
                 </label>
 
                 <label className="flex flex-col gap-1 md:col-span-2">
