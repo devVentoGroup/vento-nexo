@@ -6,17 +6,40 @@ import { GuidedFormShell } from "@/components/inventory/forms/GuidedFormShell";
 import { StepHelp } from "@/components/inventory/forms/StepHelp";
 import { WizardFooter } from "@/components/inventory/forms/WizardFooter";
 import type { GuidedStep } from "@/lib/inventory/forms/types";
+import { normalizeUnitCode, roundQuantity } from "@/lib/inventory/uom";
 
 type ProductOption = {
   id: string;
   name: string | null;
   unit: string | null;
+  stock_unit_code: string | null;
+};
+
+type LocationOption = {
+  id: string;
+  code: string;
+  zone: string | null;
+};
+
+type RecipePreview = {
+  productId: string;
+  yieldQty: number;
+  yieldUnit: string;
+  ingredients: Array<{
+    ingredientProductId: string;
+    ingredientName: string;
+    stockUnitCode: string;
+    quantityPerYield: number;
+  }>;
 };
 
 type Props = {
   siteId: string;
   siteName: string;
   products: ProductOption[];
+  locations: LocationOption[];
+  recipePreviews: RecipePreview[];
+  defaultDestinationLocationId: string;
   action: (formData: FormData) => void | Promise<void>;
 };
 
@@ -24,38 +47,57 @@ const STEPS: GuidedStep[] = [
   {
     id: "contexto",
     title: "Contexto",
-    objective: "Define sede y producto para registrar el lote.",
+    objective: "Selecciona producto a producir y sede.",
   },
   {
     id: "lote",
-    title: "Datos de lote",
-    objective: "Captura cantidad, unidad, vencimiento y notas.",
+    title: "Lote",
+    objective: "Define cantidad y LOC destino del terminado.",
   },
   {
     id: "impacto",
     title: "Impacto",
-    objective: "Revisa como impactara el inventario de la sede.",
+    objective: "Revisa consumo de receta e ingreso del terminado.",
   },
   {
     id: "confirmacion",
     title: "Confirmacion",
-    objective: "Confirma los datos y registra el lote.",
+    objective: "Confirma consumo automatico y registra el lote.",
   },
 ];
 
-export function ProductionBatchForm({ siteId, siteName, products, action }: Props) {
+export function ProductionBatchForm({
+  siteId,
+  siteName,
+  products,
+  locations,
+  recipePreviews,
+  defaultDestinationLocationId,
+  action,
+}: Props) {
   const [activeStepId, setActiveStepId] = useState(STEPS[0].id);
   const [confirmed, setConfirmed] = useState(false);
+  const [consumeRecipe, setConsumeRecipe] = useState(true);
 
   const [productId, setProductId] = useState("");
   const [producedQty, setProducedQty] = useState("");
   const [producedUnit, setProducedUnit] = useState("");
+  const [destinationLocationId, setDestinationLocationId] = useState(defaultDestinationLocationId);
   const [expiresAt, setExpiresAt] = useState("");
   const [notes, setNotes] = useState("");
 
   const selectedProduct = useMemo(
     () => products.find((product) => product.id === productId) ?? null,
     [productId, products]
+  );
+  const recipeByProduct = useMemo(
+    () => new Map(recipePreviews.map((recipe) => [recipe.productId, recipe])),
+    [recipePreviews]
+  );
+  const selectedRecipe = productId ? recipeByProduct.get(productId) ?? null : null;
+  const selectedLocation = useMemo(
+    () => locations.find((location) => location.id === destinationLocationId) ?? null,
+    [destinationLocationId, locations]
   );
 
   const stepIndex = STEPS.findIndex((step) => step.id === activeStepId);
@@ -69,12 +111,28 @@ export function ProductionBatchForm({ siteId, siteName, products, action }: Prop
 
   const parsedQty = Number(producedQty);
   const hasValidQty = Number.isFinite(parsedQty) && parsedQty > 0;
-  const canSubmit = Boolean(productId) && hasValidQty && Boolean(producedUnit.trim());
+  const hasRecipe = Boolean(selectedRecipe && selectedRecipe.ingredients.length > 0);
+  const canSubmit =
+    Boolean(productId) &&
+    hasValidQty &&
+    Boolean(producedUnit.trim()) &&
+    Boolean(destinationLocationId) &&
+    hasRecipe;
+
+  const computedIngredients = useMemo(() => {
+    if (!selectedRecipe || !hasValidQty) return [];
+    const yieldQty = Number(selectedRecipe.yieldQty ?? 1) > 0 ? Number(selectedRecipe.yieldQty) : 1;
+    const factor = parsedQty / yieldQty;
+    return selectedRecipe.ingredients.map((ingredient) => ({
+      ...ingredient,
+      requiredQty: roundQuantity(Number(ingredient.quantityPerYield) * factor, 6),
+    }));
+  }, [hasValidQty, parsedQty, selectedRecipe]);
 
   return (
     <GuidedFormShell
       title="Registro de produccion manual"
-      subtitle="Flujo guiado para crear lote, generar movimiento y actualizar stock."
+      subtitle="Crea lote terminado y descuenta insumos automaticamente desde receta."
       steps={STEPS}
       currentStepId={activeStepId}
       onStepChange={setActiveStepId}
@@ -82,15 +140,16 @@ export function ProductionBatchForm({ siteId, siteName, products, action }: Prop
       <form action={action} className="space-y-4">
         <input type="hidden" name="_wizard_step" value={activeStepId} />
         <input type="hidden" name="site_id" value={siteId} />
+        <input type="hidden" name="consume_recipe" value={consumeRecipe ? "1" : "0"} />
 
         <section className={activeStepId === "contexto" ? "ui-panel space-y-4" : "hidden"}>
           <div className="ui-h3">Paso 1. Contexto</div>
           <div className="ui-panel-soft p-3">
             <div className="ui-caption">Sede activa</div>
-            <div className="font-semibold mt-1">{siteName}</div>
+            <div className="mt-1 font-semibold">{siteName}</div>
           </div>
           <label className="flex flex-col gap-1">
-            <span className="ui-label">Producto</span>
+            <span className="ui-label">Producto terminado</span>
             <select
               name="product_id"
               className="ui-input"
@@ -99,8 +158,11 @@ export function ProductionBatchForm({ siteId, siteName, products, action }: Prop
                 const nextId = event.target.value;
                 setProductId(nextId);
                 const nextProduct = products.find((product) => product.id === nextId);
-                if (!producedUnit && nextProduct?.unit) {
-                  setProducedUnit(nextProduct.unit);
+                const nextUnit = normalizeUnitCode(
+                  nextProduct?.stock_unit_code ?? nextProduct?.unit ?? ""
+                );
+                if (nextUnit) {
+                  setProducedUnit(nextUnit);
                 }
               }}
               required
@@ -114,10 +176,10 @@ export function ProductionBatchForm({ siteId, siteName, products, action }: Prop
             </select>
           </label>
           <StepHelp
-            meaning="Define que producto terminado estas ingresando al inventario."
-            whenToUse="Cuando finalizas un lote de produccion y necesitas subir stock."
-            example="Salsa base, Pan de hamburguesa, Mix preparado."
-            impact="Genera movimiento de entrada y aumenta stock de la sede."
+            meaning="Solo se pueden producir items que tengan receta activa."
+            whenToUse="Selecciona el terminado exacto antes de definir cantidad de lote."
+            example="Pan listo, salsa base, relleno preparado."
+            impact="El sistema calculara consumo por ingrediente segun receta."
           />
         </section>
 
@@ -132,20 +194,43 @@ export function ProductionBatchForm({ siteId, siteName, products, action }: Prop
                 onChange={(event) => setProducedQty(event.target.value)}
                 placeholder="Cantidad"
                 className="ui-input"
+                required
               />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="ui-label">Unidad</span>
+              <span className="ui-label">Unidad de lote (base)</span>
               <input
                 name="produced_unit"
                 value={producedUnit}
                 onChange={(event) => setProducedUnit(event.target.value)}
-                placeholder="ej: kg, un"
+                placeholder="ej: un, kg, ml"
                 className="ui-input"
+                required
               />
+              <span className="text-xs text-[var(--ui-muted)]">
+                Debe coincidir con unidad base del producto.
+              </span>
             </label>
             <label className="flex flex-col gap-1">
-              <span className="ui-label">Fecha expiracion</span>
+              <span className="ui-label">LOC destino del terminado</span>
+              <select
+                name="destination_location_id"
+                value={destinationLocationId}
+                onChange={(event) => setDestinationLocationId(event.target.value)}
+                className="ui-input"
+                required
+              >
+                <option value="">Selecciona LOC</option>
+                {locations.map((location) => (
+                  <option key={location.id} value={location.id}>
+                    {location.code}
+                    {location.zone ? ` (${location.zone})` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Fecha de vencimiento</span>
               <input
                 type="date"
                 name="expires_at"
@@ -154,23 +239,17 @@ export function ProductionBatchForm({ siteId, siteName, products, action }: Prop
                 className="ui-input"
               />
             </label>
-            <label className="flex flex-col gap-1">
+            <label className="flex flex-col gap-1 md:col-span-2">
               <span className="ui-label">Notas</span>
               <input
                 name="notes"
                 value={notes}
                 onChange={(event) => setNotes(event.target.value)}
-                placeholder="Notas de produccion"
+                placeholder="Turno, observaciones, mermas relevantes"
                 className="ui-input"
               />
             </label>
           </div>
-          <StepHelp
-            meaning="Captura datos operativos del lote terminado."
-            whenToUse="Completa siempre cantidad y unidad; vencimiento si aplica."
-            example="12.5 kg, expira 2026-03-15, lote turno manana."
-            impact="Afecta trazabilidad y control de vida util del producto."
-          />
         </section>
 
         <section className={activeStepId === "impacto" ? "ui-panel space-y-4" : "hidden"}>
@@ -178,21 +257,39 @@ export function ProductionBatchForm({ siteId, siteName, products, action }: Prop
           <div className="grid gap-3 ui-mobile-stack sm:grid-cols-2">
             <div className="ui-panel-soft p-3">
               <div className="ui-caption">Producto</div>
-              <div className="font-semibold mt-1">{selectedProduct?.name ?? "Sin definir"}</div>
+              <div className="mt-1 font-semibold">{selectedProduct?.name ?? "Sin definir"}</div>
             </div>
             <div className="ui-panel-soft p-3">
-              <div className="ui-caption">Ingreso a stock</div>
-              <div className="font-semibold mt-1">
+              <div className="ui-caption">Ingreso de terminado</div>
+              <div className="mt-1 font-semibold">
                 {hasValidQty ? `${parsedQty} ${producedUnit || ""}` : "Sin definir"}
               </div>
             </div>
             <div className="ui-panel-soft p-3 sm:col-span-2">
-              <div className="ui-caption">Resultado</div>
-              <div className="font-semibold mt-1">
-                Se creara un lote y un movimiento tipo receipt en {siteName}.
-              </div>
+              <div className="ui-caption">LOC destino</div>
+              <div className="mt-1 font-semibold">{selectedLocation?.code ?? "Sin definir"}</div>
             </div>
           </div>
+          {!hasRecipe ? (
+            <div className="ui-alert ui-alert--warn">
+              El producto no tiene receta activa. No se puede registrar produccion automatica.
+            </div>
+          ) : null}
+          {hasRecipe ? (
+            <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
+              <div className="text-sm font-semibold text-[var(--ui-text)]">Consumo estimado por receta</div>
+              <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                Rendimiento base: {selectedRecipe?.yieldQty} {selectedRecipe?.yieldUnit}
+              </div>
+              <ul className="mt-3 space-y-1 text-sm text-[var(--ui-text)]">
+                {computedIngredients.map((ingredient) => (
+                  <li key={ingredient.ingredientProductId}>
+                    {ingredient.ingredientName}: {ingredient.requiredQty} {ingredient.stockUnitCode}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
         </section>
 
         <section className={activeStepId === "confirmacion" ? "ui-panel space-y-4" : "hidden"}>
@@ -200,16 +297,26 @@ export function ProductionBatchForm({ siteId, siteName, products, action }: Prop
           <label className="flex items-start gap-2">
             <input
               type="checkbox"
+              checked={consumeRecipe}
+              onChange={(event) => setConsumeRecipe(event.target.checked)}
+            />
+            <span className="ui-caption">
+              Confirmo consumo automatico de ingredientes por receta para este lote.
+            </span>
+          </label>
+          <label className="flex items-start gap-2">
+            <input
+              type="checkbox"
               checked={confirmed}
               onChange={(event) => setConfirmed(event.target.checked)}
             />
             <span className="ui-caption">
-              Confirmo que revise producto, cantidad, unidad y fecha de expiracion antes de registrar.
+              Revise producto, cantidad, LOC destino y consumo antes de registrar.
             </span>
           </label>
           {!canSubmit ? (
             <div className="ui-alert ui-alert--warn">
-              Completa producto, cantidad mayor a 0 y unidad antes de guardar.
+              Completa producto, cantidad valida, LOC destino y receta activa.
             </div>
           ) : null}
         </section>
@@ -223,7 +330,7 @@ export function ProductionBatchForm({ siteId, siteName, products, action }: Prop
             <button
               type="submit"
               className="ui-btn ui-btn--brand"
-              disabled={!confirmed || !canSubmit || activeStepId !== "confirmacion"}
+              disabled={!confirmed || !consumeRecipe || !canSubmit || activeStepId !== "confirmacion"}
             >
               Registrar lote
             </button>

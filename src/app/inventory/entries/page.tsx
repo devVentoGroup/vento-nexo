@@ -1,4 +1,4 @@
-import { redirect } from "next/navigation";
+﻿import { redirect } from "next/navigation";
 
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
@@ -151,6 +151,18 @@ async function createEntry(formData: FormData) {
   const invoiceNumber = asText(formData.get("invoice_number"));
   const receivedAt = asText(formData.get("received_at"));
   const notes = asText(formData.get("notes"));
+  const sourceAppRaw = asText(formData.get("source_app")).toLowerCase();
+  const entryModeRaw = asText(formData.get("entry_mode")).toLowerCase();
+  const emergencyReason = asText(formData.get("emergency_reason"));
+  const sourceApp = sourceAppRaw === "nexo" ? "nexo" : "origo";
+  const entryMode = entryModeRaw === "emergency" ? "emergency" : "normal";
+
+  if (entryMode === "emergency" && !emergencyReason) {
+    redirect(
+      "/inventory/entries?error=" +
+        encodeURIComponent("Debes registrar el motivo de emergencia para esta entrada.")
+    );
+  }
 
   const productIds = formData.getAll("item_product_id").map((v) => String(v).trim());
   const locationIds = formData.getAll("item_location_id").map((v) => String(v).trim());
@@ -391,7 +403,7 @@ async function createEntry(formData: FormData) {
   );
   const status = allReceived ? "received" : anyReceived ? "partial" : "pending";
 
-  const { data: entry, error: entryErr } = await supabase
+  let entryInsert = await supabase
     .from("inventory_entries")
     .insert({
       site_id: siteId,
@@ -403,9 +415,32 @@ async function createEntry(formData: FormData) {
       notes: notes || null,
       created_by: user.id,
       purchase_order_id: purchaseOrderId,
+      source_app: sourceApp,
+      entry_mode: entryMode,
+      emergency_reason: entryMode === "emergency" ? emergencyReason : null,
     })
     .select("id")
     .single();
+
+  if (entryInsert.error && entryInsert.error.code === "42703") {
+    entryInsert = await supabase
+      .from("inventory_entries")
+      .insert({
+        site_id: siteId,
+        supplier_id: supplierId && supplierId !== "__new__" ? supplierId : null,
+        supplier_name: supplierName,
+        invoice_number: invoiceNumber || null,
+        received_at: receivedAt || null,
+        status,
+        notes: notes || null,
+        created_by: user.id,
+        purchase_order_id: purchaseOrderId,
+      })
+      .select("id")
+      .single();
+  }
+
+  const { data: entry, error: entryErr } = entryInsert;
 
   if (entryErr || !entry) {
     redirect(
@@ -653,7 +688,7 @@ export default async function EntriesPage({
   const access = await requireAppAccess({
     appId: "nexo",
     returnTo: "/inventory/entries",
-    permissionCode: "inventory.entries",
+    permissionCode: "inventory.entries_emergency",
   });
 
   const supabase = access.supabase;
@@ -823,8 +858,8 @@ export default async function EntriesPage({
   return (
     <div className="w-full space-y-6">
       <PageHeader
-        title="Entradas"
-        subtitle="Recepción de insumos por factura. Permite recepción parcial por ítem."
+        title="Entrada de emergencia"
+        subtitle="Uso excepcional en NEXO. La recepcion operativa normal se realiza en ORIGO."
       />
 
       {errorMsg ? (
@@ -857,6 +892,7 @@ export default async function EntriesPage({
         defaultInvoiceNumber={prefillInvoiceNumber || undefined}
         defaultNotes={prefillNotes || undefined}
         purchaseOrderId={purchaseOrderId || undefined}
+        emergencyOnly
         initialRows={prefillRows}
         action={createEntry}
       />
@@ -864,7 +900,7 @@ export default async function EntriesPage({
       <div className="ui-panel">
         <div className="ui-h3">Entradas recientes</div>
         <div className="mt-1 ui-body-muted">
-          Últimas 25 entradas. El estado (Pendiente / Parcial / Recibida) se calcula según cantidades declaradas vs recibidas por ítem.
+          Ãšltimas 25 entradas. El estado (Pendiente / Parcial / Recibida) se calcula segÃºn cantidades declaradas vs recibidas por Ã­tem.
         </div>
 
         <div className="mt-4 overflow-x-auto">
@@ -904,3 +940,4 @@ export default async function EntriesPage({
     </div>
   );
 }
+

@@ -7,9 +7,6 @@ import { PageHeader } from "@/components/vento/standard/page-header";
 import { ProductImageUpload } from "@/features/inventory/catalog/product-image-upload";
 import { ProductSiteSettingsEditor } from "@/features/inventory/catalog/product-site-settings-editor";
 import { ProductSuppliersEditor } from "@/features/inventory/catalog/product-suppliers-editor";
-import { RecipeIngredientsEditor } from "@/features/inventory/catalog/recipe-ingredients-editor";
-import { RecipeMetadataFields } from "@/features/inventory/catalog/recipe-metadata-fields";
-import { RecipeStepsEditor } from "@/features/inventory/catalog/recipe-steps-editor";
 import {
   convertQuantity,
   createUnitMap,
@@ -50,6 +47,16 @@ export const dynamic = "force-dynamic";
 const APP_ID = "nexo";
 const PERMISSION = "inventory.stock";
 const STOCK_UNIT_FIELD_ID = "stock_unit_code";
+const FOGO_BASE_URL =
+  process.env.NEXT_PUBLIC_FOGO_URL?.replace(/\/$/, "") ||
+  "https://fogo.ventogroup.co";
+
+function buildFogoRecipeUrl(productId: string) {
+  const url = new URL("/recipes", FOGO_BASE_URL);
+  url.searchParams.set("product_id", productId);
+  url.searchParams.set("source", "nexo");
+  return url.toString();
+}
 
 type ProductRow = {
   id: string;
@@ -86,7 +93,7 @@ type SiteSettingRow = {
   is_active: boolean | null;
   default_area_kind: string | null;
   min_stock_qty: number | null;
-  audience: "SAUDO" | "VCF" | "BOTH" | null;
+  audience: "SAUDO" | "VCF" | "BOTH" | "INTERNAL" | null;
   sites?: { id: string; name: string | null } | null;
 };
 
@@ -613,6 +620,7 @@ async function updateProduct(formData: FormData) {
           redirectWithError("En disponibilidad por sede debes seleccionar una sede.");
         }
         if (!line.site_id) continue;
+        const normalizedAudience = String(line.audience ?? "BOTH").trim().toUpperCase();
         const row = {
           product_id: productId,
           site_id: line.site_id,
@@ -623,11 +631,13 @@ async function updateProduct(formData: FormData) {
               ? null
               : Number(line.min_stock_qty),
           audience:
-            String(line.audience ?? "BOTH").trim().toUpperCase() === "SAUDO"
+            normalizedAudience === "SAUDO"
               ? "SAUDO"
-              : String(line.audience ?? "BOTH").trim().toUpperCase() === "VCF"
+              : normalizedAudience === "VCF"
                 ? "VCF"
-                : "BOTH",
+                : normalizedAudience === "INTERNAL"
+                  ? "INTERNAL"
+                  : "BOTH",
         };
         if (line.id) {
           let { error: upErr } = await supabase.from("product_site_settings").update(row).eq("id", line.id);
@@ -660,86 +670,6 @@ async function updateProduct(formData: FormData) {
       }
     } catch {
       // ignore
-    }
-  }
-
-  // Recipe card upsert
-  const ingredientRaw = formData.get("ingredient_lines");
-  const stepsRaw = formData.get("recipe_steps");
-  const hasRecipeData = typeof ingredientRaw === "string" && ingredientRaw;
-
-  if (hasRecipeData) {
-    const yieldQty = formData.get("yield_qty") ? Number(formData.get("yield_qty")) : 1;
-    const yieldUnit = asText(formData.get("yield_unit")) || "un";
-
-    const { data: existingCard } = await supabase
-      .from("recipe_cards")
-      .select("id")
-      .eq("product_id", productId)
-      .maybeSingle();
-
-    let recipeCardId: string;
-    if (existingCard) {
-      recipeCardId = existingCard.id;
-      await supabase.from("recipe_cards").update({
-        yield_qty: yieldQty,
-        yield_unit: yieldUnit,
-        portion_size: formData.get("portion_size") ? Number(formData.get("portion_size")) : null,
-        portion_unit: asText(formData.get("portion_unit")) || null,
-        prep_time_minutes: formData.get("prep_time_minutes") ? Number(formData.get("prep_time_minutes")) : null,
-        shelf_life_days: formData.get("shelf_life_days") ? Number(formData.get("shelf_life_days")) : null,
-        difficulty: asText(formData.get("difficulty")) || null,
-        recipe_description: asText(formData.get("recipe_description")) || null,
-      }).eq("id", recipeCardId);
-    } else {
-      const { data: newCard } = await supabase.from("recipe_cards").insert({
-        product_id: productId,
-        yield_qty: yieldQty,
-        yield_unit: yieldUnit,
-        portion_size: formData.get("portion_size") ? Number(formData.get("portion_size")) : null,
-        portion_unit: asText(formData.get("portion_unit")) || null,
-        prep_time_minutes: formData.get("prep_time_minutes") ? Number(formData.get("prep_time_minutes")) : null,
-        shelf_life_days: formData.get("shelf_life_days") ? Number(formData.get("shelf_life_days")) : null,
-        difficulty: asText(formData.get("difficulty")) || null,
-        recipe_description: asText(formData.get("recipe_description")) || null,
-        status: "draft",
-      }).select("id").single();
-      recipeCardId = newCard?.id ?? "";
-    }
-
-    // Replace BOM lines
-    try {
-      const ingredientLines = JSON.parse(ingredientRaw as string) as Array<Record<string, unknown>>;
-      await supabase.from("recipes").delete().eq("product_id", productId);
-      for (const line of ingredientLines) {
-        if ((line._delete as boolean) || !line.ingredient_product_id) continue;
-        await supabase.from("recipes").insert({
-          product_id: productId,
-          ingredient_product_id: line.ingredient_product_id as string,
-          quantity: (line.quantity as number) ?? 0,
-          is_active: true,
-        });
-      }
-    } catch { /* skip */ }
-
-    // Replace steps
-    if (recipeCardId && typeof stepsRaw === "string" && stepsRaw) {
-      try {
-        const stepLines = JSON.parse(stepsRaw) as Array<Record<string, unknown>>;
-        await supabase.from("recipe_steps").delete().eq("recipe_card_id", recipeCardId);
-        for (const step of stepLines) {
-          if ((step._delete as boolean) || !step.description) continue;
-          await supabase.from("recipe_steps").insert({
-            recipe_card_id: recipeCardId,
-            step_number: (step.step_number as number) ?? 1,
-            description: step.description as string,
-            tip: (step.tip as string) || null,
-            time_minutes: (step.time_minutes as number) ?? null,
-            step_image_url: (step.step_image_url as string) || null,
-            step_video_url: (step.step_video_url as string) || null,
-          });
-        }
-      } catch { /* skip */ }
     }
   }
 
@@ -862,68 +792,6 @@ export default async function ProductCatalogDetailPage({
       String((profile as InventoryProfileRow | null)?.inventory_kind ?? "")
         .trim()
         .toLowerCase() !== "resale");
-
-  type RecipeCardRow = {
-    id: string;
-    yield_qty: number | null;
-    yield_unit: string | null;
-    portion_size: number | null;
-    portion_unit: string | null;
-    prep_time_minutes: number | null;
-    shelf_life_days: number | null;
-    difficulty: string | null;
-    recipe_description: string | null;
-  };
-  type RecipeBomRow = { id: string; ingredient_product_id: string; quantity: number };
-  type RecipeStepRow = {
-    id: string;
-    step_number: number;
-    description: string;
-    tip: string | null;
-    time_minutes: number | null;
-    step_image_url: string | null;
-    step_video_url: string | null;
-  };
-  type IngredientProductRow = { id: string; name: string | null; sku: string | null; unit: string | null; cost: number | null };
-
-  let recipeCard: RecipeCardRow | null = null;
-  let recipeBomRows: RecipeBomRow[] = [];
-  let recipeStepRows: RecipeStepRow[] = [];
-  let ingredientProducts: IngredientProductRow[] = [];
-
-  if (hasRecipe) {
-    const { data: rc } = await supabase
-      .from("recipe_cards")
-      .select("id,yield_qty,yield_unit,portion_size,portion_unit,prep_time_minutes,shelf_life_days,difficulty,recipe_description")
-      .eq("product_id", id)
-      .maybeSingle();
-    recipeCard = rc as RecipeCardRow | null;
-
-    const { data: bom } = await supabase
-      .from("recipes")
-      .select("id,ingredient_product_id,quantity")
-      .eq("product_id", id)
-      .eq("is_active", true);
-    recipeBomRows = (bom ?? []) as RecipeBomRow[];
-
-    if (recipeCard) {
-      const { data: steps } = await supabase
-        .from("recipe_steps")
-        .select("id,step_number,description,tip,time_minutes,step_image_url,step_video_url")
-        .eq("recipe_card_id", recipeCard.id)
-        .order("step_number", { ascending: true });
-      recipeStepRows = (steps ?? []) as RecipeStepRow[];
-    }
-
-    const { data: ingProds } = await supabase
-      .from("products")
-      .select("id,name,sku,unit,cost")
-      .in("product_type", ["insumo", "preparacion"])
-      .eq("is_active", true)
-      .order("name", { ascending: true })
-      .limit(1000);
-    ingredientProducts = (ingProds ?? []) as IngredientProductRow[];
-  }
 
   const [{ data: employee }, { data: settings }] = await Promise.all([
     supabase.from("employees").select("role,site_id").eq("id", user.id).maybeSingle(),
@@ -1147,73 +1015,32 @@ export default async function ProductCatalogDetailPage({
 
           </section>
 
-          {/* Secciones de receta (solo preparacion y venta) */}
+          {/* Receta y produccion ahora viven en FOGO */}
           {hasRecipe && (
-            <>
-              <section className="ui-panel space-y-6">
-                <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">R</span>
-                  <div>
-                    <h2 className="ui-h3">Receta: ingredientes</h2>
-                    <p className="text-sm text-[var(--ui-muted)]">
-                      Insumos y/o preparaciones que componen este producto, con cantidades.
-                    </p>
-                  </div>
+            <section className="ui-panel space-y-6">
+              <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">R</span>
+                <div>
+                  <h2 className="ui-h3">Receta y produccion</h2>
+                  <p className="text-sm text-[var(--ui-muted)]">
+                    Desde ahora, BOM, pasos y medios se gestionan solo en FOGO.
+                  </p>
                 </div>
-                <RecipeIngredientsEditor
-                  name="ingredient_lines"
-                  initialRows={recipeBomRows.map((r) => ({
-                    id: r.id,
-                    ingredient_product_id: r.ingredient_product_id,
-                    quantity: r.quantity,
-                  }))}
-                  products={ingredientProducts}
-                />
-              </section>
-
-              <section className="ui-panel space-y-6">
-                <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">F</span>
-                  <div>
-                    <h2 className="ui-h3">Ficha de receta</h2>
-                    <p className="text-sm text-[var(--ui-muted)]">Rendimiento, tiempos, dificultad.</p>
-                  </div>
-                </div>
-                <RecipeMetadataFields
-                  yieldQty={recipeCard?.yield_qty ?? undefined}
-                  yieldUnit={recipeCard?.yield_unit ?? undefined}
-                  portionSize={recipeCard?.portion_size ?? undefined}
-                  portionUnit={recipeCard?.portion_unit ?? undefined}
-                  prepTimeMinutes={recipeCard?.prep_time_minutes ?? undefined}
-                  shelfLifeDays={recipeCard?.shelf_life_days ?? undefined}
-                  difficulty={recipeCard?.difficulty ?? undefined}
-                  recipeDescription={recipeCard?.recipe_description ?? undefined}
-                />
-              </section>
-
-              <section className="ui-panel space-y-6">
-                <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
-                  <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">P</span>
-                  <div>
-                    <h2 className="ui-h3">Pasos de preparacion</h2>
-                    <p className="text-sm text-[var(--ui-muted)]">Instrucciones paso a paso.</p>
-                  </div>
-                </div>
-                <RecipeStepsEditor
-                  name="recipe_steps"
-                  initialRows={recipeStepRows.map((s) => ({
-                    id: s.id,
-                    step_number: s.step_number,
-                    description: s.description,
-                    tip: s.tip ?? "",
-                    time_minutes: s.time_minutes ?? undefined,
-                    step_image_url: s.step_image_url ?? "",
-                    step_video_url: s.step_video_url ?? "",
-                  }))}
-                  mediaOwnerId={productRow.id}
-                />
-              </section>
-            </>
+              </div>
+              <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)] space-y-2">
+                <p>
+                  NEXO mantiene inventario, sedes y logistica. La configuracion de receta se edita en FOGO.
+                </p>
+                <a
+                  href={buildFogoRecipeUrl(productRow.id)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex ui-btn ui-btn--ghost"
+                >
+                  Gestionar receta en FOGO
+                </a>
+              </div>
+            </section>
           )}
 
           {/* Paso 2: Unidades y almacenamiento */}

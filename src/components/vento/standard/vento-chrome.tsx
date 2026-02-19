@@ -78,9 +78,9 @@ const NAV_GROUPS: NavGroup[] = [
       },
       {
         href: "/inventory/entries",
-        label: "Entradas",
-        description: "Recepcion de insumos",
-        required: ["inventory.entries"],
+        label: "Entrada de emergencia",
+        description: "Recepcion excepcional",
+        required: ["inventory.entries_emergency"],
         icon: "layers",
       },
       {
@@ -151,13 +151,6 @@ const NAV_GROUPS: NavGroup[] = [
         allowedRoles: ["propietario", "gerente_general"],
         icon: "map",
       },
-      {
-        href: "/inventory/production-batches",
-        label: "Produccion manual",
-        description: "Lotes de produccion",
-        required: ["inventory.production_batches"],
-        icon: "sparkles",
-      },
     ],
   },
   {
@@ -174,21 +167,21 @@ const NAV_GROUPS: NavGroup[] = [
         href: "/printing/jobs",
         label: "Impresion",
         description: "Etiquetas Zebra",
-        anyOf: ["inventory.production_batches", "inventory.locations"],
+        required: ["inventory.locations"],
         icon: "printer",
       },
       {
         href: "/printing/designer",
         label: "Disenador",
         description: "Diseno de etiquetas",
-        anyOf: ["inventory.production_batches", "inventory.locations"],
+        required: ["inventory.locations"],
         icon: "layers",
       },
       {
         href: "/printing/setup",
         label: "Config. impresora",
         description: "Instalacion y conexion",
-        anyOf: ["inventory.production_batches", "inventory.locations"],
+        required: ["inventory.locations"],
         icon: "sliders",
       },
     ],
@@ -418,7 +411,7 @@ export function VentoChrome({
     () => [
       "access",
       "inventory.remissions",
-      "inventory.entries",
+      "inventory.entries_emergency",
       "inventory.transfers",
       "inventory.withdraw",
       "inventory.stock",
@@ -426,7 +419,6 @@ export function VentoChrome({
       "inventory.counts",
       "inventory.adjustments",
       "inventory.locations",
-      "inventory.production_batches",
     ],
     []
   );

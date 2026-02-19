@@ -14,9 +14,6 @@ import { safeDecodeURIComponent } from "@/lib/url";
 import { ProductSuppliersEditor } from "@/features/inventory/catalog/product-suppliers-editor";
 import { ProductSiteSettingsEditor } from "@/features/inventory/catalog/product-site-settings-editor";
 import { ProductImageUpload } from "@/features/inventory/catalog/product-image-upload";
-import { RecipeIngredientsEditor } from "@/features/inventory/catalog/recipe-ingredients-editor";
-import { RecipeMetadataFields } from "@/features/inventory/catalog/recipe-metadata-fields";
-import { RecipeStepsEditor } from "@/features/inventory/catalog/recipe-steps-editor";
 import {
   categorySupportsKind,
   filterCategoryRows,
@@ -148,6 +145,16 @@ const TYPE_CONFIG = {
 } as const;
 
 type ProductTypeKey = keyof typeof TYPE_CONFIG;
+const FOGO_BASE_URL =
+  process.env.NEXT_PUBLIC_FOGO_URL?.replace(/\/$/, "") ||
+  "https://fogo.ventogroup.co";
+
+function buildFogoRecipeCreateUrl(typeKey: ProductTypeKey) {
+  const url = new URL("/recipes/new", FOGO_BASE_URL);
+  url.searchParams.set("source", "nexo");
+  url.searchParams.set("product_type", typeKey);
+  return url.toString();
+}
 
 async function createProduct(formData: FormData) {
   "use server";
@@ -546,6 +553,7 @@ async function createProduct(formData: FormData) {
           );
         }
         if (!siteIdFromLine) continue;
+        const normalizedAudience = String(line.audience ?? "BOTH").trim().toUpperCase();
         let { error: siteInsertError } = await supabase.from("product_site_settings").insert({
           product_id: productId,
           site_id: siteIdFromLine,
@@ -556,11 +564,13 @@ async function createProduct(formData: FormData) {
               ? null
               : Number(line.min_stock_qty),
           audience:
-            String(line.audience ?? "BOTH").trim().toUpperCase() === "SAUDO"
+            normalizedAudience === "SAUDO"
               ? "SAUDO"
-              : String(line.audience ?? "BOTH").trim().toUpperCase() === "VCF"
+              : normalizedAudience === "VCF"
                 ? "VCF"
-                : "BOTH",
+                : normalizedAudience === "INTERNAL"
+                  ? "INTERNAL"
+                  : "BOTH",
         });
         if (siteInsertError && siteInsertError.code === "42703") {
           const legacyRow = {
@@ -580,68 +590,6 @@ async function createProduct(formData: FormData) {
         }
       }
     } catch { /* skip */ }
-  }
-
-  // Recipe card + BOM + Steps
-  if (config.hasRecipe) {
-    const yieldQty = formData.get("yield_qty") ? Number(formData.get("yield_qty")) : 1;
-    const yieldUnit = asText(formData.get("yield_unit")) || "un";
-
-    const { data: recipeCard } = await supabase
-      .from("recipe_cards")
-      .insert({
-        product_id: productId,
-        yield_qty: yieldQty,
-        yield_unit: yieldUnit,
-        portion_size: formData.get("portion_size") ? Number(formData.get("portion_size")) : null,
-        portion_unit: asText(formData.get("portion_unit")) || null,
-        prep_time_minutes: formData.get("prep_time_minutes") ? Number(formData.get("prep_time_minutes")) : null,
-        shelf_life_days: formData.get("shelf_life_days") ? Number(formData.get("shelf_life_days")) : null,
-        difficulty: asText(formData.get("difficulty")) || null,
-        recipe_description: asText(formData.get("recipe_description")) || null,
-        status: "draft",
-      })
-      .select("id")
-      .single();
-
-    // BOM lines
-    const ingredientRaw = formData.get("ingredient_lines");
-    if (typeof ingredientRaw === "string" && ingredientRaw) {
-      try {
-        const ingredientLines = JSON.parse(ingredientRaw) as Array<Record<string, unknown>>;
-        for (const line of ingredientLines) {
-          if ((line._delete as boolean) || !line.ingredient_product_id) continue;
-          await supabase.from("recipes").insert({
-            product_id: productId,
-            ingredient_product_id: line.ingredient_product_id as string,
-            quantity: (line.quantity as number) ?? 0,
-            is_active: true,
-          });
-        }
-      } catch { /* skip */ }
-    }
-
-    // Steps
-    if (recipeCard) {
-      const stepsRaw = formData.get("recipe_steps");
-      if (typeof stepsRaw === "string" && stepsRaw) {
-        try {
-          const stepLines = JSON.parse(stepsRaw) as Array<Record<string, unknown>>;
-          for (const step of stepLines) {
-            if ((step._delete as boolean) || !step.description) continue;
-            await supabase.from("recipe_steps").insert({
-              recipe_card_id: recipeCard.id,
-              step_number: (step.step_number as number) ?? 1,
-              description: step.description as string,
-              tip: (step.tip as string) || null,
-              time_minutes: (step.time_minutes as number) ?? null,
-              step_image_url: (step.step_image_url as string) || null,
-              step_video_url: (step.step_video_url as string) || null,
-            });
-          }
-        } catch { /* skip */ }
-      }
-    }
   }
 
   revalidatePath("/inventory/catalog");
@@ -729,19 +677,6 @@ export default async function NewProductPage({
 
   const defaultStockUnitCode = unitsList[0]?.code ?? "un";
   const defaultUnitOptions = unitsList;
-
-  // For recipe: load insumos + preparaciones as ingredient options
-  let ingredientProducts: { id: string; name: string | null; sku: string | null; unit: string | null; cost: number | null }[] = [];
-  if (config.hasRecipe) {
-    const { data: prods } = await supabase
-      .from("products")
-      .select("id,name,sku,unit,cost")
-      .in("product_type", ["insumo", "preparacion"])
-      .eq("is_active", true)
-      .order("name", { ascending: true })
-      .limit(1000);
-    ingredientProducts = (prods ?? []) as typeof ingredientProducts;
-  }
 
   if (!canCreate) {
     return (
@@ -1025,59 +960,35 @@ export default async function NewProductPage({
           </section>
         )}
 
-        {/* Secciones de receta (preparacion y venta) */}
+        {/* Receta se gestiona en FOGO */}
         {config.hasRecipe && (
-          <>
-            <section className="ui-panel space-y-6">
-              <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">
-                  {nextSection()}
-                </span>
-                <div>
-                  <h2 className="ui-h3">Receta: ingredientes</h2>
-                  <p className="text-sm text-[var(--ui-muted)]">
-                    Lista de insumos y/o preparaciones que componen este producto, con cantidades.
-                  </p>
-                </div>
+          <section className="ui-panel space-y-6">
+            <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">
+                {nextSection()}
+              </span>
+              <div>
+                <h2 className="ui-h3">Receta y produccion</h2>
+                <p className="text-sm text-[var(--ui-muted)]">
+                  Desde este corte, la receta se crea y mantiene en FOGO.
+                </p>
               </div>
-              <RecipeIngredientsEditor
-                name="ingredient_lines"
-                initialRows={[]}
-                products={ingredientProducts}
-              />
-            </section>
-
-            <section className="ui-panel space-y-6">
-              <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">
-                  {nextSection()}
-                </span>
-                <div>
-                  <h2 className="ui-h3">Ficha de receta</h2>
-                  <p className="text-sm text-[var(--ui-muted)]">Rendimiento, tiempos y dificultad.</p>
-                </div>
-              </div>
-              <RecipeMetadataFields />
-            </section>
-
-            <section className="ui-panel space-y-6">
-              <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">
-                  {nextSection()}
-                </span>
-                <div>
-                  <h2 className="ui-h3">Pasos de preparacion</h2>
-                  <p className="text-sm text-[var(--ui-muted)]">Instrucciones paso a paso para preparar este producto.</p>
-                </div>
-              </div>
-              <RecipeStepsEditor
-                name="recipe_steps"
-                initialRows={[]}
-                mediaOwnerId={`draft-${typeKey}`}
-              />
-            </section>
-
-          </>
+            </div>
+            <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
+              <p>
+                Crea primero este producto en NEXO para definir inventario y sedes.
+                Luego completa BOM, pasos y medios en FOGO.
+              </p>
+              <a
+                href={buildFogoRecipeCreateUrl(typeKey)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-3 inline-flex ui-btn ui-btn--ghost"
+              >
+                Gestionar receta en FOGO
+              </a>
+            </div>
+          </section>
         )}
 
         <section className="ui-panel space-y-6">
@@ -1136,7 +1047,7 @@ export default async function NewProductPage({
               : "Clasificacion y categoria revisadas para este tipo de item."}
           </p>
           <p>3) Sedes configuradas (disponible, area por defecto y uso en sede).</p>
-          <p>4) Si aplica, receta completa con ingredientes y pasos.</p>
+          <p>4) Si aplica, completa la receta en FOGO despues de crear el producto.</p>
         </section>
 
         {/* Accion final */}

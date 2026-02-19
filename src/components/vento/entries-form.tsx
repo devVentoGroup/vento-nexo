@@ -58,6 +58,7 @@ type Props = {
   defaultInvoiceNumber?: string;
   defaultNotes?: string;
   purchaseOrderId?: string;
+  emergencyOnly?: boolean;
   initialRows?: Array<{
     product_id?: string;
     location_id?: string;
@@ -107,6 +108,7 @@ export function EntriesForm({
   defaultInvoiceNumber,
   defaultNotes,
   purchaseOrderId,
+  emergencyOnly = false,
   initialRows,
   action,
 }: Props) {
@@ -135,6 +137,8 @@ export function EntriesForm({
       <form className="space-y-4" action={action}>
         <input type="hidden" name="_wizard_step" value={activeStepId} />
         <input type="hidden" name="purchase_order_id" value={purchaseOrderId ?? ""} />
+        <input type="hidden" name="source_app" value={emergencyOnly ? "nexo" : "origo"} />
+        <input type="hidden" name="entry_mode" value={emergencyOnly ? "emergency" : "normal"} />
 
         <section className={activeStepId === "proveedor" ? "ui-panel space-y-4" : "hidden"}>
           <div className="ui-h3">Paso 1. Proveedor y documento</div>
@@ -183,6 +187,17 @@ export function EntriesForm({
                 defaultValue={defaultNotes ?? ""}
               />
             </label>
+            {emergencyOnly ? (
+              <label className="flex flex-col gap-1 md:col-span-2">
+                <span className="ui-label">Motivo de emergencia</span>
+                <input
+                  name="emergency_reason"
+                  className="ui-input"
+                  placeholder="Ej: reposicion urgente para no detener operacion"
+                  required
+                />
+              </label>
+            ) : null}
           </div>
           <StepHelp
             meaning="Este paso define trazabilidad del documento de entrada."

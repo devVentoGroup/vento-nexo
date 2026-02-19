@@ -88,12 +88,13 @@ type RemissionRow = {
   notes: string | null;
 };
 
-type ProductAudience = "SAUDO" | "VCF" | "BOTH";
+type ProductAudience = "SAUDO" | "VCF" | "BOTH" | "INTERNAL";
 
 function normalizeAudience(value: string | null | undefined): ProductAudience {
   const normalized = String(value ?? "").trim().toUpperCase();
   if (normalized === "SAUDO") return "SAUDO";
   if (normalized === "VCF") return "VCF";
+  if (normalized === "INTERNAL") return "INTERNAL";
   return "BOTH";
 }
 
@@ -111,6 +112,12 @@ function supportsAudience(
   requestedAudience: ProductAudience
 ): boolean {
   const normalized = normalizeAudience(configuredAudience);
+  if (normalized === "INTERNAL") {
+    return requestedAudience === "INTERNAL";
+  }
+  if (requestedAudience === "INTERNAL") {
+    return false;
+  }
   return normalized === "BOTH" || requestedAudience === "BOTH" || normalized === requestedAudience;
 }
 
@@ -308,21 +315,36 @@ async function createRemission(formData: FormData) {
 
   const requestedAudience = inferAudienceFromSiteName(toSite?.name ?? "");
   const configuredRows = await loadProductSiteRows(supabase, toSiteId);
-  if (configuredRows.length > 0) {
-    const allowedProductIds = new Set(
-      configuredRows
-        .filter((row) => supportsAudience(row.audience, requestedAudience))
-        .map((row) => row.product_id)
+  if (configuredRows.length === 0) {
+    redirect(
+      "/inventory/remissions?error=" +
+        encodeURIComponent(
+          "Esta sede no tiene productos habilitados. Configura disponibilidad por sede en catalogo."
+        )
     );
-    const invalidItems = items.filter((item) => !allowedProductIds.has(item.product_id));
-    if (invalidItems.length > 0) {
-      redirect(
-        "/inventory/remissions?error=" +
-          encodeURIComponent(
-            "Algunos productos no estan habilitados para esta sede o flujo operativo. Revisa disponibilidad por sede."
-          )
-      );
-    }
+  }
+
+  const allowedProductIds = new Set(
+    configuredRows
+      .filter((row) => supportsAudience(row.audience, requestedAudience))
+      .map((row) => row.product_id)
+  );
+  if (allowedProductIds.size === 0) {
+    redirect(
+      "/inventory/remissions?error=" +
+        encodeURIComponent(
+          "Esta sede no tiene productos habilitados para su uso operativo. Ajusta Uso en sede en catalogo."
+        )
+    );
+  }
+  const invalidItems = items.filter((item) => !allowedProductIds.has(item.product_id));
+  if (invalidItems.length > 0) {
+    redirect(
+      "/inventory/remissions?error=" +
+        encodeURIComponent(
+          "Algunos productos no estan habilitados para esta sede o flujo operativo. Revisa disponibilidad por sede."
+        )
+    );
   }
 
   const { data: request, error: requestErr } = await supabase
@@ -553,40 +575,37 @@ export default async function RemissionsPage({
   const productSiteRows = productFilterSiteId
     ? await loadProductSiteRows(supabase, productFilterSiteId)
     : [];
+  const hasActiveSiteProductConfig = productSiteRows.length > 0;
   const productSiteIds = productSiteRows
     .filter((row) => supportsAudience(row.audience, requestedAudience))
     .map((row) => row.product_id);
-  const hasProductSiteFilter = productSiteIds.length > 0;
+  const hasAudienceProducts = productSiteIds.length > 0;
 
-  let productsQuery = supabase
-    .from("product_inventory_profiles")
-    .select("product_id, products(id,name,unit,stock_unit_code)")
-    .eq("track_inventory", true)
-    .in("inventory_kind", ["ingredient", "finished", "resale", "packaging"])
-    .order("name", { foreignTable: "products", ascending: true })
-    .limit(400);
-
-  if (hasProductSiteFilter) {
-    productsQuery = productsQuery.in("product_id", productSiteIds);
-  }
-
-  const { data: products } = await productsQuery;
-  let productRows = ((products ?? []) as unknown as ProductProfileWithProduct[])
-    .map((row) => row.products)
-    .filter((r): r is ProductRow => Boolean(r));
-
-  if (productRows.length === 0) {
-    let fallbackQuery = supabase
-      .from("products")
-      .select("id,name,unit,stock_unit_code")
-      .eq("is_active", true)
-      .order("name", { ascending: true })
+  let productRows: ProductRow[] = [];
+  if (hasAudienceProducts) {
+    const productsQuery = await supabase
+      .from("product_inventory_profiles")
+      .select("product_id, products(id,name,unit,stock_unit_code)")
+      .eq("track_inventory", true)
+      .in("inventory_kind", ["ingredient", "finished", "resale", "packaging"])
+      .in("product_id", productSiteIds)
+      .order("name", { foreignTable: "products", ascending: true })
       .limit(400);
-    if (hasProductSiteFilter) {
-      fallbackQuery = fallbackQuery.in("id", productSiteIds);
+
+    productRows = ((productsQuery.data ?? []) as unknown as ProductProfileWithProduct[])
+      .map((row) => row.products)
+      .filter((r): r is ProductRow => Boolean(r));
+
+    if (productRows.length === 0) {
+      const { data: fallbackProducts } = await supabase
+        .from("products")
+        .select("id,name,unit,stock_unit_code")
+        .eq("is_active", true)
+        .in("id", productSiteIds)
+        .order("name", { ascending: true })
+        .limit(400);
+      productRows = (fallbackProducts ?? []) as unknown as ProductRow[];
     }
-    const { data: fallbackProducts } = await fallbackQuery;
-    productRows = (fallbackProducts ?? []) as unknown as ProductRow[];
   }
   const productIds = productRows.map((row) => row.id);
   const { data: uomProfilesData } = productIds.length
@@ -600,6 +619,8 @@ export default async function RemissionsPage({
         .eq("is_active", true)
     : { data: [] as ProductUomProfile[] };
   const defaultUomProfiles = (uomProfilesData ?? []) as ProductUomProfile[];
+  const canCreateWithConfiguredCatalog =
+    canCreate && hasActiveSiteProductConfig && hasAudienceProducts;
 
   return (
     <div className="w-full">
@@ -689,7 +710,27 @@ export default async function RemissionsPage({
           </div>
         ) : null}
 
-        {canCreate && productRows.length === 0 ? (
+        {canCreate && !hasActiveSiteProductConfig ? (
+          <div className="mt-4 ui-alert ui-alert--warn">
+            Esta sede no tiene productos habilitados. Configura disponibilidad por sede en{" "}
+            <Link href="/inventory/catalog" className="font-semibold underline">
+              Catalogo
+            </Link>
+            .
+          </div>
+        ) : null}
+
+        {canCreate && hasActiveSiteProductConfig && !hasAudienceProducts ? (
+          <div className="mt-4 ui-alert ui-alert--warn">
+            Esta sede no tiene productos habilitados para su uso operativo. Ajusta Uso en sede en{" "}
+            <Link href="/inventory/catalog" className="font-semibold underline">
+              Catalogo
+            </Link>
+            .
+          </div>
+        ) : null}
+
+        {canCreate && hasActiveSiteProductConfig && hasAudienceProducts && productRows.length === 0 ? (
           <div className="mt-4 ui-alert ui-alert--warn">
             No hay insumos configurados para {activeSiteName}. Añade la sede en{" "}
             <Link href="/inventory/catalog" className="font-semibold underline">
@@ -699,7 +740,7 @@ export default async function RemissionsPage({
           </div>
         ) : null}
 
-        {canCreate ? (
+        {canCreateWithConfiguredCatalog ? (
           <div className="mt-4">
             <RemissionsCreateForm
               action={createRemission}

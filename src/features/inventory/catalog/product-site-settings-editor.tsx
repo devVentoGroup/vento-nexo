@@ -8,7 +8,7 @@ export type SiteSettingLine = {
   is_active: boolean;
   default_area_kind?: string;
   min_stock_qty?: number;
-  audience?: "SAUDO" | "VCF" | "BOTH";
+  audience?: "SAUDO" | "VCF" | "BOTH" | "INTERNAL";
   _delete?: boolean;
 };
 
@@ -124,7 +124,7 @@ export function ProductSiteSettingsEditor({
         </p>
         <p>
           <strong className="text-[var(--ui-text)]">Uso en sede:</strong> limita si esta sede usa el producto para
-          Saudo, Vento Cafe o ambos.
+          Saudo, Vento Cafe, ambos o solo produccion interna.
         </p>
       </div>
       <div className="space-y-3">
@@ -266,9 +266,10 @@ export function ProductSiteSettingsEditor({
                     <option value="BOTH">Ambos (Saudo + Vento Cafe)</option>
                     <option value="SAUDO">Solo Saudo</option>
                     <option value="VCF">Solo Vento Cafe</option>
+                    <option value="INTERNAL">Solo interno (CP)</option>
                   </select>
                   <p className="text-xs text-[var(--ui-muted)]">
-                    En remisiones, esta sede solo vera productos del uso seleccionado.
+                    INTERNAL deja el producto para produccion interna y lo excluye de remisiones a satelites.
                   </p>
                 </label>
               </div>

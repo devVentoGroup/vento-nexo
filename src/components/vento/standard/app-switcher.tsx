@@ -149,8 +149,8 @@ export function AppSwitcher(props: AppSwitcherProps) {
         logoSrc: "/apps/fogo.svg",
         brandColor: "#FB7185",
         href: "https://fogo.ventogroup.co",
-        status: "soon",
-        group: "Proximamente",
+        status: "active",
+        group: "Operacion",
       },
       {
         id: "aura",
