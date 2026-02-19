@@ -2,11 +2,30 @@ import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
 const DEBUG_AUTH = process.env.NEXT_PUBLIC_DEBUG_AUTH === "1";
+const COOKIE_DOMAIN =
+  process.env.NEXT_PUBLIC_COOKIE_DOMAIN || process.env.COOKIE_DOMAIN;
 
 function buildLoginRedirect(request: NextRequest) {
   const target = new URL("/login", request.url);
   target.searchParams.set("returnTo", request.url);
   return NextResponse.redirect(target);
+}
+
+function withCookieDomain(options?: Record<string, unknown>) {
+  if (!COOKIE_DOMAIN) return options;
+  return { ...(options ?? {}), domain: COOKIE_DOMAIN };
+}
+
+function hasSupabaseCookies(request: NextRequest) {
+  return request.cookies.getAll().some((c) => c.name.startsWith("sb-"));
+}
+
+function clearSupabaseCookies(request: NextRequest, response: NextResponse) {
+  for (const cookie of request.cookies.getAll()) {
+    if (cookie.name.startsWith("sb-")) {
+      response.cookies.set(cookie.name, "", withCookieDomain({ path: "/", maxAge: 0 }));
+    }
+  }
 }
 
 function withDebugHeaders(
@@ -38,6 +57,10 @@ export const config = {
 };
 
 export async function middleware(request: NextRequest) {
+  if (!hasSupabaseCookies(request)) {
+    return withDebugHeaders(buildLoginRedirect(request), request, "no-cookies");
+  }
+
   const response = NextResponse.next();
 
   const url =
@@ -59,15 +82,26 @@ export async function middleware(request: NextRequest) {
       },
       setAll(cookies) {
         cookies.forEach(({ name, value, options }) => {
-          response.cookies.set(name, value, options);
+          response.cookies.set(name, value, withCookieDomain(options));
         });
       },
     },
   });
 
-  const { data } = await supabase.auth.getUser();
+  let data: { user: unknown | null } | null = null;
+  try {
+    const result = await supabase.auth.getUser();
+    data = result.data;
+  } catch {
+    const redirect = buildLoginRedirect(request);
+    clearSupabaseCookies(request, redirect);
+    return withDebugHeaders(redirect, request, "auth-error");
+  }
+
   if (!data.user) {
-    return withDebugHeaders(buildLoginRedirect(request), request, "no-user");
+    const redirect = buildLoginRedirect(request);
+    clearSupabaseCookies(request, redirect);
+    return withDebugHeaders(redirect, request, "no-user");
   }
 
   return withDebugHeaders(response, request, "ok");
