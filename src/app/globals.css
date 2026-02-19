@@ -343,13 +343,20 @@ body {
   color: var(--ui-muted);
   border-bottom: 1px solid var(--ui-border);
   padding-bottom: 12px;
+  padding-right: 16px;
 }
 
 .ui-td {
   border-bottom: 1px solid rgba(17, 24, 39, 0.08);
   padding: 14px 0;
+  padding-right: 16px;
   font-size: 0.95rem;
   color: var(--ui-text);
+}
+
+.ui-th:last-child,
+.ui-td:last-child {
+  padding-right: 0;
 }
 
 .ui-table tbody tr:hover {
@@ -696,6 +703,58 @@ body {
   overflow: auto;
   flex: 1 1 auto;
   padding: 0 16px calc(env(safe-area-inset-bottom, 0px) + 16px);
+}
+
+@media (min-width: 640px) and (max-width: 1023.98px) {
+  .ui-panel {
+    padding: 18px;
+    border-radius: 14px;
+  }
+
+  .ui-panel-soft {
+    padding: 16px;
+    border-radius: 14px;
+  }
+
+  .ui-input {
+    height: 52px;
+    padding: 0 14px;
+    font-size: 0.95rem;
+  }
+
+  .ui-btn {
+    height: 50px;
+    padding: 0 16px;
+    font-size: 0.95rem;
+  }
+
+  .ui-btn--sm {
+    height: 34px;
+    padding: 0 10px;
+    font-size: 0.82rem;
+  }
+
+  .ui-h1 {
+    font-size: 1.55rem;
+  }
+
+  .ui-h2 {
+    font-size: 1.16rem;
+  }
+
+  .ui-h3 {
+    font-size: 1rem;
+  }
+
+  .ui-th {
+    padding-bottom: 10px;
+    font-size: 0.72rem;
+  }
+
+  .ui-td {
+    padding: 12px 0;
+    font-size: 0.9rem;
+  }
 }
 
 @media (max-width: 639.98px) {

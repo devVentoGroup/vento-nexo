@@ -673,19 +673,19 @@ export default async function InventoryStockPage({
               </a>
             ) : null}
           </div>
-          <div className="mt-4 max-h-[70vh] overflow-x-auto overflow-y-auto">
-            <Table>
+          <div className="ui-scrollbar-subtle mt-4 max-h-[70vh] overflow-x-auto overflow-y-auto">
+            <Table className="min-w-[1200px] table-auto [&_th]:pr-4 [&_td]:pr-4 [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10 [&_thead_th]:bg-[var(--ui-surface)] [&_thead_th]:backdrop-blur [&_th:first-child]:sticky [&_th:first-child]:left-0 [&_th:first-child]:z-20 [&_th:first-child]:bg-[var(--ui-surface)] [&_td:first-child]:sticky [&_td:first-child]:left-0 [&_td:first-child]:z-10 [&_td:first-child]:bg-[var(--ui-surface)]">
               <thead>
                 <tr>
-                  <TableHeaderCell>Producto</TableHeaderCell>
-                  <TableHeaderCell>SKU</TableHeaderCell>
-                  <TableHeaderCell>Unidad</TableHeaderCell>
+                  <TableHeaderCell className="min-w-[220px]">Producto</TableHeaderCell>
+                  <TableHeaderCell className="min-w-[180px]">SKU</TableHeaderCell>
+                  <TableHeaderCell className="min-w-[100px]">Unidad</TableHeaderCell>
                   {locList.map((loc) => (
-                    <TableHeaderCell key={loc.id} className="font-mono text-right">
+                    <TableHeaderCell key={loc.id} className="min-w-[120px] font-mono text-right whitespace-nowrap">
                       {loc.code ?? loc.id}
                     </TableHeaderCell>
                   ))}
-                  <TableHeaderCell className="text-right">Total sede</TableHeaderCell>
+                  <TableHeaderCell className="min-w-[120px] text-right whitespace-nowrap">Total sede</TableHeaderCell>
                 </tr>
               </thead>
               <tbody>
@@ -696,18 +696,18 @@ export default async function InventoryStockPage({
                   if (!hasAnyInLocs && totalSede <= 0) return null;
                   return (
                     <tr key={product.id} className="ui-body">
-                      <TableCell>{product.name}</TableCell>
-                      <TableCell className="font-mono">{product.sku ?? "-"}</TableCell>
-                      <TableCell>{product.stock_unit_code ?? product.unit ?? "-"}</TableCell>
+                      <TableCell className="align-top">{product.name}</TableCell>
+                      <TableCell className="font-mono align-top break-all">{product.sku ?? "-"}</TableCell>
+                      <TableCell className="align-top whitespace-nowrap">{product.stock_unit_code ?? product.unit ?? "-"}</TableCell>
                       {locList.map((loc) => {
                         const qty = matrixByProductLoc.get(`${product.id}|${loc.id}`) ?? 0;
                         return (
-                          <TableCell key={loc.id} className="font-mono text-right">
+                          <TableCell key={loc.id} className="font-mono text-right align-top whitespace-nowrap">
                             {qty > 0 ? qty : "-"}
                           </TableCell>
                         );
                       })}
-                      <TableCell className="font-mono text-right font-medium">
+                      <TableCell className="font-mono text-right font-medium align-top whitespace-nowrap">
                         {totalSede}
                       </TableCell>
                     </tr>
@@ -760,23 +760,23 @@ export default async function InventoryStockPage({
           ))}
         </div>
 
-        <div className="mt-4 max-h-[70vh] overflow-x-auto overflow-y-auto">
-          <Table>
+        <div className="ui-scrollbar-subtle mt-4 max-h-[70vh] overflow-x-auto overflow-y-auto">
+          <Table className="min-w-[1460px] table-auto [&_th]:pr-4 [&_td]:pr-4 [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10 [&_thead_th]:bg-[var(--ui-surface)] [&_thead_th]:backdrop-blur [&_th:first-child]:sticky [&_th:first-child]:left-0 [&_th:first-child]:z-20 [&_th:first-child]:bg-[var(--ui-surface)] [&_td:first-child]:sticky [&_td:first-child]:left-0 [&_td:first-child]:z-10 [&_td:first-child]:bg-[var(--ui-surface)]">
             <thead>
               <tr>
-                <TableHeaderCell>Producto</TableHeaderCell>
-                <TableHeaderCell>SKU</TableHeaderCell>
-                <TableHeaderCell>Categoria</TableHeaderCell>
-                <TableHeaderCell>Tipo</TableHeaderCell>
-                <TableHeaderCell>Inventario</TableHeaderCell>
-                <TableHeaderCell>Track</TableHeaderCell>
-                <TableHeaderCell>Sede</TableHeaderCell>
-                <TableHeaderCell>Qty</TableHeaderCell>
-                <TableHeaderCell>Unidad</TableHeaderCell>
+                <TableHeaderCell className="min-w-[220px]">Producto</TableHeaderCell>
+                <TableHeaderCell className="min-w-[180px]">SKU</TableHeaderCell>
+                <TableHeaderCell className="min-w-[420px]">Categoria</TableHeaderCell>
+                <TableHeaderCell className="min-w-[120px]">Tipo</TableHeaderCell>
+                <TableHeaderCell className="min-w-[140px]">Inventario</TableHeaderCell>
+                <TableHeaderCell className="min-w-[90px]">Track</TableHeaderCell>
+                <TableHeaderCell className="min-w-[220px]">Sede</TableHeaderCell>
+                <TableHeaderCell className="min-w-[90px] text-right">Qty</TableHeaderCell>
+                <TableHeaderCell className="min-w-[90px]">Unidad</TableHeaderCell>
                 {siteId && locList.length > 0 ? (
-                  <TableHeaderCell>Ubicaciones (LOC)</TableHeaderCell>
+                  <TableHeaderCell className="min-w-[320px]">Ubicaciones (LOC)</TableHeaderCell>
                 ) : null}
-                <TableHeaderCell>Actualizado</TableHeaderCell>
+                <TableHeaderCell className="min-w-[130px] whitespace-nowrap">Actualizado</TableHeaderCell>
               </tr>
             </thead>
             <tbody>
@@ -809,26 +809,26 @@ export default async function InventoryStockPage({
 
                 return (
                   <tr key={product.id} className="ui-body">
-                    <TableCell>{product.name}</TableCell>
-                    <TableCell className="font-mono">{sku}</TableCell>
-                    <TableCell>{categoryLabel}</TableCell>
-                    <TableCell>{product.product_type}</TableCell>
-                    <TableCell>{inventoryLabel}</TableCell>
-                    <TableCell>{trackLabel}</TableCell>
-                    <TableCell className="font-mono">{siteLabel}</TableCell>
-                    <TableCell className={`font-mono ${qtyClass}`}>
+                    <TableCell className="align-top">{product.name}</TableCell>
+                    <TableCell className="font-mono align-top break-all">{sku}</TableCell>
+                    <TableCell className="align-top">{categoryLabel}</TableCell>
+                    <TableCell className="align-top whitespace-nowrap">{product.product_type}</TableCell>
+                    <TableCell className="align-top whitespace-nowrap">{inventoryLabel}</TableCell>
+                    <TableCell className="align-top whitespace-nowrap">{trackLabel}</TableCell>
+                    <TableCell className="font-mono align-top">{siteLabel}</TableCell>
+                    <TableCell className={`font-mono text-right align-top whitespace-nowrap ${qtyClass}`}>
                       {Number.isFinite(qtyValue) ? qtyValue : "-"}
                     </TableCell>
-                    <TableCell>{unit}</TableCell>
+                    <TableCell className="align-top whitespace-nowrap">{unit}</TableCell>
                     {siteId && locList.length > 0 ? (
                       <TableCell
-                        className={sinUbicacion ? "text-amber-600 font-medium" : ""}
+                        className={`align-top ${sinUbicacion ? "text-amber-600 font-medium" : ""}`}
                         title={sinUbicacion ? "Producto con stock sin LOC asignada" : undefined}
                       >
                         {ubicacionesLabel ?? "-"}
                       </TableCell>
                     ) : null}
-                    <TableCell className="font-mono">
+                    <TableCell className="font-mono align-top whitespace-nowrap">
                       {formatDate(stockRow?.updated_at)}
                     </TableCell>
                   </tr>
