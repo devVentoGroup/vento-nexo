@@ -220,7 +220,7 @@ export function ProductSiteSettingsEditor({
             Este bloque define la configuracion interna del Centro. Aqui vive el stock real (por LOC).
           </p>
         </div>
-        <div className="grid gap-3 md:grid-cols-12">
+        <div className="grid gap-3 md:grid-cols-11">
           <label className="flex flex-col gap-1 md:col-span-4">
             <span className="ui-label">Sede centro</span>
             <select
@@ -237,7 +237,7 @@ export function ProductSiteSettingsEditor({
             </select>
           </label>
 
-          <div className="flex items-end md:col-span-2">
+          <div className="flex items-end md:col-span-1">
             <label className="flex items-center gap-2">
               <input
                 type="checkbox"
@@ -248,7 +248,7 @@ export function ProductSiteSettingsEditor({
             </label>
           </div>
 
-          <label className="flex flex-col gap-1 md:col-span-2">
+          <label className="flex flex-col gap-1 md:col-span-3">
             <span className="ui-label">Area por defecto</span>
             <select
               value={centerDefaultAreaKind}
@@ -262,9 +262,12 @@ export function ProductSiteSettingsEditor({
                 </option>
               ))}
             </select>
+            <p className="text-xs text-[var(--ui-muted)]">
+              Area sugerida para alistar y despachar en Centro.
+            </p>
           </label>
 
-          <label className="flex flex-col gap-1 md:col-span-2">
+          <label className="flex flex-col gap-1 md:col-span-3">
             <span className="ui-label">Stock minimo {stockUnitCode ? `(${stockUnitCode})` : ""}</span>
             <input
               type="number"
@@ -288,12 +291,10 @@ export function ProductSiteSettingsEditor({
                 .
               </p>
             ) : null}
+            <p className="text-xs text-[var(--ui-muted)]">
+              Si baja de aqui, se marca como bajo minimo para reabastecer LOC.
+            </p>
           </label>
-
-          <div className="flex flex-col gap-1 md:col-span-2">
-            <span className="ui-label">Uso operativo</span>
-            <div className="ui-input flex h-11 items-center text-[var(--ui-muted)]">Solo interno (Centro)</div>
-          </div>
         </div>
       </div>
 
@@ -358,9 +359,12 @@ export function ProductSiteSettingsEditor({
                           </option>
                         ))}
                       </select>
+                      <p className="text-xs text-[var(--ui-muted)]">
+                        Area sugerida al solicitar desde esta sede.
+                      </p>
                     </label>
 
-                    <label className="flex flex-col gap-1 md:col-span-3">
+                    <label className="flex flex-col gap-1 md:col-span-5">
                       <span className="ui-label">Stock minimo (referencia)</span>
                       <input
                         type="number"
@@ -378,18 +382,10 @@ export function ProductSiteSettingsEditor({
                         className="ui-input"
                         placeholder="Ej. 24"
                       />
+                      <p className="text-xs text-[var(--ui-muted)]">
+                        Opcional: meta de abastecimiento visual para esta sede (no mueve stock real).
+                      </p>
                     </label>
-
-                    <div className="flex flex-col gap-1 md:col-span-2">
-                      <span className="ui-label">Uso operativo</span>
-                      <div className="ui-input flex h-11 items-center text-[var(--ui-muted)]">
-                        {inferSatelliteAudience(site) === "SAUDO"
-                          ? "Solo Saudo"
-                          : inferSatelliteAudience(site) === "VCF"
-                            ? "Solo Vento Cafe"
-                            : "Satelite"}
-                      </div>
-                    </div>
                   </div>
                 ) : null}
               </div>
