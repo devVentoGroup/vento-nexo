@@ -101,6 +101,36 @@ function formatStatus(status?: string | null) {
   }
 }
 
+function formatDateTime(value: string | null | undefined): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "-";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  return new Intl.DateTimeFormat("es-CO", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function formatDate(value: string | null | undefined): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "-";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  return new Intl.DateTimeFormat("es-CO", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+  }).format(date);
+}
+
+function isRequesterOnlyRole(role: string): boolean {
+  return ["cocinero", "barista", "cajero"].includes(role);
+}
+
 function asText(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -423,6 +453,12 @@ async function updateStatus(formData: FormData) {
         encodeURIComponent("La remision debe estar en transito/parcial para recibir.")
     );
   }
+  if (action === "close" && !["received", "partial"].includes(currentStatus)) {
+    redirect(
+      `/inventory/remissions/${requestId}?error=` +
+        encodeURIComponent("Solo puedes cerrar una remision recibida o parcial.")
+    );
+  }
 
   const sourceLocDeductions: Array<{
     locationId: string;
@@ -630,7 +666,6 @@ export default async function RemissionDetailPage({
   const { supabase, user } = await requireAppAccess({
     appId: APP_ID,
     returnTo: `/inventory/remissions/${id}`,
-    permissionCode: "inventory.remissions",
   });
 
   const { data: request } = await supabase
@@ -716,6 +751,34 @@ export default async function RemissionDetailPage({
     );
   }
 
+  if (isRequesterOnlyRole(access.role) && request.created_by !== user.id) {
+    return (
+      <div className="w-full">
+        <Link href="/inventory/remissions" className="ui-body-muted underline">
+          Volver
+        </Link>
+        <div className="mt-4 ui-alert ui-alert--error">
+          Esta remision no fue creada por ti. Los roles operativos solo pueden ver sus propias solicitudes.
+        </div>
+      </div>
+    );
+  }
+
+  const currentStatus = String(request.status ?? "");
+  const canPrepareAction = access.canPrepare && ["pending", "partial"].includes(currentStatus);
+  const canTransitAction =
+    access.canTransit && ["pending", "preparing", "partial"].includes(currentStatus);
+  const canReceiveAction =
+    access.canReceive && ["in_transit", "partial", "preparing"].includes(currentStatus);
+  const canCloseAction = access.canClose && ["received", "partial"].includes(currentStatus);
+  const canCancelAction = access.canCancel && !["closed", "cancelled"].includes(currentStatus);
+
+  let nextStep = "Sin acciones disponibles.";
+  if (canPrepareAction) nextStep = "Paso 1: guardar items preparados y marcar preparado.";
+  else if (canTransitAction) nextStep = "Paso 2: enviar remision a destino (En viaje).";
+  else if (canReceiveAction) nextStep = "Paso 3: registrar recepcion total o parcial.";
+  else if (canCloseAction) nextStep = "Paso 4: cerrar remision.";
+
   return (
     <div className="w-full space-y-6">
       <div className="flex items-start justify-between gap-4">
@@ -723,7 +786,7 @@ export default async function RemissionDetailPage({
           <Link href="/inventory/remissions" className="ui-caption underline">
             Volver a remisiones
           </Link>
-          <h1 className="mt-2 ui-h1">Remisión {request.id}</h1>
+          <h1 className="mt-2 ui-h1">Remision #{String(request.id).slice(0, 8)}</h1>
           <p className="mt-2 ui-body-muted">
             Estado:{" "}
             <span className={formatStatus(request.status).className}>
@@ -731,7 +794,7 @@ export default async function RemissionDetailPage({
             </span>
           </p>
           <p className="mt-1 ui-caption">
-            Vista: {access.fromSiteType === "production_center" ? "Bodega (Centro)" : "Sede satélite"} | Rol: {access.roleLabel || "sin rol"}
+            Vista: {access.fromSiteType === "production_center" ? "Bodega (Centro)" : "Sede satelite"} | Rol: {access.roleLabel || "sin rol"}
           </p>
         </div>
       </div>
@@ -748,7 +811,7 @@ export default async function RemissionDetailPage({
 
       {lowStockWarning ? (
         <div className="ui-alert ui-alert--warn">
-          Algunos productos pueden no tener stock suficiente en Centro. Bodega verificará al preparar.
+          Algunos productos pueden no tener stock suficiente en Centro. Bodega verificara al preparar.
         </div>
       ) : null}
 
@@ -765,7 +828,11 @@ export default async function RemissionDetailPage({
           </div>
           <div>
             <div className="ui-caption">Creada</div>
-            <div className="font-mono">{request.created_at ?? "-"}</div>
+            <div>{formatDateTime(request.created_at)}</div>
+          </div>
+          <div>
+            <div className="ui-caption">Fecha esperada</div>
+            <div>{formatDate(request.expected_date ?? null)}</div>
           </div>
           <div>
             <div className="ui-caption">Notas</div>
@@ -774,21 +841,21 @@ export default async function RemissionDetailPage({
         </div>
       </div>
 
-      {access.canPrepare || access.canTransit ? (
-        <div className="ui-alert ui-alert--warn">
-          <div className="ui-h3">Flujo bodega: preparar y enviar</div>
-          <ol className="mt-2 list-decimal list-inside space-y-1 ui-body-muted">
-            <li>Marca cantidades <strong>Preparado</strong> y <strong>Enviado</strong> por ítem abajo y pulsa &quot;Guardar ítems&quot;.</li>
-            <li>Cuando todo esté listo, pulsa <strong>En viaje</strong> para descontar stock en origen.</li>
-          </ol>
+      <div className="ui-panel">
+        <div className="ui-h3">Flujo de trabajo</div>
+        <div className="mt-2 ui-caption">
+          Estado actual: <strong>{formatStatus(request.status).label}</strong>
         </div>
-      ) : null}
+        <div className="mt-1 ui-caption">
+          Siguiente paso: <strong>{nextStep}</strong>
+        </div>
+      </div>
 
       <div className="ui-panel">
         <div className="ui-h3">Acciones</div>
         <form action={updateStatus} className="mt-4 flex flex-wrap gap-3">
           <input type="hidden" name="request_id" value={request.id} />
-          {access.canPrepare ? (
+          {canPrepareAction ? (
             <button
               name="action"
               value="prepare"
@@ -797,7 +864,7 @@ export default async function RemissionDetailPage({
               Marcar preparado
             </button>
           ) : null}
-          {access.canTransit ? (
+          {canTransitAction ? (
             <button
               name="action"
               value="transit"
@@ -806,7 +873,7 @@ export default async function RemissionDetailPage({
               En viaje
             </button>
           ) : null}
-          {access.canReceive ? (
+          {canReceiveAction ? (
             <button
               name="action"
               value="receive"
@@ -815,7 +882,7 @@ export default async function RemissionDetailPage({
               Recibir
             </button>
           ) : null}
-          {access.canReceive ? (
+          {canReceiveAction ? (
             <button
               name="action"
               value="receive_partial"
@@ -824,7 +891,7 @@ export default async function RemissionDetailPage({
               Recibir parcial
             </button>
           ) : null}
-          {access.canClose ? (
+          {canCloseAction ? (
             <button
               name="action"
               value="close"
@@ -833,7 +900,7 @@ export default async function RemissionDetailPage({
               Cerrar
             </button>
           ) : null}
-          {access.canCancel ? (
+          {canCancelAction ? (
             <button
               name="action"
               value="cancel"
@@ -843,13 +910,22 @@ export default async function RemissionDetailPage({
             </button>
           ) : null}
         </form>
+        {!canPrepareAction &&
+        !canTransitAction &&
+        !canReceiveAction &&
+        !canCloseAction &&
+        !canCancelAction ? (
+          <div className="mt-3 ui-caption">
+            No hay acciones disponibles para tu rol en el estado actual.
+          </div>
+        ) : null}
         <div className="mt-2 ui-caption">
           &quot;En viaje&quot; descuenta stock en origen. &quot;Recibir&quot; agrega stock en destino.
         </div>
       </div>
 
       <div className="ui-panel">
-        <div className="ui-h3">Ítems — marcar cantidades a preparar y enviar</div>
+        <div className="ui-h3">{access.canPrepare ? "Paso 1. Items a preparar y enviar" : access.canReceive ? "Paso 3. Items a recibir" : "Items de la remision"}</div>
         <form action={updateItems} className="mt-4 space-y-4">
           <input type="hidden" name="request_id" value={request.id} />
           <div className="space-y-3">

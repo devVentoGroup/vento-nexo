@@ -8,7 +8,7 @@ import { WizardFooter } from "@/components/inventory/forms/WizardFooter";
 import { type ProductUomProfile } from "@/lib/inventory/uom";
 import type { GuidedStep } from "@/lib/inventory/forms/types";
 
-import { RemissionsItems } from "./remissions-items";
+import { RemissionsItems, type RemissionDraftRow } from "./remissions-items";
 
 type SiteOption = {
   id: string;
@@ -76,6 +76,7 @@ export function RemissionsCreateForm({
   const [expectedDate, setExpectedDate] = useState("");
   const [notes, setNotes] = useState("");
   const [confirmed, setConfirmed] = useState(false);
+  const [draftRows, setDraftRows] = useState<RemissionDraftRow[]>([]);
 
   const stepIndex = STEPS.findIndex((step) => step.id === activeStepId);
   const atFirstStep = stepIndex <= 0;
@@ -89,6 +90,28 @@ export function RemissionsCreateForm({
   const selectedFromSite = useMemo(
     () => fromSiteOptions.find((site) => site.id === fromSiteId) ?? null,
     [fromSiteId, fromSiteOptions]
+  );
+  const selectedItems = useMemo(() => {
+    const productMap = new Map(products.map((product) => [product.id, product]));
+    return draftRows
+      .map((row) => {
+        const product = productMap.get(row.productId);
+        const qty = Number(row.quantity);
+        return {
+          id: row.id,
+          name: product?.name ?? "",
+          quantity: Number.isFinite(qty) ? qty : 0,
+          inputUnitCode: row.inputUnitCode || product?.stock_unit_code || product?.unit || "un",
+          areaKind: row.areaKind,
+          valid: Boolean(row.productId && product?.name && Number.isFinite(qty) && qty > 0),
+        };
+      })
+      .filter((item) => item.valid);
+  }, [draftRows, products]);
+
+  const totalQuantity = useMemo(
+    () => selectedItems.reduce((sum, item) => sum + item.quantity, 0),
+    [selectedItems]
   );
 
   return (
@@ -172,6 +195,7 @@ export function RemissionsCreateForm({
             products={products}
             areaOptions={areaOptions}
             defaultUomProfiles={defaultUomProfiles}
+            onRowsChange={setDraftRows}
           />
         </section>
 
@@ -184,9 +208,24 @@ export function RemissionsCreateForm({
             <div className="ui-caption">
               Destino seleccionado: <strong>{toSiteName}</strong>
             </div>
-            <div className="ui-caption">
-              Verifica cantidades para evitar faltantes y pedidos duplicados.
-            </div>
+            <div className="ui-caption">Fecha esperada: <strong>{expectedDate || "Sin definir"}</strong></div>
+            <div className="ui-caption">Notas: <strong>{notes || "Sin notas"}</strong></div>
+            <div className="ui-caption">Items validos: <strong>{selectedItems.length}</strong></div>
+            <div className="ui-caption">Cantidad total: <strong>{totalQuantity}</strong></div>
+          </div>
+          <div className="ui-panel-soft p-3">
+            {selectedItems.length ? (
+              <div className="space-y-2">
+                {selectedItems.map((item, index) => (
+                  <div key={item.id} className="ui-caption">
+                    {index + 1}. <strong>{item.name}</strong> - {item.quantity} {item.inputUnitCode}
+                    {item.areaKind ? ` - area: ${item.areaKind}` : ""}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <div className="ui-caption">No hay items completos para revisar todavia.</div>
+            )}
           </div>
           <StepHelp
             meaning="Paso de control previo antes de generar la solicitud."

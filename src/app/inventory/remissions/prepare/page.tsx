@@ -30,7 +30,6 @@ export default async function RemissionsPreparePage() {
   const { supabase, user } = await requireAppAccess({
     appId: "nexo",
     returnTo: "/inventory/remissions",
-    permissionCode: "inventory.remissions",
   });
 
   const { data: employee } = await supabase

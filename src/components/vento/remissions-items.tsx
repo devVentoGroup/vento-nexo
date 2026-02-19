@@ -1,6 +1,6 @@
 ﻿"use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { SearchableSingleSelect } from "@/components/inventory/forms/SearchableSingleSelect";
 import {
@@ -30,13 +30,21 @@ type Row = {
   areaKind: string;
 };
 
+export type RemissionDraftRow = Row;
+
 type Props = {
   products: Option[];
   areaOptions: AreaOption[];
   defaultUomProfiles?: ProductUomProfile[];
+  onRowsChange?: (rows: RemissionDraftRow[]) => void;
 };
 
-export function RemissionsItems({ products, areaOptions, defaultUomProfiles = [] }: Props) {
+export function RemissionsItems({
+  products,
+  areaOptions,
+  defaultUomProfiles = [],
+  onRowsChange,
+}: Props) {
   const [rows, setRows] = useState<Row[]>([
     {
       id: 0,
@@ -68,6 +76,10 @@ export function RemissionsItems({ products, areaOptions, defaultUomProfiles = []
     }
     return selected;
   }, [defaultUomProfiles]);
+
+  useEffect(() => {
+    onRowsChange?.(rows);
+  }, [rows, onRowsChange]);
 
   const addRow = () => {
     setRows((prev) => [
@@ -103,8 +115,10 @@ export function RemissionsItems({ products, areaOptions, defaultUomProfiles = []
         const stockUnitCode = normalizeUnitCode(product?.stock_unit_code ?? product?.unit ?? "");
         const defaultProfile = row.productId ? defaultProfileByProduct.get(row.productId) ?? null : null;
 
+        const conversionInputLabel = String(defaultProfile?.label ?? "").trim();
+        const conversionInputUnit = conversionInputLabel || defaultProfile?.input_unit_code || "";
         const conversionLabel = defaultProfile
-          ? `${defaultProfile.qty_in_input_unit} ${defaultProfile.input_unit_code} = ${defaultProfile.qty_in_stock_unit} ${stockUnitCode || "un"}`
+          ? `${defaultProfile.qty_in_input_unit} ${conversionInputUnit} = ${defaultProfile.qty_in_stock_unit} ${stockUnitCode || "un"}`
           : "";
 
         return (

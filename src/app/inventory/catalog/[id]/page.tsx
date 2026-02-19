@@ -127,7 +127,7 @@ type SiteSettingRow = {
 };
 
 type AreaKindRow = { code: string; name: string | null };
-type SiteOptionRow = { id: string; name: string | null };
+type SiteOptionRow = { id: string; name: string | null; site_type: string | null };
 type UnitRow = InventoryUnit;
 
 type SupplierRow = {
@@ -771,7 +771,11 @@ export default async function ProductCatalogDetailPage({
     audience: row.audience ?? "BOTH",
   }));
 
-  const { data: sitesData } = await supabase.from("sites").select("id,name").eq("is_active", true).order("name", { ascending: true });
+  const { data: sitesData } = await supabase
+    .from("sites")
+    .select("id,name,site_type")
+    .eq("is_active", true)
+    .order("name", { ascending: true });
   const sitesList = (sitesData ?? []) as SiteOptionRow[];
 
   const { data: areaKindsData } = await supabase.from("area_kinds").select("code,name").order("name", { ascending: true });
@@ -1308,7 +1312,7 @@ export default async function ProductCatalogDetailPage({
                 min_stock_qty: r.min_stock_qty ?? undefined,
                 audience: r.audience ?? "BOTH",
               }))}
-              sites={sitesList.map((s) => ({ id: s.id, name: s.name }))}
+              sites={sitesList.map((s) => ({ id: s.id, name: s.name, site_type: s.site_type }))}
               areaKinds={areaKindsList.map((a) => ({ code: a.code, name: a.name ?? a.code }))}
               stockUnitCode={stockUnitCode}
               operationUnitHint={

@@ -653,12 +653,16 @@ export default async function NewProductPage({
       .select("selected_site_id")
       .eq("employee_id", user.id)
       .maybeSingle(),
-    supabase.from("sites").select("id,name").eq("is_active", true).order("name"),
+    supabase.from("sites").select("id,name,site_type").eq("is_active", true).order("name"),
   ]);
   const role = String((emp as { role?: string } | null)?.role ?? "").toLowerCase();
   const canCreate = ["propietario", "gerente_general"].includes(role);
 
-  const sitesList = (sitesData ?? []) as { id: string; name: string | null }[];
+  const sitesList = (sitesData ?? []) as {
+    id: string;
+    name: string | null;
+    site_type: string | null;
+  }[];
   const siteNamesById = Object.fromEntries(
     sitesList.map((site) => [site.id, site.name ?? site.id])
   );
@@ -1060,7 +1064,7 @@ export default async function NewProductPage({
           <ProductSiteSettingsEditor
             name="site_settings_lines"
             initialRows={[]}
-            sites={sitesList.map((s) => ({ id: s.id, name: s.name }))}
+            sites={sitesList.map((s) => ({ id: s.id, name: s.name, site_type: s.site_type }))}
             areaKinds={areaKindsList.map((a) => ({ code: a.code, name: a.name ?? a.code }))}
             stockUnitCode={defaultStockUnitCode}
             operationUnitHint={buildOperationUnitHintFromUnits({

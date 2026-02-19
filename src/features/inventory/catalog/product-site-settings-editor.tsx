@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 export type SiteSettingLine = {
   id?: string;
@@ -12,7 +12,7 @@ export type SiteSettingLine = {
   _delete?: boolean;
 };
 
-type SiteOption = { id: string; name: string | null };
+type SiteOption = { id: string; name: string | null; site_type?: string | null };
 type AreaKindOption = { code: string; name: string };
 
 type Props = {
@@ -29,13 +29,39 @@ type Props = {
   } | null;
 };
 
-const emptyLine = (): SiteSettingLine => ({
-  site_id: "",
-  is_active: true,
-  default_area_kind: "",
-  min_stock_qty: undefined,
-  audience: "BOTH",
-});
+type SiteKind = "production_center" | "satellite" | "other";
+
+type SatelliteState = {
+  enabled: boolean;
+  isActive: boolean;
+  defaultAreaKind: string;
+  minStockQty?: number;
+};
+
+function normalizeText(value: string | null | undefined): string {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function inferSiteKind(site: SiteOption): SiteKind {
+  const explicit = String(site.site_type ?? "").trim().toLowerCase();
+  if (explicit === "production_center") return "production_center";
+  if (explicit === "satellite") return "satellite";
+  const normalizedName = normalizeText(site.name);
+  if (normalizedName.includes("centro de produccion")) return "production_center";
+  if (normalizedName.includes("saudo") || normalizedName.includes("vento cafe")) return "satellite";
+  return "other";
+}
+
+function inferSatelliteAudience(site: SiteOption): "SAUDO" | "VCF" | "BOTH" {
+  const normalizedName = normalizeText(site.name);
+  if (normalizedName.includes("saudo")) return "SAUDO";
+  if (normalizedName.includes("vento cafe") || normalizedName.includes("vcf")) return "VCF";
+  return "BOTH";
+}
 
 export function ProductSiteSettingsEditor({
   name = "site_settings_lines",
@@ -45,34 +71,59 @@ export function ProductSiteSettingsEditor({
   stockUnitCode,
   operationUnitHint,
 }: Props) {
-  const [lines, setLines] = useState<SiteSettingLine[]>(initialRows.length ? initialRows : [emptyLine()]);
-  const siteNameById = useMemo(
-    () =>
-      new Map(
-        sites.map((site) => [site.id, site.name?.trim() || site.id])
-      ),
+  const siteMap = useMemo(() => new Map(sites.map((site) => [site.id, site])), [sites]);
+  const initialBySite = useMemo(() => {
+    const map = new Map<string, SiteSettingLine>();
+    for (const row of initialRows) {
+      const siteId = String(row.site_id ?? "").trim();
+      if (!siteId || map.has(siteId)) continue;
+      map.set(siteId, row);
+    }
+    return map;
+  }, [initialRows]);
+
+  const productionSites = useMemo(
+    () => sites.filter((site) => inferSiteKind(site) === "production_center"),
     [sites]
   );
+  const satelliteSites = useMemo(
+    () => sites.filter((site) => inferSiteKind(site) === "satellite"),
+    [sites]
+  );
+  const managedSiteIds = useMemo(
+    () => new Set([...productionSites, ...satelliteSites].map((site) => site.id)),
+    [productionSites, satelliteSites]
+  );
 
-  const updateLine = useCallback((index: number, patch: Partial<SiteSettingLine>) => {
-    setLines((prev) => prev.map((line, i) => (i === index ? { ...line, ...patch } : line)));
-  }, []);
+  const fallbackCenter = productionSites[0]?.id ?? "";
+  const existingCenter = initialRows.find((row) => managedSiteIds.has(row.site_id) && inferSiteKind(siteMap.get(row.site_id) ?? { id: "", name: null }) === "production_center");
+  const [centerSiteId, setCenterSiteId] = useState(existingCenter?.site_id ?? fallbackCenter);
+  const [centerIsActive, setCenterIsActive] = useState(Boolean(existingCenter?.is_active ?? true));
+  const [centerDefaultAreaKind, setCenterDefaultAreaKind] = useState(existingCenter?.default_area_kind ?? "");
+  const [centerMinStockQty, setCenterMinStockQty] = useState<number | undefined>(
+    existingCenter?.min_stock_qty
+  );
 
-  const addLine = useCallback(() => {
-    setLines((prev) => [...prev, emptyLine()]);
-  }, []);
+  const initialSatelliteState = useMemo(() => {
+    const state = new Map<string, SatelliteState>();
+    for (const site of satelliteSites) {
+      const existing = initialBySite.get(site.id);
+      state.set(site.id, {
+        enabled: Boolean(existing?.id) || Boolean(existing?.is_active),
+        isActive: Boolean(existing?.is_active ?? true),
+        defaultAreaKind: existing?.default_area_kind ?? "",
+        minStockQty: existing?.min_stock_qty,
+      });
+    }
+    return state;
+  }, [initialBySite, satelliteSites]);
+  const [satelliteState, setSatelliteState] = useState<Map<string, SatelliteState>>(initialSatelliteState);
 
-  const removeLine = useCallback((index: number) => {
-    setLines((prev) => {
-      const line = prev[index];
-      if (line?.id) {
-        return prev.map((current, i) => (i === index ? { ...current, _delete: true } : current));
-      }
-      return prev.filter((_, i) => i !== index);
-    });
-  }, []);
+  const unknownRows = useMemo(
+    () => initialRows.filter((row) => !managedSiteIds.has(String(row.site_id ?? "").trim())),
+    [initialRows, managedSiteIds]
+  );
 
-  const visibleLines = lines.filter((line) => !line._delete);
   const operationFactorToStock =
     operationUnitHint &&
     Number.isFinite(operationUnitHint.qtyInInputUnit) &&
@@ -81,6 +132,7 @@ export function ProductSiteSettingsEditor({
     operationUnitHint.qtyInStockUnit > 0
       ? operationUnitHint.qtyInStockUnit / operationUnitHint.qtyInInputUnit
       : null;
+
   const formatEquivalent = (minStockQty?: number) => {
     if (minStockQty == null || !Number.isFinite(minStockQty) || minStockQty < 0) return null;
     if (!operationUnitHint || !operationFactorToStock) return null;
@@ -89,193 +141,261 @@ export function ProductSiteSettingsEditor({
     return `${rounded} ${operationUnitHint.label.toLowerCase()}${rounded === 1 ? "" : "s"}`;
   };
 
+  const lines = useMemo(() => {
+    const next: SiteSettingLine[] = [...unknownRows];
+
+    if (centerSiteId) {
+      const current = initialBySite.get(centerSiteId);
+      next.push({
+        id: current?.id,
+        site_id: centerSiteId,
+        is_active: centerIsActive,
+        default_area_kind: centerDefaultAreaKind || undefined,
+        min_stock_qty: centerMinStockQty,
+        audience: "INTERNAL",
+      });
+    }
+
+    for (const site of satelliteSites) {
+      const current = initialBySite.get(site.id);
+      const state = satelliteState.get(site.id) ?? {
+        enabled: false,
+        isActive: true,
+        defaultAreaKind: "",
+        minStockQty: undefined,
+      };
+      if (!state.enabled && !current?.id) continue;
+
+      next.push({
+        id: current?.id,
+        site_id: site.id,
+        is_active: state.enabled ? state.isActive : false,
+        default_area_kind: state.defaultAreaKind || undefined,
+        min_stock_qty: state.minStockQty,
+        audience: inferSatelliteAudience(site),
+      });
+    }
+
+    return next;
+  }, [
+    centerDefaultAreaKind,
+    centerIsActive,
+    centerMinStockQty,
+    centerSiteId,
+    initialBySite,
+    satelliteSites,
+    satelliteState,
+    unknownRows,
+  ]);
+
+  const updateSatellite = (siteId: string, patch: Partial<SatelliteState>) => {
+    setSatelliteState((prev) => {
+      const next = new Map(prev);
+      const current = next.get(siteId) ?? {
+        enabled: false,
+        isActive: true,
+        defaultAreaKind: "",
+        minStockQty: undefined,
+      };
+      next.set(siteId, { ...current, ...patch });
+      return next;
+    });
+  };
+
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <input type="hidden" name={name} value={JSON.stringify(lines)} />
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="space-y-1">
-          <span className="ui-label">Configuracion por sede</span>
+
+      <div className="space-y-1">
+        <span className="ui-label">Disponibilidad por sede</span>
+        <p className="text-xs text-[var(--ui-muted)]">
+          Stock real solo en Centro (LOC). En satelites solo defines si el producto se puede solicitar por remision.
+        </p>
+      </div>
+
+      <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
+        <div className="mb-3 border-b border-[var(--ui-border)] pb-3">
+          <div className="text-sm font-semibold text-[var(--ui-text)]">Centro de produccion (stock real)</div>
           <p className="text-xs text-[var(--ui-muted)]">
-            Define en que sede estara habilitado el producto y a que area se enviara por defecto.
+            Este bloque define la configuracion interna del Centro. Aqui vive el stock real (por LOC).
           </p>
         </div>
-        <button
-          type="button"
-          onClick={addLine}
-          className="ui-btn ui-btn--ghost ui-btn--sm"
-          title="Agrega otra sede donde este producto tambien estara disponible."
-        >
-          + Agregar sede
-        </button>
-      </div>
-      <div className="ui-panel-soft p-3 text-xs text-[var(--ui-muted)]">
-        <p>
-          <strong className="text-[var(--ui-text)]">Sede:</strong> donde se podra usar este producto.
-        </p>
-        <p>
-          <strong className="text-[var(--ui-text)]">Disponible:</strong> si se desactiva, no aparece para esa sede.
-        </p>
-        <p>
-          <strong className="text-[var(--ui-text)]">Area por defecto:</strong> destino sugerido para remisiones y
-          distribucion interna.
-        </p>
-        <p>
-          <strong className="text-[var(--ui-text)]">Stock minimo:</strong> umbral para alertar compra en la sede activa.
-        </p>
-        <p>
-          <strong className="text-[var(--ui-text)]">Uso en sede:</strong> limita si esta sede usa el producto para
-          Saudo, Vento Cafe, ambos o solo produccion interna.
-        </p>
-      </div>
-      <div className="space-y-3">
-        {visibleLines.map((line, index) => {
-          const realIndex = lines.findIndex((current) => current === line);
-          const selectedSiteIds = new Set(
-            visibleLines
-              .map((current) => current.site_id.trim())
-              .filter(Boolean)
-          );
-          const selectedSiteName = line.site_id ? siteNameById.get(line.site_id) : null;
-          return (
-            <div
-              key={line.id ?? `new-${index}`}
-              className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm"
+        <div className="grid gap-3 md:grid-cols-12">
+          <label className="flex flex-col gap-1 md:col-span-4">
+            <span className="ui-label">Sede centro</span>
+            <select
+              value={centerSiteId}
+              onChange={(event) => setCenterSiteId(event.target.value)}
+              className="ui-input"
             >
-              <div className="mb-3 flex items-center justify-between gap-2 border-b border-[var(--ui-border)] pb-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm font-semibold text-[var(--ui-text)]">Sede #{index + 1}</span>
-                  <span className="rounded-full bg-[var(--ui-bg-soft)] px-2 py-0.5 text-xs text-[var(--ui-muted)]">
-                    {selectedSiteName ?? "Sin sede"}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => removeLine(realIndex)}
-                  className="ui-btn ui-btn--ghost ui-btn--sm text-[var(--ui-danger)] hover:text-[var(--ui-danger)]"
-                  title="Quitar sede de esta configuracion"
-                >
-                  Quitar sede
-                </button>
-              </div>
+              <option value="">Seleccionar centro</option>
+              {productionSites.map((site) => (
+                <option key={site.id} value={site.id}>
+                  {site.name ?? site.id}
+                </option>
+              ))}
+            </select>
+          </label>
 
-              <div className="grid gap-3 md:grid-cols-12">
-                <label className="flex flex-col gap-1 md:col-span-4">
-                  <span className="ui-label">Sede</span>
-                  <select
-                    value={line.site_id}
-                    onChange={(event) => updateLine(realIndex, { site_id: event.target.value })}
-                    className="ui-input"
-                  >
-                    <option value="">Seleccionar sede</option>
-                    {sites.map((site) => (
-                      <option
-                        key={site.id}
-                        value={site.id}
-                        disabled={site.id !== line.site_id && selectedSiteIds.has(site.id)}
-                      >
-                        {site.name ?? site.id}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-[var(--ui-muted)]">
-                    Elige la sede donde este producto estara visible.
-                  </p>
-                </label>
+          <div className="flex items-end md:col-span-2">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={centerIsActive}
+                onChange={(event) => setCenterIsActive(event.target.checked)}
+              />
+              <span className="ui-label">Disponible</span>
+            </label>
+          </div>
 
-                <div className="flex items-end md:col-span-2">
-                  <label
-                    className="flex items-center gap-2"
-                    title="Activa o desactiva el producto solo para esta sede."
-                  >
+          <label className="flex flex-col gap-1 md:col-span-2">
+            <span className="ui-label">Area por defecto</span>
+            <select
+              value={centerDefaultAreaKind}
+              onChange={(event) => setCenterDefaultAreaKind(event.target.value)}
+              className="ui-input"
+            >
+              <option value="">Sin definir</option>
+              {areaKinds.map((area) => (
+                <option key={area.code} value={area.code}>
+                  {area.name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1 md:col-span-2">
+            <span className="ui-label">Stock minimo {stockUnitCode ? `(${stockUnitCode})` : ""}</span>
+            <input
+              type="number"
+              min={0}
+              step="0.000001"
+              value={centerMinStockQty ?? ""}
+              onChange={(event) =>
+                setCenterMinStockQty(
+                  event.target.value.trim() === "" ? undefined : Number(event.target.value)
+                )
+              }
+              className="ui-input"
+              placeholder="Ej. 24"
+            />
+            {operationUnitHint ? (
+              <p className="text-xs text-[var(--ui-muted)]">
+                Equivale aprox. a{" "}
+                <strong className="text-[var(--ui-text)]">
+                  {formatEquivalent(centerMinStockQty) ?? "-"}
+                </strong>
+                .
+              </p>
+            ) : null}
+          </label>
+
+          <div className="flex flex-col gap-1 md:col-span-2">
+            <span className="ui-label">Uso operativo</span>
+            <div className="ui-input flex h-11 items-center text-[var(--ui-muted)]">Solo interno (Centro)</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
+        <div className="mb-3 border-b border-[var(--ui-border)] pb-3">
+          <div className="text-sm font-semibold text-[var(--ui-text)]">
+            Sedes satelite (catalogo para solicitar remision)
+          </div>
+          <p className="text-xs text-[var(--ui-muted)]">
+            Activa solo las sedes que pueden pedir este producto en remisiones.
+          </p>
+        </div>
+
+        <div className="space-y-3">
+          {satelliteSites.map((site) => {
+            const state = satelliteState.get(site.id) ?? {
+              enabled: false,
+              isActive: true,
+              defaultAreaKind: "",
+              minStockQty: undefined,
+            };
+            return (
+              <div key={site.id} className="rounded-xl border border-[var(--ui-border)] p-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm font-semibold text-[var(--ui-text)]">{site.name ?? site.id}</div>
+                  <label className="flex items-center gap-2">
                     <input
                       type="checkbox"
-                      checked={line.is_active}
-                      onChange={(event) => updateLine(realIndex, { is_active: event.target.checked })}
+                      checked={state.enabled}
+                      onChange={(event) => updateSatellite(site.id, { enabled: event.target.checked })}
                     />
-                    <span className="ui-label">Disponible</span>
+                    <span className="ui-label">Habilitar para solicitar</span>
                   </label>
                 </div>
 
-                <label className="flex flex-col gap-1 md:col-span-2">
-                  <span className="ui-label">Area por defecto</span>
-                  <select
-                    value={line.default_area_kind ?? ""}
-                    onChange={(event) =>
-                      updateLine(realIndex, { default_area_kind: event.target.value || undefined })
-                    }
-                    className="ui-input"
-                  >
-                    <option value="">Sin definir</option>
-                    {areaKinds.map((area) => (
-                      <option key={area.code} value={area.code}>
-                        {area.name}
-                      </option>
-                    ))}
-                  </select>
-                  <p className="text-xs text-[var(--ui-muted)]">
-                    Si no estas seguro, deja &quot;Sin definir&quot; y ajustalo despues.
-                  </p>
-                </label>
+                {state.enabled ? (
+                  <div className="mt-3 grid gap-3 md:grid-cols-12">
+                    <div className="flex items-end md:col-span-3">
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          checked={state.isActive}
+                          onChange={(event) => updateSatellite(site.id, { isActive: event.target.checked })}
+                        />
+                        <span className="ui-label">Disponible</span>
+                      </label>
+                    </div>
 
-                <label className="flex flex-col gap-1 md:col-span-2">
-                  <span className="ui-label">
-                    Stock minimo {stockUnitCode ? `(${stockUnitCode})` : ""}
-                  </span>
-                  <input
-                    type="number"
-                    min={0}
-                    step="0.000001"
-                    value={line.min_stock_qty ?? ""}
-                    onChange={(event) =>
-                      updateLine(realIndex, {
-                        min_stock_qty:
-                          event.target.value.trim() === ""
-                            ? undefined
-                            : Number(event.target.value),
-                      })
-                    }
-                    className="ui-input"
-                    placeholder="Ej. 24"
-                  />
-                  <p className="text-xs text-[var(--ui-muted)]">
-                    Si el stock de esta sede baja de aqui, aparece en bajo minimo.
-                  </p>
-                  {operationUnitHint ? (
-                    <p className="text-xs text-[var(--ui-muted)]">
-                      Equivale aprox. a{" "}
-                      <strong className="text-[var(--ui-text)]">
-                        {formatEquivalent(line.min_stock_qty) ?? "-"}
-                      </strong>{" "}
-                      (1 {operationUnitHint.label.toLowerCase()} = {operationUnitHint.qtyInStockUnit}{" "}
-                      {stockUnitCode || "unidad base"}).
-                    </p>
-                  ) : null}
-                </label>
+                    <label className="flex flex-col gap-1 md:col-span-4">
+                      <span className="ui-label">Area por defecto</span>
+                      <select
+                        value={state.defaultAreaKind}
+                        onChange={(event) =>
+                          updateSatellite(site.id, { defaultAreaKind: event.target.value })
+                        }
+                        className="ui-input"
+                      >
+                        <option value="">Sin definir</option>
+                        {areaKinds.map((area) => (
+                          <option key={area.code} value={area.code}>
+                            {area.name}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
 
-                <label className="flex flex-col gap-1 md:col-span-2">
-                  <span className="ui-label">Uso en sede</span>
-                  <select
-                    value={line.audience ?? "BOTH"}
-                    onChange={(event) =>
-                      updateLine(realIndex, {
-                        audience: event.target.value as SiteSettingLine["audience"],
-                      })
-                    }
-                    className="ui-input"
-                  >
-                    <option value="BOTH">Ambos (Saudo + Vento Cafe)</option>
-                    <option value="SAUDO">Solo Saudo</option>
-                    <option value="VCF">Solo Vento Cafe</option>
-                    <option value="INTERNAL">Solo interno (CP)</option>
-                  </select>
-                  <p className="text-xs text-[var(--ui-muted)]">
-                    INTERNAL deja el producto para produccion interna y lo excluye de remisiones a satelites.
-                  </p>
-                </label>
+                    <label className="flex flex-col gap-1 md:col-span-3">
+                      <span className="ui-label">Stock minimo (referencia)</span>
+                      <input
+                        type="number"
+                        min={0}
+                        step="0.000001"
+                        value={state.minStockQty ?? ""}
+                        onChange={(event) =>
+                          updateSatellite(site.id, {
+                            minStockQty:
+                              event.target.value.trim() === ""
+                                ? undefined
+                                : Number(event.target.value),
+                          })
+                        }
+                        className="ui-input"
+                        placeholder="Ej. 24"
+                      />
+                    </label>
+
+                    <div className="flex flex-col gap-1 md:col-span-2">
+                      <span className="ui-label">Uso operativo</span>
+                      <div className="ui-input flex h-11 items-center text-[var(--ui-muted)]">
+                        {inferSatelliteAudience(site) === "SAUDO"
+                          ? "Solo Saudo"
+                          : inferSatelliteAudience(site) === "VCF"
+                            ? "Solo Vento Cafe"
+                            : "Satelite"}
+                      </div>
+                    </div>
+                  </div>
+                ) : null}
               </div>
-            </div>
-          );
-        })}
+            );
+          })}
+        </div>
       </div>
     </div>
   );

@@ -71,6 +71,8 @@ type ProductSiteRow = {
   is_active: boolean | null;
   default_area_kind: string | null;
   audience?: string | null;
+  updated_at?: string | null;
+  created_at?: string | null;
 };
 
 /** Filas de product_inventory_profiles con el join a products(id,name,unit) */
@@ -86,24 +88,32 @@ type RemissionRow = {
   from_site_id: string | null;
   to_site_id: string | null;
   notes: string | null;
+  created_by?: string | null;
 };
 
 type ProductAudience = "SAUDO" | "VCF" | "BOTH" | "INTERNAL";
 
-function normalizeAudience(value: string | null | undefined): ProductAudience {
+function normalizeAudience(value: string | null | undefined): ProductAudience | null {
   const normalized = String(value ?? "").trim().toUpperCase();
   if (normalized === "SAUDO") return "SAUDO";
   if (normalized === "VCF") return "VCF";
   if (normalized === "INTERNAL") return "INTERNAL";
-  return "BOTH";
+  if (normalized === "BOTH") return "BOTH";
+  return null;
+}
+
+function normalizeText(value: string | null | undefined): string {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
 }
 
 function inferAudienceFromSiteName(siteName: string | null | undefined): ProductAudience {
-  const normalized = String(siteName ?? "")
-    .trim()
-    .toLowerCase();
+  const normalized = normalizeText(siteName);
   if (normalized.includes("saudo")) return "SAUDO";
-  if (normalized.includes("vento cafe") || normalized.includes("vento café")) return "VCF";
+  if (normalized.includes("vento cafe")) return "VCF";
   return "BOTH";
 }
 
@@ -112,6 +122,7 @@ function supportsAudience(
   requestedAudience: ProductAudience
 ): boolean {
   const normalized = normalizeAudience(configuredAudience);
+  if (!normalized) return false;
   if (normalized === "INTERNAL") {
     return requestedAudience === "INTERNAL";
   }
@@ -127,24 +138,50 @@ async function loadProductSiteRows(
 ): Promise<ProductSiteRow[]> {
   const withAudience = await supabase
     .from("product_site_settings")
-    .select("product_id,is_active,default_area_kind,audience")
+    .select("product_id,is_active,default_area_kind,audience,updated_at,created_at")
     .eq("site_id", siteId)
     .eq("is_active", true);
 
   if (!withAudience.error) {
-    return (withAudience.data ?? []) as ProductSiteRow[];
+    const rows = (withAudience.data ?? []) as ProductSiteRow[];
+    const ordered = [...rows].sort((a, b) => {
+      const aTs = new Date(String(a.updated_at ?? a.created_at ?? "")).getTime();
+      const bTs = new Date(String(b.updated_at ?? b.created_at ?? "")).getTime();
+      const safeA = Number.isFinite(aTs) ? aTs : 0;
+      const safeB = Number.isFinite(bTs) ? bTs : 0;
+      return safeB - safeA;
+    });
+    const byProduct = new Map<string, ProductSiteRow>();
+    for (const row of ordered) {
+      if (!row.product_id || byProduct.has(row.product_id)) continue;
+      byProduct.set(row.product_id, row);
+    }
+    return Array.from(byProduct.values());
   }
 
   const fallback = await supabase
     .from("product_site_settings")
-    .select("product_id,is_active,default_area_kind")
+    .select("product_id,is_active,default_area_kind,updated_at,created_at")
     .eq("site_id", siteId)
     .eq("is_active", true);
 
-  return ((fallback.data ?? []) as ProductSiteRow[]).map((row) => ({
-    ...row,
-    audience: "BOTH",
-  }));
+  const legacyRows = (fallback.data ?? []) as ProductSiteRow[];
+  const orderedLegacy = [...legacyRows].sort((a, b) => {
+    const aTs = new Date(String(a.updated_at ?? a.created_at ?? "")).getTime();
+    const bTs = new Date(String(b.updated_at ?? b.created_at ?? "")).getTime();
+    const safeA = Number.isFinite(aTs) ? aTs : 0;
+    const safeB = Number.isFinite(bTs) ? bTs : 0;
+    return safeB - safeA;
+  });
+  const byProduct = new Map<string, ProductSiteRow>();
+  for (const row of orderedLegacy) {
+    if (!row.product_id || byProduct.has(row.product_id)) continue;
+    byProduct.set(row.product_id, {
+      ...row,
+      audience: null,
+    });
+  }
+  return Array.from(byProduct.values());
 }
 
 function formatStatus(status?: string | null) {
@@ -167,6 +204,28 @@ function formatStatus(status?: string | null) {
     default:
       return { label: value || "Sin estado", className: "ui-chip" };
   }
+}
+
+function formatDateTime(value: string | null | undefined): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "-";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  return new Intl.DateTimeFormat("es-CO", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
+}
+
+function isRequesterOnlyRole(role: string): boolean {
+  return ["cocinero", "barista", "cajero"].includes(role);
+}
+
+function isWarehouseRole(role: string): boolean {
+  return role === "bodeguero";
 }
 
 async function createRemission(formData: FormData) {
@@ -286,6 +345,12 @@ async function createRemission(formData: FormData) {
     context: { siteId: toSiteId },
     actualRole,
   });
+  if (actualRole === "bodeguero") {
+    redirect(
+      "/inventory/remissions?error=" +
+        encodeURIComponent("Bodega no puede crear solicitudes. Usa la vista de preparar remisiones.")
+    );
+  }
   if (!canRequest) {
     redirect(
       "/inventory/remissions?error=" +
@@ -428,7 +493,6 @@ export default async function RemissionsPage({
   const { supabase, user } = await requireAppAccess({
     appId: APP_ID,
     returnTo: "/inventory/remissions",
-    permissionCode: "inventory.remissions",
   });
 
   const { data: employee } = await supabase
@@ -492,7 +556,9 @@ export default async function RemissionsPage({
     : false;
 
   const viewMode = isAllSites ? "all" : isProductionCenter ? "bodega" : "satélite";
-  const canCreate = viewMode === "satélite" && canRequestPermission;
+  const requesterOnlyRole = isRequesterOnlyRole(actualRole);
+  const warehouseRole = isWarehouseRole(actualRole);
+  const canCreate = viewMode === "satélite" && canRequestPermission && !warehouseRole;
 
   const { data: routes } = await supabase
     .from("site_supply_routes")
@@ -530,7 +596,7 @@ export default async function RemissionsPage({
       : fulfillmentSiteRows[0]?.id ?? "";
   let remissionsQuery = supabase
     .from("restock_requests")
-    .select("id, created_at, status, from_site_id, to_site_id, notes")
+    .select("id, created_at, status, from_site_id, to_site_id, notes, created_by")
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -539,6 +605,9 @@ export default async function RemissionsPage({
       viewMode === "bodega"
         ? remissionsQuery.eq("from_site_id", activeSiteId)
         : remissionsQuery.eq("to_site_id", activeSiteId);
+  }
+  if (viewMode === "satélite" && requesterOnlyRole) {
+    remissionsQuery = remissionsQuery.eq("created_by", user.id);
   }
 
   const { data: remissions } = await remissionsQuery;
@@ -628,7 +697,7 @@ export default async function RemissionsPage({
         title="Remisiones"
         subtitle="Flujo interno entre sedes. Satelites solicitan, bodega prepara y se recibe en destino."
         actions={
-          isProductionCenter ? (
+          isProductionCenter && !requesterOnlyRole ? (
             <Link href="/inventory/remissions/prepare" className="ui-btn ui-btn--brand">
               Preparar remisiones
             </Link>
@@ -761,7 +830,11 @@ export default async function RemissionsPage({
 
       <div className="mt-6 ui-panel">
         <div className="ui-h3">
-          {viewMode === "bodega" ? "Solicitudes para preparar" : "Solicitudes enviadas"}
+          {viewMode === "bodega"
+            ? "Solicitudes para preparar"
+            : requesterOnlyRole
+              ? "Mis solicitudes"
+              : "Solicitudes enviadas"}
         </div>
         <div className="mt-1 ui-body-muted">
           Mostrando hasta 50 solicitudes recientes.
@@ -785,9 +858,7 @@ export default async function RemissionsPage({
                 const toSiteId = row.to_site_id ?? "";
                 return (
                   <tr key={row.id} className="ui-body">
-                    <TableCell className="font-mono">
-                      {row.created_at ?? ""}
-                    </TableCell>
+                    <TableCell>{formatDateTime(row.created_at)}</TableCell>
                     <TableCell>
                       <span className={formatStatus(row.status).className}>
                         {formatStatus(row.status).label}
@@ -826,3 +897,4 @@ export default async function RemissionsPage({
     </div>
   );
 }
+
