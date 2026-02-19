@@ -58,6 +58,35 @@ function buildFogoRecipeUrl(productId: string) {
   return url.toString();
 }
 
+function buildOperationUnitHintFromUnits(params: {
+  units: UnitRow[];
+  inputUnitCode: string;
+  stockUnitCode: string;
+}) {
+  const inputUnitCode = normalizeUnitCode(params.inputUnitCode || "");
+  const stockUnitCode = normalizeUnitCode(params.stockUnitCode || "");
+  if (!inputUnitCode || !stockUnitCode) return null;
+  try {
+    const unitMap = createUnitMap(params.units);
+    const { quantity } = convertQuantity({
+      quantity: 1,
+      fromUnitCode: inputUnitCode,
+      toUnitCode: stockUnitCode,
+      unitMap,
+    });
+    if (!Number.isFinite(quantity) || quantity <= 0) return null;
+    const inputUnit = params.units.find((unit) => normalizeUnitCode(unit.code) === inputUnitCode);
+    return {
+      label: inputUnit?.name?.trim() || inputUnitCode.toUpperCase(),
+      inputUnitCode,
+      qtyInInputUnit: 1,
+      qtyInStockUnit: quantity,
+    };
+  } catch {
+    return null;
+  }
+}
+
 type ProductRow = {
   id: string;
   name: string | null;
@@ -1290,7 +1319,11 @@ export default async function ProductCatalogDetailPage({
                       qtyInInputUnit: remissionUomProfile.qty_in_input_unit,
                       qtyInStockUnit: remissionUomProfile.qty_in_stock_unit,
                     }
-                  : null
+                  : buildOperationUnitHintFromUnits({
+                      units: unitsList,
+                      inputUnitCode: resolvedDefaultUnit || stockUnitCode,
+                      stockUnitCode,
+                    })
               }
             />
           </section>

@@ -93,7 +93,7 @@ function resolveTypeCategoryKind(typeKey: ProductTypeKey): CategoryKind {
 const TYPE_CONFIG = {
   insumo: {
     title: "Nuevo insumo",
-    subtitle: "Materia prima: se compra a proveedores y se consume en recetas.",
+    subtitle: "Materia prima: se compra a proveedores y se consume en produccion (recetas en FOGO).",
     productType: "insumo",
     inventoryKind: "ingredient",
     hasSuppliers: true,
@@ -113,7 +113,7 @@ const TYPE_CONFIG = {
   },
   venta: {
     title: "Nuevo producto de venta",
-    subtitle: "Producto final que se vende al cliente. Puede tener receta con insumos y preparaciones.",
+    subtitle: "Producto final que se vende al cliente. La receta y produccion se gestionan en FOGO.",
     productType: "venta",
     inventoryKind: "finished",
     hasSuppliers: false,
@@ -154,6 +154,35 @@ function buildFogoRecipeCreateUrl(typeKey: ProductTypeKey) {
   url.searchParams.set("source", "nexo");
   url.searchParams.set("product_type", typeKey);
   return url.toString();
+}
+
+function buildOperationUnitHintFromUnits(params: {
+  units: UnitRow[];
+  inputUnitCode: string;
+  stockUnitCode: string;
+}) {
+  const inputUnitCode = normalizeUnitCode(params.inputUnitCode || "");
+  const stockUnitCode = normalizeUnitCode(params.stockUnitCode || "");
+  if (!inputUnitCode || !stockUnitCode) return null;
+  try {
+    const unitMap = createUnitMap(params.units);
+    const { quantity } = convertQuantity({
+      quantity: 1,
+      fromUnitCode: inputUnitCode,
+      toUnitCode: stockUnitCode,
+      unitMap,
+    });
+    if (!Number.isFinite(quantity) || quantity <= 0) return null;
+    const inputUnit = params.units.find((unit) => normalizeUnitCode(unit.code) === inputUnitCode);
+    return {
+      label: inputUnit?.name?.trim() || inputUnitCode.toUpperCase(),
+      inputUnitCode,
+      qtyInInputUnit: 1,
+      qtyInStockUnit: quantity,
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function createProduct(formData: FormData) {
@@ -1034,6 +1063,11 @@ export default async function NewProductPage({
             sites={sitesList.map((s) => ({ id: s.id, name: s.name }))}
             areaKinds={areaKindsList.map((a) => ({ code: a.code, name: a.name ?? a.code }))}
             stockUnitCode={defaultStockUnitCode}
+            operationUnitHint={buildOperationUnitHintFromUnits({
+              units: unitsList,
+              inputUnitCode: defaultStockUnitCode,
+              stockUnitCode: defaultStockUnitCode,
+            })}
           />
         </section>
 

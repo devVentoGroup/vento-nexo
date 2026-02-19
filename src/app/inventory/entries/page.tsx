@@ -900,7 +900,7 @@ export default async function EntriesPage({
       <div className="ui-panel">
         <div className="ui-h3">Entradas recientes</div>
         <div className="mt-1 ui-body-muted">
-          Ãšltimas 25 entradas. El estado (Pendiente / Parcial / Recibida) se calcula segÃºn cantidades declaradas vs recibidas por Ã­tem.
+          Últimas 25 entradas. El estado (Pendiente / Parcial / Recibida) se calcula según cantidades declaradas vs recibidas por ítem.
         </div>
 
         <div className="mt-4 overflow-x-auto">

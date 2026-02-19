@@ -726,7 +726,7 @@ export default async function InventoryCatalogPage({
         {activeTab === "productos" ? (
           <div className="flex flex-wrap gap-2">
             <Link href="/inventory/catalog/new?type=venta" className="ui-btn ui-btn--brand ui-btn--sm">
-              + Producto con receta
+              + Producto de venta
             </Link>
             <Link href="/inventory/catalog/new?type=reventa" className="ui-btn ui-btn--ghost ui-btn--sm">
               + Producto de reventa
