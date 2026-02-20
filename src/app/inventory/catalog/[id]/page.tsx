@@ -304,7 +304,7 @@ async function updateProduct(formData: FormData) {
     asText(formData.get("stock_unit_code")) || asText(formData.get("unit")) || "un"
   );
   const costingModeRaw = asText(formData.get("costing_mode"));
-  const costingMode: "auto_primary_supplier" | "manual" =
+  const costingModeBase: "auto_primary_supplier" | "manual" =
     costingModeRaw === "manual" ? "manual" : "auto_primary_supplier";
   const unitFamily = inferFamilyFromUnitCode(stockUnitCode, unitMap) ?? null;
   const requestedDefaultUnit = normalizeUnitCode(
@@ -324,6 +324,14 @@ async function updateProduct(formData: FormData) {
     productType: productTypeValue,
     inventoryKind: inventoryKindValue,
   });
+  const normalizedProductTypeForCosting = String(productTypeValue ?? "").trim().toLowerCase();
+  const normalizedInventoryKindForCosting = String(inventoryKindValue ?? "").trim().toLowerCase();
+  const supportsSupplierAutoCost =
+    (normalizedProductTypeForCosting === "insumo" && normalizedInventoryKindForCosting !== "asset") ||
+    (normalizedProductTypeForCosting === "venta" && normalizedInventoryKindForCosting === "resale");
+  const costingMode: "auto_primary_supplier" | "manual" = supportsSupplierAutoCost
+    ? costingModeBase
+    : "manual";
   if (categoryId) {
     const { data: categoryRow, error: categoryError } = await supabase
       .from("product_categories")
@@ -886,18 +894,22 @@ export default async function ProductCatalogDetailPage({
 
   const defaultUnitOptions = unitsList;
   const primarySupplier = supplierRows.find((row) => Boolean(row.is_primary)) ?? null;
-  const autoCostReadinessReason = getAutoCostReadinessReason({
-    costingMode: profileRow?.costing_mode ?? "manual",
-    stockUnitCode,
-    primarySupplier,
-    unitMap: inventoryUnitMap,
-  });
-  const autoCostReady = isAutoCostReady({
-    costingMode: profileRow?.costing_mode ?? "manual",
-    stockUnitCode,
-    primarySupplier,
-    unitMap: inventoryUnitMap,
-  });
+  const autoCostReadinessReason = hasSuppliers
+    ? getAutoCostReadinessReason({
+        costingMode: profileRow?.costing_mode ?? "manual",
+        stockUnitCode,
+        primarySupplier,
+        unitMap: inventoryUnitMap,
+      })
+    : null;
+  const autoCostReady = hasSuppliers
+    ? isAutoCostReady({
+        costingMode: profileRow?.costing_mode ?? "manual",
+        stockUnitCode,
+        primarySupplier,
+        unitMap: inventoryUnitMap,
+      })
+    : true;
   const remissionInputUnitCode = remissionUomProfile
     ? normalizeUnitCode(remissionUomProfile.input_unit_code)
     : "";
@@ -936,7 +948,7 @@ export default async function ProductCatalogDetailPage({
 
       {errorMsg ? <div className="ui-alert ui-alert--error">Error: {errorMsg}</div> : null}
       {okMsg ? <div className="ui-alert ui-alert--success">{okMsg}</div> : null}
-      {profileRow?.costing_mode === "auto_primary_supplier" && autoCostReadinessReason ? (
+      {hasSuppliers && profileRow?.costing_mode === "auto_primary_supplier" && autoCostReadinessReason ? (
         <div className="ui-alert ui-alert--warn">
           Auto-costo incompleto: {autoCostReadinessReason}
         </div>
@@ -1181,14 +1193,21 @@ export default async function ProductCatalogDetailPage({
               <input type="hidden" name="cost" value="" />
               <label className="flex flex-col gap-1">
                 <span className="ui-label">Politica de costo</span>
-                <select
-                  name="costing_mode"
-                  defaultValue={profileRow?.costing_mode ?? "auto_primary_supplier"}
-                  className="ui-input"
-                >
-                  <option value="auto_primary_supplier">Auto proveedor primario</option>
-                  <option value="manual">Manual</option>
-                </select>
+                {hasSuppliers ? (
+                  <select
+                    name="costing_mode"
+                    defaultValue={profileRow?.costing_mode ?? "auto_primary_supplier"}
+                    className="ui-input"
+                  >
+                    <option value="auto_primary_supplier">Auto proveedor primario</option>
+                    <option value="manual">Manual</option>
+                  </select>
+                ) : (
+                  <>
+                    <input type="hidden" name="costing_mode" value="manual" />
+                    <div className="ui-input flex items-center">Auto por receta/lote (FOGO)</div>
+                  </>
+                )}
               </label>
               <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3 text-sm text-[var(--ui-muted)] md:col-span-2">
                 <p className="font-medium text-[var(--ui-text)]">
@@ -1205,11 +1224,15 @@ export default async function ProductCatalogDetailPage({
                     {productRow.cost != null ? `$${Number(productRow.cost).toLocaleString("es-CO")}` : "Sin calcular"}
                   </strong>
                 </p>
-                {profileRow?.costing_mode === "auto_primary_supplier" ? (
+                {hasSuppliers && profileRow?.costing_mode === "auto_primary_supplier" ? (
                   <p className="mt-1">
                     {autoCostReadinessReason
                       ? `Falta completar: ${autoCostReadinessReason}`
                       : "Se actualiza automaticamente con proveedor primario y entradas."}
+                  </p>
+                ) : hasRecipe ? (
+                  <p className="mt-1">
+                    Se actualiza desde receta y lotes en FOGO (ingredientes / rendimiento).
                   </p>
                 ) : (
                   <p className="mt-1">

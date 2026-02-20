@@ -271,8 +271,10 @@ async function createProduct(formData: FormData) {
       ? Number(explicitCostRaw)
       : null;
   const costingModeRaw = asText(formData.get("costing_mode")) || "auto_primary_supplier";
-  const costingMode =
+  const costingModeBase =
     costingModeRaw === "manual" ? "manual" : "auto_primary_supplier";
+  const costingMode: "auto_primary_supplier" | "manual" =
+    config.hasSuppliers ? costingModeBase : "manual";
   const unitFamily = inferFamilyFromUnitCode(stockUnitCode, unitMap) ?? null;
   const requestedDefaultUnit = normalizeUnitCode(
     asText(formData.get("default_unit")) || stockUnitCode
@@ -917,10 +919,17 @@ export default async function NewProductPage({
 
               <label className="flex flex-col gap-1">
                 <span className="ui-label">Politica de costo</span>
-                <select name="costing_mode" className="ui-input" defaultValue="auto_primary_supplier">
-                  <option value="auto_primary_supplier">Auto desde proveedor primario</option>
-                  <option value="manual">Manual</option>
-                </select>
+                {config.hasSuppliers ? (
+                  <select name="costing_mode" className="ui-input" defaultValue="auto_primary_supplier">
+                    <option value="auto_primary_supplier">Auto desde proveedor primario</option>
+                    <option value="manual">Manual</option>
+                  </select>
+                ) : (
+                  <>
+                    <input type="hidden" name="costing_mode" value="manual" />
+                    <div className="ui-input flex items-center">Auto por receta/lote (FOGO)</div>
+                  </>
+                )}
               </label>
             </div>
 

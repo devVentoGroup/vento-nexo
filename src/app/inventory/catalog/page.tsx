@@ -512,12 +512,19 @@ export default async function InventoryCatalogPage({
   const autoCostReasonByProduct = new Map<string, string | null>();
   for (const product of productRows) {
     const profile = product.product_inventory_profiles;
-    const reason = getAutoCostReadinessReason({
-      costingMode: profile?.costing_mode ?? "manual",
-      stockUnitCode: normalizeUnitCode(product.stock_unit_code || product.unit || ""),
-      primarySupplier: primarySupplierByProduct.get(product.id) ?? null,
-      unitMap,
-    });
+    const normalizedType = String(product.product_type ?? "").trim().toLowerCase();
+    const normalizedInventoryKind = String(profile?.inventory_kind ?? "").trim().toLowerCase();
+    const hasSuppliers =
+      (normalizedType === "insumo" && normalizedInventoryKind !== "asset") ||
+      (normalizedType === "venta" && normalizedInventoryKind === "resale");
+    const reason = hasSuppliers
+      ? getAutoCostReadinessReason({
+          costingMode: profile?.costing_mode ?? "manual",
+          stockUnitCode: normalizeUnitCode(product.stock_unit_code || product.unit || ""),
+          primarySupplier: primarySupplierByProduct.get(product.id) ?? null,
+          unitMap,
+        })
+      : null;
     autoCostReasonByProduct.set(product.id, reason);
   }
 
