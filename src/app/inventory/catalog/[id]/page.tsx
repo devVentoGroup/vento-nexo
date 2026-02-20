@@ -52,7 +52,7 @@ const FOGO_BASE_URL =
   "https://fogo.ventogroup.co";
 
 function buildFogoRecipeUrl(productId: string) {
-  const url = new URL("/recipes", FOGO_BASE_URL);
+  const url = new URL("/recipes/new", FOGO_BASE_URL);
   url.searchParams.set("product_id", productId);
   url.searchParams.set("source", "nexo");
   return url.toString();
