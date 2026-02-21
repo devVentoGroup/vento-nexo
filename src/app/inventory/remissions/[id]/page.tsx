@@ -248,10 +248,15 @@ async function updateItems(formData: FormData) {
     .single();
 
   const access = await loadAccessContext(supabase, user.id, request);
-  const allowPrepared = access.canPrepare;
-  const allowReceived = access.canReceive;
-  const allowStatus = access.canCancel || access.canPrepare || access.canReceive;
-  const allowArea = access.canCancel || access.canPrepare;
+  const currentStatus = String(request?.status ?? "");
+  const allowPrepared =
+    access.canPrepare && ["pending", "preparing"].includes(currentStatus);
+  const allowReceived =
+    access.canReceive && ["in_transit", "partial"].includes(currentStatus);
+  const allowStatus =
+    (access.canCancel || access.canPrepare || access.canReceive) &&
+    !["closed", "cancelled"].includes(currentStatus);
+  const allowArea = access.canCancel || allowPrepared;
 
   const itemIds = formData.getAll("item_id").map((v) => String(v).trim());
   const prepared = formData.getAll("prepared_quantity").map((v) => String(v).trim());
@@ -432,25 +437,31 @@ async function updateStatus(formData: FormData) {
     );
   }
 
-  if (action === "prepare" && !["pending", "partial"].includes(currentStatus)) {
+  if (action === "prepare" && currentStatus !== "pending") {
     redirect(
       `/inventory/remissions/${requestId}?error=` +
-        encodeURIComponent("Solo puedes preparar una remision pendiente/parcial.")
+        encodeURIComponent("Solo puedes preparar una remision pendiente.")
     );
   }
-  if (action === "transit" && !["pending", "preparing", "partial"].includes(currentStatus)) {
+  if (action === "transit" && currentStatus !== "preparing") {
     redirect(
       `/inventory/remissions/${requestId}?error=` +
-        encodeURIComponent("Solo puedes enviar una remision pendiente/preparando/parcial.")
+        encodeURIComponent("Solo puedes enviar una remision en estado preparando.")
     );
   }
   if (
     (action === "receive" || action === "receive_partial") &&
-    !["in_transit", "partial", "preparing"].includes(currentStatus)
+    !["in_transit", "partial"].includes(currentStatus)
   ) {
     redirect(
       `/inventory/remissions/${requestId}?error=` +
         encodeURIComponent("La remision debe estar en transito/parcial para recibir.")
+    );
+  }
+  if (action === "receive_partial" && currentStatus !== "in_transit") {
+    redirect(
+      `/inventory/remissions/${requestId}?error=` +
+        encodeURIComponent("Solo puedes registrar recepcion parcial desde en transito.")
     );
   }
   if (action === "close" && !["received", "partial"].includes(currentStatus)) {
@@ -765,13 +776,21 @@ export default async function RemissionDetailPage({
   }
 
   const currentStatus = String(request.status ?? "");
-  const canPrepareAction = access.canPrepare && ["pending", "partial"].includes(currentStatus);
-  const canTransitAction =
-    access.canTransit && ["pending", "preparing", "partial"].includes(currentStatus);
+  const canPrepareAction = access.canPrepare && currentStatus === "pending";
+  const canTransitAction = access.canTransit && currentStatus === "preparing";
   const canReceiveAction =
-    access.canReceive && ["in_transit", "partial", "preparing"].includes(currentStatus);
+    access.canReceive && ["in_transit", "partial"].includes(currentStatus);
+  const canReceivePartialAction = access.canReceive && currentStatus === "in_transit";
   const canCloseAction = access.canClose && ["received", "partial"].includes(currentStatus);
   const canCancelAction = access.canCancel && !["closed", "cancelled"].includes(currentStatus);
+  const canEditPrepareItems =
+    access.canPrepare && ["pending", "preparing"].includes(currentStatus);
+  const canEditReceiveItems =
+    access.canReceive && ["in_transit", "partial"].includes(currentStatus);
+  const canEditStatus =
+    (access.canCancel || access.canPrepare || access.canReceive) &&
+    !["closed", "cancelled"].includes(currentStatus);
+  const canEditArea = access.canCancel || canEditPrepareItems;
 
   let nextStep = "Sin acciones disponibles.";
   if (canPrepareAction) nextStep = "Paso 1: guardar items preparados y marcar preparado.";
@@ -882,7 +901,7 @@ export default async function RemissionDetailPage({
               Recibir
             </button>
           ) : null}
-          {canReceiveAction ? (
+          {canReceivePartialAction ? (
             <button
               name="action"
               value="receive_partial"
@@ -913,6 +932,7 @@ export default async function RemissionDetailPage({
         {!canPrepareAction &&
         !canTransitAction &&
         !canReceiveAction &&
+        !canReceivePartialAction &&
         !canCloseAction &&
         !canCancelAction ? (
           <div className="mt-3 ui-caption">
@@ -925,7 +945,13 @@ export default async function RemissionDetailPage({
       </div>
 
       <div className="ui-panel">
-        <div className="ui-h3">{access.canPrepare ? "Paso 1. Items a preparar y enviar" : access.canReceive ? "Paso 3. Items a recibir" : "Items de la remision"}</div>
+        <div className="ui-h3">
+          {canEditPrepareItems
+            ? "Paso 1. Items a preparar y enviar"
+            : canEditReceiveItems
+              ? "Paso 3. Items a recibir"
+              : "Items de la remision"}
+        </div>
         <form action={updateItems} className="mt-4 space-y-4">
           <input type="hidden" name="request_id" value={request.id} />
           <div className="space-y-3">
@@ -946,7 +972,7 @@ export default async function RemissionDetailPage({
                   {" "}Solicitado: {item.quantity} {item.stock_unit_code ?? item.unit ?? item.product?.unit ?? ""}
                   {" "}· LOC origen: {sourceLocLabel}
                 </div>
-                {access.canPrepare && fromSiteId ? (
+                {canEditPrepareItems && fromSiteId ? (
                   <div className="mt-2 ui-panel-soft px-3 py-2 text-sm">
                     <span className="font-semibold text-[var(--ui-text)]">Stock en origen:</span>{" "}
                     <span className={stockOk ? "text-[var(--ui-success)]" : "text-[var(--ui-brand-700)]"}>
@@ -963,7 +989,7 @@ export default async function RemissionDetailPage({
                 <input type="hidden" name="item_id" value={item.id} />
 
                 <div className="mt-3 grid gap-3 md:grid-cols-6">
-                  {showSourceLocSelector ? (
+                  {showSourceLocSelector && canEditPrepareItems ? (
                     <label className="flex flex-col gap-1">
                       <span className="ui-caption">LOC origen</span>
                       <select
@@ -982,7 +1008,7 @@ export default async function RemissionDetailPage({
                   ) : (
                     <input type="hidden" name="source_location_id" value={item.source_location_id ?? ""} />
                   )}
-                  {access.canPrepare ? (
+                  {canEditPrepareItems ? (
                     <label className="flex flex-col gap-1">
                       <span className="ui-caption">Preparado</span>
                       <input
@@ -992,7 +1018,7 @@ export default async function RemissionDetailPage({
                       />
                     </label>
                   ) : null}
-                  {access.canPrepare ? (
+                  {canEditPrepareItems ? (
                     <label className="flex flex-col gap-1">
                       <span className="ui-caption">Enviado</span>
                       <input
@@ -1002,7 +1028,7 @@ export default async function RemissionDetailPage({
                       />
                     </label>
                   ) : null}
-                  {access.canReceive ? (
+                  {canEditReceiveItems ? (
                     <label className="flex flex-col gap-1">
                       <span className="ui-caption">Recibido</span>
                       <input
@@ -1012,7 +1038,7 @@ export default async function RemissionDetailPage({
                       />
                     </label>
                   ) : null}
-                  {access.canReceive ? (
+                  {canEditReceiveItems ? (
                     <label className="flex flex-col gap-1">
                       <span className="ui-caption">Faltante</span>
                       <input
@@ -1022,7 +1048,7 @@ export default async function RemissionDetailPage({
                       />
                     </label>
                   ) : null}
-                  {access.canCancel || access.canPrepare || access.canReceive ? (
+                  {canEditStatus ? (
                     <label className="flex flex-col gap-1">
                       <span className="ui-caption">Estado</span>
                       <select
@@ -1038,7 +1064,7 @@ export default async function RemissionDetailPage({
                       </select>
                     </label>
                   ) : null}
-                  {access.canCancel || access.canPrepare ? (
+                  {canEditArea ? (
                     <label className="flex flex-col gap-1">
                       <span className="ui-caption">Área</span>
                       <select
