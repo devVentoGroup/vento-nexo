@@ -253,9 +253,6 @@ async function updateItems(formData: FormData) {
     access.canPrepare && ["pending", "preparing"].includes(currentStatus);
   const allowReceived =
     access.canReceive && ["in_transit", "partial"].includes(currentStatus);
-  const allowStatus =
-    (access.canCancel || access.canPrepare || access.canReceive) &&
-    !["closed", "cancelled"].includes(currentStatus);
   const allowArea = access.canCancel || allowPrepared;
 
   const itemIds = formData.getAll("item_id").map((v) => String(v).trim());
@@ -263,7 +260,6 @@ async function updateItems(formData: FormData) {
   const shipped = formData.getAll("shipped_quantity").map((v) => String(v).trim());
   const received = formData.getAll("received_quantity").map((v) => String(v).trim());
   const shortage = formData.getAll("shortage_quantity").map((v) => String(v).trim());
-  const statuses = formData.getAll("item_status").map((v) => String(v).trim());
   const areaKinds = formData.getAll("item_area_kind").map((v) => String(v).trim());
   const sourceLocationIds = formData
     .getAll("source_location_id")
@@ -359,10 +355,6 @@ async function updateItems(formData: FormData) {
     if (allowReceived) {
       updates.received_quantity = parseNumber(received[i] ?? "0");
       updates.shortage_quantity = parseNumber(shortage[i] ?? "0");
-    }
-
-    if (allowStatus) {
-      updates.item_status = statuses[i] || "pending";
     }
 
     if (allowArea) {
@@ -787,9 +779,6 @@ export default async function RemissionDetailPage({
     access.canPrepare && ["pending", "preparing"].includes(currentStatus);
   const canEditReceiveItems =
     access.canReceive && ["in_transit", "partial"].includes(currentStatus);
-  const canEditStatus =
-    (access.canCancel || access.canPrepare || access.canReceive) &&
-    !["closed", "cancelled"].includes(currentStatus);
   const canEditArea = access.canCancel || canEditPrepareItems;
 
   let nextStep = "Sin acciones disponibles.";
@@ -952,6 +941,18 @@ export default async function RemissionDetailPage({
               ? "Paso 3. Items a recibir"
               : "Items de la remision"}
         </div>
+        {canEditPrepareItems ? (
+          <p className="mt-2 ui-caption">
+            Flujo: selecciona LOC origen, captura preparado/enviado, guarda ítems y luego usa
+            <strong> Marcar preparado</strong> y <strong>En viaje</strong>.
+          </p>
+        ) : null}
+        {canEditReceiveItems ? (
+          <p className="mt-2 ui-caption">
+            Flujo: captura recibido/faltante, guarda ítems y luego usa <strong>Recibir</strong> o{" "}
+            <strong>Recibir parcial</strong>.
+          </p>
+        ) : null}
         <form action={updateItems} className="mt-4 space-y-4">
           <input type="hidden" name="request_id" value={request.id} />
           <div className="space-y-3">
@@ -1048,22 +1049,6 @@ export default async function RemissionDetailPage({
                       />
                     </label>
                   ) : null}
-                  {canEditStatus ? (
-                    <label className="flex flex-col gap-1">
-                      <span className="ui-caption">Estado</span>
-                      <select
-                        name="item_status"
-                        defaultValue={item.item_status ?? "pending"}
-                        className="ui-input h-10 min-w-0"
-                      >
-                        <option value="pending">pendiente</option>
-                        <option value="preparing">preparando</option>
-                        <option value="in_transit">en_transito</option>
-                        <option value="received">recibido</option>
-                        <option value="shortage">faltante</option>
-                      </select>
-                    </label>
-                  ) : null}
                   {canEditArea ? (
                     <label className="flex flex-col gap-1">
                       <span className="ui-caption">Área</span>
@@ -1088,7 +1073,11 @@ export default async function RemissionDetailPage({
           </div>
 
           <button className="ui-btn ui-btn--brand">
-            Guardar items
+            {canEditPrepareItems
+              ? "Guardar preparacion"
+              : canEditReceiveItems
+                ? "Guardar recepcion"
+                : "Guardar items"}
           </button>
         </form>
       </div>
