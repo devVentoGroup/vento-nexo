@@ -876,30 +876,41 @@ export default async function InventoryCatalogPage({
 
         {siteId && lowStockPurchaseGroupRows.length > 0 ? (
           <div className="mt-4 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
-            <div className="text-sm font-semibold text-[var(--ui-text)]">
-              Ordenes sugeridas por proveedor (bajo minimo)
-            </div>
-            <div className="mt-1 text-xs text-[var(--ui-muted)]">
-              Se arma una OC por proveedor primario usando faltante de la sede activa.
-            </div>
-            <div className="mt-3 grid gap-2">
-              {lowStockPurchaseGroupRows.map((group) => (
-                <div
-                  key={group.supplierId}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2"
-                >
-                  <div className="min-w-0">
-                    <div className="text-sm font-semibold text-[var(--ui-text)]">{group.supplierName}</div>
-                    <div className="text-xs text-[var(--ui-muted)]">
-                      {group.items.length} producto(s) bajo minimo
-                    </div>
+            <details className="group" open>
+              <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-semibold text-[var(--ui-text)]">
+                    Ordenes sugeridas por proveedor (bajo minimo)
                   </div>
-                  <Link href={group.href} className="ui-btn ui-btn--brand ui-btn--sm">
-                    Crear OC en Origo
-                  </Link>
+                  <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                    Se arma una OC por proveedor primario usando faltante de la sede activa.
+                  </div>
                 </div>
-              ))}
-            </div>
+                <span className="ui-chip">
+                  {lowStockPurchaseGroupRows.length} proveedor(es)
+                </span>
+              </summary>
+              <div className="mt-3 max-h-[280px] overflow-y-auto pr-1">
+                <div className="grid gap-2">
+                  {lowStockPurchaseGroupRows.map((group) => (
+                    <div
+                      key={group.supplierId}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <div className="text-sm font-semibold text-[var(--ui-text)]">{group.supplierName}</div>
+                        <div className="text-xs text-[var(--ui-muted)]">
+                          {group.items.length} producto(s) bajo minimo
+                        </div>
+                      </div>
+                      <Link href={group.href} className="ui-btn ui-btn--brand ui-btn--sm">
+                        Crear OC en Origo
+                      </Link>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </details>
           </div>
         ) : null}
 

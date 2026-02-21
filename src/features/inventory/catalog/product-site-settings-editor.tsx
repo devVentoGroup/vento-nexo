@@ -8,6 +8,10 @@ export type SiteSettingLine = {
   is_active: boolean;
   default_area_kind?: string;
   min_stock_qty?: number;
+  min_stock_input_mode?: "base" | "purchase";
+  min_stock_purchase_qty?: number;
+  min_stock_purchase_unit_code?: string;
+  min_stock_purchase_to_base_factor?: number;
   audience?: "SAUDO" | "VCF" | "BOTH" | "INTERNAL";
   _delete?: boolean;
 };
@@ -107,6 +111,9 @@ export function ProductSiteSettingsEditor({
   const [centerSiteId, setCenterSiteId] = useState(existingCenter?.site_id ?? fallbackCenter);
   const [centerIsActive, setCenterIsActive] = useState(Boolean(existingCenter?.is_active ?? true));
   const [centerDefaultAreaKind, setCenterDefaultAreaKind] = useState(existingCenter?.default_area_kind ?? "");
+  const [centerMinStockInputMode, setCenterMinStockInputMode] = useState<"base" | "purchase">(
+    existingCenter?.min_stock_input_mode === "purchase" && purchaseUnitHint ? "purchase" : "base"
+  );
   const [centerMinStockQty, setCenterMinStockQty] = useState<number | undefined>(
     existingCenter?.min_stock_qty
   );
@@ -154,6 +161,14 @@ export function ProductSiteSettingsEditor({
     centerMinStockQty >= 0
       ? Math.round((centerMinStockQty / purchaseFactorToStock) * 1_000_000) / 1_000_000
       : null;
+  const centerPurchaseQtyForSave =
+    centerMinStockInputMode === "purchase" &&
+    purchaseFactorToStock &&
+    centerMinStockQty != null &&
+    Number.isFinite(centerMinStockQty) &&
+    centerMinStockQty >= 0
+      ? Math.round((centerMinStockQty / purchaseFactorToStock) * 1_000_000) / 1_000_000
+      : undefined;
 
   const formatEquivalent = (minStockQty?: number) => {
     if (minStockQty == null || !Number.isFinite(minStockQty) || minStockQty < 0) return null;
@@ -174,6 +189,17 @@ export function ProductSiteSettingsEditor({
         is_active: centerIsActive,
         default_area_kind: centerDefaultAreaKind || undefined,
         min_stock_qty: centerMinStockQty,
+        min_stock_input_mode:
+          centerMinStockInputMode === "purchase" && purchaseFactorToStock ? "purchase" : "base",
+        min_stock_purchase_qty: centerPurchaseQtyForSave,
+        min_stock_purchase_unit_code:
+          centerMinStockInputMode === "purchase" && purchaseFactorToStock
+            ? purchaseUnitHint?.inputUnitCode
+            : undefined,
+        min_stock_purchase_to_base_factor:
+          centerMinStockInputMode === "purchase" && purchaseFactorToStock
+            ? purchaseFactorToStock
+            : undefined,
         audience: "INTERNAL",
       });
     }
@@ -194,6 +220,7 @@ export function ProductSiteSettingsEditor({
         is_active: state.enabled ? state.isActive : false,
         default_area_kind: state.defaultAreaKind || undefined,
         min_stock_qty: state.minStockQty,
+        min_stock_input_mode: "base",
         audience: inferSatelliteAudience(site),
       });
     }
@@ -202,9 +229,13 @@ export function ProductSiteSettingsEditor({
   }, [
     centerDefaultAreaKind,
     centerIsActive,
+    centerMinStockInputMode,
     centerMinStockQty,
+    centerPurchaseQtyForSave,
     centerSiteId,
     initialBySite,
+    purchaseFactorToStock,
+    purchaseUnitHint?.inputUnitCode,
     satelliteSites,
     satelliteState,
     unknownRows,
@@ -290,15 +321,30 @@ export function ProductSiteSettingsEditor({
           </label>
 
           <label className="flex flex-col gap-1 md:col-span-3">
+            {purchaseUnitHint && purchaseFactorToStock ? (
+              <div className="flex items-center justify-between gap-2">
+                <span className="ui-label">Modo de minimo</span>
+                <select
+                  value={centerMinStockInputMode}
+                  onChange={(event) =>
+                    setCenterMinStockInputMode(event.target.value === "purchase" ? "purchase" : "base")
+                  }
+                  className="ui-input h-10 max-w-[180px]"
+                >
+                  <option value="base">Unidad base</option>
+                  <option value="purchase">Unidad de compra</option>
+                </select>
+              </div>
+            ) : null}
             <span className="ui-label">
               Stock minimo{" "}
-              {purchaseUnitHint
+              {purchaseUnitHint && purchaseFactorToStock && centerMinStockInputMode === "purchase"
                 ? `en compra (${purchaseUnitHint.inputUnitCode})`
                 : stockUnitCode
                   ? `(${stockUnitCode})`
                   : ""}
             </span>
-            {purchaseUnitHint && purchaseFactorToStock ? (
+            {purchaseUnitHint && purchaseFactorToStock && centerMinStockInputMode === "purchase" ? (
               <input
                 type="number"
                 min={0}

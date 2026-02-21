@@ -122,6 +122,10 @@ type SiteSettingRow = {
   is_active: boolean | null;
   default_area_kind: string | null;
   min_stock_qty: number | null;
+  min_stock_input_mode?: "base" | "purchase" | null;
+  min_stock_purchase_qty?: number | null;
+  min_stock_purchase_unit_code?: string | null;
+  min_stock_purchase_to_base_factor?: number | null;
   audience: "SAUDO" | "VCF" | "BOTH" | "INTERNAL" | null;
   sites?: { id: string; name: string | null } | null;
 };
@@ -641,6 +645,10 @@ async function updateProduct(formData: FormData) {
         is_active?: boolean;
         default_area_kind?: string;
         min_stock_qty?: number | string;
+        min_stock_input_mode?: "base" | "purchase" | string;
+        min_stock_purchase_qty?: number | string;
+        min_stock_purchase_unit_code?: string;
+        min_stock_purchase_to_base_factor?: number | string;
         audience?: string;
         _delete?: boolean;
       }>;
@@ -658,15 +666,51 @@ async function updateProduct(formData: FormData) {
         }
         if (!line.site_id) continue;
         const normalizedAudience = String(line.audience ?? "BOTH").trim().toUpperCase();
+        const minStockInputMode = String(line.min_stock_input_mode ?? "base").trim().toLowerCase() === "purchase"
+          ? "purchase"
+          : "base";
+        const parsedMinStockQtyRaw =
+          line.min_stock_qty == null || String(line.min_stock_qty).trim() === ""
+            ? null
+            : Number(line.min_stock_qty);
+        const parsedMinStockQty =
+          parsedMinStockQtyRaw != null && Number.isFinite(parsedMinStockQtyRaw)
+            ? parsedMinStockQtyRaw
+            : null;
+        const parsedMinPurchaseQtyRaw =
+          line.min_stock_purchase_qty == null || String(line.min_stock_purchase_qty).trim() === ""
+            ? null
+            : Number(line.min_stock_purchase_qty);
+        const parsedMinPurchaseQty =
+          parsedMinPurchaseQtyRaw != null && Number.isFinite(parsedMinPurchaseQtyRaw)
+            ? parsedMinPurchaseQtyRaw
+            : null;
+        const parsedMinPurchaseFactorRaw =
+          line.min_stock_purchase_to_base_factor == null ||
+          String(line.min_stock_purchase_to_base_factor).trim() === ""
+            ? null
+            : Number(line.min_stock_purchase_to_base_factor);
+        const parsedMinPurchaseFactor =
+          parsedMinPurchaseFactorRaw != null &&
+          Number.isFinite(parsedMinPurchaseFactorRaw) &&
+          parsedMinPurchaseFactorRaw > 0
+            ? parsedMinPurchaseFactorRaw
+            : null;
         const row = {
           product_id: productId,
           site_id: line.site_id,
           is_active: Boolean(line.is_active),
           default_area_kind: line.default_area_kind || null,
-          min_stock_qty:
-            line.min_stock_qty == null || String(line.min_stock_qty).trim() === ""
-              ? null
-              : Number(line.min_stock_qty),
+          min_stock_qty: parsedMinStockQty,
+          min_stock_input_mode: minStockInputMode,
+          min_stock_purchase_qty:
+            minStockInputMode === "purchase" ? parsedMinPurchaseQty : null,
+          min_stock_purchase_unit_code:
+            minStockInputMode === "purchase"
+              ? String(line.min_stock_purchase_unit_code ?? "").trim().toLowerCase() || null
+              : null,
+          min_stock_purchase_to_base_factor:
+            minStockInputMode === "purchase" ? parsedMinPurchaseFactor : null,
           audience:
             normalizedAudience === "SAUDO"
               ? "SAUDO"
@@ -757,7 +801,9 @@ export default async function ProductCatalogDetailPage({
 
   const { data: siteSettingsWithAudience, error: siteSettingsAudienceError } = await supabase
     .from("product_site_settings")
-    .select("id,site_id,is_active,default_area_kind,min_stock_qty,audience,sites(id,name)")
+    .select(
+      "id,site_id,is_active,default_area_kind,min_stock_qty,min_stock_input_mode,min_stock_purchase_qty,min_stock_purchase_unit_code,min_stock_purchase_to_base_factor,audience,sites(id,name)"
+    )
     .eq("product_id", id);
   const siteSettings =
     !siteSettingsAudienceError
@@ -765,7 +811,7 @@ export default async function ProductCatalogDetailPage({
       : (
           await supabase
             .from("product_site_settings")
-            .select("id,site_id,is_active,default_area_kind,audience,sites(id,name)")
+            .select("id,site_id,is_active,default_area_kind,min_stock_qty,audience,sites(id,name)")
             .eq("product_id", id)
         ).data ??
         (
@@ -1333,6 +1379,12 @@ export default async function ProductCatalogDetailPage({
                 is_active: Boolean(r.is_active),
                 default_area_kind: r.default_area_kind ?? "",
                 min_stock_qty: r.min_stock_qty ?? undefined,
+                min_stock_input_mode:
+                  r.min_stock_input_mode === "purchase" ? "purchase" : "base",
+                min_stock_purchase_qty: r.min_stock_purchase_qty ?? undefined,
+                min_stock_purchase_unit_code: r.min_stock_purchase_unit_code ?? undefined,
+                min_stock_purchase_to_base_factor:
+                  r.min_stock_purchase_to_base_factor ?? undefined,
                 audience: r.audience ?? "BOTH",
               }))}
               sites={sitesList.map((s) => ({ id: s.id, name: s.name, site_type: s.site_type }))}

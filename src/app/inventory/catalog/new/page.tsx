@@ -585,15 +585,48 @@ async function createProduct(formData: FormData) {
         }
         if (!siteIdFromLine) continue;
         const normalizedAudience = String(line.audience ?? "BOTH").trim().toUpperCase();
+        const minStockInputMode = String(line.min_stock_input_mode ?? "base").trim().toLowerCase() === "purchase"
+          ? "purchase"
+          : "base";
+        const parsedMinStockQtyRaw =
+          line.min_stock_qty == null || line.min_stock_qty === ""
+            ? null
+            : Number(line.min_stock_qty);
+        const parsedMinStockQty =
+          parsedMinStockQtyRaw != null && Number.isFinite(parsedMinStockQtyRaw)
+            ? parsedMinStockQtyRaw
+            : null;
+        const parsedMinPurchaseQty =
+          line.min_stock_purchase_qty == null || String(line.min_stock_purchase_qty).trim() === ""
+            ? null
+            : Number(line.min_stock_purchase_qty);
+        const parsedMinPurchaseFactor =
+          line.min_stock_purchase_to_base_factor == null ||
+          String(line.min_stock_purchase_to_base_factor).trim() === ""
+            ? null
+            : Number(line.min_stock_purchase_to_base_factor);
         let { error: siteInsertError } = await supabase.from("product_site_settings").insert({
           product_id: productId,
           site_id: siteIdFromLine,
           is_active: Boolean(line.is_active),
           default_area_kind: (line.default_area_kind as string) || null,
-          min_stock_qty:
-            line.min_stock_qty == null || line.min_stock_qty === ""
-              ? null
-              : Number(line.min_stock_qty),
+          min_stock_qty: parsedMinStockQty,
+          min_stock_input_mode: minStockInputMode,
+          min_stock_purchase_qty:
+            minStockInputMode === "purchase" && parsedMinPurchaseQty != null && Number.isFinite(parsedMinPurchaseQty)
+              ? parsedMinPurchaseQty
+              : null,
+          min_stock_purchase_unit_code:
+            minStockInputMode === "purchase"
+              ? String(line.min_stock_purchase_unit_code ?? "").trim().toLowerCase() || null
+              : null,
+          min_stock_purchase_to_base_factor:
+            minStockInputMode === "purchase" &&
+            parsedMinPurchaseFactor != null &&
+            Number.isFinite(parsedMinPurchaseFactor) &&
+            parsedMinPurchaseFactor > 0
+              ? parsedMinPurchaseFactor
+              : null,
           audience:
             normalizedAudience === "SAUDO"
               ? "SAUDO"
