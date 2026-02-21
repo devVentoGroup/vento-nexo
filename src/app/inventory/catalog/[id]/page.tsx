@@ -1338,6 +1338,16 @@ export default async function ProductCatalogDetailPage({
               sites={sitesList.map((s) => ({ id: s.id, name: s.name, site_type: s.site_type }))}
               areaKinds={areaKindsList.map((a) => ({ code: a.code, name: a.name ?? a.code }))}
               stockUnitCode={stockUnitCode}
+              purchaseUnitHint={
+                purchaseUomProfile
+                  ? {
+                      label: purchaseUomProfile.label,
+                      inputUnitCode: purchaseUomProfile.input_unit_code,
+                      qtyInInputUnit: purchaseUomProfile.qty_in_input_unit,
+                      qtyInStockUnit: purchaseUomProfile.qty_in_stock_unit,
+                    }
+                  : null
+              }
               operationUnitHint={
                 remissionUomProfile
                   ? {

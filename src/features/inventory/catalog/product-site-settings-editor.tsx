@@ -27,6 +27,12 @@ type Props = {
     qtyInInputUnit: number;
     qtyInStockUnit: number;
   } | null;
+  purchaseUnitHint?: {
+    label: string;
+    inputUnitCode: string;
+    qtyInInputUnit: number;
+    qtyInStockUnit: number;
+  } | null;
 };
 
 type SiteKind = "production_center" | "satellite" | "other";
@@ -70,6 +76,7 @@ export function ProductSiteSettingsEditor({
   areaKinds,
   stockUnitCode,
   operationUnitHint,
+  purchaseUnitHint,
 }: Props) {
   const siteMap = useMemo(() => new Map(sites.map((site) => [site.id, site])), [sites]);
   const initialBySite = useMemo(() => {
@@ -131,6 +138,21 @@ export function ProductSiteSettingsEditor({
     operationUnitHint.qtyInInputUnit > 0 &&
     operationUnitHint.qtyInStockUnit > 0
       ? operationUnitHint.qtyInStockUnit / operationUnitHint.qtyInInputUnit
+      : null;
+  const purchaseFactorToStock =
+    purchaseUnitHint &&
+    Number.isFinite(purchaseUnitHint.qtyInInputUnit) &&
+    Number.isFinite(purchaseUnitHint.qtyInStockUnit) &&
+    purchaseUnitHint.qtyInInputUnit > 0 &&
+    purchaseUnitHint.qtyInStockUnit > 0
+      ? purchaseUnitHint.qtyInStockUnit / purchaseUnitHint.qtyInInputUnit
+      : null;
+  const centerMinStockQtyInPurchase =
+    purchaseFactorToStock &&
+    centerMinStockQty != null &&
+    Number.isFinite(centerMinStockQty) &&
+    centerMinStockQty >= 0
+      ? Math.round((centerMinStockQty / purchaseFactorToStock) * 1_000_000) / 1_000_000
       : null;
 
   const formatEquivalent = (minStockQty?: number) => {
@@ -268,20 +290,59 @@ export function ProductSiteSettingsEditor({
           </label>
 
           <label className="flex flex-col gap-1 md:col-span-3">
-            <span className="ui-label">Stock minimo {stockUnitCode ? `(${stockUnitCode})` : ""}</span>
-            <input
-              type="number"
-              min={0}
-              step="0.000001"
-              value={centerMinStockQty ?? ""}
-              onChange={(event) =>
-                setCenterMinStockQty(
-                  event.target.value.trim() === "" ? undefined : Number(event.target.value)
-                )
-              }
-              className="ui-input"
-              placeholder="Ej. 24"
-            />
+            <span className="ui-label">
+              Stock minimo{" "}
+              {purchaseUnitHint
+                ? `en compra (${purchaseUnitHint.inputUnitCode})`
+                : stockUnitCode
+                  ? `(${stockUnitCode})`
+                  : ""}
+            </span>
+            {purchaseUnitHint && purchaseFactorToStock ? (
+              <input
+                type="number"
+                min={0}
+                step="0.000001"
+                value={centerMinStockQtyInPurchase ?? ""}
+                onChange={(event) => {
+                  const raw = event.target.value.trim();
+                  if (raw === "") {
+                    setCenterMinStockQty(undefined);
+                    return;
+                  }
+                  const parsed = Number(raw);
+                  if (!Number.isFinite(parsed) || parsed < 0) return;
+                  setCenterMinStockQty(parsed * purchaseFactorToStock);
+                }}
+                className="ui-input"
+                placeholder="Ej. 2"
+              />
+            ) : (
+              <input
+                type="number"
+                min={0}
+                step="0.000001"
+                value={centerMinStockQty ?? ""}
+                onChange={(event) =>
+                  setCenterMinStockQty(
+                    event.target.value.trim() === "" ? undefined : Number(event.target.value)
+                  )
+                }
+                className="ui-input"
+                placeholder="Ej. 24"
+              />
+            )}
+            {purchaseUnitHint && purchaseFactorToStock ? (
+              <p className="text-xs text-[var(--ui-muted)]">
+                Se guarda como{" "}
+                <strong className="text-[var(--ui-text)]">
+                  {centerMinStockQty != null && Number.isFinite(centerMinStockQty)
+                    ? `${Math.round(centerMinStockQty * 1_000_000) / 1_000_000} ${stockUnitCode || ""}`
+                    : "-"}
+                </strong>{" "}
+                en unidad base.
+              </p>
+            ) : null}
             {operationUnitHint ? (
               <p className="text-xs text-[var(--ui-muted)]">
                 Equivale aprox. a{" "}
