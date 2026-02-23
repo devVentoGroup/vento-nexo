@@ -431,7 +431,13 @@ export function ProductSiteSettingsEditor({
                     <input
                       type="checkbox"
                       checked={state.enabled}
-                      onChange={(event) => updateSatellite(site.id, { enabled: event.target.checked })}
+                      onChange={(event) =>
+                        updateSatellite(site.id, {
+                          enabled: event.target.checked,
+                          // Al habilitar la sede para solicitar, se marca disponible por defecto.
+                          isActive: event.target.checked ? true : state.isActive,
+                        })
+                      }
                     />
                     <span className="ui-label">Habilitar para solicitar</span>
                   </label>
