@@ -390,100 +390,107 @@ async function createProduct(formData: FormData) {
   if (config.hasSuppliers) {
     const supplierRaw = formData.get("supplier_lines");
     if (typeof supplierRaw === "string" && supplierRaw) {
+      let lines: Array<Record<string, unknown>> = [];
       try {
-        const lines = JSON.parse(supplierRaw) as Array<Record<string, unknown>>;
-        for (const line of lines) {
-          if ((line._delete as boolean) || !line.supplier_id) continue;
-          const packQty =
-            Number(line.purchase_pack_qty ?? line.purchase_unit_size ?? 0) || 0;
-          const packUnitCode = normalizeUnitCode(
-            (line.purchase_pack_unit_code as string) || stockUnitCode
-          );
-          let purchaseUnitSizeLegacy: number | null = null;
-          if (packQty > 0 && packUnitCode) {
-            try {
-              const { quantity } = convertQuantity({
-                quantity: packQty,
-                fromUnitCode: packUnitCode,
-                toUnitCode: stockUnitCode,
-                unitMap,
-              });
-              purchaseUnitSizeLegacy = quantity;
-            } catch {
-              purchaseUnitSizeLegacy = null;
-            }
+        lines = JSON.parse(supplierRaw) as typeof lines;
+      } catch {
+        redirect(
+          `/inventory/catalog/new?type=${typeKey}&error=${encodeURIComponent(
+            "No se pudo leer el bloque de proveedores. Recarga la pagina e intenta de nuevo."
+          )}`
+        );
+      }
+      for (const line of lines) {
+        if ((line._delete as boolean) || !line.supplier_id) continue;
+        const packQty =
+          Number(line.purchase_pack_qty ?? line.purchase_unit_size ?? 0) || 0;
+        const packUnitCode = normalizeUnitCode(
+          (line.purchase_pack_unit_code as string) || stockUnitCode
+        );
+        let purchaseUnitSizeLegacy: number | null = null;
+        if (packQty > 0 && packUnitCode) {
+          try {
+            const { quantity } = convertQuantity({
+              quantity: packQty,
+              fromUnitCode: packUnitCode,
+              toUnitCode: stockUnitCode,
+              unitMap,
+            });
+            purchaseUnitSizeLegacy = quantity;
+          } catch {
+            purchaseUnitSizeLegacy = null;
           }
-          const purchasePrice = Number(line.purchase_price ?? 0) || null;
-          if (
-            costingMode === "auto_primary_supplier" &&
-            Boolean(line.is_primary) &&
-            purchasePrice != null &&
-            purchasePrice > 0 &&
-            packQty > 0 &&
-            packUnitCode
-          ) {
-            try {
-              autoCostFromPrimary = computeAutoCostFromPrimarySupplier({
-                packPrice: purchasePrice,
-                packQty,
-                packUnitCode,
-                stockUnitCode,
-                unitMap,
-              });
-            } catch {
-              // ignore invalid conversion in auto-cost fallback
-            }
+        }
+        const purchasePrice = Number(line.purchase_price ?? 0) || null;
+        if (
+          costingMode === "auto_primary_supplier" &&
+          Boolean(line.is_primary) &&
+          purchasePrice != null &&
+          purchasePrice > 0 &&
+          packQty > 0 &&
+          packUnitCode
+        ) {
+          try {
+            autoCostFromPrimary = computeAutoCostFromPrimarySupplier({
+              packPrice: purchasePrice,
+              packQty,
+              packUnitCode,
+              stockUnitCode,
+              unitMap,
+            });
+          } catch {
+            // ignore invalid conversion in auto-cost fallback
           }
+        }
 
-          if (
-            Boolean(line.is_primary) &&
-            packQty > 0 &&
-            packUnitCode
-          ) {
-            try {
-              const { quantity: qtyInStockUnit } = convertQuantity({
-                quantity: packQty,
-                fromUnitCode: packUnitCode,
-                toUnitCode: stockUnitCode,
-                unitMap,
-              });
-              if (qtyInStockUnit > 0) {
-                purchaseUomFromSupplier = {
-                  label: String(line.purchase_unit || "Empaque"),
+        if (
+          Boolean(line.is_primary) &&
+          packQty > 0 &&
+          packUnitCode
+        ) {
+          try {
+            const { quantity: qtyInStockUnit } = convertQuantity({
+              quantity: packQty,
+              fromUnitCode: packUnitCode,
+              toUnitCode: stockUnitCode,
+              unitMap,
+            });
+            if (qtyInStockUnit > 0) {
+              purchaseUomFromSupplier = {
+                label: String(line.purchase_unit || "Empaque"),
+                inputUnitCode: packUnitCode,
+                qtyInInputUnit: 1,
+                qtyInStockUnit,
+              };
+              if (Boolean(line.use_in_operations)) {
+                remissionUomFromSupplier = {
+                  label: String(line.purchase_unit || "Empaque operativo"),
                   inputUnitCode: packUnitCode,
                   qtyInInputUnit: 1,
                   qtyInStockUnit,
                 };
-                if (Boolean(line.use_in_operations)) {
-                  remissionUomFromSupplier = {
-                    label: String(line.purchase_unit || "Empaque operativo"),
-                    inputUnitCode: packUnitCode,
-                    qtyInInputUnit: 1,
-                    qtyInStockUnit,
-                  };
-                }
               }
-            } catch {
-              // keep without operational profile when conversion is invalid
             }
+          } catch {
+            // keep without operational profile when conversion is invalid
           }
-
-          await supabase.from("product_suppliers").insert({
-            product_id: productId,
-            supplier_id: line.supplier_id as string,
-            supplier_sku: (line.supplier_sku as string) || null,
-            purchase_unit: (line.purchase_unit as string) || null,
-            purchase_unit_size: purchaseUnitSizeLegacy,
-            purchase_pack_qty: packQty > 0 ? packQty : null,
-            purchase_pack_unit_code: packUnitCode || null,
-            purchase_price: purchasePrice,
-            currency: (line.currency as string) || "COP",
-            lead_time_days: (line.lead_time_days as number) ?? null,
-            min_order_qty: (line.min_order_qty as number) ?? null,
-            is_primary: Boolean(line.is_primary),
-          });
         }
-      } catch { /* skip */ }
+
+        await supabase.from("product_suppliers").insert({
+          product_id: productId,
+          supplier_id: line.supplier_id as string,
+          supplier_sku: (line.supplier_sku as string) || null,
+          purchase_unit: (line.purchase_unit as string) || null,
+          purchase_unit_size: purchaseUnitSizeLegacy,
+          purchase_pack_qty: packQty > 0 ? packQty : null,
+          purchase_pack_unit_code: packUnitCode || null,
+          purchase_price: purchasePrice,
+          currency: (line.currency as string) || "COP",
+          lead_time_days: (line.lead_time_days as number) ?? null,
+          min_order_qty: (line.min_order_qty as number) ?? null,
+          is_primary: Boolean(line.is_primary),
+        });
+      }
     }
   }
 
@@ -566,94 +573,101 @@ async function createProduct(formData: FormData) {
   // Site settings
   const siteRaw = formData.get("site_settings_lines");
   if (typeof siteRaw === "string" && siteRaw) {
+    let siteLines: Array<Record<string, unknown>> = [];
     try {
-      const siteLines = JSON.parse(siteRaw) as Array<Record<string, unknown>>;
-      for (const line of siteLines) {
-        if (line._delete as boolean) continue;
-        const siteIdFromLine = String(line.site_id ?? "").trim();
-        const hasMeaningfulData =
-          Boolean(siteIdFromLine) ||
-          Boolean(String(line.default_area_kind ?? "").trim()) ||
-          Boolean(String(line.audience ?? "").trim()) ||
-          String(line.min_stock_qty ?? "").trim() !== "";
-        if (!siteIdFromLine && hasMeaningfulData) {
-          redirect(
-            `/inventory/catalog/new?type=${typeKey}&error=${encodeURIComponent(
-              "En disponibilidad por sede debes seleccionar una sede."
-            )}`
-          );
-        }
-        if (!siteIdFromLine) continue;
-        const normalizedAudience = String(line.audience ?? "BOTH").trim().toUpperCase();
-        const minStockInputMode = String(line.min_stock_input_mode ?? "base").trim().toLowerCase() === "purchase"
-          ? "purchase"
-          : "base";
-        const parsedMinStockQtyRaw =
-          line.min_stock_qty == null || line.min_stock_qty === ""
-            ? null
-            : Number(line.min_stock_qty);
-        const parsedMinStockQty =
-          parsedMinStockQtyRaw != null && Number.isFinite(parsedMinStockQtyRaw)
-            ? parsedMinStockQtyRaw
-            : null;
-        const parsedMinPurchaseQty =
-          line.min_stock_purchase_qty == null || String(line.min_stock_purchase_qty).trim() === ""
-            ? null
-            : Number(line.min_stock_purchase_qty);
-        const parsedMinPurchaseFactor =
-          line.min_stock_purchase_to_base_factor == null ||
-          String(line.min_stock_purchase_to_base_factor).trim() === ""
-            ? null
-            : Number(line.min_stock_purchase_to_base_factor);
-        let { error: siteInsertError } = await supabase.from("product_site_settings").insert({
+      siteLines = JSON.parse(siteRaw) as typeof siteLines;
+    } catch {
+      redirect(
+        `/inventory/catalog/new?type=${typeKey}&error=${encodeURIComponent(
+          "No se pudo leer disponibilidad por sede. Recarga la pagina e intenta de nuevo."
+        )}`
+      );
+    }
+    for (const line of siteLines) {
+      if (line._delete as boolean) continue;
+      const siteIdFromLine = String(line.site_id ?? "").trim();
+      const hasMeaningfulData =
+        Boolean(siteIdFromLine) ||
+        Boolean(String(line.default_area_kind ?? "").trim()) ||
+        Boolean(String(line.audience ?? "").trim()) ||
+        String(line.min_stock_qty ?? "").trim() !== "";
+      if (!siteIdFromLine && hasMeaningfulData) {
+        redirect(
+          `/inventory/catalog/new?type=${typeKey}&error=${encodeURIComponent(
+            "En disponibilidad por sede debes seleccionar una sede."
+          )}`
+        );
+      }
+      if (!siteIdFromLine) continue;
+      const normalizedAudience = String(line.audience ?? "BOTH").trim().toUpperCase();
+      const minStockInputMode = String(line.min_stock_input_mode ?? "base").trim().toLowerCase() === "purchase"
+        ? "purchase"
+        : "base";
+      const parsedMinStockQtyRaw =
+        line.min_stock_qty == null || line.min_stock_qty === ""
+          ? null
+          : Number(line.min_stock_qty);
+      const parsedMinStockQty =
+        parsedMinStockQtyRaw != null && Number.isFinite(parsedMinStockQtyRaw)
+          ? parsedMinStockQtyRaw
+          : null;
+      const parsedMinPurchaseQty =
+        line.min_stock_purchase_qty == null || String(line.min_stock_purchase_qty).trim() === ""
+          ? null
+          : Number(line.min_stock_purchase_qty);
+      const parsedMinPurchaseFactor =
+        line.min_stock_purchase_to_base_factor == null ||
+        String(line.min_stock_purchase_to_base_factor).trim() === ""
+          ? null
+          : Number(line.min_stock_purchase_to_base_factor);
+      let { error: siteInsertError } = await supabase.from("product_site_settings").insert({
+        product_id: productId,
+        site_id: siteIdFromLine,
+        is_active: Boolean(line.is_active),
+        default_area_kind: (line.default_area_kind as string) || null,
+        min_stock_qty: parsedMinStockQty,
+        min_stock_input_mode: minStockInputMode,
+        min_stock_purchase_qty:
+          minStockInputMode === "purchase" && parsedMinPurchaseQty != null && Number.isFinite(parsedMinPurchaseQty)
+            ? parsedMinPurchaseQty
+            : null,
+        min_stock_purchase_unit_code:
+          minStockInputMode === "purchase"
+            ? String(line.min_stock_purchase_unit_code ?? "").trim().toLowerCase() || null
+            : null,
+        min_stock_purchase_to_base_factor:
+          minStockInputMode === "purchase" &&
+          parsedMinPurchaseFactor != null &&
+          Number.isFinite(parsedMinPurchaseFactor) &&
+          parsedMinPurchaseFactor > 0
+            ? parsedMinPurchaseFactor
+            : null,
+        audience:
+          normalizedAudience === "SAUDO"
+            ? "SAUDO"
+            : normalizedAudience === "VCF"
+              ? "VCF"
+              : normalizedAudience === "INTERNAL"
+                ? "INTERNAL"
+                : "BOTH",
+      });
+      if (siteInsertError && siteInsertError.code === "42703") {
+        const legacyRow = {
           product_id: productId,
           site_id: siteIdFromLine,
           is_active: Boolean(line.is_active),
           default_area_kind: (line.default_area_kind as string) || null,
-          min_stock_qty: parsedMinStockQty,
-          min_stock_input_mode: minStockInputMode,
-          min_stock_purchase_qty:
-            minStockInputMode === "purchase" && parsedMinPurchaseQty != null && Number.isFinite(parsedMinPurchaseQty)
-              ? parsedMinPurchaseQty
-              : null,
-          min_stock_purchase_unit_code:
-            minStockInputMode === "purchase"
-              ? String(line.min_stock_purchase_unit_code ?? "").trim().toLowerCase() || null
-              : null,
-          min_stock_purchase_to_base_factor:
-            minStockInputMode === "purchase" &&
-            parsedMinPurchaseFactor != null &&
-            Number.isFinite(parsedMinPurchaseFactor) &&
-            parsedMinPurchaseFactor > 0
-              ? parsedMinPurchaseFactor
-              : null,
-          audience:
-            normalizedAudience === "SAUDO"
-              ? "SAUDO"
-              : normalizedAudience === "VCF"
-                ? "VCF"
-                : normalizedAudience === "INTERNAL"
-                  ? "INTERNAL"
-                  : "BOTH",
-        });
-        if (siteInsertError && siteInsertError.code === "42703") {
-          const legacyRow = {
-            product_id: productId,
-            site_id: siteIdFromLine,
-            is_active: Boolean(line.is_active),
-            default_area_kind: (line.default_area_kind as string) || null,
-          };
-          ({ error: siteInsertError } = await supabase.from("product_site_settings").insert(legacyRow));
-        }
-        if (siteInsertError) {
-          redirect(
-            `/inventory/catalog/new?type=${typeKey}&error=${encodeURIComponent(
-              siteInsertError.message
-            )}`
-          );
-        }
+        };
+        ({ error: siteInsertError } = await supabase.from("product_site_settings").insert(legacyRow));
       }
-    } catch { /* skip */ }
+      if (siteInsertError) {
+        redirect(
+          `/inventory/catalog/new?type=${typeKey}&error=${encodeURIComponent(
+            siteInsertError.message
+          )}`
+        );
+      }
+    }
   }
 
   revalidatePath("/inventory/catalog");

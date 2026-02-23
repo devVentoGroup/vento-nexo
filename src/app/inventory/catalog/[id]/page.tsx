@@ -467,111 +467,112 @@ async function updateProduct(formData: FormData) {
     | null = null;
   const supplierLinesRaw = formData.get("supplier_lines");
   if (typeof supplierLinesRaw === "string" && supplierLinesRaw) {
+    let lines: Array<{
+      id?: string;
+      supplier_id?: string;
+      supplier_sku?: string;
+      purchase_unit?: string;
+      purchase_unit_size?: number;
+      purchase_pack_qty?: number;
+      purchase_pack_unit_code?: string;
+      purchase_price?: number;
+      currency?: string;
+      lead_time_days?: number;
+      min_order_qty?: number;
+      is_primary?: boolean;
+      use_in_operations?: boolean;
+      _delete?: boolean;
+    }> = [];
     try {
-      const lines = JSON.parse(supplierLinesRaw) as Array<{
-        id?: string;
-        supplier_id?: string;
-        supplier_sku?: string;
-        purchase_unit?: string;
-        purchase_unit_size?: number;
-        purchase_pack_qty?: number;
-        purchase_pack_unit_code?: string;
-        purchase_price?: number;
-        currency?: string;
-        lead_time_days?: number;
-        min_order_qty?: number;
-        is_primary?: boolean;
-        use_in_operations?: boolean;
-        _delete?: boolean;
-      }>;
-      await supabase.from("product_suppliers").delete().eq("product_id", productId);
-      for (const line of lines) {
-        if (line._delete || !line.supplier_id) continue;
-        const packQty = Number(line.purchase_pack_qty ?? line.purchase_unit_size ?? 0) || 0;
-        const packUnitCode = normalizeUnitCode(
-          (line.purchase_pack_unit_code as string) || stockUnitCode
-        );
-        let purchaseUnitSizeLegacy: number | null = null;
-        if (packQty > 0 && packUnitCode) {
-          try {
-            const { quantity } = convertQuantity({
-              quantity: packQty,
-              fromUnitCode: packUnitCode,
-              toUnitCode: stockUnitCode,
-              unitMap,
-            });
-            purchaseUnitSizeLegacy = quantity;
-          } catch {
-            purchaseUnitSizeLegacy = null;
-          }
+      lines = JSON.parse(supplierLinesRaw) as typeof lines;
+    } catch {
+      redirectWithError("No se pudo leer el bloque de proveedores. Recarga la pagina e intenta de nuevo.");
+    }
+    await supabase.from("product_suppliers").delete().eq("product_id", productId);
+    for (const line of lines) {
+      if (line._delete || !line.supplier_id) continue;
+      const packQty = Number(line.purchase_pack_qty ?? line.purchase_unit_size ?? 0) || 0;
+      const packUnitCode = normalizeUnitCode(
+        (line.purchase_pack_unit_code as string) || stockUnitCode
+      );
+      let purchaseUnitSizeLegacy: number | null = null;
+      if (packQty > 0 && packUnitCode) {
+        try {
+          const { quantity } = convertQuantity({
+            quantity: packQty,
+            fromUnitCode: packUnitCode,
+            toUnitCode: stockUnitCode,
+            unitMap,
+          });
+          purchaseUnitSizeLegacy = quantity;
+        } catch {
+          purchaseUnitSizeLegacy = null;
         }
-        const purchasePrice = Number(line.purchase_price ?? 0) || null;
-        if (
-          costingMode === "auto_primary_supplier" &&
-          Boolean(line.is_primary) &&
-          purchasePrice != null &&
-          purchasePrice > 0 &&
-          packQty > 0 &&
-          packUnitCode
-        ) {
-          try {
-            autoCostFromPrimary = computeAutoCostFromPrimarySupplier({
-              packPrice: purchasePrice,
-              packQty,
-              packUnitCode,
-              stockUnitCode,
-              unitMap,
-            });
-          } catch {
-            // Keep previous/manual cost when conversion is not valid
-          }
+      }
+      const purchasePrice = Number(line.purchase_price ?? 0) || null;
+      if (
+        costingMode === "auto_primary_supplier" &&
+        Boolean(line.is_primary) &&
+        purchasePrice != null &&
+        purchasePrice > 0 &&
+        packQty > 0 &&
+        packUnitCode
+      ) {
+        try {
+          autoCostFromPrimary = computeAutoCostFromPrimarySupplier({
+            packPrice: purchasePrice,
+            packQty,
+            packUnitCode,
+            stockUnitCode,
+            unitMap,
+          });
+        } catch {
+          // Keep previous/manual cost when conversion is not valid
         }
-        if (Boolean(line.is_primary) && packQty > 0 && packUnitCode) {
-          try {
-            const { quantity: qtyInStockUnit } = convertQuantity({
-              quantity: packQty,
-              fromUnitCode: packUnitCode,
-              toUnitCode: stockUnitCode,
-              unitMap,
-            });
-            if (qtyInStockUnit > 0) {
-              purchaseUomFromSupplier = {
-                label: String(line.purchase_unit || "Empaque"),
+      }
+      if (Boolean(line.is_primary) && packQty > 0 && packUnitCode) {
+        try {
+          const { quantity: qtyInStockUnit } = convertQuantity({
+            quantity: packQty,
+            fromUnitCode: packUnitCode,
+            toUnitCode: stockUnitCode,
+            unitMap,
+          });
+          if (qtyInStockUnit > 0) {
+            purchaseUomFromSupplier = {
+              label: String(line.purchase_unit || "Empaque"),
+              inputUnitCode: packUnitCode,
+              qtyInInputUnit: 1,
+              qtyInStockUnit,
+            };
+            if (Boolean(line.use_in_operations)) {
+              remissionUomFromSupplier = {
+                label: String(line.purchase_unit || "Empaque operativo"),
                 inputUnitCode: packUnitCode,
                 qtyInInputUnit: 1,
                 qtyInStockUnit,
               };
-              if (Boolean(line.use_in_operations)) {
-                remissionUomFromSupplier = {
-                  label: String(line.purchase_unit || "Empaque operativo"),
-                  inputUnitCode: packUnitCode,
-                  qtyInInputUnit: 1,
-                  qtyInStockUnit,
-                };
-              }
             }
-          } catch {
-            // Keep previous profile if conversion is invalid.
           }
+        } catch {
+          // Keep previous profile if conversion is invalid.
         }
-        const { error: supplierErr } = await supabase.from("product_suppliers").insert({
-          product_id: productId,
-          supplier_id: line.supplier_id,
-          supplier_sku: line.supplier_sku || null,
-          purchase_unit: line.purchase_unit || null,
-          purchase_unit_size: purchaseUnitSizeLegacy,
-          purchase_pack_qty: packQty > 0 ? packQty : null,
-          purchase_pack_unit_code: packUnitCode || null,
-          purchase_price: purchasePrice,
-          currency: line.currency || "COP",
-          lead_time_days: line.lead_time_days ?? null,
-          min_order_qty: line.min_order_qty ?? null,
-          is_primary: Boolean(line.is_primary),
-        });
-        if (supplierErr) redirectWithError(supplierErr.message);
       }
-    } catch {
-      // ignore invalid JSON
+      const { error: supplierErr } = await supabase.from("product_suppliers").insert({
+        product_id: productId,
+        supplier_id: line.supplier_id,
+        supplier_sku: line.supplier_sku || null,
+        purchase_unit: line.purchase_unit || null,
+        purchase_unit_size: purchaseUnitSizeLegacy,
+        purchase_pack_qty: packQty > 0 ? packQty : null,
+        purchase_pack_unit_code: packUnitCode || null,
+        purchase_price: purchasePrice,
+        currency: line.currency || "COP",
+        lead_time_days: line.lead_time_days ?? null,
+        min_order_qty: line.min_order_qty ?? null,
+        is_primary: Boolean(line.is_primary),
+      });
+      if (supplierErr) redirectWithError(supplierErr.message);
     }
   }
 
@@ -654,124 +655,125 @@ async function updateProduct(formData: FormData) {
 
   const siteSettingsRaw = formData.get("site_settings_lines");
   if (typeof siteSettingsRaw === "string" && siteSettingsRaw) {
+    let siteLines: Array<{
+      id?: string;
+      site_id?: string;
+      is_active?: boolean;
+      default_area_kind?: string;
+      min_stock_qty?: number | string;
+      min_stock_input_mode?: "base" | "purchase" | string;
+      min_stock_purchase_qty?: number | string;
+      min_stock_purchase_unit_code?: string;
+      min_stock_purchase_to_base_factor?: number | string;
+      audience?: string;
+      _delete?: boolean;
+    }> = [];
     try {
-      const siteLines = JSON.parse(siteSettingsRaw) as Array<{
-        id?: string;
-        site_id?: string;
-        is_active?: boolean;
-        default_area_kind?: string;
-        min_stock_qty?: number | string;
-        min_stock_input_mode?: "base" | "purchase" | string;
-        min_stock_purchase_qty?: number | string;
-        min_stock_purchase_unit_code?: string;
-        min_stock_purchase_to_base_factor?: number | string;
-        audience?: string;
-        _delete?: boolean;
-      }>;
-      const toDelete = siteLines.filter((l) => l.id && l._delete).map((l) => l.id as string);
-      for (const id of toDelete) await supabase.from("product_site_settings").delete().eq("id", id);
-      for (const line of siteLines) {
-        if (line._delete) continue;
-        const hasMeaningfulData =
-          Boolean(String(line.site_id ?? "").trim()) ||
-          Boolean(String(line.default_area_kind ?? "").trim()) ||
-          Boolean(String(line.audience ?? "").trim()) ||
-          String(line.min_stock_qty ?? "").trim() !== "";
-        if (!line.site_id && hasMeaningfulData) {
-          redirectWithError("En disponibilidad por sede debes seleccionar una sede.");
-        }
-        if (!line.site_id) continue;
-        const normalizedAudience = String(line.audience ?? "BOTH").trim().toUpperCase();
-        const minStockInputMode = String(line.min_stock_input_mode ?? "base").trim().toLowerCase() === "purchase"
-          ? "purchase"
-          : "base";
-        const parsedMinStockQtyRaw =
-          line.min_stock_qty == null || String(line.min_stock_qty).trim() === ""
-            ? null
-            : Number(line.min_stock_qty);
-        const parsedMinStockQty =
-          parsedMinStockQtyRaw != null && Number.isFinite(parsedMinStockQtyRaw)
-            ? parsedMinStockQtyRaw
-            : null;
-        const parsedMinPurchaseQtyRaw =
-          line.min_stock_purchase_qty == null || String(line.min_stock_purchase_qty).trim() === ""
-            ? null
-            : Number(line.min_stock_purchase_qty);
-        const parsedMinPurchaseQty =
-          parsedMinPurchaseQtyRaw != null && Number.isFinite(parsedMinPurchaseQtyRaw)
-            ? parsedMinPurchaseQtyRaw
-            : null;
-        const parsedMinPurchaseFactorRaw =
-          line.min_stock_purchase_to_base_factor == null ||
-          String(line.min_stock_purchase_to_base_factor).trim() === ""
-            ? null
-            : Number(line.min_stock_purchase_to_base_factor);
-        const parsedMinPurchaseFactor =
-          parsedMinPurchaseFactorRaw != null &&
-          Number.isFinite(parsedMinPurchaseFactorRaw) &&
-          parsedMinPurchaseFactorRaw > 0
-            ? parsedMinPurchaseFactorRaw
-            : null;
-        const row = {
-          product_id: productId,
-          site_id: line.site_id,
-          is_active: Boolean(line.is_active),
-          default_area_kind: line.default_area_kind || null,
-          min_stock_qty: parsedMinStockQty,
-          min_stock_input_mode: minStockInputMode,
-          min_stock_purchase_qty:
-            minStockInputMode === "purchase" ? parsedMinPurchaseQty : null,
-          min_stock_purchase_unit_code:
-            minStockInputMode === "purchase"
-              ? String(line.min_stock_purchase_unit_code ?? "").trim().toLowerCase() || null
-              : null,
-          min_stock_purchase_to_base_factor:
-            minStockInputMode === "purchase" ? parsedMinPurchaseFactor : null,
-          audience:
-            normalizedAudience === "SAUDO"
-              ? "SAUDO"
-              : normalizedAudience === "VCF"
-                ? "VCF"
-                : normalizedAudience === "INTERNAL"
-                  ? "INTERNAL"
-                  : "BOTH",
-        };
-        if (line.id) {
-          let { error: upErr } = await supabase
-            .from("product_site_settings")
-            .update(row)
-            .eq("product_id", productId)
-            .eq("site_id", line.site_id);
-          if (upErr && upErr.code === "42703") {
-            const legacyRow = {
-              product_id: productId,
-              site_id: line.site_id,
-              is_active: Boolean(line.is_active),
-              default_area_kind: line.default_area_kind || null,
-            };
-            ({ error: upErr } = await supabase
-              .from("product_site_settings")
-              .update(legacyRow)
-              .eq("product_id", productId)
-              .eq("site_id", line.site_id));
-          }
-          if (upErr) redirectWithError(upErr.message);
-        } else {
-          let { error: insErr } = await supabase.from("product_site_settings").insert(row);
-          if (insErr && insErr.code === "42703") {
-            const legacyRow = {
-              product_id: productId,
-              site_id: line.site_id,
-              is_active: Boolean(line.is_active),
-              default_area_kind: line.default_area_kind || null,
-            };
-            ({ error: insErr } = await supabase.from("product_site_settings").insert(legacyRow));
-          }
-          if (insErr) redirectWithError(insErr.message);
-        }
-      }
+      siteLines = JSON.parse(siteSettingsRaw) as typeof siteLines;
     } catch {
-      // ignore
+      redirectWithError("No se pudo leer disponibilidad por sede. Recarga la pagina e intenta de nuevo.");
+    }
+    const toDelete = siteLines.filter((l) => l.id && l._delete).map((l) => l.id as string);
+    for (const id of toDelete) await supabase.from("product_site_settings").delete().eq("id", id);
+    for (const line of siteLines) {
+      if (line._delete) continue;
+      const hasMeaningfulData =
+        Boolean(String(line.site_id ?? "").trim()) ||
+        Boolean(String(line.default_area_kind ?? "").trim()) ||
+        Boolean(String(line.audience ?? "").trim()) ||
+        String(line.min_stock_qty ?? "").trim() !== "";
+      if (!line.site_id && hasMeaningfulData) {
+        redirectWithError("En disponibilidad por sede debes seleccionar una sede.");
+      }
+      if (!line.site_id) continue;
+      const normalizedAudience = String(line.audience ?? "BOTH").trim().toUpperCase();
+      const minStockInputMode = String(line.min_stock_input_mode ?? "base").trim().toLowerCase() === "purchase"
+        ? "purchase"
+        : "base";
+      const parsedMinStockQtyRaw =
+        line.min_stock_qty == null || String(line.min_stock_qty).trim() === ""
+          ? null
+          : Number(line.min_stock_qty);
+      const parsedMinStockQty =
+        parsedMinStockQtyRaw != null && Number.isFinite(parsedMinStockQtyRaw)
+          ? parsedMinStockQtyRaw
+          : null;
+      const parsedMinPurchaseQtyRaw =
+        line.min_stock_purchase_qty == null || String(line.min_stock_purchase_qty).trim() === ""
+          ? null
+          : Number(line.min_stock_purchase_qty);
+      const parsedMinPurchaseQty =
+        parsedMinPurchaseQtyRaw != null && Number.isFinite(parsedMinPurchaseQtyRaw)
+          ? parsedMinPurchaseQtyRaw
+          : null;
+      const parsedMinPurchaseFactorRaw =
+        line.min_stock_purchase_to_base_factor == null ||
+        String(line.min_stock_purchase_to_base_factor).trim() === ""
+          ? null
+          : Number(line.min_stock_purchase_to_base_factor);
+      const parsedMinPurchaseFactor =
+        parsedMinPurchaseFactorRaw != null &&
+        Number.isFinite(parsedMinPurchaseFactorRaw) &&
+        parsedMinPurchaseFactorRaw > 0
+          ? parsedMinPurchaseFactorRaw
+          : null;
+      const row = {
+        product_id: productId,
+        site_id: line.site_id,
+        is_active: Boolean(line.is_active),
+        default_area_kind: line.default_area_kind || null,
+        min_stock_qty: parsedMinStockQty,
+        min_stock_input_mode: minStockInputMode,
+        min_stock_purchase_qty:
+          minStockInputMode === "purchase" ? parsedMinPurchaseQty : null,
+        min_stock_purchase_unit_code:
+          minStockInputMode === "purchase"
+            ? String(line.min_stock_purchase_unit_code ?? "").trim().toLowerCase() || null
+            : null,
+        min_stock_purchase_to_base_factor:
+          minStockInputMode === "purchase" ? parsedMinPurchaseFactor : null,
+        audience:
+          normalizedAudience === "SAUDO"
+            ? "SAUDO"
+            : normalizedAudience === "VCF"
+              ? "VCF"
+              : normalizedAudience === "INTERNAL"
+                ? "INTERNAL"
+                : "BOTH",
+      };
+      if (line.id) {
+        let { error: upErr } = await supabase
+          .from("product_site_settings")
+          .update(row)
+          .eq("product_id", productId)
+          .eq("site_id", line.site_id);
+        if (upErr && upErr.code === "42703") {
+          const legacyRow = {
+            product_id: productId,
+            site_id: line.site_id,
+            is_active: Boolean(line.is_active),
+            default_area_kind: line.default_area_kind || null,
+          };
+          ({ error: upErr } = await supabase
+            .from("product_site_settings")
+            .update(legacyRow)
+            .eq("product_id", productId)
+            .eq("site_id", line.site_id));
+        }
+        if (upErr) redirectWithError(upErr.message);
+      } else {
+        let { error: insErr } = await supabase.from("product_site_settings").insert(row);
+        if (insErr && insErr.code === "42703") {
+          const legacyRow = {
+            product_id: productId,
+            site_id: line.site_id,
+            is_active: Boolean(line.is_active),
+            default_area_kind: line.default_area_kind || null,
+          };
+          ({ error: insErr } = await supabase.from("product_site_settings").insert(legacyRow));
+        }
+        if (insErr) redirectWithError(insErr.message);
+      }
     }
   }
 
