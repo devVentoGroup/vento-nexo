@@ -122,9 +122,10 @@ export function ProductSiteSettingsEditor({
     const state = new Map<string, SatelliteState>();
     for (const site of satelliteSites) {
       const existing = initialBySite.get(site.id);
+      const isActive = Boolean(existing?.is_active ?? false);
       state.set(site.id, {
-        enabled: Boolean(existing?.id) || Boolean(existing?.is_active),
-        isActive: Boolean(existing?.is_active ?? true),
+        enabled: isActive,
+        isActive,
         defaultAreaKind: existing?.default_area_kind ?? "",
         minStockQty: existing?.min_stock_qty,
       });
