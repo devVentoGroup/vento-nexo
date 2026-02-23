@@ -128,6 +128,8 @@ type SiteSettingRow = {
   min_stock_purchase_to_base_factor?: number | null;
   audience: "SAUDO" | "VCF" | "BOTH" | "INTERNAL" | null;
   sites?: { id: string; name: string | null } | null;
+  updated_at?: string | null;
+  created_at?: string | null;
 };
 
 type AreaKindRow = { code: string; name: string | null };
@@ -209,6 +211,20 @@ function resolveCatalogTab(productTypeRaw: string, inventoryKindRaw: string): Ca
   if (productType === "preparacion") return "preparaciones";
   if (productType === "venta") return "productos";
   return "insumos";
+}
+
+function siteSettingRowRank(row: SiteSettingRow): number {
+  const activeScore = row.is_active === false ? 0 : 2;
+  const minScore = row.min_stock_qty == null ? 0 : 1;
+  return activeScore + minScore;
+}
+
+function siteSettingTs(row: SiteSettingRow): number {
+  const updatedTs = new Date(String(row.updated_at ?? "")).getTime();
+  if (Number.isFinite(updatedTs) && updatedTs > 0) return updatedTs;
+  const createdTs = new Date(String(row.created_at ?? "")).getTime();
+  if (Number.isFinite(createdTs) && createdTs > 0) return createdTs;
+  return 0;
 }
 
 function resolveCompatibleDefaultUnit(params: {
@@ -721,7 +737,11 @@ async function updateProduct(formData: FormData) {
                   : "BOTH",
         };
         if (line.id) {
-          let { error: upErr } = await supabase.from("product_site_settings").update(row).eq("id", line.id);
+          let { error: upErr } = await supabase
+            .from("product_site_settings")
+            .update(row)
+            .eq("product_id", productId)
+            .eq("site_id", line.site_id);
           if (upErr && upErr.code === "42703") {
             const legacyRow = {
               product_id: productId,
@@ -732,7 +752,8 @@ async function updateProduct(formData: FormData) {
             ({ error: upErr } = await supabase
               .from("product_site_settings")
               .update(legacyRow)
-              .eq("id", line.id));
+              .eq("product_id", productId)
+              .eq("site_id", line.site_id));
           }
           if (upErr) redirectWithError(upErr.message);
         } else {
@@ -802,7 +823,7 @@ export default async function ProductCatalogDetailPage({
   const { data: siteSettingsWithAudience, error: siteSettingsAudienceError } = await supabase
     .from("product_site_settings")
     .select(
-      "id,site_id,is_active,default_area_kind,min_stock_qty,min_stock_input_mode,min_stock_purchase_qty,min_stock_purchase_unit_code,min_stock_purchase_to_base_factor,audience,sites(id,name)"
+      "id,site_id,is_active,default_area_kind,min_stock_qty,min_stock_input_mode,min_stock_purchase_qty,min_stock_purchase_unit_code,min_stock_purchase_to_base_factor,audience,updated_at,created_at,sites(id,name)"
     )
     .eq("product_id", id);
   const siteSettings =
@@ -811,19 +832,35 @@ export default async function ProductCatalogDetailPage({
       : (
           await supabase
             .from("product_site_settings")
-            .select("id,site_id,is_active,default_area_kind,min_stock_qty,audience,sites(id,name)")
+            .select("id,site_id,is_active,default_area_kind,min_stock_qty,audience,updated_at,created_at,sites(id,name)")
             .eq("product_id", id)
         ).data ??
         (
           await supabase
             .from("product_site_settings")
-            .select("id,site_id,is_active,default_area_kind,sites(id,name)")
+            .select("id,site_id,is_active,default_area_kind,updated_at,created_at,sites(id,name)")
             .eq("product_id", id)
         ).data;
-  const siteRows = ((siteSettings ?? []) as unknown as SiteSettingRow[]).map((row) => ({
+  const siteRowsRaw = ((siteSettings ?? []) as unknown as SiteSettingRow[]).map((row) => ({
     ...row,
     audience: row.audience ?? "BOTH",
   }));
+  const siteRowsBySite = new Map<string, SiteSettingRow>();
+  for (const row of siteRowsRaw) {
+    const siteId = String(row.site_id ?? "").trim();
+    if (!siteId) continue;
+    const current = siteRowsBySite.get(siteId);
+    if (!current) {
+      siteRowsBySite.set(siteId, row);
+      continue;
+    }
+    const currentRank = siteSettingRowRank(current);
+    const nextRank = siteSettingRowRank(row);
+    if (nextRank > currentRank || (nextRank === currentRank && siteSettingTs(row) > siteSettingTs(current))) {
+      siteRowsBySite.set(siteId, row);
+    }
+  }
+  const siteRows = Array.from(siteRowsBySite.values());
 
   const { data: sitesData } = await supabase
     .from("sites")
