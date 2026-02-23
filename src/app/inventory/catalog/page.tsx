@@ -57,6 +57,7 @@ type ProductRow = {
   id: string;
   name: string;
   sku: string | null;
+  cost: number | null;
   unit: string | null;
   stock_unit_code: string | null;
   product_type: string;
@@ -425,7 +426,7 @@ export default async function InventoryCatalogPage({
     let productsQuery = supabase
       .from("products")
       .select(
-        "id,name,sku,unit,stock_unit_code,product_type,category_id,is_active,product_inventory_profiles(track_inventory,inventory_kind,costing_mode)"
+        "id,name,sku,cost,unit,stock_unit_code,product_type,category_id,is_active,product_inventory_profiles(track_inventory,inventory_kind,costing_mode)"
       )
       .order("name", { ascending: true })
       .limit(1200);
@@ -953,6 +954,12 @@ export default async function InventoryCatalogPage({
                 const inventoryLabel = inventoryProfile?.inventory_kind ?? "unclassified";
                 const autoCostMode = inventoryProfile?.costing_mode ?? "auto_primary_supplier";
                 const autoCostReason = autoCostReasonByProduct.get(product.id) ?? null;
+                const normalizedType = String(product.product_type ?? "").trim().toLowerCase();
+                const normalizedInventoryKind = String(inventoryProfile?.inventory_kind ?? "").trim().toLowerCase();
+                const usesRecipeAutoCost =
+                  normalizedType === "preparacion" ||
+                  (normalizedType === "venta" && normalizedInventoryKind !== "resale");
+                const hasComputedCost = product.cost != null && Number.isFinite(Number(product.cost));
                 const primarySupplier = primarySupplierByProduct.get(product.id);
                 const primarySupplierName = primarySupplier?.supplier_id
                   ? supplierNameById.get(primarySupplier.supplier_id) ?? primarySupplier.supplier_id
@@ -1029,7 +1036,13 @@ export default async function InventoryCatalogPage({
                     {viewMode === "catalogo" ? (
                       <>
                         <td className="py-2.5 pr-4">
-                          {autoCostMode === "manual" ? (
+                          {usesRecipeAutoCost ? (
+                            hasComputedCost ? (
+                              <span className="ui-chip ui-chip--success">Listo (FOGO)</span>
+                            ) : (
+                              <span className="ui-chip ui-chip--warn">Pendiente (FOGO)</span>
+                            )
+                          ) : autoCostMode === "manual" ? (
                             <span className="ui-chip">Manual</span>
                           ) : autoCostReason ? (
                             <div className="space-y-1">

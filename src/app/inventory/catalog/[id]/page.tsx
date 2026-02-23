@@ -918,6 +918,7 @@ export default async function ProductCatalogDetailPage({
       String((profile as InventoryProfileRow | null)?.inventory_kind ?? "")
         .trim()
         .toLowerCase() !== "resale");
+  const hasComputedCost = (product as ProductRow).cost != null && Number.isFinite(Number((product as ProductRow).cost));
 
   const [{ data: employee }, { data: settings }] = await Promise.all([
     supabase.from("employees").select("role,site_id").eq("id", user.id).maybeSingle(),
@@ -1297,11 +1298,17 @@ export default async function ProductCatalogDetailPage({
               <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3 text-sm text-[var(--ui-muted)] md:col-span-2">
                 <p className="font-medium text-[var(--ui-text)]">
                   Estado de costo:{" "}
-                  {profileRow?.costing_mode === "manual"
-                    ? "Manual"
-                    : autoCostReady
-                      ? "Listo"
-                      : "Incompleto"}
+                  {hasSuppliers
+                    ? profileRow?.costing_mode === "manual"
+                      ? "Manual"
+                      : autoCostReady
+                        ? "Listo"
+                        : "Incompleto"
+                    : hasRecipe
+                      ? hasComputedCost
+                        ? "Listo (FOGO)"
+                        : "Pendiente (FOGO)"
+                      : "Manual"}
                 </p>
                 <p className="mt-1">
                   Costo actual:{" "}
