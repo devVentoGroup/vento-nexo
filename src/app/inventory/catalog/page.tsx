@@ -44,6 +44,7 @@ type SearchParams = {
   site_id?: string;
   stock_alert?: string;
   view_mode?: string;
+  supplier_id?: string;
   category_kind?: string;
   category_domain?: string;
   category_scope?: string;
@@ -338,6 +339,7 @@ export default async function InventoryCatalogPage({
   const searchQuery = String(sp.q ?? "").trim();
   const stockAlert = String(sp.stock_alert ?? "all").trim().toLowerCase() === "low" ? "low" : "all";
   const viewMode = String(sp.view_mode ?? "catalogo").trim().toLowerCase() === "compras" ? "compras" : "catalogo";
+  const selectedSupplierId = String(sp.supplier_id ?? "").trim();
 
   const tabRaw = String(sp.tab ?? "insumos").trim().toLowerCase();
   const activeTab: TabValue = TAB_OPTIONS.some((t) => t.value === tabRaw)
@@ -353,7 +355,7 @@ export default async function InventoryCatalogPage({
     permissionCode: PERMISSION,
   });
 
-  const [{ data: employee }, { data: settings }, { data: sites }] = await Promise.all([
+  const [{ data: employee }, { data: settings }, { data: sites }, { data: suppliersFilterData }] = await Promise.all([
     supabase.from("employees").select("site_id,role").eq("id", user.id).maybeSingle(),
     supabase
       .from("employee_settings")
@@ -361,9 +363,14 @@ export default async function InventoryCatalogPage({
       .eq("employee_id", user.id)
       .maybeSingle(),
     supabase.from("sites").select("id,name").eq("is_active", true).order("name", { ascending: true }),
+    supabase.from("suppliers").select("id,name").eq("is_active", true).order("name", { ascending: true }),
   ]);
 
   const siteRows = (sites ?? []) as SiteRow[];
+  const suppliersFilterRows = (suppliersFilterData ?? []) as SupplierRow[];
+  const effectiveSupplierId = suppliersFilterRows.some((row) => row.id === selectedSupplierId)
+    ? selectedSupplierId
+    : "";
   const siteNamesById = Object.fromEntries(siteRows.map((row) => [row.id, row.name ?? row.id]));
   const canManageProducts = ["propietario", "gerente_general"].includes(
     String((employee as { role?: string | null } | null)?.role ?? "").toLowerCase()
@@ -419,8 +426,26 @@ export default async function InventoryCatalogPage({
     getCategoryDomainCodes(allCategoryRows, categoryKind)
   );
 
+  let supplierProductIds: string[] | null = null;
+  if (effectiveSupplierId) {
+    const { data: supplierProductLinks } = await supabase
+      .from("product_suppliers")
+      .select("product_id")
+      .eq("supplier_id", effectiveSupplierId);
+    supplierProductIds = Array.from(
+      new Set(
+        ((supplierProductLinks ?? []) as Array<{ product_id: string | null }>)
+          .map((row) => row.product_id)
+          .filter((value): value is string => Boolean(value))
+      )
+    );
+  }
+
   let productRows: ProductRow[] = [];
-  if (effectiveCategoryIds !== null && effectiveCategoryIds.length === 0) {
+  if (
+    (effectiveCategoryIds !== null && effectiveCategoryIds.length === 0) ||
+    (supplierProductIds !== null && supplierProductIds.length === 0)
+  ) {
     productRows = [];
   } else {
     let productsQuery = supabase
@@ -438,6 +463,10 @@ export default async function InventoryCatalogPage({
 
     if (effectiveCategoryIds && effectiveCategoryIds.length > 0) {
       productsQuery = productsQuery.in("category_id", effectiveCategoryIds);
+    }
+
+    if (supplierProductIds && supplierProductIds.length > 0) {
+      productsQuery = productsQuery.in("id", supplierProductIds);
     }
 
     if (activeTab === "equipos") {
@@ -687,6 +716,7 @@ export default async function InventoryCatalogPage({
     if (siteId) params.set("site_id", siteId);
     if (stockAlert === "low") params.set("stock_alert", "low");
     if (viewMode === "compras") params.set("view_mode", "compras");
+    if (effectiveSupplierId) params.set("supplier_id", effectiveSupplierId);
     params.set("category_kind", tabKind);
     params.set("category_scope", categoryScope);
     if (categoryScope === "site" && activeSiteId) params.set("category_site_id", activeSiteId);
@@ -803,6 +833,18 @@ export default async function InventoryCatalogPage({
             <select name="view_mode" defaultValue={viewMode} className="ui-input">
               <option value="catalogo">Catalogo</option>
               <option value="compras">Compras (ejecutiva)</option>
+            </select>
+          </label>
+
+          <label className="flex flex-col gap-1">
+            <span className="ui-label">Proveedor</span>
+            <select name="supplier_id" defaultValue={effectiveSupplierId} className="ui-input">
+              <option value="">Todos</option>
+              {suppliersFilterRows.map((supplier) => (
+                <option key={supplier.id} value={supplier.id}>
+                  {supplier.name ?? supplier.id}
+                </option>
+              ))}
             </select>
           </label>
 
