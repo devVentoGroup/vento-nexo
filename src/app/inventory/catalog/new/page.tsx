@@ -61,6 +61,72 @@ function resolveCompatibleDefaultUnit(params: {
   return requestedDefaultUnit || stockUnitCode;
 }
 
+function omitKeys(
+  payload: Record<string, unknown>,
+  keysToOmit: string[]
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(payload).filter(([key, value]) => !keysToOmit.includes(key) && value !== undefined)
+  );
+}
+
+function buildProductSiteSettingPayloadVariants(
+  payload: Record<string, unknown>
+): Record<string, unknown>[] {
+  const variantKeysToOmit: string[][] = [
+    [],
+    [
+      "min_stock_input_mode",
+      "min_stock_purchase_qty",
+      "min_stock_purchase_unit_code",
+      "min_stock_purchase_to_base_factor",
+    ],
+    [
+      "min_stock_input_mode",
+      "min_stock_purchase_qty",
+      "min_stock_purchase_unit_code",
+      "min_stock_purchase_to_base_factor",
+      "audience",
+    ],
+    [
+      "min_stock_input_mode",
+      "min_stock_purchase_qty",
+      "min_stock_purchase_unit_code",
+      "min_stock_purchase_to_base_factor",
+      "audience",
+      "min_stock_qty",
+    ],
+  ];
+
+  const variants: Record<string, unknown>[] = [];
+  const seen = new Set<string>();
+  for (const keys of variantKeysToOmit) {
+    const variant = omitKeys(payload, keys);
+    const signature = JSON.stringify(variant);
+    if (seen.has(signature)) continue;
+    seen.add(signature);
+    variants.push(variant);
+  }
+  return variants;
+}
+
+async function insertProductSiteSettingCompat(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  payload: Record<string, unknown>
+) {
+  const variants = buildProductSiteSettingPayloadVariants(payload);
+  let lastError: { code?: string; message: string } | null = null;
+
+  for (const variant of variants) {
+    const { error } = await supabase.from("product_site_settings").insert(variant);
+    if (!error) return null;
+    lastError = { code: error.code, message: error.message };
+    if (error.code !== "42703") return lastError;
+  }
+
+  return lastError;
+}
+
 async function loadCategoryRows(
   supabase: Awaited<ReturnType<typeof requireAppAccess>>["supabase"]
 ): Promise<CategoryRow[]> {
@@ -620,7 +686,7 @@ async function createProduct(formData: FormData) {
         String(line.min_stock_purchase_to_base_factor).trim() === ""
           ? null
           : Number(line.min_stock_purchase_to_base_factor);
-      let { error: siteInsertError } = await supabase.from("product_site_settings").insert({
+      const siteRowPayload = {
         product_id: productId,
         site_id: siteIdFromLine,
         is_active: Boolean(line.is_active),
@@ -647,19 +713,11 @@ async function createProduct(formData: FormData) {
             ? "SAUDO"
             : normalizedAudience === "VCF"
               ? "VCF"
-              : normalizedAudience === "INTERNAL"
+            : normalizedAudience === "INTERNAL"
                 ? "INTERNAL"
                 : "BOTH",
-      });
-      if (siteInsertError && siteInsertError.code === "42703") {
-        const legacyRow = {
-          product_id: productId,
-          site_id: siteIdFromLine,
-          is_active: Boolean(line.is_active),
-          default_area_kind: (line.default_area_kind as string) || null,
-        };
-        ({ error: siteInsertError } = await supabase.from("product_site_settings").insert(legacyRow));
-      }
+      };
+      const siteInsertError = await insertProductSiteSettingCompat(supabase, siteRowPayload);
       if (siteInsertError) {
         redirect(
           `/inventory/catalog/new?type=${typeKey}&error=${encodeURIComponent(
