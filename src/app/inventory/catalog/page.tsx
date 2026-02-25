@@ -761,34 +761,41 @@ export default async function InventoryCatalogPage({
       </div>
 
       <div className="mt-4 flex justify-end">
-        {activeTab === "productos" ? (
-          <div className="flex flex-wrap gap-2">
-            <Link href="/inventory/catalog/new?type=venta" className="ui-btn ui-btn--brand ui-btn--sm">
-              + Producto de venta
+        <div className="flex flex-wrap gap-2">
+          {activeTab === "insumos" ? (
+            <Link href="/api/inventory/catalog/export-suppliers" className="ui-btn ui-btn--ghost ui-btn--sm">
+              Descargar Excel de insumos
             </Link>
-            <Link href="/inventory/catalog/new?type=reventa" className="ui-btn ui-btn--ghost ui-btn--sm">
-              + Producto de reventa
-            </Link>
-          </div>
-        ) : (
-          <Link
-            href={`/inventory/catalog/new?type=${
-              activeTab === "insumos"
+          ) : null}
+          {activeTab === "productos" ? (
+            <>
+              <Link href="/inventory/catalog/new?type=venta" className="ui-btn ui-btn--brand ui-btn--sm">
+                + Producto de venta
+              </Link>
+              <Link href="/inventory/catalog/new?type=reventa" className="ui-btn ui-btn--ghost ui-btn--sm">
+                + Producto de reventa
+              </Link>
+            </>
+          ) : (
+            <Link
+              href={`/inventory/catalog/new?type=${
+                activeTab === "insumos"
+                  ? "insumo"
+                  : activeTab === "preparaciones"
+                    ? "preparacion"
+                    : "asset"
+              }`}
+              className="ui-btn ui-btn--brand ui-btn--sm"
+            >
+              + Crear{" "}
+              {activeTab === "insumos"
                 ? "insumo"
                 : activeTab === "preparaciones"
                   ? "preparacion"
-                  : "asset"
-            }`}
-            className="ui-btn ui-btn--brand ui-btn--sm"
-          >
-            + Crear{" "}
-            {activeTab === "insumos"
-              ? "insumo"
-              : activeTab === "preparaciones"
-                ? "preparacion"
-                : "equipo"}
-          </Link>
-        )}
+                  : "equipo"}
+            </Link>
+          )}
+        </div>
       </div>
 
       <div className="mt-4 ui-panel">
