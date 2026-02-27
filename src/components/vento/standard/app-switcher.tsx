@@ -139,8 +139,8 @@ export function AppSwitcher(props: AppSwitcherProps) {
         logoSrc: "/apps/viso.svg",
         brandColor: "#6366F1",
         href: "https://viso.ventogroup.co",
-        status: "soon",
-        group: "Proximamente",
+        status: "active",
+        group: "Operacion",
       },
       {
         id: "fogo",
