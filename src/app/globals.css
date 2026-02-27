@@ -1,13 +1,13 @@
 @import "tailwindcss";
 
 :root {
-  --ui-bg: #FFFFFF;
-  --ui-bg-2: #F7F8FA;
+  --ui-bg: #F3F6F9;
+  --ui-bg-2: #EDF2F6;
   --ui-surface: #FFFFFF;
-  --ui-surface-2: #F7F7F9;
-  --ui-border: #E5E7EB;
+  --ui-surface-2: #EEF2F6;
+  --ui-border: #C9D2DB;
   --ui-text: #111827;
-  --ui-muted: #6B7280;
+  --ui-muted: #5E6A78;
   --ui-primary: #1F2937;
   --ui-primary-hover: #111827;
   --ui-on-primary: #FFFFFF;
@@ -48,15 +48,15 @@ body {
 }
 
 .ui-header {
-  background: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(14px);
-  border-bottom: 1px solid var(--ui-border);
+  border-bottom: 1px solid #bcc8d4;
   box-shadow: 0 1px 0 rgba(17, 24, 39, 0.04);
 }
 
 .ui-sidebar {
   background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.85) 0%, rgba(247, 248, 250, 0.85) 100%);
+    linear-gradient(180deg, rgba(255, 255, 255, 0.94) 0%, rgba(239, 243, 247, 0.9) 100%);
   border-right: 1px solid var(--ui-border);
   box-shadow: 1px 0 0 rgba(17, 24, 39, 0.03);
   backdrop-filter: blur(16px);
@@ -341,13 +341,13 @@ body {
   font-weight: 600;
   letter-spacing: 0.06em;
   color: var(--ui-muted);
-  border-bottom: 1px solid var(--ui-border);
+  border-bottom: 1px solid #bcc8d4;
   padding-bottom: 12px;
   padding-right: 16px;
 }
 
 .ui-td {
-  border-bottom: 1px solid rgba(17, 24, 39, 0.08);
+  border-bottom: 1px solid rgba(15, 23, 42, 0.14);
   padding: 14px 0;
   padding-right: 16px;
   font-size: 0.95rem;
@@ -360,7 +360,7 @@ body {
 }
 
 .ui-table tbody tr:hover {
-  background: rgba(17, 24, 39, 0.03);
+  background: rgba(15, 23, 42, 0.05);
 }
 
 .ui-empty {
@@ -685,7 +685,7 @@ body {
   justify-content: space-between;
   gap: 8px;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--ui-border);
+  border-bottom: 1px solid #bcc8d4;
   background: rgba(255, 255, 255, 0.9);
   backdrop-filter: blur(10px);
 }
@@ -695,7 +695,7 @@ body {
   top: 0;
   z-index: 1;
   padding: 12px 16px 8px;
-  border-bottom: 1px solid var(--ui-border);
+  border-bottom: 1px solid #bcc8d4;
   background: rgba(255, 255, 255, 0.95);
 }
 
