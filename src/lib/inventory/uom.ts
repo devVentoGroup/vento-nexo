@@ -47,21 +47,35 @@ export function selectProductUomProfileForContext(params: {
   const candidates = params.profiles.filter(
     (profile) =>
       profile.is_active &&
-      profile.is_default &&
       String(profile.product_id).trim() === productId
   );
   if (!candidates.length) return null;
 
-  const byContext = candidates.find(
-    (profile) =>
-      normalizeProductUomUsageContext(profile.usage_context) === params.context
+  const contextMatches = candidates.filter(
+    (profile) => normalizeProductUomUsageContext(profile.usage_context) === params.context
   );
-  if (byContext) return byContext;
+  const contextDefault = contextMatches.find((profile) => profile.is_default);
+  if (contextDefault) return contextDefault;
+  if (contextMatches.length) return contextMatches[0] ?? null;
 
-  const general = candidates.find(
+  if (params.context === "remission") {
+    const purchaseMatches = candidates.filter(
+      (profile) => normalizeProductUomUsageContext(profile.usage_context) === "purchase"
+    );
+    const purchaseDefault = purchaseMatches.find((profile) => profile.is_default);
+    if (purchaseDefault) return purchaseDefault;
+    if (purchaseMatches.length) return purchaseMatches[0] ?? null;
+  }
+
+  const generalMatches = candidates.filter(
     (profile) => normalizeProductUomUsageContext(profile.usage_context) === "general"
   );
-  return general ?? candidates[0] ?? null;
+  const generalDefault = generalMatches.find((profile) => profile.is_default);
+  if (generalDefault) return generalDefault;
+  if (generalMatches.length) return generalMatches[0] ?? null;
+
+  const anyDefault = candidates.find((profile) => profile.is_default);
+  return anyDefault ?? candidates[0] ?? null;
 }
 
 export function normalizeUnitCode(code: string | null | undefined): string {

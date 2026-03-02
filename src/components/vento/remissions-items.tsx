@@ -59,7 +59,7 @@ export function RemissionsItems({
   const defaultProfileByProduct = useMemo(() => {
     const profilesByProduct = new Map<string, ProductUomProfile[]>();
     for (const profile of defaultUomProfiles) {
-      if (!profile.is_active || !profile.is_default) continue;
+      if (!profile.is_active) continue;
       const productId = String(profile.product_id).trim();
       const current = profilesByProduct.get(productId) ?? [];
       current.push(profile);
@@ -117,6 +117,13 @@ export function RemissionsItems({
 
         const conversionInputLabel = String(defaultProfile?.label ?? "").trim();
         const conversionInputUnit = conversionInputLabel || defaultProfile?.input_unit_code || "";
+        const stockUnitWithContextLabel =
+          stockUnitCode &&
+          defaultProfile &&
+          normalizeUnitCode(defaultProfile.input_unit_code) === normalizeUnitCode(stockUnitCode) &&
+          String(defaultProfile.label ?? "").trim()
+            ? `${stockUnitCode} (${String(defaultProfile.label ?? "").trim()})`
+            : stockUnitCode;
         const conversionLabel = defaultProfile
           ? `${defaultProfile.qty_in_input_unit} ${conversionInputUnit} = ${defaultProfile.qty_in_stock_unit} ${stockUnitCode || "un"}`
           : "";
@@ -195,7 +202,9 @@ export function RemissionsItems({
                 required
               >
                 <option value="">Unidad</option>
-                {stockUnitCode ? <option value={stockUnitCode}>{stockUnitCode}</option> : null}
+                {stockUnitCode ? (
+                  <option value={stockUnitCode}>{stockUnitWithContextLabel}</option>
+                ) : null}
                 {defaultProfile &&
                 normalizeUnitCode(defaultProfile.input_unit_code) !== normalizeUnitCode(stockUnitCode) ? (
                   <option value={normalizeUnitCode(defaultProfile.input_unit_code)}>

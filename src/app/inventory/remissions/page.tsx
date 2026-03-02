@@ -684,7 +684,6 @@ export default async function RemissionsPage({
           "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
         )
         .in("product_id", productIds)
-        .eq("is_default", true)
         .eq("is_active", true)
     : { data: [] as ProductUomProfile[] };
   const defaultUomProfiles = (uomProfilesData ?? []) as ProductUomProfile[];
