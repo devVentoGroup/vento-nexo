@@ -153,6 +153,7 @@ export function RemissionsItems({
                 placeholder="Selecciona producto"
                 searchPlaceholder="Buscar producto..."
                 sheetTitle="Selecciona producto"
+                dropdownMode="inline"
               />
 
               <input

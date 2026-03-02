@@ -20,6 +20,7 @@ type SearchableSingleSelectProps = {
   mobilePresentation?: "sheet" | "dropdown" | "native";
   mobileBreakpointPx?: number;
   sheetTitle?: string;
+  dropdownMode?: "floating" | "inline";
 };
 
 function normalize(value: string): string {
@@ -38,6 +39,7 @@ export function SearchableSingleSelect({
   mobilePresentation = "sheet",
   mobileBreakpointPx = 640,
   sheetTitle = "Selecciona opcion",
+  dropdownMode = "floating",
 }: SearchableSingleSelectProps) {
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -112,6 +114,8 @@ export function SearchableSingleSelect({
   const useSheetMobile = isMobile && mobilePresentation === "sheet";
   const shouldRenderDropdown = !useNativeMobile && !useSheetMobile;
 
+  const isInlineDropdown = dropdownMode === "inline";
+
   return (
     <div ref={rootRef} className={`relative ${className}`.trim()}>
       {name ? <input type="hidden" name={name} value={value} /> : null}
@@ -143,7 +147,11 @@ export function SearchableSingleSelect({
       )}
 
       {isOpen && shouldRenderDropdown ? (
-        <div className="absolute left-0 top-[calc(100%+4px)] z-20 w-full rounded-xl border border-[var(--ui-border)] bg-[var(--ui-panel)] p-2 shadow-lg">
+        <div
+          className={`w-full rounded-xl border border-[var(--ui-border)] bg-[var(--ui-panel)] p-2 shadow-lg ${
+            isInlineDropdown ? "mt-2" : "absolute left-0 top-[calc(100%+4px)] z-30"
+          }`}
+        >
           <input
             type="search"
             value={query}
