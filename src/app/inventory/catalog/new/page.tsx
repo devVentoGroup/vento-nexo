@@ -44,6 +44,22 @@ function asText(v: FormDataEntryValue | null) {
   return typeof v === "string" ? v.trim() : "";
 }
 
+function resolveNetPurchasePrice(params: {
+  purchasePrice: number | null;
+  purchasePriceIncludesTax: boolean;
+  purchaseTaxRate: number;
+}): number | null {
+  const gross = Number(params.purchasePrice ?? 0);
+  if (!Number.isFinite(gross) || gross <= 0) return null;
+  if (!params.purchasePriceIncludesTax) return gross;
+  const safeTaxRate = Number.isFinite(params.purchaseTaxRate) && params.purchaseTaxRate >= 0
+    ? params.purchaseTaxRate
+    : 0;
+  const divisor = 1 + safeTaxRate / 100;
+  if (!Number.isFinite(divisor) || divisor <= 0) return gross;
+  return gross / divisor;
+}
+
 function resolveCompatibleDefaultUnit(params: {
   requestedDefaultUnit: string;
   stockUnitCode: string;
@@ -488,17 +504,28 @@ async function createProduct(formData: FormData) {
           }
         }
         const purchasePrice = Number(line.purchase_price ?? 0) || null;
+        const purchasePriceIncludesTax = Boolean(line.purchase_price_includes_tax);
+        const purchaseTaxRateRaw = Number(line.purchase_tax_rate ?? 0);
+        const purchaseTaxRate =
+          Number.isFinite(purchaseTaxRateRaw) && purchaseTaxRateRaw >= 0
+            ? purchaseTaxRateRaw
+            : 0;
+        const purchasePriceNet = resolveNetPurchasePrice({
+          purchasePrice,
+          purchasePriceIncludesTax,
+          purchaseTaxRate,
+        });
         if (
           costingMode === "auto_primary_supplier" &&
           Boolean(line.is_primary) &&
-          purchasePrice != null &&
-          purchasePrice > 0 &&
+          purchasePriceNet != null &&
+          purchasePriceNet > 0 &&
           packQty > 0 &&
           packUnitCode
         ) {
           try {
             autoCostFromPrimary = computeAutoCostFromPrimarySupplier({
-              packPrice: purchasePrice,
+              packPrice: purchasePriceNet,
               packQty,
               packUnitCode,
               stockUnitCode,
@@ -551,6 +578,9 @@ async function createProduct(formData: FormData) {
           purchase_pack_qty: packQty > 0 ? packQty : null,
           purchase_pack_unit_code: packUnitCode || null,
           purchase_price: purchasePrice,
+          purchase_price_net: purchasePriceNet,
+          purchase_price_includes_tax: purchasePriceIncludesTax,
+          purchase_tax_rate: purchaseTaxRate,
           currency: (line.currency as string) || "COP",
           lead_time_days: (line.lead_time_days as number) ?? null,
           min_order_qty: (line.min_order_qty as number) ?? null,
@@ -841,9 +871,14 @@ export default async function NewProductPage({
         title={config.title}
         subtitle={config.subtitle}
         actions={
-          <Link href="/inventory/catalog" className="ui-btn ui-btn--ghost">
-            Volver al catalogo
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href={`/inventory/ai-ingestions?flow=catalog_create`} className="ui-btn ui-btn--brand">
+              Cargar con IA
+            </Link>
+            <Link href="/inventory/catalog" className="ui-btn ui-btn--ghost">
+              Volver al catalogo
+            </Link>
+          </div>
         }
       />
 

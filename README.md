@@ -16,6 +16,20 @@ bun dev
 
 Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
+## Inventory AI (NEXO)
+
+Set these env vars in `.env.local`:
+
+```bash
+OPENAI_API_KEY=...
+OPENAI_INVENTORY_MODEL=gpt-4.1-mini
+```
+
+After running Supabase migrations, use:
+
+- `/inventory/ai-ingestions?flow=catalog_create` for product creation copilot.
+- `/inventory/ai-ingestions?flow=supplier_entries` for supplier entries copilot.
+
 You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.

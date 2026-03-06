@@ -145,6 +145,9 @@ type SupplierRow = {
   purchase_pack_qty: number | null;
   purchase_pack_unit_code: string | null;
   purchase_price: number | null;
+  purchase_price_net: number | null;
+  purchase_price_includes_tax: boolean | null;
+  purchase_tax_rate: number | null;
   currency: string | null;
   lead_time_days: number | null;
   min_order_qty: number | null;
@@ -183,6 +186,22 @@ function asNullableNumber(value: FormDataEntryValue | null): number | null {
   if (!raw) return null;
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function resolveNetPurchasePrice(params: {
+  purchasePrice: number | null;
+  purchasePriceIncludesTax: boolean;
+  purchaseTaxRate: number;
+}): number | null {
+  const gross = Number(params.purchasePrice ?? 0);
+  if (!Number.isFinite(gross) || gross <= 0) return null;
+  if (!params.purchasePriceIncludesTax) return gross;
+  const safeTaxRate = Number.isFinite(params.purchaseTaxRate) && params.purchaseTaxRate >= 0
+    ? params.purchaseTaxRate
+    : 0;
+  const divisor = 1 + safeTaxRate / 100;
+  if (!Number.isFinite(divisor) || divisor <= 0) return gross;
+  return gross / divisor;
 }
 
 type CatalogTab = "insumos" | "preparaciones" | "productos" | "equipos";
@@ -565,6 +584,9 @@ async function updateProduct(formData: FormData) {
       purchase_pack_qty?: number;
       purchase_pack_unit_code?: string;
       purchase_price?: number;
+      purchase_price_net?: number;
+      purchase_price_includes_tax?: boolean;
+      purchase_tax_rate?: number;
       currency?: string;
       lead_time_days?: number;
       min_order_qty?: number;
@@ -599,17 +621,28 @@ async function updateProduct(formData: FormData) {
         }
       }
       const purchasePrice = Number(line.purchase_price ?? 0) || null;
+      const purchasePriceIncludesTax = Boolean(line.purchase_price_includes_tax);
+      const purchaseTaxRateRaw = Number(line.purchase_tax_rate ?? 0);
+      const purchaseTaxRate =
+        Number.isFinite(purchaseTaxRateRaw) && purchaseTaxRateRaw >= 0
+          ? purchaseTaxRateRaw
+          : 0;
+      const purchasePriceNet = resolveNetPurchasePrice({
+        purchasePrice,
+        purchasePriceIncludesTax,
+        purchaseTaxRate,
+      });
       if (
         costingMode === "auto_primary_supplier" &&
         Boolean(line.is_primary) &&
-        purchasePrice != null &&
-        purchasePrice > 0 &&
+        purchasePriceNet != null &&
+        purchasePriceNet > 0 &&
         packQty > 0 &&
         packUnitCode
       ) {
         try {
           autoCostFromPrimary = computeAutoCostFromPrimarySupplier({
-            packPrice: purchasePrice,
+            packPrice: purchasePriceNet,
             packQty,
             packUnitCode,
             stockUnitCode,
@@ -656,6 +689,9 @@ async function updateProduct(formData: FormData) {
         purchase_pack_qty: packQty > 0 ? packQty : null,
         purchase_pack_unit_code: packUnitCode || null,
         purchase_price: purchasePrice,
+        purchase_price_net: purchasePriceNet,
+        purchase_price_includes_tax: purchasePriceIncludesTax,
+        purchase_tax_rate: purchaseTaxRate,
         currency: line.currency || "COP",
         lead_time_days: line.lead_time_days ?? null,
         min_order_qty: line.min_order_qty ?? null,
@@ -953,7 +989,7 @@ export default async function ProductCatalogDetailPage({
 
   const { data: supplierLinks } = await supabase
     .from("product_suppliers")
-    .select("id,supplier_id,supplier_sku,purchase_unit,purchase_unit_size,purchase_pack_qty,purchase_pack_unit_code,purchase_price,currency,lead_time_days,min_order_qty,is_primary")
+    .select("id,supplier_id,supplier_sku,purchase_unit,purchase_unit_size,purchase_pack_qty,purchase_pack_unit_code,purchase_price,purchase_price_net,purchase_price_includes_tax,purchase_tax_rate,currency,lead_time_days,min_order_qty,is_primary")
     .eq("product_id", id)
     .order("is_primary", { ascending: false });
   const supplierRows = (supplierLinks ?? []) as SupplierRow[];
@@ -1077,6 +1113,9 @@ export default async function ProductCatalogDetailPage({
     purchase_pack_qty: r.purchase_pack_qty ?? r.purchase_unit_size ?? undefined,
     purchase_pack_unit_code: r.purchase_pack_unit_code ?? stockUnitCode,
     purchase_price: r.purchase_price ?? undefined,
+    purchase_price_net: r.purchase_price_net ?? undefined,
+    purchase_price_includes_tax: Boolean(r.purchase_price_includes_tax),
+    purchase_tax_rate: r.purchase_tax_rate ?? undefined,
     currency: r.currency ?? "COP",
     lead_time_days: r.lead_time_days ?? undefined,
     min_order_qty: r.min_order_qty ?? undefined,
@@ -1094,9 +1133,14 @@ export default async function ProductCatalogDetailPage({
         title={productRow.name ?? "Ficha maestra"}
         subtitle="Catalogo del insumo o producto: compra, almacenamiento y distribucion."
         actions={
-          <Link href={from || "/inventory/catalog"} className="ui-btn ui-btn--ghost">
-            Volver al catalogo
-          </Link>
+          <div className="flex items-center gap-2">
+            <Link href="/inventory/ai-ingestions?flow=catalog_create" className="ui-btn ui-btn--brand">
+              IA productos
+            </Link>
+            <Link href={from || "/inventory/catalog"} className="ui-btn ui-btn--ghost">
+              Volver al catalogo
+            </Link>
+          </div>
         }
       />
 

@@ -7,7 +7,7 @@ import { PageHeader } from "@/components/vento/standard/page-header";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { getCategoryDomainOptions } from "@/lib/constants";
-import { getAutoCostReadinessReason } from "@/lib/inventory/costing";
+import { getAutoCostReadinessReason, resolveNetSupplierPackPrice } from "@/lib/inventory/costing";
 import { createClient } from "@/lib/supabase/server";
 import { safeDecodeURIComponent } from "@/lib/url";
 import {
@@ -84,6 +84,9 @@ type ProductSupplierCostRow = {
   purchase_pack_unit_code: string | null;
   purchase_unit: string | null;
   purchase_price: number | null;
+  purchase_price_net: number | null;
+  purchase_price_includes_tax: boolean | null;
+  purchase_tax_rate: number | null;
 };
 
 type ProductSiteSettingRow = {
@@ -506,7 +509,7 @@ export default async function InventoryCatalogPage({
       ? supabase
           .from("product_suppliers")
           .select(
-            "product_id,supplier_id,is_primary,purchase_pack_qty,purchase_pack_unit_code,purchase_unit,purchase_price"
+            "product_id,supplier_id,is_primary,purchase_pack_qty,purchase_pack_unit_code,purchase_unit,purchase_price,purchase_price_net,purchase_price_includes_tax,purchase_tax_rate"
           )
           .in("product_id", productIds)
       : Promise.resolve({ data: [] as ProductSupplierCostRow[] }),
@@ -677,7 +680,13 @@ export default async function InventoryCatalogPage({
 
     const suggestedPurchaseQtyRaw = stockMetrics.missingQty / qtyInStockPerPurchaseUnit;
     const suggestedPurchaseQty = Math.max(0.001, Math.round(suggestedPurchaseQtyRaw * 1000) / 1000);
-    const unitCost = asFiniteNumber(supplier.purchase_price) ?? 0;
+    const unitCost =
+      resolveNetSupplierPackPrice({
+        purchasePrice: supplier.purchase_price,
+        purchasePriceNet: supplier.purchase_price_net,
+        purchasePriceIncludesTax: supplier.purchase_price_includes_tax,
+        purchaseTaxRate: supplier.purchase_tax_rate,
+      }) ?? 0;
 
     const currentGroup = lowStockPurchaseGroups.get(supplier.supplier_id) ?? {
       supplierId: supplier.supplier_id,

@@ -11,6 +11,9 @@ export type SupplierLine = {
   purchase_pack_qty?: number;
   purchase_pack_unit_code?: string;
   purchase_price?: number;
+  purchase_price_net?: number;
+  purchase_price_includes_tax?: boolean;
+  purchase_tax_rate?: number;
   currency?: string;
   lead_time_days?: number;
   min_order_qty?: number;
@@ -52,6 +55,9 @@ function buildEmptyLine(stockUnitCode?: string): SupplierLine {
     purchase_pack_qty: undefined,
     purchase_pack_unit_code: normalizedStockUnitCode || "",
     purchase_price: undefined,
+    purchase_price_net: undefined,
+    purchase_price_includes_tax: false,
+    purchase_tax_rate: 19,
     currency: "COP",
     lead_time_days: undefined,
     min_order_qty: undefined,
@@ -222,13 +228,22 @@ export function ProductSuppliersEditor({
             const packUnit = packUnitCode ? unitsByCode.get(packUnitCode) ?? null : null;
             const packQty = Number(line.purchase_pack_qty ?? 0);
             const price = Number(line.purchase_price ?? 0);
+            const includesTax = Boolean(line.purchase_price_includes_tax);
+            const taxRateRaw = Number(line.purchase_tax_rate ?? 0);
+            const taxRate = Number.isFinite(taxRateRaw) && taxRateRaw >= 0 ? taxRateRaw : 0;
+            const netPackPrice =
+              price > 0
+                ? includesTax
+                  ? price / (1 + taxRate / 100)
+                  : price
+                : 0;
             const packLabel = line.purchase_unit?.trim() || "empaque";
             const currency = line.currency?.trim() || "COP";
             const hasPurchaseData =
               Boolean(line.supplier_id) &&
               Boolean(line.purchase_unit?.trim()) &&
               packQty > 0 &&
-              price > 0;
+              netPackPrice > 0;
 
             const isFamilyCompatible =
               Boolean(stockUnit) &&
@@ -248,7 +263,7 @@ export function ProductSuppliersEditor({
                 : null;
 
             const costPerStockUnit =
-              stockQty && stockQty > 0 && Number.isFinite(price) ? price / stockQty : null;
+              stockQty && stockQty > 0 && Number.isFinite(netPackPrice) ? netPackPrice / stockQty : null;
 
             const packUnitOptions = stockUnit
               ? units.filter(
@@ -428,6 +443,43 @@ export function ProductSuppliersEditor({
                     <span className="text-xs text-[var(--ui-muted)]">
                       Precio del empaque completo (no por unidad base).
                     </span>
+                    <label className="mt-1 flex items-center gap-2 text-xs text-[var(--ui-muted)]">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(line.purchase_price_includes_tax)}
+                        onChange={(event) =>
+                          updateLine(realIndex, {
+                            purchase_price_includes_tax: event.target.checked,
+                          })
+                        }
+                      />
+                      Incluye IVA
+                    </label>
+                    {Boolean(line.purchase_price_includes_tax) ? (
+                      <label className="flex items-center gap-2 text-xs text-[var(--ui-muted)]">
+                        <span>% IVA</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min={0}
+                          max={100}
+                          value={line.purchase_tax_rate ?? 19}
+                          onChange={(event) =>
+                            updateLine(realIndex, {
+                              purchase_tax_rate: event.target.value
+                                ? Number(event.target.value)
+                                : undefined,
+                            })
+                          }
+                          className="ui-input h-9 w-28"
+                        />
+                      </label>
+                    ) : null}
+                    {price > 0 ? (
+                      <span className="text-xs text-[var(--ui-muted)]">
+                        Neto sin IVA: {formatMoney(netPackPrice, currency)}
+                      </span>
+                    ) : null}
                   </label>
                 </div>
 

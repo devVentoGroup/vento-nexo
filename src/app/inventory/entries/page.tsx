@@ -1,5 +1,6 @@
 ﻿import { redirect } from "next/navigation";
 
+import Link from "next/link";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { EntriesForm } from "@/components/vento/entries-form";
@@ -17,6 +18,7 @@ import {
 import {
   computeAutoCostFromPrimarySupplier,
   computeStockUnitCostFromInput,
+  resolveNetSupplierPackPrice,
   computeWeightedAverageCost,
 } from "@/lib/inventory/costing";
 
@@ -68,6 +70,9 @@ type ProductSupplierCostRow = {
   purchase_pack_qty: number | null;
   purchase_pack_unit_code: string | null;
   purchase_price: number | null;
+  purchase_price_net: number | null;
+  purchase_price_includes_tax: boolean | null;
+  purchase_tax_rate: number | null;
 };
 
 type PurchaseOrderRow = {
@@ -205,7 +210,7 @@ async function createEntry(formData: FormData) {
     ? await supabase
         .from("product_suppliers")
         .select(
-          "product_id,supplier_id,is_primary,purchase_pack_qty,purchase_pack_unit_code,purchase_price"
+          "product_id,supplier_id,is_primary,purchase_pack_qty,purchase_pack_unit_code,purchase_price,purchase_price_net,purchase_price_includes_tax,purchase_tax_rate"
         )
         .in("product_id", productIdsForLookup)
     : { data: [] as ProductSupplierCostRow[] };
@@ -230,7 +235,13 @@ async function createEntry(formData: FormData) {
 
     const isValid = (row: ProductSupplierCostRow) => {
       const packQty = Number(row.purchase_pack_qty ?? 0);
-      const packPrice = Number(row.purchase_price ?? 0);
+      const packPrice =
+        resolveNetSupplierPackPrice({
+          purchasePrice: row.purchase_price,
+          purchasePriceNet: row.purchase_price_net,
+          purchasePriceIncludesTax: row.purchase_price_includes_tax,
+          purchaseTaxRate: row.purchase_tax_rate,
+        }) ?? 0;
       return (
         Boolean(normalizeUnitCode(row.purchase_pack_unit_code)) &&
         Number.isFinite(packQty) &&
@@ -253,7 +264,13 @@ async function createEntry(formData: FormData) {
 
     try {
       return computeAutoCostFromPrimarySupplier({
-        packPrice: Number(chosenRow.purchase_price ?? 0),
+        packPrice:
+          resolveNetSupplierPackPrice({
+            purchasePrice: chosenRow.purchase_price,
+            purchasePriceNet: chosenRow.purchase_price_net,
+            purchasePriceIncludesTax: chosenRow.purchase_price_includes_tax,
+            purchaseTaxRate: chosenRow.purchase_tax_rate,
+          }) ?? 0,
         packQty: Number(chosenRow.purchase_pack_qty ?? 0),
         packUnitCode: normalizeUnitCode(chosenRow.purchase_pack_unit_code),
         stockUnitCode: normalizeUnitCode(stockUnitCode),
@@ -730,7 +747,7 @@ export default async function EntriesPage({
     ? await supabase
         .from("product_suppliers")
         .select(
-          "product_id,supplier_id,is_primary,purchase_pack_qty,purchase_pack_unit_code,purchase_price"
+          "product_id,supplier_id,is_primary,purchase_pack_qty,purchase_pack_unit_code,purchase_price,purchase_price_net,purchase_price_includes_tax,purchase_tax_rate"
         )
         .in("product_id", productIds)
     : { data: [] as ProductSupplierCostRow[] };
@@ -860,6 +877,11 @@ export default async function EntriesPage({
       <PageHeader
         title="Entrada de emergencia"
         subtitle="Uso excepcional en NEXO. La recepcion operativa normal se realiza en ORIGO."
+        actions={
+          <Link href="/inventory/ai-ingestions?flow=supplier_entries" className="ui-btn ui-btn--brand">
+            Importar factura con IA
+          </Link>
+        }
       />
 
       {errorMsg ? (

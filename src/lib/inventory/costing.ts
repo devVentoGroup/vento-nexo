@@ -10,6 +10,9 @@ export type AutoCostPrimarySupplierInput = {
   purchase_pack_qty?: number | null;
   purchase_pack_unit_code?: string | null;
   purchase_price?: number | null;
+  purchase_price_net?: number | null;
+  purchase_price_includes_tax?: boolean | null;
+  purchase_tax_rate?: number | null;
 };
 
 export type AutoCostReadinessInput = {
@@ -61,6 +64,30 @@ export function computeAutoCostFromPrimarySupplier(params: {
   });
 }
 
+export function resolveNetSupplierPackPrice(params: {
+  purchasePrice?: number | null;
+  purchasePriceNet?: number | null;
+  purchasePriceIncludesTax?: boolean | null;
+  purchaseTaxRate?: number | null;
+}): number | null {
+  const explicitNet = Number(params.purchasePriceNet ?? 0);
+  if (Number.isFinite(explicitNet) && explicitNet > 0) {
+    return roundQuantity(explicitNet, 6);
+  }
+
+  const gross = Number(params.purchasePrice ?? 0);
+  if (!Number.isFinite(gross) || gross <= 0) return null;
+
+  const includesTax = Boolean(params.purchasePriceIncludesTax);
+  if (!includesTax) return roundQuantity(gross, 6);
+
+  const taxRate = Number(params.purchaseTaxRate ?? 0);
+  const safeTaxRate = Number.isFinite(taxRate) && taxRate > 0 ? taxRate : 0;
+  const divisor = 1 + safeTaxRate / 100;
+  if (!Number.isFinite(divisor) || divisor <= 0) return roundQuantity(gross, 6);
+  return roundQuantity(gross / divisor, 6);
+}
+
 export function computeStockUnitCostFromInput(params: {
   inputUnitCost: number;
   conversionFactorToStock: number;
@@ -91,7 +118,13 @@ export function getAutoCostReadinessReason(params: AutoCostReadinessInput): stri
     return "Falta unidad de compra del proveedor primario.";
   }
 
-  const packPrice = Number(supplier.purchase_price ?? 0);
+  const packPrice =
+    resolveNetSupplierPackPrice({
+      purchasePrice: supplier.purchase_price,
+      purchasePriceNet: supplier.purchase_price_net,
+      purchasePriceIncludesTax: supplier.purchase_price_includes_tax,
+      purchaseTaxRate: supplier.purchase_tax_rate,
+    }) ?? 0;
   if (!Number.isFinite(packPrice) || packPrice <= 0) {
     return "Falta precio de compra del proveedor primario.";
   }

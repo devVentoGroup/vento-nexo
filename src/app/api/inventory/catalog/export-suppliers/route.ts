@@ -25,6 +25,9 @@ type ProductSupplierRow = {
   purchase_pack_unit_code: string | null;
   purchase_unit: string | null;
   purchase_price: number | null;
+  purchase_price_net: number | null;
+  purchase_price_includes_tax: boolean | null;
+  purchase_tax_rate: number | null;
   currency: string | null;
 };
 
@@ -87,7 +90,7 @@ export async function GET() {
       ? await supabase
           .from("product_suppliers")
           .select(
-            "product_id,supplier_id,is_primary,purchase_pack_qty,purchase_pack_unit_code,purchase_unit,purchase_price,currency"
+            "product_id,supplier_id,is_primary,purchase_pack_qty,purchase_pack_unit_code,purchase_unit,purchase_price,purchase_price_net,purchase_price_includes_tax,purchase_tax_rate,currency"
           )
           .in("product_id", productIds)
       : { data: [] as ProductSupplierRow[], error: null };
@@ -121,6 +124,9 @@ export async function GET() {
     "Proveedor",
     "Proveedor primario",
     "Precio compra",
+    "Precio neto (sin IVA)",
+    "Precio incluye IVA",
+    "% IVA",
     "Moneda",
     "Presentacion compra (cantidad)",
     "Presentacion compra (unidad)",
@@ -176,6 +182,9 @@ export async function GET() {
           escapeCsv(supplierName),
           escapeCsv(supplierRow.is_primary ? "Si" : "No"),
           String(supplierRow.purchase_price ?? ""),
+          String(supplierRow.purchase_price_net ?? ""),
+          escapeCsv(supplierRow.purchase_price_includes_tax ? "Si" : "No"),
+          String(supplierRow.purchase_tax_rate ?? ""),
           escapeCsv(supplierRow.currency ?? ""),
           String(supplierRow.purchase_pack_qty ?? ""),
           escapeCsv(supplierRow.purchase_pack_unit_code ?? ""),
