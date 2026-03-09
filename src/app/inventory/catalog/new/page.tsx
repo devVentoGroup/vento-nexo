@@ -175,7 +175,7 @@ function resolveTypeCategoryKind(typeKey: ProductTypeKey): CategoryKind {
 const TYPE_CONFIG = {
   insumo: {
     title: "Nuevo insumo",
-    subtitle: "Materia prima: se compra a proveedores y se consume en produccion (recetas en FOGO).",
+    subtitle: "Materia prima operativa para stock, entradas, remisiones y consumo manual.",
     productType: "insumo",
     inventoryKind: "ingredient",
     hasSuppliers: true,
@@ -195,7 +195,7 @@ const TYPE_CONFIG = {
   },
   venta: {
     title: "Nuevo producto de venta",
-    subtitle: "Producto final que se vende al cliente. La receta y produccion se gestionan en FOGO.",
+    subtitle: "Producto final de venta. La configuracion avanzada queda fuera del arranque v1.",
     productType: "venta",
     inventoryKind: "finished",
     hasSuppliers: false,
@@ -230,6 +230,8 @@ type ProductTypeKey = keyof typeof TYPE_CONFIG;
 const FOGO_BASE_URL =
   process.env.NEXT_PUBLIC_FOGO_URL?.replace(/\/$/, "") ||
   "https://fogo.ventogroup.co";
+
+const QUICK_MODE_TYPES = new Set<ProductTypeKey>(["insumo", "reventa", "asset"]);
 
 function buildFogoRecipeCreateUrl(typeKey: ProductTypeKey) {
   const url = new URL("/recipes/new", FOGO_BASE_URL);
@@ -767,6 +769,7 @@ export default async function NewProductPage({
 }: {
   searchParams?: Promise<{
     type?: string;
+    mode?: string;
     error?: string;
     category_scope?: string;
     category_site_id?: string;
@@ -777,6 +780,7 @@ export default async function NewProductPage({
   const typeKey = (sp.type ?? "insumo") as ProductTypeKey;
   const config = TYPE_CONFIG[typeKey] ?? TYPE_CONFIG.insumo;
   const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
+  const isQuickMode = sp.mode === "quick" && QUICK_MODE_TYPES.has(typeKey);
 
   const { supabase, user } = await requireAppAccess({
     appId: "nexo",
@@ -869,9 +873,22 @@ export default async function NewProductPage({
     <div className="w-full max-w-6xl space-y-8">
       <PageHeader
         title={config.title}
-        subtitle={config.subtitle}
+        subtitle={
+          isQuickMode
+            ? "Alta rapida v1: deja el producto listo para stock, sedes y remisiones sin completar campos avanzados."
+            : config.subtitle
+        }
         actions={
           <div className="flex items-center gap-2">
+            {isQuickMode ? (
+              <Link href={`/inventory/catalog/new?type=${typeKey}`} className="ui-btn ui-btn--ghost">
+                Ver formulario completo
+              </Link>
+            ) : QUICK_MODE_TYPES.has(typeKey) ? (
+              <Link href={`/inventory/catalog/new?type=${typeKey}&mode=quick`} className="ui-btn ui-btn--ghost">
+                Modo rapido v1
+              </Link>
+            ) : null}
             <Link href={`/inventory/ai-ingestions?flow=catalog_create`} className="ui-btn ui-btn--brand">
               Cargar con IA
             </Link>
@@ -884,44 +901,50 @@ export default async function NewProductPage({
 
       {errorMsg && <div className="ui-alert ui-alert--error">Error: {errorMsg}</div>}
 
-      <form method="get" className="ui-panel grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <input type="hidden" name="type" value={typeKey} />
-        <label className="flex flex-col gap-1">
-          <span className="ui-label">Alcance de categoria</span>
-          <select name="category_scope" defaultValue={categoryScope} className="ui-input">
-            <option value="all">Todas</option>
-            <option value="global">Globales</option>
-            <option value="site">Sede activa</option>
-          </select>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="ui-label">Sede para categorias</span>
-          <select name="category_site_id" defaultValue={categorySiteId} className="ui-input">
-            <option value="">Seleccionar sede</option>
-            {sitesList.map((site) => (
-              <option key={site.id} value={site.id}>
-                {site.name ?? site.id}
-              </option>
-            ))}
-          </select>
-        </label>
-        {shouldShowCategoryDomain(categoryKind) ? (
+      {isQuickMode ? (
+        <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
+          Usa este modo para cargar maestros criticos de v1. Si necesitas proveedores detallados, fotos, recetas o configuracion avanzada, cambia al formulario completo.
+        </div>
+      ) : (
+        <form method="get" className="ui-panel grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <input type="hidden" name="type" value={typeKey} />
           <label className="flex flex-col gap-1">
-            <span className="ui-label">Dominio de venta</span>
-            <select name="category_domain" defaultValue={categoryDomain} className="ui-input">
-              <option value="">Todos</option>
-              {categoryDomainOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
+            <span className="ui-label">Alcance de categoria</span>
+            <select name="category_scope" defaultValue={categoryScope} className="ui-input">
+              <option value="all">Todas</option>
+              <option value="global">Globales</option>
+              <option value="site">Sede activa</option>
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="ui-label">Sede para categorias</span>
+            <select name="category_site_id" defaultValue={categorySiteId} className="ui-input">
+              <option value="">Seleccionar sede</option>
+              {sitesList.map((site) => (
+                <option key={site.id} value={site.id}>
+                  {site.name ?? site.id}
                 </option>
               ))}
             </select>
           </label>
-        ) : null}
-        <div className="flex items-end">
-          <button className="ui-btn ui-btn--ghost">Actualizar categorias</button>
-        </div>
-      </form>
+          {shouldShowCategoryDomain(categoryKind) ? (
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Dominio de venta</span>
+              <select name="category_domain" defaultValue={categoryDomain} className="ui-input">
+                <option value="">Todos</option>
+                {categoryDomainOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
+          <div className="flex items-end">
+            <button className="ui-btn ui-btn--ghost">Actualizar categorias</button>
+          </div>
+        </form>
+      )}
 
       <form action={createProduct} className="space-y-8">
         <input type="hidden" name="_type_key" value={typeKey} />
@@ -935,7 +958,9 @@ export default async function NewProductPage({
             <div>
               <h2 className="ui-h3">Datos basicos</h2>
               <p className="text-sm text-[var(--ui-muted)]">
-                Nombre, codigo y clasificacion. Las unidades se definen en la seccion de almacenamiento.
+                {isQuickMode
+                  ? "Solo lo minimo para operar en v1: nombre, clasificacion y unidad base."
+                  : "Nombre, codigo y clasificacion. Las unidades se definen en la seccion de almacenamiento."}
               </p>
             </div>
           </div>
@@ -1067,7 +1092,7 @@ export default async function NewProductPage({
                 ) : (
                   <>
                     <input type="hidden" name="costing_mode" value="manual" />
-                    <div className="ui-input flex items-center">Auto por receta/lote (FOGO)</div>
+                    <div className="ui-input flex items-center">Manual / externo (fuera de v1)</div>
                   </>
                 )}
               </label>
@@ -1112,7 +1137,7 @@ export default async function NewProductPage({
           </section>
         ) : null}
 
-        {config.hasSuppliers && (
+        {config.hasSuppliers && !isQuickMode && (
           <section className="ui-panel space-y-6">
             <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">
@@ -1142,8 +1167,14 @@ export default async function NewProductPage({
           </section>
         )}
 
-        {/* Receta se gestiona en FOGO */}
-        {config.hasRecipe && (
+        {config.hasSuppliers && isQuickMode ? (
+          <section className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
+            Proveedor y costos detallados quedan opcionales en v1. Puedes completar esa informacion despues desde la ficha del producto o por carga asistida.
+          </section>
+        ) : null}
+
+        {/* Receta se gestiona fuera de v1 */}
+        {config.hasRecipe && !isQuickMode && (
           <section className="ui-panel space-y-6">
             <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
               <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">
@@ -1152,14 +1183,14 @@ export default async function NewProductPage({
               <div>
                 <h2 className="ui-h3">Receta y produccion</h2>
                 <p className="text-sm text-[var(--ui-muted)]">
-                  Desde este corte, la receta se crea y mantiene en FOGO.
+                  Esta configuracion queda fuera del flujo operativo v1.
                 </p>
               </div>
             </div>
             <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
               <p>
                 Crea primero este producto en NEXO para definir inventario y sedes.
-                Luego completa BOM, pasos y medios en FOGO.
+                Si luego activas FOGO, completa BOM, pasos y medios desde alla.
               </p>
               <a
                 href={buildFogoRecipeCreateUrl(typeKey)}
@@ -1167,12 +1198,13 @@ export default async function NewProductPage({
                 rel="noopener noreferrer"
                 className="mt-3 inline-flex ui-btn ui-btn--ghost"
               >
-                Gestionar receta en FOGO
+                Abrir continuidad externa
               </a>
             </div>
           </section>
         )}
 
+        {!isQuickMode ? (
         <section className="ui-panel space-y-6">
           <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">
@@ -1198,6 +1230,7 @@ export default async function NewProductPage({
             Si no subes fotos ahora, puedes cargarlas despues desde la ficha de edicion.
           </div>
         </section>
+        ) : null}
 
         {/* Paso final: Disponibilidad por sede */}
         <section className="ui-panel space-y-6">
@@ -1226,15 +1259,17 @@ export default async function NewProductPage({
 
         <section className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)] space-y-2">
           <p className="font-semibold text-[var(--ui-text)]">Checklist rapido antes de guardar</p>
-          <p>1) Unidad base definida (donde vive stock, costo y recetas).</p>
+          <p>1) Unidad base definida (donde vive stock y conteo en v1).</p>
           <p>
             2){" "}
             {config.hasSuppliers
-              ? "Proveedor principal completo (empaque, cantidad, unidad y precio)."
+              ? isQuickMode
+                ? "Proveedor puede quedar pendiente en v1 si solo necesitas salir a operar."
+                : "Proveedor principal completo (empaque, cantidad, unidad y precio)."
               : "Clasificacion y categoria revisadas para este tipo de item."}
           </p>
           <p>3) Sedes configuradas (disponible, area por defecto y uso en sede).</p>
-          <p>4) Si aplica, completa la receta en FOGO despues de crear el producto.</p>
+          <p>4) Si aplica, completa recetas, fotos o costos avanzados despues del arranque.</p>
         </section>
 
         {/* Accion final */}

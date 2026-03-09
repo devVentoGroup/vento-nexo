@@ -1266,13 +1266,13 @@ export default async function ProductCatalogDetailPage({
                 <div>
                   <h2 className="ui-h3">Receta y produccion</h2>
                   <p className="text-sm text-[var(--ui-muted)]">
-                    Desde ahora, BOM, pasos y medios se gestionan solo en FOGO.
+                    Esta configuracion queda fuera del flujo operativo v1.
                   </p>
                 </div>
               </div>
               <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)] space-y-2">
                 <p>
-                  NEXO mantiene inventario, sedes y logistica. La configuracion de receta se edita en FOGO.
+                  NEXO mantiene inventario, sedes y logistica. Si luego activas produccion externa, la configuracion de receta se completa fuera de NEXO.
                 </p>
                 <a
                   href={buildFogoRecipeUrl(productRow.id)}
@@ -1280,7 +1280,7 @@ export default async function ProductCatalogDetailPage({
                   rel="noopener noreferrer"
                   className="inline-flex ui-btn ui-btn--ghost"
                 >
-                  Gestionar receta en FOGO
+                  Abrir continuidad externa
                 </a>
               </div>
             </section>
@@ -1403,7 +1403,7 @@ export default async function ProductCatalogDetailPage({
                 ) : (
                   <>
                     <input type="hidden" name="costing_mode" value="manual" />
-                    <div className="ui-input flex items-center">Auto por receta/lote (FOGO)</div>
+                    <div className="ui-input flex items-center">Manual / externo (fuera de v1)</div>
                   </>
                 )}
               </label>
@@ -1418,8 +1418,8 @@ export default async function ProductCatalogDetailPage({
                         : "Incompleto"
                     : hasRecipe
                       ? hasComputedCost
-                        ? "Listo (FOGO)"
-                        : "Pendiente (FOGO)"
+                        ? "Listo (externo)"
+                        : "Pendiente (fuera de v1)"
                       : "Manual"}
                 </p>
                 <p className="mt-1">

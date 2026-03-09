@@ -789,28 +789,35 @@ export default async function InventoryCatalogPage({
               <Link href="/inventory/catalog/new?type=venta" className="ui-btn ui-btn--brand ui-btn--sm">
                 + Producto de venta
               </Link>
-              <Link href="/inventory/catalog/new?type=reventa" className="ui-btn ui-btn--ghost ui-btn--sm">
-                + Producto de reventa
+              <Link href="/inventory/catalog/new?type=reventa&mode=quick" className="ui-btn ui-btn--ghost ui-btn--sm">
+                + Reventa rapido v1
               </Link>
             </>
           ) : (
-            <Link
-              href={`/inventory/catalog/new?type=${
-                activeTab === "insumos"
-                  ? "insumo"
+            <>
+              <Link
+                href={`/inventory/catalog/new?type=${
+                  activeTab === "insumos"
+                    ? "insumo"
+                    : activeTab === "preparaciones"
+                      ? "preparacion"
+                      : "asset"
+                }${activeTab === "insumos" || activeTab === "equipos" ? "&mode=quick" : ""}`}
+                className="ui-btn ui-btn--brand ui-btn--sm"
+              >
+                + Crear{" "}
+                {activeTab === "insumos"
+                  ? "insumo rapido"
                   : activeTab === "preparaciones"
                     ? "preparacion"
-                    : "asset"
-              }`}
-              className="ui-btn ui-btn--brand ui-btn--sm"
-            >
-              + Crear{" "}
-              {activeTab === "insumos"
-                ? "insumo"
-                : activeTab === "preparaciones"
-                  ? "preparacion"
-                  : "equipo"}
-            </Link>
+                    : "equipo rapido"}
+              </Link>
+              {activeTab === "insumos" ? (
+                <Link href="/inventory/ai-ingestions?flow=catalog_create" className="ui-btn ui-btn--ghost ui-btn--sm">
+                  Alta asistida IA
+                </Link>
+              ) : null}
+            </>
           )}
         </div>
       </div>
@@ -873,7 +880,7 @@ export default async function InventoryCatalogPage({
                 <span className="ui-label">Vista</span>
                 <select name="view_mode" defaultValue={viewMode} className="ui-input">
                   <option value="catalogo">Catalogo</option>
-                  <option value="compras">Compras (ejecutiva)</option>
+                  <option value="compras">Compras (continuidad v2)</option>
                 </select>
               </label>
 
@@ -956,10 +963,10 @@ export default async function InventoryCatalogPage({
               <summary className="flex cursor-pointer items-center justify-between gap-3">
                 <div>
                   <div className="text-sm font-semibold text-[var(--ui-text)]">
-                    Ordenes sugeridas por proveedor (bajo minimo)
+                    Ordenes sugeridas por proveedor (continuidad v2)
                   </div>
                   <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                    Se arma una OC por proveedor primario usando faltante de la sede activa.
+                    Referencia futura para ORIGO. No bloquea la operacion v1.
                   </div>
                 </div>
                 <span className="ui-chip">{lowStockPurchaseGroupRows.length} proveedor(es)</span>
@@ -984,7 +991,7 @@ export default async function InventoryCatalogPage({
                             </div>
                           </div>
                           <Link href={group.href} className="ui-btn ui-btn--brand ui-btn--sm">
-                            Crear OC en Origo
+                            Continuar en ORIGO
                           </Link>
                         </div>
                       ))}
@@ -1113,9 +1120,9 @@ export default async function InventoryCatalogPage({
                         <td className="py-2.5 pr-4">
                           {usesRecipeAutoCost ? (
                             hasComputedCost ? (
-                              <span className="ui-chip ui-chip--success">Listo (FOGO)</span>
+                              <span className="ui-chip ui-chip--success">Listo (externo)</span>
                             ) : (
-                              <span className="ui-chip ui-chip--warn">Pendiente (FOGO)</span>
+                              <span className="ui-chip ui-chip--warn">Pendiente (fuera de v1)</span>
                             )
                           ) : autoCostMode === "manual" ? (
                             <span className="ui-chip">Manual</span>
@@ -1168,7 +1175,7 @@ export default async function InventoryCatalogPage({
                         ) : null}
                         {viewMode === "compras" && rowOrigoHref ? (
                           <Link href={rowOrigoHref} className="ui-btn ui-btn--brand ui-btn--sm min-w-[120px] justify-center">
-                            OC proveedor
+                            ORIGO
                           </Link>
                         ) : null}
                       </div>

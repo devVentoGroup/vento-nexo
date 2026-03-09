@@ -17,6 +17,7 @@ const PERMISSIONS = {
   remissionsRequest: "inventory.remissions.request",
   remissionsPrepare: "inventory.remissions.prepare",
   remissionsReceive: "inventory.remissions.receive",
+  entriesEmergency: "inventory.entries_emergency",
   locations: "inventory.locations",
   movements: "inventory.movements",
   stock: "inventory.stock",
@@ -309,6 +310,7 @@ export default async function Home({
   let canRequestPermission = false;
   let canPreparePermission = false;
   let canReceivePermission = false;
+  let canEntriesEmergencyPermission = false;
   let canMovementsPermission = false;
   let canStockPermission = false;
   let canLocationsPermission = false;
@@ -319,6 +321,7 @@ export default async function Home({
       canRequestPermission,
       canPreparePermission,
       canReceivePermission,
+      canEntriesEmergencyPermission,
       canMovementsPermission,
       canStockPermission,
       canLocationsPermission,
@@ -348,6 +351,13 @@ export default async function Home({
         supabase,
         appId: APP_ID,
         code: PERMISSIONS.remissionsReceive,
+        context: { siteId: activeSiteId },
+        actualRole: role,
+      }),
+      checkPermissionWithRoleOverride({
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.entriesEmergency,
         context: { siteId: activeSiteId },
         actualRole: role,
       }),
@@ -386,6 +396,7 @@ export default async function Home({
   const canRequestRemission = isSatellite && canRequestPermission;
   const canPrepareRemission = isProductionCenter && canPreparePermission;
   const canReceiveRemission = isSatellite && canReceivePermission;
+  const canCreateEntries = isProductionCenter && canEntriesEmergencyPermission;
   const canViewStock = canStockPermission;
   const canManageLocations = isProductionCenter && canLocationsPermission;
 
@@ -420,11 +431,21 @@ export default async function Home({
       id: "prepare-remissions",
       title: "Preparar remisiones",
       description: "Gestiona picking y despacho para sedes satélite.",
-      href: "/inventory/remissions",
+      href: "/inventory/remissions/prepare",
       cta: "Preparar",
       tone: "primary",
       visible: canPrepareRemission,
       icon: "package",
+    },
+    {
+      id: "entries",
+      title: "Cargar stock manual v1",
+      description: "Carga stock inicial o contingencias del Centro con entrada manual.",
+      href: "/inventory/entries",
+      cta: "Cargar stock",
+      tone: "primary",
+      visible: canCreateEntries,
+      icon: "layers",
     },
     {
       id: "receive-remissions",
@@ -445,6 +466,26 @@ export default async function Home({
       tone: "secondary",
       visible: canViewRemissions,
       icon: "package",
+    },
+    {
+      id: "checklist",
+      title: "Configuracion inicial",
+      description: "Checklist v1 para Centro + Saudo.",
+      href: "/inventory/settings/checklist",
+      cta: "Abrir",
+      tone: "secondary",
+      visible: true,
+      icon: "clipboard",
+    },
+    {
+      id: "catalog",
+      title: "Catalogo",
+      description: "Alta rapida y activacion por sede.",
+      href: "/inventory/catalog",
+      cta: "Abrir",
+      tone: "secondary",
+      visible: canViewStock,
+      icon: "boxes",
     },
     {
       id: "stock",
@@ -511,7 +552,7 @@ export default async function Home({
               Bienvenido, {displayName}
             </h1>
             <p className="mt-2 ui-body-muted">
-              Panel operativo de inventario y logística, organizado por rol y sede.
+              Panel operativo v1 para inventario base, stock manual y remisiones entre Centro y Saudo.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2 ui-caption">
               <span className="ui-chip">

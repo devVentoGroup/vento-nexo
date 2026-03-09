@@ -1,0 +1,3 @@
+name,type,stock_unit_code,category,primary_supplier,active_sites,center_loc,initial_stock_qty,notes
+Harina 000,insumo,kg,Secos,Proveedor Base,"Centro|Saudo",Bodega,25,Maestro critico v1
+Caja delivery,reventa,un,Empaques,Proveedor Empaques,"Centro|Saudo",Bodega,200,Opcional si se controla stock terminado

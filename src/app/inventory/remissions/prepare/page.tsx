@@ -1,7 +1,7 @@
-import Link from "next/link";
-import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
+﻿import Link from "next/link";
 
 import { requireAppAccess } from "@/lib/auth/guard";
+
 export const dynamic = "force-dynamic";
 
 type SiteRow = { id: string; name: string | null };
@@ -22,8 +22,22 @@ function formatStatus(status?: string | null) {
     case "preparing":
       return { label: "Preparando", className: "ui-chip ui-chip--brand" };
     default:
-      return { label: v || "—", className: "ui-chip" };
+      return { label: v || "-", className: "ui-chip" };
   }
+}
+
+function formatDateTime(value?: string | null) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "-";
+  const date = new Date(raw);
+  if (Number.isNaN(date.getTime())) return raw;
+  return new Intl.DateTimeFormat("es-CO", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  }).format(date);
 }
 
 export default async function RemissionsPreparePage() {
@@ -79,11 +93,7 @@ export default async function RemissionsPreparePage() {
     );
   }
 
-  const { data: siteRow } = await supabase
-    .from("sites")
-    .select("id,name")
-    .eq("id", siteId)
-    .single();
+  const { data: siteRow } = await supabase.from("sites").select("id,name").eq("id", siteId).single();
 
   const { data: remissions } = await supabase
     .from("restock_requests")
@@ -95,85 +105,93 @@ export default async function RemissionsPreparePage() {
 
   const rows = (remissions ?? []) as RemissionRow[];
   const toSiteIds = [...new Set(rows.map((r) => r.to_site_id).filter(Boolean))] as string[];
-
-  const { data: sites } = await supabase
-    .from("sites")
-    .select("id,name")
-    .in("id", toSiteIds);
-
+  const { data: sites } = await supabase.from("sites").select("id,name").in("id", toSiteIds);
   const siteMap = new Map(((sites ?? []) as SiteRow[]).map((s) => [s.id, s.name]));
+  const pendingCount = rows.filter((row) => row.status === "pending").length;
+  const preparingCount = rows.filter((row) => row.status === "preparing").length;
 
   return (
-    <div className="w-full">
-      <div className="flex items-start justify-between gap-4">
+    <div className="w-full space-y-6 pb-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <Link href="/inventory/remissions" className="ui-caption underline">
             Volver a remisiones
           </Link>
           <h1 className="mt-2 ui-h1">Preparar remisiones</h1>
           <p className="mt-2 ui-body-muted">
-            Marca cantidades por ítem y envía a tránsito. Vista para bodega (tablet).
+            Vista optimizada para celular y tablet. Entra a una solicitud, prepara cantidades y luego la envias a transito.
           </p>
-          <p className="mt-1 ui-caption">
-            Sede: {(siteRow as { name?: string })?.name ?? siteId}
-          </p>
+          <p className="mt-1 ui-caption">Sede: {(siteRow as { name?: string })?.name ?? siteId}</p>
         </div>
       </div>
 
-      <div className="mt-6 ui-panel">
-        <div className="ui-h3">Solicitudes pendientes de preparar</div>
-        <div className="mt-1 ui-body-muted">
-          Abre una remisión, indica cantidades preparadas y enviadas, guarda y luego &quot;En viaje&quot;.
+      <div className="grid gap-3 sm:grid-cols-3">
+        <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
+          <div className="ui-caption">Solicitudes abiertas</div>
+          <div className="mt-1 text-2xl font-semibold text-[var(--ui-text)]">{rows.length}</div>
+        </div>
+        <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
+          <div className="ui-caption">Pendientes</div>
+          <div className="mt-1 text-2xl font-semibold text-[var(--ui-text)]">{pendingCount}</div>
+        </div>
+        <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
+          <div className="ui-caption">Preparando</div>
+          <div className="mt-1 text-2xl font-semibold text-[var(--ui-text)]">{preparingCount}</div>
+        </div>
+      </div>
+
+      <div className="ui-panel space-y-4">
+        <div>
+          <div className="ui-h3">Solicitudes pendientes de preparar</div>
+          <div className="mt-1 ui-body-muted">
+            Abre una remision, captura preparado y enviado, guarda y luego usa la accion correspondiente.
+          </div>
         </div>
 
-        <div className="mt-4 overflow-x-auto">
-          <Table>
-            <thead>
-              <tr>
-                <TableHeaderCell>Destino</TableHeaderCell>
-                <TableHeaderCell>Estado</TableHeaderCell>
-                <TableHeaderCell>Creada</TableHeaderCell>
-                <TableHeaderCell>Notas</TableHeaderCell>
-                <TableHeaderCell>Acción</TableHeaderCell>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((row) => (
-                <tr key={row.id} className="ui-body">
-                  <TableCell>
-                    {siteMap.get(row.to_site_id ?? "") ?? row.to_site_id ?? "—"}
-                  </TableCell>
-                  <TableCell>
-                    <span className={formatStatus(row.status).className}>
-                      {formatStatus(row.status).label}
-                    </span>
-                  </TableCell>
-                  <TableCell className="font-mono text-sm">
-                    {row.created_at ? new Date(row.created_at).toLocaleString() : "—"}
-                  </TableCell>
-                  <TableCell className="max-w-[200px] truncate">
-                    {row.notes ?? "—"}
-                  </TableCell>
-                  <TableCell>
+        {rows.length > 0 ? (
+          <div className="grid gap-4 xl:grid-cols-2">
+            {rows.map((row) => {
+              const status = formatStatus(row.status);
+              return (
+                <div key={row.id} className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-4 sm:p-5">
+                  <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div className="min-w-0">
+                      <div className="text-sm font-semibold text-[var(--ui-text)] truncate">
+                        Destino: {siteMap.get(row.to_site_id ?? "") ?? row.to_site_id ?? "-"}
+                      </div>
+                      <div className="mt-1 text-xs font-mono text-[var(--ui-muted)]">Remision #{String(row.id).slice(0, 8)}</div>
+                    </div>
+                    <span className={status.className}>{status.label}</span>
+                  </div>
+
+                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-xl border border-[var(--ui-border)] bg-white p-3">
+                      <div className="ui-caption">Creada</div>
+                      <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">{formatDateTime(row.created_at)}</div>
+                    </div>
+                    <div className="rounded-xl border border-[var(--ui-border)] bg-white p-3 sm:col-span-2">
+                      <div className="ui-caption">Notas</div>
+                      <div className="mt-1 text-sm text-[var(--ui-text)] line-clamp-3">{row.notes ?? "Sin notas"}</div>
+                    </div>
+                  </div>
+
+                  <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:justify-end">
                     <Link
                       href={`/inventory/remissions/${row.id}`}
-                      className="inline-flex items-center justify-center rounded-xl bg-zinc-900 px-4 py-2 text-sm font-semibold text-white hover:bg-zinc-800"
+                      className="ui-btn ui-btn--brand w-full sm:w-auto"
                     >
-                      Preparar
+                      Abrir preparacion
                     </Link>
-                  </TableCell>
-                </tr>
-              ))}
-              {rows.length === 0 ? (
-                <tr>
-                  <TableCell colSpan={5} className="ui-empty">
-                    No hay solicitudes pendientes de preparar.
-                  </TableCell>
-                </tr>
-              ) : null}
-            </tbody>
-          </Table>
-        </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="ui-empty rounded-2xl border border-dashed border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-6">
+            No hay solicitudes pendientes de preparar.
+          </div>
+        )}
       </div>
     </div>
   );

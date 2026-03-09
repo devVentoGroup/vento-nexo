@@ -319,19 +319,35 @@ export default async function WithdrawPage({
     }
   }
 
-  const { data: products } = await supabase
-    .from("product_inventory_profiles")
-    .select("product_id, products(id,name,unit,stock_unit_code)")
-    .eq("track_inventory", true)
-    .in("inventory_kind", ["ingredient", "finished", "resale", "packaging"])
-    .order("name", { foreignTable: "products", ascending: true })
-    .limit(400);
+  const { data: productsWithStock } = siteId
+    ? await supabase
+        .from("inventory_stock_by_site")
+        .select("product_id, products(id,name,unit,stock_unit_code)")
+        .eq("site_id", siteId)
+        .gt("current_qty", 0)
+        .limit(400)
+    : { data: [] as { product_id: string; products: ProductRow | null }[] };
 
   let productRows: ProductRow[] = [];
-  const raw = (products ?? []) as unknown as { product_id: string; products: ProductRow | null }[];
-  productRows = raw
+  const stocked = (productsWithStock ?? []) as unknown as { product_id: string; products: ProductRow | null }[];
+  productRows = stocked
     .map((r) => r.products)
     .filter((p): p is ProductRow => Boolean(p));
+
+  if (productRows.length === 0) {
+    const { data: products } = await supabase
+      .from("product_inventory_profiles")
+      .select("product_id, products(id,name,unit,stock_unit_code)")
+      .eq("track_inventory", true)
+      .in("inventory_kind", ["ingredient", "finished", "resale", "packaging"])
+      .order("name", { foreignTable: "products", ascending: true })
+      .limit(400);
+
+    const raw = (products ?? []) as unknown as { product_id: string; products: ProductRow | null }[];
+    productRows = raw
+      .map((r) => r.products)
+      .filter((p): p is ProductRow => Boolean(p));
+  }
 
   if (productRows.length === 0) {
     const { data: fallback } = await supabase
@@ -359,7 +375,7 @@ export default async function WithdrawPage({
     <div className="w-full">
       <PageHeader
         title="Retirar insumos"
-        subtitle="Registra consumo desde un LOC (ej. bodega, cuarto frio). Usa el QR de la zona para abrir con el LOC ya elegido."
+        subtitle="Abre el retiro desde el QR del LOC y registra solo lo que realmente salio. El LOC queda preseleccionado para agilizar la captura."
         actions={
           <Link href="/inventory/stock" className="ui-btn ui-btn--ghost">
             Ver stock

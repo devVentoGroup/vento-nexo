@@ -10,11 +10,24 @@ type BwipJsModule = {
 
 let bwipjsPromise: Promise<BwipJsModule> | null = null;
 
+async function importOptionalModule<T>(specifier: string): Promise<T | null> {
+  try {
+    const importer = new Function("s", "return import(s);") as (s: string) => Promise<unknown>;
+    const mod = await importer(specifier);
+    return ((mod as { default?: T }).default ?? mod) as T;
+  } catch {
+    return null;
+  }
+}
+
 async function loadBwipJs(): Promise<BwipJsModule> {
   if (!bwipjsPromise) {
-    bwipjsPromise = import("bwip-js").then(
-      (mod) => ((mod as { default?: BwipJsModule }).default ?? mod) as BwipJsModule
-    );
+    bwipjsPromise = importOptionalModule<BwipJsModule>("bwip-js").then((mod) => {
+      if (!mod) {
+        throw new Error("bwip-js no esta disponible en este entorno.");
+      }
+      return mod;
+    });
   }
   return bwipjsPromise;
 }
@@ -120,7 +133,7 @@ export function BarcodeImage({
   return (
     <img
       src={dataUrl}
-      alt="Código de barras"
+      alt="CÃ³digo de barras"
       style={{
         ...sizeStyle,
         objectFit: "fill",
@@ -130,3 +143,4 @@ export function BarcodeImage({
     />
   );
 }
+

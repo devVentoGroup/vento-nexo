@@ -1,18 +1,14 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-import { GuidedFormShell } from "@/components/inventory/forms/GuidedFormShell";
 import { SearchableSingleSelect } from "@/components/inventory/forms/SearchableSingleSelect";
-import { StepHelp } from "@/components/inventory/forms/StepHelp";
-import { WizardFooter } from "@/components/inventory/forms/WizardFooter";
 import {
   normalizeUnitCode,
   selectProductUomProfileForContext,
   type ProductUomProfile,
 } from "@/lib/inventory/uom";
-import type { GuidedStep } from "@/lib/inventory/forms/types";
 
 type LocOption = { id: string; code: string | null; zone: string | null };
 type ProductOption = {
@@ -40,28 +36,9 @@ type Props = {
   action: (formData: FormData) => void | Promise<void>;
 };
 
-const STEPS: GuidedStep[] = [
-  {
-    id: "contexto",
-    title: "LOC y contexto",
-    objective: "Selecciona la ubicacion origen del retiro y su contexto operativo.",
-  },
-  {
-    id: "items",
-    title: "Items",
-    objective: "Indica que productos y cantidades salen del LOC.",
-  },
-  {
-    id: "impacto",
-    title: "Impacto",
-    objective: "Revisa como afectara el stock por ubicacion.",
-  },
-  {
-    id: "confirmacion",
-    title: "Confirmacion",
-    objective: "Confirma el retiro y guarda el movimiento.",
-  },
-];
+function createRow(id: number): Row {
+  return { id, productId: "", quantity: "", inputUnitCode: "", inputUomProfileId: "", notes: "" };
+}
 
 export function WithdrawForm({
   locations,
@@ -72,11 +49,13 @@ export function WithdrawForm({
   action,
 }: Props) {
   const [locationId, setLocationId] = useState((defaultLocationId || locations[0]?.id) ?? "");
-  const [activeStepId, setActiveStepId] = useState(STEPS[0].id);
-  const [confirmed, setConfirmed] = useState(false);
-  const [rows, setRows] = useState<Row[]>([
-    { id: 0, productId: "", quantity: "", inputUnitCode: "", inputUomProfileId: "", notes: "" },
-  ]);
+  const [rows, setRows] = useState<Row[]>([createRow(0)]);
+
+  const selectedLocation = useMemo(
+    () => locations.find((loc) => loc.id === locationId) ?? null,
+    [locationId, locations]
+  );
+
   const defaultProfileByProduct = useMemo(() => {
     const profilesByProduct = new Map<string, ProductUomProfile[]>();
     for (const profile of defaultUomProfiles) {
@@ -98,38 +77,6 @@ export function WithdrawForm({
     return selected;
   }, [defaultUomProfiles]);
 
-  const addRow = () => {
-    setRows((prev) => [
-      ...prev,
-      {
-        id: prev.length,
-        productId: "",
-        quantity: "",
-        inputUnitCode: "",
-        inputUomProfileId: "",
-        notes: "",
-      },
-    ]);
-  };
-
-  const removeRow = (id: number) => {
-    setRows((prev) => (prev.length === 1 ? prev : prev.filter((row) => row.id !== id)));
-  };
-
-  const stepIndex = STEPS.findIndex((step) => step.id === activeStepId);
-  const atFirstStep = stepIndex <= 0;
-  const atLastStep = stepIndex >= STEPS.length - 1;
-
-  const moveStep = (offset: -1 | 1) => {
-    const nextIndex = Math.min(STEPS.length - 1, Math.max(0, stepIndex + offset));
-    setActiveStepId(STEPS[nextIndex].id);
-  };
-
-  const selectedLocation = useMemo(
-    () => locations.find((loc) => loc.id === locationId) ?? null,
-    [locationId, locations]
-  );
-
   const locationOptions = useMemo(
     () =>
       locations.map((loc) => ({
@@ -144,25 +91,35 @@ export function WithdrawForm({
     () =>
       products.map((item) => ({
         value: item.id,
-        label: `${item.name ?? item.id}${item.unit ? ` (${item.unit})` : ""}`,
+        label: `${item.name ?? item.id}${
+          item.stock_unit_code || item.unit
+            ? ` - ${normalizeUnitCode(item.stock_unit_code ?? item.unit ?? "")}`
+            : ""
+        }`,
         searchText: `${item.name ?? ""} ${item.unit ?? ""} ${item.stock_unit_code ?? ""}`,
       })),
     [products]
   );
 
-  const linesWithQty = useMemo(
+  const linesReady = useMemo(
     () =>
       rows.filter((row) => {
         const qty = Number(row.quantity);
-        return Number.isFinite(qty) && qty > 0 && row.productId;
+        return Boolean(row.productId) && Number.isFinite(qty) && qty > 0 && Boolean(row.inputUnitCode);
       }),
     [rows]
   );
 
-  const totalUnits = useMemo(
-    () => linesWithQty.reduce((sum, row) => sum + Number(row.quantity), 0),
-    [linesWithQty]
-  );
+  const canSubmit = Boolean(siteId && locationId && linesReady.length > 0);
+  const totalCaptured = linesReady.reduce((sum, row) => sum + Number(row.quantity), 0);
+
+  const addRow = () => {
+    setRows((prev) => [...prev, createRow((prev.at(-1)?.id ?? -1) + 1)]);
+  };
+
+  const removeRow = (id: number) => {
+    setRows((prev) => (prev.length === 1 ? prev : prev.filter((row) => row.id !== id)));
+  };
 
   if (!siteId) {
     return (
@@ -176,9 +133,7 @@ export function WithdrawForm({
     return (
       <div className="ui-panel space-y-3">
         <p className="ui-body-muted">
-          No hay LOCs en esta sede. Puede que la sede activa no tenga ubicaciones, o que el LOC
-          escaneado pertenezca a otra sede. Crea ubicaciones, cambia la sede activa en el menu, o
-          escanea un QR de un LOC de tu sede actual.
+          No hay LOCs en esta sede. Puede que la sede activa no tenga ubicaciones o que el QR abra un LOC de otra sede.
         </p>
         <Link href="/inventory/locations" className="ui-btn ui-btn--ghost ui-btn--sm">
           Ir a Ubicaciones (LOC)
@@ -188,20 +143,46 @@ export function WithdrawForm({
   }
 
   return (
-    <GuidedFormShell
-      title="Retiro desde LOC"
-      subtitle="Flujo guiado para registrar consumos y retiros por ubicacion."
-      steps={STEPS}
-      currentStepId={activeStepId}
-      onStepChange={setActiveStepId}
-    >
-      <form action={action} className="space-y-4">
-        <input type="hidden" name="_wizard_step" value={activeStepId} />
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
+      <form id="withdraw-quick-form" action={action} className="space-y-5 pb-28 lg:pb-0">
+        <section className="ui-panel space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div>
+              <div className="ui-h3">Retiro rapido desde LOC</div>
+              <div className="ui-caption mt-1">
+                Abre este formulario desde el QR del LOC. El operario confirma el origen, agrega items y registra el retiro.
+              </div>
+            </div>
+            <Link href="/inventory/stock" className="ui-btn ui-btn--ghost ui-btn--sm w-full sm:w-auto">
+              Ver stock
+            </Link>
+          </div>
 
-        <section className={activeStepId === "contexto" ? "ui-panel space-y-4" : "hidden"}>
-          <div className="ui-h3">Paso 1. LOC y contexto</div>
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Ubicacion (LOC)</span>
+          <div className="rounded-2xl border border-[var(--ui-brand)]/20 bg-[var(--ui-brand-soft)] p-4 sm:p-5">
+            <div className="ui-caption font-semibold text-[var(--ui-brand)]">
+              {defaultLocationId ? "LOC abierto desde QR" : "LOC activo"}
+            </div>
+            <div className="mt-2 text-lg font-semibold text-[var(--ui-text)] sm:text-xl">
+              {selectedLocation?.code ?? selectedLocation?.zone ?? selectedLocation?.id ?? "Sin LOC"}
+            </div>
+            <div className="mt-1 text-sm text-[var(--ui-muted)]">
+              Todo el retiro se descuenta de este LOC y de la sede activa.
+            </div>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-2 lg:hidden">
+            <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
+              <div className="ui-caption">Items listos</div>
+              <div className="mt-1 text-lg font-semibold text-[var(--ui-text)]">{linesReady.length}</div>
+            </div>
+            <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
+              <div className="ui-caption">Cantidad capturada</div>
+              <div className="mt-1 text-lg font-semibold text-[var(--ui-text)]">{totalCaptured}</div>
+            </div>
+          </div>
+
+          <label className="flex flex-col gap-2">
+            <span className="ui-label">Cambiar LOC manualmente</span>
             <SearchableSingleSelect
               name="location_id"
               value={locationId}
@@ -210,132 +191,146 @@ export function WithdrawForm({
               placeholder="Selecciona LOC"
               searchPlaceholder="Buscar LOC..."
               sheetTitle="Selecciona LOC"
+              dropdownMode="inline"
             />
             <span className="ui-caption">
-              El retiro siempre descuenta de este LOC y de la sede activa.
+              Solo cambialo si el QR abrio el LOC equivocado o si necesitas retirar desde otra ubicacion.
             </span>
           </label>
-          <StepHelp
-            meaning="Define el punto exacto desde donde sale el inventario."
-            whenToUse="Antes de cargar productos para no descontar del lugar equivocado."
-            example="LOC-CP-BOD-MAIN para consumo de produccion."
-            impact="Afecta trazabilidad de inventario por ubicacion y por sede."
-          />
         </section>
 
-        <section className={activeStepId === "items" ? "ui-panel space-y-4" : "hidden"}>
-          <div className="ui-h3">Paso 2. Items a retirar</div>
+        <section className="ui-panel space-y-4">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+            <div>
+              <div className="ui-h3">Items a retirar</div>
+              <div className="ui-caption mt-1">Captura aqui todo lo que realmente sale de este LOC.</div>
+            </div>
+            <button type="button" onClick={addRow} className="ui-btn ui-btn--ghost ui-btn--sm w-full sm:w-auto">
+              + Agregar item
+            </button>
+          </div>
+
           <div className="space-y-3">
             {rows.map((row, idx) => {
               const product = products.find((p) => p.id === row.productId);
               const stockUnitCode = normalizeUnitCode(product?.stock_unit_code ?? product?.unit ?? "");
               const defaultProfile = row.productId ? defaultProfileByProduct.get(row.productId) ?? null : null;
+              const selectedUnit = normalizeUnitCode(
+                row.inputUnitCode || defaultProfile?.input_unit_code || stockUnitCode
+              );
               const conversionLabel = defaultProfile
-                ? `${defaultProfile.qty_in_input_unit} ${defaultProfile.input_unit_code} = ${defaultProfile.qty_in_stock_unit} ${stockUnitCode || "un"}`
+                ? `${defaultProfile.qty_in_input_unit} ${normalizeUnitCode(defaultProfile.input_unit_code)} = ${defaultProfile.qty_in_stock_unit} ${stockUnitCode || "un"}`
                 : "";
-              const isLast = idx === rows.length - 1;
+
               return (
-                <div key={row.id} className="flex flex-col gap-3 ui-panel-soft p-3 sm:flex-row sm:flex-wrap sm:items-end">
-                  <label className="min-w-0 flex-1 flex-col gap-1 md:flex-initial">
-                    <span className="text-[11px] text-zinc-500">Producto</span>
-                    <SearchableSingleSelect
-                      name="item_product_id"
-                      value={row.productId}
-                      onValueChange={(next) => {
-                        const selectedProduct = products.find((item) => item.id === next);
-                        const stockUnit = normalizeUnitCode(
-                          selectedProduct?.stock_unit_code ?? selectedProduct?.unit ?? ""
-                        );
-                        const nextProfile = defaultProfileByProduct.get(next) ?? null;
-                        setRows((prev) =>
-                          prev.map((current) =>
-                            current.id === row.id
-                              ? {
-                                  ...current,
-                                  productId: next,
-                                  inputUnitCode:
-                                    normalizeUnitCode(nextProfile?.input_unit_code ?? "") ||
-                                    stockUnit ||
-                                    current.inputUnitCode,
-                                  inputUomProfileId: nextProfile?.id ?? "",
-                                }
-                              : current
+                <div key={row.id} className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-4 sm:p-5">
+                  <div className="mb-3 flex items-center justify-between gap-3">
+                    <div className="text-sm font-semibold text-[var(--ui-text)]">Item {idx + 1}</div>
+                    {rows.length > 1 ? (
+                      <button
+                        type="button"
+                        onClick={() => removeRow(row.id)}
+                        className="ui-btn ui-btn--ghost ui-btn--sm"
+                      >
+                        Quitar
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="grid gap-3 xl:grid-cols-[minmax(0,2fr)_120px_160px]">
+                    <label className="flex flex-col gap-1 xl:col-span-1">
+                      <span className="ui-label">Producto</span>
+                      <SearchableSingleSelect
+                        name="item_product_id"
+                        value={row.productId}
+                        onValueChange={(next) => {
+                          const selectedProduct = products.find((item) => item.id === next);
+                          const stockUnit = normalizeUnitCode(selectedProduct?.stock_unit_code ?? selectedProduct?.unit ?? "");
+                          const nextProfile = defaultProfileByProduct.get(next) ?? null;
+                          setRows((prev) =>
+                            prev.map((current) =>
+                              current.id === row.id
+                                ? {
+                                    ...current,
+                                    productId: next,
+                                    inputUnitCode:
+                                      normalizeUnitCode(nextProfile?.input_unit_code ?? "") || stockUnit || current.inputUnitCode,
+                                    inputUomProfileId: nextProfile?.id ?? "",
+                                  }
+                                : current
+                            )
+                          );
+                        }}
+                        options={productOptions}
+                        placeholder="Selecciona producto"
+                        searchPlaceholder="Buscar producto..."
+                        sheetTitle="Selecciona producto"
+                        dropdownMode="inline"
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-1">
+                      <span className="ui-label">Cantidad</span>
+                      <input
+                        name="item_quantity"
+                        type="number"
+                        min="0"
+                        step="any"
+                        placeholder="0"
+                        value={row.quantity}
+                        onChange={(event) =>
+                          setRows((prev) =>
+                            prev.map((current) =>
+                              current.id === row.id ? { ...current, quantity: event.target.value } : current
+                            )
                           )
-                        );
-                      }}
-                      className="mt-1"
-                      options={productOptions}
-                      placeholder="Selecciona producto"
-                      searchPlaceholder="Buscar producto..."
-                      sheetTitle="Selecciona producto"
-                    />
-                  </label>
-                  <label className="flex w-full flex-col gap-1 sm:w-24">
-                    <span className="text-[11px] text-zinc-500">Cantidad</span>
-                    <input
-                      name="item_quantity"
-                      type="number"
-                      min="0"
-                      step="any"
-                      placeholder="0"
-                      value={row.quantity}
-                      onChange={(event) =>
-                        setRows((prev) =>
-                          prev.map((current) =>
-                            current.id === row.id
-                              ? { ...current, quantity: event.target.value }
-                              : current
+                        }
+                        className="ui-input h-12"
+                        inputMode="decimal"
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-1">
+                      <span className="ui-label">Unidad</span>
+                      <select
+                        name="item_input_unit_code"
+                        value={selectedUnit}
+                        onChange={(event) =>
+                          setRows((prev) =>
+                            prev.map((current) =>
+                              current.id === row.id
+                                ? {
+                                    ...current,
+                                    inputUnitCode: normalizeUnitCode(event.target.value),
+                                    inputUomProfileId:
+                                      defaultProfile &&
+                                      normalizeUnitCode(defaultProfile.input_unit_code) === normalizeUnitCode(event.target.value)
+                                        ? defaultProfile.id
+                                        : "",
+                                  }
+                                : current
+                            )
                           )
-                        )
-                      }
-                      className="ui-input mt-1 h-10 min-w-0"
-                    />
-                  </label>
-                  <label className="flex w-full flex-col gap-1 sm:w-24">
-                    <span className="text-[11px] text-zinc-500">Unidad</span>
-                    <select
-                      name="item_input_unit_code"
-                      value={row.inputUnitCode}
-                      onChange={(event) =>
-                        setRows((prev) =>
-                          prev.map((current) =>
-                            current.id === row.id
-                              ? {
-                                  ...current,
-                                  inputUnitCode: normalizeUnitCode(event.target.value),
-                                  inputUomProfileId:
-                                    defaultProfile &&
-                                    normalizeUnitCode(defaultProfile.input_unit_code) ===
-                                      normalizeUnitCode(event.target.value)
-                                      ? defaultProfile.id
-                                      : "",
-                                }
-                              : current
-                          )
-                        )
-                      }
-                      className="ui-input mt-1 h-10 min-w-0"
-                      required
-                    >
-                      <option value="">-</option>
-                      {(() => {
-                        const unitCode = stockUnitCode;
-                        return unitCode ? <option value={unitCode}>{unitCode}</option> : null;
-                      })()}
-                      {defaultProfile &&
-                      normalizeUnitCode(defaultProfile.input_unit_code) !==
-                        normalizeUnitCode(stockUnitCode) ? (
-                        <option value={normalizeUnitCode(defaultProfile.input_unit_code)}>
-                          {normalizeUnitCode(defaultProfile.input_unit_code)} ({defaultProfile.label})
-                        </option>
-                      ) : null}
-                    </select>
-                  </label>
-                  <label className="min-w-0 flex-1 flex-col gap-1 md:flex-initial">
-                    <span className="text-[11px] text-zinc-500">Nota (opcional)</span>
+                        }
+                        className="ui-input h-12"
+                        required
+                      >
+                        <option value="">Selecciona unidad</option>
+                        {stockUnitCode ? <option value={stockUnitCode}>{stockUnitCode}</option> : null}
+                        {defaultProfile && normalizeUnitCode(defaultProfile.input_unit_code) !== normalizeUnitCode(stockUnitCode) ? (
+                          <option value={normalizeUnitCode(defaultProfile.input_unit_code)}>
+                            {normalizeUnitCode(defaultProfile.input_unit_code)} ({defaultProfile.label})
+                          </option>
+                        ) : null}
+                      </select>
+                    </label>
+                  </div>
+
+                  <label className="mt-3 flex flex-col gap-1">
+                    <span className="ui-label">Nota opcional</span>
                     <input
                       name="item_notes"
-                      placeholder="Ej. para produccion"
+                      placeholder="Ej. produccion, merma, mise en place"
                       value={row.notes}
                       onChange={(event) =>
                         setRows((prev) =>
@@ -344,35 +339,15 @@ export function WithdrawForm({
                           )
                         )
                       }
-                      className="ui-input mt-1 h-10 w-full min-w-0"
+                      className="ui-input h-11"
                     />
                   </label>
-                  {rows.length > 1 ? (
-                    <button
-                      type="button"
-                      onClick={() => removeRow(row.id)}
-                      className="ui-btn ui-btn--ghost h-10 w-full text-sm sm:w-auto"
-                    >
-                      Quitar
-                    </button>
-                  ) : null}
-                  {isLast ? (
-                    <button
-                      type="button"
-                      onClick={addRow}
-                      className="ui-btn ui-btn--ghost h-10 w-full text-sm sm:w-auto"
-                    >
-                      + Otro item
-                    </button>
-                  ) : null}
-                  <input
-                    type="hidden"
-                    name="item_input_uom_profile_id"
-                    value={row.inputUomProfileId}
-                  />
+
+                  <input type="hidden" name="item_input_uom_profile_id" value={row.inputUomProfileId} />
                   <input type="hidden" name="item_quantity_in_input" value={row.quantity} />
+
                   {conversionLabel ? (
-                    <div className="w-full text-xs text-[var(--ui-muted)]">
+                    <div className="mt-3 rounded-xl border border-[var(--ui-border)] bg-white px-3 py-2 text-xs text-[var(--ui-muted)]">
                       Conversion aplicada: {conversionLabel}
                     </div>
                   ) : null}
@@ -380,71 +355,71 @@ export function WithdrawForm({
               );
             })}
           </div>
-          <StepHelp
-            meaning="Cada fila representa un consumo o retiro real."
-            whenToUse="Agrega todos los productos retirados en esta misma operacion."
-            example="Leche 2 lt, Harina 1 kg, Empaques 20 un."
-            impact="Se descuenta inventario en LOC y sede con trazabilidad."
-          />
         </section>
-
-        <section className={activeStepId === "impacto" ? "ui-panel space-y-4" : "hidden"}>
-          <div className="ui-h3">Paso 3. Impacto en stock</div>
-          <div className="grid gap-3 ui-mobile-stack sm:grid-cols-2">
-            <div className="ui-panel-soft p-3">
-              <div className="ui-caption">LOC seleccionado</div>
-              <div className="font-semibold mt-1">
-                {selectedLocation?.code ?? selectedLocation?.zone ?? selectedLocation?.id ?? "-"}
-              </div>
-            </div>
-            <div className="ui-panel-soft p-3">
-              <div className="ui-caption">Items con cantidad</div>
-              <div className="font-semibold mt-1">{linesWithQty.length}</div>
-            </div>
-            <div className="ui-panel-soft p-3 sm:col-span-2">
-              <div className="ui-caption">Cantidad total capturada</div>
-              <div className="font-semibold mt-1">{totalUnits}</div>
-            </div>
-          </div>
-          <div className="ui-caption">
-            Verifica unidades y cantidades. Si una cantidad supera stock disponible, el servidor bloqueara el guardado.
-          </div>
-        </section>
-
-        <section className={activeStepId === "confirmacion" ? "ui-panel space-y-4" : "hidden"}>
-          <div className="ui-h3">Paso 4. Confirmacion</div>
-          <label className="flex items-start gap-2">
-            <input
-              type="checkbox"
-              checked={confirmed}
-              onChange={(event) => setConfirmed(event.target.checked)}
-            />
-            <span className="ui-caption">
-              Confirmo que revise LOC, productos, cantidades y unidades antes de registrar el retiro.
-            </span>
-          </label>
-          <p className="ui-caption">
-            Para abrir desde QR puedes usar <span className="font-mono">?loc_id=UUID</span> o{" "}
-            <span className="font-mono">?loc=LOC-CP-BODEGA-MAIN</span>.
-          </p>
-        </section>
-
-        <WizardFooter
-          canGoPrevious={!atFirstStep}
-          canGoNext={!atLastStep}
-          onPrevious={() => moveStep(-1)}
-          onNext={() => moveStep(1)}
-          rightActions={
-            <button
-              type="submit"
-              className="ui-btn ui-btn--brand"
-              disabled={!confirmed || activeStepId !== "confirmacion"}
-            >
-              Registrar retiro
-            </button>
-          }
-        />
       </form>
-    </GuidedFormShell>
+
+      <aside className="hidden space-y-4 lg:sticky lg:top-24 lg:block lg:self-start">
+        <div className="ui-panel space-y-4">
+          <div>
+            <div className="ui-h3">Resumen</div>
+            <div className="ui-caption mt-1">Antes de guardar, valida LOC, productos y cantidades.</div>
+          </div>
+
+          <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
+            <div className="ui-caption">LOC</div>
+            <div className="mt-1 font-semibold text-[var(--ui-text)]">
+              {selectedLocation?.code ?? selectedLocation?.zone ?? selectedLocation?.id ?? "Sin LOC"}
+            </div>
+          </div>
+
+          <div className="grid gap-3">
+            <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
+              <div className="ui-caption">Items listos</div>
+              <div className="mt-1 text-lg font-semibold text-[var(--ui-text)]">{linesReady.length}</div>
+            </div>
+            <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
+              <div className="ui-caption">Cantidad capturada</div>
+              <div className="mt-1 text-lg font-semibold text-[var(--ui-text)]">{totalCaptured}</div>
+            </div>
+          </div>
+
+          <div className="space-y-2 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
+            <div className="ui-caption font-semibold">Items a registrar</div>
+            {linesReady.length > 0 ? (
+              <div className="space-y-2 text-sm text-[var(--ui-text)]">
+                {linesReady.slice(0, 6).map((row) => {
+                  const product = products.find((item) => item.id === row.productId);
+                  return (
+                    <div key={row.id} className="flex items-start justify-between gap-3">
+                      <span className="min-w-0 flex-1 truncate">{product?.name ?? "Producto"}</span>
+                      <span className="font-medium">{row.quantity} {row.inputUnitCode}</span>
+                    </div>
+                  );
+                })}
+                {linesReady.length > 6 ? <div className="ui-caption">+ {linesReady.length - 6} items mas</div> : null}
+              </div>
+            ) : (
+              <div className="ui-caption">Agrega al menos un item con cantidad valida.</div>
+            )}
+          </div>
+
+          <button type="submit" form="withdraw-quick-form" className="ui-btn ui-btn--brand w-full" disabled={!canSubmit}>
+            Registrar retiro
+          </button>
+        </div>
+      </aside>
+
+      <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--ui-border)] bg-white/95 p-3 backdrop-blur lg:hidden">
+        <div className="mx-auto flex max-w-3xl items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="text-xs text-[var(--ui-muted)]">{selectedLocation?.code ?? "Sin LOC"}</div>
+            <div className="text-sm font-semibold text-[var(--ui-text)]">{linesReady.length} items listos</div>
+          </div>
+          <button type="submit" form="withdraw-quick-form" className="ui-btn ui-btn--brand h-12 min-w-[160px]" disabled={!canSubmit}>
+            Registrar retiro
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }

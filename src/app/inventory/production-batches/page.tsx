@@ -1,53 +1,40 @@
-import { redirect } from "next/navigation";
+import Link from "next/link";
 
 import { requireAppAccess } from "@/lib/auth/guard";
-import { buildShellLoginUrl } from "@/lib/auth/sso";
 
 export const dynamic = "force-dynamic";
 
-const FOGO_BASE_URL =
-  process.env.NEXT_PUBLIC_FOGO_URL?.replace(/\/$/, "") ||
-  "https://fogo.ventogroup.co";
-
-function buildFogoProductionUrl(siteId: string) {
-  const url = new URL("/production-batches", FOGO_BASE_URL);
-  if (siteId) {
-    url.searchParams.set("site_id", siteId);
-  }
-  return url.toString();
-}
-
-export default async function LegacyProductionRedirectPage() {
-  const { supabase, user } = await requireAppAccess({
+export default async function ProductionBatchesInfoPage() {
+  await requireAppAccess({
     appId: "nexo",
     returnTo: "/inventory/production-batches",
   });
 
-  const { data: employee } = await supabase
-    .from("employees")
-    .select("site_id")
-    .eq("id", user.id)
-    .maybeSingle();
+  return (
+    <div className="w-full max-w-4xl space-y-6">
+      <div>
+        <h1 className="ui-h1">Produccion fuera de v1</h1>
+        <p className="mt-2 ui-body-muted">
+          NEXO v1 sale a operar con inventario base, entradas manuales y remisiones. Produccion integrada y consumo por receta quedan fuera del arranque.
+        </p>
+      </div>
 
-  const { data: settings } = await supabase
-    .from("employee_settings")
-    .select("selected_site_id")
-    .eq("employee_id", user.id)
-    .maybeSingle();
-
-  const siteId = String(settings?.selected_site_id ?? employee?.site_id ?? "").trim();
-
-  if (!siteId) {
-    redirect(
-      "/inventory/catalog?error=" +
-        encodeURIComponent("No tienes sede activa para abrir produccion en FOGO.")
-    );
-  }
-
-  const fogoUrl = buildFogoProductionUrl(siteId);
-  if (!fogoUrl) {
-    redirect(await buildShellLoginUrl("/inventory/production-batches"));
-  }
-
-  redirect(fogoUrl);
+      <div className="ui-panel space-y-3">
+        <p className="text-sm text-[var(--ui-muted)]">
+          Para la operacion inicial usa solo catalogo, ubicaciones, stock, remisiones, retiros, traslados, conteos y ajustes.
+        </p>
+        <div className="flex flex-wrap gap-2">
+          <Link href="/inventory/settings/checklist" className="ui-btn ui-btn--brand">
+            Ver checklist v1
+          </Link>
+          <Link href="/inventory/catalog" className="ui-btn ui-btn--ghost">
+            Ir a catalogo
+          </Link>
+          <Link href="/inventory/remissions" className="ui-btn ui-btn--ghost">
+            Ir a remisiones
+          </Link>
+        </div>
+      </div>
+    </div>
+  );
 }

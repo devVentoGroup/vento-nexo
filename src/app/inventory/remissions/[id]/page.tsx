@@ -788,8 +788,8 @@ export default async function RemissionDetailPage({
   else if (canCloseAction) nextStep = "Paso 4: cerrar remision.";
 
   return (
-    <div className="w-full space-y-6">
-      <div className="flex items-start justify-between gap-4">
+    <div className="w-full space-y-6 pb-28 lg:pb-6">
+      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <Link href="/inventory/remissions" className="ui-caption underline">
             Volver a remisiones
@@ -825,7 +825,7 @@ export default async function RemissionDetailPage({
 
       <div className="ui-panel">
         <div className="ui-h3">Detalle</div>
-        <div className="mt-3 grid gap-3 md:grid-cols-2 ui-body">
+        <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5 ui-body">
           <div>
             <div className="ui-caption">Origen</div>
             <div>{access.fromSiteName || "-"}</div>
@@ -861,7 +861,7 @@ export default async function RemissionDetailPage({
 
       <div className="ui-panel">
         <div className="ui-h3">Acciones</div>
-        <form action={updateStatus} className="mt-4 flex flex-wrap gap-3">
+        <form action={updateStatus} className="mt-4 grid gap-3 sm:grid-cols-2 xl:flex xl:flex-wrap">
           <input type="hidden" name="request_id" value={request.id} />
           {canPrepareAction ? (
             <button
@@ -953,7 +953,7 @@ export default async function RemissionDetailPage({
             <strong>Recibir parcial</strong>.
           </p>
         ) : null}
-        <form action={updateItems} className="mt-4 space-y-4">
+        <form action={updateItems} className="mt-4 space-y-4 pb-24 lg:pb-0">
           <input type="hidden" name="request_id" value={request.id} />
           <div className="space-y-3">
             {itemRows.map((item) => {
@@ -964,7 +964,7 @@ export default async function RemissionDetailPage({
                 ? originLocMap.get(item.source_location_id) ?? item.source_location_id.slice(0, 8)
                 : "-";
               return (
-              <div key={item.id} className="ui-panel-soft p-4">
+              <div key={item.id} className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-4 sm:p-5">
                 <div className="ui-h3">
                   {item.product?.name ?? item.product_id}
                 </div>
@@ -989,14 +989,14 @@ export default async function RemissionDetailPage({
 
                 <input type="hidden" name="item_id" value={item.id} />
 
-                <div className="mt-3 grid gap-3 md:grid-cols-6">
+                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
                   {showSourceLocSelector && canEditPrepareItems ? (
                     <label className="flex flex-col gap-1">
                       <span className="ui-caption">LOC origen</span>
                       <select
                         name="source_location_id"
                         defaultValue={item.source_location_id ?? ""}
-                        className="ui-input h-10 min-w-0"
+                        className="ui-input h-12 min-w-0"
                       >
                         <option value="">Selecciona LOC</option>
                         {originLocRows.map((loc) => (
@@ -1072,13 +1072,15 @@ export default async function RemissionDetailPage({
             })}
           </div>
 
-          <button className="ui-btn ui-btn--brand">
+          <div className="sticky bottom-0 z-20 -mx-4 border-t border-[var(--ui-border)] bg-white/95 px-4 py-3 backdrop-blur lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:px-0 lg:py-0">
+            <button className="ui-btn ui-btn--brand w-full lg:w-auto">
             {canEditPrepareItems
               ? "Guardar preparacion"
               : canEditReceiveItems
                 ? "Guardar recepcion"
                 : "Guardar items"}
           </button>
+          </div>
         </form>
       </div>
     </div>

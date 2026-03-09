@@ -26,7 +26,23 @@ function parseScan(raw: string): ParsedScan {
     }
   }
 
-  // DataMatrix de etiqueta LOC suele traer solo el código (ej. LOC-CP-BODEGA-MAIN)
+  // QR de retiro: puede venir como URL completa /inventory/withdraw?loc=LOC-...
+  if (cleaned.includes("/inventory/withdraw") || cleaned.includes("loc=")) {
+    try {
+      const parsedUrl = new URL(cleaned, "https://vento.local");
+      const locCode = parsedUrl.searchParams.get("loc")?.trim();
+      if (locCode) {
+        return { kind: "vento", entity: "LOC", code: locCode, raw: cleaned };
+      }
+    } catch {
+      // Sigue con parseo defensivo abajo.
+    }
+    const locMatch = cleaned.match(/(?:[?&]loc=)(LOC-[A-Z0-9-]+)/i);
+    if (locMatch?.[1]) {
+      return { kind: "vento", entity: "LOC", code: locMatch[1], raw: cleaned };
+    }
+  }
+
   if (cleaned.toUpperCase().startsWith("LOC-")) {
     return { kind: "vento", entity: "LOC", code: cleaned, raw: cleaned };
   }
@@ -43,7 +59,7 @@ export function ScanInput(props: {
   autoFocus?: boolean;
   onScan: (parsed: ParsedScan) => void;
 }) {
-  const { label = "Escanear", placeholder = "Escanea o pega el código…", autoFocus = true, onScan } = props;
+  const { label = "Escanear", placeholder = "Escanea o pega el codigo...", autoFocus = true, onScan } = props;
 
   const [value, setValue] = useState("");
   const [cameraOpen, setCameraOpen] = useState(false);
@@ -80,17 +96,11 @@ export function ScanInput(props: {
         return;
       }
       if (!BarcodeDetectorImpl) {
-        try {
-          const mod = await import("barcode-detector-api-polyfill");
-          BarcodeDetectorImpl = mod.BarcodeDetector as BarcodeDetectorCtor;
-          (window as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector = BarcodeDetectorImpl;
-        } catch {
-          setCameraError(
-            "Tu navegador no soporta escaneo por cámara. Usa Chrome o Edge, o pega el código manualmente."
-          );
-          setCameraLoading(false);
-          return;
-        }
+        setCameraError(
+          "Tu navegador no soporta escaneo por camara. Usa Chrome o Edge, o pega el codigo manualmente."
+        );
+        setCameraLoading(false);
+        return;
       }
       setCameraLoading(false);
 
@@ -151,7 +161,7 @@ export function ScanInput(props: {
         setCameraError(
           err instanceof Error
             ? err.message
-            : "No se pudo abrir la cámara. Verifica permisos."
+            : "No se pudo abrir la camara. Verifica permisos."
         );
       }
     }
@@ -185,7 +195,7 @@ export function ScanInput(props: {
         <div>
           <div className="ui-body font-semibold">{label}</div>
           <div className="mt-1 ui-body-muted">
-            En cel o tablet: usa la cámara. En PC: escáner Bluetooth/USB tipo teclado o pega el código.
+            En cel o tablet: usa la camara. En PC: escaner Bluetooth/USB tipo teclado o pega el codigo.
           </div>
         </div>
 
@@ -193,9 +203,9 @@ export function ScanInput(props: {
           type="button"
           className="ui-btn ui-btn--brand"
           onClick={() => setCameraOpen(true)}
-          aria-label="Abrir cámara para escanear"
+          aria-label="Abrir camara para escanear"
         >
-          Escanear con cámara
+          Escanear con camara
         </button>
       </div>
 
@@ -245,7 +255,7 @@ export function ScanInput(props: {
                   <span className="font-semibold">Tipo:</span> {parsed.entity}
                 </div>
                 <div>
-                  <span className="font-semibold">Código:</span> <span className="font-mono">{parsed.code}</span>
+                  <span className="font-semibold">Codigo:</span> <span className="font-mono">{parsed.code}</span>
                 </div>
               </div>
             ) : (
@@ -254,7 +264,7 @@ export function ScanInput(props: {
               </div>
             )
           ) : (
-            <div className="ui-caption">Esperando escaneo…</div>
+            <div className="ui-caption">Esperando escaneo...</div>
           )}
         </div>
       </div>
@@ -264,9 +274,9 @@ export function ScanInput(props: {
           <div className="ui-panel w-full max-w-lg space-y-4">
             <div className="flex items-center justify-between gap-4">
               <div>
-                <div className="ui-h3">Escaneo por cámara</div>
+                <div className="ui-h3">Escaneo por camara</div>
                 <div className="mt-1 ui-caption">
-                  Apunta al QR o DataMatrix de la etiqueta. En cel/tablet usa la cámara trasera si pide elegir.
+                  Apunta al QR o DataMatrix de la etiqueta. En cel/tablet usa la camara trasera si pide elegir.
                 </div>
               </div>
               <button
@@ -282,7 +292,7 @@ export function ScanInput(props: {
               <div className="ui-alert ui-alert--error">{cameraError}</div>
             ) : cameraLoading ? (
               <div className="flex items-center justify-center py-16 ui-body-muted">
-                Cargando detector de códigos…
+                Cargando detector de codigos...
               </div>
             ) : (
               <div className="relative overflow-hidden rounded-2xl border border-[var(--ui-border)] bg-black">
@@ -303,6 +313,7 @@ export function ScanInput(props: {
     </div>
   );
 }
+
 
 
 
