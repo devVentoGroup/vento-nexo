@@ -1,5 +1,60 @@
 begin;
 
+create table if not exists vital.module_catalog (
+  key text primary key,
+  name text not null,
+  description text not null,
+  is_active boolean not null default true,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint module_catalog_key_check check (key in ('training', 'nutrition', 'habits', 'recovery'))
+);
+
+alter table vital.module_catalog enable row level security;
+
+drop policy if exists module_catalog_manage_admin on vital.module_catalog;
+create policy module_catalog_manage_admin
+  on vital.module_catalog
+  for all
+  using (vital.is_vital_admin() or vital.is_service_role())
+  with check (vital.is_vital_admin() or vital.is_service_role());
+
+drop policy if exists module_catalog_read_authenticated on vital.module_catalog;
+create policy module_catalog_read_authenticated
+  on vital.module_catalog
+  for select
+  using (auth.uid() is not null);
+
+drop trigger if exists trg_module_catalog_updated_at on vital.module_catalog;
+create trigger trg_module_catalog_updated_at
+before update on vital.module_catalog
+for each row execute function vital.set_updated_at();
+
+insert into vital.module_catalog (key, name, description, is_active)
+values
+  ('training', 'Training', 'Modulo principal de entrenamiento y sesiones deportivas.', true),
+  ('nutrition', 'Nutrition', 'Modulo de nutricion, timing y adherencia alimentaria.', true),
+  ('habits', 'Habits', 'Modulo de habitos, metricas y consistencia diaria.', true),
+  ('recovery', 'Recovery', 'Modulo de recuperacion, descanso y descarga.', true)
+on conflict (key) do update
+set
+  name = excluded.name,
+  description = excluded.description,
+  is_active = excluded.is_active,
+  updated_at = now();
+
+create or replace function vital.list_module_catalog()
+returns setof vital.module_catalog
+language sql
+set search_path = public, vital, auth
+as $function$
+  select *
+  from vital.module_catalog
+  where is_active
+  order by key;
+$function$;
+
+grant execute on function vital.list_module_catalog() to authenticated, service_role;
 create table if not exists vital.sport_module_template_catalog (
   id uuid primary key default gen_random_uuid(),
   module_key text not null references vital.module_catalog(key) on delete cascade,
@@ -222,4 +277,7 @@ $$;
 grant execute on function vital.apply_sport_templates_from_profile(text) to authenticated, service_role;
 
 commit;
+
+
+
 

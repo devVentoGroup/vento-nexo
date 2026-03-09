@@ -111,7 +111,7 @@ begin
         perform cron.schedule(
           'purge_inventory_form_drafts_daily',
           '15 3 * * *',
-          $$select public.purge_inventory_form_drafts();$$
+          $cron$select public.purge_inventory_form_drafts();$cron$
         );
       end if;
     exception
@@ -125,4 +125,5 @@ end
 $$;
 
 commit;
+
 
