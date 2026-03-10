@@ -13,6 +13,8 @@ type CategoryOption = {
   label: string;
   searchLabel: string;
   selectable: boolean;
+  sortKey: string;
+  depth: number;
 };
 
 type CategoryTreeFilterProps = {
@@ -99,6 +101,7 @@ export function CategoryTreeFilter({
 
     const rows: CategoryOption[] = categories.map((row) => {
       const path = getCategoryPath(row.id, categoryMap);
+      const depth = Math.max(0, path.split("/").length - 1);
       const meta = showMeta
         ? buildCategoryMetaLabel(row, siteNameMap, {
             domainLabelMode: metaDomainLabelMode,
@@ -114,10 +117,12 @@ export function CategoryTreeFilter({
         label: optionLabel,
         searchLabel: toSearchLabel(`${path} ${row.name} ${meta}`),
         selectable,
+        sortKey: toSearchLabel(path),
+        depth,
       };
     });
 
-    return rows.sort((a, b) => a.label.localeCompare(b.label, "es"));
+    return rows.sort((a, b) => a.sortKey.localeCompare(b.sortKey, "es"));
   }, [
     categories,
     categoryMap,
@@ -215,7 +220,10 @@ export function CategoryTreeFilter({
                       : "cursor-not-allowed bg-zinc-50 text-[var(--ui-text)] font-semibold"
                   }`}
                 >
-                  <span className={`truncate ${option.selectable ? "" : "tracking-[0.01em]"}`}>
+                  <span
+                    className={`truncate ${option.selectable ? "" : "tracking-[0.01em]"}`}
+                    style={{ paddingLeft: `${option.depth * 12}px` }}
+                  >
                     {option.label}
                   </span>
                   {!option.selectable ? (
