@@ -130,7 +130,8 @@ export function RemissionsItems({
 
         return (
           <div key={row.id} className="space-y-3">
-            <div className="ui-card grid gap-3 md:grid-cols-4">
+            <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3 sm:p-4">
+              <div className="grid gap-3 md:grid-cols-12 md:items-start">
               <SearchableSingleSelect
                 name="item_product_id"
                 value={row.productId}
@@ -160,13 +161,14 @@ export function RemissionsItems({
                 placeholder="Selecciona producto"
                 searchPlaceholder="Buscar producto..."
                 sheetTitle="Selecciona producto"
-                dropdownMode="inline"
+                dropdownMode="floating"
+                className="min-w-0 md:col-span-5"
               />
 
               <input
                 name="item_quantity"
                 placeholder="Cantidad"
-                className="ui-input"
+                className="ui-input h-10 md:col-span-2"
                 value={row.quantity}
                 onChange={(event) =>
                   setRows((prev) =>
@@ -179,7 +181,7 @@ export function RemissionsItems({
 
               <select
                 name="item_input_unit_code"
-                className="ui-input"
+                className="ui-input h-10 md:col-span-2"
                 value={row.inputUnitCode}
                 onChange={(event) =>
                   setRows((prev) =>
@@ -213,10 +215,10 @@ export function RemissionsItems({
                 ) : null}
               </select>
 
-              <div className="flex flex-col gap-2 sm:flex-row">
+              <div className="flex flex-col gap-2 md:col-span-3">
                 <select
                   name="item_area_kind"
-                  className="ui-input"
+                  className="ui-input h-10"
                   value={row.areaKind}
                   onChange={(event) =>
                     setRows((prev) =>
@@ -233,23 +235,27 @@ export function RemissionsItems({
                     </option>
                   ))}
                 </select>
-                {rows.length > 1 ? (
-                  <button
-                    type="button"
-                    className="ui-btn ui-btn--ghost"
-                    onClick={() => removeRow(row.id)}
-                  >
-                    Quitar
-                  </button>
-                ) : null}
               </div>
 
               <input type="hidden" name="item_input_uom_profile_id" value={row.inputUomProfileId} />
               <input type="hidden" name="item_quantity_in_input" value={row.quantity} />
 
               {conversionLabel ? (
-                <div className="md:col-span-4 text-xs text-[var(--ui-muted)]">
+                <div className="md:col-span-12 text-xs text-[var(--ui-muted)]">
                   Conversion aplicada: {conversionLabel}
+                </div>
+              ) : null}
+              </div>
+
+              {rows.length > 1 ? (
+                <div className="mt-3 flex justify-end">
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn--ghost ui-btn--sm"
+                    onClick={() => removeRow(row.id)}
+                  >
+                    Quitar item
+                  </button>
                 </div>
               ) : null}
             </div>
