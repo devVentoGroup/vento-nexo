@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { CategoryTreeFilter } from "@/components/inventory/CategoryTreeFilter";
+import { RequiredFieldsGuardForm } from "@/components/inventory/forms/RequiredFieldsGuardForm";
 import { SkuField } from "@/components/inventory/SkuField";
 import { PageHeader } from "@/components/vento/standard/page-header";
 import { requireAppAccess } from "@/lib/auth/guard";
@@ -284,10 +285,17 @@ async function createProduct(formData: FormData) {
   }
 
   const typeKey = asText(formData.get("_type_key")) as ProductTypeKey;
+  const mode = asText(formData.get("_mode"));
+  const modeQuery = mode === "quick" ? "&mode=quick" : "";
   const config = TYPE_CONFIG[typeKey] ?? TYPE_CONFIG.insumo;
 
   const name = asText(formData.get("name"));
-  if (!name) redirect(`/inventory/catalog/new?type=${typeKey}&error=` + encodeURIComponent("El nombre es obligatorio."));
+  if (!name) {
+    redirect(
+      `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
+        encodeURIComponent("El nombre es obligatorio.")
+    );
+  }
 
   const { data: unitsData } = await supabase
     .from("inventory_units")
@@ -298,6 +306,12 @@ async function createProduct(formData: FormData) {
   const unitMap = createUnitMap(units);
 
   const categoryId = asText(formData.get("category_id"));
+  if (!categoryId) {
+    redirect(
+      `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
+        encodeURIComponent("Selecciona una categoria antes de crear el producto.")
+    );
+  }
   const categoryKind = resolveTypeCategoryKind(typeKey);
   if (categoryId) {
     const { data: categoryRow, error: categoryError } = await supabase
@@ -307,20 +321,20 @@ async function createProduct(formData: FormData) {
       .maybeSingle();
     if (categoryError || !categoryRow) {
       redirect(
-        `/inventory/catalog/new?type=${typeKey}&error=` +
+        `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
           encodeURIComponent("La categoria seleccionada no existe.")
       );
     }
     const category = categoryRow as CategoryRow;
     if (!categorySupportsKind(category, categoryKind)) {
       redirect(
-        `/inventory/catalog/new?type=${typeKey}&error=` +
+        `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
           encodeURIComponent("La categoria no aplica al tipo de item seleccionado.")
       );
     }
     if (categoryKind !== "venta" && normalizeCategoryDomain(category.domain)) {
       redirect(
-        `/inventory/catalog/new?type=${typeKey}&error=` +
+        `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
           encodeURIComponent("Las categorias con dominio solo se permiten para productos de venta.")
       );
     }
@@ -334,13 +348,13 @@ async function createProduct(formData: FormData) {
       .eq("is_active", true);
     if (activeChildrenError) {
       redirect(
-        `/inventory/catalog/new?type=${typeKey}&error=` +
+        `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
           encodeURIComponent(activeChildrenError.message)
       );
     }
     if ((activeChildrenCount ?? 0) > 0) {
       redirect(
-        `/inventory/catalog/new?type=${typeKey}&error=` +
+        `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
           encodeURIComponent("Selecciona una categoria del ultimo nivel (categoria hoja).")
       );
     }
@@ -416,7 +430,7 @@ async function createProduct(formData: FormData) {
 
   if (!createdProductId) {
     redirect(
-      `/inventory/catalog/new?type=${typeKey}&error=` +
+      `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
         encodeURIComponent(
           lastInsertErrorMessage || "No se pudo asignar un SKU automatico. Intenta de nuevo."
         )
@@ -480,7 +494,7 @@ async function createProduct(formData: FormData) {
         lines = JSON.parse(supplierRaw) as typeof lines;
       } catch {
         redirect(
-          `/inventory/catalog/new?type=${typeKey}&error=${encodeURIComponent(
+          `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
             "No se pudo leer el bloque de proveedores. Recarga la pagina e intenta de nuevo."
           )}`
         );
@@ -701,7 +715,7 @@ async function createProduct(formData: FormData) {
       siteLines = JSON.parse(siteRaw) as typeof siteLines;
     } catch {
       redirect(
-        `/inventory/catalog/new?type=${typeKey}&error=${encodeURIComponent(
+        `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
           "No se pudo leer disponibilidad por sede. Recarga la pagina e intenta de nuevo."
         )}`
       );
@@ -716,7 +730,7 @@ async function createProduct(formData: FormData) {
         String(line.min_stock_qty ?? "").trim() !== "";
       if (!siteIdFromLine && hasMeaningfulData) {
         redirect(
-          `/inventory/catalog/new?type=${typeKey}&error=${encodeURIComponent(
+          `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
             "En disponibilidad por sede debes seleccionar una sede."
           )}`
         );
@@ -777,7 +791,7 @@ async function createProduct(formData: FormData) {
       const siteInsertError = await insertProductSiteSettingCompat(supabase, siteRowPayload);
       if (siteInsertError) {
         redirect(
-          `/inventory/catalog/new?type=${typeKey}&error=${encodeURIComponent(
+          `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
             siteInsertError.message
           )}`
         );
@@ -971,8 +985,9 @@ export default async function NewProductPage({
         </form>
       )}
 
-      <form action={createProduct} className="space-y-8">
+      <RequiredFieldsGuardForm action={createProduct} className="space-y-8">
         <input type="hidden" name="_type_key" value={typeKey} />
+        <input type="hidden" name="_mode" value={isQuickMode ? "quick" : ""} />
 
         {/* Paso 1: Datos basicos */}
         <section className="ui-panel space-y-6">
@@ -1010,7 +1025,8 @@ export default async function NewProductPage({
               siteNamesById={siteNamesById}
               className="sm:col-span-2"
               label="Categoria"
-              emptyOptionLabel="Sin categoria"
+              required
+              emptyOptionLabel="Selecciona categoria"
               maxVisibleOptions={8}
               selectionMode="leaf_only"
               nonSelectableHint="Categoria padre"
@@ -1351,7 +1367,7 @@ export default async function NewProductPage({
                   : typeKey}
           </button>
         </div>
-      </form>
+      </RequiredFieldsGuardForm>
     </div>
   );
 }

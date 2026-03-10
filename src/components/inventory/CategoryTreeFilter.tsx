@@ -23,6 +23,7 @@ type CategoryTreeFilterProps = {
   siteNamesById?: Record<string, string>;
   name?: string;
   label?: string;
+  required?: boolean;
   searchPlaceholder?: string;
   emptyOptionLabel?: string;
   className?: string;
@@ -45,6 +46,7 @@ export function CategoryTreeFilter({
   siteNamesById,
   name = "category_id",
   label = "Categoria",
+  required = false,
   searchPlaceholder = "Buscar categoria por nombre o ruta",
   emptyOptionLabel = "Todas",
   className = "",
@@ -162,12 +164,26 @@ export function CategoryTreeFilter({
     maxVisibleOptions <= 6 ? "max-h-48" : maxVisibleOptions <= 10 ? "max-h-64" : "max-h-80";
 
   return (
-    <div className={`flex flex-col gap-1 ${className}`.trim()} ref={rootRef}>
-      <span className="ui-label">{label}</span>
-      <input type="hidden" name={name} value={value} />
+    <div
+      className={`flex flex-col gap-1 ${className}`.trim()}
+      ref={rootRef}
+      data-required-group={required ? "true" : undefined}
+    >
+      <span className="ui-label">
+        {label}
+        {required ? <span className="text-[var(--ui-danger)]"> *</span> : null}
+      </span>
+      <input
+        type="hidden"
+        name={name}
+        value={value}
+        data-required-custom={required ? "true" : undefined}
+        data-required-label={required ? label : undefined}
+      />
 
       <button
         type="button"
+        data-required-trigger={required ? "true" : undefined}
         className="ui-input flex h-11 items-center justify-between text-left"
         onClick={() => setIsOpen((prev) => !prev)}
         aria-expanded={isOpen}
