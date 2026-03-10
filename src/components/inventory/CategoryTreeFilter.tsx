@@ -10,7 +10,10 @@ import {
 
 type CategoryOption = {
   id: string;
-  label: string;
+  shortLabel: string;
+  routeLabel: string;
+  siteLabel: string;
+  levelLabel: "RAIZ" | "PADRE" | "HOJA";
   searchLabel: string;
   selectable: boolean;
   sortKey: string;
@@ -104,6 +107,7 @@ export function CategoryTreeFilter({
     const rows: CategoryOption[] = categories.map((row) => {
       const path = getCategoryPath(row.id, categoryMap);
       const depth = Math.max(0, path.split("/").length - 1);
+      const pathWithArrows = path.split("/").map((part) => part.trim()).filter(Boolean).join(" > ");
       const meta = showMeta
         ? buildCategoryMetaLabel(row, siteNameMap, {
             domainLabelMode: metaDomainLabelMode,
@@ -111,15 +115,26 @@ export function CategoryTreeFilter({
           })
         : "";
       const shortName = String(row.name ?? "").trim() || path;
-      const optionLabel = meta ? `${shortName} (${meta})` : shortName;
       const hasChildren = parentIds.has(row.id);
+      const isRoot = !String(row.parent_id ?? "").trim();
       const selectable = selectionMode === "leaf_only" ? !hasChildren : true;
+      const siteLabel = row.site_id ? siteNameMap.get(row.site_id) ?? row.site_id : "Global";
+      const routeBase = `${siteLabel} · ${pathWithArrows}`;
+      const routeLabel = meta ? `${routeBase} · ${meta}` : routeBase;
+      const levelLabel: "RAIZ" | "PADRE" | "HOJA" = isRoot
+        ? "RAIZ"
+        : hasChildren
+          ? "PADRE"
+          : "HOJA";
       return {
         id: row.id,
-        label: optionLabel,
-        searchLabel: toSearchLabel(`${path} ${row.name} ${meta}`),
+        shortLabel: shortName,
+        routeLabel,
+        siteLabel,
+        levelLabel,
+        searchLabel: toSearchLabel(`${shortName} ${pathWithArrows} ${siteLabel} ${meta}`),
         selectable,
-        sortKey: toSearchLabel(path),
+        sortKey: toSearchLabel(`${siteLabel} ${pathWithArrows}`),
         depth,
       };
     });
@@ -159,7 +174,9 @@ export function CategoryTreeFilter({
   const visibleOptions =
     selectedOption && !selectedInFiltered ? [selectedOption, ...filtered] : filtered;
 
-  const selectedLabel = selectedOption?.label ?? emptyOptionLabel;
+  const selectedLabel = selectedOption
+    ? `${selectedOption.shortLabel} · ${selectedOption.siteLabel}`
+    : emptyOptionLabel;
   const maxListHeightClass =
     maxVisibleOptions <= 6 ? "max-h-48" : maxVisibleOptions <= 10 ? "max-h-64" : "max-h-80";
 
@@ -236,17 +253,32 @@ export function CategoryTreeFilter({
                       : "cursor-not-allowed bg-zinc-50 text-[var(--ui-text)] font-semibold"
                   }`}
                 >
-                  <span
-                    className={`truncate ${option.selectable ? "" : "tracking-[0.01em]"}`}
-                    style={{ paddingLeft: `${option.depth * 12}px` }}
-                  >
-                    {option.label}
-                  </span>
-                  {!option.selectable ? (
-                    <span className="ml-3 shrink-0 rounded-full border border-zinc-300 bg-white px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
-                      {nonSelectableHint}
+                  <span className="min-w-0" style={{ paddingLeft: `${option.depth * 12}px` }}>
+                    <span className={`block truncate ${option.selectable ? "" : "tracking-[0.01em]"}`}>
+                      {option.shortLabel}
                     </span>
-                  ) : null}
+                    <span className="mt-0.5 block truncate text-[11px] font-normal text-[var(--ui-muted)]">
+                      {option.routeLabel}
+                    </span>
+                  </span>
+                  <span className="ml-3 shrink-0">
+                    <span
+                      className={`rounded-full px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide ${
+                        option.levelLabel === "HOJA"
+                          ? "border border-[color:var(--ui-success)]/35 bg-[color:var(--ui-success)]/12 text-[var(--ui-success)]"
+                          : option.levelLabel === "PADRE"
+                            ? "border border-[color:var(--ui-brand)]/35 bg-[color:var(--ui-brand)]/10 text-[var(--ui-brand)]"
+                            : "border border-[var(--ui-border)] bg-[var(--ui-surface)] text-[var(--ui-muted)]"
+                      }`}
+                    >
+                      {option.levelLabel}
+                    </span>
+                    {!option.selectable ? (
+                      <span className="mt-1 block text-[10px] font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
+                        {nonSelectableHint}
+                      </span>
+                    ) : null}
+                  </span>
                 </button>
               ))
             ) : (
