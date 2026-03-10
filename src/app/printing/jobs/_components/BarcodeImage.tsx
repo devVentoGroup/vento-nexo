@@ -133,7 +133,7 @@ export function BarcodeImage({
   return (
     <img
       src={dataUrl}
-      alt="CÃ³digo de barras"
+      alt="Codigo de barras"
       style={{
         ...sizeStyle,
         objectFit: "fill",
