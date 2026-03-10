@@ -25,7 +25,7 @@ type ProductSupplierRow = {
   purchase_pack_unit_code: string | null;
   purchase_unit: string | null;
   purchase_price: number | null;
-  purchase_price_net: number | null;
+  purchase_price_net?: number | null;
   purchase_price_includes_tax: boolean | null;
   purchase_tax_rate: number | null;
   currency: string | null;
@@ -85,15 +85,34 @@ export async function GET() {
   const products = (productsData ?? []) as ProductRow[];
   const productIds = products.map((row) => row.id);
 
-  const { data: productSuppliersData, error: productSuppliersErr } =
+  const productSuppliersBaseSelect =
+    "product_id,supplier_id,is_primary,purchase_pack_qty,purchase_pack_unit_code,purchase_unit,purchase_price,purchase_price_includes_tax,purchase_tax_rate,currency";
+  const productSuppliersWithNetSelect =
+    `${productSuppliersBaseSelect},purchase_price_net`;
+
+  const withNet =
     productIds.length > 0
       ? await supabase
           .from("product_suppliers")
-          .select(
-            "product_id,supplier_id,is_primary,purchase_pack_qty,purchase_pack_unit_code,purchase_unit,purchase_price,purchase_price_net,purchase_price_includes_tax,purchase_tax_rate,currency"
-          )
+          .select(productSuppliersWithNetSelect)
           .in("product_id", productIds)
       : { data: [] as ProductSupplierRow[], error: null };
+
+  const missingPurchasePriceNet =
+    withNet.error?.message?.toLowerCase().includes("purchase_price_net") &&
+    withNet.error?.message?.toLowerCase().includes("does not exist");
+
+  const fallback =
+    productIds.length > 0 && missingPurchasePriceNet
+      ? await supabase
+          .from("product_suppliers")
+          .select(productSuppliersBaseSelect)
+          .in("product_id", productIds)
+      : null;
+
+  const productSuppliersData =
+    (fallback?.data as ProductSupplierRow[] | null) ?? (withNet.data as ProductSupplierRow[] | null);
+  const productSuppliersErr = fallback?.error ?? withNet.error;
 
   if (productSuppliersErr) {
     return NextResponse.json({ error: productSuppliersErr.message }, { status: 400 });
@@ -140,6 +159,20 @@ export async function GET() {
 
   const rows: string[] = [header];
 
+  const resolvePurchasePriceNet = (supplierRow: ProductSupplierRow): number | null => {
+    const explicitNet = Number(supplierRow.purchase_price_net ?? NaN);
+    if (Number.isFinite(explicitNet)) return explicitNet;
+
+    const gross = Number(supplierRow.purchase_price ?? NaN);
+    if (!Number.isFinite(gross)) return null;
+
+    const includesTax = Boolean(supplierRow.purchase_price_includes_tax);
+    const taxRate = Number(supplierRow.purchase_tax_rate ?? 0);
+    if (!includesTax || !Number.isFinite(taxRate) || taxRate <= 0) return gross;
+
+    return gross / (1 + taxRate / 100);
+  };
+
   for (const product of products) {
     const supplierRows = supplierRowsByProduct.get(product.id) ?? [];
     if (!supplierRows.length) {
@@ -148,6 +181,9 @@ export async function GET() {
           escapeCsv(product.name ?? ""),
           escapeCsv(product.sku ?? ""),
           escapeCsv("Sin proveedor"),
+          "",
+          "",
+          "",
           "",
           "",
           "",
@@ -182,7 +218,7 @@ export async function GET() {
           escapeCsv(supplierName),
           escapeCsv(supplierRow.is_primary ? "Si" : "No"),
           String(supplierRow.purchase_price ?? ""),
-          String(supplierRow.purchase_price_net ?? ""),
+          String(resolvePurchasePriceNet(supplierRow) ?? ""),
           escapeCsv(supplierRow.purchase_price_includes_tax ? "Si" : "No"),
           String(supplierRow.purchase_tax_rate ?? ""),
           escapeCsv(supplierRow.currency ?? ""),

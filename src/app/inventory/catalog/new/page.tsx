@@ -469,6 +469,7 @@ async function createProduct(formData: FormData) {
         inputUnitCode: string;
         qtyInInputUnit: number;
         qtyInStockUnit: number;
+        source: "manual" | "supplier_primary";
       }
     | null = null;
   if (config.hasSuppliers) {
@@ -563,6 +564,7 @@ async function createProduct(formData: FormData) {
                   inputUnitCode: packUnitCode,
                   qtyInInputUnit: 1,
                   qtyInStockUnit,
+                  source: "supplier_primary",
                 };
               }
             }
@@ -589,6 +591,29 @@ async function createProduct(formData: FormData) {
           is_primary: Boolean(line.is_primary),
         });
       }
+    }
+  }
+
+  if (!remissionUomFromSupplier) {
+    const remissionInputUnitCode = normalizeUnitCode(
+      asText(formData.get("remission_uom_code"))
+    );
+    const remissionQtyInStockRaw = Number(formData.get("remission_uom_qty_in_stock") ?? 0);
+    const remissionQtyInStock =
+      Number.isFinite(remissionQtyInStockRaw) && remissionQtyInStockRaw > 0
+        ? remissionQtyInStockRaw
+        : 0;
+    const remissionLabel =
+      asText(formData.get("remission_uom_label")) || "Empaque remision";
+
+    if (remissionInputUnitCode && remissionQtyInStock > 0) {
+      remissionUomFromSupplier = {
+        label: remissionLabel,
+        inputUnitCode: remissionInputUnitCode,
+        qtyInInputUnit: 1,
+        qtyInStockUnit: remissionQtyInStock,
+        source: "manual",
+      };
     }
   }
 
@@ -657,7 +682,7 @@ async function createProduct(formData: FormData) {
       inputUnitCode: remissionUomFromSupplier.inputUnitCode,
       qtyInInputUnit: remissionUomFromSupplier.qtyInInputUnit,
       qtyInStockUnit: remissionUomFromSupplier.qtyInStockUnit,
-      source: "supplier_primary",
+      source: remissionUomFromSupplier.source,
     });
   }
 
@@ -1168,8 +1193,49 @@ export default async function NewProductPage({
         )}
 
         {config.hasSuppliers && isQuickMode ? (
-          <section className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
-            Proveedor y costos detallados quedan opcionales en v1. Puedes completar esa informacion despues desde la ficha del producto o por carga asistida.
+          <section className="space-y-4">
+            <div className="ui-panel">
+              <div className="ui-h3">Empaque para remision (v1 rapido)</div>
+              <p className="mt-1 text-sm text-[var(--ui-muted)]">
+                Define como se solicita en remisiones cuando no es por unidad base.
+                Ejemplo: 1 canasta = 12 und.
+              </p>
+              <div className="mt-4 grid gap-4 sm:grid-cols-3">
+                <label className="flex flex-col gap-1">
+                  <span className="ui-label">Nombre empaque remision</span>
+                  <input
+                    name="remission_uom_label"
+                    className="ui-input"
+                    placeholder="Canasta x12"
+                  />
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="ui-label">Unidad empaque</span>
+                  <select name="remission_uom_code" className="ui-input" defaultValue="">
+                    <option value="">(sin empaque especial)</option>
+                    {defaultUnitOptions.map((unit) => (
+                      <option key={unit.code} value={unit.code}>
+                        {unit.code} - {unit.name}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <label className="flex flex-col gap-1">
+                  <span className="ui-label">Cuanto stock base contiene 1 empaque</span>
+                  <input
+                    name="remission_uom_qty_in_stock"
+                    type="number"
+                    step="0.0001"
+                    min="0"
+                    className="ui-input"
+                    placeholder="12"
+                  />
+                </label>
+              </div>
+            </div>
+            <section className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
+              Proveedor y costos detallados quedan opcionales en v1. Puedes completar esa informacion despues desde la ficha del producto o por carga asistida.
+            </section>
           </section>
         ) : null}
 
