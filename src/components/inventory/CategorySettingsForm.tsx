@@ -24,6 +24,8 @@ type ParentCategoryOption = {
   name: string;
   path: string;
   isRoot: boolean;
+  siteId: string;
+  kinds: CategoryKind[];
 };
 
 type DomainOption = {
@@ -61,11 +63,6 @@ const CATEGORY_KIND_ORDER: CategoryKind[] = ["insumo", "preparacion", "venta", "
 
 const WIZARD_STEPS: GuidedStep[] = [
   {
-    id: "identidad",
-    title: "Identidad",
-    objective: "Define nombre, slug y categoria padre.",
-  },
-  {
     id: "uso",
     title: "Uso",
     objective: "Define para que tipo de items aplica la categoria.",
@@ -74,6 +71,11 @@ const WIZARD_STEPS: GuidedStep[] = [
     id: "alcance",
     title: "Alcance",
     objective: "Define si la categoria es global o exclusiva de una sede.",
+  },
+  {
+    id: "identidad",
+    title: "Identidad",
+    objective: "Define nombre, slug y categoria padre.",
   },
   {
     id: "canal",
@@ -143,13 +145,49 @@ export function CategorySettingsForm({
     const site = sites.find((row) => row.id === selectedSiteId);
     return site?.name ?? selectedSiteId;
   }, [selectedSiteId, sites]);
+  const siteNameById = useMemo(
+    () =>
+      new Map(
+        sites.map((site) => [site.id, site.name ?? site.id] as const)
+      ),
+    [sites]
+  );
 
   const scopeDescription = selectedSiteId
     ? `Sede: esta categoria solo se vera en ${selectedSiteName}.`
     : "Global: esta categoria se vera en todas las sedes.";
 
   const rootParentOptions = parentOptions.filter((row) => row.isRoot);
-  const nestedParentOptions = parentOptions.filter((row) => !row.isRoot);
+  const filteredRootParentOptions = useMemo(() => {
+    return rootParentOptions.filter((row) => {
+      const scopeMatch = selectedSiteId
+        ? !row.siteId || row.siteId === selectedSiteId
+        : !row.siteId;
+      if (!scopeMatch) return false;
+      if (selectedKinds.length === 0) return true;
+      if (row.kinds.length === 0) return true;
+      return row.kinds.some((kind) => selectedKinds.includes(kind));
+    });
+  }, [rootParentOptions, selectedSiteId, selectedKinds]);
+
+  const parentOptionsByKind = useMemo(() => {
+    const grouped = new Map<CategoryKind, ParentCategoryOption[]>();
+    for (const kind of CATEGORY_KIND_ORDER) grouped.set(kind, []);
+    const transversal: ParentCategoryOption[] = [];
+    for (const row of filteredRootParentOptions) {
+      if (row.kinds.length === 0) {
+        transversal.push(row);
+        continue;
+      }
+      for (const kind of CATEGORY_KIND_ORDER) {
+        if (row.kinds.includes(kind)) grouped.get(kind)?.push(row);
+      }
+    }
+    return { grouped, transversal };
+  }, [filteredRootParentOptions]);
+  const selectedParentStillAvailable =
+    !selectedParentId || filteredRootParentOptions.some((row) => row.id === selectedParentId);
+  const effectiveParentId = selectedParentStillAvailable ? selectedParentId : "";
 
   const isIdentityComplete = Boolean(name.trim());
   const isUsageComplete = selectedKinds.length > 0;
@@ -229,7 +267,7 @@ export function CategorySettingsForm({
 
         <input type="hidden" name="name" value={name} />
         <input type="hidden" name="slug" value={slug} />
-        <input type="hidden" name="parent_id" value={selectedParentId} />
+        <input type="hidden" name="parent_id" value={effectiveParentId} />
         <input type="hidden" name="description" value={showDescriptionEditor ? description : ""} />
         <input type="hidden" name="site_id" value={selectedSiteId} />
         <input type="hidden" name="domain" value={showChannel ? selectedDomain : ""} />
@@ -238,8 +276,59 @@ export function CategorySettingsForm({
           <input key={`kind-${kind}`} type="hidden" name="applies_to_kinds" value={kind} />
         ))}
 
+        <section className={currentStepId === "uso" ? "ui-panel space-y-4" : "hidden"}>
+          <div className="ui-h3">Paso 1. Uso</div>
+          <div className="flex flex-wrap gap-3">
+            {CATEGORY_KIND_ORDER.map((kind) => (
+              <label
+                key={kind}
+                className="flex items-center gap-2 rounded-md border border-[var(--ui-border)] px-3 py-2"
+              >
+                <input
+                  type="checkbox"
+                  checked={selectedKinds.includes(kind)}
+                  onChange={() => toggleKind(kind)}
+                />
+                <span className="text-sm">{CATEGORY_KIND_LABELS[kind]}</span>
+              </label>
+            ))}
+          </div>
+          <StepHelp
+            meaning="Define para que tipo de item se permite usar esta categoria."
+            whenToUse="Marca uno o varios usos segun el contexto operativo real."
+            example="Categoria para equipos: solo Equipo. Categoria transversal: Insumo y Preparacion."
+            impact="Evita que una categoria aparezca donde no corresponde."
+          />
+        </section>
+
+        <section className={currentStepId === "alcance" ? "ui-panel space-y-4" : "hidden"}>
+          <div className="ui-h3">Paso 2. Alcance</div>
+          <label className="flex flex-col gap-1">
+            <span className="ui-label">Alcance</span>
+            <select
+              value={selectedSiteId}
+              onChange={(event) => setSelectedSiteId(event.target.value)}
+              className="ui-input"
+            >
+              <option value="">Global</option>
+              {sites.map((site) => (
+                <option key={site.id} value={site.id}>
+                  {site.name ?? site.id}
+                </option>
+              ))}
+            </select>
+            <span className="ui-caption">{scopeDescription}</span>
+          </label>
+          <StepHelp
+            meaning="Alcance define visibilidad por sede."
+            whenToUse="Global para categorias comunes. Sede para categorias locales o excepciones."
+            example="Global: Insumos secos. Sede Saudo: Menaje de salon."
+            impact="Controla que cada sede vea solo lo que aplica."
+          />
+        </section>
+
         <section className={currentStepId === "identidad" ? "ui-panel space-y-4" : "hidden"}>
-          <div className="ui-h3">Paso 1. Identidad</div>
+          <div className="ui-h3">Paso 3. Identidad</div>
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="flex flex-col gap-1 sm:col-span-2">
               <span className="ui-label">Nombre</span>
@@ -263,28 +352,37 @@ export function CategorySettingsForm({
             <label className="flex flex-col gap-1 sm:col-span-2">
               <span className="ui-label">Categoria padre</span>
               <select
-                value={selectedParentId}
+                value={effectiveParentId}
                 onChange={(event) => setSelectedParentId(event.target.value)}
                 className="ui-input"
               >
                 <option value="">Sin padre (raiz)</option>
-                <optgroup label="Categorias padre">
-                  {rootParentOptions.map((row) => (
-                    <option key={row.id} value={row.id}>
-                      {row.name}
-                    </option>
-                  ))}
-                </optgroup>
-                {nestedParentOptions.length > 0 ? (
-                  <optgroup label="Subcategorias (avanzado)">
-                    {nestedParentOptions.map((row) => (
+                {CATEGORY_KIND_ORDER.map((kind) => {
+                  const rows = parentOptionsByKind.grouped.get(kind) ?? [];
+                  if (!rows.length) return null;
+                  return (
+                    <optgroup key={`parent-kind-${kind}`} label={`Padres ${CATEGORY_KIND_LABELS[kind]}`}>
+                      {rows.map((row) => (
+                        <option key={row.id} value={row.id}>
+                          {row.name} - {row.siteId ? siteNameById.get(row.siteId) ?? row.siteId : "Global"}
+                        </option>
+                      ))}
+                    </optgroup>
+                  );
+                })}
+                {parentOptionsByKind.transversal.length > 0 ? (
+                  <optgroup label="Padres transversales">
+                    {parentOptionsByKind.transversal.map((row) => (
                       <option key={row.id} value={row.id}>
-                        {row.path}
+                        {row.name} - {row.siteId ? siteNameById.get(row.siteId) ?? row.siteId : "Global"}
                       </option>
                     ))}
                   </optgroup>
                 ) : null}
               </select>
+              <span className="ui-caption">
+                Solo se muestran categorias padre (raiz), filtradas por alcance y uso.
+              </span>
             </label>
             {showDescriptionEditor ? (
               <label className="flex flex-col gap-1 sm:col-span-2">
@@ -316,57 +414,6 @@ export function CategorySettingsForm({
             whenToUse="Usa categoria padre cuando quieras agrupar subcategorias bajo un nodo principal."
             example="Padre: Bebidas. Hija: Bebidas frias."
             impact="Mejora busqueda, filtros y orden del catalogo."
-          />
-        </section>
-
-        <section className={currentStepId === "uso" ? "ui-panel space-y-4" : "hidden"}>
-          <div className="ui-h3">Paso 2. Uso</div>
-          <div className="flex flex-wrap gap-3">
-            {CATEGORY_KIND_ORDER.map((kind) => (
-              <label
-                key={kind}
-                className="flex items-center gap-2 rounded-md border border-[var(--ui-border)] px-3 py-2"
-              >
-                <input
-                  type="checkbox"
-                  checked={selectedKinds.includes(kind)}
-                  onChange={() => toggleKind(kind)}
-                />
-                <span className="text-sm">{CATEGORY_KIND_LABELS[kind]}</span>
-              </label>
-            ))}
-          </div>
-          <StepHelp
-            meaning="Define para que tipo de item se permite usar esta categoria."
-            whenToUse="Marca uno o varios usos segun el contexto operativo real."
-            example="Categoria para equipos: solo Equipo. Categoria transversal: Insumo y Preparacion."
-            impact="Evita que una categoria aparezca donde no corresponde."
-          />
-        </section>
-
-        <section className={currentStepId === "alcance" ? "ui-panel space-y-4" : "hidden"}>
-          <div className="ui-h3">Paso 3. Alcance</div>
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Alcance</span>
-            <select
-              value={selectedSiteId}
-              onChange={(event) => setSelectedSiteId(event.target.value)}
-              className="ui-input"
-            >
-              <option value="">Global</option>
-              {sites.map((site) => (
-                <option key={site.id} value={site.id}>
-                  {site.name ?? site.id}
-                </option>
-              ))}
-            </select>
-            <span className="ui-caption">{scopeDescription}</span>
-          </label>
-          <StepHelp
-            meaning="Alcance define visibilidad por sede."
-            whenToUse="Global para categorias comunes. Sede para categorias locales o excepciones."
-            example="Global: Insumos secos. Sede Saudo: Menaje de salon."
-            impact="Controla que cada sede vea solo lo que aplica."
           />
         </section>
 

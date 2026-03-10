@@ -813,6 +813,8 @@ export default async function InventoryCategorySettingsPage({
     name: row.name,
     path: getCategoryPath(row.id, categoryMap),
     isRoot: !row.parent_id,
+    siteId: asText(row.site_id),
+    kinds: parseCategoryKinds(row.applies_to_kinds),
   }));
   const channelOptions = domainOptions.filter((option) => option.value);
 
