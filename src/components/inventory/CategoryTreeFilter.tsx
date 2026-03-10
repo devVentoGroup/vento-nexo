@@ -105,7 +105,8 @@ export function CategoryTreeFilter({
             useBusinessDomainLabel: metaUseBusinessDomainLabel,
           })
         : "";
-      const optionLabel = meta ? `${path} (${meta})` : path;
+      const shortName = String(row.name ?? "").trim() || path;
+      const optionLabel = meta ? `${shortName} (${meta})` : shortName;
       const hasChildren = parentIds.has(row.id);
       const selectable = selectionMode === "leaf_only" ? !hasChildren : true;
       return {
