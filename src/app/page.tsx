@@ -18,6 +18,10 @@ const PERMISSIONS = {
   remissionsPrepare: "inventory.remissions.prepare",
   remissionsReceive: "inventory.remissions.receive",
   entriesEmergency: "inventory.entries_emergency",
+  counts: "inventory.counts",
+  transfers: "inventory.transfers",
+  withdraw: "inventory.withdraw",
+  adjustments: "inventory.adjustments",
   locations: "inventory.locations",
   movements: "inventory.movements",
   stock: "inventory.stock",
@@ -48,6 +52,7 @@ type RemissionRow = {
 
 type ActionLink = {
   id: string;
+  section: ActionSectionId;
   title: string;
   description: string;
   href: string;
@@ -57,12 +62,14 @@ type ActionLink = {
   icon?: IconName;
 };
 
+type ActionSectionId = "operate" | "verify" | "configure" | "utilities";
+
 const STATUS_LABELS: Record<string, string> = {
   pending: "pendiente",
   preparing: "preparando",
   in_transit: "en_transito",
   received: "recibido",
-  closed: "cerrado",
+  closed: "recibido",
   cancelled: "cancelado",
 };
 
@@ -90,6 +97,32 @@ type IconName =
   | "badge"
   | "building"
   | "eye";
+
+const ACTION_SECTIONS: Record<
+  ActionSectionId,
+  { title: string; description: string; icon: IconName }
+> = {
+  operate: {
+    title: "Operar",
+    description: "Abrir el flujo correcto para recibir, mover o abastecer inventario.",
+    icon: "package",
+  },
+  verify: {
+    title: "Verificar",
+    description: "Consultar saldo, trazabilidad y salud operativa antes de corregir.",
+    icon: "eye",
+  },
+  configure: {
+    title: "Configurar",
+    description: "Mantener setup base sin mezclarlo con la operacion diaria.",
+    icon: "clipboard",
+  },
+  utilities: {
+    title: "Utilidades",
+    description: "Herramientas de apoyo que no deben competir con el flujo principal.",
+    icon: "scan",
+  },
+};
 
 function Icon({ name, className }: { name?: IconName; className?: string }) {
   const common = "none";
@@ -216,6 +249,40 @@ function ActionCard({ action }: { action: ActionLink }) {
   );
 }
 
+function ActionSection({
+  title,
+  description,
+  icon,
+  actions,
+}: {
+  title: string;
+  description: string;
+  icon: IconName;
+  actions: ActionLink[];
+}) {
+  if (!actions.length) return null;
+
+  return (
+    <div className="ui-panel">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <div className="ui-section-title">
+            <Icon name={icon} />
+            {title}
+          </div>
+          <div className="mt-1 ui-body-muted">{description}</div>
+        </div>
+        <div className="ui-caption">{actions.length} acceso{actions.length === 1 ? "" : "s"}</div>
+      </div>
+      <div className="mt-4 grid gap-4 md:grid-cols-3">
+        {actions.map((action) => (
+          <ActionCard key={action.id} action={action} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function EmptyState({
   title,
   description,
@@ -311,6 +378,10 @@ export default async function Home({
   let canPreparePermission = false;
   let canReceivePermission = false;
   let canEntriesEmergencyPermission = false;
+  let canCountsPermission = false;
+  let canTransfersPermission = false;
+  let canWithdrawPermission = false;
+  let canAdjustmentsPermission = false;
   let canMovementsPermission = false;
   let canStockPermission = false;
   let canLocationsPermission = false;
@@ -322,6 +393,10 @@ export default async function Home({
       canPreparePermission,
       canReceivePermission,
       canEntriesEmergencyPermission,
+      canCountsPermission,
+      canTransfersPermission,
+      canWithdrawPermission,
+      canAdjustmentsPermission,
       canMovementsPermission,
       canStockPermission,
       canLocationsPermission,
@@ -364,6 +439,34 @@ export default async function Home({
       checkPermissionWithRoleOverride({
         supabase,
         appId: APP_ID,
+        code: PERMISSIONS.counts,
+        context: { siteId: activeSiteId },
+        actualRole: role,
+      }),
+      checkPermissionWithRoleOverride({
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.transfers,
+        context: { siteId: activeSiteId },
+        actualRole: role,
+      }),
+      checkPermissionWithRoleOverride({
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.withdraw,
+        context: { siteId: activeSiteId },
+        actualRole: role,
+      }),
+      checkPermissionWithRoleOverride({
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.adjustments,
+        context: { siteId: activeSiteId },
+        actualRole: role,
+      }),
+      checkPermissionWithRoleOverride({
+        supabase,
+        appId: APP_ID,
         code: PERMISSIONS.movements,
         context: { siteId: activeSiteId },
         actualRole: role,
@@ -388,15 +491,19 @@ export default async function Home({
   const viewLabel = !activeSiteId
     ? "Sin sede"
     : isProductionCenter
-      ? "Bodega (Centro)"
+      ? "Centro de produccion"
       : isSatellite
-        ? "Sede satélite"
-        : "Sede";
+        ? "Satelite operativo"
+        : "Sede operativa";
 
   const canRequestRemission = isSatellite && canRequestPermission;
   const canPrepareRemission = isProductionCenter && canPreparePermission;
   const canReceiveRemission = isSatellite && canReceivePermission;
   const canCreateEntries = isProductionCenter && canEntriesEmergencyPermission;
+  const canCountInventory = canCountsPermission;
+  const canRunTransfers = canTransfersPermission;
+  const canRunWithdrawals = canWithdrawPermission;
+  const canRunAdjustments = canAdjustmentsPermission;
   const canViewStock = canStockPermission;
   const canManageLocations = isProductionCenter && canLocationsPermission;
 
@@ -419,8 +526,9 @@ export default async function Home({
   const actions: ActionLink[] = [
     {
       id: "request-remission",
-      title: "Solicitar remisión",
-      description: "Pide insumos desde sede satélite hacia el centro de producción.",
+      section: "operate",
+      title: "Solicitar abastecimiento",
+      description: "Pide insumos desde el satelite a la sede origen.",
       href: "/inventory/remissions",
       cta: "Solicitar",
       tone: "primary",
@@ -429,8 +537,9 @@ export default async function Home({
     },
     {
       id: "prepare-remissions",
-      title: "Preparar remisiones",
-      description: "Gestiona picking y despacho para sedes satélite.",
+      section: "operate",
+      title: "Preparar abastecimiento",
+      description: "Gestiona picking y despacho para las solicitudes abiertas.",
       href: "/inventory/remissions/prepare",
       cta: "Preparar",
       tone: "primary",
@@ -439,17 +548,19 @@ export default async function Home({
     },
     {
       id: "entries",
-      title: "Cargar stock manual v1",
-      description: "Carga stock inicial o contingencias del Centro con entrada manual.",
+      section: "operate",
+      title: "Registrar entrada",
+      description: "Carga recepciones manuales y contingencias de inventario.",
       href: "/inventory/entries",
-      cta: "Cargar stock",
+      cta: "Registrar",
       tone: "primary",
       visible: canCreateEntries,
       icon: "layers",
     },
     {
       id: "receive-remissions",
-      title: "Recibir remisiones",
+      section: "operate",
+      title: "Recibir abastecimiento",
       description: "Confirma cantidades recibidas y reporta faltantes.",
       href: "/inventory/remissions",
       cta: "Recibir",
@@ -459,8 +570,9 @@ export default async function Home({
     },
     {
       id: "remissions",
-      title: "Ver remisiones",
-      description: "Seguimiento de solicitudes y estados recientes.",
+      section: "operate",
+      title: "Abastecimiento interno",
+      description: "Seguimiento de solicitudes, despacho y recepcion entre sedes.",
       href: "/inventory/remissions",
       cta: "Abrir",
       tone: "secondary",
@@ -468,9 +580,54 @@ export default async function Home({
       icon: "package",
     },
     {
+      id: "counts",
+      section: "operate",
+      title: "Conteos",
+      description: "Conteo inicial y saneamiento auditable antes de ajustar.",
+      href: "/inventory/count-initial",
+      cta: "Abrir",
+      tone: "secondary",
+      visible: canCountInventory,
+      icon: "clipboard",
+    },
+    {
+      id: "transfers",
+      section: "operate",
+      title: "Traslados",
+      description: "Movimientos internos entre ubicaciones o zonas.",
+      href: "/inventory/transfers",
+      cta: "Abrir",
+      tone: "secondary",
+      visible: canRunTransfers,
+      icon: "arrows",
+    },
+    {
+      id: "withdraw",
+      section: "operate",
+      title: "Retiros",
+      description: "Salidas controladas por consumo, merma o uso interno.",
+      href: "/inventory/withdraw",
+      cta: "Abrir",
+      tone: "secondary",
+      visible: canRunWithdrawals,
+      icon: "boxes",
+    },
+    {
+      id: "adjust",
+      section: "operate",
+      title: "Ajustes",
+      description: "Correcciones puntuales cuando el flujo oficial ya no alcanza.",
+      href: "/inventory/adjust",
+      cta: "Abrir",
+      tone: "secondary",
+      visible: canRunAdjustments,
+      icon: "arrows",
+    },
+    {
       id: "checklist",
-      title: "Configuracion inicial",
-      description: "Checklist v1 para Centro + Saudo.",
+      section: "configure",
+      title: "Checklist v1",
+      description: "Checklist de salida para setup, salud de datos y rutas.",
       href: "/inventory/settings/checklist",
       cta: "Abrir",
       tone: "secondary",
@@ -479,8 +636,9 @@ export default async function Home({
     },
     {
       id: "catalog",
-      title: "Catalogo",
-      description: "Alta rapida y activacion por sede.",
+      section: "configure",
+      title: "Productos maestros",
+      description: "Catalogo operativo, activacion por sede y salud base.",
       href: "/inventory/catalog",
       cta: "Abrir",
       tone: "secondary",
@@ -489,6 +647,7 @@ export default async function Home({
     },
     {
       id: "stock",
+      section: "verify",
       title: "Stock por sede",
       description: "Consulta stock actual por SKU y sede.",
       href: "/inventory/stock",
@@ -499,6 +658,7 @@ export default async function Home({
     },
     {
       id: "movements",
+      section: "verify",
       title: "Movimientos",
       description: "Ledger de inventario por sede y tipo de movimiento.",
       href: "/inventory/movements",
@@ -509,6 +669,7 @@ export default async function Home({
     },
     {
       id: "scanner",
+      section: "utilities",
       title: "Scanner",
       description: "Escaneo rápido de LOC/AST.",
       href: "/scanner",
@@ -518,29 +679,42 @@ export default async function Home({
       icon: "scan",
     },
     {
-      id: "printing",
-      title: "Impresión",
-      description: "Etiquetas Zebra para LOC, SKU y PROD.",
-      href: "/printing/jobs",
-      cta: "Abrir",
-      tone: "secondary",
-      visible: true,
-      icon: "printer",
-    },
-    {
       id: "locations",
-      title: "LOC",
-      description: "Ubicaciones fisicas y zonas de almacen.",
+      section: "configure",
+      title: "Ubicaciones",
+      description: "LOC, zonas y ubicaciones fisicas del centro.",
       href: "/inventory/locations",
       cta: "Abrir",
       tone: "secondary",
       visible: canManageLocations,
       icon: "map",
     },
+    {
+      id: "supply-routes",
+      section: "configure",
+      title: "Rutas de abastecimiento",
+      description: "Reglas de origen y destino para surtir sedes.",
+      href: "/inventory/settings/supply-routes",
+      cta: "Abrir",
+      tone: "secondary",
+      visible: true,
+      icon: "arrows",
+    },
   ];
 
   const primaryActions = actions.filter((action) => action.visible && action.tone === "primary");
-  const secondaryActions = actions.filter((action) => action.visible && action.tone !== "primary");
+  const secondaryActionSections = (Object.entries(ACTION_SECTIONS) as [
+    ActionSectionId,
+    (typeof ACTION_SECTIONS)[ActionSectionId],
+  ][])
+    .map(([id, meta]) => ({
+      id,
+      ...meta,
+      actions: actions.filter(
+        (action) => action.visible && action.tone !== "primary" && action.section === id
+      ),
+    }))
+    .filter((section) => section.actions.length > 0);
 
   return (
     <div className="w-full space-y-6">
@@ -552,7 +726,10 @@ export default async function Home({
               Bienvenido, {displayName}
             </h1>
             <p className="mt-2 ui-body-muted">
-              Panel operativo v1 para inventario base, stock manual y remisiones entre Centro y Saudo.
+              Cockpit operativo v1 para inventario base, entradas, stock y abastecimiento interno entre sedes.
+            </p>
+            <p className="mt-2 ui-caption">
+              El flujo diario de esta version es simple: producto maestro, movimiento fisico, conteo y setup.
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2 ui-caption">
               <span className="ui-chip">
@@ -577,19 +754,29 @@ export default async function Home({
 
           <div className="flex flex-wrap items-center gap-2">
             <Link
-              href="/inventory/remissions"
+              href="/inventory/settings/checklist"
               className="ui-btn ui-btn--ghost"
             >
-              <Icon name="package" className="h-4 w-4" />
-              Remisiones
+              <Icon name="clipboard" className="h-4 w-4" />
+              Checklist v1
             </Link>
-            <Link
-              href="/scanner"
-              className="ui-btn ui-btn--brand"
-            >
-              <Icon name="scan" className="h-4 w-4" />
-              Scanner
-            </Link>
+            {canViewRemissions ? (
+              <Link
+                href="/inventory/remissions"
+                className="ui-btn ui-btn--brand"
+              >
+                <Icon name="package" className="h-4 w-4" />
+                Abastecimiento
+              </Link>
+            ) : canViewStock ? (
+              <Link
+                href="/inventory/stock"
+                className="ui-btn ui-btn--brand"
+              >
+                <Icon name="boxes" className="h-4 w-4" />
+                Ver stock
+              </Link>
+            ) : null}
           </div>
         </div>
 
@@ -634,7 +821,7 @@ export default async function Home({
       <div className="ui-panel">
         <div className="ui-section-title">
           <Icon name="sparkles" />
-          Acciones clave
+          Siguiente paso
         </div>
         {primaryActions.length ? (
           <div className="mt-4 grid gap-4 md:grid-cols-3">
@@ -644,36 +831,33 @@ export default async function Home({
           </div>
         ) : (
           <EmptyState
-            title="No hay acciones clave"
-            description="Tu rol no tiene acciones asignadas en esta sede."
+            title="No hay acciones inmediatas"
+            description="Usa las secciones de abajo para entrar al flujo correcto segun tu rol y sede."
           />
         )}
       </div>
 
-      <div className="ui-panel">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div className="ui-section-title">
-            <Icon name="sparkles" />
-            Módulos
-          </div>
-          <div className="ui-caption">Accesos rápidos</div>
-        </div>
-        <div className="mt-4 grid gap-4 md:grid-cols-3">
-          {secondaryActions.map((action) => (
-            <ActionCard key={action.id} action={action} />
-          ))}
-        </div>
-      </div>
+      {secondaryActionSections.map((section) => (
+        <ActionSection
+          key={section.id}
+          title={section.title}
+          description={section.description}
+          icon={section.icon}
+          actions={section.actions}
+        />
+      ))}
 
       <div className="ui-panel">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="ui-section-title">
               <Icon name="package" />
-              Remisiones recientes
+              Abastecimiento reciente
             </div>
             <div className="mt-1 ui-body-muted">
-              {isProductionCenter ? "Solicitudes para preparar" : "Solicitudes enviadas/recibidas"}
+              {isProductionCenter
+                ? "Solicitudes abiertas para preparar o despachar."
+                : "Solicitudes abiertas y recepciones pendientes para tu sede."}
             </div>
           </div>
           <Link
@@ -723,8 +907,8 @@ export default async function Home({
                 <tr>
                   <TableCell colSpan={5}>
                     <EmptyState
-                      title="Sin permiso de remisiones"
-                      description="Solicita acceso para consultar remisiones."
+                      title="Sin permiso de abastecimiento"
+                      description="Solicita acceso para consultar solicitudes y recepciones entre sedes."
                     />
                   </TableCell>
                 </tr>
@@ -741,9 +925,9 @@ export default async function Home({
                 <tr>
                   <TableCell colSpan={5}>
                     <EmptyState
-                      title="Sin remisiones recientes"
-                      description="Cuando se creen solicitudes aparecerán aquí."
-                      cta="Abrir remisiones"
+                      title="Sin movimientos recientes"
+                      description="Cuando se creen solicitudes de abastecimiento apareceran aqui."
+                      cta="Abrir abastecimiento"
                       href="/inventory/remissions"
                     />
                   </TableCell>

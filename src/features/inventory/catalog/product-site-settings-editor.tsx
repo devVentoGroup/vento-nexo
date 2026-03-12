@@ -261,9 +261,12 @@ export function ProductSiteSettingsEditor({
       <input type="hidden" name={name} value={JSON.stringify(lines)} />
 
       <div className="space-y-1">
-        <span className="ui-label">Disponibilidad por sede</span>
+        <span className="ui-label">Disponibilidad operativa por sede</span>
         <p className="text-xs text-[var(--ui-muted)]">
-          Stock real solo en Centro (LOC). En satelites solo defines si el producto se puede solicitar por remision.
+          Stock real solo en Centro (LOC). En satelites defines disponibilidad para abastecimiento interno.
+        </p>
+        <p className="text-xs text-[var(--ui-muted)]">
+          La marca `audience` se sigue guardando solo como compatibilidad transicional de v1.
         </p>
       </div>
 
@@ -409,10 +412,10 @@ export function ProductSiteSettingsEditor({
       <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
         <div className="mb-3 border-b border-[var(--ui-border)] pb-3">
           <div className="text-sm font-semibold text-[var(--ui-text)]">
-            Sedes satelite (catalogo para solicitar remision)
+            Sedes satelite (abastecimiento interno)
           </div>
           <p className="text-xs text-[var(--ui-muted)]">
-            Activa solo las sedes que pueden pedir este producto en remisiones.
+            Activa solo las sedes que pueden pedir este producto al centro o sede origen.
           </p>
         </div>
 

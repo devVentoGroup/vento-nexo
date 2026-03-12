@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
 import { requireAppAccess } from "@/lib/auth/guard";
 import { PageHeader } from "@/components/vento/standard/page-header";
@@ -59,6 +60,10 @@ export default async function InventoryAdjustPage({
 
   const siteId = String(sp.site_id ?? "").trim();
 
+  if (!siteId && siteRows.length === 1) {
+    redirect(`/inventory/adjust?site_id=${encodeURIComponent(siteRows[0].id)}`);
+  }
+
   if (!siteId) {
     return (
       <div className="w-full">
@@ -67,8 +72,17 @@ export default async function InventoryAdjustPage({
           subtitle="Ajustes manuales con motivo, permisos y evidencia opcional."
         />
 
-        <div className="mt-6 ui-panel">
-          <div className="ui-h3">Paso 1: elegir sede</div>
+        <div className="mt-6 ui-panel-soft space-y-3 p-4">
+          <div>
+            <div className="ui-h3">Elegir sede operativa</div>
+            <p className="mt-1 text-sm text-[var(--ui-muted)]">
+              Selecciona la sede sobre la que vas a registrar el ajuste. Si solo tienes una sede asignada,
+              NEXO entra directo a esa vista.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-4 ui-panel">
           <form method="get" action="/inventory/adjust" className="mt-4">
             <label className="flex flex-col gap-1">
               <span className="ui-label">Sede</span>

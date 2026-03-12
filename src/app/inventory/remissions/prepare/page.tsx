@@ -13,6 +13,17 @@ type RemissionRow = {
   to_site_id: string | null;
   notes: string | null;
 };
+type RemissionItemRow = {
+  request_id: string;
+  product_id: string;
+  quantity: number | null;
+  prepared_quantity: number | null;
+  shipped_quantity: number | null;
+  source_location_id: string | null;
+};
+type LocRow = { id: string; code: string | null };
+type StockBySiteRow = { product_id: string; current_qty: number | null };
+type StockByLocRow = { location_id: string; product_id: string; current_qty: number | null };
 
 function formatStatus(status?: string | null) {
   const v = String(status ?? "").trim();
@@ -63,7 +74,7 @@ export default async function RemissionsPreparePage() {
     return (
       <div className="w-full">
         <Link href="/inventory/remissions" className="ui-caption underline">
-          Volver a remisiones
+          Volver al hub de remisiones
         </Link>
         <div className="mt-4 ui-alert ui-alert--warn">
           No tienes sede activa. Elige sede en Remisiones para preparar.
@@ -84,7 +95,7 @@ export default async function RemissionsPreparePage() {
     return (
       <div className="w-full">
         <Link href="/inventory/remissions" className="ui-caption underline">
-          Volver a remisiones
+          Volver al hub de remisiones
         </Link>
         <div className="mt-4 ui-alert ui-alert--neutral">
           Esta vista es para bodegueros, gerentes y propietarios. Tu rol actual no tiene acceso.
@@ -109,20 +120,117 @@ export default async function RemissionsPreparePage() {
   const siteMap = new Map(((sites ?? []) as SiteRow[]).map((s) => [s.id, s.name]));
   const pendingCount = rows.filter((row) => row.status === "pending").length;
   const preparingCount = rows.filter((row) => row.status === "preparing").length;
+  const requestIds = rows.map((row) => row.id);
+  const { data: itemsData } = requestIds.length
+    ? await supabase
+        .from("restock_request_items")
+        .select("request_id,product_id,quantity,prepared_quantity,shipped_quantity,source_location_id")
+        .in("request_id", requestIds)
+    : { data: [] as RemissionItemRow[] };
+  const itemRows = (itemsData ?? []) as RemissionItemRow[];
+  const productIds = Array.from(new Set(itemRows.map((row) => row.product_id).filter(Boolean)));
+  const { data: stockBySiteData } =
+    productIds.length > 0
+      ? await supabase
+          .from("inventory_stock_by_site")
+          .select("product_id,current_qty")
+          .eq("site_id", siteId)
+          .in("product_id", productIds)
+      : { data: [] as StockBySiteRow[] };
+  const stockBySiteMap = new Map(
+    ((stockBySiteData ?? []) as StockBySiteRow[]).map((row) => [
+      row.product_id,
+      Number(row.current_qty ?? 0),
+    ])
+  );
+  const { data: locsData } = await supabase
+    .from("inventory_locations")
+    .select("id,code")
+    .eq("site_id", siteId)
+    .order("code", { ascending: true })
+    .limit(500);
+  const locRows = (locsData ?? []) as LocRow[];
+  const locIds = locRows.map((row) => row.id);
+  const { data: stockByLocData } =
+    locIds.length > 0 && productIds.length > 0
+      ? await supabase
+          .from("inventory_stock_by_location")
+          .select("location_id,product_id,current_qty")
+          .in("location_id", locIds)
+          .in("product_id", productIds)
+          .gt("current_qty", 0)
+      : { data: [] as StockByLocRow[] };
+  const stockByLocRows = (stockByLocData ?? []) as StockByLocRow[];
+  const bestLocQtyByProduct = new Map<string, number>();
+  for (const row of stockByLocRows) {
+    const qty = Number(row.current_qty ?? 0);
+    const current = bestLocQtyByProduct.get(row.product_id) ?? 0;
+    if (qty > current) {
+      bestLocQtyByProduct.set(row.product_id, qty);
+    }
+  }
+  const requestMetrics = new Map<
+    string,
+    {
+      totalLines: number;
+      linesMissingSourceLoc: number;
+      linesPartialPrep: number;
+      linesLikelyShortage: number;
+      linesWithoutCoveringLoc: number;
+    }
+  >();
+  for (const item of itemRows) {
+    const requestedQty = Number(item.quantity ?? 0);
+    const preparedQty = Number(item.prepared_quantity ?? 0);
+    const shippedQty = Number(item.shipped_quantity ?? 0);
+    const plannedQty = Math.max(preparedQty, shippedQty);
+    const targetQty = plannedQty > 0 ? plannedQty : requestedQty;
+    const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
+    const bestLocQty = bestLocQtyByProduct.get(item.product_id) ?? 0;
+    const current = requestMetrics.get(item.request_id) ?? {
+      totalLines: 0,
+      linesMissingSourceLoc: 0,
+      linesPartialPrep: 0,
+      linesLikelyShortage: 0,
+      linesWithoutCoveringLoc: 0,
+    };
+    current.totalLines += 1;
+    if (plannedQty > 0 && !item.source_location_id) {
+      current.linesMissingSourceLoc += 1;
+    }
+    if (plannedQty > 0 && requestedQty > 0 && plannedQty < requestedQty) {
+      current.linesPartialPrep += 1;
+    }
+    if (targetQty > 0 && targetQty > availableSite) {
+      current.linesLikelyShortage += 1;
+    }
+    if (targetQty > 0 && targetQty <= availableSite && bestLocQty < targetQty) {
+      current.linesWithoutCoveringLoc += 1;
+    }
+    requestMetrics.set(item.request_id, current);
+  }
 
   return (
     <div className="w-full space-y-6 pb-6">
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <Link href="/inventory/remissions" className="ui-caption underline">
-            Volver a remisiones
+            Volver al hub de remisiones
           </Link>
-          <h1 className="mt-2 ui-h1">Preparar remisiones</h1>
+          <h1 className="mt-2 ui-h1">Cola de preparacion</h1>
           <p className="mt-2 ui-body-muted">
-            Vista optimizada para celular y tablet. Entra a una solicitud, prepara cantidades y luego la envias a transito.
+            Vista especializada de bodega para ejecutar el paso 2 del flujo oficial: preparar y despachar.
           </p>
           <p className="mt-1 ui-caption">Sede: {(siteRow as { name?: string })?.name ?? siteId}</p>
         </div>
+      </div>
+
+      <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
+        <p className="font-semibold text-[var(--ui-text)]">Esta vista no reemplaza Remisiones</p>
+        <p className="mt-1">
+          El flujo oficial sigue siendo <strong className="text-[var(--ui-text)]">Solicitar - Preparar - Recibir</strong>.
+          Esta cola existe solo para que Centro trabaje pendientes mas rapido desde movil o tablet.
+        </p>
       </div>
 
       <div className="grid gap-3 sm:grid-cols-3">
@@ -144,7 +252,7 @@ export default async function RemissionsPreparePage() {
         <div>
           <div className="ui-h3">Solicitudes pendientes de preparar</div>
           <div className="mt-1 ui-body-muted">
-            Abre una remision, captura preparado y enviado, guarda y luego usa la accion correspondiente.
+            Abre una remision, captura preparado y enviado, guarda items y luego marca la accion correspondiente.
           </div>
         </div>
 
@@ -164,20 +272,60 @@ export default async function RemissionsPreparePage() {
                     <span className={status.className}>{status.label}</span>
                   </div>
 
-                  <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-xl border border-[var(--ui-border)] bg-white p-3">
-                      <div className="ui-caption">Creada</div>
-                      <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">{formatDateTime(row.created_at)}</div>
+                    <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                      <div className="rounded-xl border border-[var(--ui-border)] bg-white p-3">
+                        <div className="ui-caption">Creada</div>
+                        <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">{formatDateTime(row.created_at)}</div>
+                      </div>
+                      <div className="rounded-xl border border-[var(--ui-border)] bg-white p-3">
+                        <div className="ui-caption">Lineas</div>
+                        <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">
+                          {requestMetrics.get(row.id)?.totalLines ?? 0}
+                        </div>
+                      </div>
+                      <div className="rounded-xl border border-[var(--ui-border)] bg-white p-3 sm:col-span-2">
+                        <div className="ui-caption">Notas</div>
+                        <div className="mt-1 text-sm text-[var(--ui-text)] line-clamp-3">{row.notes ?? "Sin notas"}</div>
+                      </div>
                     </div>
-                    <div className="rounded-xl border border-[var(--ui-border)] bg-white p-3 sm:col-span-2">
-                      <div className="ui-caption">Notas</div>
-                      <div className="mt-1 text-sm text-[var(--ui-text)] line-clamp-3">{row.notes ?? "Sin notas"}</div>
+
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    <div className="rounded-xl border border-[var(--ui-border)] bg-white p-3">
+                      <div className="ui-caption">LOC pendiente</div>
+                      <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">
+                        {requestMetrics.get(row.id)?.linesMissingSourceLoc ?? 0}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-[var(--ui-border)] bg-white p-3">
+                      <div className="ui-caption">Preparacion corta</div>
+                      <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">
+                        {requestMetrics.get(row.id)?.linesPartialPrep ?? 0}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-[var(--ui-border)] bg-white p-3">
+                      <div className="ui-caption">Faltante probable</div>
+                      <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">
+                        {requestMetrics.get(row.id)?.linesLikelyShortage ?? 0}
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-[var(--ui-border)] bg-white p-3">
+                      <div className="ui-caption">Sin LOC unico suficiente</div>
+                      <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">
+                        {requestMetrics.get(row.id)?.linesWithoutCoveringLoc ?? 0}
+                      </div>
                     </div>
                   </div>
 
+                  {(requestMetrics.get(row.id)?.linesLikelyShortage ?? 0) > 0 ||
+                  (requestMetrics.get(row.id)?.linesWithoutCoveringLoc ?? 0) > 0 ? (
+                    <div className="mt-3 ui-alert ui-alert--warn">
+                      Esta solicitud ya muestra señales para bodega: revisa faltante probable y si algun item no cabe completo en un solo LOC.
+                    </div>
+                  ) : null}
+
                   <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:justify-end">
                     <Link
-                      href={`/inventory/remissions/${row.id}`}
+                      href={`/inventory/remissions/${row.id}?from=prepare`}
                       className="ui-btn ui-btn--brand w-full sm:w-auto"
                     >
                       Abrir preparacion

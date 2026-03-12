@@ -352,7 +352,9 @@ export default async function InventoryLocationsPage({
   const { data: locations, error } = await locationsQuery;
   const locationRows = (locations ?? []) as LocationRow[];
 
-  const editingLoc = editId ? locationRows.find((l) => l.id === editId) : null;
+  const editingLoc = editId ? locationRows.find((l) => l.id === editId) ?? null : null;
+  const isEditingLoc = Boolean(canEditLoc && editingLoc);
+  const requestedEditButNotFound = Boolean(editId) && canEditLoc && !editingLoc;
   const baseQuery = new URLSearchParams();
   if (filterSiteId) baseQuery.set("site_id", filterSiteId);
   if (filterZone) baseQuery.set("zone", filterZone);
@@ -363,11 +365,22 @@ export default async function InventoryLocationsPage({
     <div className="w-full">
       <PageHeader
         title="Ubicaciones"
-        subtitle="Ubicaciones físicas (LOC). Convención: LOC-SEDE-ZONA-PASILLO."
+        subtitle={
+          isEditingLoc
+            ? "Modo edicion activo. Corrige identidad y metadatos del LOC sin mezclarlo con alta nueva."
+            : "Ubicaciones físicas (LOC). Convención: LOC-SEDE-ZONA-PASILLO."
+        }
         actions={
-          <Link href="/scanner" className="ui-btn ui-btn--ghost">
-            Ir a Scanner
-          </Link>
+          <div className="flex flex-wrap gap-2">
+            {isEditingLoc ? (
+              <Link href={cancelHref} className="ui-btn ui-btn--ghost">
+                Volver a alta
+              </Link>
+            ) : null}
+            <Link href="/scanner" className="ui-btn ui-btn--ghost">
+              Ir a Scanner
+            </Link>
+          </div>
         }
       />
 
@@ -389,21 +402,67 @@ export default async function InventoryLocationsPage({
         </div>
       ) : null}
 
-      {canEditLoc && editingLoc ? (
-        <LocEditForm
-          loc={editingLoc}
-          action={updateLocAction}
-          cancelHref={cancelHref}
-        />
+      {requestedEditButNotFound ? (
+        <div className="mt-6 ui-alert ui-alert--warn">
+          El LOC solicitado para edición no aparece en el listado actual. Revisa filtros o vuelve al modo de alta.
+        </div>
       ) : null}
 
-      <div className="mt-6">
-        <LocCreateForm
-          sites={siteOptions}
-          defaultSiteId={defaultSiteId}
-          action={createLocAction}
-        />
-      </div>
+      {canEditLoc && editingLoc ? (
+        <>
+          <div className="mt-6 ui-panel-soft space-y-3 p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="ui-h3">Editando {editingLoc.code ?? editingLoc.id}</div>
+                <p className="mt-1 text-sm text-[var(--ui-muted)]">
+                  En este modo solo se muestran los cambios del LOC seleccionado para evitar mezclar edición con alta nueva.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <span className="ui-chip">{editingLoc.zone ?? "Sin zona"}</span>
+                <span className="ui-chip">{editingLoc.aisle ?? "Sin pasillo"}</span>
+              </div>
+            </div>
+          </div>
+
+          <LocEditForm
+            loc={editingLoc}
+            action={updateLocAction}
+            cancelHref={cancelHref}
+          />
+
+          <div className="mt-6 ui-panel-soft space-y-3 p-4 text-sm text-[var(--ui-muted)]">
+            <div className="font-semibold text-[var(--ui-text)]">¿Necesitas crear otra ubicación?</div>
+            <p>
+              Sal del modo edición para volver al formulario de alta limpia y evitar confundir cambios sobre un LOC existente con una ubicación nueva.
+            </p>
+            <div>
+              <Link href={cancelHref} className="ui-btn ui-btn--ghost">
+                Ir a alta nueva
+              </Link>
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="mt-6">
+          <div className="ui-panel-soft space-y-3 p-4">
+            <div>
+              <div className="ui-h3">Alta de ubicación</div>
+              <p className="mt-1 text-sm text-[var(--ui-muted)]">
+                Crea un LOC nuevo con la convención estándar. Si luego necesitas corregir uno existente, entra desde el listado en modo edición.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4">
+            <LocCreateForm
+              sites={siteOptions}
+              defaultSiteId={defaultSiteId}
+              action={createLocAction}
+            />
+          </div>
+        </div>
+      )}
 
       {error ? (
         <div className="mt-6 ui-alert ui-alert--error">

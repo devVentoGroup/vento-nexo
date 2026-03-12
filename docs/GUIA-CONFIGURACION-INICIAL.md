@@ -28,6 +28,11 @@ Guia corta para dejar `NEXO` listo con el modelo operativo `Centro + Saudo`.
 8. Haz un conteo de ajuste si hace falta.
 9. Ejecuta una remision de prueba end-to-end.
 
+Para considerar la validacion de remisiones como suficiente en v1, esa prueba debe cubrir:
+- un caso normal;
+- un caso donde toque `partir linea` por `LOC` insuficiente en una sola linea;
+- un caso con recepcion parcial y cierre posterior.
+
 ## Productos minimos para v1
 
 Un producto queda listo para operar cuando tiene:
@@ -69,6 +74,8 @@ Luego valida en:
 2. `Centro` prepara.
 3. `Saudo` recibe.
 4. Si hay diferencias, ajusta por conteo o movimiento segun el caso.
+
+La remision termina en `Recibida` en v1. No existe un cierre operativo adicional; si aparece `closed` en registros viejos, se interpreta solo como compatibilidad historica.
 
 ## Documentos de apoyo
 

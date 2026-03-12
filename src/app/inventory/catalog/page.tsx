@@ -2,8 +2,15 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
-import { CategoryTreeFilter } from "@/components/inventory/CategoryTreeFilter";
 import { PageHeader } from "@/components/vento/standard/page-header";
+import { CatalogFiltersPanel } from "@/features/inventory/catalog/catalog-filters-panel";
+import {
+  CatalogResultsPanel,
+  type CatalogResultRow,
+  type PurchaseSuggestionRow,
+} from "@/features/inventory/catalog/catalog-results-panel";
+import { CatalogToolbar } from "@/features/inventory/catalog/catalog-toolbar";
+import { CatalogHintPanel } from "@/features/inventory/catalog/catalog-ui";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { getCategoryDomainOptions } from "@/lib/constants";
@@ -106,11 +113,6 @@ type SupplierRow = {
 };
 
 type UnitRow = InventoryUnit;
-
-const TABLE_ACTION_BUTTON_CLASS =
-  "ui-btn ui-btn--ghost ui-btn--sm min-w-[104px] justify-center shrink-0";
-const TABLE_DELETE_BUTTON_CLASS =
-  "ui-btn ui-btn--ghost ui-btn--sm min-w-[104px] justify-center shrink-0 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700";
 
 async function loadCategoryRows(
   supabase: Awaited<ReturnType<typeof requireAppAccess>>["supabase"]
@@ -724,6 +726,13 @@ export default async function InventoryCatalogPage({
     })
     .sort((a, b) => a.supplierName.localeCompare(b.supplierName, "es"));
 
+  const purchaseSuggestionRows: PurchaseSuggestionRow[] = lowStockPurchaseGroupRows.map((group) => ({
+    supplierId: group.supplierId,
+    supplierName: group.supplierName,
+    itemsCount: group.items.length,
+    href: group.href,
+  }));
+
   const buildUrl = (newTab?: TabValue) => {
     const tab = newTab ?? activeTab;
     const tabKind = categoryKindFromCatalogTab(tab);
@@ -745,12 +754,160 @@ export default async function InventoryCatalogPage({
   };
 
   const catalogReturnUrl = buildUrl();
+  const clearHref = `/inventory/catalog?tab=${activeTab}${siteId ? `&site_id=${encodeURIComponent(siteId)}` : ""}&category_kind=${categoryKind}`;
+  const activeTabLabel = TAB_OPTIONS.find((tab) => tab.value === activeTab)?.label ?? "Productos";
+  const activeSiteLabel = siteNamesById[siteId] ?? siteId;
+  const tabLinks = TAB_OPTIONS.map((tab) => ({
+    value: tab.value,
+    label: tab.label,
+    href: buildUrl(tab.value),
+    active: activeTab === tab.value,
+  }));
+  const toolbarActions = activeTab === "productos"
+    ? [
+        { href: "/inventory/catalog/new?type=venta", label: "+ Producto de venta", tone: "brand" as const },
+        { href: "/inventory/catalog/new?type=reventa&mode=quick", label: "+ Reventa rapido v1", tone: "ghost" as const },
+      ]
+    : [
+        {
+          href: `/inventory/catalog/new?type=${
+            activeTab === "insumos"
+              ? "insumo"
+              : activeTab === "preparaciones"
+                ? "preparacion"
+                : "asset"
+          }${activeTab === "insumos" || activeTab === "equipos" ? "&mode=quick" : ""}`,
+          label: `+ Crear ${
+            activeTab === "insumos"
+              ? "insumo rapido"
+              : activeTab === "preparaciones"
+                ? "preparacion"
+                : "equipo rapido"
+          }`,
+          tone: "brand" as const,
+        },
+        ...(activeTab === "insumos"
+          ? [{ href: "/api/inventory/catalog/export-suppliers", label: "Descargar Excel de insumos", tone: "ghost" as const }]
+          : []),
+        ...(activeTab === "insumos"
+          ? [{ href: "/inventory/ai-ingestions?flow=catalog_create", label: "Alta asistida IA", tone: "ghost" as const }]
+          : []),
+      ];
+
+  const catalogResultRows: CatalogResultRow[] = visibleProducts.map((product) => {
+    const inventoryProfile = product.product_inventory_profiles;
+    const inventoryLabel = inventoryProfile?.inventory_kind ?? "unclassified";
+    const autoCostMode = inventoryProfile?.costing_mode ?? "auto_primary_supplier";
+    const autoCostReason = autoCostReasonByProduct.get(product.id) ?? "";
+    const normalizedType = String(product.product_type ?? "").trim().toLowerCase();
+    const normalizedInventoryKind = String(inventoryProfile?.inventory_kind ?? "").trim().toLowerCase();
+    const usesRecipeAutoCost =
+      normalizedType === "preparacion" ||
+      (normalizedType === "venta" && normalizedInventoryKind !== "resale");
+    const hasComputedCost = product.cost != null && Number.isFinite(Number(product.cost));
+    const primarySupplier = primarySupplierByProduct.get(product.id);
+    const primarySupplierName = primarySupplier?.supplier_id
+      ? supplierNameById.get(primarySupplier.supplier_id) ?? primarySupplier.supplier_id
+      : "Sin proveedor";
+    const stockMetrics = stockMetricsByProduct.get(product.id) ?? {
+      currentQty: 0,
+      minStock: null,
+      missingQty: null,
+      isLow: false,
+      hasSiteConfig: false,
+      siteActive: true,
+    };
+    const categoryPath = getCategoryPath(product.category_id, categoryMap);
+    const categoryLabel = getLastCategorySegment(categoryPath);
+    const rowPrefill =
+      siteId && primarySupplier?.supplier_id && stockMetrics.missingQty && stockMetrics.missingQty > 0
+        ? toBase64UrlJson({
+            supplier_id: primarySupplier.supplier_id,
+            site_id: siteId,
+            notes: "Borrador generado desde Nexo por bajo stock minimo.",
+            lines: [
+              {
+                product_id: product.id,
+                quantity: Math.max(0.001, Math.round(stockMetrics.missingQty * 1000) / 1000),
+                unit_cost: asFiniteNumber(primarySupplier.purchase_price) ?? 0,
+                unit: normalizeUnitCode(
+                  primarySupplier.purchase_pack_unit_code || product.stock_unit_code || product.unit || "un"
+                ) || null,
+              },
+            ],
+          })
+        : "";
+    const rowOrigoHref = rowPrefill
+      ? `https://origo.ventogroup.co/purchase-orders/new?prefill=${encodeURIComponent(rowPrefill)}`
+      : "";
+
+    let autoCostLabel = "Listo";
+    let autoCostTone: CatalogResultRow["autoCostTone"] = "success";
+    let autoCostDetail = "";
+
+    if (usesRecipeAutoCost) {
+      if (hasComputedCost) {
+        autoCostLabel = "Listo (externo)";
+        autoCostTone = "success";
+      } else {
+        autoCostLabel = "Pendiente (fuera de v1)";
+        autoCostTone = "warn";
+      }
+    } else if (autoCostMode === "manual") {
+      autoCostLabel = "Manual";
+      autoCostTone = "default";
+    } else if (autoCostReason) {
+      autoCostLabel = "Incompleto";
+      autoCostTone = "warn";
+      autoCostDetail = autoCostReason;
+    }
+
+    let shortageLabel = "OK";
+    let shortageTone: CatalogResultRow["shortageTone"] = "success";
+    if (stockMetrics.missingQty != null && stockMetrics.missingQty > 0) {
+      shortageLabel = formatQty(stockMetrics.missingQty);
+      shortageTone = "warn";
+    } else if (!stockMetrics.hasSiteConfig) {
+      shortageLabel = "Sin config sede";
+      shortageTone = "muted";
+    } else if (!stockMetrics.siteActive) {
+      shortageLabel = "Sede inactiva";
+      shortageTone = "muted";
+    } else if (stockMetrics.minStock == null) {
+      shortageLabel = "Sin minimo";
+      shortageTone = "muted";
+    }
+
+    return {
+      id: product.id,
+      name: product.name ?? "-",
+      sku: product.sku ?? "-",
+      categoryPath,
+      categoryLabel,
+      inventoryLabel,
+      unitLabel: product.unit ?? "-",
+      currentQtyLabel: formatQty(stockMetrics.currentQty),
+      currentQtyIsLow: stockMetrics.isLow,
+      minStockLabel: formatQty(stockMetrics.minStock),
+      shortageLabel,
+      shortageTone,
+      autoCostLabel,
+      autoCostTone,
+      autoCostDetail,
+      statusLabel: product.is_active === false ? "Inactivo" : "Activo",
+      primarySupplierName,
+      fichaHref: `/inventory/catalog/${product.id}?from=${encodeURIComponent(catalogReturnUrl)}`,
+      nextIsActive: product.is_active === false,
+      toggleLabel: product.is_active === false ? "Habilitar" : "Deshabilitar",
+      origoHref: rowOrigoHref,
+    };
+  });
 
   return (
     <div className="w-full">
       <PageHeader
-        title="Catalogo"
-        subtitle="Abre cualquier item para ver su ficha."
+        title="Catalogo maestro"
+        subtitle="Productos maestros, salud operativa por sede y continuidad de compra."
         actions={
           <Link href="/inventory/stock" className="ui-btn ui-btn--ghost">
             Ver stock
@@ -760,443 +917,54 @@ export default async function InventoryCatalogPage({
 
       {okMsg ? <div className="mt-6 ui-alert ui-alert--success">{okMsg}</div> : null}
       {errorMsg ? <div className="mt-6 ui-alert ui-alert--error">Error: {errorMsg}</div> : null}
+      <CatalogHintPanel title="Norte de esta vista" className="mt-6">
+        <p>
+          Esta pantalla gobierna el <strong className="text-[var(--ui-text)]">producto maestro</strong> y su salud
+          operativa. La categoria aqui es operativa, no comercial.
+        </p>
+        <p>
+          La vista de compras es continuidad de v2 para ORIGO y no debe contaminar la operacion diaria de v1.
+        </p>
+      </CatalogHintPanel>
 
-      <div className="mt-6 flex gap-1 overflow-x-auto ui-panel-soft p-1">
-        {TAB_OPTIONS.map((tab) => (
-          <Link
-            key={tab.value}
-            href={buildUrl(tab.value)}
-            className={`rounded-lg px-4 py-2.5 text-sm font-medium transition-colors ${
-              activeTab === tab.value
-                ? "bg-[var(--ui-surface)] text-[var(--ui-text)] shadow-sm"
-                : "text-[var(--ui-muted)] hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)]"
-            }`}
-          >
-            {tab.label}
-          </Link>
-        ))}
-      </div>
+      <CatalogToolbar tabs={tabLinks} actions={toolbarActions} />
 
-      <div className="mt-4 flex justify-end">
-        <div className="flex flex-wrap gap-2">
-          {activeTab === "insumos" ? (
-            <Link href="/api/inventory/catalog/export-suppliers" className="ui-btn ui-btn--ghost ui-btn--sm">
-              Descargar Excel de insumos
-            </Link>
-          ) : null}
-          {activeTab === "productos" ? (
-            <>
-              <Link href="/inventory/catalog/new?type=venta" className="ui-btn ui-btn--brand ui-btn--sm">
-                + Producto de venta
-              </Link>
-              <Link href="/inventory/catalog/new?type=reventa&mode=quick" className="ui-btn ui-btn--ghost ui-btn--sm">
-                + Reventa rapido v1
-              </Link>
-            </>
-          ) : (
-            <>
-              <Link
-                href={`/inventory/catalog/new?type=${
-                  activeTab === "insumos"
-                    ? "insumo"
-                    : activeTab === "preparaciones"
-                      ? "preparacion"
-                      : "asset"
-                }${activeTab === "insumos" || activeTab === "equipos" ? "&mode=quick" : ""}`}
-                className="ui-btn ui-btn--brand ui-btn--sm"
-              >
-                + Crear{" "}
-                {activeTab === "insumos"
-                  ? "insumo rapido"
-                  : activeTab === "preparaciones"
-                    ? "preparacion"
-                    : "equipo rapido"}
-              </Link>
-              {activeTab === "insumos" ? (
-                <Link href="/inventory/ai-ingestions?flow=catalog_create" className="ui-btn ui-btn--ghost ui-btn--sm">
-                  Alta asistida IA
-                </Link>
-              ) : null}
-            </>
-          )}
-        </div>
-      </div>
+      <CatalogFiltersPanel
+        activeTab={activeTab}
+        siteId={siteId}
+        categoryKind={categoryKind}
+        searchQuery={searchQuery}
+        clearHref={clearHref}
+        hasAdvancedFilters={hasAdvancedFilters}
+        categoryScope={categoryScope}
+        stockAlert={stockAlert}
+        viewMode={viewMode}
+        effectiveSupplierId={effectiveSupplierId}
+        suppliers={suppliersFilterRows}
+        categorySiteId={activeSiteId}
+        sites={siteRows}
+        showCategoryDomain={shouldShowCategoryDomain(categoryKind)}
+        categoryDomain={categoryDomain}
+        categoryDomainOptions={categoryDomainOptions}
+        categoryRows={categoryRows}
+        effectiveCategoryId={effectiveCategoryId}
+        siteNamesById={siteNamesById}
+      />
 
-      <div className="mt-4 ui-panel">
-        <div className="ui-h3">Filtros</div>
-        <form method="get" className="mt-4 grid gap-3">
-          <input type="hidden" name="tab" value={activeTab} />
-          <input type="hidden" name="site_id" value={siteId} />
-          <input type="hidden" name="category_kind" value={categoryKind} />
-
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Buscar SKU o nombre</span>
-            <input
-              name="q"
-              defaultValue={searchQuery}
-              placeholder="SKU o nombre de producto"
-              className="ui-input"
-            />
-          </label>
-
-          <div className="flex flex-wrap gap-2">
-            <button className="ui-btn ui-btn--brand">Aplicar filtros</button>
-            <Link
-              href={`/inventory/catalog?tab=${activeTab}${siteId ? `&site_id=${encodeURIComponent(siteId)}` : ""}&category_kind=${categoryKind}`}
-              className="ui-btn ui-btn--ghost"
-            >
-              Limpiar
-            </Link>
-          </div>
-
-          <details className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-3" open={hasAdvancedFilters}>
-            <summary className="flex cursor-pointer items-center justify-between gap-2">
-              <span className="ui-label">Filtros avanzados</span>
-              <span className="ui-caption">{hasAdvancedFilters ? "Activos" : "Opcionales"}</span>
-            </summary>
-
-            <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Alcance de categoria</span>
-                <select name="category_scope" defaultValue={categoryScope} className="ui-input">
-                  <option value="all">Todas</option>
-                  <option value="global">Globales</option>
-                  <option value="site">Sede activa</option>
-                </select>
-              </label>
-
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Alerta de stock (sede activa)</span>
-                <select name="stock_alert" defaultValue={stockAlert} className="ui-input">
-                  <option value="all">Todos</option>
-                  <option value="low">Solo bajo minimo</option>
-                </select>
-                <span className="ui-caption">
-                  Usa el stock de la sede activa para compras del centro de produccion.
-                </span>
-              </label>
-
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Vista</span>
-                <select name="view_mode" defaultValue={viewMode} className="ui-input">
-                  <option value="catalogo">Catalogo</option>
-                  <option value="compras">Compras (continuidad v2)</option>
-                </select>
-              </label>
-
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Proveedor</span>
-                <select name="supplier_id" defaultValue={effectiveSupplierId} className="ui-input">
-                  <option value="">Todos</option>
-                  {suppliersFilterRows.map((supplier) => (
-                    <option key={supplier.id} value={supplier.id}>
-                      {supplier.name ?? supplier.id}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              {categoryScope === "site" ? (
-                <label className="flex flex-col gap-1">
-                  <span className="ui-label">Sede para categorias</span>
-                  <select name="category_site_id" defaultValue={activeSiteId} className="ui-input">
-                    <option value="">Seleccionar sede</option>
-                    {siteRows.map((site) => (
-                      <option key={site.id} value={site.id}>
-                        {site.name ?? site.id}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="ui-caption">Solo aplica cuando el alcance es Sede activa.</span>
-                </label>
-              ) : (
-                <input type="hidden" name="category_site_id" value="" />
-              )}
-
-              {shouldShowCategoryDomain(categoryKind) ? (
-                <label className="flex flex-col gap-1">
-                  <span className="ui-label">Dominio de venta</span>
-                  <select name="category_domain" defaultValue={categoryDomain} className="ui-input">
-                    <option value="">Todos</option>
-                    {categoryDomainOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : (
-                <input type="hidden" name="category_domain" value="" />
-              )}
-
-              <CategoryTreeFilter
-                categories={categoryRows}
-                selectedCategoryId={effectiveCategoryId}
-                siteNamesById={siteNamesById}
-                className="sm:col-span-2 lg:col-span-4"
-                label="Categoria"
-                emptyOptionLabel="Todas"
-                maxVisibleOptions={10}
-              />
-            </div>
-          </details>
-        </form>
-      </div>
-
-      <div className="mt-6 ui-panel">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <div className="ui-h3">{TAB_OPTIONS.find((t) => t.value === activeTab)?.label ?? "Productos"}</div>
-            <div className="mt-1 ui-body-muted">Mostrando hasta 1200 items.</div>
-            {siteId ? (
-              <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                Sede activa: {siteNamesById[siteId] ?? siteId}. Bajo minimo: {lowStockCount}.
-              </div>
-            ) : null}
-          </div>
-          <div className="ui-caption">Items: {visibleProducts.length}</div>
-        </div>
-
-        {siteId ? (
-          <div className="mt-4 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
-            <details className="group" open={lowStockPurchaseGroupRows.length > 0}>
-              <summary className="flex cursor-pointer items-center justify-between gap-3">
-                <div>
-                  <div className="text-sm font-semibold text-[var(--ui-text)]">
-                    Ordenes sugeridas por proveedor (continuidad v2)
-                  </div>
-                  <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                    Referencia futura para ORIGO. No bloquea la operacion v1.
-                  </div>
-                </div>
-                <span className="ui-chip">{lowStockPurchaseGroupRows.length} proveedor(es)</span>
-              </summary>
-              <div className="mt-3">
-                {lowStockPurchaseGroupRows.length === 0 ? (
-                  <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-3 text-sm text-[var(--ui-muted)]">
-                    No hay ordenes sugeridas para la sede activa en este momento.
-                  </div>
-                ) : (
-                  <div className="max-h-[280px] overflow-y-auto pr-1">
-                    <div className="grid gap-2">
-                      {lowStockPurchaseGroupRows.map((group) => (
-                        <div
-                          key={group.supplierId}
-                          className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2"
-                        >
-                          <div className="min-w-0">
-                            <div className="text-sm font-semibold text-[var(--ui-text)]">{group.supplierName}</div>
-                            <div className="text-xs text-[var(--ui-muted)]">
-                              {group.items.length} producto(s) bajo minimo
-                            </div>
-                          </div>
-                          <Link href={group.href} className="ui-btn ui-btn--brand ui-btn--sm">
-                            Continuar en ORIGO
-                          </Link>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            </details>
-          </div>
-        ) : null}
-
-        <div className="mt-4 max-h-[70vh] overflow-auto rounded-xl border border-[var(--ui-border)]">
-          <table className="ui-table min-w-[1280px] text-sm">
-            <thead className="text-left text-[var(--ui-muted)]">
-              <tr>
-                <th className="py-2 pr-4 whitespace-nowrap">Producto</th>
-                {viewMode === "catalogo" ? (
-                  <>
-                    <th className="py-2 pr-4 whitespace-nowrap">SKU</th>
-                    <th className="py-2 pr-4 whitespace-nowrap">Categoria</th>
-                    <th className="py-2 pr-4 whitespace-nowrap">Inventario</th>
-                    <th className="py-2 pr-4 whitespace-nowrap">Unidad</th>
-                  </>
-                ) : null}
-                <th className="py-2 pr-4 whitespace-nowrap">Stock sede</th>
-                <th className="py-2 pr-4 whitespace-nowrap">Minimo</th>
-                <th className="py-2 pr-4 whitespace-nowrap">Faltante</th>
-                {viewMode === "catalogo" ? (
-                  <>
-                    <th className="py-2 pr-4 whitespace-nowrap">Auto-costo</th>
-                    <th className="py-2 pr-4 whitespace-nowrap">Estado</th>
-                  </>
-                ) : (
-                  <th className="py-2 pr-4 whitespace-nowrap">Proveedor primario</th>
-                )}
-                <th className="py-2 pr-4 w-[340px] whitespace-nowrap">Acciones</th>
-              </tr>
-            </thead>
-            <tbody>
-              {visibleProducts.map((product) => {
-                const inventoryProfile = product.product_inventory_profiles;
-                const inventoryLabel = inventoryProfile?.inventory_kind ?? "unclassified";
-                const autoCostMode = inventoryProfile?.costing_mode ?? "auto_primary_supplier";
-                const autoCostReason = autoCostReasonByProduct.get(product.id) ?? null;
-                const normalizedType = String(product.product_type ?? "").trim().toLowerCase();
-                const normalizedInventoryKind = String(inventoryProfile?.inventory_kind ?? "").trim().toLowerCase();
-                const usesRecipeAutoCost =
-                  normalizedType === "preparacion" ||
-                  (normalizedType === "venta" && normalizedInventoryKind !== "resale");
-                const hasComputedCost = product.cost != null && Number.isFinite(Number(product.cost));
-                const primarySupplier = primarySupplierByProduct.get(product.id);
-                const primarySupplierName = primarySupplier?.supplier_id
-                  ? supplierNameById.get(primarySupplier.supplier_id) ?? primarySupplier.supplier_id
-                  : "Sin proveedor";
-                const stockMetrics = stockMetricsByProduct.get(product.id) ?? {
-                  currentQty: 0,
-                  minStock: null,
-                  missingQty: null,
-                  isLow: false,
-                  hasSiteConfig: false,
-                  siteActive: true,
-                };
-                const categoryPath = getCategoryPath(product.category_id, categoryMap);
-                const categoryLabel = getLastCategorySegment(categoryPath);
-                const rowPrefill =
-                  siteId && primarySupplier?.supplier_id && stockMetrics.missingQty && stockMetrics.missingQty > 0
-                    ? toBase64UrlJson({
-                        supplier_id: primarySupplier.supplier_id,
-                        site_id: siteId,
-                        notes: "Borrador generado desde Nexo por bajo stock minimo.",
-                        lines: [
-                          {
-                            product_id: product.id,
-                            quantity: Math.max(0.001, Math.round(stockMetrics.missingQty * 1000) / 1000),
-                            unit_cost: asFiniteNumber(primarySupplier.purchase_price) ?? 0,
-                            unit: normalizeUnitCode(
-                              primarySupplier.purchase_pack_unit_code || product.stock_unit_code || product.unit || "un"
-                            ) || null,
-                          },
-                        ],
-                      })
-                    : "";
-                const rowOrigoHref = rowPrefill
-                  ? `https://origo.ventogroup.co/purchase-orders/new?prefill=${encodeURIComponent(rowPrefill)}`
-                  : "";
-                return (
-                  <tr key={product.id} className="border-t border-zinc-200/60">
-                    <td className="py-2.5 pr-4">
-                      <div className="max-w-[220px] truncate" title={product.name ?? "-"}>
-                        {product.name}
-                      </div>
-                    </td>
-                    {viewMode === "catalogo" ? (
-                      <>
-                        <td className="py-2.5 pr-4 font-mono whitespace-nowrap">{product.sku ?? "-"}</td>
-                        <td className="py-2.5 pr-4">
-                          <div className="max-w-[320px] truncate" title={categoryPath}>
-                            {categoryLabel}
-                          </div>
-                        </td>
-                        <td className="py-2.5 pr-4 whitespace-nowrap">{inventoryLabel}</td>
-                        <td className="py-2.5 pr-4 whitespace-nowrap">{product.unit ?? "-"}</td>
-                      </>
-                    ) : null}
-                    <td className="py-2.5 pr-4 whitespace-nowrap">
-                      <span className={stockMetrics.isLow ? "font-semibold text-amber-700" : ""}>
-                        {formatQty(stockMetrics.currentQty)}
-                      </span>
-                    </td>
-                    <td className="py-2.5 pr-4 whitespace-nowrap">{formatQty(stockMetrics.minStock)}</td>
-                    <td className="py-2.5 pr-4 whitespace-nowrap">
-                      {stockMetrics.missingQty != null && stockMetrics.missingQty > 0 ? (
-                        <span className="ui-chip ui-chip--warn">{formatQty(stockMetrics.missingQty)}</span>
-                      ) : !stockMetrics.hasSiteConfig ? (
-                        <span className="text-xs text-[var(--ui-muted)]">Sin config sede</span>
-                      ) : !stockMetrics.siteActive ? (
-                        <span className="text-xs text-[var(--ui-muted)]">Sede inactiva</span>
-                      ) : stockMetrics.minStock == null ? (
-                        <span className="text-xs text-[var(--ui-muted)]">Sin minimo</span>
-                      ) : (
-                        <span className="ui-chip ui-chip--success">OK</span>
-                      )}
-                    </td>
-                    {viewMode === "catalogo" ? (
-                      <>
-                        <td className="py-2.5 pr-4">
-                          {usesRecipeAutoCost ? (
-                            hasComputedCost ? (
-                              <span className="ui-chip ui-chip--success">Listo (externo)</span>
-                            ) : (
-                              <span className="ui-chip ui-chip--warn">Pendiente (fuera de v1)</span>
-                            )
-                          ) : autoCostMode === "manual" ? (
-                            <span className="ui-chip">Manual</span>
-                          ) : autoCostReason ? (
-                            <div className="space-y-1">
-                              <span className="ui-chip ui-chip--warn">Incompleto</span>
-                              <div className="text-xs text-[var(--ui-muted)]">{autoCostReason}</div>
-                            </div>
-                          ) : (
-                            <span className="ui-chip ui-chip--success">Listo</span>
-                          )}
-                        </td>
-                        <td className="py-2.5 pr-4 whitespace-nowrap">
-                          {product.is_active === false ? "Inactivo" : "Activo"}
-                        </td>
-                      </>
-                    ) : (
-                      <td className="py-2.5 pr-4 whitespace-nowrap">{primarySupplierName}</td>
-                    )}
-                    <td className="py-2.5 pr-4 align-top">
-                      <div className="flex flex-nowrap items-center gap-2">
-                        <Link
-                          href={`/inventory/catalog/${product.id}?from=${encodeURIComponent(catalogReturnUrl)}`}
-                          className={TABLE_ACTION_BUTTON_CLASS}
-                        >
-                          Ficha
-                        </Link>
-                        {canManageProducts ? (
-                          <form action={toggleProductActiveFromListAction}>
-                            <input type="hidden" name="product_id" value={product.id} />
-                            <input type="hidden" name="return_to" value={catalogReturnUrl} />
-                            <input
-                              type="hidden"
-                              name="next_is_active"
-                              value={product.is_active === false ? "1" : "0"}
-                            />
-                            <button type="submit" className={TABLE_ACTION_BUTTON_CLASS}>
-                              {product.is_active === false ? "Habilitar" : "Deshabilitar"}
-                            </button>
-                          </form>
-                        ) : null}
-                        {canManageProducts ? (
-                          <form action={deleteProductFromListAction}>
-                            <input type="hidden" name="product_id" value={product.id} />
-                            <input type="hidden" name="return_to" value={catalogReturnUrl} />
-                            <button type="submit" className={TABLE_DELETE_BUTTON_CLASS}>
-                              Eliminar
-                            </button>
-                          </form>
-                        ) : null}
-                        {viewMode === "compras" && rowOrigoHref ? (
-                          <Link href={rowOrigoHref} className="ui-btn ui-btn--brand ui-btn--sm min-w-[120px] justify-center">
-                            ORIGO
-                          </Link>
-                        ) : null}
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-              {!visibleProducts.length ? (
-                <tr>
-                  <td
-                    className="py-4 text-[var(--ui-muted)]"
-                    colSpan={viewMode === "catalogo" ? 11 : 8}
-                  >
-                    No hay productos para mostrar con estos filtros.
-                  </td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <CatalogResultsPanel
+        activeTabLabel={activeTabLabel}
+        siteLabel={activeSiteLabel}
+        lowStockCount={lowStockCount}
+        itemCount={visibleProducts.length}
+        siteId={siteId}
+        viewMode={viewMode}
+        purchaseSuggestions={purchaseSuggestionRows}
+        rows={catalogResultRows}
+        canManageProducts={canManageProducts}
+        catalogReturnUrl={catalogReturnUrl}
+        onToggleProductActive={toggleProductActiveFromListAction}
+        onDeleteProduct={deleteProductFromListAction}
+      />
     </div>
   );
 }

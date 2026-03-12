@@ -2,6 +2,48 @@
 
 Guía paso a paso para simular el flujo **Solicitar → Preparar → Recibir** cambiando de rol y sede. Sirve para probar el flujo completo con un solo usuario (por ejemplo con override de rol) o con varias personas.
 
+## Checklist rapido de ejecucion
+
+Usa este bloque como hoja corta de corrida. Marca cada punto al terminarlo.
+
+### Caso A. Remision normal
+
+- [ ] Crear remision desde `Saudo` hacia `Centro`.
+- [ ] Preparar completo en `Centro`.
+- [ ] Marcar `En viaje`.
+- [ ] Recibir completo en `Saudo`.
+- [ ] Confirmar estado final `Recibida`.
+- [ ] Confirmar stock correcto en `/inventory/stock`.
+- [ ] Confirmar movimientos correctos en `/inventory/movements`.
+
+### Caso B. Remision con `partir linea`
+
+- [ ] Crear remision con una cantidad que la sede tiene, pero ningun `LOC` unico cubre.
+- [ ] Abrir detalle en `Centro`.
+- [ ] Usar `Partir linea`.
+- [ ] Asignar un `LOC` distinto por cada linea.
+- [ ] Marcar `En viaje`.
+- [ ] Recibir completo en `Saudo`.
+- [ ] Confirmar estado final `Recibida`.
+- [ ] Confirmar descuento correcto por `LOC`.
+
+### Caso C. Remision con recepcion parcial
+
+- [ ] Crear remision normal.
+- [ ] Preparar y enviar desde `Centro`.
+- [ ] Recibir incompleto en `Saudo`.
+- [ ] Registrar faltante.
+- [ ] Guardar como `Parcial`.
+- [ ] Confirmar mensajes de parcial/faltante.
+- [ ] Completar conciliacion final si aplica.
+- [ ] Confirmar cierre final en `Recibida`.
+
+### Cierre de v1
+
+- [ ] Los 3 casos se ejecutaron sin depender de `FOGO`, `ORIGO` o `VISO`.
+- [ ] No aparecio un bloqueo real que obligue modelo multi-LOC por linea.
+- [ ] Si hubo hallazgos, quedaron anotados con pantalla, paso y mensaje exacto.
+
 ---
 
 ## Antes de empezar
@@ -104,3 +146,56 @@ Guía paso a paso para simular el flujo **Solicitar → Preparar → Recibir** c
 - **Rutas:** En `site_supply_routes`, que Saudo (y Vento Café) tengan como `fulfillment_site_id` el Centro, para que al solicitar desde Saudo el “origen” sea el Centro.
 
 Con esto puedes hacer una **simulación completa** del flujo de remisiones cambiando solo de sede (y de rol en modo prueba) en cada paso.
+
+---
+
+## Corrida de cierre v1
+
+Esta es la corrida minima que define si `NEXO v1` ya esta cerrable para operacion `Centro + Saudo`.
+
+### Caso A. Remision normal
+
+1. Solicita una remision desde `Saudo` con 2 o 3 productos que el `Centro` tenga disponibles.
+2. En `Centro`, prepara cantidades completas y marca `En viaje`.
+3. En `Saudo`, recibe todo completo.
+
+**Debe terminar así:**
+- remision en `Recibida`;
+- descuento correcto en stock del `Centro`;
+- aumento correcto en stock de `Saudo`;
+- sin mensajes incoherentes en detalle ni hub.
+
+### Caso B. Remision con `partir linea`
+
+1. Usa un producto cuya cantidad total exista en la sede `Centro`, pero repartida en mas de un `LOC`.
+2. Solicita una cantidad que ningun `LOC` individual cubra por si solo.
+3. En `Centro`, abre el detalle y usa `Partir linea`.
+4. Asigna un `LOC` distinto por cada linea resultante.
+5. Marca `En viaje`.
+6. En `Saudo`, recibe completo.
+
+**Debe terminar así:**
+- la accion `Partir linea` crea una segunda linea sin romper la remision;
+- cada linea acepta su propio `LOC origen`;
+- el envio y la recepcion completan sin bloquearse por `LOC insuficiente`;
+- el stock por `LOC` baja segun cada linea.
+
+### Caso C. Remision con recepcion parcial
+
+1. Solicita una remision normal.
+2. En `Centro`, prepara y envia todo.
+3. En `Saudo`, registra recepcion incompleta y faltante en al menos una linea.
+4. Guarda como `Parcial`.
+
+**Debe terminar así:**
+- remision en `Parcial`;
+- mensaje claro de lineas pendientes y faltantes;
+- no se permite cerrar como recepcion completa mientras falte conciliacion;
+- si luego completas la conciliacion, debe terminar en `Recibida`.
+
+### Evidencia minima para cerrar v1
+
+- Captura o nota del estado final de cada caso.
+- Confirmacion visual de stock en `/inventory/stock`.
+- Confirmacion visual de movimientos en `/inventory/movements`.
+- Confirmacion de que el flujo se pudo hacer sin depender de `FOGO`, `ORIGO` o `VISO`.

@@ -1,12 +1,21 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { CategoryTreeFilter } from "@/components/inventory/CategoryTreeFilter";
-import { SkuField } from "@/components/inventory/SkuField";
 import { PageHeader } from "@/components/vento/standard/page-header";
-import { ProductImageUpload } from "@/features/inventory/catalog/product-image-upload";
-import { ProductSiteSettingsEditor } from "@/features/inventory/catalog/product-site-settings-editor";
-import { ProductSuppliersEditor } from "@/features/inventory/catalog/product-suppliers-editor";
+import { ProductChecklistPanel } from "@/features/inventory/catalog/product-checklist-panel";
+import { ProductCostStatusPanel } from "@/features/inventory/catalog/product-cost-status-panel";
+import { ProductFormFooter } from "@/features/inventory/catalog/product-form-footer";
+import { ProductIdentityFields } from "@/features/inventory/catalog/product-identity-fields";
+import { ProductPhotoSection } from "@/features/inventory/catalog/product-photo-section";
+import { ProductPurchaseSection } from "@/features/inventory/catalog/product-purchase-section";
+import { ProductSiteAvailabilitySection } from "@/features/inventory/catalog/product-site-availability-section";
+import { ProductStorageFields } from "@/features/inventory/catalog/product-storage-fields";
+import { ProductUomProfilePanel } from "@/features/inventory/catalog/product-uom-profile-panel";
+import {
+  CatalogCategoryContextForm,
+  CatalogHintPanel,
+  CatalogSection,
+} from "@/features/inventory/catalog/catalog-ui";
 import {
   convertQuantity,
   createUnitMap,
@@ -1042,9 +1051,6 @@ export default async function ProductCatalogDetailPage({
   const hasSuppliers =
     (normalizedProductType === "insumo" && normalizedInventoryKind !== "asset") ||
     (normalizedProductType === "venta" && normalizedInventoryKind === "resale");
-  const suppliersStepNumber = "3";
-  const photoStepNumber = hasSuppliers ? "4" : "3";
-  const distributionStepNumber = hasSuppliers ? "5" : "4";
   const siteNamesById = Object.fromEntries(
     sitesList.map((site) => [site.id, site.name ?? site.id])
   );
@@ -1131,7 +1137,7 @@ export default async function ProductCatalogDetailPage({
     <div className="w-full space-y-8">
       <PageHeader
         title={productRow.name ?? "Ficha maestra"}
-        subtitle="Catalogo del insumo o producto: compra, almacenamiento y distribucion."
+        subtitle="Ficha maestra del producto: identidad operativa, compra, almacenamiento y setup por sede."
         actions={
           <div className="flex items-center gap-2">
             <Link href="/inventory/ai-ingestions?flow=catalog_create" className="ui-btn ui-btn--brand">
@@ -1146,6 +1152,16 @@ export default async function ProductCatalogDetailPage({
 
       {errorMsg ? <div className="ui-alert ui-alert--error">Error: {errorMsg}</div> : null}
       {okMsg ? <div className="ui-alert ui-alert--success">{okMsg}</div> : null}
+      <CatalogHintPanel title="Ficha maestra v1">
+        <p>
+          Esta ficha concentra la identidad operativa del producto: categoria operativa, unidades, costo base,
+          proveedor y setup por sede.
+        </p>
+        <p>
+          La logica comercial por negocio no se define aqui. La compatibilidad de v1 sigue guardandose por debajo,
+          pero ya no es el centro del flujo.
+        </p>
+      </CatalogHintPanel>
       {hasSuppliers && profileRow?.costing_mode === "auto_primary_supplier" && autoCostReadinessReason ? (
         <div className="ui-alert ui-alert--warn">
           Auto-costo incompleto: {autoCostReadinessReason}
@@ -1154,122 +1170,59 @@ export default async function ProductCatalogDetailPage({
 
       {canEdit ? (
         <>
-        <form method="get" className="ui-panel grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          {from ? <input type="hidden" name="from" value={from} /> : null}
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Alcance de categoria</span>
-            <select name="category_scope" defaultValue={categoryScope} className="ui-input">
-              <option value="all">Todas</option>
-              <option value="global">Globales</option>
-              <option value="site">Sede activa</option>
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Sede para categorias</span>
-            <select name="category_site_id" defaultValue={categorySiteId} className="ui-input">
-              <option value="">Seleccionar sede</option>
-              {sitesList.map((site) => (
-                <option key={site.id} value={site.id}>
-                  {site.name ?? site.id}
-                </option>
-              ))}
-            </select>
-          </label>
-          {shouldShowCategoryDomain(categoryKind) ? (
-            <label className="flex flex-col gap-1">
-              <span className="ui-label">Dominio de venta</span>
-              <select name="category_domain" defaultValue={categoryDomain} className="ui-input">
-                <option value="">Todos</option>
-                {categoryDomainOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : null}
-          <div className="flex items-end">
-            <button className="ui-btn ui-btn--ghost">Actualizar categorias</button>
-          </div>
-        </form>
+        <CatalogCategoryContextForm
+          hiddenFields={from ? [{ name: "from", value: from }] : []}
+          categoryScope={categoryScope}
+          categorySiteId={categorySiteId}
+          categoryDomain={categoryDomain}
+          showDomain={shouldShowCategoryDomain(categoryKind)}
+          categoryDomainOptions={categoryDomainOptions}
+          sites={sitesList.map((site) => ({ id: site.id, name: site.name }))}
+        />
 
         <form action={updateProduct} className="space-y-8">
           <input type="hidden" name="product_id" value={productRow.id} />
           <input type="hidden" name="return_to" value={from} />
 
-          {/* Paso 1: Datos basicos */}
-          <section className="ui-panel space-y-6">
-            <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">1</span>
-              <div>
-                <h2 className="ui-h3">Datos basicos</h2>
-                <p className="text-sm text-[var(--ui-muted)]">
-                  Identidad del item: nombre, SKU, tipo fijo, categoria y descripcion.
-                </p>
-              </div>
-            </div>
-
-            <div className="grid gap-4 sm:grid-cols-2">
-              <label className="flex flex-col gap-1 sm:col-span-2">
-                <span className="ui-label">Nombre del producto / insumo</span>
-                <input name="name" defaultValue={productRow.name ?? ""} className="ui-input" placeholder="Ej. Harina 000" required />
-              </label>
-              <SkuField
-                mode="edit"
-                currentSku={productRow.sku}
-                initialProductType={productRow.product_type}
-                initialInventoryKind={profileRow?.inventory_kind ?? ""}
-                className="flex flex-col gap-1"
-              />
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Tipo (bloqueado)</span>
-                <input
-                  className="ui-input"
-                  value={
-                    String(productRow.product_type ?? "").trim().toLowerCase() === "venta"
-                      ? "Venta"
-                      : String(productRow.product_type ?? "").trim().toLowerCase() === "preparacion"
-                        ? "Preparacion"
-                        : "Insumo"
-                  }
-                  readOnly
-                />
-                <input type="hidden" name="product_type" value={productRow.product_type ?? "insumo"} />
-                <span className="text-xs text-[var(--ui-muted)]">
-                  El tipo se define al crear y no se cambia en edicion.
-                </span>
-              </label>
-              <label className="flex flex-col gap-1 sm:col-span-2">
-                <span className="ui-label">Descripcion</span>
-                <input name="description" defaultValue={productRow.description ?? ""} className="ui-input" placeholder="Opcional" />
-              </label>
-              <CategoryTreeFilter
-                categories={categoryRows}
-                selectedCategoryId={productRow.category_id ?? ""}
-                siteNamesById={siteNamesById}
-                className="sm:col-span-2"
-                label="Categoria"
-                emptyOptionLabel="Sin categoria"
-                maxVisibleOptions={8}
-                selectionMode="leaf_only"
-                nonSelectableHint="Categoria padre"
-              />
-            </div>
-
-          </section>
+          <CatalogSection
+            title="Datos basicos"
+            description="Identidad del item: nombre, SKU, tipo fijo, categoria operativa y descripcion."
+          >
+            <ProductIdentityFields
+              nameLabel="Nombre del producto / insumo"
+              namePlaceholder="Ej. Harina 000"
+              nameDefaultValue={productRow.name ?? ""}
+              categories={categoryRows}
+              selectedCategoryId={productRow.category_id ?? ""}
+              siteNamesById={siteNamesById}
+              categoryEmptyOptionLabel="Sin categoria"
+              descriptionDefaultValue={productRow.description ?? ""}
+              skuField={{
+                mode: "edit",
+                currentSku: productRow.sku,
+                initialProductType: productRow.product_type,
+                initialInventoryKind: profileRow?.inventory_kind ?? "",
+              }}
+              lockedTypeField={{
+                value:
+                  String(productRow.product_type ?? "").trim().toLowerCase() === "venta"
+                    ? "Venta"
+                    : String(productRow.product_type ?? "").trim().toLowerCase() === "preparacion"
+                      ? "Preparacion"
+                      : "Insumo",
+                hiddenName: "product_type",
+                hiddenValue: productRow.product_type ?? "insumo",
+                hint: "El tipo se define al crear y no se cambia en edicion.",
+              }}
+            />
+          </CatalogSection>
 
           {/* Receta y produccion ahora viven en FOGO */}
           {hasRecipe && (
-            <section className="ui-panel space-y-6">
-              <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">R</span>
-                <div>
-                  <h2 className="ui-h3">Receta y produccion</h2>
-                  <p className="text-sm text-[var(--ui-muted)]">
-                    Esta configuracion queda fuera del flujo operativo v1.
-                  </p>
-                </div>
-              </div>
+            <CatalogSection
+              title="Receta y produccion"
+              description="Esta configuracion queda fuera del flujo operativo v1."
+            >
               <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)] space-y-2">
                 <p>
                   NEXO mantiene inventario, sedes y logistica. Si luego activas produccion externa, la configuracion de receta se completa fuera de NEXO.
@@ -1283,321 +1236,160 @@ export default async function ProductCatalogDetailPage({
                   Abrir continuidad externa
                 </a>
               </div>
-            </section>
+            </CatalogSection>
           )}
 
-          {/* Paso 2: Unidades y almacenamiento */}
-          <section className="ui-panel space-y-6">
-            <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">2</span>
-              <div>
-                <h2 className="ui-h3">Unidades y almacenamiento</h2>
-                <p className="text-sm text-[var(--ui-muted)]">
-                  Define unidad base, unidad operativa y politica de costo para inventario.
-                </p>
-              </div>
-            </div>
-
-            <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
-              <p className="font-medium text-[var(--ui-text)]">Regla clara de unidades</p>
-              <p className="mt-1">Unidad base: donde viven stock, costo y recetas.</p>
-              <p>Unidad de compra: se define en proveedor (empaque y precio).</p>
-              <p>Unidad operativa: sugerida para formularios cuando no hay empaque activo.</p>
-            </div>
-            {purchaseUomProfile || remissionUomProfile ? (
-              <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
-                <p>
-                  <strong className="text-[var(--ui-text)]">Unidad base (consumo y costo):</strong>{" "}
-                  {stockUnitCode}
-                </p>
-                {purchaseUomProfile ? (
-                  <p>
-                    <strong className="text-[var(--ui-text)]">Presentacion compra:</strong>{" "}
-                    {purchaseUomProfile.label} ({purchaseUomProfile.qty_in_input_unit}{" "}
-                    {purchaseUomProfile.input_unit_code} ={" "}
-                    {purchaseUomProfile.qty_in_stock_unit} {stockUnitCode})
-                  </p>
-                ) : null}
-                {remissionUomProfile ? (
-                  <p>
-                    <strong className="text-[var(--ui-text)]">Presentacion remision:</strong>{" "}
-                    {remissionUomProfile.label} ({remissionUomProfile.qty_in_input_unit}{" "}
-                    {remissionUomProfile.input_unit_code} ={" "}
-                    {remissionUomProfile.qty_in_stock_unit} {stockUnitCode})
-                  </p>
-                ) : null}
-              </div>
-            ) : null}
-
-            <div className="grid gap-4 sm:grid-cols-2 md:grid-cols-3">
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Unidad base de stock</span>
-                <select
-                  id={STOCK_UNIT_FIELD_ID}
-                  name="stock_unit_code"
-                  defaultValue={stockUnitCode}
-                  className="ui-input"
-                  required
-                >
-                  {unitsList.map((unit) => (
-                    <option key={unit.code} value={unit.code}>
-                      {unit.code} - {unit.name} ({unit.family})
-                    </option>
-                  ))}
-                </select>
-                <span className="text-xs text-[var(--ui-muted)]">
-                  Esta unidad es la referencia canonica para entradas, salidas y conteos.
-                </span>
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Unidad operativa (formularios)</span>
-                <select name="default_unit" defaultValue={resolvedDefaultUnit} className="ui-input">
-                  {defaultUnitOptions.map((unit) => (
-                    <option key={unit.code} value={unit.code}>
-                      {unit.code} - {unit.name} ({unit.family})
-                    </option>
-                  ))}
-                </select>
-                <span className="text-xs text-[var(--ui-muted)]">
-                  Si no coincide con la familia de la unidad base, se guardara automaticamente la unidad base.
-                </span>
-              </label>
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Tipo de inventario</span>
-                <select name="inventory_kind" defaultValue={profileRow?.inventory_kind ?? "unclassified"} className="ui-input">
-                  <option value="unclassified">Sin clasificar</option>
-                  <option value="ingredient">Insumo</option>
-                  <option value="finished">Producto terminado</option>
-                  <option value="resale">Reventa</option>
-                  <option value="packaging">Empaque</option>
-                  <option value="asset">Activo</option>
-                </select>
-              </label>
-              {String(productRow.product_type ?? "").trim().toLowerCase() === "venta" ? (
-                <label className="flex flex-col gap-1">
-                  <span className="ui-label">Precio de venta</span>
-                  <input
-                    name="price"
-                    type="number"
-                    step="0.01"
-                    defaultValue={productRow.price ?? ""}
-                    className="ui-input"
-                    placeholder="0.00"
-                  />
-                </label>
-              ) : (
-                <input type="hidden" name="price" value={productRow.price ?? ""} />
-              )}
-              <input type="hidden" name="cost" value="" />
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Politica de costo</span>
-                {hasSuppliers ? (
-                  <select
-                    name="costing_mode"
-                    defaultValue={profileRow?.costing_mode ?? "auto_primary_supplier"}
-                    className="ui-input"
-                  >
-                    <option value="auto_primary_supplier">Auto proveedor primario</option>
-                    <option value="manual">Manual</option>
-                  </select>
-                ) : (
-                  <>
-                    <input type="hidden" name="costing_mode" value="manual" />
-                    <div className="ui-input flex items-center">Manual / externo (fuera de v1)</div>
-                  </>
-                )}
-              </label>
-              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3 text-sm text-[var(--ui-muted)] md:col-span-2">
-                <p className="font-medium text-[var(--ui-text)]">
-                  Estado de costo:{" "}
-                  {hasSuppliers
-                    ? profileRow?.costing_mode === "manual"
-                      ? "Manual"
-                      : autoCostReady
-                        ? "Listo"
-                        : "Incompleto"
-                    : hasRecipe
-                      ? hasComputedCost
-                        ? "Listo (externo)"
-                        : "Pendiente (fuera de v1)"
-                      : "Manual"}
-                </p>
-                <p className="mt-1">
-                  Costo actual:{" "}
-                  <strong className="text-[var(--ui-text)]">
-                    {productRow.cost != null ? `$${Number(productRow.cost).toLocaleString("es-CO")}` : "Sin calcular"}
-                  </strong>
-                </p>
-                {hasSuppliers && profileRow?.costing_mode === "auto_primary_supplier" ? (
-                  <p className="mt-1">
-                    {autoCostReadinessReason
-                      ? `Falta completar: ${autoCostReadinessReason}`
-                      : "Se actualiza automaticamente con proveedor primario y entradas."}
-                  </p>
-                ) : hasRecipe ? (
-                  <p className="mt-1">
-                    Se actualiza desde receta y lotes en FOGO (ingredientes / rendimiento).
-                  </p>
-                ) : (
-                  <p className="mt-1">
-                    Modo manual activo. Puedes volver a automatico cuando quieras.
-                  </p>
-                )}
-              </div>
-            </div>
-
-            <div className="flex flex-wrap gap-6">
-              <label className="flex items-center gap-2">
-                <input type="checkbox" name="track_inventory" defaultChecked={Boolean(profileRow?.track_inventory)} />
-                <span className="ui-label">Controlar stock</span>
-              </label>
-              <label className="flex items-center gap-2">
-                <input type="checkbox" name="lot_tracking" defaultChecked={Boolean(profileRow?.lot_tracking)} />
-                <span className="ui-label">Lotes</span>
-              </label>
-              <label className="flex items-center gap-2">
-                <input type="checkbox" name="expiry_tracking" defaultChecked={Boolean(profileRow?.expiry_tracking)} />
-                <span className="ui-label">Vencimiento</span>
-              </label>
-            </div>
-          </section>
-
-          {hasSuppliers ? (
-            <section className="ui-panel space-y-6">
-              <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
-                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">
-                  {suppliersStepNumber}
-                </span>
-                <div>
-                  <h2 className="ui-h3">Compra principal (proveedor)</h2>
-                  <p className="text-sm text-[var(--ui-muted)]">
-                    Define empaque, unidad y precio de compra. El sistema convierte todo a unidad base.
-                  </p>
-                </div>
-              </div>
-              <ProductSuppliersEditor
-                name="supplier_lines"
-                initialRows={supplierInitialRows}
-                suppliers={suppliersList.map((s) => ({ id: s.id, name: s.name }))}
-                units={unitsList.map((unit) => ({
-                  code: unit.code,
-                  name: unit.name,
-                  family: unit.family,
-                  factor_to_base: unit.factor_to_base,
-                }))}
-                stockUnitCode={stockUnitCode}
-                stockUnitCodeFieldId={STOCK_UNIT_FIELD_ID}
-                mode="simple"
-              />
-            </section>
-          ) : (
-            <input type="hidden" name="supplier_lines" value="[]" />
-          )}
-
-          <section className="ui-panel space-y-6">
-            <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">
-                {photoStepNumber}
-              </span>
-              <div>
-                <h2 className="ui-h3">Foto del producto</h2>
-                <p className="text-sm text-[var(--ui-muted)]">
-                  Imagen principal para identificar rapidamente el item en catalogo y listados.
-                </p>
-              </div>
-            </div>
-            <ProductImageUpload
-              name="image_url"
-              label="Foto del producto"
-              currentUrl={productRow.image_url}
-              productId={productRow.id}
-              kind="product"
-            />
-          </section>
-
-          {/* Paso final: Distribucion por sede */}
-          <section className="ui-panel space-y-6">
-            <div className="flex items-center gap-3 border-b border-[var(--ui-border)] pb-3">
-              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[var(--ui-brand)] text-lg font-bold text-white">
-                {distributionStepNumber}
-              </span>
-              <div>
-                <h2 className="ui-h3">Disponibilidad por sede</h2>
-                <p className="text-sm text-[var(--ui-muted)]">
-                  Define en que sede se usa este producto, area sugerida y uso (Saudo / Vento Cafe).
-                </p>
-              </div>
-            </div>
-
-            <ProductSiteSettingsEditor
-              name="site_settings_lines"
-              initialRows={siteRows.map((r) => ({
-                id: r.id,
-                site_id: r.site_id,
-                is_active: Boolean(r.is_active),
-                default_area_kind: r.default_area_kind ?? "",
-                min_stock_qty: r.min_stock_qty ?? undefined,
-                min_stock_input_mode:
-                  r.min_stock_input_mode === "purchase" ? "purchase" : "base",
-                min_stock_purchase_qty: r.min_stock_purchase_qty ?? undefined,
-                min_stock_purchase_unit_code: r.min_stock_purchase_unit_code ?? undefined,
-                min_stock_purchase_to_base_factor:
-                  r.min_stock_purchase_to_base_factor ?? undefined,
-                audience: r.audience ?? "BOTH",
-              }))}
-              sites={sitesList.map((s) => ({ id: s.id, name: s.name, site_type: s.site_type }))}
-              areaKinds={areaKindsList.map((a) => ({ code: a.code, name: a.name ?? a.code }))}
+          <CatalogSection
+            title="Unidades y almacenamiento"
+            description="Define unidad base, unidad operativa y politica de costo para inventario."
+          >
+            <ProductStorageFields
+              stockUnitFieldId={STOCK_UNIT_FIELD_ID}
+              units={defaultUnitOptions}
               stockUnitCode={stockUnitCode}
-              purchaseUnitHint={
-                purchaseUomProfile
-                  ? {
-                      label: purchaseUomProfile.label,
-                      inputUnitCode: purchaseUomProfile.input_unit_code,
-                      qtyInInputUnit: purchaseUomProfile.qty_in_input_unit,
-                      qtyInStockUnit: purchaseUomProfile.qty_in_stock_unit,
-                    }
-                  : null
+              defaultUnitCode={resolvedDefaultUnit}
+              defaultUnitHint="Si no coincide con la familia de la unidad base, se guardara automaticamente la unidad base."
+              profilePanel={
+                <ProductUomProfilePanel
+                  stockUnitCode={stockUnitCode}
+                  purchaseUomProfile={purchaseUomProfile}
+                  remissionUomProfile={remissionUomProfile}
+                />
               }
-              operationUnitHint={
-                remissionUomProfile
-                  ? {
-                      label: remissionUomProfile.label,
-                      inputUnitCode: remissionUomProfile.input_unit_code,
-                      qtyInInputUnit: remissionUomProfile.qty_in_input_unit,
-                      qtyInStockUnit: remissionUomProfile.qty_in_stock_unit,
-                    }
-                  : buildOperationUnitHintFromUnits({
-                      units: unitsList,
-                      inputUnitCode: resolvedDefaultUnit || stockUnitCode,
-                      stockUnitCode,
-                    })
+              preCostingFields={
+                <>
+                  <label className="flex flex-col gap-1">
+                    <span className="ui-label">Tipo de inventario</span>
+                    <select
+                      name="inventory_kind"
+                      defaultValue={profileRow?.inventory_kind ?? "unclassified"}
+                      className="ui-input"
+                    >
+                      <option value="unclassified">Sin clasificar</option>
+                      <option value="ingredient">Insumo</option>
+                      <option value="finished">Producto terminado</option>
+                      <option value="resale">Reventa</option>
+                      <option value="packaging">Empaque</option>
+                      <option value="asset">Activo</option>
+                    </select>
+                  </label>
+                  {String(productRow.product_type ?? "").trim().toLowerCase() === "venta" ? (
+                    <label className="flex flex-col gap-1">
+                      <span className="ui-label">Precio de venta</span>
+                      <input
+                        name="price"
+                        type="number"
+                        step="0.01"
+                        defaultValue={productRow.price ?? ""}
+                        className="ui-input"
+                        placeholder="0.00"
+                      />
+                    </label>
+                  ) : (
+                    <input type="hidden" name="price" value={productRow.price ?? ""} />
+                  )}
+                </>
               }
+              postCostingFields={
+                <>
+                  <input type="hidden" name="cost" value="" />
+                  <ProductCostStatusPanel
+                    hasSuppliers={hasSuppliers}
+                    hasRecipe={hasRecipe}
+                    hasComputedCost={hasComputedCost}
+                    costingMode={profileRow?.costing_mode}
+                    autoCostReady={autoCostReady}
+                    autoCostReadinessReason={autoCostReadinessReason}
+                    currentCost={productRow.cost}
+                  />
+                </>
+              }
+              costingModeField={{
+                hasSuppliers,
+                defaultValue: profileRow?.costing_mode ?? "auto_primary_supplier",
+                autoOptionLabel: "Auto proveedor primario",
+              }}
+              trackingOptions={{
+                trackInventoryDefaultChecked: Boolean(profileRow?.track_inventory),
+                lotTrackingDefaultChecked: Boolean(profileRow?.lot_tracking),
+                expiryTrackingDefaultChecked: Boolean(profileRow?.expiry_tracking),
+              }}
             />
-          </section>
+          </CatalogSection>
 
-          <section className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)] space-y-2">
-            <p className="font-semibold text-[var(--ui-text)]">Checklist rapido antes de guardar</p>
-            <p>1) Unidad base definida (donde viven stock, costo y recetas).</p>
-            <p>
-              2){" "}
-              {hasSuppliers
+          <ProductPurchaseSection
+            enabled={hasSuppliers}
+            initialRows={supplierInitialRows}
+            suppliers={suppliersList.map((s) => ({ id: s.id, name: s.name }))}
+            units={unitsList}
+            stockUnitCode={stockUnitCode}
+            stockUnitFieldId={STOCK_UNIT_FIELD_ID}
+          />
+
+          <ProductPhotoSection
+            description="Imagen principal para identificar rapidamente el item en catalogo y listados."
+            currentUrl={productRow.image_url}
+            productId={productRow.id}
+          />
+
+          <ProductSiteAvailabilitySection
+            initialRows={siteRows.map((r) => ({
+              id: r.id,
+              site_id: r.site_id,
+              is_active: Boolean(r.is_active),
+              default_area_kind: r.default_area_kind ?? "",
+              min_stock_qty: r.min_stock_qty ?? undefined,
+              min_stock_input_mode: r.min_stock_input_mode === "purchase" ? "purchase" : "base",
+              min_stock_purchase_qty: r.min_stock_purchase_qty ?? undefined,
+              min_stock_purchase_unit_code: r.min_stock_purchase_unit_code ?? undefined,
+              min_stock_purchase_to_base_factor: r.min_stock_purchase_to_base_factor ?? undefined,
+              audience: r.audience ?? "BOTH",
+            }))}
+            sites={sitesList.map((s) => ({ id: s.id, name: s.name, site_type: s.site_type }))}
+            areaKinds={areaKindsList.map((a) => ({ code: a.code, name: a.name ?? a.code }))}
+            stockUnitCode={stockUnitCode}
+            purchaseUnitHint={
+              purchaseUomProfile
+                ? {
+                    label: purchaseUomProfile.label,
+                    inputUnitCode: purchaseUomProfile.input_unit_code,
+                    qtyInInputUnit: purchaseUomProfile.qty_in_input_unit,
+                    qtyInStockUnit: purchaseUomProfile.qty_in_stock_unit,
+                  }
+                : null
+            }
+            operationUnitHint={
+              remissionUomProfile
+                ? {
+                    label: remissionUomProfile.label,
+                    inputUnitCode: remissionUomProfile.input_unit_code,
+                    qtyInInputUnit: remissionUomProfile.qty_in_input_unit,
+                    qtyInStockUnit: remissionUomProfile.qty_in_stock_unit,
+                  }
+                : buildOperationUnitHintFromUnits({
+                    units: unitsList,
+                    inputUnitCode: resolvedDefaultUnit || stockUnitCode,
+                    stockUnitCode,
+                  })
+            }
+          />
+
+          <ProductChecklistPanel
+            items={[
+              "Unidad base definida (donde viven stock, costo y recetas).",
+              hasSuppliers
                 ? "Proveedor principal completo (empaque, cantidad, unidad y precio)."
-                : "Clasificacion y categoria revisadas para este tipo de item."}
-            </p>
-            <p>3) Sedes configuradas (disponible, area por defecto y uso en sede).</p>
-            <p>4) Si aplica, receta completa con ingredientes y pasos.</p>
-          </section>
+                : "Clasificacion y categoria revisadas para este tipo de item.",
+              "Sedes configuradas (disponible, area por defecto y setup por sede).",
+              "Si aplica, receta completa con ingredientes y pasos.",
+            ]}
+          />
 
-          <section className="ui-panel border-t border-[var(--ui-border)] pt-6">
-            <label className="flex items-center gap-2">
-              <input type="checkbox" name="is_active" defaultChecked={Boolean(productRow.is_active)} />
-              <span className="ui-label">Producto activo</span>
-            </label>
-          </section>
-
-          <div className="flex justify-end">
-            <button type="submit" className="ui-btn ui-btn--brand">Guardar cambios</button>
-          </div>
+          <ProductFormFooter
+            submitLabel="Guardar cambios"
+            showActiveToggle
+            activeDefaultChecked={Boolean(productRow.is_active)}
+          />
         </form>
         </>
       ) : (

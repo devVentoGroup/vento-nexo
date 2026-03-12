@@ -1,0 +1,17 @@
+export const STANDARD_LOCATION_ZONES = [
+  { code: "BOD", label: "Bodega (BOD)" },
+  { code: "EMP", label: "Empaques / Estibas (EMP)" },
+  { code: "REC", label: "Recepcion (REC)" },
+  { code: "DSP", label: "Despacho (DSP)" },
+  { code: "BODEGA", label: "Bodega general" },
+  { code: "FRIO", label: "Cuarto frio" },
+  { code: "CONG", label: "Congelacion" },
+  { code: "N2P", label: "Nevera 2 puertas" },
+  { code: "N3P", label: "Nevera 3 puertas" },
+  { code: "SECOS1", label: "Secos primer piso" },
+  { code: "SECPREP", label: "Secos preparados" },
+  { code: "COC", label: "Cocina (COC)" },
+  { code: "BAR", label: "Bar (BAR)" },
+  { code: "OFI", label: "Oficina (OFI)" },
+  { code: "EXT", label: "Externo (EXT)" },
+] as const;
