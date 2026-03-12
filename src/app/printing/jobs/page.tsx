@@ -6,7 +6,7 @@ import Link from "next/link";
 import { useSearchParams } from "next/navigation";
 
 import { BROWSERPRINT_CORE, BROWSERPRINT_ZEBRA, LOCS_API, PRESETS } from "./_lib/constants";
-import type { BarcodeKind, BrowserPrintDevices, LocRow, PreviewMode } from "./_lib/types";
+import type { BarcodeKind, LocRow, PreviewMode } from "./_lib/types";
 import {
   buildSingleLabelZpl,
   buildThreeUpRowZpl,
@@ -14,7 +14,6 @@ import {
   buildZplHeader,
   buildTextField,
   mmToDots,
-  normalizeDevices,
   safeText,
 } from "./_lib/zpl";
 import { readStoredSettings } from "./_hooks/useStoredSettings";
@@ -74,6 +73,8 @@ function PrintingJobsContent() {
     connectSelected,
     detectPrinters: detectPrintersFromHook,
     isConnected,
+    isDetecting,
+    lastError,
   } = usePrinterDevices();
 
   const uidKey = selectedUid || "default";
@@ -91,6 +92,7 @@ function PrintingJobsContent() {
     hasPresetParam
   );
 
+  /* eslint-disable react-hooks/set-state-in-effect */
   useEffect(() => {
     const presetParam = searchParams.get("preset");
     const queueParam = searchParams.get("queue");
@@ -121,6 +123,7 @@ function PrintingJobsContent() {
     if (preset.defaultType === "SKU") setTitle("VENTO · SKU");
     if (preset.defaultType === "PROD") setTitle("VENTO · PROD");
   }, [presetId, preset.defaultType, preset.defaultBarcodeKind, preset.defaultCode128HeightDots, preset.defaultDmModuleDots]);
+  /* eslint-enable react-hooks/set-state-in-effect */
 
   const offsetXDots = useMemo(() => mmToDots(offsetXmm, dpi), [offsetXmm, dpi]);
   const offsetYDots = useMemo(() => mmToDots(offsetYmm, dpi), [offsetYmm, dpi]);
@@ -456,19 +459,52 @@ function PrintingJobsContent() {
     if (!base) return "";
     return `${base.replace(/\/$/, "")}/inventory/withdraw?loc=${encodeURIComponent(code)}`;
   }, [previewLocVariant, previewItems]);
+  const activePrinterLabel =
+    devices.find((d) => String(d?.uid) === String(selectedUid))?.name ??
+    devices.find((d) => String(d?.uid) === String(selectedUid))?.uid ??
+    "";
 
   return (
-    <div className="w-full space-y-6">
+    <div className="ui-scene w-full space-y-6">
       <Script src={BROWSERPRINT_CORE} strategy="afterInteractive" />
       <Script src={BROWSERPRINT_ZEBRA} strategy="afterInteractive" />
 
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="ui-h1">Impresión de etiquetas</h1>
-          <p className="mt-2 ui-body-muted">
-            Imprime etiquetas de ubicaciones (LOC), productos (SKU/PROD). Elige ubicación, revisa la
-            vista previa e imprime.
-          </p>
+      <section className="ui-remission-hero ui-fade-up">
+        <div className="ui-remission-hero-grid">
+          <div>
+            <span className="ui-chip ui-chip--brand">Impresión rápida</span>
+            <h1 className="mt-4 text-3xl font-semibold tracking-[-0.03em] text-[var(--ui-text)]">
+              Etiquetas listas para salir
+            </h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--ui-muted)] sm:text-base">
+              Selecciona tipo, arma cola, revisa vista previa y manda a imprimir sin salir del mismo flujo.
+            </p>
+          </div>
+          <div className="ui-remission-kpis">
+            <div className="ui-remission-kpi" data-tone={browserPrintOk ? "success" : undefined}>
+              <div className="ui-remission-kpi-label">Bridge</div>
+              <div className="ui-remission-kpi-value">{browserPrintOk ? "OK" : "NO"}</div>
+              <div className="ui-remission-kpi-note">Browser Print</div>
+            </div>
+            <div className="ui-remission-kpi" data-tone={isConnected ? "success" : "cool"}>
+              <div className="ui-remission-kpi-label">Impresora</div>
+              <div className="ui-remission-kpi-value">{isConnected ? "OK" : devices.length}</div>
+              <div className="ui-remission-kpi-note">
+                {isConnected ? String(activePrinterLabel || "Conectada") : "Disponibles en este equipo"}
+              </div>
+            </div>
+            <div className="ui-remission-kpi" data-tone={hasQueue ? "cool" : undefined}>
+              <div className="ui-remission-kpi-label">Cola</div>
+              <div className="ui-remission-kpi-value">{parsedQueue.length}</div>
+              <div className="ui-remission-kpi-note">{preset.columns === 3 ? "Modo 3-up" : "Modo 1-up"}</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="flex flex-wrap items-start justify-between gap-4 ui-fade-up ui-delay-1">
+        <div className="ui-caption">
+          Preset activo: <strong>{preset.label}</strong>
         </div>
         <div className="flex gap-2">
           <Link href="/printing/designer" className="ui-btn ui-btn--ghost ui-btn--sm">
@@ -481,24 +517,29 @@ function PrintingJobsContent() {
       </div>
 
       {!browserPrintOk && (
-        <div className="ui-alert ui-alert--warn">
-          <strong>Para imprimir a impresoras Zebra</strong> necesitas tener instalado{" "}
-          <strong>Zebra Browser Print</strong> y el servicio en ejecución. Sin ello podrás usar la
-          vista previa y preparar la cola, pero no enviar a la impresora.{" "}
+        <div className="ui-alert ui-alert--warn ui-fade-up ui-delay-1">
+          <strong>Falta Browser Print.</strong> Puedes preparar la cola y ver la vista previa, pero no enviar a la impresora.{" "}
           <Link href="/printing/setup" className="font-medium underline">
-            Guía de configuración paso a paso →
+            Abrir configuración →
           </Link>
         </div>
       )}
 
-      <div className="ui-panel">
-        <div className="flex flex-wrap items-center gap-3">
+      {lastError ? (
+        <div className="ui-alert ui-alert--warn ui-fade-up ui-delay-1">
+          Error de detección: {lastError}
+        </div>
+      ) : null}
+
+      <div className="ui-panel ui-panel--halo ui-remission-section ui-fade-up ui-delay-1">
+        <div className="flex flex-wrap items-end gap-3">
           <button
             className="ui-btn ui-btn--brand"
             onClick={detectPrinters}
             type="button"
+            disabled={isDetecting}
           >
-            Detectar impresoras
+            {isDetecting ? "Detectando..." : "Detectar impresoras"}
           </button>
 
           <button
@@ -506,7 +547,7 @@ function PrintingJobsContent() {
             onClick={connectSelectedAndStatus}
             type="button"
           >
-            Conectar impresora
+            {isConnected ? "Impresora conectada" : "Conectar impresora"}
           </button>
 
           <button
@@ -514,7 +555,7 @@ function PrintingJobsContent() {
             onClick={printAll}
             type="button"
           >
-            Imprimir
+            Imprimir cola
           </button>
 
           {preset.columns === 3 && (
@@ -536,14 +577,7 @@ function PrintingJobsContent() {
             Probar posición
           </button>
 
-          <div className="ml-auto flex items-center gap-3 ui-body-muted">
-            <span>
-              BrowserPrint: <span className="font-medium">{browserPrintOk ? "OK" : "NO"}</span>
-            </span>
-            <span>
-              Impresora: <span className="font-medium">{isConnected ? "OK" : "NO"}</span>
-            </span>
-
+          <div className="ml-auto flex min-w-[280px] items-center gap-3">
             <select
               className="ui-input min-w-[140px]"
               value={selectedUid}
@@ -552,14 +586,24 @@ function PrintingJobsContent() {
               <option value="">(Selecciona)</option>
               {devices.map((d) => (
                 <option key={String(d?.uid)} value={String(d?.uid)}>
-                  {String(d?.name ?? d?.uid)}
+                  {String(d?.name ?? d?.uid)} {d?.connection ? `(${String(d.connection)})` : ""}
                 </option>
               ))}
             </select>
           </div>
         </div>
 
-        <label className="mt-3 inline-flex items-center gap-2 ui-body">
+        <div className="mt-3 flex flex-wrap gap-2">
+          <span className={browserPrintOk ? "ui-chip ui-chip--success" : "ui-chip ui-chip--warn"}>
+            Browser Print {browserPrintOk ? "activo" : "pendiente"}
+          </span>
+          <span className={isConnected ? "ui-chip ui-chip--success" : "ui-chip"}>
+            {isConnected ? "Impresora lista" : "Sin conexión activa"}
+          </span>
+          <span className="ui-chip">{parsedQueue.length} en cola</span>
+        </div>
+
+        <label className="mt-4 inline-flex items-center gap-2 ui-body">
           <input
             type="checkbox"
             checked={enablePrinting}
@@ -573,7 +617,7 @@ function PrintingJobsContent() {
         ) : null}
       </div>
 
-      <div className="grid gap-6 md:grid-cols-2">
+      <div className="grid gap-6 md:grid-cols-2 ui-fade-up ui-delay-2">
         <ConfigPanel
           presets={presets}
           preset={preset}

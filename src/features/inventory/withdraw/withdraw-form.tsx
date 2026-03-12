@@ -123,7 +123,7 @@ export function WithdrawForm({
 
   if (!siteId) {
     return (
-      <div className="ui-panel">
+      <div className="ui-panel ui-remission-section">
         <p className="ui-body-muted">Selecciona una sede activa para retirar insumos.</p>
       </div>
     );
@@ -131,7 +131,7 @@ export function WithdrawForm({
 
   if (locations.length === 0) {
     return (
-      <div className="ui-panel space-y-3">
+      <div className="ui-panel ui-remission-section space-y-3">
         <p className="ui-body-muted">
           No hay LOCs en esta sede. Puede que la sede activa no tenga ubicaciones o que el QR abra un LOC de otra sede.
         </p>
@@ -145,20 +145,18 @@ export function WithdrawForm({
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
       <form id="withdraw-quick-form" action={action} className="space-y-5 pb-28 lg:pb-0">
-        <section className="ui-panel space-y-4">
+        <section className="ui-panel ui-remission-section ui-fade-up ui-delay-1 space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
-              <div className="ui-h3">Retiro rapido desde LOC</div>
-              <div className="ui-caption mt-1">
-                Abre este formulario desde el QR del LOC. El operario confirma el origen, agrega items y registra el retiro.
-              </div>
+              <div className="ui-h3">Origen</div>
+              <div className="ui-caption mt-1">Confirma el LOC desde donde sale el inventario.</div>
             </div>
             <Link href="/inventory/stock" className="ui-btn ui-btn--ghost ui-btn--sm w-full sm:w-auto">
               Ver stock
             </Link>
           </div>
 
-          <div className="rounded-2xl border border-[var(--ui-brand)]/20 bg-[var(--ui-brand-soft)] p-4 sm:p-5">
+          <div className="rounded-2xl border border-[var(--ui-brand)]/20 bg-[linear-gradient(135deg,rgba(245,158,11,0.18)_0%,rgba(255,255,255,0.92)_100%)] p-4 shadow-sm sm:p-5">
             <div className="ui-caption font-semibold text-[var(--ui-brand)]">
               {defaultLocationId ? "LOC abierto desde QR" : "LOC activo"}
             </div>
@@ -193,17 +191,14 @@ export function WithdrawForm({
               sheetTitle="Selecciona LOC"
               dropdownMode="inline"
             />
-            <span className="ui-caption">
-              Solo cambialo si el QR abrio el LOC equivocado o si necesitas retirar desde otra ubicacion.
-            </span>
           </label>
         </section>
 
-        <section className="ui-panel space-y-4">
+        <section className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <div className="ui-h3">Items a retirar</div>
-              <div className="ui-caption mt-1">Captura aqui todo lo que realmente sale de este LOC.</div>
+              <div className="ui-h3">Items</div>
+              <div className="ui-caption mt-1">Captura solo lo que realmente sale de este LOC.</div>
             </div>
             <button type="button" onClick={addRow} className="ui-btn ui-btn--ghost ui-btn--sm w-full sm:w-auto">
               + Agregar item
@@ -221,11 +216,21 @@ export function WithdrawForm({
               const conversionLabel = defaultProfile
                 ? `${defaultProfile.qty_in_input_unit} ${normalizeUnitCode(defaultProfile.input_unit_code)} = ${defaultProfile.qty_in_stock_unit} ${stockUnitCode || "un"}`
                 : "";
+              const isReady =
+                Boolean(row.productId) &&
+                Number.isFinite(Number(row.quantity)) &&
+                Number(row.quantity) > 0 &&
+                Boolean(selectedUnit);
 
               return (
-                <div key={row.id} className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-4 sm:p-5">
+                <div key={row.id} className="rounded-2xl border border-[var(--ui-border)] bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(247,250,252,0.96)_100%)] p-4 shadow-sm sm:p-5">
                   <div className="mb-3 flex items-center justify-between gap-3">
-                    <div className="text-sm font-semibold text-[var(--ui-text)]">Item {idx + 1}</div>
+                    <div className="flex items-center gap-3">
+                      <div className="text-sm font-semibold text-[var(--ui-text)]">Item {idx + 1}</div>
+                      <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${isReady ? "border border-emerald-200 bg-emerald-50 text-emerald-900" : "border border-slate-200 bg-slate-100 text-slate-700"}`}>
+                        {isReady ? "Listo" : "Pendiente"}
+                      </span>
+                    </div>
                     {rows.length > 1 ? (
                       <button
                         type="button"
@@ -348,7 +353,7 @@ export function WithdrawForm({
 
                   {conversionLabel ? (
                     <div className="mt-3 rounded-xl border border-[var(--ui-border)] bg-white px-3 py-2 text-xs text-[var(--ui-muted)]">
-                      Conversion aplicada: {conversionLabel}
+                      Conversion: {conversionLabel}
                     </div>
                   ) : null}
                 </div>
@@ -359,10 +364,10 @@ export function WithdrawForm({
       </form>
 
       <aside className="hidden space-y-4 lg:sticky lg:top-24 lg:block lg:self-start">
-        <div className="ui-panel space-y-4">
+        <div className="ui-panel ui-panel--halo ui-remission-section ui-fade-up ui-delay-3 space-y-4">
           <div>
             <div className="ui-h3">Resumen</div>
-            <div className="ui-caption mt-1">Antes de guardar, valida LOC, productos y cantidades.</div>
+            <div className="ui-caption mt-1">Vista rapida antes de registrar la salida.</div>
           </div>
 
           <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
@@ -399,7 +404,7 @@ export function WithdrawForm({
                 {linesReady.length > 6 ? <div className="ui-caption">+ {linesReady.length - 6} items mas</div> : null}
               </div>
             ) : (
-              <div className="ui-caption">Agrega al menos un item con cantidad valida.</div>
+              <div className="ui-caption">Agrega al menos un item valido.</div>
             )}
           </div>
 

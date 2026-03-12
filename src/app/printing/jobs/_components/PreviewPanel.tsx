@@ -41,7 +41,6 @@ export function PreviewPanel({
   setPreviewMode,
   previewScale,
   setPreviewScale,
-  previewRefreshKey: _previewRefreshKey,
   setPreviewRefreshKey,
   previewZpl,
   previewZplHasError,
@@ -62,12 +61,13 @@ export function PreviewPanel({
   hasQueue,
 }: PreviewPanelProps) {
   return (
-    <div className="mt-6">
-      <div className="ui-h3">Vista previa (cómo se verá impresa)</div>
-      <p className="mt-1 ui-body-muted">
-        Vista real renderizada desde el ZPL. Si falla, puedes usar el modo mock para validar tamaño
-        y layout.
-      </p>
+    <div className="mt-6 ui-panel ui-remission-section">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="ui-h3">Vista previa</div>
+          <div className="mt-1 ui-caption">Revisa antes de imprimir.</div>
+        </div>
+      </div>
 
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <span className="ui-chip ui-chip--brand">
@@ -218,7 +218,7 @@ export function PreviewPanel({
         onClick={() => setShowZplCode((v) => !v)}
         className="mt-3 text-sm font-semibold text-[var(--ui-brand-600)] hover:underline"
       >
-        {showZplCode ? "Ocultar código de impresora" : "Ver código de impresora (ZPL)"}
+        {showZplCode ? "Ocultar ZPL" : "Ver ZPL"}
       </button>
       {showZplCode ? (
         <pre className="mt-2 max-h-48 overflow-auto rounded-xl bg-zinc-950 p-3 text-xs text-zinc-100">

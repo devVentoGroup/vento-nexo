@@ -209,50 +209,79 @@ export default async function RemissionsPreparePage() {
     }
     requestMetrics.set(item.request_id, current);
   }
+  const shortageSignalCount = Array.from(requestMetrics.values()).reduce(
+    (sum, current) => sum + current.linesLikelyShortage,
+    0
+  );
+  const locSignalCount = Array.from(requestMetrics.values()).reduce(
+    (sum, current) => sum + current.linesWithoutCoveringLoc,
+    0
+  );
+  const activeSiteName = (siteRow as { name?: string } | null)?.name ?? siteId;
 
   return (
-    <div className="w-full space-y-6 pb-6">
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <Link href="/inventory/remissions" className="ui-caption underline">
-            Volver al hub de remisiones
-          </Link>
-          <h1 className="mt-2 ui-h1">Cola de preparacion</h1>
-          <p className="mt-2 ui-body-muted">
-            Vista especializada de bodega para ejecutar el paso 2 del flujo oficial: preparar y despachar.
-          </p>
-          <p className="mt-1 ui-caption">Sede: {(siteRow as { name?: string })?.name ?? siteId}</p>
+    <div className="ui-scene w-full space-y-6 pb-6">
+      <section className="ui-remission-hero ui-fade-up">
+        <div className="ui-remission-hero-grid">
+          <div>
+            <Link href="/inventory/remissions" className="ui-caption underline">
+              Volver al hub de remisiones
+            </Link>
+            <span className="mt-4 inline-flex ui-chip ui-chip--brand">{activeSiteName}</span>
+            <h1 className="mt-4 text-3xl font-semibold tracking-[-0.03em] text-[var(--ui-text)]">
+              Cola de preparacion
+            </h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--ui-muted)] sm:text-base">
+              Centro resuelve desde aqui lo que necesita preparar hoy.
+            </p>
+          </div>
+          <div className="ui-remission-kpis">
+            <div className="ui-remission-kpi">
+              <div className="ui-remission-kpi-label">Abiertas</div>
+              <div className="ui-remission-kpi-value">{rows.length}</div>
+              <div className="ui-remission-kpi-note">Solicitudes en cola</div>
+            </div>
+            <div className="ui-remission-kpi" data-tone="cool">
+              <div className="ui-remission-kpi-label">Preparando</div>
+              <div className="ui-remission-kpi-value">{preparingCount}</div>
+              <div className="ui-remission-kpi-note">Ya empezadas por bodega</div>
+            </div>
+            <div className="ui-remission-kpi" data-tone="success">
+              <div className="ui-remission-kpi-label">Señales</div>
+              <div className="ui-remission-kpi-value">{shortageSignalCount + locSignalCount}</div>
+              <div className="ui-remission-kpi-note">Faltantes o LOCs ajustados</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="grid gap-3 sm:grid-cols-3 ui-fade-up ui-delay-1">
+        <div className="ui-remission-kpi">
+          <div className="ui-remission-kpi-label">Pendientes</div>
+          <div className="ui-remission-kpi-value">{pendingCount}</div>
+          <div className="ui-remission-kpi-note">Sin empezar</div>
+        </div>
+        <div className="ui-remission-kpi" data-tone="cool">
+          <div className="ui-remission-kpi-label">Faltante probable</div>
+          <div className="ui-remission-kpi-value">{shortageSignalCount}</div>
+          <div className="ui-remission-kpi-note">Lineas sobre stock de sede</div>
+        </div>
+        <div className="ui-remission-kpi" data-tone="success">
+          <div className="ui-remission-kpi-label">LOC ajustado</div>
+          <div className="ui-remission-kpi-value">{locSignalCount}</div>
+          <div className="ui-remission-kpi-note">Sin un LOC unico suficiente</div>
         </div>
       </div>
 
-      <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
-        <p className="font-semibold text-[var(--ui-text)]">Esta vista no reemplaza Remisiones</p>
-        <p className="mt-1">
-          El flujo oficial sigue siendo <strong className="text-[var(--ui-text)]">Solicitar - Preparar - Recibir</strong>.
-          Esta cola existe solo para que Centro trabaje pendientes mas rapido desde movil o tablet.
-        </p>
-      </div>
-
-      <div className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
-          <div className="ui-caption">Solicitudes abiertas</div>
-          <div className="mt-1 text-2xl font-semibold text-[var(--ui-text)]">{rows.length}</div>
-        </div>
-        <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
-          <div className="ui-caption">Pendientes</div>
-          <div className="mt-1 text-2xl font-semibold text-[var(--ui-text)]">{pendingCount}</div>
-        </div>
-        <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
-          <div className="ui-caption">Preparando</div>
-          <div className="mt-1 text-2xl font-semibold text-[var(--ui-text)]">{preparingCount}</div>
-        </div>
-      </div>
-
-      <div className="ui-panel space-y-4">
-        <div>
-          <div className="ui-h3">Solicitudes pendientes de preparar</div>
-          <div className="mt-1 ui-body-muted">
-            Abre una remision, captura preparado y enviado, guarda items y luego marca la accion correspondiente.
+      <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-4">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="ui-h3">Solicitudes pendientes de preparar</div>
+            <div className="mt-1 ui-caption">{rows.length} remision(es) visibles</div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className="ui-chip">{pendingCount} pendientes</span>
+            <span className="ui-chip ui-chip--brand">{preparingCount} preparando</span>
           </div>
         </div>
 
@@ -261,7 +290,10 @@ export default async function RemissionsPreparePage() {
             {rows.map((row) => {
               const status = formatStatus(row.status);
               return (
-                <div key={row.id} className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-4 sm:p-5">
+                <div
+                  key={row.id}
+                  className="ui-remission-section rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-4 shadow-[var(--ui-shadow-soft)] sm:p-5"
+                >
                   <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                     <div className="min-w-0">
                       <div className="text-sm font-semibold text-[var(--ui-text)] truncate">
@@ -273,42 +305,42 @@ export default async function RemissionsPreparePage() {
                   </div>
 
                     <div className="mt-4 grid gap-3 sm:grid-cols-2">
-                      <div className="rounded-xl border border-[var(--ui-border)] bg-white p-3">
+                      <div className="rounded-xl border border-[var(--ui-border)] bg-white/90 p-3">
                         <div className="ui-caption">Creada</div>
                         <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">{formatDateTime(row.created_at)}</div>
                       </div>
-                      <div className="rounded-xl border border-[var(--ui-border)] bg-white p-3">
+                      <div className="rounded-xl border border-[var(--ui-border)] bg-white/90 p-3">
                         <div className="ui-caption">Lineas</div>
                         <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">
                           {requestMetrics.get(row.id)?.totalLines ?? 0}
                         </div>
                       </div>
-                      <div className="rounded-xl border border-[var(--ui-border)] bg-white p-3 sm:col-span-2">
+                      <div className="rounded-xl border border-[var(--ui-border)] bg-white/90 p-3 sm:col-span-2">
                         <div className="ui-caption">Notas</div>
                         <div className="mt-1 text-sm text-[var(--ui-text)] line-clamp-3">{row.notes ?? "Sin notas"}</div>
                       </div>
                     </div>
 
                   <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    <div className="rounded-xl border border-[var(--ui-border)] bg-white p-3">
+                    <div className="rounded-xl border border-[var(--ui-border)] bg-white/90 p-3">
                       <div className="ui-caption">LOC pendiente</div>
                       <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">
                         {requestMetrics.get(row.id)?.linesMissingSourceLoc ?? 0}
                       </div>
                     </div>
-                    <div className="rounded-xl border border-[var(--ui-border)] bg-white p-3">
+                    <div className="rounded-xl border border-[var(--ui-border)] bg-white/90 p-3">
                       <div className="ui-caption">Preparacion corta</div>
                       <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">
                         {requestMetrics.get(row.id)?.linesPartialPrep ?? 0}
                       </div>
                     </div>
-                    <div className="rounded-xl border border-[var(--ui-border)] bg-white p-3">
+                    <div className="rounded-xl border border-[var(--ui-border)] bg-white/90 p-3">
                       <div className="ui-caption">Faltante probable</div>
                       <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">
                         {requestMetrics.get(row.id)?.linesLikelyShortage ?? 0}
                       </div>
                     </div>
-                    <div className="rounded-xl border border-[var(--ui-border)] bg-white p-3">
+                    <div className="rounded-xl border border-[var(--ui-border)] bg-white/90 p-3">
                       <div className="ui-caption">Sin LOC unico suficiente</div>
                       <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">
                         {requestMetrics.get(row.id)?.linesWithoutCoveringLoc ?? 0}

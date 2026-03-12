@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 
-import { StepHelp } from "@/components/inventory/forms/StepHelp";
 import { type ProductUomProfile } from "@/lib/inventory/uom";
 
 import { EntriesItems } from "./entries-items";
@@ -92,7 +91,6 @@ export function EntriesForm({
   const [receivedAt, setReceivedAt] = useState("");
   const [notes, setNotes] = useState(defaultNotes ?? "");
   const [emergencyReason, setEmergencyReason] = useState("");
-  const [confirmed, setConfirmed] = useState(false);
   const showCustomSupplier = supplierId === "__new__";
 
   const selectedSupplierName = useMemo(() => {
@@ -100,60 +98,28 @@ export function EntriesForm({
     return suppliers.find((supplier) => supplier.id === supplierId)?.name ?? "Proveedor sin nombre";
   }, [showCustomSupplier, supplierCustomName, supplierId, suppliers]);
 
-  const reviewRows = useMemo(
-    () => [
-      { label: "Proveedor", value: selectedSupplierName },
-      { label: "Documento", value: invoiceNumber.trim() || "Sin factura / documento" },
-      { label: "Fecha de recepcion", value: receivedAt || "Sin fecha cargada" },
-      {
-        label: "Modo",
-        value: emergencyOnly ? "Entrada de contingencia en NEXO" : "Entrada operativa",
-      },
-      {
-        label: "Fuente",
-        value: purchaseOrderId
-          ? `Orden ${purchaseOrderId}`
-          : emergencyOnly
-            ? "Carga manual directa"
-            : "Sin orden asociada",
-      },
-      { label: "Notas", value: notes.trim() || "Sin notas" },
-    ],
-    [emergencyOnly, invoiceNumber, notes, purchaseOrderId, receivedAt, selectedSupplierName]
-  );
-
   return (
     <form className="space-y-6 pb-24 lg:pb-0" action={action}>
       <input type="hidden" name="purchase_order_id" value={purchaseOrderId ?? ""} />
       <input type="hidden" name="source_app" value={emergencyOnly ? "nexo" : "origo"} />
       <input type="hidden" name="entry_mode" value={emergencyOnly ? "emergency" : "normal"} />
 
-      <section className="ui-panel-soft space-y-3 p-4">
+      <section className="ui-panel ui-remission-section ui-fade-up ui-delay-1 space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="ui-h3">Captura completa en una sola vista</div>
-            <p className="mt-1 text-sm text-[var(--ui-muted)]">
-              Aqui completas contexto, items, ubicaciones y confirmacion sin navegar por wizard.
-            </p>
+            <div className="ui-h3">Contexto</div>
+            <div className="ui-caption mt-1">Proveedor, documento y fecha para esta entrada.</div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <span className="ui-chip">
-              {emergencyOnly ? "Modo contingencia" : "Modo operativo"}
+          <div className="flex flex-wrap gap-2 text-xs font-semibold">
+            <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-slate-700">
+              {emergencyOnly ? "Modo emergencia" : "Modo normal"}
             </span>
-            {purchaseOrderId ? <span className="ui-chip">Con orden asociada</span> : null}
+            {purchaseOrderId ? (
+              <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-cyan-900">
+                Con OC vinculada
+              </span>
+            ) : null}
           </div>
-        </div>
-        <p className="text-sm text-[var(--ui-muted)]">
-          La meta es que una persona nueva pueda registrar una entrada completa desde una sola pantalla.
-        </p>
-      </section>
-
-      <section className="ui-panel space-y-4">
-        <div>
-          <div className="ui-h3">Contexto del documento</div>
-          <p className="mt-1 ui-caption">
-            Define proveedor, documento y trazabilidad basica de la recepcion.
-          </p>
         </div>
 
         <div className="grid gap-3 ui-mobile-stack md:grid-cols-2">
@@ -214,7 +180,7 @@ export function EntriesForm({
             <input
               name="notes"
               className="ui-input"
-              placeholder="Observaciones para inventario o bodega"
+              placeholder="Notas opcionales"
               value={notes}
               onChange={(event) => setNotes(event.target.value)}
             />
@@ -226,7 +192,7 @@ export function EntriesForm({
               <input
                 name="emergency_reason"
                 className="ui-input"
-                placeholder="Ej: reposicion urgente para no detener operacion"
+                placeholder="Motivo"
                 value={emergencyReason}
                 onChange={(event) => setEmergencyReason(event.target.value)}
                 required
@@ -234,26 +200,17 @@ export function EntriesForm({
             </label>
           ) : null}
         </div>
-
-        <StepHelp
-          meaning="Este bloque define la trazabilidad principal de la entrada."
-          whenToUse="Siempre que recibas mercancia con o sin factura formal."
-          example="Proveedor X, factura FAC-1023, recepcion hoy."
-          impact="Permite auditar diferencias entre declarado y recibido."
-        />
       </section>
 
-      <section className="ui-panel space-y-4">
-        <div>
-          <div className="ui-h3">Items, unidades y LOC destino</div>
-          <p className="mt-1 ui-caption">
-            Captura productos, cantidades declaradas/recibidas, costo de referencia y ubicacion fisica.
-          </p>
-        </div>
-
-        <div className="ui-panel-soft p-3 text-sm text-[var(--ui-muted)]">
-          Si dejas costo unitario vacio, el sistema intenta proveedor y luego costo actual del producto.
-          Si recibes menos que lo declarado, la entrada quedara parcial.
+      <section className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="ui-h3">Productos</div>
+            <div className="ui-caption mt-1">Captura lo declarado y lo realmente recibido.</div>
+          </div>
+          <div className="rounded-full border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-1 text-xs font-semibold text-[var(--ui-muted)]">
+            {locations.length} LOCs disponibles
+          </div>
         </div>
 
         <EntriesItems
@@ -266,61 +223,14 @@ export function EntriesForm({
           defaultUomProfiles={defaultUomProfiles}
           initialRows={initialRows}
         />
-
-        <StepHelp
-          meaning="Cada linea deja listo el movimiento de stock y la ubicacion destino."
-          whenToUse="Agrega una linea por producto realmente recibido."
-          example="Harina: declarada 20 kg, recibida 19.5 kg, LOC BOD-MAIN."
-          impact="Afecta stock por sede, por ubicacion y costo promedio cuando aplica."
-        />
       </section>
 
-      <section className="ui-panel space-y-4">
-        <div>
-          <div className="ui-h3">Revision operativa</div>
-          <p className="mt-1 ui-caption">
-            Antes de guardar, confirma que el contexto y las lineas correspondan a la recepcion real.
-          </p>
+      <div className="ui-mobile-sticky-footer ui-fade-up ui-delay-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ui-border)] bg-white/92 px-4 py-3 backdrop-blur">
+        <div className="text-sm text-[var(--ui-muted)]">
+          {selectedSupplierName}
+          {invoiceNumber.trim() ? ` · ${invoiceNumber.trim()}` : ""}
         </div>
-
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-          {reviewRows.map((row) => (
-            <div key={row.label} className="ui-panel-soft px-3 py-2">
-              <div className="ui-caption">{row.label}</div>
-              <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">{row.value}</div>
-            </div>
-          ))}
-        </div>
-
-        <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)] space-y-2">
-          <p>1) Cada item debe tener producto, cantidad declarada y LOC destino.</p>
-          <p>2) Si recibido es menor que declarado, la entrada queda parcial y eso es valido.</p>
-          <p>3) Si no tienes factura formal, igual puedes registrar la recepcion con trazabilidad basica.</p>
-        </div>
-      </section>
-
-      <section className="ui-panel space-y-4">
-        <div>
-          <div className="ui-h3">Confirmacion final</div>
-          <p className="mt-1 ui-caption">
-            Este es el ultimo control antes de generar la entrada y mover stock.
-          </p>
-        </div>
-
-        <label className="flex items-start gap-2 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-3">
-          <input
-            type="checkbox"
-            checked={confirmed}
-            onChange={(event) => setConfirmed(event.target.checked)}
-          />
-          <span className="ui-caption">
-            Confirmo que revise proveedor, documento, cantidades, costos y ubicaciones antes de guardar.
-          </span>
-        </label>
-      </section>
-
-      <div className="ui-mobile-sticky-footer flex flex-wrap items-center justify-end gap-2">
-        <button type="submit" className="ui-btn ui-btn--brand" disabled={!confirmed}>
+        <button type="submit" className="ui-btn ui-btn--brand">
           Guardar entrada
         </button>
       </div>

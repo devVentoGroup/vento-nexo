@@ -1149,127 +1149,148 @@ export default async function RemissionDetailPage({
   } else if (currentStatus === "cancelled") {
     responsibleActor = "Remisión cancelada";
   }
-
-  let nextStep = "Sin acciones disponibles.";
-  if (currentStatus === "pending") {
-    nextStep = access.canPrepare
-      ? "Paso 2: revisa items, guarda preparación y luego marca preparado."
-      : `${access.fromSiteName || "Centro"} debe tomar esta solicitud y empezar preparación.`;
-  } else if (currentStatus === "preparing") {
-    nextStep = access.canTransit
-      ? "Paso 2: confirma cantidades enviadas y marca en viaje."
-      : `${access.fromSiteName || "Centro"} debe despachar esta remisión.`;
-  } else if (currentStatus === "in_transit") {
-    nextStep = access.canReceive
-      ? "Paso 3: registra recibido y faltante, guarda items y luego confirma recepción completa o parcial."
-      : `${access.toSiteName || "Destino"} debe registrar la recepción.`;
-  } else if (currentStatus === "partial") {
-    nextStep = access.canReceive
-      ? "La recepción quedó parcial. Completa lo pendiente entre recibido y faltante o confirma la recepción total cuando ya esté conciliada."
-      : `La recepción quedó parcial y requiere conciliación en ${access.toSiteName || "destino"}.`;
-  } else if (currentStatus === "received") {
-    nextStep = "La recepción ya quedó completa. En v1 aquí termina el flujo.";
-  } else if (currentStatus === "closed") {
-    nextStep = "Registro legado: esta remisión ya estaba cerrada y en v1 se trata como recibida.";
-  } else if (currentStatus === "cancelled") {
-    nextStep = "La remisión fue cancelada.";
-  }
+  const phaseLabel = canEditPrepareItems
+    ? "Preparacion en Centro"
+    : canEditReceiveItems
+      ? "Recepcion en destino"
+      : formatStatus(request.status).label;
+  const activeSignals = canEditPrepareItems
+    ? linesMissingSourceLoc + linesPartialPreparation + linesWithoutCoveringLoc
+    : canEditReceiveItems
+      ? pendingReceiptLines + shortageLines
+      : 0;
 
   return (
-    <div className="w-full space-y-6 pb-28 lg:pb-6">
+    <div className="ui-scene w-full space-y-6 pb-28 lg:pb-6">
+      <section className="ui-remission-hero ui-fade-up">
+        <div className="ui-remission-hero-grid">
+          <div>
+            <Link href={backHref} className="ui-caption underline">
+              {backLabel}
+            </Link>
+            <div className="mt-4 flex flex-wrap items-center gap-2">
+              <span className="ui-chip ui-chip--brand">{phaseLabel}</span>
+              <span className={formatStatus(request.status).className}>
+                {formatStatus(request.status).label}
+              </span>
+            </div>
+            <h1 className="mt-4 text-3xl font-semibold tracking-[-0.03em] text-[var(--ui-text)]">
+              Remision #{String(request.id).slice(0, 8)}
+            </h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--ui-muted)] sm:text-base">
+              {access.fromSiteName || "-"} → {access.toSiteName || "-"}
+            </p>
+          </div>
+          <div className="ui-remission-kpis">
+            <div className="ui-remission-kpi">
+              <div className="ui-remission-kpi-label">Actor actual</div>
+              <div className="mt-2 text-base font-semibold text-[var(--ui-text)]">{responsibleActor}</div>
+              <div className="ui-remission-kpi-note">Responsable operativo visible</div>
+            </div>
+            <div className="ui-remission-kpi" data-tone="cool">
+              <div className="ui-remission-kpi-label">Lineas</div>
+              <div className="ui-remission-kpi-value">{itemRows.length}</div>
+              <div className="ui-remission-kpi-note">Items dentro de la remision</div>
+            </div>
+            <div className="ui-remission-kpi" data-tone={activeSignals > 0 ? "warm" : "success"}>
+              <div className="ui-remission-kpi-label">Señales activas</div>
+              <div className="ui-remission-kpi-value">{activeSignals}</div>
+              <div className="ui-remission-kpi-note">
+                {request.expected_date
+                  ? `Entrega esperada ${formatDate(request.expected_date ?? null)}`
+                  : "Sin fecha esperada"}
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
-          <Link href={backHref} className="ui-caption underline">
-            {backLabel}
-          </Link>
-          <h1 className="mt-2 ui-h1">Remision #{String(request.id).slice(0, 8)}</h1>
-          <p className="mt-2 ui-body-muted">
-            Estado:{" "}
-            <span className={formatStatus(request.status).className}>
-              {formatStatus(request.status).label}
-            </span>
-          </p>
           <p className="mt-1 ui-caption">
             Vista: {access.fromSiteType === "production_center" ? "Bodega (Centro)" : "Sede satelite"} | Rol: {access.roleLabel || "sin rol"}
           </p>
         </div>
       </div>
 
-      {cameFromPrepareQueue ? (
-        <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
-          Estas trabajando desde la cola especializada de bodega. Termina esta preparacion y vuelve a la cola para seguir con la siguiente solicitud.
-        </div>
-      ) : null}
-
       {errorMsg ? (
-        <div className="ui-alert ui-alert--error">
+        <div className="ui-alert ui-alert--error ui-fade-up ui-delay-1">
           Error: {errorMsg}
         </div>
       ) : null}
 
       {okMsg ? (
-        <div className="ui-alert ui-alert--success">{okMsg}</div>
+        <div className="ui-alert ui-alert--success ui-fade-up ui-delay-1">{okMsg}</div>
       ) : null}
 
       {lowStockWarning ? (
-        <div className="ui-alert ui-alert--warn">
+        <div className="ui-alert ui-alert--warn ui-fade-up ui-delay-1">
           Algunos productos pueden no tener stock suficiente en Centro. Bodega verificara al preparar.
         </div>
       ) : null}
 
-      <div className="ui-panel">
-        <div className="ui-h3">Detalle</div>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5 ui-body">
-          <div>
-            <div className="ui-caption">Origen</div>
-            <div>{access.fromSiteName || "-"}</div>
-          </div>
-          <div>
-            <div className="ui-caption">Destino</div>
-            <div>{access.toSiteName || "-"}</div>
-          </div>
-          <div>
-            <div className="ui-caption">Creada</div>
-            <div>{formatDateTime(request.created_at)}</div>
-          </div>
-          <div>
-            <div className="ui-caption">Fecha esperada</div>
-            <div>{formatDate(request.expected_date ?? null)}</div>
-          </div>
-          <div>
-            <div className="ui-caption">Notas</div>
-            <div>{request.notes ?? "-"}</div>
+      <div className="grid gap-6 xl:grid-cols-[1.6fr_0.9fr]">
+        <div className="ui-panel ui-remission-section ui-fade-up ui-delay-1">
+          <div className="ui-h3">Detalle</div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5 ui-body">
+            <div>
+              <div className="ui-caption">Origen</div>
+              <div>{access.fromSiteName || "-"}</div>
+            </div>
+            <div>
+              <div className="ui-caption">Destino</div>
+              <div>{access.toSiteName || "-"}</div>
+            </div>
+            <div>
+              <div className="ui-caption">Creada</div>
+              <div>{formatDateTime(request.created_at)}</div>
+            </div>
+            <div>
+              <div className="ui-caption">Fecha esperada</div>
+              <div>{formatDate(request.expected_date ?? null)}</div>
+            </div>
+            <div>
+              <div className="ui-caption">Notas</div>
+              <div>{request.notes ?? "-"}</div>
+            </div>
           </div>
         </div>
-      </div>
 
-      <div className="ui-panel">
-        <div className="ui-h3">Flujo de trabajo</div>
-        <div className="mt-2 ui-caption">
-          Estado actual: <strong>{formatStatus(request.status).label}</strong>
-        </div>
-        <div className="mt-1 ui-caption">
-          Quién debe actuar: <strong>{responsibleActor}</strong>
-        </div>
-        <div className="mt-1 ui-caption">
-          Siguiente paso: <strong>{nextStep}</strong>
+        <div className="ui-panel ui-panel--halo ui-remission-section ui-fade-up ui-delay-2">
+          <div className="ui-h3">Estado</div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <span className={formatStatus(request.status).className}>
+              {formatStatus(request.status).label}
+            </span>
+            <span className="ui-chip">{phaseLabel}</span>
+          </div>
+          <div className="mt-3 ui-caption">
+            Actor actual: <strong>{responsibleActor}</strong>
+          </div>
+          <div className="mt-3 ui-caption">
+            {canEditPrepareItems
+              ? `${linesMissingSourceLoc} LOC pendiente · ${linesPartialPreparation} parciales · ${linesWithoutCoveringLoc} sin LOC suficiente`
+              : canEditReceiveItems
+                ? `${pendingReceiptLines} por conciliar · ${shortageLines} con faltante · ${receivedLines} recibidas`
+                : "Sin acciones operativas pendientes."}
+          </div>
         </div>
       </div>
 
       {currentStatus === "partial" ? (
-        <div className="ui-alert ui-alert--warn">
+        <div className="ui-alert ui-alert--warn ui-fade-up ui-delay-2">
           Recepción parcial activa. Hay <strong>{pendingReceiptLines}</strong> linea(s) con cantidades todavía por conciliar y <strong>{shortageLines}</strong> con faltante registrado.
           {receivedLines > 0 ? ` También hay ${receivedLines} linea(s) con recepción registrada.` : ""}
         </div>
       ) : null}
 
       {currentStatus === "closed" ? (
-        <div className="ui-alert ui-alert--neutral">
+        <div className="ui-alert ui-alert--neutral ui-fade-up ui-delay-2">
           Esta remisión viene de una lógica anterior con estado <strong>closed</strong>. Para operación v1 se interpreta como remisión ya recibida.
         </div>
       ) : null}
 
-      <div className="ui-panel">
+      <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
         <div className="ui-h3">Acciones</div>
         <form action={updateStatus} className="mt-4 grid gap-3 sm:grid-cols-2 xl:flex xl:flex-wrap">
           <input type="hidden" name="request_id" value={request.id} />
@@ -1280,7 +1301,7 @@ export default async function RemissionDetailPage({
               value="prepare"
               className="ui-btn ui-btn--ghost"
             >
-              Paso 2: marcar preparado
+              Marcar preparado
             </button>
           ) : null}
           {canTransitAction ? (
@@ -1289,7 +1310,7 @@ export default async function RemissionDetailPage({
               value="transit"
               className="ui-btn ui-btn--brand"
             >
-              Paso 2: marcar en viaje
+              Marcar en viaje
             </button>
           ) : null}
           {canReceiveAction ? (
@@ -1298,7 +1319,7 @@ export default async function RemissionDetailPage({
               value="receive"
               className="ui-btn ui-btn--ghost"
             >
-              Paso 3: confirmar recepción
+              Confirmar recepción
             </button>
           ) : null}
           {canReceivePartialAction ? (
@@ -1307,7 +1328,7 @@ export default async function RemissionDetailPage({
               value="receive_partial"
               className="ui-btn ui-btn--ghost"
             >
-              Paso 3: guardar como parcial
+              Guardar parcial
             </button>
           ) : null}
           {canCancelAction ? (
@@ -1330,12 +1351,9 @@ export default async function RemissionDetailPage({
             No hay acciones disponibles para tu rol en el estado actual.
           </div>
         ) : null}
-        <div className="mt-2 ui-caption">
-          &quot;Marcar en viaje&quot; descuenta stock en origen. &quot;Confirmar recepción&quot; agrega stock en destino. Si queda parcial, vuelve a esta misma remisión para completar la conciliación.
-        </div>
       </div>
 
-      <div className="ui-panel">
+      <div className="ui-panel ui-remission-section ui-fade-up ui-delay-3">
         <div className="ui-h3">
           {canEditPrepareItems
             ? "Preparación y despacho"
@@ -1343,49 +1361,37 @@ export default async function RemissionDetailPage({
               ? "Recepción en destino"
               : "Items de la remision"}
         </div>
-        {canEditPrepareItems ? (
-          <p className="mt-2 ui-caption">
-            Paso 2 del flujo: selecciona LOC origen, captura preparado/enviado, guarda ítems y luego usa
-            <strong> Marcar preparado</strong> y <strong>Marcar en viaje</strong>.
-          </p>
-        ) : null}
-        {canEditReceiveItems ? (
-          <p className="mt-2 ui-caption">
-            Paso 3 del flujo: captura recibido/faltante, guarda ítems y luego usa <strong>Confirmar recepción</strong> o{" "}
-            <strong>Guardar como parcial</strong>.
-          </p>
-        ) : null}
         <form action={updateItems} className="mt-4 space-y-4 pb-24 lg:pb-0">
           <input type="hidden" name="request_id" value={request.id} />
           <input type="hidden" name="return_origin" value={cameFromPrepareQueue ? "prepare" : ""} />
 
           {canEditPrepareItems ? (
             <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-5">
-              <div className="ui-panel-soft p-4">
+              <div className="ui-remission-kpi">
                 <div className="ui-caption">Lineas con LOC pendiente</div>
                 <div className="mt-1 text-2xl font-semibold text-[var(--ui-text)]">
                   {linesMissingSourceLoc}
                 </div>
               </div>
-              <div className="ui-panel-soft p-4">
+              <div className="ui-remission-kpi" data-tone="cool">
                 <div className="ui-caption">Lineas pasadas de stock sede</div>
                 <div className="mt-1 text-2xl font-semibold text-[var(--ui-text)]">
                   {linesOverSiteStock}
                 </div>
               </div>
-              <div className="ui-panel-soft p-4">
+              <div className="ui-remission-kpi" data-tone="cool">
                 <div className="ui-caption">Lineas pasadas de stock LOC</div>
                 <div className="mt-1 text-2xl font-semibold text-[var(--ui-text)]">
                   {linesOverSelectedLocStock}
                 </div>
               </div>
-              <div className="ui-panel-soft p-4">
+              <div className="ui-remission-kpi">
                 <div className="ui-caption">Preparacion corta</div>
                 <div className="mt-1 text-2xl font-semibold text-[var(--ui-text)]">
                   {linesPartialPreparation}
                 </div>
               </div>
-              <div className="ui-panel-soft p-4">
+              <div className="ui-remission-kpi" data-tone="success">
                 <div className="ui-caption">Sin LOC unico suficiente</div>
                 <div className="mt-1 text-2xl font-semibold text-[var(--ui-text)]">
                   {linesWithoutCoveringLoc}

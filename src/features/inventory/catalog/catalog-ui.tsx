@@ -31,7 +31,7 @@ export function CatalogSection({
   className = "",
 }: CatalogSectionProps) {
   return (
-    <section className={`ui-panel space-y-6 ${className}`.trim()}>
+    <section className={`ui-panel ui-remission-section space-y-6 ${className}`.trim()}>
       <div className="flex items-start gap-3 border-b border-[var(--ui-border)] pb-3">
         <span
           aria-hidden="true"
@@ -53,7 +53,7 @@ export function CatalogHintPanel({
   className = "",
 }: CatalogHintPanelProps) {
   return (
-    <div className={`ui-panel-soft p-4 text-sm text-[var(--ui-muted)] space-y-2 ${className}`.trim()}>
+    <div className={`ui-panel ui-remission-section p-4 text-sm text-[var(--ui-muted)] space-y-2 ${className}`.trim()}>
       <p className="font-semibold text-[var(--ui-text)]">{title}</p>
       {children}
     </div>
@@ -71,14 +71,13 @@ export function CatalogCategoryContextForm({
   submitLabel = "Actualizar categorias",
 }: CatalogCategoryContextFormProps) {
   return (
-    <form method="get" className="ui-panel grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+    <form method="get" className="ui-panel ui-remission-section grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
       {hiddenFields.map((field) => (
         <input key={`${field.name}:${field.value}`} type="hidden" name={field.name} value={field.value} />
       ))}
 
       <div className="sm:col-span-2 lg:col-span-4 ui-caption">
-        Este selector solo define el arbol de categoria operativa disponible en esta vista. No define menu,
-        marca ni oferta comercial futura.
+        Este selector solo define el arbol de categoria operativa disponible en esta vista.
       </div>
 
       <label className="flex flex-col gap-1">

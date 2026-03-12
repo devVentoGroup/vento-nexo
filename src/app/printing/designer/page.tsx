@@ -54,7 +54,12 @@ export default function DesignerPage() {
     } catch { /* skip */ }
   }, []);
 
-  useEffect(() => { loadLocs(); }, [loadLocs]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      void loadLocs();
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [loadLocs]);
 
   const filteredLocs = useMemo(() => {
     if (!locSearch.trim()) return locs;
@@ -188,27 +193,81 @@ export default function DesignerPage() {
     try { return loadTemplates().length; } catch { return 0; }
   }, []);
 
+  const selectedLoc = useMemo(
+    () => locs.find((loc) => loc.code === selectedLocCode) ?? null,
+    [locs, selectedLocCode]
+  );
+
   return (
-    <div className="w-full space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <Link href="/printing/jobs" className="ui-caption underline">Volver a impresion</Link>
-          <h1 className="mt-2 ui-h1">Diseñador de etiquetas</h1>
-          <p className="mt-2 ui-body-muted">
-            Carga un LOC real, ajusta posicion y tamaño de cada elemento, cambia la orientacion y guarda el layout.
-          </p>
+    <div className="ui-scene w-full space-y-6">
+      <section className="ui-remission-hero ui-fade-up">
+        <div className="ui-remission-hero-grid lg:grid-cols-[1.55fr_0.95fr] lg:items-start">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Link href="/printing/jobs" className="ui-caption underline">Volver a impresion</Link>
+              <h1 className="ui-h1">Diseñador de etiquetas</h1>
+              <p className="ui-body-muted">
+                Ajusta el layout una vez y dejalo listo para imprimir LOCs sin volver a pelear con el formato.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
+                {template.orientation === "horizontal" ? "Horizontal" : "Vertical"}
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+                {canvasW} x {canvasH} mm
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+                {template.dpi} dpi
+              </span>
+              {selectedLoc && (
+                <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-900">
+                  LOC {selectedLoc.code}
+                </span>
+              )}
+            </div>
+          </div>
+          <div className="ui-remission-kpis sm:grid-cols-3 lg:grid-cols-1">
+            <article className="ui-remission-kpi" data-tone="warm">
+              <div className="ui-remission-kpi-label">LOC base</div>
+              <div className="ui-remission-kpi-value">{selectedLocCode || "Sin elegir"}</div>
+              <div className="ui-remission-kpi-note">
+                {selectedLoc ? (selectedLoc.zone || selectedLoc.description || "LOC activo para esta plantilla") : "Elige un LOC real para previsualizar"}
+              </div>
+            </article>
+            <article className="ui-remission-kpi" data-tone="cool">
+              <div className="ui-remission-kpi-label">Elementos</div>
+              <div className="ui-remission-kpi-value">{template.elements.length}</div>
+              <div className="ui-remission-kpi-note">
+                {selectedElement ? `Editando ${ELEMENT_LABELS[selectedElement.type]}` : "Selecciona uno en el canvas para moverlo"}
+              </div>
+            </article>
+            <article className="ui-remission-kpi" data-tone="success">
+              <div className="ui-remission-kpi-label">Layouts guardados</div>
+              <div className="ui-remission-kpi-value">{savedCount}</div>
+              <div className="ui-remission-kpi-note">
+                {locsLoaded ? `${locs.length} LOCs listos para usar` : "Carga los LOCs para empezar"}
+              </div>
+            </article>
+          </div>
         </div>
-        <Link href="/printing/jobs" className="ui-btn ui-btn--ghost ui-btn--sm">Ir a imprimir</Link>
-      </div>
+      </section>
 
       {statusMsg && <div className="ui-alert ui-alert--success">{statusMsg}</div>}
 
       <div className="grid gap-6 lg:grid-cols-[1fr_340px]">
         {/* LEFT: Canvas */}
         <div className="space-y-4">
-          {/* LOC selector */}
-          <div className="ui-panel space-y-3">
-            <div className="ui-h3">1. Elige un LOC real</div>
+          <div className="ui-panel ui-remission-section ui-fade-up ui-delay-1 space-y-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="ui-h3">LOC base</div>
+                <p className="ui-caption text-[var(--ui-muted)]">Usa un LOC real para ver la etiqueta con datos correctos.</p>
+              </div>
+              <button type="button" onClick={loadLocs} className="ui-btn ui-btn--ghost ui-btn--sm">
+                {locsLoaded ? "Recargar" : "Cargar LOCs"}
+              </button>
+            </div>
             <div className="flex flex-wrap items-end gap-3">
               <label className="flex flex-col gap-1 flex-1 min-w-[200px]">
                 <span className="ui-caption font-semibold">Buscar LOC</span>
@@ -235,46 +294,48 @@ export default function DesignerPage() {
                   ))}
                 </select>
               </label>
-              <button type="button" onClick={loadLocs} className="ui-btn ui-btn--ghost ui-btn--sm">
-                {locsLoaded ? "Recargar" : "Cargar LOCs"}
-              </button>
             </div>
-            {!selectedLocCode && (
-              <p className="ui-caption text-[var(--ui-muted)]">Selecciona un LOC para generar la etiqueta con datos reales.</p>
-            )}
           </div>
 
-          {/* Canvas */}
-          <div className="overflow-auto rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-6">
-            <LabelCanvas
-              template={{ ...template, widthMm: canvasW, heightMm: canvasH }}
-              selectedId={selectedId}
-              onSelectElement={setSelectedId}
-              onMoveElement={moveElement}
-              onResizeElement={resizeElement}
-              zoom={zoom}
-            />
+          <div className="ui-panel ui-panel--halo ui-remission-section ui-fade-up ui-delay-2 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="ui-h3">Canvas</div>
+                <p className="ui-caption text-[var(--ui-muted)]">Toca un elemento para moverlo o ajustarlo.</p>
+              </div>
+              <div className="flex items-center gap-3 rounded-full border border-slate-200 bg-white/80 px-4 py-2 shadow-sm">
+                <span className="ui-caption font-semibold text-slate-700">Zoom</span>
+                <input type="range" min="1" max="6" step="0.5" value={zoom} onChange={(e) => setZoom(Number(e.target.value))} />
+                <span className="ui-caption w-12 text-right">{Math.round(zoom * 100)}%</span>
+              </div>
+            </div>
+            <div className="overflow-auto rounded-[20px] border border-[var(--ui-border)] bg-[linear-gradient(180deg,rgba(255,255,255,0.9)_0%,rgba(238,242,246,0.95)_100%)] p-6">
+              <LabelCanvas
+                template={{ ...template, widthMm: canvasW, heightMm: canvasH }}
+                selectedId={selectedId}
+                onSelectElement={setSelectedId}
+                onMoveElement={moveElement}
+                onResizeElement={resizeElement}
+                zoom={zoom}
+              />
+            </div>
           </div>
 
-          {/* ZPL preview */}
           {zplPreview && (
-            <div className="ui-panel space-y-2">
-              <div className="ui-h3">ZPL generado</div>
+            <div className="ui-panel ui-fade-up ui-delay-3 space-y-2">
+              <div className="ui-h3">ZPL</div>
               <pre className="max-h-48 overflow-auto rounded-lg bg-zinc-950 p-3 text-xs text-zinc-100 font-mono">{zplPreview}</pre>
             </div>
           )}
 
-          {/* Properties on mobile */}
           <div className="lg:hidden">
             <PropertiesPanel element={selectedElement} onUpdate={updateElement} onDelete={deleteElement} />
           </div>
         </div>
 
-        {/* RIGHT: Controls */}
         <div className="space-y-4">
-          {/* Orientation + size */}
-          <div className="ui-panel space-y-3">
-            <div className="ui-h3">2. Orientacion y tamaño</div>
+          <div className="ui-panel ui-remission-section ui-fade-up ui-delay-1 space-y-3">
+            <div className="ui-h3">Formato</div>
             <div className="flex gap-2">
               <button
                 type="button"
@@ -324,18 +385,8 @@ export default function DesignerPage() {
             </div>
           </div>
 
-          {/* Zoom */}
-          <div className="ui-panel space-y-2">
-            <div className="ui-h3">Zoom</div>
-            <div className="flex items-center gap-3">
-              <input type="range" min="1" max="6" step="0.5" value={zoom} onChange={(e) => setZoom(Number(e.target.value))} />
-              <span className="ui-caption w-12 text-right">{Math.round(zoom * 100)}%</span>
-            </div>
-          </div>
-
-          {/* Add extra elements */}
-          <div className="ui-panel space-y-3">
-            <div className="ui-h3">Agregar elemento</div>
+          <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-3">
+            <div className="ui-h3">Elementos</div>
             <div className="flex flex-wrap gap-2">
               {(["title", "text", "barcode_dm", "barcode_c128", "barcode_qr"] as ElementType[]).map((type) => (
                 <button key={type} type="button" onClick={() => addElement(type)} className="ui-btn ui-btn--ghost ui-btn--sm">
@@ -345,9 +396,11 @@ export default function DesignerPage() {
             </div>
           </div>
 
-          {/* Save / Load / ZPL */}
-          <div className="ui-panel space-y-3">
-            <div className="ui-h3">Acciones</div>
+          <div className="ui-panel ui-panel--halo ui-remission-section ui-fade-up ui-delay-3 space-y-3">
+            <div className="flex items-center justify-between gap-3">
+              <div className="ui-h3">Layout</div>
+              <Link href="/printing/jobs" className="ui-btn ui-btn--ghost ui-btn--sm">Ir a imprimir</Link>
+            </div>
             <label className="flex flex-col gap-1">
               <span className="ui-caption font-semibold">Nombre del layout</span>
               <input
@@ -377,14 +430,12 @@ export default function DesignerPage() {
             )}
           </div>
 
-          {/* Properties panel (desktop) */}
           <div className="hidden lg:block">
             <PropertiesPanel element={selectedElement} onUpdate={updateElement} onDelete={deleteElement} />
           </div>
         </div>
       </div>
 
-      {/* Load modal */}
       {showLoadModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30" onClick={() => setShowLoadModal(false)}>
           <div className="ui-panel w-full max-w-md space-y-4" onClick={(e) => e.stopPropagation()}>

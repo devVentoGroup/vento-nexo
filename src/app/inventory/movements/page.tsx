@@ -152,15 +152,49 @@ export default async function InventoryMovementsPage({
   const { data: rows, error } = await q;
 
   const movements = (rows ?? []) as unknown as MovementRow[];
+  const siteLabel = siteId ? siteNameMap.get(siteId) ?? siteId : "Todas las sedes";
+  const positiveCount = movements.filter((row) => Number(row.quantity ?? 0) > 0).length;
+  const negativeCount = movements.filter((row) => Number(row.quantity ?? 0) < 0).length;
+  const activeFilterCount = [siteId, movementType, productId, fromDate, toDate].filter(Boolean).length;
 
   return (
-    <div className="w-full">
-      <div className="flex items-start justify-between gap-4">
+    <div className="ui-scene w-full space-y-6">
+      <section className="ui-remission-hero ui-fade-up">
+        <div className="ui-remission-hero-grid">
+          <div>
+            <span className="ui-chip ui-chip--brand">{siteLabel}</span>
+            <h1 className="mt-4 text-3xl font-semibold tracking-[-0.03em] text-[var(--ui-text)]">
+              Movimientos
+            </h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--ui-muted)] sm:text-base">
+              Ledger vivo del inventario para seguir entradas, salidas, ajustes y remisiones desde un solo lugar.
+            </p>
+          </div>
+          <div className="ui-remission-kpis">
+            <div className="ui-remission-kpi">
+              <div className="ui-remission-kpi-label">Registros</div>
+              <div className="ui-remission-kpi-value">{movements.length}</div>
+              <div className="ui-remission-kpi-note">Hasta 200 movimientos recientes</div>
+            </div>
+            <div className="ui-remission-kpi" data-tone="success">
+              <div className="ui-remission-kpi-label">Entradas</div>
+              <div className="ui-remission-kpi-value">{positiveCount}</div>
+              <div className="ui-remission-kpi-note">Cantidades positivas</div>
+            </div>
+            <div className="ui-remission-kpi" data-tone="cool">
+              <div className="ui-remission-kpi-label">Salidas</div>
+              <div className="ui-remission-kpi-value">{negativeCount}</div>
+              <div className="ui-remission-kpi-note">Cantidades negativas</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="flex items-start justify-between gap-4 ui-fade-up ui-delay-1">
         <div>
-          <h1 className="ui-h1">Movimientos</h1>
-          <p className="mt-2 ui-body-muted">
-            Ledger de inventario. Filtra por sede, tipo y producto para auditar cambios.
-          </p>
+          <div className="ui-caption">
+            {activeFilterCount > 0 ? `${activeFilterCount} filtro(s) activos` : "Sin filtros adicionales"}
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -186,13 +220,23 @@ export default async function InventoryMovementsPage({
       </div>
 
       {errorMsg ? (
-        <div className="mt-6 ui-alert ui-alert--error">
+        <div className="ui-alert ui-alert--error ui-fade-up ui-delay-1">
           Error: {errorMsg}
         </div>
       ) : null}
 
-      <div className="mt-6 ui-panel">
-        <div className="ui-h3">Filtros</div>
+      <div className="ui-panel ui-panel--halo ui-remission-section ui-fade-up ui-delay-1">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="ui-h3">Filtros</div>
+            <div className="mt-1 ui-caption">Recorta por sede, tipo, producto o rango sin salir del ledger.</div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className="ui-chip">{siteLabel}</span>
+            <span className="ui-chip ui-chip--success">{positiveCount} entradas</span>
+            <span className="ui-chip ui-chip--warn">{negativeCount} salidas</span>
+          </div>
+        </div>
         <form method="get" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label className="flex flex-col gap-1">
             <span className="ui-label">Sede</span>
@@ -268,23 +312,35 @@ export default async function InventoryMovementsPage({
             </label>
           </div>
 
-          <div className="sm:col-span-2 lg:col-span-4">
+          <div className="sm:col-span-2 lg:col-span-4 flex gap-2">
             <button className="ui-btn ui-btn--brand">
               Aplicar filtros
             </button>
+            <Link href="/inventory/movements" className="ui-btn ui-btn--ghost">
+              Limpiar
+            </Link>
           </div>
         </form>
       </div>
 
       {error ? (
-        <div className="mt-6 ui-alert ui-alert--error">
+        <div className="ui-alert ui-alert--error ui-fade-up ui-delay-2">
           Fallo el SELECT de movimientos: {error.message}
         </div>
       ) : null}
 
-      <div className="mt-6 ui-panel">
-        <div className="ui-h3">Movimientos</div>
-        <div className="mt-1 ui-body-muted">Mostrando hasta 200 registros.</div>
+      <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <div className="ui-h3">Movimientos</div>
+            <div className="mt-1 ui-caption">Mostrando hasta 200 registros.</div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className="ui-chip">{movements.length} visibles</span>
+            <span className="ui-chip ui-chip--success">{positiveCount} +</span>
+            <span className="ui-chip ui-chip--warn">{negativeCount} -</span>
+          </div>
+        </div>
 
         <div className="mt-4 overflow-x-auto">
           <Table>

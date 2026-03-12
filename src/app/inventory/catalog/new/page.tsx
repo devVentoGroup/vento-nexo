@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { RequiredFieldsGuardForm } from "@/components/inventory/forms/RequiredFieldsGuardForm";
-import { PageHeader } from "@/components/vento/standard/page-header";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
@@ -900,8 +899,13 @@ export default async function NewProductPage({
 
   if (!canCreate) {
     return (
-      <div className="w-full max-w-6xl space-y-6">
-        <PageHeader title={config.title} subtitle={config.subtitle} />
+      <div className="ui-scene w-full max-w-6xl space-y-6">
+        <section className="ui-remission-hero ui-fade-up">
+          <div className="space-y-2">
+            <h1 className="ui-h1">{config.title}</h1>
+            <p className="ui-body-muted">{config.subtitle}</p>
+          </div>
+        </section>
         <div className="ui-alert ui-alert--warn">
           Solo propietarios y gerentes generales pueden crear productos.
         </div>
@@ -910,34 +914,61 @@ export default async function NewProductPage({
   }
 
   return (
-    <div className="w-full max-w-6xl space-y-8">
-      <PageHeader
-        title={config.title}
-        subtitle={
-          isQuickMode
-            ? "Alta rapida v1: deja el producto listo para stock, sedes y remisiones sin completar campos avanzados."
-            : config.subtitle
-        }
-        actions={
-          <div className="flex items-center gap-2">
-            {isQuickMode ? (
-              <Link href={`/inventory/catalog/new?type=${typeKey}`} className="ui-btn ui-btn--ghost">
-                Ver formulario completo
+    <div className="ui-scene w-full max-w-6xl space-y-8">
+      <section className="ui-remission-hero ui-fade-up">
+        <div className="ui-remission-hero-grid lg:grid-cols-[1.45fr_1fr] lg:items-start">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Link href="/inventory/catalog" className="ui-caption underline">Volver al catalogo</Link>
+              <h1 className="ui-h1">{config.title}</h1>
+              <p className="ui-body-muted">
+                {isQuickMode
+                  ? "Alta rapida v1: deja el producto listo para stock, sedes y remisiones sin completar campos avanzados."
+                  : config.subtitle}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
+                {isQuickMode ? "Modo rapido" : "Formulario completo"}
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+                {typeKey}
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              {isQuickMode ? (
+                <Link href={`/inventory/catalog/new?type=${typeKey}`} className="ui-btn ui-btn--ghost">
+                  Ver formulario completo
+                </Link>
+              ) : QUICK_MODE_TYPES.has(typeKey) ? (
+                <Link href={`/inventory/catalog/new?type=${typeKey}&mode=quick`} className="ui-btn ui-btn--ghost">
+                  Modo rapido v1
+                </Link>
+              ) : null}
+              <Link href={`/inventory/ai-ingestions?flow=catalog_create`} className="ui-btn ui-btn--brand">
+                Cargar con IA
               </Link>
-            ) : QUICK_MODE_TYPES.has(typeKey) ? (
-              <Link href={`/inventory/catalog/new?type=${typeKey}&mode=quick`} className="ui-btn ui-btn--ghost">
-                Modo rapido v1
-              </Link>
-            ) : null}
-            <Link href={`/inventory/ai-ingestions?flow=catalog_create`} className="ui-btn ui-btn--brand">
-              Cargar con IA
-            </Link>
-            <Link href="/inventory/catalog" className="ui-btn ui-btn--ghost">
-              Volver al catalogo
-            </Link>
+            </div>
           </div>
-        }
-      />
+          <div className="ui-remission-kpis sm:grid-cols-3 lg:grid-cols-1">
+            <article className="ui-remission-kpi" data-tone="warm">
+              <div className="ui-remission-kpi-label">Tipo</div>
+              <div className="ui-remission-kpi-value">{typeKey}</div>
+              <div className="ui-remission-kpi-note">Clase operativa del maestro que vas a crear</div>
+            </article>
+            <article className="ui-remission-kpi" data-tone="cool">
+              <div className="ui-remission-kpi-label">Modo</div>
+              <div className="ui-remission-kpi-value">{isQuickMode ? "Rapido" : "Completo"}</div>
+              <div className="ui-remission-kpi-note">Elige la profundidad segun la necesidad operativa</div>
+            </article>
+            <article className="ui-remission-kpi" data-tone="success">
+              <div className="ui-remission-kpi-label">Objetivo</div>
+              <div className="ui-remission-kpi-value">v1</div>
+              <div className="ui-remission-kpi-note">Maestro listo para stock, sedes y abastecimiento</div>
+            </article>
+          </div>
+        </div>
+      </section>
 
       {errorMsg && <div className="ui-alert ui-alert--error">Error: {errorMsg}</div>}
 

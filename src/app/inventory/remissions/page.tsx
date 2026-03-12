@@ -620,15 +620,6 @@ export default async function RemissionsPage({
 
   const { data: remissions } = await remissionsQuery;
   const remissionRows = (remissions ?? []) as RemissionRow[];
-  const pendingPreparationCount = remissionRows.filter((row) =>
-    ["pending", "preparing"].includes(String(row.status ?? ""))
-  ).length;
-  const inboundToReceiveCount = remissionRows.filter((row) =>
-    ["in_transit", "partial"].includes(String(row.status ?? ""))
-  ).length;
-  const closedCount = remissionRows.filter((row) =>
-    ["received", "closed"].includes(String(row.status ?? ""))
-  ).length;
 
   const areaFilterSiteId = canCreate ? activeSiteId : selectedFromSiteId;
   const { data: areas } = areaFilterSiteId
@@ -706,6 +697,33 @@ export default async function RemissionsPage({
   const defaultUomProfiles = (uomProfilesData ?? []) as ProductUomProfile[];
   const canCreateWithConfiguredCatalog =
     canCreate && hasActiveSiteProductConfig && hasAudienceProducts;
+  const pendingCount = remissionRows.filter((row) =>
+    ["pending", "preparing"].includes(String(row.status ?? ""))
+  ).length;
+  const transitCount = remissionRows.filter((row) =>
+    ["in_transit", "partial"].includes(String(row.status ?? ""))
+  ).length;
+  const receivedCount = remissionRows.filter((row) =>
+    ["received", "closed"].includes(String(row.status ?? ""))
+  ).length;
+  const heroViewLabel =
+    viewMode === "all"
+      ? "Todas las sedes"
+      : viewMode === "bodega"
+        ? "Centro operando"
+        : activeSiteName;
+  const heroTitle =
+    viewMode === "bodega"
+      ? "Salida y recepcion de remisiones"
+      : canCreate
+        ? "Solicitudes listas para salir"
+        : "Seguimiento de solicitudes";
+  const heroSubtitle =
+    viewMode === "bodega"
+      ? "Centro ve cola, detalle y trazabilidad en una sola vista."
+      : canCreate
+        ? "Pide desde la sede activa y sigue el estado sin salir del modulo."
+        : "Consulta remisiones activas y entra directo al detalle cuando toque actuar.";
   const fulfillmentSiteIdsForStock = fulfillmentSiteRows
     .map((site) => site.id)
     .filter((id): id is string => Boolean(id));
@@ -725,10 +743,10 @@ export default async function RemissionsPage({
   }));
 
   return (
-    <div className="w-full">
+    <div className="ui-scene w-full space-y-6">
       <PageHeader
         title="Remisiones"
-        subtitle="Flujo interno entre sedes. Satelites solicitan y reciben; Centro prepara y despacha."
+        subtitle="Solicitudes entre sedes."
         actions={
           isProductionCenter && !requesterOnlyRole ? (
             <Link href="/inventory/remissions/prepare" className="ui-btn ui-btn--brand">
@@ -738,24 +756,54 @@ export default async function RemissionsPage({
         }
       />
 
+      <section className="ui-remission-hero ui-fade-up">
+        <div className="ui-remission-hero-grid">
+          <div>
+            <span className="ui-chip ui-chip--brand">{heroViewLabel}</span>
+            <h2 className="mt-4 text-3xl font-semibold tracking-[-0.03em] text-[var(--ui-text)]">
+              {heroTitle}
+            </h2>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--ui-muted)] sm:text-base">
+              {heroSubtitle}
+            </p>
+          </div>
+          <div className="ui-remission-kpis">
+            <div className="ui-remission-kpi">
+              <div className="ui-remission-kpi-label">Por preparar</div>
+              <div className="ui-remission-kpi-value">{pendingCount}</div>
+              <div className="ui-remission-kpi-note">Pendientes o preparando</div>
+            </div>
+            <div className="ui-remission-kpi" data-tone="cool">
+              <div className="ui-remission-kpi-label">En movimiento</div>
+              <div className="ui-remission-kpi-value">{transitCount}</div>
+              <div className="ui-remission-kpi-note">En viaje o parciales</div>
+            </div>
+            <div className="ui-remission-kpi" data-tone="success">
+              <div className="ui-remission-kpi-label">Recibidas</div>
+              <div className="ui-remission-kpi-value">{receivedCount}</div>
+              <div className="ui-remission-kpi-note">Cierre operativo v1</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {errorMsg ? (
-        <div className="mt-6 ui-alert ui-alert--error">
+        <div className="ui-alert ui-alert--error ui-fade-up ui-delay-1">
           Error: {errorMsg}
         </div>
       ) : null}
 
       {okMsg ? (
-        <div className="mt-6 ui-alert ui-alert--success">{okMsg}</div>
+        <div className="ui-alert ui-alert--success ui-fade-up ui-delay-1">{okMsg}</div>
       ) : null}
 
       {sp.warning === "low_stock" ? (
-        <div className="mt-6 ui-alert ui-alert--warn">
-          La solicitud se creo, pero algunos items podrian no tener stock suficiente en Centro.
-          Bodega lo confirma al preparar.
+        <div className="ui-alert ui-alert--warn ui-fade-up ui-delay-1">
+          Algunos items podrian no tener stock suficiente en Centro.
         </div>
       ) : null}
 
-      <div className="mt-6 ui-panel">
+      <div className="ui-panel ui-panel--halo ui-remission-section ui-fade-up ui-delay-1">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="ui-h3">Sede activa</div>
@@ -869,90 +917,25 @@ export default async function RemissionsPage({
         ) : null}
       </div>
 
-      <div className="mt-6 grid gap-4 lg:grid-cols-3">
-        <div className="ui-panel-soft p-4">
-          <div className="ui-caption">Flujo oficial v1</div>
-          <div className="mt-1 text-lg font-semibold text-[var(--ui-text)]">
-            Solicitar - Preparar - Recibir
+      <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="ui-h3">
+              {viewMode === "bodega"
+                ? "Remisiones recientes"
+                : requesterOnlyRole
+                  ? "Mis solicitudes y recepciones"
+                  : "Solicitudes y recepciones recientes"}
+            </div>
+            <div className="mt-1 ui-caption">
+              {remissionRows.length} registro(s) visibles en esta vista
+            </div>
           </div>
-          <p className="mt-2 text-sm text-[var(--ui-muted)]">
-            Remisiones es el hub del flujo. La cola de preparacion existe solo para acelerar despacho en bodega.
-          </p>
-        </div>
-
-        {viewMode === "bodega" ? (
-          <>
-            <div className="ui-panel-soft p-4">
-              <div className="ui-caption">Paso 2 sugerido</div>
-              <div className="mt-1 text-lg font-semibold text-[var(--ui-text)]">
-                Preparar y despachar desde Centro
-              </div>
-              <p className="mt-2 text-sm text-[var(--ui-muted)]">
-                Tienes <strong className="text-[var(--ui-text)]">{pendingPreparationCount}</strong>{" "}
-                solicitudes abiertas para preparar, revisar cantidades y luego marcar en viaje.
-              </p>
-              <Link href="/inventory/remissions/prepare" className="mt-3 inline-flex ui-btn ui-btn--ghost">
-                Ir a cola especializada
-              </Link>
-            </div>
-            <div className="ui-panel-soft p-4">
-              <div className="ui-caption">Historial visible</div>
-              <div className="mt-1 text-lg font-semibold text-[var(--ui-text)]">
-                {closedCount} remisiones completadas
-              </div>
-              <p className="mt-2 text-sm text-[var(--ui-muted)]">
-                Aqui mantienes contexto general. La ejecucion operativa rapida de bodega vive en la cola.
-              </p>
-            </div>
-          </>
-        ) : viewMode === "satélite" ? (
-          <>
-            <div className="ui-panel-soft p-4">
-              <div className="ui-caption">Paso 1 sugerido</div>
-              <div className="mt-1 text-lg font-semibold text-[var(--ui-text)]">
-                Solicitar desde {activeSiteName}
-              </div>
-              <p className="mt-2 text-sm text-[var(--ui-muted)]">
-                Crea la solicitud aqui y deja que Centro prepare. Si no puedes crear, revisa sede activa, rutas y permisos.
-              </p>
-            </div>
-            <div className="ui-panel-soft p-4">
-              <div className="ui-caption">Paso 3 sugerido</div>
-              <div className="mt-1 text-lg font-semibold text-[var(--ui-text)]">
-                {inboundToReceiveCount} remisiones por recibir o conciliar
-              </div>
-              <p className="mt-2 text-sm text-[var(--ui-muted)]">
-                Cuando Centro marque <strong className="text-[var(--ui-text)]">En transito</strong>, entra al detalle y registra recibido o faltante. Si queda parcial, vuelve a la misma remision para terminar la conciliacion.
-              </p>
-            </div>
-          </>
-        ) : (
-          <>
-            <div className="ui-panel-soft p-4 lg:col-span-2">
-              <div className="ui-caption">Vista global</div>
-              <div className="mt-1 text-lg font-semibold text-[var(--ui-text)]">
-                Selecciona una sede para operar
-              </div>
-              <p className="mt-2 text-sm text-[var(--ui-muted)]">
-                La vista global sirve para seguimiento. Para solicitar, preparar o recibir debes entrar con una sede activa concreta.
-              </p>
-            </div>
-          </>
-        )}
-      </div>
-
-      <div className="mt-6 ui-panel">
-        <div className="ui-h3">
-          {viewMode === "bodega"
-            ? "Historial reciente de remisiones"
-            : requesterOnlyRole
-              ? "Mis solicitudes y recepciones"
-              : "Solicitudes y recepciones recientes"}
-        </div>
-        <div className="mt-1 ui-body-muted">
-          {viewMode === "bodega"
-            ? "La cola de preparacion concentra lo accionable. Aqui mantienes contexto y seguimiento reciente."
-            : "Mostrando hasta 50 remisiones recientes para seguimiento y recepcion."}
+          <div className="flex flex-wrap gap-2">
+            <span className="ui-chip">{pendingCount} activas</span>
+            <span className="ui-chip ui-chip--warn">{transitCount} en curso</span>
+            <span className="ui-chip ui-chip--success">{receivedCount} recibidas</span>
+          </div>
         </div>
 
         <div className="mt-4 overflow-x-auto">

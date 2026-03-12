@@ -4,7 +4,6 @@ import Link from "next/link";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { EntriesForm } from "@/components/vento/entries-form";
-import { PageHeader } from "@/components/vento/standard/page-header";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { safeDecodeURIComponent } from "@/lib/url";
 import {
@@ -871,18 +870,58 @@ export default async function EntriesPage({
   }
 
   const entryRows = (entries ?? []) as EntryRow[];
+  const pendingEntries = entryRows.filter((row) => row.status === "pending").length;
+  const partialEntries = entryRows.filter((row) => row.status === "partial").length;
+  const receivedEntries = entryRows.filter((row) => row.status === "received").length;
 
   return (
-    <div className="w-full space-y-6">
-      <PageHeader
-        title="Entrada de emergencia"
-        subtitle="Uso excepcional en NEXO. La recepcion operativa normal se realiza en ORIGO."
-        actions={
-          <Link href="/inventory/ai-ingestions?flow=supplier_entries" className="ui-btn ui-btn--brand">
-            Importar factura con IA
-          </Link>
-        }
-      />
+    <div className="ui-scene w-full space-y-6">
+      <section className="ui-remission-hero ui-fade-up">
+        <div className="ui-remission-hero-grid lg:grid-cols-[1.45fr_1fr] lg:items-start">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Link href="/inventory/stock" className="ui-caption underline">Volver a stock</Link>
+              <h1 className="ui-h1">Entrada de emergencia</h1>
+              <p className="ui-body-muted">
+                Registra recepciones excepcionales en NEXO cuando no puedes usar el flujo normal de ORIGO.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
+                Uso excepcional
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+                {supplierRows.length} proveedores
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+                {productRows.length} productos
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link href="/inventory/ai-ingestions?flow=supplier_entries" className="ui-btn ui-btn--brand">
+                Importar factura con IA
+              </Link>
+            </div>
+          </div>
+          <div className="ui-remission-kpis sm:grid-cols-3 lg:grid-cols-1">
+            <article className="ui-remission-kpi" data-tone="warm">
+              <div className="ui-remission-kpi-label">Pendientes</div>
+              <div className="ui-remission-kpi-value">{pendingEntries}</div>
+              <div className="ui-remission-kpi-note">Entradas creadas sin recepcion completa</div>
+            </article>
+            <article className="ui-remission-kpi" data-tone="cool">
+              <div className="ui-remission-kpi-label">Parciales</div>
+              <div className="ui-remission-kpi-value">{partialEntries}</div>
+              <div className="ui-remission-kpi-note">Recepcion parcial registrada en las ultimas 25</div>
+            </article>
+            <article className="ui-remission-kpi" data-tone="success">
+              <div className="ui-remission-kpi-label">Recibidas</div>
+              <div className="ui-remission-kpi-value">{receivedEntries}</div>
+              <div className="ui-remission-kpi-note">Entradas completas dentro del historial reciente</div>
+            </article>
+          </div>
+        </div>
+      </section>
 
       {errorMsg ? (
         <div className="ui-alert ui-alert--error">Error: {errorMsg}</div>
@@ -919,10 +958,25 @@ export default async function EntriesPage({
         action={createEntry}
       />
 
-      <div className="ui-panel">
-        <div className="ui-h3">Entradas recientes</div>
-        <div className="mt-1 ui-body-muted">
-          Últimas 25 entradas. El estado (Pendiente / Parcial / Recibida) se calcula según cantidades declaradas vs recibidas por ítem.
+      <div className="ui-panel ui-remission-section ui-fade-up ui-delay-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="ui-h3">Entradas recientes</div>
+            <div className="mt-1 ui-body-muted">
+              Ultimas 25 entradas registradas en este flujo.
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2 text-xs font-semibold">
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-900">
+              Pendientes {pendingEntries}
+            </span>
+            <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-cyan-900">
+              Parciales {partialEntries}
+            </span>
+            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-900">
+              Recibidas {receivedEntries}
+            </span>
+          </div>
         </div>
 
         <div className="mt-4 overflow-x-auto">

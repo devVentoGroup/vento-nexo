@@ -3,7 +3,6 @@ import { redirect } from "next/navigation";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { TransfersForm } from "@/components/vento/transfers-form";
-import { PageHeader } from "@/components/vento/standard/page-header";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { safeDecodeURIComponent } from "@/lib/url";
 import {
@@ -377,13 +376,51 @@ export default async function TransfersPage({
   const locMap = new Map(
     ((locations ?? []) as LocRow[]).map((loc) => [loc.id, loc.code ?? loc.name ?? loc.id])
   );
+  const completedTransfers = transferRows.filter((row) => row.status === "completed").length;
 
   return (
-    <div className="w-full space-y-6">
-      <PageHeader
-        title="Traslados internos"
-        subtitle="Movimientos entre LOCs dentro de la misma sede."
-      />
+    <div className="ui-scene w-full space-y-6">
+      <section className="ui-remission-hero ui-fade-up">
+        <div className="ui-remission-hero-grid lg:grid-cols-[1.45fr_1fr] lg:items-start">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <a href="/inventory/stock" className="ui-caption underline">Volver a stock</a>
+              <h1 className="ui-h1">Traslados internos</h1>
+              <p className="ui-body-muted">
+                Mueve inventario entre LOCs dentro de la misma sede con un flujo corto y directo.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
+                Misma sede
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+                {(locations ?? []).length} LOCs
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+                {productRows.length} productos
+              </span>
+            </div>
+          </div>
+          <div className="ui-remission-kpis sm:grid-cols-3 lg:grid-cols-1">
+            <article className="ui-remission-kpi" data-tone="warm">
+              <div className="ui-remission-kpi-label">LOCs activos</div>
+              <div className="ui-remission-kpi-value">{(locations ?? []).length}</div>
+              <div className="ui-remission-kpi-note">Origen y destino disponibles para mover inventario</div>
+            </article>
+            <article className="ui-remission-kpi" data-tone="cool">
+              <div className="ui-remission-kpi-label">Productos</div>
+              <div className="ui-remission-kpi-value">{productRows.length}</div>
+              <div className="ui-remission-kpi-note">Listado operativo disponible para capturar traslado</div>
+            </article>
+            <article className="ui-remission-kpi" data-tone="success">
+              <div className="ui-remission-kpi-label">Completados</div>
+              <div className="ui-remission-kpi-value">{completedTransfers}</div>
+              <div className="ui-remission-kpi-note">Traslados cerrados dentro del historial reciente</div>
+            </article>
+          </div>
+        </div>
+      </section>
 
       {errorMsg ? (
         <div className="ui-alert ui-alert--error">Error: {errorMsg}</div>
@@ -399,9 +436,16 @@ export default async function TransfersPage({
         action={createTransfer}
       />
 
-      <div className="ui-panel">
-        <div className="ui-h3">Traslados recientes</div>
-        <div className="mt-1 ui-body-muted">Últimos 25 traslados registrados.</div>
+      <div className="ui-panel ui-remission-section ui-fade-up ui-delay-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="ui-h3">Traslados recientes</div>
+            <div className="mt-1 ui-body-muted">Ultimos 25 traslados registrados.</div>
+          </div>
+          <div className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-900">
+            Completados {completedTransfers}
+          </div>
+        </div>
 
         <div className="mt-4 overflow-x-auto">
           <table className="ui-table min-w-full text-sm">

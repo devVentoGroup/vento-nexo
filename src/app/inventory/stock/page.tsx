@@ -444,14 +444,65 @@ export default async function InventoryStockPage({
     productRows = productRows.filter((p) => byLoc(p) && byZone(p));
   }
 
+  const totalQty = productRows.reduce((sum, product) => {
+    const qty = Number(stockMap.get(product.id)?.current_qty ?? 0);
+    return sum + (Number.isFinite(qty) ? qty : 0);
+  }, 0);
+  const siteLabel = siteId ? siteNameMap.get(siteId) ?? siteId : "Todas las sedes";
+  const locCount = siteId ? locList.length : 0;
+  const activeFilterCount = [
+    searchQuery,
+    productType,
+    inventoryKind,
+    categoryKind ?? "",
+    effectiveCategoryId,
+    categoryDomain,
+    categoryScope !== "all" ? categoryScope : "",
+    categorySiteId,
+    locationIdFilter,
+    zoneFilter,
+  ].filter(Boolean).length;
+
   return (
-    <div className="w-full">
-      <div className="flex items-start justify-between gap-4">
+    <div className="ui-scene w-full space-y-6">
+      <section className="ui-remission-hero ui-fade-up">
+        <div className="ui-remission-hero-grid">
+          <div>
+            <span className="ui-chip ui-chip--brand">{siteLabel}</span>
+            <h1 className="mt-4 text-3xl font-semibold tracking-[-0.03em] text-[var(--ui-text)]">
+              Stock por sede
+            </h1>
+            <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--ui-muted)] sm:text-base">
+              Lee el inventario actual y entra a conteos, movimientos o vista por LOC sin cambiar de flujo.
+            </p>
+          </div>
+
+          <div className="ui-remission-kpis">
+            <div className="ui-remission-kpi">
+              <div className="ui-remission-kpi-label">Productos</div>
+              <div className="ui-remission-kpi-value">{productRows.length}</div>
+              <div className="ui-remission-kpi-note">Visibles con los filtros actuales</div>
+            </div>
+            <div className="ui-remission-kpi" data-tone="cool">
+              <div className="ui-remission-kpi-label">Qty total</div>
+              <div className="ui-remission-kpi-value">{totalQty}</div>
+              <div className="ui-remission-kpi-note">Suma de stock visible</div>
+            </div>
+            <div className="ui-remission-kpi" data-tone="success">
+              <div className="ui-remission-kpi-label">Señales</div>
+              <div className="ui-remission-kpi-value">{negativeCount + productIdsWithStockNoLoc.length}</div>
+              <div className="ui-remission-kpi-note">Negativos o sin LOC</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <div className="flex items-start justify-between gap-4 ui-fade-up ui-delay-1">
         <div>
-          <h1 className="ui-h1">Stock por sede</h1>
-          <p className="mt-2 ui-body-muted">
-            Consulta el inventario actual por SKU y sede. Esta vista respeta los permisos por sitio.
-          </p>
+          <div className="ui-caption">
+            {activeFilterCount > 0 ? `${activeFilterCount} filtro(s) activos` : "Sin filtros adicionales"}
+            {locCount > 0 ? ` · ${locCount} LOCs visibles` : ""}
+          </div>
         </div>
 
         <div className="flex flex-wrap gap-2">
@@ -482,32 +533,42 @@ export default async function InventoryStockPage({
       </div>
 
       {sp.count_initial === "1" ? (
-        <div className="mt-6 ui-alert ui-alert--success">
+        <div className="ui-alert ui-alert--success ui-fade-up ui-delay-1">
           Conteo inicial registrado. Los movimientos y el stock se actualizaron.
         </div>
       ) : null}
 
       {sp.adjust === "1" ? (
-        <div className="mt-6 ui-alert ui-alert--success">
+        <div className="ui-alert ui-alert--success ui-fade-up ui-delay-1">
           Ajuste registrado. El movimiento y el stock se actualizaron.
         </div>
       ) : null}
 
       {productIdsWithStockNoLoc.length > 0 ? (
-        <div className="mt-6 ui-alert ui-alert--warn">
+        <div className="ui-alert ui-alert--warn ui-fade-up ui-delay-1">
           <strong>Sin ubicación:</strong> {productIdsWithStockNoLoc.length} producto(s) tienen stock en esta sede pero
           no tienen LOC asignada. Asigna ubicación en Entradas al recibir o en Traslados.
         </div>
       ) : null}
 
       {errorMsg ? (
-        <div className="mt-6 ui-alert ui-alert--error">
+        <div className="ui-alert ui-alert--error ui-fade-up ui-delay-1">
           Error: {errorMsg}
         </div>
       ) : null}
 
-      <div className="mt-6 ui-panel">
-        <div className="ui-h3">Filtros</div>
+      <div className="ui-panel ui-panel--halo ui-remission-section ui-fade-up ui-delay-1">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="ui-h3">Filtros</div>
+            <div className="mt-1 ui-caption">Afina vista, categoria y ubicaciones sin salir de stock.</div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className="ui-chip">{siteLabel}</span>
+            <span className="ui-chip ui-chip--warn">{negativeCount} negativos</span>
+            <span className="ui-chip ui-chip--brand">{productIdsWithStockNoLoc.length} sin LOC</span>
+          </div>
+        </div>
         <form method="get" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <label className="flex flex-col gap-1 sm:col-span-2 lg:col-span-4">
             <span className="ui-label">Buscar SKU o nombre</span>
@@ -655,7 +716,7 @@ export default async function InventoryStockPage({
       </div>
 
       {viewByLoc && siteId && locList.length > 0 ? (
-        <div className="mt-6 ui-panel">
+        <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
               <div className="ui-h3">Stock por LOC (producto × ubicación)</div>
@@ -727,22 +788,21 @@ export default async function InventoryStockPage({
       ) : null}
 
       {hasError ? (
-        <div className="mt-6 ui-alert ui-alert--error">
+        <div className="ui-alert ui-alert--error ui-fade-up ui-delay-2">
           Fallo el SELECT de inventario: {productError?.message ?? stockError?.message}
         </div>
       ) : null}
 
       {!viewByLoc ? (
-      <div className="mt-6 ui-panel">
+      <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <div className="ui-h3">Stock</div>
-            <div className="mt-1 ui-body-muted">
-              Mostrando hasta 1000 productos.
-            </div>
+            <div className="mt-1 ui-caption">Mostrando hasta 1000 productos.</div>
           </div>
-          <div className="ui-caption">
-            Items: {productRows.length} | Negativos: {negativeCount}
+          <div className="flex flex-wrap gap-2">
+            <span className="ui-chip">{productRows.length} items</span>
+            <span className="ui-chip ui-chip--warn">{negativeCount} negativos</span>
           </div>
         </div>
 

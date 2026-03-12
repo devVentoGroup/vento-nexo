@@ -2,7 +2,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
-import { PageHeader } from "@/components/vento/standard/page-header";
 import { CatalogFiltersPanel } from "@/features/inventory/catalog/catalog-filters-panel";
 import {
   CatalogResultsPanel,
@@ -904,20 +903,59 @@ export default async function InventoryCatalogPage({
   });
 
   return (
-    <div className="w-full">
-      <PageHeader
-        title="Catalogo maestro"
-        subtitle="Productos maestros, salud operativa por sede y continuidad de compra."
-        actions={
-          <Link href="/inventory/stock" className="ui-btn ui-btn--ghost">
-            Ver stock
-          </Link>
-        }
-      />
+    <div className="ui-scene w-full space-y-6">
+      <section className="ui-remission-hero ui-fade-up">
+        <div className="ui-remission-hero-grid lg:grid-cols-[1.45fr_1fr] lg:items-start">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Link href="/inventory/stock" className="ui-caption underline">Volver a stock</Link>
+              <h1 className="ui-h1">Catalogo maestro</h1>
+              <p className="ui-body-muted">
+                Productos maestros, salud operativa por sede y continuidad de compra sin mezclar logica comercial.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
+                {activeTabLabel}
+              </span>
+              {activeSiteLabel ? (
+                <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-900">
+                  {activeSiteLabel}
+                </span>
+              ) : null}
+              <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+                {visibleProducts.length} items
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <Link href="/inventory/stock" className="ui-btn ui-btn--ghost">
+                Ver stock
+              </Link>
+            </div>
+          </div>
+          <div className="ui-remission-kpis sm:grid-cols-3 lg:grid-cols-1">
+            <article className="ui-remission-kpi" data-tone="warm">
+              <div className="ui-remission-kpi-label">Items visibles</div>
+              <div className="ui-remission-kpi-value">{visibleProducts.length}</div>
+              <div className="ui-remission-kpi-note">Aplicando filtros y tab actual</div>
+            </article>
+            <article className="ui-remission-kpi" data-tone="cool">
+              <div className="ui-remission-kpi-label">Stock bajo</div>
+              <div className="ui-remission-kpi-value">{lowStockCount}</div>
+              <div className="ui-remission-kpi-note">Alertas dentro de la vista actual</div>
+            </article>
+            <article className="ui-remission-kpi" data-tone="success">
+              <div className="ui-remission-kpi-label">Modo</div>
+              <div className="ui-remission-kpi-value">Maestro</div>
+              <div className="ui-remission-kpi-note">Base operativa para stock, sedes y abastecimiento</div>
+            </article>
+          </div>
+        </div>
+      </section>
 
-      {okMsg ? <div className="mt-6 ui-alert ui-alert--success">{okMsg}</div> : null}
-      {errorMsg ? <div className="mt-6 ui-alert ui-alert--error">Error: {errorMsg}</div> : null}
-      <CatalogHintPanel title="Norte de esta vista" className="mt-6">
+      {okMsg ? <div className="ui-alert ui-alert--success">{okMsg}</div> : null}
+      {errorMsg ? <div className="ui-alert ui-alert--error">Error: {errorMsg}</div> : null}
+      <CatalogHintPanel title="Norte de esta vista">
         <p>
           Esta pantalla gobierna el <strong className="text-[var(--ui-text)]">producto maestro</strong> y su salud
           operativa. La categoria aqui es operativa, no comercial.

@@ -1,7 +1,6 @@
 import Link from "next/link";
 
 import { requireAppAccess } from "@/lib/auth/guard";
-import { PageHeader } from "@/components/vento/standard/page-header";
 
 import { CountInitialForm } from "@/features/inventory/count-initial/count-initial-form";
 
@@ -67,14 +66,42 @@ export default async function InventoryCountInitialPage({
 
   if (!siteId) {
     return (
-      <div className="w-full">
-        <PageHeader
-          title="Conteos"
-          subtitle="Wizard por sede: elige la sede, ingresa cantidades contadas y confirma. No bloquea operación. Se generan movimientos tipo count y se actualiza el stock."
-        />
+      <div className="ui-scene w-full space-y-6">
+        <section className="ui-remission-hero ui-fade-up">
+          <div className="ui-remission-hero-grid lg:grid-cols-[1.45fr_1fr] lg:items-start">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Link href="/inventory/stock" className="ui-caption underline">Volver a stock</Link>
+                <h1 className="ui-h1">Conteos</h1>
+                <p className="ui-body-muted">
+                  Registra cantidades contadas por sede, zona o LOC y confirma el ajuste del stock inicial.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
+                  Conteo manual
+                </span>
+                <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+                  {siteRows.length} sedes
+                </span>
+              </div>
+            </div>
+            <div className="ui-remission-kpis sm:grid-cols-2 lg:grid-cols-1">
+              <article className="ui-remission-kpi" data-tone="warm">
+                <div className="ui-remission-kpi-label">Sedes</div>
+                <div className="ui-remission-kpi-value">{siteRows.length}</div>
+                <div className="ui-remission-kpi-note">Elige la sede para comenzar el conteo</div>
+              </article>
+              <article className="ui-remission-kpi" data-tone="cool">
+                <div className="ui-remission-kpi-label">Impacto</div>
+                <div className="ui-remission-kpi-value">Stock</div>
+                <div className="ui-remission-kpi-note">El conteo actualiza cantidades y genera trazabilidad</div>
+              </article>
+            </div>
+          </div>
+        </section>
 
-        <div className="mt-6 ui-panel">
-          <div className="ui-h3">Paso 1: elegir sede</div>
+        <div className="ui-panel ui-remission-section ui-fade-up ui-delay-1">
           <form method="get" action="/inventory/count-initial" className="mt-4">
             <label className="flex flex-col gap-1">
               <span className="ui-label">Sede</span>
@@ -203,19 +230,51 @@ export default async function InventoryCountInitialPage({
   const openSessions = (sessionsData ?? []) as CountSessionRow[];
 
   return (
-    <div className="w-full">
-      <PageHeader
-        title="Conteos"
-        subtitle={"Sede: " + siteName + ". Ingresa las cantidades contadas y confirma."}
-        actions={
-          <Link href="/inventory/stock" className="ui-btn ui-btn--ghost">
-            Ver stock
-          </Link>
-        }
-      />
+    <div className="ui-scene w-full space-y-6">
+      <section className="ui-remission-hero ui-fade-up">
+        <div className="ui-remission-hero-grid lg:grid-cols-[1.45fr_1fr] lg:items-start">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Link href="/inventory/stock" className="ui-caption underline">Volver a stock</Link>
+              <h1 className="ui-h1">Conteos</h1>
+              <p className="ui-body-muted">
+                Sede {siteName}. Captura cantidades contadas y confirma el ambito del conteo antes de guardar.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
+                {siteName}
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+                {productRows.length} productos
+              </span>
+              <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-900">
+                {countScopeLabel}
+              </span>
+            </div>
+          </div>
+          <div className="ui-remission-kpis sm:grid-cols-3 lg:grid-cols-1">
+            <article className="ui-remission-kpi" data-tone="warm">
+              <div className="ui-remission-kpi-label">Sede</div>
+              <div className="ui-remission-kpi-value">{siteName}</div>
+              <div className="ui-remission-kpi-note">Base del conteo actual</div>
+            </article>
+            <article className="ui-remission-kpi" data-tone="cool">
+              <div className="ui-remission-kpi-label">Productos</div>
+              <div className="ui-remission-kpi-value">{productRows.length}</div>
+              <div className="ui-remission-kpi-note">Filtrados segun sede, zona o LOC</div>
+            </article>
+            <article className="ui-remission-kpi" data-tone="success">
+              <div className="ui-remission-kpi-label">Sesiones abiertas</div>
+              <div className="ui-remission-kpi-value">{openSessions.length}</div>
+              <div className="ui-remission-kpi-note">Conteos por zona o LOC pendientes de cierre</div>
+            </article>
+          </div>
+        </div>
+      </section>
 
       {openSessions.length > 0 ? (
-        <div className="mt-6 ui-panel">
+        <div className="ui-panel ui-remission-section ui-fade-up ui-delay-1">
           <div className="ui-h3">Sesiones abiertas (por zona/LOC)</div>
           <p className="mt-1 ui-body-muted">
             Conteos por zona/LOC pendientes de cerrar. Cierra el conteo para calcular diferencias y aprobar ajustes.
@@ -239,22 +298,21 @@ export default async function InventoryCountInitialPage({
       ) : null}
 
       {productError ? (
-        <div className="mt-6 ui-alert ui-alert--error">
+        <div className="ui-alert ui-alert--error">
           Error al cargar productos: {productError.message}
         </div>
       ) : productRows.length === 0 ? (
-        <div className="mt-6 ui-alert ui-alert--warn">
+        <div className="ui-alert ui-alert--warn">
           No hay productos con inventario trackeado para esta sede. Revisa el catálogo y
           product_site_settings, o &quot;Inventario &gt; Stock&quot; para ver el filtro por sede.
         </div>
       ) : (
         <>
-          {/* Fase 3.1: opción de conteo por zona/LOC */}
           {locRows.length > 0 ? (
-            <div className="mt-6 ui-panel">
+            <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
               <div className="ui-h3">Ámbito del conteo</div>
               <p className="mt-1 ui-body-muted">
-                Opcional: limita el conteo a una zona o un LOC (solo se listan productos con stock ahí). Si no eliges, se cuenta toda la sede.
+                Filtra el conteo por zona o por LOC si no vas a contar toda la sede.
               </p>
               <form method="get" action="/inventory/count-initial" className="mt-4 flex flex-wrap items-end gap-3">
                 <input type="hidden" name="site_id" value={siteId} />

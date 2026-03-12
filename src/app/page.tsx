@@ -234,7 +234,7 @@ function ActionCard({ action }: { action: ActionLink }) {
     : "ui-btn ui-btn--ghost";
 
   return (
-    <div className="ui-card">
+    <div className={`ui-card ${isPrimary ? "ui-panel--halo" : ""}`.trim()}>
       <div className="flex items-center gap-2 ui-h3">
         <Icon name={action.icon} className="h-5 w-5 text-[var(--ui-brand-600)]" />
         {action.title}
@@ -263,7 +263,7 @@ function ActionSection({
   if (!actions.length) return null;
 
   return (
-    <div className="ui-panel">
+    <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <div className="ui-section-title">
@@ -717,8 +717,8 @@ export default async function Home({
     .filter((section) => section.actions.length > 0);
 
   return (
-    <div className="w-full space-y-6">
-      <div className="ui-panel ui-panel--halo">
+    <div className="ui-scene w-full space-y-6">
+      <div className="ui-remission-hero ui-fade-up">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="ui-caption">NEXO · Inventario</div>
@@ -818,7 +818,7 @@ export default async function Home({
         ) : null}
       </div>
 
-      <div className="ui-panel">
+      <div className="ui-panel ui-remission-section ui-fade-up ui-delay-1">
         <div className="ui-section-title">
           <Icon name="sparkles" />
           Siguiente paso
@@ -847,7 +847,7 @@ export default async function Home({
         />
       ))}
 
-      <div className="ui-panel">
+      <div className="ui-panel ui-remission-section ui-fade-up ui-delay-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="ui-section-title">

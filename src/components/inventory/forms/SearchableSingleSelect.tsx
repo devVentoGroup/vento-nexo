@@ -148,8 +148,8 @@ export function SearchableSingleSelect({
 
       {isOpen && shouldRenderDropdown ? (
         <div
-          className={`w-full rounded-xl border border-[var(--ui-border)] bg-[var(--ui-panel)] p-2 shadow-lg ${
-            isInlineDropdown ? "mt-2" : "absolute left-0 top-[calc(100%+4px)] z-30"
+          className={`w-full rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-2 shadow-[var(--ui-shadow-2)] ${
+            isInlineDropdown ? "mt-2" : "absolute left-0 top-[calc(100%+4px)] z-40"
           }`}
         >
           <input
@@ -159,7 +159,7 @@ export function SearchableSingleSelect({
             placeholder={searchPlaceholder}
             className="ui-input mb-2 h-10 w-full"
           />
-          <div className="max-h-64 overflow-auto rounded-lg border border-[var(--ui-border)] bg-[var(--ui-panel)]">
+          <div className="max-h-64 overflow-auto rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)]">
             <button
               type="button"
               className={`block w-full border-b border-[var(--ui-border)] px-3 py-2 text-left text-sm hover:bg-[var(--ui-surface)] ${

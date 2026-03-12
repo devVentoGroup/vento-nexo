@@ -1,6 +1,6 @@
 "use client";
 
-import type { LabelElement, ElementType } from "../_lib/types";
+import type { LabelElement } from "../_lib/types";
 import { ELEMENT_LABELS } from "../_lib/types";
 
 type Props = {
@@ -12,9 +12,9 @@ type Props = {
 export function PropertiesPanel({ element, onUpdate, onDelete }: Props) {
   if (!element) {
     return (
-      <div className="ui-panel space-y-3">
+      <div className="ui-panel ui-remission-section space-y-3">
         <div className="ui-h3">Propiedades</div>
-        <p className="ui-body-muted">Selecciona un elemento en el canvas para editar sus propiedades.</p>
+        <p className="ui-body-muted">Selecciona un elemento en el canvas para editarlo.</p>
       </div>
     );
   }
@@ -22,9 +22,12 @@ export function PropertiesPanel({ element, onUpdate, onDelete }: Props) {
   const { id } = element;
 
   return (
-    <div className="ui-panel space-y-4">
+    <div className="ui-panel ui-remission-section space-y-4">
       <div className="flex items-center justify-between">
-        <div className="ui-h3">Propiedades</div>
+        <div className="space-y-1">
+          <div className="ui-h3">Propiedades</div>
+          <div className="ui-caption text-[var(--ui-muted)]">{ELEMENT_LABELS[element.type]}</div>
+        </div>
         <button
           type="button"
           onClick={() => onDelete(id)}
@@ -47,11 +50,9 @@ export function PropertiesPanel({ element, onUpdate, onDelete }: Props) {
             value={element.content}
             onChange={(e) => onUpdate(id, { content: e.target.value })}
             className="ui-input"
-            placeholder="Texto o {code}, {note}, {title}"
+            placeholder="Texto o variable"
           />
-          <span className="ui-caption text-[var(--ui-muted)]">
-            Variables: {"{code}"}, {"{note}"}, {"{title}"} se reemplazan al imprimir.
-          </span>
+          <span className="ui-caption text-[var(--ui-muted)]">Usa {"{code}"}, {"{note}"} o {"{title}"} si quieres que cambie al imprimir.</span>
         </label>
 
         <div className="grid grid-cols-2 gap-3">
@@ -118,7 +119,7 @@ export function PropertiesPanel({ element, onUpdate, onDelete }: Props) {
               <span className="ui-caption font-semibold">Peso</span>
               <select
                 value={element.fontWeight ?? "normal"}
-                onChange={(e) => onUpdate(id, { fontWeight: e.target.value as "normal" | "bold" })}
+                onChange={(e) => onUpdate(id, { fontWeight: e.target.value as LabelElement["fontWeight"] })}
                 className="ui-input"
               >
                 <option value="normal">Normal</option>

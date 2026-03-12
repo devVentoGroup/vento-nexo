@@ -2,7 +2,6 @@
 
 import { useMemo, useState } from "react";
 
-import { StepHelp } from "@/components/inventory/forms/StepHelp";
 import { type ProductUomProfile } from "@/lib/inventory/uom";
 
 import { TransfersItems } from "./transfers-items";
@@ -28,7 +27,6 @@ type Props = {
 };
 
 export function TransfersForm({ locations, products, defaultUomProfiles = [], action }: Props) {
-  const [confirmed, setConfirmed] = useState(false);
   const [fromLocId, setFromLocId] = useState("");
   const [toLocId, setToLocId] = useState("");
   const [notes, setNotes] = useState("");
@@ -42,56 +40,28 @@ export function TransfersForm({ locations, products, defaultUomProfiles = [], ac
     [toLocId, locations]
   );
   const sameLocation = fromLocId !== "" && fromLocId === toLocId;
-  const reviewRows = useMemo(
-    () => [
-      {
-        label: "Origen",
-        value: selectedFrom?.code ?? selectedFrom?.name ?? "Sin LOC origen",
-      },
-      {
-        label: "Destino",
-        value: selectedTo?.code ?? selectedTo?.name ?? "Sin LOC destino",
-      },
-      {
-        label: "Regla operativa",
-        value: sameLocation
-          ? "Origen y destino no pueden ser iguales"
-          : "Traslado entre dos LOC distintos",
-      },
-      {
-        label: "Notas",
-        value: notes.trim() || "Sin notas operativas",
-      },
-    ],
-    [notes, sameLocation, selectedFrom, selectedTo]
-  );
+  const canSubmit = Boolean(fromLocId) && Boolean(toLocId) && !sameLocation;
 
   return (
     <form className="space-y-6 pb-24 lg:pb-0" action={action}>
-      <section className="ui-panel-soft space-y-3 p-4">
+      <section className="ui-panel ui-remission-section ui-fade-up ui-delay-1 space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="ui-h3">Traslado completo en una sola vista</div>
-            <p className="mt-1 text-sm text-[var(--ui-muted)]">
-              Aqui defines origen, destino, items y confirmacion sin navegar por pasos ocultos.
-            </p>
+            <div className="ui-h3">Ruta</div>
+            <div className="ui-caption mt-1">Selecciona el LOC de salida y el LOC de llegada.</div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <span className="ui-chip">Traslado interno</span>
-            <span className="ui-chip">Misma sede</span>
+          <div className="flex flex-wrap gap-2 text-xs font-semibold">
+            {selectedFrom ? (
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-900">
+                Origen {selectedFrom.code ?? selectedFrom.name}
+              </span>
+            ) : null}
+            {selectedTo ? (
+              <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-cyan-900">
+                Destino {selectedTo.code ?? selectedTo.name}
+              </span>
+            ) : null}
           </div>
-        </div>
-        <p className="text-sm text-[var(--ui-muted)]">
-          La meta es que una persona nueva pueda registrar un traslado completo desde una sola pantalla.
-        </p>
-      </section>
-
-      <section className="ui-panel space-y-4">
-        <div>
-          <div className="ui-h3">Origen, destino y contexto</div>
-          <p className="mt-1 ui-caption">
-            Define desde donde sale el stock, a donde llega y deja trazabilidad basica del movimiento.
-          </p>
         </div>
 
         <div className="grid gap-3 ui-mobile-stack md:grid-cols-2">
@@ -145,86 +115,30 @@ export function TransfersForm({ locations, products, defaultUomProfiles = [], ac
 
         {sameLocation ? (
           <div className="ui-alert ui-alert--error">
-            Origen y destino no pueden ser iguales. Corrigelo antes de registrar el traslado.
+            Origen y destino no pueden ser iguales.
           </div>
         ) : null}
-
-        <StepHelp
-          meaning="Este bloque define el recorrido fisico del stock dentro de la sede."
-          whenToUse="Siempre antes de cargar items; evita errores de ubicacion y doble movimiento."
-          example="Origen: LOC-CP-BOD-MAIN, Destino: LOC-CP-BAR-MAIN."
-          impact="El sistema descuenta del origen y suma en el destino."
-        />
       </section>
 
-      <section className="ui-panel space-y-4">
-        <div>
-          <div className="ui-h3">Items, cantidades y unidad de captura</div>
-          <p className="mt-1 ui-caption">
-            Agrega una fila por producto que realmente va a salir del origen y entrar al destino.
-          </p>
-        </div>
-
-        <div className="ui-panel-soft p-3 text-sm text-[var(--ui-muted)]">
-          Cada linea debe quedar con producto, cantidad mayor a cero y unidad coherente para conversion a stock.
+      <section className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="ui-h3">Productos</div>
+            <div className="ui-caption mt-1">Captura lo que realmente se mueve entre ambos LOCs.</div>
+          </div>
+          <div className="rounded-full border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-1 text-xs font-semibold text-[var(--ui-muted)]">
+            {locations.length} LOCs disponibles
+          </div>
         </div>
 
         <TransfersItems products={products} defaultUomProfiles={defaultUomProfiles} />
-
-        <StepHelp
-          meaning="Cada fila representa un producto a trasladar."
-          whenToUse="Agrega una fila por cada producto y cantidad."
-          example="Leche 6 lt, Azucar 2 kg, Vasos 1 caja."
-          impact="Define el detalle que afectara stock por LOC."
-        />
       </section>
 
-      <section className="ui-panel space-y-4">
-        <div>
-          <div className="ui-h3">Revision operativa</div>
-          <p className="mt-1 ui-caption">
-            Antes de guardar, confirma que el movimiento corresponde al traslado real que va a ejecutar bodega.
-          </p>
+      <div className="ui-mobile-sticky-footer ui-fade-up ui-delay-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ui-border)] bg-white/92 px-4 py-3 backdrop-blur">
+        <div className="text-sm text-[var(--ui-muted)]">
+          {(selectedFrom?.code ?? selectedFrom?.name ?? "Sin origen")} → {(selectedTo?.code ?? selectedTo?.name ?? "Sin destino")}
         </div>
-
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-          {reviewRows.map((row) => (
-            <div key={row.label} className="ui-panel-soft px-3 py-2">
-              <div className="ui-caption">{row.label}</div>
-              <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">{row.value}</div>
-            </div>
-          ))}
-        </div>
-
-        <div className="ui-panel-soft space-y-2 p-4 text-sm text-[var(--ui-muted)]">
-          <p>1) Origen y destino deben ser distintos.</p>
-          <p>2) Cada item debe tener producto, cantidad y unidad de captura.</p>
-          <p>3) El sistema valida stock disponible en el LOC origen antes de registrar.</p>
-        </div>
-      </section>
-
-      <section className="ui-panel space-y-4">
-        <div>
-          <div className="ui-h3">Confirmacion final</div>
-          <p className="mt-1 ui-caption">
-            Este es el ultimo control antes de mover stock entre LOCs.
-          </p>
-        </div>
-
-        <label className="flex items-start gap-2 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-3">
-          <input
-            type="checkbox"
-            checked={confirmed}
-            onChange={(event) => setConfirmed(event.target.checked)}
-          />
-          <span className="ui-caption">
-            Confirmo que revise origen, destino, cantidades y coherencia operativa antes de registrar el traslado.
-          </span>
-        </label>
-      </section>
-
-      <div className="ui-mobile-sticky-footer flex flex-wrap items-center justify-end gap-2">
-        <button type="submit" className="ui-btn ui-btn--brand" disabled={!confirmed || sameLocation}>
+        <button type="submit" className="ui-btn ui-btn--brand" disabled={!canSubmit}>
           Registrar traslado
         </button>
       </div>

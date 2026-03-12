@@ -2,8 +2,6 @@
 
 import { useMemo, useState } from "react";
 
-import { StepHelp } from "@/components/inventory/forms/StepHelp";
-
 import { STANDARD_LOCATION_ZONES } from "./location-form-options";
 
 type SiteCode = "CP" | "SAU" | "VCF" | "VGR";
@@ -28,7 +26,6 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
   const [aisle, setAisle] = useState("MAIN");
   const [level, setLevel] = useState("");
   const [description, setDescription] = useState("");
-  const [confirmed, setConfirmed] = useState(false);
 
   const selectedSite = useMemo(
     () => sites.find((site) => site.id === siteId) ?? null,
@@ -57,30 +54,15 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
       <input type="hidden" name="level" value={levelUpper} />
       <input type="hidden" name="description" value={description} />
 
-      <section className="ui-panel-soft space-y-3 p-4">
+      <section className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="ui-h3">Nueva ubicacion en una sola vista</div>
-            <p className="mt-1 text-sm text-[var(--ui-muted)]">
-              Aqui defines sede, zona, estructura y validas el codigo final sin navegar por wizard.
-            </p>
+            <div className="ui-h3">Ubicación</div>
+            <div className="ui-caption mt-1">Define la sede y la zona operativa.</div>
           </div>
-          <div className="flex flex-wrap gap-2">
-            <span className="ui-chip">Alta de LOC</span>
-            <span className="ui-chip">Convencion estandar</span>
+          <div className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-900">
+            {selectedSite?.code ?? "Sin sede"}
           </div>
-        </div>
-        <p className="text-sm text-[var(--ui-muted)]">
-          La meta es que alguien nuevo pueda crear una ubicacion completa entendiendo el codigo que va a quedar.
-        </p>
-      </section>
-
-      <section className="ui-panel space-y-4">
-        <div>
-          <div className="ui-h3">Sede y zona operativa</div>
-          <p className="mt-1 ui-caption">
-            Define en que sede va a existir el LOC y en que zona fisica se usara realmente.
-          </p>
         </div>
 
         <div className="grid gap-4 ui-mobile-stack sm:grid-cols-2">
@@ -90,7 +72,6 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
               value={siteId}
               onChange={(event) => {
                 setSiteId(event.target.value);
-                setConfirmed(false);
               }}
               className="ui-input"
               required
@@ -108,7 +89,6 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
               value={zone}
               onChange={(event) => {
                 setZone(event.target.value);
-                setConfirmed(false);
               }}
               className="ui-input"
               required
@@ -122,21 +102,10 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
           </label>
         </div>
 
-        <StepHelp
-          meaning="Define en que sede y zona fisica existira el LOC."
-          whenToUse="Selecciona la zona real donde estara el inventario."
-          example="Sede CP, Zona BOD."
-          impact="Determina visibilidad y trazabilidad por sede."
-        />
       </section>
 
-      <section className="ui-panel space-y-4">
-        <div>
-          <div className="ui-h3">Estructura del LOC</div>
-          <p className="mt-1 ui-caption">
-            Completa el identificador dentro de la zona y revisa el codigo estandar que va a generarse.
-          </p>
-        </div>
+      <section className="ui-panel ui-remission-section ui-fade-up ui-delay-3 space-y-4">
+        <div className="ui-h3">Código</div>
 
         <div className="grid gap-4 ui-mobile-stack sm:grid-cols-3">
           <label className="flex flex-col gap-1">
@@ -146,7 +115,6 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
               value={aisle}
               onChange={(event) => {
                 setAisle(event.target.value.toUpperCase().replace(/\s/g, ""));
-                setConfirmed(false);
               }}
               placeholder="MAIN, EST01"
               className="ui-input"
@@ -159,7 +127,6 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
               value={level}
               onChange={(event) => {
                 setLevel(event.target.value.toUpperCase().replace(/\s/g, ""));
-                setConfirmed(false);
               }}
               placeholder="N0, 1"
               className="ui-input"
@@ -172,7 +139,6 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
               value={description}
               onChange={(event) => {
                 setDescription(event.target.value);
-                setConfirmed(false);
               }}
               placeholder="Ej: Estanteria 1"
               className="ui-input"
@@ -186,71 +152,15 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
             {codigoGenerado || "-"}
           </div>
         </div>
-
-        <StepHelp
-          meaning="Completa el identificador del LOC dentro de la zona."
-          whenToUse="Usa pasillo obligatorio; nivel solo si aplica verticalidad."
-          example="PASILLO MAIN, NIVEL N2."
-          impact="Mejora lectura en scanner y operaciones de conteo."
-        />
       </section>
 
-      <section className="ui-panel space-y-4">
-        <div>
-          <div className="ui-h3">Revision operativa</div>
-          <p className="mt-1 ui-caption">
-            Antes de crear, valida que el LOC refleje la ubicacion fisica real que va a usar operacion.
-          </p>
+      <div className="ui-mobile-sticky-footer ui-fade-up ui-delay-4 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ui-border)] bg-white/92 px-4 py-3 backdrop-blur">
+        <div className="text-sm text-[var(--ui-muted)]">
+          {selectedSite?.label ?? "Sin sede"} · {codigoGenerado || "-"}
         </div>
-
-        <div className="grid gap-3 ui-mobile-stack sm:grid-cols-2 xl:grid-cols-4">
-          <div className="ui-panel-soft p-3">
-            <div className="ui-caption">Sede</div>
-            <div className="mt-1 font-semibold">{selectedSite?.label ?? "Sin definir"}</div>
-          </div>
-          <div className="ui-panel-soft p-3">
-            <div className="ui-caption">Zona</div>
-            <div className="mt-1 font-semibold">{zoneUpper || "Sin definir"}</div>
-          </div>
-          <div className="ui-panel-soft p-3">
-            <div className="ui-caption">Pasillo</div>
-            <div className="mt-1 font-semibold">{aisleUpper || "Sin definir"}</div>
-          </div>
-          <div className="ui-panel-soft p-3">
-            <div className="ui-caption">Codigo</div>
-            <div className="mt-1 font-mono font-semibold">{codigoGenerado || "-"}</div>
-          </div>
-        </div>
-
-        <div className="ui-panel-soft space-y-2 p-4 text-sm text-[var(--ui-muted)]">
-          <p>1) Usa un pasillo corto y estable para que el LOC no cambie de significado.</p>
-          <p>2) Usa nivel solo cuando realmente exista estructura vertical que operacion reconozca.</p>
-          <p>3) El codigo final debe ser entendible para conteo, recepcion y scanner.</p>
-        </div>
-      </section>
-
-      <section className="ui-panel space-y-4">
-        <div>
-          <div className="ui-h3">Confirmacion final</div>
-          <p className="mt-1 ui-caption">
-            Este es el ultimo control antes de crear la ubicacion y dejarla visible en operacion.
-          </p>
-        </div>
-
-        <label className="flex items-start gap-2 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-3">
-          <input
-            type="checkbox"
-            checked={confirmed}
-            onChange={(event) => setConfirmed(event.target.checked)}
-          />
-          <span className="ui-caption">Confirmo que la ubicacion y el codigo son correctos.</span>
-        </label>
-      </section>
-
-      <div className="ui-mobile-sticky-footer flex flex-wrap items-center justify-end gap-2">
         <button
           type="submit"
-          disabled={!canSubmit || !confirmed}
+          disabled={!canSubmit}
           className="ui-btn ui-btn--brand disabled:opacity-50"
         >
           Crear ubicacion

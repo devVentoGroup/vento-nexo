@@ -6,7 +6,6 @@ import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { safeDecodeURIComponent } from "@/lib/url";
 import { WithdrawForm } from "@/features/inventory/withdraw/withdraw-form";
-import { PageHeader } from "@/components/vento/standard/page-header";
 import {
   convertByProductProfile,
   normalizeUnitCode,
@@ -370,39 +369,76 @@ export default async function WithdrawPage({
         .eq("is_active", true)
     : { data: [] as ProductUomProfile[] };
   const defaultUomProfiles = (uomProfilesDataForPage ?? []) as ProductUomProfile[];
+  const selectedLocation = locations.find((location) => location.id === defaultLocationId) ?? null;
 
   return (
-    <div className="w-full">
-      <PageHeader
-        title="Retirar insumos"
-        subtitle="Abre el retiro desde el QR del LOC y registra solo lo que realmente salio. El LOC queda preseleccionado para agilizar la captura."
-        actions={
-          <Link href="/inventory/stock" className="ui-btn ui-btn--ghost">
-            Ver stock
-          </Link>
-        }
-      />
+    <div className="ui-scene w-full space-y-6">
+      <section className="ui-remission-hero ui-fade-up">
+        <div className="ui-remission-hero-grid lg:grid-cols-[1.45fr_1fr] lg:items-start">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Link href="/inventory/stock" className="ui-caption underline">Volver a stock</Link>
+              <h1 className="ui-h1">Retirar insumos</h1>
+              <p className="ui-body-muted">
+                Registra la salida real desde un LOC. Si abriste el formulario desde el QR, el origen ya queda listo para capturar.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
+                {siteId ? "Sede activa lista" : "Sin sede activa"}
+              </span>
+              {selectedLocation ? (
+                <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-900">
+                  LOC {selectedLocation.code ?? selectedLocation.zone ?? selectedLocation.id}
+                </span>
+              ) : null}
+              <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+                {productRows.length} productos disponibles
+              </span>
+            </div>
+          </div>
+          <div className="ui-remission-kpis sm:grid-cols-3 lg:grid-cols-1">
+            <article className="ui-remission-kpi" data-tone="warm">
+              <div className="ui-remission-kpi-label">LOC activo</div>
+              <div className="ui-remission-kpi-value">
+                {selectedLocation?.code ?? selectedLocation?.zone ?? "Sin LOC"}
+              </div>
+              <div className="ui-remission-kpi-note">
+                {selectedLocation?.zone || "El retiro se descuenta del LOC seleccionado"}
+              </div>
+            </article>
+            <article className="ui-remission-kpi" data-tone="cool">
+              <div className="ui-remission-kpi-label">Productos cargados</div>
+              <div className="ui-remission-kpi-value">{productRows.length}</div>
+              <div className="ui-remission-kpi-note">Lista disponible para capturar salida rápida</div>
+            </article>
+            <article className="ui-remission-kpi" data-tone="success">
+              <div className="ui-remission-kpi-label">Modo</div>
+              <div className="ui-remission-kpi-value">QR + móvil</div>
+              <div className="ui-remission-kpi-note">Optimizado para tablet o celular en operación</div>
+            </article>
+          </div>
+        </div>
+      </section>
 
       {errorMsg ? (
-        <div className="mt-6 ui-alert ui-alert--error">
+        <div className="ui-alert ui-alert--error">
           {errorMsg}
         </div>
       ) : null}
 
       {okMsg ? (
-        <div className="mt-6 ui-alert ui-alert--success">{okMsg}</div>
+        <div className="ui-alert ui-alert--success">{okMsg}</div>
       ) : null}
 
-      <div className="mt-6">
-        <WithdrawForm
-          locations={locations}
-          defaultLocationId={defaultLocationId}
-          products={productRows}
-          defaultUomProfiles={defaultUomProfiles}
-          siteId={siteId}
-          action={submitWithdraw}
-        />
-      </div>
+      <WithdrawForm
+        locations={locations}
+        defaultLocationId={defaultLocationId}
+        products={productRows}
+        defaultUomProfiles={defaultUomProfiles}
+        siteId={siteId}
+        action={submitWithdraw}
+      />
     </div>
   );
 }

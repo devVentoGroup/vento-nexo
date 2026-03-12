@@ -89,7 +89,7 @@ export function ScanInput(props: {
       setCameraError(null);
       setCameraLoading(true);
 
-      let BarcodeDetectorImpl = (window as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector;
+      const BarcodeDetectorImpl = (window as unknown as { BarcodeDetector?: BarcodeDetectorCtor }).BarcodeDetector;
       if (typeof window === "undefined") {
         setCameraError("Error de entorno.");
         setCameraLoading(false);
@@ -190,13 +190,11 @@ export function ScanInput(props: {
   }
 
   return (
-    <div className="ui-panel">
+    <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <div className="ui-body font-semibold">{label}</div>
-          <div className="mt-1 ui-body-muted">
-            En cel o tablet: usa la camara. En PC: escaner Bluetooth/USB tipo teclado o pega el codigo.
-          </div>
+          <div className="ui-h3">{label}</div>
+          <div className="mt-1 ui-body-muted">Usa cámara o pega el código para procesarlo al instante.</div>
         </div>
 
         <button
@@ -245,7 +243,7 @@ export function ScanInput(props: {
         </div>
       </div>
 
-      <div className="mt-4 rounded-[var(--ui-radius-card)] border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
+      <div className="mt-4 rounded-[var(--ui-radius-card)] border border-[var(--ui-border)] bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(238,242,246,0.96)_100%)] p-4">
         <div className="ui-caption font-semibold tracking-wide text-[var(--ui-muted)]">Vista previa</div>
         <div className="mt-2 ui-body">
           {parsed ? (
@@ -271,7 +269,7 @@ export function ScanInput(props: {
 
       {cameraOpen ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 px-4">
-          <div className="ui-panel w-full max-w-lg space-y-4">
+          <div className="ui-panel ui-panel--halo w-full max-w-lg space-y-4">
             <div className="flex items-center justify-between gap-4">
               <div>
                 <div className="ui-h3">Escaneo por camara</div>

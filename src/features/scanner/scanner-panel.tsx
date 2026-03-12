@@ -37,9 +37,16 @@ export function ScannerPanel() {
       <ScanInput onScan={handleScan} />
 
       {lastScanned?.kind === "vento" && lastScanned.entity === "LOC" ? (
-        <div className="ui-panel border-[var(--ui-brand)]/20 bg-[var(--ui-brand-soft)]">
-          <div className="ui-h3">LOC detectado</div>
-          <p className="mt-1 font-mono text-sm font-medium text-[var(--ui-text)]">{lastScanned.code}</p>
+        <div className="ui-panel ui-panel--halo ui-fade-up ui-delay-1 space-y-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="ui-h3">LOC detectado</div>
+              <p className="mt-1 font-mono text-sm font-medium text-[var(--ui-text)]">{lastScanned.code}</p>
+            </div>
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
+              Listo para operar
+            </span>
+          </div>
           <div className="mt-4 flex flex-wrap gap-3">
             <Link
               href={`/inventory/locations?code=${encodeURIComponent(lastScanned.code)}${currentSiteId ? `&site_id=${encodeURIComponent(currentSiteId)}` : ""}`}
@@ -58,7 +65,7 @@ export function ScannerPanel() {
       ) : null}
 
       {lastScanned?.kind === "vento" && lastScanned.entity === "AST" ? (
-        <div className="ui-panel ui-alert ui-alert--neutral">
+        <div className="ui-panel ui-remission-section ui-fade-up ui-delay-1">
           <div className="ui-h3">AST detectado</div>
           <p className="mt-1 font-mono text-sm">{lastScanned.code}</p>
           <p className="mt-2 ui-body-muted">Ficha técnica: pendiente (VISO).</p>
@@ -66,7 +73,7 @@ export function ScannerPanel() {
       ) : null}
 
       {lastScanned?.kind === "raw" && lastScanned.raw ? (
-        <div className="ui-panel-soft">
+        <div className="ui-panel ui-remission-section ui-fade-up ui-delay-1">
           <div className="ui-caption font-semibold">Código sin formato Vento</div>
           <p className="mt-1 font-mono text-sm">{lastScanned.raw}</p>
           <div className="mt-3">

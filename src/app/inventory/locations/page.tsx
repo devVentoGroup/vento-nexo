@@ -6,7 +6,6 @@ import { redirect } from "next/navigation";
 import { LocCreateForm } from "@/features/inventory/locations/loc-create-form";
 import { LocDeleteButton } from "@/features/inventory/locations/loc-delete-button";
 import { LocEditForm } from "@/features/inventory/locations/loc-edit-form";
-import { PageHeader } from "@/components/vento/standard/page-header";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { safeDecodeURIComponent } from "@/lib/url";
@@ -362,55 +361,88 @@ export default async function InventoryLocationsPage({
   const cancelHref = `/inventory/locations${baseQuery.toString() ? `?${baseQuery.toString()}` : ""}`;
 
   return (
-    <div className="w-full">
-      <PageHeader
-        title="Ubicaciones"
-        subtitle={
-          isEditingLoc
-            ? "Modo edicion activo. Corrige identidad y metadatos del LOC sin mezclarlo con alta nueva."
-            : "Ubicaciones físicas (LOC). Convención: LOC-SEDE-ZONA-PASILLO."
-        }
-        actions={
-          <div className="flex flex-wrap gap-2">
-            {isEditingLoc ? (
-              <Link href={cancelHref} className="ui-btn ui-btn--ghost">
-                Volver a alta
+    <div className="ui-scene w-full space-y-6">
+      <section className="ui-remission-hero ui-fade-up">
+        <div className="ui-remission-hero-grid lg:grid-cols-[1.45fr_1fr] lg:items-start">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Link href="/inventory/stock" className="ui-caption underline">Volver a stock</Link>
+              <h1 className="ui-h1">Ubicaciones</h1>
+              <p className="ui-body-muted">
+                {isEditingLoc
+                  ? "Corrige identidad y metadatos del LOC seleccionado sin mezclarlo con alta nueva."
+                  : "Crea y administra LOCs con una convención clara y un listado filtrable por sede, zona y código."}
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
+                {isEditingLoc ? "Modo edicion" : "Alta de LOC"}
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+                {siteOptions.length} sedes
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+                {locationRows.length} LOCs visibles
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {isEditingLoc ? (
+                <Link href={cancelHref} className="ui-btn ui-btn--ghost">
+                  Volver a alta
+                </Link>
+              ) : null}
+              <Link href="/scanner" className="ui-btn ui-btn--ghost">
+                Ir a Scanner
               </Link>
-            ) : null}
-            <Link href="/scanner" className="ui-btn ui-btn--ghost">
-              Ir a Scanner
-            </Link>
+            </div>
           </div>
-        }
-      />
+          <div className="ui-remission-kpis sm:grid-cols-3 lg:grid-cols-1">
+            <article className="ui-remission-kpi" data-tone="warm">
+              <div className="ui-remission-kpi-label">LOCs visibles</div>
+              <div className="ui-remission-kpi-value">{locationRows.length}</div>
+              <div className="ui-remission-kpi-note">Aplicando los filtros actuales del listado</div>
+            </article>
+            <article className="ui-remission-kpi" data-tone="cool">
+              <div className="ui-remission-kpi-label">Sedes</div>
+              <div className="ui-remission-kpi-value">{siteOptions.length}</div>
+              <div className="ui-remission-kpi-note">Disponibles para crear o filtrar ubicaciones</div>
+            </article>
+            <article className="ui-remission-kpi" data-tone="success">
+              <div className="ui-remission-kpi-label">Estado</div>
+              <div className="ui-remission-kpi-value">{isEditingLoc ? "Editar" : "Crear"}</div>
+              <div className="ui-remission-kpi-note">Alta limpia o edicion aislada segun el modo activo</div>
+            </article>
+          </div>
+        </div>
+      </section>
 
       {created === "1" ? (
-        <div className="mt-6 ui-alert ui-alert--success">Ubicación creada correctamente.</div>
+        <div className="ui-alert ui-alert--success">Ubicación creada correctamente.</div>
       ) : null}
 
       {deleted === "1" ? (
-        <div className="mt-6 ui-alert ui-alert--success">LOC eliminado correctamente.</div>
+        <div className="ui-alert ui-alert--success">LOC eliminado correctamente.</div>
       ) : null}
 
       {updated === "1" ? (
-        <div className="mt-6 ui-alert ui-alert--success">LOC actualizado correctamente.</div>
+        <div className="ui-alert ui-alert--success">LOC actualizado correctamente.</div>
       ) : null}
 
       {errorMsg ? (
-        <div className="mt-6 ui-alert ui-alert--error">
+        <div className="ui-alert ui-alert--error">
           Error: {errorMsg}
         </div>
       ) : null}
 
       {requestedEditButNotFound ? (
-        <div className="mt-6 ui-alert ui-alert--warn">
+        <div className="ui-alert ui-alert--warn">
           El LOC solicitado para edición no aparece en el listado actual. Revisa filtros o vuelve al modo de alta.
         </div>
       ) : null}
 
       {canEditLoc && editingLoc ? (
         <>
-          <div className="mt-6 ui-panel-soft space-y-3 p-4">
+          <div className="ui-panel ui-remission-section ui-fade-up ui-delay-1 space-y-3">
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="ui-h3">Editando {editingLoc.code ?? editingLoc.id}</div>
@@ -431,7 +463,7 @@ export default async function InventoryLocationsPage({
             cancelHref={cancelHref}
           />
 
-          <div className="mt-6 ui-panel-soft space-y-3 p-4 text-sm text-[var(--ui-muted)]">
+          <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-3 text-sm text-[var(--ui-muted)]">
             <div className="font-semibold text-[var(--ui-text)]">¿Necesitas crear otra ubicación?</div>
             <p>
               Sal del modo edición para volver al formulario de alta limpia y evitar confundir cambios sobre un LOC existente con una ubicación nueva.
@@ -444,8 +476,8 @@ export default async function InventoryLocationsPage({
           </div>
         </>
       ) : (
-        <div className="mt-6">
-          <div className="ui-panel-soft space-y-3 p-4">
+        <div className="space-y-4">
+          <div className="ui-panel ui-remission-section ui-fade-up ui-delay-1 space-y-3">
             <div>
               <div className="ui-h3">Alta de ubicación</div>
               <p className="mt-1 text-sm text-[var(--ui-muted)]">
@@ -454,26 +486,31 @@ export default async function InventoryLocationsPage({
             </div>
           </div>
 
-          <div className="mt-4">
-            <LocCreateForm
-              sites={siteOptions}
-              defaultSiteId={defaultSiteId}
-              action={createLocAction}
-            />
-          </div>
+          <LocCreateForm
+            sites={siteOptions}
+            defaultSiteId={defaultSiteId}
+            action={createLocAction}
+          />
         </div>
       )}
 
       {error ? (
-        <div className="mt-6 ui-alert ui-alert--error">
+        <div className="ui-alert ui-alert--error">
           Falló el SELECT de LOCs: {error.message}
         </div>
       ) : null}
 
-      <div className="mt-6 ui-panel">
-        <div className="ui-h3">Listado</div>
-        <div className="mt-1 ui-body-muted">
-          Filtra por sede, zona o código. Máx. 500 registros.
+      <div className="ui-panel ui-remission-section ui-fade-up ui-delay-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="ui-h3">Listado</div>
+            <div className="mt-1 ui-body-muted">
+              Filtra por sede, zona o código. Máx. 500 registros.
+            </div>
+          </div>
+          <div className="rounded-full border border-slate-200 bg-[var(--ui-bg-soft)] px-3 py-1 text-xs font-semibold text-[var(--ui-muted)]">
+            {locationRows.length} resultados
+          </div>
         </div>
 
         <form

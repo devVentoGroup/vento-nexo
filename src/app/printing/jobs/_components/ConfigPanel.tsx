@@ -62,8 +62,14 @@ export function ConfigPanel({
   addSelectedLocToQueue,
 }: ConfigPanelProps) {
   return (
-    <div className="ui-panel">
-      <div className="ui-h3">Configuración</div>
+    <div className="ui-panel ui-remission-section">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <div className="ui-h3">Configuración</div>
+          <div className="mt-1 ui-caption">Define el tipo de etiqueta y solo abre ajustes finos cuando de verdad hagan falta.</div>
+        </div>
+        <span className="ui-chip ui-chip--brand">{preset.label}</span>
+      </div>
 
       <div className="mt-4 grid grid-cols-2 gap-4">
         <div className="col-span-2">
@@ -116,9 +122,7 @@ export function ConfigPanel({
               PROD
             </button>
           </div>
-          <div className="mt-2 ui-caption">
-            Esto solo cambia el preset recomendado. La cola es la que define qué se imprime.
-          </div>
+          <div className="mt-2 ui-caption">El preset cambia tamaño y formato recomendados.</div>
         </div>
 
         <div className="col-span-2">
@@ -137,7 +141,7 @@ export function ConfigPanel({
         </div>
 
         <div className="col-span-2">
-          <div className="ui-caption font-medium">Título</div>
+          <div className="ui-caption font-medium">Título visible</div>
           <input
             className="ui-input mt-1 w-full"
             value={title}
@@ -226,18 +230,15 @@ export function ConfigPanel({
             )}
 
             <div className="col-span-2 ui-caption text-[var(--ui-muted)]">
-              Si la etiqueta no sale bien alineada, ajusta los márgenes o usa{" "}
-              <span className="font-medium">Probar posición</span>.
+              Si algo sale corrido, usa márgenes o el botón `Probar posición`.
             </div>
           </>
         ) : null}
       </div>
 
       <div className="mt-5 ui-panel-soft p-4 ui-caption">
-        <div className="font-semibold text-[var(--ui-text)]">Ubicación</div>
-        <div className="mt-1 text-[var(--ui-muted)]">
-          Elige una ubicación (LOC) de la lista y agrégalo a la cola para imprimir su etiqueta.
-        </div>
+        <div className="font-semibold text-[var(--ui-text)]">Carga rápida</div>
+        <div className="mt-1 text-[var(--ui-muted)]">Para LOC, elige una ubicación y agrégala directo a la cola.</div>
       </div>
 
       <div className="mt-6">
@@ -295,7 +296,7 @@ export function ConfigPanel({
             </div>
 
             <div className="mt-2 ui-caption text-[var(--ui-muted)]">
-              Al elegir una ubicación se usa la etiqueta estándar 50×70 mm.
+              Al elegir una ubicación se usa la etiqueta estándar de LOC.
             </div>
           </>
         ) : null}

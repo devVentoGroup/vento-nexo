@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { PageHeader } from "@/components/vento/standard/page-header";
 import { ProductChecklistPanel } from "@/features/inventory/catalog/product-checklist-panel";
 import { ProductCostStatusPanel } from "@/features/inventory/catalog/product-cost-status-panel";
 import { ProductFormFooter } from "@/features/inventory/catalog/product-form-footer";
@@ -1078,6 +1077,8 @@ export default async function ProductCatalogDetailPage({
   const categoryDomainOptions = getCategoryDomainOptions(
     getCategoryDomainCodes(allCategoryRows, categoryKind)
   );
+  const resolvedCategoryPath =
+    allCategoryRows.find((row) => row.id === productRow.category_id)?.name?.trim() || "";
 
   const stockUnitCode = normalizeUnitCode(productRow.stock_unit_code || productRow.unit || "un");
   const inventoryUnitMap = createUnitMap(unitsList);
@@ -1134,21 +1135,63 @@ export default async function ProductCatalogDetailPage({
   }));
 
   return (
-    <div className="w-full space-y-8">
-      <PageHeader
-        title={productRow.name ?? "Ficha maestra"}
-        subtitle="Ficha maestra del producto: identidad operativa, compra, almacenamiento y setup por sede."
-        actions={
-          <div className="flex items-center gap-2">
-            <Link href="/inventory/ai-ingestions?flow=catalog_create" className="ui-btn ui-btn--brand">
-              IA productos
-            </Link>
-            <Link href={from || "/inventory/catalog"} className="ui-btn ui-btn--ghost">
-              Volver al catalogo
-            </Link>
+    <div className="ui-scene w-full space-y-8">
+      <section className="ui-remission-hero ui-fade-up">
+        <div className="ui-remission-hero-grid lg:grid-cols-[1.45fr_1fr] lg:items-start">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Link href={from || "/inventory/catalog"} className="ui-caption underline">Volver al catalogo</Link>
+              <h1 className="ui-h1">{productRow.name ?? "Ficha maestra"}</h1>
+              <p className="ui-body-muted">
+                Ficha maestra del producto: identidad operativa, compra, almacenamiento y setup por sede.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
+                {productRow.is_active === false ? "Inactivo" : "Activo"}
+              </span>
+              {productRow.sku ? (
+                <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+                  SKU {productRow.sku}
+                </span>
+              ) : null}
+              {resolvedCategoryPath ? (
+                <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-900">
+                  {resolvedCategoryPath}
+                </span>
+              ) : null}
+            </div>
+            <div className="flex items-center gap-2">
+              <Link href="/inventory/ai-ingestions?flow=catalog_create" className="ui-btn ui-btn--brand">
+                IA productos
+              </Link>
+            </div>
           </div>
-        }
-      />
+          <div className="ui-remission-kpis sm:grid-cols-3 lg:grid-cols-1">
+            <article className="ui-remission-kpi" data-tone="warm">
+              <div className="ui-remission-kpi-label">Estado</div>
+              <div className="ui-remission-kpi-value">{productRow.is_active === false ? "Off" : "On"}</div>
+              <div className="ui-remission-kpi-note">Disponibilidad actual del maestro</div>
+            </article>
+            <article className="ui-remission-kpi" data-tone="cool">
+              <div className="ui-remission-kpi-label">Tipo</div>
+              <div className="ui-remission-kpi-value">
+                {String(productRow.product_type ?? "insumo").trim().toLowerCase() === "venta"
+                  ? "Venta"
+                  : String(productRow.product_type ?? "insumo").trim().toLowerCase() === "preparacion"
+                    ? "Prep"
+                    : "Insumo"}
+              </div>
+              <div className="ui-remission-kpi-note">Clasificacion operativa del producto</div>
+            </article>
+            <article className="ui-remission-kpi" data-tone="success">
+              <div className="ui-remission-kpi-label">Sedes</div>
+              <div className="ui-remission-kpi-value">{siteRows.length}</div>
+              <div className="ui-remission-kpi-note">Configuraciones por sede en esta ficha</div>
+            </article>
+          </div>
+        </div>
+      </section>
 
       {errorMsg ? <div className="ui-alert ui-alert--error">Error: {errorMsg}</div> : null}
       {okMsg ? <div className="ui-alert ui-alert--success">{okMsg}</div> : null}

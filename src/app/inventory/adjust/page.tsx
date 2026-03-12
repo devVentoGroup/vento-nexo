@@ -2,7 +2,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { requireAppAccess } from "@/lib/auth/guard";
-import { PageHeader } from "@/components/vento/standard/page-header";
 
 import { AdjustForm } from "@/features/inventory/adjust/adjust-form";
 
@@ -66,23 +65,42 @@ export default async function InventoryAdjustPage({
 
   if (!siteId) {
     return (
-      <div className="w-full">
-        <PageHeader
-          title="Ajustes"
-          subtitle="Ajustes manuales con motivo, permisos y evidencia opcional."
-        />
-
-        <div className="mt-6 ui-panel-soft space-y-3 p-4">
-          <div>
-            <div className="ui-h3">Elegir sede operativa</div>
-            <p className="mt-1 text-sm text-[var(--ui-muted)]">
-              Selecciona la sede sobre la que vas a registrar el ajuste. Si solo tienes una sede asignada,
-              NEXO entra directo a esa vista.
-            </p>
+      <div className="ui-scene w-full space-y-6">
+        <section className="ui-remission-hero ui-fade-up">
+          <div className="ui-remission-hero-grid lg:grid-cols-[1.45fr_1fr] lg:items-start">
+            <div className="space-y-4">
+              <div className="space-y-2">
+                <Link href="/inventory/stock" className="ui-caption underline">Volver a stock</Link>
+                <h1 className="ui-h1">Ajustes</h1>
+                <p className="ui-body-muted">
+                  Corrige diferencias de inventario con motivo y trazabilidad. Primero elige la sede operativa.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
+                  Ajuste manual
+                </span>
+                <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+                  {siteRows.length} sedes disponibles
+                </span>
+              </div>
+            </div>
+            <div className="ui-remission-kpis sm:grid-cols-2 lg:grid-cols-1">
+              <article className="ui-remission-kpi" data-tone="warm">
+                <div className="ui-remission-kpi-label">Sedes</div>
+                <div className="ui-remission-kpi-value">{siteRows.length}</div>
+                <div className="ui-remission-kpi-note">Elige la sede sobre la que vas a corregir stock</div>
+              </article>
+              <article className="ui-remission-kpi" data-tone="cool">
+                <div className="ui-remission-kpi-label">Modo</div>
+                <div className="ui-remission-kpi-value">Manual</div>
+                <div className="ui-remission-kpi-note">Con motivo y evidencia opcional</div>
+              </article>
+            </div>
           </div>
-        </div>
+        </section>
 
-        <div className="mt-4 ui-panel">
+        <div className="ui-panel ui-remission-section ui-fade-up ui-delay-1">
           <form method="get" action="/inventory/adjust" className="mt-4">
             <label className="flex flex-col gap-1">
               <span className="ui-label">Sede</span>
@@ -120,7 +138,7 @@ export default async function InventoryAdjustPage({
           <p className="mt-4 ui-body-muted">No tienes sedes asignadas. Contacta al administrador.</p>
         ) : null}
       </div>
-    );
+      );
   }
 
   // Paso 2: productos y formulario
@@ -166,23 +184,47 @@ export default async function InventoryAdjustPage({
   const siteName = siteNameMap.get(siteId) ?? siteId;
 
   return (
-    <div className="w-full">
-      <PageHeader
-        title="Ajustes"
-        subtitle={`Sede: ${siteName}. Registra ajustes manuales con motivo y trazabilidad.`}
-        actions={
-          <Link href="/inventory/stock" className="ui-btn ui-btn--ghost">
-            Ver stock
-          </Link>
-        }
-      />
+    <div className="ui-scene w-full space-y-6">
+      <section className="ui-remission-hero ui-fade-up">
+        <div className="ui-remission-hero-grid lg:grid-cols-[1.45fr_1fr] lg:items-start">
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Link href="/inventory/stock" className="ui-caption underline">Volver a stock</Link>
+              <h1 className="ui-h1">Ajustes</h1>
+              <p className="ui-body-muted">
+                Corrige diferencias de inventario en {siteName} con motivo claro y trazabilidad.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
+                {siteName}
+              </span>
+              <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+                {productRows.length} productos
+              </span>
+            </div>
+          </div>
+          <div className="ui-remission-kpis sm:grid-cols-2 lg:grid-cols-1">
+            <article className="ui-remission-kpi" data-tone="warm">
+              <div className="ui-remission-kpi-label">Sede activa</div>
+              <div className="ui-remission-kpi-value">{siteName}</div>
+              <div className="ui-remission-kpi-note">Los ajustes impactan el stock de esta sede</div>
+            </article>
+            <article className="ui-remission-kpi" data-tone="cool">
+              <div className="ui-remission-kpi-label">Productos</div>
+              <div className="ui-remission-kpi-value">{productRows.length}</div>
+              <div className="ui-remission-kpi-note">Inventario trackeado disponible para ajustar</div>
+            </article>
+          </div>
+        </div>
+      </section>
 
       {productError ? (
-        <div className="mt-6 ui-alert ui-alert--error">
+        <div className="ui-alert ui-alert--error">
           Error al cargar productos: {productError.message}
         </div>
       ) : productRows.length === 0 ? (
-        <div className="mt-6 ui-alert ui-alert--warn">
+        <div className="ui-alert ui-alert--warn">
           No hay productos con inventario trackeado para esta sede. Revisa el catálogo y
           product_site_settings, o &quot;Inventario &gt; Stock&quot; para ver el filtro por sede.
         </div>

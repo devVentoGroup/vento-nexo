@@ -5,6 +5,7 @@
   --ui-bg-2: #EDF2F6;
   --ui-surface: #FFFFFF;
   --ui-surface-2: #EEF2F6;
+  --ui-bg-soft: #F7FAFC;
   --ui-border: #C9D2DB;
   --ui-text: #111827;
   --ui-muted: #5E6A78;
@@ -83,6 +84,160 @@ body {
   border-radius: var(--ui-radius-card);
   padding: 20px;
   box-shadow: var(--ui-shadow-soft);
+}
+
+.ui-scene {
+  position: relative;
+}
+
+.ui-scene::before {
+  content: "";
+  position: absolute;
+  inset: -18px -12px auto;
+  height: 220px;
+  border-radius: 32px;
+  background:
+    radial-gradient(460px 200px at 12% 10%, rgba(245, 158, 11, 0.18) 0%, rgba(245, 158, 11, 0) 72%),
+    radial-gradient(520px 240px at 88% 0%, rgba(14, 116, 144, 0.12) 0%, rgba(14, 116, 144, 0) 72%);
+  filter: blur(8px);
+  opacity: 0.95;
+  pointer-events: none;
+}
+
+.ui-remission-hero {
+  position: relative;
+  overflow: hidden;
+  border: 1px solid rgba(245, 158, 11, 0.18);
+  border-radius: 24px;
+  padding: 24px;
+  background:
+    radial-gradient(420px 220px at 0% 0%, rgba(245, 158, 11, 0.18) 0%, rgba(245, 158, 11, 0) 70%),
+    radial-gradient(360px 220px at 100% 0%, rgba(14, 116, 144, 0.16) 0%, rgba(14, 116, 144, 0) 74%),
+    linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(247, 250, 252, 0.98) 100%);
+  box-shadow: var(--ui-shadow-2);
+}
+
+.ui-remission-hero::after {
+  content: "";
+  position: absolute;
+  inset: auto -10% -55% auto;
+  width: 280px;
+  height: 280px;
+  border-radius: 999px;
+  background: radial-gradient(circle, rgba(245, 158, 11, 0.18) 0%, rgba(245, 158, 11, 0) 72%);
+  pointer-events: none;
+}
+
+.ui-remission-hero-grid {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  gap: 16px;
+}
+
+.ui-remission-kpis {
+  display: grid;
+  gap: 12px;
+}
+
+.ui-remission-kpi {
+  position: relative;
+  overflow: hidden;
+  border-radius: 18px;
+  border: 1px solid rgba(201, 210, 219, 0.9);
+  background: rgba(255, 255, 255, 0.74);
+  padding: 16px 18px;
+  box-shadow: 0 10px 28px rgba(15, 23, 42, 0.08);
+  backdrop-filter: blur(12px);
+}
+
+.ui-remission-kpi::before {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 4px;
+  background: linear-gradient(180deg, var(--ui-brand) 0%, #F97316 100%);
+}
+
+.ui-remission-kpi[data-tone="cool"]::before {
+  background: linear-gradient(180deg, #0891B2 0%, #0F766E 100%);
+}
+
+.ui-remission-kpi[data-tone="success"]::before {
+  background: linear-gradient(180deg, #22C55E 0%, #15803D 100%);
+}
+
+.ui-remission-kpi-label {
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ui-muted);
+}
+
+.ui-remission-kpi-value {
+  margin-top: 8px;
+  font-size: 1.9rem;
+  line-height: 1;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  color: var(--ui-text);
+}
+
+.ui-remission-kpi-note {
+  margin-top: 6px;
+  font-size: 0.84rem;
+  color: var(--ui-muted);
+}
+
+.ui-remission-section {
+  position: relative;
+  overflow: hidden;
+}
+
+.ui-remission-section::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(245, 158, 11, 0.03) 100%);
+  pointer-events: none;
+}
+
+.ui-remission-section > * {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes fadeUpSoft {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.ui-fade-up {
+  animation: fadeUpSoft 420ms ease both;
+}
+
+.ui-delay-1 {
+  animation-delay: 70ms;
+}
+
+.ui-delay-2 {
+  animation-delay: 140ms;
+}
+
+.ui-delay-3 {
+  animation-delay: 210ms;
+}
+
+.ui-delay-4 {
+  animation-delay: 280ms;
 }
 
 .ui-card {
@@ -207,6 +362,8 @@ body {
   outline: none;
   box-shadow: inset 0 1px 0 rgba(15, 23, 42, 0.04);
   transition: box-shadow 160ms ease, border-color 160ms ease;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .ui-input:focus {
@@ -224,6 +381,8 @@ body {
   font-weight: 600;
   transition: all 120ms ease;
   gap: 8px;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 .ui-btn--brand {
@@ -492,6 +651,25 @@ body {
   animation-delay: 1.6s;
 }
 
+@media (min-width: 900px) {
+  .ui-remission-hero-grid {
+    grid-template-columns: minmax(0, 1.3fr) minmax(320px, 0.9fr);
+    align-items: start;
+  }
+
+  .ui-remission-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ui-fade-up,
+  .vento-line-glow,
+  .vento-node-pulse {
+    animation: none !important;
+  }
+}
+
 @keyframes launcherIn {
   from {
     opacity: 0;
@@ -706,6 +884,19 @@ body {
 }
 
 @media (min-width: 640px) and (max-width: 1023.98px) {
+  .ui-remission-hero {
+    padding: 20px;
+    border-radius: 20px;
+  }
+
+  .ui-remission-kpis {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ui-card {
+    padding: 16px;
+  }
+
   .ui-panel {
     padding: 18px;
     border-radius: 14px;
@@ -755,9 +946,39 @@ body {
     padding: 12px 0;
     font-size: 0.9rem;
   }
+
+  .ui-mobile-sticky-footer {
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+    padding: 12px 0 calc(env(safe-area-inset-bottom, 0px) + 8px);
+    background: linear-gradient(
+      to top,
+      rgba(255, 255, 255, 0.96) 68%,
+      rgba(255, 255, 255, 0.72) 100%
+    );
+    backdrop-filter: blur(10px);
+  }
+
+  .ui-mobile-sticky-footer .ui-btn {
+    min-width: 160px;
+  }
 }
 
 @media (max-width: 639.98px) {
+  .ui-remission-hero {
+    padding: 16px;
+    border-radius: 18px;
+  }
+
+  .ui-remission-kpi {
+    padding: 14px 16px;
+  }
+
+  .ui-card {
+    padding: 16px;
+  }
+
   .ui-panel {
     padding: 14px;
     border-radius: 14px;
@@ -806,13 +1027,30 @@ body {
     position: sticky;
     bottom: 0;
     z-index: 20;
-    padding: 10px 0 calc(env(safe-area-inset-bottom, 0px) + 6px);
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+    align-items: stretch;
+    padding: 10px 0 calc(env(safe-area-inset-bottom, 0px) + 8px);
     background: linear-gradient(
       to top,
       rgba(255, 255, 255, 0.98) 65%,
       rgba(255, 255, 255, 0.75) 100%
     );
     backdrop-filter: blur(8px);
+  }
+
+  .ui-mobile-sticky-footer > * {
+    width: 100%;
+  }
+
+  .ui-mobile-sticky-footer .ui-btn {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .ui-table {
+    min-width: 640px;
   }
 
   .ui-mobile-safe {

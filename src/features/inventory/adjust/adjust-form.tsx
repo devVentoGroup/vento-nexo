@@ -4,8 +4,6 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState } from "react";
 
-import { StepHelp } from "@/components/inventory/forms/StepHelp";
-
 type Product = {
   id: string;
   name: string;
@@ -27,7 +25,6 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
   const [reason, setReason] = useState<string>("");
   const [evidence, setEvidence] = useState<string>("");
   const [unitCostForAdjust, setUnitCostForAdjust] = useState<string>("");
-  const [confirmed, setConfirmed] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -50,7 +47,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSubmit || !confirmed) return;
+    if (!canSubmit) return;
 
     setError("");
     setLoading(true);
@@ -89,30 +86,15 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
       {error ? <div className="ui-alert ui-alert--error">{error}</div> : null}
 
       <form onSubmit={handleSubmit} className="space-y-6 pb-24 lg:pb-0">
-        <section className="ui-panel-soft space-y-3 p-4">
+        <section className="ui-panel ui-remission-section ui-fade-up ui-delay-1 space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <div className="ui-h3">Ajuste completo en una sola vista</div>
-              <p className="mt-1 text-sm text-[var(--ui-muted)]">
-                Aqui seleccionas producto, defines la diferencia, justificas el cambio y confirmas sin wizard.
-              </p>
+              <div className="ui-h3">Contexto</div>
+              <div className="ui-caption mt-1">Elige producto y valida el stock actual antes de corregir.</div>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <span className="ui-chip">Sede {siteName}</span>
-              <span className="ui-chip">Ajuste manual</span>
+            <div className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
+              {siteName}
             </div>
-          </div>
-          <p className="text-sm text-[var(--ui-muted)]">
-            La meta es que una persona nueva pueda registrar un ajuste con criterio operativo y trazabilidad completa.
-          </p>
-        </section>
-
-        <section className="ui-panel space-y-4">
-          <div>
-            <div className="ui-h3">Producto y stock actual</div>
-            <p className="mt-1 ui-caption">
-              Selecciona el producto exacto antes de capturar la diferencia para evitar ajustes equivocados.
-            </p>
           </div>
 
           <label className="flex flex-col gap-1">
@@ -124,7 +106,6 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
               onChange={(event) => {
                 setProductId(event.target.value);
                 setQuantityDelta("");
-                setConfirmed(false);
               }}
               required
               className="ui-input"
@@ -155,20 +136,19 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
             </div>
           </div>
 
-          <StepHelp
-            meaning="Primero defines a que producto se le aplica el ajuste."
-            whenToUse="Selecciona siempre el producto exacto antes de capturar la diferencia."
-            example="Leche entera (LT) con stock actual 120."
-            impact="Evita ajustar inventario equivocado y mejora la trazabilidad."
-          />
         </section>
 
-        <section className="ui-panel space-y-4">
-          <div>
-            <div className="ui-h3">Diferencia, motivo y evidencia</div>
-            <p className="mt-1 ui-caption">
-              Registra la diferencia real, explica por que ocurre y agrega soporte cuando exista.
-            </p>
+        <section className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="ui-h3">Detalle</div>
+              <div className="ui-caption mt-1">Define el cambio y deja el motivo registrado.</div>
+            </div>
+            {deltaNum != null && deltaNum !== 0 && productId ? (
+              <div className={`rounded-full px-3 py-1 text-xs font-semibold ${newQty != null && newQty >= 0 ? "border border-emerald-200 bg-emerald-50 text-emerald-900" : "border border-red-200 bg-red-50 text-red-900"}`}>
+                Resultado {newQty?.toLocaleString()} {selectedProduct?.unit ?? "un"}
+              </div>
+            ) : null}
           </div>
 
           <label className="flex flex-col gap-1">
@@ -182,16 +162,12 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
                 value={quantityDelta}
                 onChange={(event) => {
                   setQuantityDelta(event.target.value);
-                  setConfirmed(false);
                 }}
                 placeholder="Ej: +10 o -5"
                 required
                 className="ui-input flex-1"
               />
               {selectedProduct?.unit ? <span className="ui-body-muted">{selectedProduct.unit}</span> : null}
-            </div>
-            <div className="mt-1 ui-caption">
-              Usa numeros positivos (+) para aumentar stock y negativos (-) para disminuir.
             </div>
             {deltaNum != null && deltaNum !== 0 && productId ? (
               <div className="mt-2 text-sm font-medium text-zinc-700">
@@ -211,7 +187,6 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
               value={reason}
               onChange={(event) => {
                 setReason(event.target.value);
-                setConfirmed(false);
               }}
               placeholder="Ej: Merma detectada, correccion por conteo, producto danado."
               required
@@ -230,7 +205,6 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
                 value={unitCostForAdjust}
                 onChange={(event) => {
                   setUnitCostForAdjust(event.target.value);
-                  setConfirmed(false);
                 }}
                 placeholder="Si lo dejas vacio, no cambia costo promedio"
                 className="ui-input"
@@ -244,7 +218,6 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
               value={evidence}
               onChange={(event) => {
                 setEvidence(event.target.value);
-                setConfirmed(false);
               }}
               placeholder="Ej: reporte de supervisor, foto, incidencia."
               rows={2}
@@ -252,79 +225,18 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
             />
           </label>
 
-          <StepHelp
-            meaning="Defines la diferencia real y su justificacion operativa."
-            whenToUse="Siempre con motivo claro, aunque la diferencia sea pequena."
-            example="Ajuste -2 por merma detectada en conteo fisico."
-            impact="Genera historial de auditoria y protege la calidad del dato."
-          />
-        </section>
-
-        <section className="ui-panel space-y-4">
-          <div>
-            <div className="ui-h3">Revision operativa</div>
-            <p className="mt-1 ui-caption">
-              Antes de guardar, valida el impacto esperado del ajuste y confirma que la justificacion sea suficiente.
-            </p>
-          </div>
-
-          <div className="grid gap-3 ui-mobile-stack sm:grid-cols-2 xl:grid-cols-4">
-            <div className="ui-panel-soft p-3">
-              <div className="ui-caption">Producto</div>
-              <div className="mt-1 font-semibold">{selectedProduct?.name ?? "Sin definir"}</div>
-            </div>
-            <div className="ui-panel-soft p-3">
-              <div className="ui-caption">Ajuste</div>
-              <div className="mt-1 font-semibold">
-                {deltaNum != null ? `${deltaNum} ${selectedProduct?.unit ?? ""}` : "Sin definir"}
-              </div>
-            </div>
-            <div className="ui-panel-soft p-3">
-              <div className="ui-caption">Resultado esperado</div>
-              <div className="mt-1 font-semibold">
-                {newQty != null ? `${newQty} ${selectedProduct?.unit ?? ""}` : "Sin definir"}
-              </div>
-            </div>
-            <div className="ui-panel-soft p-3">
-              <div className="ui-caption">Motivo</div>
-              <div className="mt-1 font-semibold">{reason.trim() || "Sin definir"}</div>
-            </div>
-          </div>
-
           {!canSubmit ? (
             <div className="ui-alert ui-alert--warn">
-              Completa producto, cantidad distinta de 0 y motivo para registrar el ajuste.
+              Completa producto, cantidad distinta de 0 y motivo.
             </div>
           ) : null}
-
-          <div className="ui-panel-soft space-y-2 p-4 text-sm text-[var(--ui-muted)]">
-            <p>1) Usa ajuste positivo solo si realmente estas incorporando stock no registrado.</p>
-            <p>2) Usa ajuste negativo para merma, dano, perdida o correccion de conteo.</p>
-            <p>3) Si agregas costo en ajuste positivo, puede impactar costo promedio.</p>
-          </div>
         </section>
 
-        <section className="ui-panel space-y-4">
-          <div>
-            <div className="ui-h3">Confirmacion final</div>
-            <p className="mt-1 ui-caption">
-              Este es el ultimo control antes de registrar el movimiento manual en inventario.
-            </p>
+        <div className="ui-mobile-sticky-footer ui-fade-up ui-delay-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ui-border)] bg-white/92 px-4 py-3 backdrop-blur">
+          <div className="text-sm text-[var(--ui-muted)]">
+            {selectedProduct?.name ?? "Sin producto"}
+            {newQty != null ? ` · ${newQty} ${selectedProduct?.unit ?? ""}` : ""}
           </div>
-
-          <label className="flex items-start gap-2 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-3">
-            <input
-              type="checkbox"
-              checked={confirmed}
-              onChange={(event) => setConfirmed(event.target.checked)}
-            />
-            <span className="ui-caption">
-              Confirmo que revise producto, diferencia, motivo y resultado esperado antes de registrar el ajuste.
-            </span>
-          </label>
-        </section>
-
-        <div className="ui-mobile-sticky-footer flex flex-wrap items-center justify-end gap-2">
           <Link href={`/inventory/adjust?site_id=${encodeURIComponent(siteId)}`} className="ui-btn ui-btn--ghost">
             Limpiar
           </Link>
@@ -333,7 +245,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
           </Link>
           <button
             type="submit"
-            disabled={!canSubmit || !confirmed}
+            disabled={!canSubmit}
             className="ui-btn ui-btn--brand disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? "Guardando..." : "Registrar ajuste"}
