@@ -478,8 +478,17 @@ async function updateProduct(formData: FormData) {
       redirectWithError("La categoria seleccionada no existe.");
     }
     const category = categoryRow as CategoryRow;
+    if (category.is_active === false) {
+      redirectWithError("La categoria seleccionada esta inactiva.");
+    }
     if (!categorySupportsKind(category, categoryKind)) {
       redirectWithError("La categoria no aplica al tipo de item seleccionado.");
+    }
+    if (
+      categoryKind === "venta" &&
+      (normalizeCategoryDomain(category.domain) || String(category.site_id ?? "").trim())
+    ) {
+      redirectWithError("En v1 los productos de venta solo pueden usar categorias maestras globales.");
     }
     if (categoryKind !== "venta" && normalizeCategoryDomain(category.domain)) {
       redirectWithError("Las categorías con dominio solo se permiten para productos de venta.");
@@ -1064,15 +1073,19 @@ export default async function ProductCatalogDetailPage({
       ""
   ).trim();
   const defaultCategoryScope = categorySiteId ? "site" : "all";
-  const categoryScope = normalizeCategoryScope(sp.category_scope ?? defaultCategoryScope);
-  const categoryDomain = shouldShowCategoryDomain(categoryKind)
+  const requestedCategoryScope = normalizeCategoryScope(sp.category_scope ?? defaultCategoryScope);
+  const requestedCategoryDomain = shouldShowCategoryDomain(categoryKind)
     ? normalizeCategoryDomain(sp.category_domain)
     : "";
+  const isSaleCategoryKind = categoryKind === "venta";
+  const categoryScope = isSaleCategoryKind ? "global" : requestedCategoryScope;
+  const effectiveCategorySiteId = isSaleCategoryKind ? "" : categorySiteId;
+  const categoryDomain = isSaleCategoryKind ? "" : requestedCategoryDomain;
   const categoryRows = filterCategoryRows(allCategoryRows, {
     kind: categoryKind,
     domain: categoryDomain,
     scope: categoryScope,
-    siteId: categorySiteId,
+    siteId: effectiveCategorySiteId,
   });
   const categoryDomainOptions = getCategoryDomainOptions(
     getCategoryDomainCodes(allCategoryRows, categoryKind)
@@ -1213,15 +1226,17 @@ export default async function ProductCatalogDetailPage({
 
       {canEdit ? (
         <>
-        <CatalogCategoryContextForm
-          hiddenFields={from ? [{ name: "from", value: from }] : []}
-          categoryScope={categoryScope}
-          categorySiteId={categorySiteId}
-          categoryDomain={categoryDomain}
-          showDomain={shouldShowCategoryDomain(categoryKind)}
-          categoryDomainOptions={categoryDomainOptions}
-          sites={sitesList.map((site) => ({ id: site.id, name: site.name }))}
-        />
+        {isSaleCategoryKind ? null : (
+          <CatalogCategoryContextForm
+            hiddenFields={from ? [{ name: "from", value: from }] : []}
+            categoryScope={categoryScope}
+            categorySiteId={effectiveCategorySiteId}
+            categoryDomain={categoryDomain}
+            showDomain={shouldShowCategoryDomain(categoryKind)}
+            categoryDomainOptions={categoryDomainOptions}
+            sites={sitesList.map((site) => ({ id: site.id, name: site.name }))}
+          />
+        )}
 
         <form action={updateProduct} className="space-y-8">
           <input type="hidden" name="product_id" value={productRow.id} />

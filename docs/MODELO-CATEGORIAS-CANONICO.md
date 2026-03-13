@@ -248,6 +248,7 @@ La ficha debe separarse en pestañas o bloques distintos:
 - tratar esa categoría como operativa/canónica;
 - evitar seguir creando árboles comerciales dentro de la misma lógica;
 - no expandir más `domain` y `site_id` como solución principal.
+- para `venta`, crear un árbol maestro global y mover categorías heredadas de menú a ese árbol, como quedó aterrizado en `docs/MIGRACION-CATEGORIAS-VENTA-V1.md`.
 
 ### `v2`
 

@@ -332,10 +332,25 @@ async function createProduct(formData: FormData) {
       );
     }
     const category = categoryRow as CategoryRow;
+    if (category.is_active === false) {
+      redirect(
+        `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
+          encodeURIComponent("La categoria seleccionada esta inactiva.")
+      );
+    }
     if (!categorySupportsKind(category, categoryKind)) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
           encodeURIComponent("La categoria no aplica al tipo de item seleccionado.")
+      );
+    }
+    if (
+      categoryKind === "venta" &&
+      (normalizeCategoryDomain(category.domain) || String(category.site_id ?? "").trim())
+    ) {
+      redirect(
+        `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
+          encodeURIComponent("En v1 los productos de venta solo pueden usar categorias maestras globales.")
       );
     }
     if (categoryKind !== "venta" && normalizeCategoryDomain(category.domain)) {
@@ -861,17 +876,21 @@ export default async function NewProductPage({
       ""
   ).trim();
   const defaultCategoryScope = categorySiteId ? "site" : "all";
-  const categoryScope = normalizeCategoryScope(sp.category_scope ?? defaultCategoryScope);
-  const categoryDomain = shouldShowCategoryDomain(categoryKind)
+  const requestedCategoryScope = normalizeCategoryScope(sp.category_scope ?? defaultCategoryScope);
+  const requestedCategoryDomain = shouldShowCategoryDomain(categoryKind)
     ? normalizeCategoryDomain(sp.category_domain)
     : "";
+  const isSaleCategoryKind = categoryKind === "venta";
+  const categoryScope = isSaleCategoryKind ? "global" : requestedCategoryScope;
+  const effectiveCategorySiteId = isSaleCategoryKind ? "" : categorySiteId;
+  const categoryDomain = isSaleCategoryKind ? "" : requestedCategoryDomain;
 
   const allCategoryRows = await loadCategoryRows(supabase);
   const categoryRows = filterCategoryRows(allCategoryRows, {
     kind: categoryKind,
     domain: categoryDomain,
     scope: categoryScope,
-    siteId: categorySiteId,
+    siteId: effectiveCategorySiteId,
   });
   const categoryDomainOptions = getCategoryDomainOptions(
     getCategoryDomainCodes(allCategoryRows, categoryKind)
@@ -987,11 +1006,11 @@ export default async function NewProductPage({
         <CatalogHintPanel title="Modo rapido v1">
           Usa este modo para cargar maestros criticos de v1. Si necesitas proveedores detallados, fotos, recetas o configuracion avanzada, cambia al formulario completo.
         </CatalogHintPanel>
-      ) : (
+      ) : isSaleCategoryKind ? null : (
         <CatalogCategoryContextForm
           hiddenFields={[{ name: "type", value: typeKey }]}
           categoryScope={categoryScope}
-          categorySiteId={categorySiteId}
+          categorySiteId={effectiveCategorySiteId}
           categoryDomain={categoryDomain}
           showDomain={shouldShowCategoryDomain(categoryKind)}
           categoryDomainOptions={categoryDomainOptions}

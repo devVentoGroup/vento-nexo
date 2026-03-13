@@ -16,6 +16,7 @@ type Option = {
   name: string | null;
   unit: string | null;
   stock_unit_code?: string | null;
+  category_id?: string | null;
 };
 
 type AreaOption = {
@@ -36,6 +37,7 @@ export type RemissionDraftRow = Row;
 
 type Props = {
   products: Option[];
+  categoryNameById?: Record<string, string>;
   areaOptions: AreaOption[];
   defaultUomProfiles?: ProductUomProfile[];
   onRowsChange?: (rows: RemissionDraftRow[]) => void;
@@ -51,6 +53,7 @@ type Props = {
 
 export function RemissionsItems({
   products,
+  categoryNameById = {},
   areaOptions,
   defaultUomProfiles = [],
   onRowsChange,
@@ -116,7 +119,10 @@ export function RemissionsItems({
     label: `${item.name ?? item.id}${
       item.stock_unit_code ? ` (${item.stock_unit_code})` : item.unit ? ` (${item.unit})` : ""
     }`,
-    searchText: `${item.name ?? ""} ${item.unit ?? ""} ${item.stock_unit_code ?? ""}`,
+    searchText: `${item.name ?? ""} ${item.unit ?? ""} ${item.stock_unit_code ?? ""} ${
+      categoryNameById[String(item.category_id ?? "").trim()] ?? ""
+    }`,
+    groupLabel: categoryNameById[String(item.category_id ?? "").trim()] ?? "Sin categoria",
   }));
 
   return (

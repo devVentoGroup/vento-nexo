@@ -65,6 +65,7 @@ type ProductRow = {
   name: string | null;
   unit: string | null;
   stock_unit_code: string | null;
+  category_id?: string | null;
 };
 
 type ProductSiteRow = {
@@ -662,7 +663,7 @@ export default async function RemissionsPage({
   if (hasAudienceProducts) {
     const productsQuery = await supabase
       .from("product_inventory_profiles")
-      .select("product_id, products(id,name,unit,stock_unit_code)")
+      .select("product_id, products(id,name,unit,stock_unit_code,category_id)")
       .eq("track_inventory", true)
       .in("inventory_kind", ["ingredient", "finished", "resale", "packaging"])
       .in("product_id", productSiteIds)
@@ -676,7 +677,7 @@ export default async function RemissionsPage({
     if (productRows.length === 0) {
       const { data: fallbackProducts } = await supabase
         .from("products")
-        .select("id,name,unit,stock_unit_code")
+        .select("id,name,unit,stock_unit_code,category_id")
         .eq("is_active", true)
         .in("id", productSiteIds)
         .order("name", { ascending: true })
@@ -685,6 +686,21 @@ export default async function RemissionsPage({
     }
   }
   const productIds = productRows.map((row) => row.id);
+  const categoryIds = Array.from(
+    new Set(productRows.map((row) => String(row.category_id ?? "").trim()).filter(Boolean))
+  );
+  const { data: categoryData } = categoryIds.length
+    ? await supabase
+        .from("product_categories")
+        .select("id,name,parent_id")
+        .in("id", categoryIds)
+    : { data: [] as Array<{ id: string; name: string | null; parent_id: string | null }> };
+  const categoryNameById = new Map(
+    ((categoryData ?? []) as Array<{ id: string; name: string | null }>).map((row) => [
+      row.id,
+      String(row.name ?? "").trim() || "Sin categoria",
+    ])
+  );
   const { data: uomProfilesData } = productIds.length
     ? await supabase
         .from("product_uom_profiles")
@@ -909,6 +925,7 @@ export default async function RemissionsPage({
               }))}
               defaultFromSiteId={selectedFromSiteId}
               products={productRows}
+              categoryNameById={Object.fromEntries(categoryNameById)}
               defaultUomProfiles={defaultUomProfiles}
               areaOptions={areaOptions}
               originStockRows={originStockRows}

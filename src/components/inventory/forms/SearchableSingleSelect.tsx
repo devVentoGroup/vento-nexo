@@ -6,6 +6,7 @@ type SelectOption = {
   value: string;
   label: string;
   searchText?: string;
+  groupLabel?: string;
 };
 
 type SearchableSingleSelectProps = {
@@ -107,6 +108,20 @@ export function SearchableSingleSelect({
       return haystack.includes(normalizedQuery);
     });
   }, [normalizedQuery, options]);
+  const groupedOptions = useMemo(() => {
+    const groups: Array<{ label: string; options: SelectOption[] }> = [];
+    const groupMap = new Map<string, SelectOption[]>();
+    for (const option of filteredOptions) {
+      const label = String(option.groupLabel ?? "").trim() || "Sin categoria";
+      const current = groupMap.get(label) ?? [];
+      current.push(option);
+      groupMap.set(label, current);
+      if (current.length === 1) {
+        groups.push({ label, options: current });
+      }
+    }
+    return groups;
+  }, [filteredOptions]);
 
   const selectedOption = options.find((option) => option.value === value) ?? null;
   const selectedLabel = selectedOption?.label ?? placeholder;
@@ -173,21 +188,28 @@ export function SearchableSingleSelect({
               {placeholder}
             </button>
 
-            {filteredOptions.length ? (
-              filteredOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={`block w-full border-b border-[var(--ui-border)] px-3 py-2 text-left text-sm last:border-b-0 hover:bg-[var(--ui-surface)] ${
-                    option.value === value ? "bg-[var(--ui-surface)] font-semibold" : ""
-                  }`}
-                  onClick={() => {
-                    onValueChange(option.value);
-                    setIsOpen(false);
-                  }}
-                >
-                  {option.label}
-                </button>
+            {groupedOptions.length ? (
+              groupedOptions.map((group) => (
+                <div key={group.label} className="border-b border-[var(--ui-border)] last:border-b-0">
+                  <div className="bg-[var(--ui-bg-soft)] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
+                    {group.label}
+                  </div>
+                  {group.options.map((option) => (
+                    <button
+                      key={option.value}
+                      type="button"
+                      className={`block w-full border-t border-[var(--ui-border)] px-3 py-2 text-left text-sm hover:bg-[var(--ui-surface)] ${
+                        option.value === value ? "bg-[var(--ui-surface)] font-semibold" : ""
+                      }`}
+                      onClick={() => {
+                        onValueChange(option.value);
+                        setIsOpen(false);
+                      }}
+                    >
+                      {option.label}
+                    </button>
+                  ))}
+                </div>
               ))
             ) : (
               <div className="px-3 py-2 text-sm text-[var(--ui-muted)]">{emptyMessage}</div>
@@ -229,21 +251,28 @@ export function SearchableSingleSelect({
               >
                 {placeholder}
               </button>
-              {filteredOptions.length ? (
-                filteredOptions.map((option) => (
-                  <button
-                    key={option.value}
-                    type="button"
-                    className={`block w-full border-b border-[var(--ui-border)] px-3 py-3 text-left text-sm last:border-b-0 ${
-                      option.value === value ? "bg-[var(--ui-surface)] font-semibold" : ""
-                    }`}
-                    onClick={() => {
-                      onValueChange(option.value);
-                      setIsOpen(false);
-                    }}
-                  >
-                    {option.label}
-                  </button>
+              {groupedOptions.length ? (
+                groupedOptions.map((group) => (
+                  <div key={group.label} className="border-b border-[var(--ui-border)] last:border-b-0">
+                    <div className="sticky top-0 bg-[var(--ui-bg-soft)] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
+                      {group.label}
+                    </div>
+                    {group.options.map((option) => (
+                      <button
+                        key={option.value}
+                        type="button"
+                        className={`block w-full border-t border-[var(--ui-border)] px-3 py-3 text-left text-sm ${
+                          option.value === value ? "bg-[var(--ui-surface)] font-semibold" : ""
+                        }`}
+                        onClick={() => {
+                          onValueChange(option.value);
+                          setIsOpen(false);
+                        }}
+                      >
+                        {option.label}
+                      </button>
+                    ))}
+                  </div>
                 ))
               ) : (
                 <div className="px-3 py-3 text-sm text-[var(--ui-muted)]">{emptyMessage}</div>

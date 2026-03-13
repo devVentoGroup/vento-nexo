@@ -20,6 +20,7 @@ type ProductOption = {
   name: string | null;
   unit: string | null;
   stock_unit_code?: string | null;
+  category_id?: string | null;
 };
 
 type AreaOption = {
@@ -41,6 +42,7 @@ type Props = {
   fromSiteOptions: SiteOption[];
   defaultFromSiteId: string;
   products: ProductOption[];
+  categoryNameById?: Record<string, string>;
   defaultUomProfiles?: ProductUomProfile[];
   areaOptions: AreaOption[];
   originStockRows?: OriginStockReference[];
@@ -53,6 +55,7 @@ export function RemissionsCreateForm({
   fromSiteOptions,
   defaultFromSiteId,
   products,
+  categoryNameById = {},
   defaultUomProfiles = [],
   areaOptions,
   originStockRows = [],
@@ -260,6 +263,7 @@ export function RemissionsCreateForm({
 
         <RemissionsItems
           products={products}
+          categoryNameById={categoryNameById}
           areaOptions={areaOptions}
           defaultUomProfiles={defaultUomProfiles}
           onRowsChange={setDraftRows}

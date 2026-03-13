@@ -300,6 +300,7 @@ export function getCategoryDomainCodes(
 
   const values = new Set<string>();
   for (const row of rows) {
+    if (row.is_active === false) continue;
     if (!categorySupportsKind(row, kind)) continue;
     const normalized = normalizeCategoryDomain(row.domain);
     if (normalized) values.add(normalized);

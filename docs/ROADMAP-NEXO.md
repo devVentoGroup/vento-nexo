@@ -96,6 +96,7 @@ NEXO queda congelado en una **v1 operativa** para inventario base y remisiones.
   - `Catalogo` ya entro en la misma linea visual: listado, alta y ficha maestra con heroes, metricas y secciones mas vivas. Se mantiene el norte de producto maestro y categoria operativa, pero ahora con una presencia visual mas consistente con el resto del sistema.
   - `Home` ya quedo mas alineado con el resto del sistema: hero principal, tarjetas de accion con mas presencia y bloques de cockpit mejor integrados visualmente. La entrada ya se siente mas cerca de un solo flujo operativo que de una portada aparte.
   - Refinamiento transversal movil/tablet aplicado en `globals.css`: footers sticky mas usables, botones y campos mas tactiles, heroes/cards mas compactos y tablas con mejor comportamiento horizontal. La meta es que operacion en celular o tablet requiera menos precision, menos scroll confuso y menos busqueda de acciones.
+  - `Remisiones` ya empezo a usar categoria operativa dentro del selector de productos: el buscador ahora agrupa por categoria del catalogo maestro en vez de listar todo plano. Esto mantiene rapidez de busqueda pero ya acerca la experiencia a pedir por familias operativas, no por una lista larga sin estructura.
   - El mismo criterio ya se aplicó al resto de formularios operativos principales (`entradas`, `traslados`, `ajustes`, `LOCs`, `conteo inicial`, `produccion manual`) y a remisiones hub/detalle: fuera `StepHelp`, fuera paneles de “revision” y “confirmacion” inflados, fuera copy de “paso 1/2/3” en botones. El flujo ahora depende mas de estructura clara y alertas reales que de instrucciones largas en pantalla.
 - `Entradas` ya salio del esquema wizard.
   - `entries-form.tsx` ahora opera como formulario unico con contexto, items, revision y confirmacion en una sola vista.
@@ -147,6 +148,24 @@ NEXO queda congelado en una **v1 operativa** para inventario base y remisiones.
 
 ### Siguiente corte recomendado
 - Ya no toca abrir otro frente de producto para v1 salvo que la corrida operativa encuentre un hueco real.
+- Ya quedó aterrizada la migración de categorías maestras de `venta`:
+  - árbol nuevo global `Venta` con hijas maestras operativas;
+  - mapeo heredado `menu -> maestro` documentado en `docs/MIGRACION-CATEGORIAS-VENTA-V1.md`;
+  - migración SQL creada en `vento-shell` para crear categorías y mover productos `venta` existentes sin borrar categorías heredadas.
+  - ya hubo una segunda pasada para cubrir heredados activos no incluidos en el primer mapeo (`Bebidas Listas (RTD)`, `HORNEADOS`, `VITRINA`).
+  - corrida auditada despues de aplicar ambas migraciones:
+    - `Panaderia y bolleria`: 14
+    - `Bebidas frias`: 13
+    - `Cocteles y alcohol`: 2
+    - `Otros de venta`: 0
+  - tercera pasada aplicada para corregir falsos positivos de alcohol por substring; despues de eso solo quedaron cervezas reales en `Cocteles y alcohol`.
+  - categorias heredadas de `venta` ya quedaron desactivadas en v1 para que formularios y filtros no las sigan ofreciendo; se conservan solo como material de migracion a comerciales en v2.
+  - auditado despues de la quinta migracion de limpieza dura:
+    - solo quedan activas `15` categorias canonicas de `venta` en total (`Venta` + `14` hijas maestras `venta-*`);
+    - las heredadas quedan inactivas y marcadas como `LEGACY COMERCIAL v1`.
+  - endurecimiento UI/server aplicado en catalogo `new` y `edit` para `venta`:
+    - la seleccion ya fuerza arbol global (sin `scope/domain` transicional en la vista);
+    - backend ya rechaza categorias inactivas y categorias `venta` con `site_id` o `domain`.
 - Siguiente foco concreto: ejecutar la corrida `Centro + Saudo` con los 3 casos de `docs/SIMULACION-REMISIONES.md` y decidir con eso si `v1` queda cerrable.
 - Backlog UX create/edit:
   - remisiones ya quedo dentro del patron simple + completo; los siguientes refinamientos UX deben concentrarse otra vez en preparacion y recepcion, no en agregar mas peso al create.
