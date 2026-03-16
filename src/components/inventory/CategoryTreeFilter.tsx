@@ -14,6 +14,7 @@ type CategoryOption = {
   routeLabel: string;
   siteLabel: string;
   levelLabel: "RAIZ" | "PADRE" | "HOJA";
+  guidanceLabel: string;
   searchLabel: string;
   selectable: boolean;
   sortKey: string;
@@ -40,7 +41,96 @@ type CategoryTreeFilterProps = {
 };
 
 function toSearchLabel(value: string): string {
-  return value.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  return value
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function getCategoryGuidanceLabel(
+  shortLabel: string,
+  routeLabel: string,
+  levelLabel: "RAIZ" | "PADRE" | "HOJA",
+): string {
+  const short = toSearchLabel(shortLabel);
+  const route = toSearchLabel(routeLabel);
+
+  if (levelLabel === "RAIZ") {
+    return "Raíz organizacional del árbol. No asignes productos aquí.";
+  }
+
+  if (levelLabel === "PADRE") {
+    if (route.includes("preparaciones / semi-elaborados")) {
+      return "Agrupa subcategorías operativas. Elige una categoría hija.";
+    }
+    return "Categoría contenedora. Elige una subcategoría.";
+  }
+
+  if (short.includes("masas y bases saladas")) {
+    return "Panes, masas y bases saladas. Ej: english muffin, bun, focaccia, masa de pizza.";
+  }
+
+  if (short.includes("mise en place de proteina")) {
+    return "Proteínas listas para cocción o armado. Ej: pollo porcionado, tocineta lista, carne marinada.";
+  }
+
+  if (short.includes("mise en place vegetal")) {
+    return "Vegetales prealistados para producción. Ej: cebolla brunoise, mix salteado, tomate porcionado.";
+  }
+
+  if (short.includes("salsas listas para servicio")) {
+    return "Salsas terminadas para usar o regenerar. Ej: salsa de la casa, BBQ, mayo saborizada.";
+  }
+
+  if (short.includes("salsas madre y bases saladas")) {
+    return "Bases para derivar otras salsas. Ej: bechamel, base de tomate, veloute.";
+  }
+
+  if (short.includes("guarniciones listas")) {
+    return "Acompañamientos listos o casi listos. Ej: papas listas, arroz base, vegetales asados.";
+  }
+
+  if (short.includes("batidos, tempuras y rebozados")) {
+    return "Preparaciones para freír o empanizar. Ej: tempura, mezcla para apanado, batido salado.";
+  }
+
+  if (short.includes("siropes, concentrados y mixes de barra")) {
+    return "Bases para bebidas. Ej: syrup vainilla, concentrado chai, mix limón.";
+  }
+
+  if (short.includes("cultivos y masas madre")) {
+    return "Fermentos activos. Ej: masa madre, starter, cultivo base.";
+  }
+
+  if (short.includes("preparaciones para regenerar")) {
+    return "Componentes o platos casi terminados. Ej: lasaña armada, sous-vide, producto al vacío.";
+  }
+
+  if (short.includes("rellenos y farsas saladas")) {
+    return "Rellenos listos para armado. Ej: relleno de empanada, farce, mezcla cárnica.";
+  }
+
+  if (short.includes("cremas y rellenos dulces")) {
+    return "Bases dulces de pastelería. Ej: crema pastelera, ganache, chantilly.";
+  }
+
+  if (short.includes("salsas dulces y coulis")) {
+    return "Salsas para postres. Ej: coulis frutos rojos, caramelo, salsa de chocolate.";
+  }
+
+  if (short.includes("toppings, crumbles y decoraciones")) {
+    return "Terminaciones de postres o bebidas. Ej: crumble, crocante, topping dulce.";
+  }
+
+  if (short.includes("otros (preparaciones)")) {
+    return "Solo úsala si ninguna otra categoría aplica claramente.";
+  }
+
+  if (route.includes("venta")) {
+    return "Producto final del menú que el cliente compra directamente.";
+  }
+
+  return "Selecciona la categoría más específica posible.";
 }
 
 export function CategoryTreeFilter({
@@ -89,12 +179,12 @@ export function CategoryTreeFilter({
 
   const siteNameMap = useMemo(
     () => new Map(Object.entries(siteNamesById ?? {})),
-    [siteNamesById]
+    [siteNamesById],
   );
 
   const categoryMap = useMemo(
     () => new Map(categories.map((row) => [row.id, row])),
-    [categories]
+    [categories],
   );
 
   const options = useMemo(() => {
@@ -107,7 +197,11 @@ export function CategoryTreeFilter({
     const rows: CategoryOption[] = categories.map((row) => {
       const path = getCategoryPath(row.id, categoryMap);
       const depth = Math.max(0, path.split("/").length - 1);
-      const pathWithArrows = path.split("/").map((part) => part.trim()).filter(Boolean).join(" > ");
+      const pathWithArrows = path
+        .split("/")
+        .map((part) => part.trim())
+        .filter(Boolean)
+        .join(" > ");
       const meta = showMeta
         ? buildCategoryMetaLabel(row, siteNameMap, {
             domainLabelMode: metaDomainLabelMode,
@@ -119,7 +213,9 @@ export function CategoryTreeFilter({
       const isRoot = !String(row.parent_id ?? "").trim();
       // leaf_only: Raíz y padres no seleccionables; solo hojas (o padre sin hojas) son seleccionables.
       const selectable = selectionMode === "leaf_only" ? !hasChildren : true;
-      const siteLabel = row.site_id ? siteNameMap.get(row.site_id) ?? row.site_id : "Global";
+      const siteLabel = row.site_id
+        ? (siteNameMap.get(row.site_id) ?? row.site_id)
+        : "Global";
       const routeBase = `${siteLabel} · ${pathWithArrows}`;
       const routeLabel = meta ? `${routeBase} · ${meta}` : routeBase;
       const levelLabel: "RAIZ" | "PADRE" | "HOJA" = isRoot
@@ -127,13 +223,22 @@ export function CategoryTreeFilter({
         : hasChildren
           ? "PADRE"
           : "HOJA";
+      const guidanceLabel = getCategoryGuidanceLabel(
+        shortName,
+        routeLabel,
+        levelLabel,
+      );
+
       return {
         id: row.id,
         shortLabel: shortName,
         routeLabel,
         siteLabel,
         levelLabel,
-        searchLabel: toSearchLabel(`${shortName} ${pathWithArrows} ${siteLabel} ${meta}`),
+        guidanceLabel,
+        searchLabel: toSearchLabel(
+          `${shortName} ${pathWithArrows} ${siteLabel} ${meta} ${guidanceLabel}`,
+        ),
         selectable,
         sortKey: toSearchLabel(`${siteLabel} ${pathWithArrows}`),
         depth,
@@ -155,12 +260,14 @@ export function CategoryTreeFilter({
 
   const filtered = useMemo(() => {
     if (!normalizedQuery) return options;
-    return options.filter((option) => option.searchLabel.includes(normalizedQuery));
+    return options.filter((option) =>
+      option.searchLabel.includes(normalizedQuery),
+    );
   }, [normalizedQuery, options]);
 
   const selectedOption = useMemo(
     () => options.find((option) => option.id === value) ?? null,
-    [options, value]
+    [options, value],
   );
 
   useEffect(() => {
@@ -171,15 +278,23 @@ export function CategoryTreeFilter({
     }
   }, [options, value]);
 
-  const selectedInFiltered = Boolean(filtered.find((option) => option.id === value));
+  const selectedInFiltered = Boolean(
+    filtered.find((option) => option.id === value),
+  );
   const visibleOptions =
-    selectedOption && !selectedInFiltered ? [selectedOption, ...filtered] : filtered;
+    selectedOption && !selectedInFiltered
+      ? [selectedOption, ...filtered]
+      : filtered;
 
   const selectedLabel = selectedOption
     ? `${selectedOption.shortLabel} · ${selectedOption.siteLabel}`
     : emptyOptionLabel;
   const maxListHeightClass =
-    maxVisibleOptions <= 6 ? "max-h-48" : maxVisibleOptions <= 10 ? "max-h-64" : "max-h-80";
+    maxVisibleOptions <= 6
+      ? "max-h-48"
+      : maxVisibleOptions <= 10
+        ? "max-h-64"
+        : "max-h-80";
 
   return (
     <div
@@ -221,7 +336,9 @@ export function CategoryTreeFilter({
             className="ui-input"
           />
 
-          <div className={`overflow-auto rounded-lg border border-[var(--ui-border)] ${maxListHeightClass}`}>
+          <div
+            className={`overflow-auto rounded-lg border border-[var(--ui-border)] ${maxListHeightClass}`}
+          >
             <button
               type="button"
               onClick={() => {
@@ -247,19 +364,39 @@ export function CategoryTreeFilter({
                     setIsOpen(false);
                   }}
                   className={`flex w-full items-center justify-between border-b border-[var(--ui-border)] px-3 py-2 text-left text-sm last:border-b-0 ${
-                    value === option.id ? "bg-[var(--ui-surface)] font-semibold" : ""
+                    value === option.id
+                      ? "bg-[var(--ui-surface)] font-semibold"
+                      : ""
                   } ${
                     option.selectable
                       ? "hover:bg-[var(--ui-surface)]"
                       : "cursor-not-allowed bg-zinc-50 text-[var(--ui-text)] font-semibold"
                   }`}
                 >
-                  <span className="min-w-0" style={{ paddingLeft: `${option.depth * 12}px` }}>
-                    <span className={`block truncate ${option.selectable ? "" : "tracking-[0.01em]"}`}>
-                      {option.shortLabel}
+                  <span
+                    className="min-w-0"
+                    style={{ paddingLeft: `${option.depth * 12}px` }}
+                  >
+                    <span
+                      className={`block truncate ${
+                        option.levelLabel === "RAIZ"
+                          ? "font-bold uppercase tracking-[0.03em]"
+                          : option.levelLabel === "PADRE"
+                            ? "font-bold"
+                            : option.selectable
+                              ? ""
+                              : "tracking-[0.01em]"
+                      }`}
+                    >
+                      {option.levelLabel === "RAIZ"
+                        ? option.shortLabel.toUpperCase()
+                        : option.shortLabel}
                     </span>
                     <span className="mt-0.5 block truncate text-[11px] font-normal text-[var(--ui-muted)]">
                       {option.routeLabel}
+                    </span>
+                    <span className="mt-0.5 block text-[11px] leading-4 text-[var(--ui-muted)]">
+                      {option.guidanceLabel}
                     </span>
                   </span>
                   <span className="ml-3 shrink-0">
@@ -291,7 +428,9 @@ export function CategoryTreeFilter({
         </div>
       ) : null}
 
-      <span className="ui-caption">{visibleOptions.length} categoria(s) visibles</span>
+      <span className="ui-caption">
+        {visibleOptions.length} categoria(s) visibles
+      </span>
     </div>
   );
 }
