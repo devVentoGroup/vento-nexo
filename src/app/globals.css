@@ -177,17 +177,23 @@ body {
 
 .ui-remission-kpi-value {
   margin-top: 8px;
-  font-size: 1.9rem;
-  line-height: 1;
+  font-size: clamp(1.4rem, 2.4vw, 1.9rem);
+  line-height: 1.05;
   font-weight: 700;
   letter-spacing: -0.03em;
   color: var(--ui-text);
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .ui-remission-kpi-note {
   margin-top: 6px;
   font-size: 0.84rem;
   color: var(--ui-muted);
+}
+
+.ui-remission-kpis--stack {
+  grid-template-columns: 1fr;
 }
 
 .ui-remission-section {
@@ -660,6 +666,10 @@ body {
   .ui-remission-kpis {
     grid-template-columns: repeat(3, minmax(0, 1fr));
   }
+
+  .ui-remission-kpis--stack {
+    grid-template-columns: 1fr;
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -891,6 +901,10 @@ body {
 
   .ui-remission-kpis {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .ui-remission-kpis--stack {
+    grid-template-columns: 1fr;
   }
 
   .ui-card {

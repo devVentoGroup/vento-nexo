@@ -1180,7 +1180,7 @@ export default async function ProductCatalogDetailPage({
               </Link>
             </div>
           </div>
-          <div className="ui-remission-kpis sm:grid-cols-3 lg:grid-cols-1">
+          <div className="ui-remission-kpis ui-remission-kpis--stack sm:grid-cols-3 lg:grid-cols-1">
             <article className="ui-remission-kpi" data-tone="warm">
               <div className="ui-remission-kpi-label">Estado</div>
               <div className="ui-remission-kpi-value">{productRow.is_active === false ? "Off" : "On"}</div>

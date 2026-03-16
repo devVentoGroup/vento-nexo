@@ -117,6 +117,7 @@ export function CategoryTreeFilter({
       const shortName = String(row.name ?? "").trim() || path;
       const hasChildren = parentIds.has(row.id);
       const isRoot = !String(row.parent_id ?? "").trim();
+      // leaf_only: Raíz y padres no seleccionables; solo hojas (o padre sin hojas) son seleccionables.
       const selectable = selectionMode === "leaf_only" ? !hasChildren : true;
       const siteLabel = row.site_id ? siteNameMap.get(row.site_id) ?? row.site_id : "Global";
       const routeBase = `${siteLabel} · ${pathWithArrows}`;

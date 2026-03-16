@@ -969,7 +969,7 @@ export default async function NewProductPage({
               </Link>
             </div>
           </div>
-          <div className="ui-remission-kpis sm:grid-cols-3 lg:grid-cols-1">
+          <div className="ui-remission-kpis ui-remission-kpis--stack sm:grid-cols-3 lg:grid-cols-1">
             <article className="ui-remission-kpi" data-tone="warm">
               <div className="ui-remission-kpi-label">Tipo</div>
               <div className="ui-remission-kpi-value">{typeKey}</div>

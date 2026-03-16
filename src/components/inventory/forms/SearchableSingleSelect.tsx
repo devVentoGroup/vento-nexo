@@ -14,6 +14,7 @@ type SearchableSingleSelectProps = {
   value: string;
   onValueChange: (nextValue: string) => void;
   options: SelectOption[];
+  allowEmptySelection?: boolean;
   placeholder?: string;
   searchPlaceholder?: string;
   emptyMessage?: string;
@@ -33,6 +34,7 @@ export function SearchableSingleSelect({
   value,
   onValueChange,
   options,
+  allowEmptySelection = true,
   placeholder = "Selecciona",
   searchPlaceholder = "Buscar...",
   emptyMessage = "Sin resultados",
@@ -141,7 +143,9 @@ export function SearchableSingleSelect({
           value={value}
           onChange={(event) => onValueChange(event.target.value)}
         >
-          <option value="">{placeholder}</option>
+          <option value="" disabled={!allowEmptySelection}>
+            {placeholder}
+          </option>
           {options.map((option) => (
             <option key={option.value} value={option.value}>
               {option.label}
@@ -175,24 +179,33 @@ export function SearchableSingleSelect({
             className="ui-input mb-2 h-10 w-full"
           />
           <div className="max-h-64 overflow-auto rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)]">
-            <button
-              type="button"
-              className={`block w-full border-b border-[var(--ui-border)] px-3 py-2 text-left text-sm hover:bg-[var(--ui-surface)] ${
-                value === "" ? "bg-[var(--ui-surface)] font-semibold" : ""
-              }`}
-              onClick={() => {
-                onValueChange("");
-                setIsOpen(false);
-              }}
-            >
-              {placeholder}
-            </button>
+            {allowEmptySelection ? (
+              <button
+                type="button"
+                className={`block w-full border-b border-[var(--ui-border)] px-3 py-2 text-left text-sm hover:bg-[var(--ui-surface)] ${
+                  value === "" ? "bg-[var(--ui-surface)] font-semibold" : ""
+                }`}
+                onClick={() => {
+                  onValueChange("");
+                  setIsOpen(false);
+                }}
+              >
+                {placeholder}
+              </button>
+            ) : (
+              <div className="border-b border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
+                {placeholder}
+              </div>
+            )}
 
             {groupedOptions.length ? (
               groupedOptions.map((group) => (
                 <div key={group.label} className="border-b border-[var(--ui-border)] last:border-b-0">
-                  <div className="bg-[var(--ui-bg-soft)] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
-                    {group.label}
+                  <div className="flex items-center justify-between bg-slate-100 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-700">
+                    <span>{group.label}</span>
+                    <span className="rounded-full border border-slate-300 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                      {group.options.length}
+                    </span>
                   </div>
                   {group.options.map((option) => (
                     <button
@@ -239,23 +252,32 @@ export function SearchableSingleSelect({
               />
             </div>
             <div className="ui-mobile-select-sheet__list">
-              <button
-                type="button"
-                className={`block w-full border-b border-[var(--ui-border)] px-3 py-3 text-left text-sm ${
-                  value === "" ? "bg-[var(--ui-surface)] font-semibold" : ""
-                }`}
-                onClick={() => {
-                  onValueChange("");
-                  setIsOpen(false);
-                }}
-              >
-                {placeholder}
-              </button>
+              {allowEmptySelection ? (
+                <button
+                  type="button"
+                  className={`block w-full border-b border-[var(--ui-border)] px-3 py-3 text-left text-sm ${
+                    value === "" ? "bg-[var(--ui-surface)] font-semibold" : ""
+                  }`}
+                  onClick={() => {
+                    onValueChange("");
+                    setIsOpen(false);
+                  }}
+                >
+                  {placeholder}
+                </button>
+              ) : (
+                <div className="border-b border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
+                  {placeholder}
+                </div>
+              )}
               {groupedOptions.length ? (
                 groupedOptions.map((group) => (
                   <div key={group.label} className="border-b border-[var(--ui-border)] last:border-b-0">
-                    <div className="sticky top-0 bg-[var(--ui-bg-soft)] px-3 py-2 text-[11px] font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
-                      {group.label}
+                    <div className="sticky top-0 flex items-center justify-between bg-slate-100 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-700">
+                      <span>{group.label}</span>
+                      <span className="rounded-full border border-slate-300 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                        {group.options.length}
+                      </span>
                     </div>
                     {group.options.map((option) => (
                       <button

@@ -51,6 +51,28 @@ type Props = {
   referenceSiteName?: string;
 };
 
+const SALE_CATEGORY_PRIORITY = [
+  "Panaderia y bolleria",
+  "Tortas y postres",
+  "Helados y frios dulces",
+  "Desayunos y brunch",
+  "Entradas y para compartir",
+  "Ensaladas y bowls",
+  "Sanduches, wraps y tostadas",
+  "Platos fuertes",
+  "Cafe y espresso",
+  "Otras bebidas calientes",
+  "Bebidas frias",
+  "Cocteles y alcohol",
+  "Productos empacados y retail",
+  "Otros de venta",
+  "Sin categoria",
+];
+
+const saleCategoryPriorityMap = new Map(
+  SALE_CATEGORY_PRIORITY.map((label, index) => [label.toLowerCase(), index])
+);
+
 export function RemissionsItems({
   products,
   categoryNameById = {},
@@ -114,16 +136,34 @@ export function RemissionsItems({
     setRows((prev) => (prev.length === 1 ? prev : prev.filter((row) => row.id !== rowId)));
   };
 
-  const productOptions = products.map((item) => ({
-    value: item.id,
-    label: `${item.name ?? item.id}${
-      item.stock_unit_code ? ` (${item.stock_unit_code})` : item.unit ? ` (${item.unit})` : ""
-    }`,
-    searchText: `${item.name ?? ""} ${item.unit ?? ""} ${item.stock_unit_code ?? ""} ${
-      categoryNameById[String(item.category_id ?? "").trim()] ?? ""
-    }`,
-    groupLabel: categoryNameById[String(item.category_id ?? "").trim()] ?? "Sin categoria",
-  }));
+  const productOptions = useMemo(() => {
+    const options = products.map((item) => {
+      const groupLabel = categoryNameById[String(item.category_id ?? "").trim()] ?? "Sin categoria";
+      return {
+        value: item.id,
+        label: `${item.name ?? item.id}${
+          item.stock_unit_code ? ` (${item.stock_unit_code})` : item.unit ? ` (${item.unit})` : ""
+        }`,
+        searchText: `${item.name ?? ""} ${item.unit ?? ""} ${item.stock_unit_code ?? ""} ${groupLabel}`,
+        groupLabel,
+      };
+    });
+
+    options.sort((a, b) => {
+      const groupA = String(a.groupLabel ?? "").trim();
+      const groupB = String(b.groupLabel ?? "").trim();
+      const rankA = saleCategoryPriorityMap.get(groupA.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
+      const rankB = saleCategoryPriorityMap.get(groupB.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
+      if (rankA !== rankB) return rankA - rankB;
+
+      const groupCompare = groupA.localeCompare(groupB, "es", { sensitivity: "base" });
+      if (groupCompare !== 0) return groupCompare;
+
+      return a.label.localeCompare(b.label, "es", { sensitivity: "base" });
+    });
+
+    return options;
+  }, [products, categoryNameById]);
 
   return (
     <div className="space-y-3">
@@ -209,6 +249,7 @@ export function RemissionsItems({
                       );
                     }}
                     options={productOptions}
+                    allowEmptySelection={false}
                     placeholder="Selecciona producto"
                     searchPlaceholder="Buscar producto..."
                     sheetTitle="Productos"
