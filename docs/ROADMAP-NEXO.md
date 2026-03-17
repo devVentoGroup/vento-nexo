@@ -283,3 +283,14 @@ Follow-up:
   - se agregaron sugerencias automaticas de nombre humano a partir de `zona + pasillo + nivel`, sin tocar el codigo tecnico;
   - el listado muestra esa sugerencia cuando un LOC sigue sin `description`;
   - hay accion para aplicar la sugerencia una por una o en lote sobre los LOCs visibles, con la idea de que la operacion deje de depender de leer `LOC-...` para entender desde donde saca o guarda stock.
+- la preparacion en detalle de remisiones se recorto otra vez porque seguia saturada:
+  - ya no aparece `Despachar a destino` mientras sigan lineas sin terminar;
+  - `Cancelar` dejo de competir como CTA primario en escritorio;
+  - se saco la barra explicativa de flujo;
+  - cada linea ahora muestra solo el siguiente paso que toca (`elige LOC` o `prepara` o `envia`), en vez de tres bloques simultaneos;
+  - cuando una linea ya quedo lista, solo se muestra el resumen de exito y una opcion secundaria para cambiarla.
+- se hizo una pasada extra para que la linea se sienta mas como tarea y menos como formulario:
+  - menos chips y menos lenguaje de `paso 1/2/3`;
+  - la cantidad a preparar queda mas protagonista;
+  - la etiqueta principal ahora dice `Ahora: ...` o `Hecha`, para que el operario entienda rapido que sigue;
+  - el LOC elegido ya no compite con todas las opciones a la vez; cuando ya existe, la pantalla lo resume y deja `Cambiar LOC` en segundo plano.

@@ -1618,6 +1618,15 @@ export default async function RemissionDetailPage({
     const bestLocQty = stockByLocCandidates.get(item.product_id)?.[0]?.qty ?? 0;
     return canEditPrepareItems && targetQty > 0 && targetQty <= availableSite && bestLocQty < targetQty;
   }).length;
+  const dispatchReadyLines = itemRows.filter(
+    (item) => roundQuantity(Number(item.shipped_quantity ?? 0)) > 0
+  ).length;
+  const dispatchBlockedLines = itemRows.filter((item) => {
+    const requestedQty = roundQuantity(Number(item.quantity ?? 0));
+    const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
+    return canEditPrepareItems && requestedQty > 0 && shippedQty <= 0;
+  }).length;
+  const canTransitNow = canTransitAction && dispatchReadyLines > 0 && dispatchBlockedLines === 0;
   let responsibleActor = "Sin actor operativo pendiente.";
   if (["pending", "preparing"].includes(currentStatus)) {
     responsibleActor = `${access.fromSiteName || "Centro"} / bodega`;
@@ -1795,13 +1804,19 @@ export default async function RemissionDetailPage({
             </button>
           ) : null}
           {canTransitAction ? (
-            <button
-              name="action"
-              value="transit"
-              className="ui-btn ui-btn--brand h-12 w-full text-sm font-semibold md:w-auto md:min-w-[220px] md:px-5 md:text-[15px]"
-            >
-              Despachar a destino
-            </button>
+            canTransitNow ? (
+              <button
+                name="action"
+                value="transit"
+                className="ui-btn ui-btn--brand h-12 w-full text-sm font-semibold md:w-auto md:min-w-[220px] md:px-5 md:text-[15px]"
+              >
+                Despachar a destino
+              </button>
+            ) : (
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                Aún no puedes despachar. Faltan <strong>{dispatchBlockedLines}</strong> linea(s) por completar.
+              </div>
+            )
           ) : null}
           {canReceiveAction ? (
             <button
@@ -1825,7 +1840,7 @@ export default async function RemissionDetailPage({
             <button
               name="action"
               value="cancel"
-              className="ui-btn ui-btn--danger h-12 w-full text-sm font-semibold md:w-auto md:min-w-[180px] md:px-5 md:text-[15px]"
+              className="ui-btn ui-btn--ghost h-12 w-full text-sm font-semibold md:w-auto md:px-5 md:text-[15px]"
             >
               Cancelar
             </button>
@@ -1854,17 +1869,6 @@ export default async function RemissionDetailPage({
         <form action={updateItems} className="mt-4 space-y-4 pb-24 lg:pb-0">
           <input type="hidden" name="request_id" value={request.id} />
           <input type="hidden" name="return_origin" value={cameFromPrepareQueue ? "prepare" : ""} />
-
-          {canEditPrepareItems ? (
-            <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3 text-sm text-[var(--ui-muted)]">
-              <span className="font-semibold text-[var(--ui-text)]">Flujo:</span> elige el LOC, marca cuánto preparas y luego confirma cuánto sale.
-            </div>
-          ) : null}
-          {canEditReceiveItems ? (
-            <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3 text-sm text-[var(--ui-muted)]">
-              <span className="font-semibold text-[var(--ui-text)]">Flujo:</span> registra lo recibido. Si algo faltó, guarda la diferencia aquí mismo.
-            </div>
-          ) : null}
 
           <div className="space-y-3">
             {itemRows.map((item) => {
@@ -2027,9 +2031,7 @@ export default async function RemissionDetailPage({
                   ? receiveStepLabel
                   : lineStatusLabel;
               const primaryHint = canEditPrepareItems
-                ? missingSourceLoc
-                  ? "Selecciona primero el LOC de origen."
-                  : overSiteStock
+                ? overSiteStock
                     ? "La cantidad supera el stock total de la sede."
                     : overLocStock
                       ? "La cantidad supera el stock del LOC elegido."
@@ -2037,21 +2039,34 @@ export default async function RemissionDetailPage({
                         ? "Ningún LOC alcanza solo. Divide esta línea y sigue."
                         : linePreparationPartial
                           ? "La preparación va corta frente a lo solicitado."
-                          : "Elige el LOC y completa la cantidad a despachar."
+                          : ""
                 : canEditReceiveItems
                   ? linePartialReceipt
                     ? `Van ${receivedQty} ${itemUnitLabel} recibidas y ${shortageQty} ${itemUnitLabel} faltantes.`
-                    : linePendingReceipt
-                      ? "Registra lo recibido y, si aplica, el faltante."
-                      : "Esta línea todavía no tiene envío confirmado."
+                    : ""
                   : "";
+              const nextTaskLabel = canEditPrepareItems
+                ? canSplitLine
+                  ? "Divide esta línea"
+                  : !item.source_location_id
+                    ? "Ahora: elegir LOC"
+                    : shippedQty > 0
+                      ? "Lista"
+                      : preparedQty > 0
+                        ? "Ahora: confirmar salida"
+                        : "Ahora: marcar preparación"
+                : canEditReceiveItems
+                  ? lineCompleteReceipt
+                    ? "Lista"
+                    : "Ahora: recibir"
+                  : stepLabel;
               return (
               <div key={item.id} className="rounded-[28px] border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-4 sm:p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
                   <div className="space-y-2">
                     <div className="ui-h3">{item.product?.name ?? item.product_id}</div>
                     <div className="flex flex-wrap items-center gap-2 text-sm">
-                      <span className="rounded-full border border-amber-200 bg-amber-50 px-3.5 py-1.5 text-sm font-semibold text-amber-950 shadow-sm">
+                      <span className="rounded-full border border-amber-200 bg-amber-50 px-3.5 py-1.5 text-[15px] font-semibold text-amber-950 shadow-sm">
                         {requestedQty} {itemUnitLabel} por preparar
                       </span>
                       {lineIdsForProduct.length > 1 ? (
@@ -2059,8 +2074,8 @@ export default async function RemissionDetailPage({
                           Línea {splitLineIndex} de {lineIdsForProduct.length}
                         </span>
                       ) : null}
-                      <span className="rounded-full border border-[var(--ui-border)] px-3 py-1 text-[var(--ui-muted)]">
-                        {stepLabel}
+                      <span className="rounded-full border border-slate-200 bg-white px-3 py-1 text-[13px] font-semibold text-slate-700 shadow-sm">
+                        {nextTaskLabel}
                       </span>
                     </div>
                   </div>
@@ -2077,7 +2092,6 @@ export default async function RemissionDetailPage({
                     <p className="mt-1 ui-caption">
                       Divide automáticamente esta línea para seguir con dos líneas más simples.
                     </p>
-                    <input type="hidden" name={`split_quantity_${item.id}`} value={suggestedSplitQty} />
                     <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                       <div className="rounded-2xl bg-[var(--ui-bg-soft)] px-3 py-3 text-sm text-[var(--ui-muted)]">
                         {suggestedSplitQty} {itemUnitLabel} desde {bestLocCandidate?.label ?? "el mejor LOC"} y {remainingSplitQty} {itemUnitLabel} en la línea restante.
@@ -2109,12 +2123,12 @@ export default async function RemissionDetailPage({
                         <div className="flex flex-wrap items-center justify-between gap-3">
                           <div className="space-y-1">
                             <div className="text-sm font-semibold text-[var(--ui-text)]">
-                              {item.source_location_id ? "LOC elegido" : "Elige de dónde sale"}
+                              {item.source_location_id ? "Sale desde" : "Paso 1 · Elige de dónde sale"}
                             </div>
                             <div className="text-sm text-[var(--ui-muted)]">
-                              Stock en origen:{" "}
+                              {item.source_location_id ? "Disponible en este LOC:" : "Stock total en origen:"}{" "}
                               <span className={stockOk ? "font-semibold text-[var(--ui-success)]" : "font-semibold text-[var(--ui-brand-700)]"}>
-                                {availableSite} {itemUnitLabel}
+                                {item.source_location_id ? availableAtSelectedLoc : availableSite} {itemUnitLabel}
                               </span>
                             </div>
                           </div>
@@ -2125,7 +2139,7 @@ export default async function RemissionDetailPage({
                           ) : null}
                         </div>
 
-                        {quickLocCandidates.length > 0 ? (
+                        {!item.source_location_id && quickLocCandidates.length > 0 ? (
                           <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
                             {quickLocCandidates.map((candidate, index) => {
                               const isBest = index === 0;
@@ -2168,7 +2182,7 @@ export default async function RemissionDetailPage({
                           </div>
                         )}
 
-                        {selectedLocIsNotBest && bestLocCandidate ? (
+                        {!item.source_location_id && selectedLocIsNotBest && bestLocCandidate ? (
                           <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
                             Hay un LOC que cubre mejor esta línea: <strong>{bestLocCandidate.label}</strong>.
                           </div>
@@ -2176,7 +2190,7 @@ export default async function RemissionDetailPage({
 
                         <details className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3">
                           <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
-                            Ver más LOCs
+                            {item.source_location_id ? "Cambiar LOC" : "Ver más LOCs"}
                           </summary>
                           <div className="mt-3 flex flex-col gap-3 md:max-w-xl">
                             <label className="flex flex-col gap-1">
@@ -2209,86 +2223,50 @@ export default async function RemissionDetailPage({
                   ) : (
                     <input type="hidden" name="source_location_id" value={item.source_location_id ?? ""} />
                   )}
-                  <div className="grid gap-3 xl:grid-cols-[0.9fr_0.9fr]">
-                    {canEditPrepareItems ? (
-                      item.source_location_id ? (
-                        <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
-                          <div className="text-sm font-semibold text-[var(--ui-text)]">Paso 2 · Preparar</div>
-                          <div className="mt-1 text-sm text-[var(--ui-muted)]">
-                            {preparedQty > 0
-                              ? `Marcado: ${preparedQty} ${itemUnitLabel}`
-                              : "Marca cuánto separas para esta salida."}
+                  <div className="space-y-3">
+                    {canEditPrepareItems && item.source_location_id ? (
+                      shippedQty > 0 ? (
+                        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+                          <div className="text-sm font-semibold text-emerald-950">Hecha</div>
+                          <div className="mt-1 text-sm text-emerald-900">
+                            Ya quedaron marcadas {shippedQty} {itemUnitLabel} para esta línea.
                           </div>
-                          <div className="mt-3 flex flex-wrap gap-3">
-                            <button
-                              type="submit"
-                              form={prepareShortcutFormId}
-                              className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold"
-                              disabled={quickPrepareQty <= 0}
-                            >
-                              {quickPrepareText}
-                            </button>
-                            {preparedQty > 0 ? (
+                          <details className="mt-3 rounded-2xl border border-emerald-200 bg-white px-4 py-3">
+                            <summary className="cursor-pointer text-sm font-semibold text-emerald-950">
+                              Cambiar esta línea
+                            </summary>
+                            <div className="mt-3 flex flex-wrap gap-3">
                               <button
                                 type="submit"
-                                form={clearPrepareShortcutFormId}
+                                form={clearShipShortcutFormId}
                                 className="ui-btn ui-btn--ghost h-12 px-5 text-base font-semibold"
                               >
-                                Limpiar
+                                Limpiar envío
                               </button>
-                            ) : null}
-                          </div>
-                          <details className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3">
-                            <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
-                              Ajustar manualmente
-                            </summary>
-                            <div className="mt-3">
-                              <label className="flex flex-col gap-1">
-                                <span className="ui-caption">Preparado</span>
-                                <input
-                                  name="prepared_quantity"
-                                  defaultValue={item.prepared_quantity ?? 0}
-                                  className="ui-input h-12 min-w-0"
-                                />
-                              </label>
                             </div>
                           </details>
                         </div>
-                      ) : (
-                        <input type="hidden" name="prepared_quantity" value={item.prepared_quantity ?? 0} />
-                      )
-                    ) : null}
-                    {canEditPrepareItems ? (
-                      item.source_location_id ? (
+                      ) : preparedQty > 0 ? (
                         <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
-                          <div className="text-sm font-semibold text-[var(--ui-text)]">Paso 3 · Enviar</div>
+                          <div className="text-sm font-semibold text-[var(--ui-text)]">Ahora: confirmar salida</div>
                           <div className="mt-1 text-sm text-[var(--ui-muted)]">
-                            {shippedQty > 0
-                              ? `Marcado: ${shippedQty} ${itemUnitLabel}`
-                              : preparedQty > 0
-                                ? "Confirma cuánto sale hoy."
-                                : "Primero marca cuánto preparas."}
+                            Ya separaste {preparedQty} {itemUnitLabel}. Solo falta confirmar la salida.
                           </div>
                           <div className="mt-3 flex flex-wrap gap-3">
                             <button
                               type="submit"
                               form={shipShortcutFormId}
                               className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold"
-                              disabled={preparedQty <= 0}
                             >
-                              {preparedQty > 0
-                                ? `Enviar ${preparedQty} ${itemUnitLabel}`
-                                : "Enviar preparado"}
+                              Enviar {preparedQty} {itemUnitLabel}
                             </button>
-                            {shippedQty > 0 ? (
-                              <button
-                                type="submit"
-                                form={clearShipShortcutFormId}
-                                className="ui-btn ui-btn--ghost h-12 px-5 text-base font-semibold"
-                              >
-                                Limpiar
-                              </button>
-                            ) : null}
+                            <button
+                              type="submit"
+                              form={clearPrepareShortcutFormId}
+                              className="ui-btn ui-btn--ghost h-12 px-5 text-base font-semibold"
+                            >
+                              Volver atrás
+                            </button>
                           </div>
                           <details className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3">
                             <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
@@ -2307,12 +2285,49 @@ export default async function RemissionDetailPage({
                           </details>
                         </div>
                       ) : (
-                        <input type="hidden" name="shipped_quantity" value={item.shipped_quantity ?? 0} />
+                        <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
+                          <div className="text-sm font-semibold text-[var(--ui-text)]">Ahora: marcar preparación</div>
+                          <div className="mt-1 text-sm text-[var(--ui-muted)]">
+                            Usa el LOC elegido y marca la cantidad para esta línea.
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-3">
+                            <button
+                              type="submit"
+                              form={prepareShortcutFormId}
+                              className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold"
+                              disabled={quickPrepareQty <= 0}
+                            >
+                              {quickPrepareText}
+                            </button>
+                          </div>
+                          <details className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3">
+                            <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+                              Ajustar manualmente
+                            </summary>
+                            <div className="mt-3">
+                              <label className="flex flex-col gap-1">
+                                <span className="ui-caption">Preparado</span>
+                                <input
+                                  name="prepared_quantity"
+                                  defaultValue={item.prepared_quantity ?? 0}
+                                  className="ui-input h-12 min-w-0"
+                                />
+                              </label>
+                            </div>
+                          </details>
+                        </div>
                       )
+                    ) : canEditPrepareItems ? (
+                      <>
+                        <input type="hidden" name="prepared_quantity" value={item.prepared_quantity ?? 0} />
+                        <input type="hidden" name="shipped_quantity" value={item.shipped_quantity ?? 0} />
+                      </>
                     ) : null}
                     {canEditReceiveItems ? (
                       <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
-                        <div className="text-sm font-semibold text-[var(--ui-text)]">Paso 1 · Recibir</div>
+                        <div className="text-sm font-semibold text-[var(--ui-text)]">
+                          {lineCompleteReceipt ? "Hecha" : "Ahora: recibir"}
+                        </div>
                         <div className="mt-1 text-sm text-[var(--ui-muted)]">
                           {lineCompleteReceipt
                             ? `Recepción completa: ${receivedQty} ${itemUnitLabel}.`
