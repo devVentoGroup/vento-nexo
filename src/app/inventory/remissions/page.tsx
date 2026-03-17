@@ -730,16 +730,16 @@ export default async function RemissionsPage({
         : activeSiteName;
   const heroTitle =
     viewMode === "bodega"
-      ? "Salida y recepcion de remisiones"
+      ? "Preparar solicitudes"
       : canCreate
-        ? "Solicitudes listas para salir"
-        : "Seguimiento de solicitudes";
+        ? "Pedir a Centro"
+        : "Recibir desde Centro";
   const heroSubtitle =
     viewMode === "bodega"
-      ? "Centro ve cola, detalle y trazabilidad en una sola vista."
+      ? "Centro solo ve lo necesario para preparar y despachar."
       : canCreate
-        ? "Pide desde la sede activa y sigue el estado sin salir del modulo."
-        : "Consulta remisiones activas y entra directo al detalle cuando toque actuar.";
+        ? "Elige productos y envía la solicitud. Luego solo sigues el estado."
+        : "Aquí solo aparecen las remisiones que todavía te toca recibir.";
   const fulfillmentSiteIdsForStock = fulfillmentSiteRows
     .map((site) => site.id)
     .filter((id): id is string => Boolean(id));
@@ -869,7 +869,7 @@ export default async function RemissionsPage({
 
         {!canCreate && viewMode === "satélite" ? (
           <div className="mt-4 ui-alert ui-alert--neutral">
-            Esta vista es para sedes satélite. Tu rol actual no puede crear remisiones, pero si la remision ya viene en transito o parcial todavía puedes entrar al detalle para recibir según permisos.
+            Esta vista queda en modo recepción. Cuando una remisión salga desde Centro, aquí podrás abrirla y recibirla.
           </div>
         ) : null}
 
@@ -939,10 +939,10 @@ export default async function RemissionsPage({
           <div>
             <div className="ui-h3">
               {viewMode === "bodega"
-                ? "Remisiones recientes"
+                ? "Solicitudes por preparar"
                 : requesterOnlyRole
-                  ? "Mis solicitudes y recepciones"
-                  : "Solicitudes y recepciones recientes"}
+                  ? "Mis remisiones"
+                  : "Remisiones de la sede"}
             </div>
             <div className="mt-1 ui-caption">
               {remissionRows.length} registro(s) visibles en esta vista
@@ -989,9 +989,9 @@ export default async function RemissionsPage({
                     <TableCell>
                       <Link
                         href={`/inventory/remissions/${row.id}`}
-                        className="ui-body font-semibold underline decoration-zinc-200 underline-offset-4"
+                        className="ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
                       >
-                        Ver detalle
+                        {viewMode === "bodega" ? "Preparar" : "Abrir"}
                       </Link>
                     </TableCell>
                   </tr>

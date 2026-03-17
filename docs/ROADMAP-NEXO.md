@@ -196,3 +196,22 @@ NEXO v1 se considera lista cuando:
 - Existe stock inicial en `Centro`.
 - Hay productos activos para `Centro` y `Saudo`.
 - Se completa una remision end-to-end sin depender de `FOGO`, `ORIGO` o `VISO`.
+
+### 2026-03-17 - Sandbox reversible para validar v1
+
+Se dejo un sandbox de validacion v1 preparado desde `vento-shell` para no depender del inventario inicial real.
+
+Incluye:
+- productos artificiales `SBXV1-*`;
+- `LOCs` `LOC-CP-SBX-*`;
+- stock minimo en `Centro`;
+- activacion en `Centro` y `Saudo`;
+- script de cleanup que crea una migracion y borra todo el sandbox.
+
+Referencia:
+- `docs/SANDBOX-VALIDACION-V1.md`
+
+Follow-up:
+- se corrigio el sandbox para que los `product_site_settings` de `SBXV1-*` queden con `audience = BOTH`, porque remisiones filtra por audiencia operativa y con `null` no aparecian en `Saudo`.
+- en detalle de remisiones, la preparacion paso a flujo progresivo: menos KPIs, sin UUIDs visibles, menos paneles tecnicos y campos que aparecen por etapa (`LOC -> preparado -> enviado`).
+- hub/detalle de remisiones quedaron mas dirigidos por rol y sede: `Centro` ve preparar/despachar con CTA grandes; `satelite` ve pedir/recibir con copy corto y menos decisiones simultaneas. El siguiente refinamiento UX debe seguir empujando acciones tactiles y revelar campos solo cuando hacen falta.

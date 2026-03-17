@@ -232,7 +232,7 @@ export default async function RemissionsPreparePage() {
               Cola de preparacion
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--ui-muted)] sm:text-base">
-              Centro resuelve desde aqui lo que necesita preparar hoy.
+              Abre la solicitud, elige LOC y confirma cuánto sale.
             </p>
           </div>
           <div className="ui-remission-kpis">
@@ -255,22 +255,8 @@ export default async function RemissionsPreparePage() {
         </div>
       </section>
 
-      <div className="grid gap-3 sm:grid-cols-3 ui-fade-up ui-delay-1">
-        <div className="ui-remission-kpi">
-          <div className="ui-remission-kpi-label">Pendientes</div>
-          <div className="ui-remission-kpi-value">{pendingCount}</div>
-          <div className="ui-remission-kpi-note">Sin empezar</div>
-        </div>
-        <div className="ui-remission-kpi" data-tone="cool">
-          <div className="ui-remission-kpi-label">Faltante probable</div>
-          <div className="ui-remission-kpi-value">{shortageSignalCount}</div>
-          <div className="ui-remission-kpi-note">Lineas sobre stock de sede</div>
-        </div>
-        <div className="ui-remission-kpi" data-tone="success">
-          <div className="ui-remission-kpi-label">LOC ajustado</div>
-          <div className="ui-remission-kpi-value">{locSignalCount}</div>
-          <div className="ui-remission-kpi-note">Sin un LOC unico suficiente</div>
-        </div>
+      <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3 text-sm text-[var(--ui-muted)] ui-fade-up ui-delay-1">
+        {pendingCount} pendientes, {preparingCount} en curso, {shortageSignalCount + locSignalCount} con revisión extra.
       </div>
 
       <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-4">
@@ -299,7 +285,7 @@ export default async function RemissionsPreparePage() {
                       <div className="text-sm font-semibold text-[var(--ui-text)] truncate">
                         Destino: {siteMap.get(row.to_site_id ?? "") ?? row.to_site_id ?? "-"}
                       </div>
-                      <div className="mt-1 text-xs font-mono text-[var(--ui-muted)]">Remision #{String(row.id).slice(0, 8)}</div>
+                      <div className="mt-1 text-xs text-[var(--ui-muted)]">Solicitud lista para preparar</div>
                     </div>
                     <span className={status.className}>{status.label}</span>
                   </div>
@@ -321,31 +307,33 @@ export default async function RemissionsPreparePage() {
                       </div>
                     </div>
 
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    <div className="rounded-xl border border-[var(--ui-border)] bg-white/90 p-3">
-                      <div className="ui-caption">LOC pendiente</div>
-                      <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">
-                        {requestMetrics.get(row.id)?.linesMissingSourceLoc ?? 0}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-[var(--ui-border)] bg-white/90 p-3">
-                      <div className="ui-caption">Preparacion corta</div>
-                      <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">
-                        {requestMetrics.get(row.id)?.linesPartialPrep ?? 0}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-[var(--ui-border)] bg-white/90 p-3">
-                      <div className="ui-caption">Faltante probable</div>
-                      <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">
-                        {requestMetrics.get(row.id)?.linesLikelyShortage ?? 0}
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-[var(--ui-border)] bg-white/90 p-3">
-                      <div className="ui-caption">Sin LOC unico suficiente</div>
-                      <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">
-                        {requestMetrics.get(row.id)?.linesWithoutCoveringLoc ?? 0}
-                      </div>
-                    </div>
+                  <div className="mt-3 flex flex-wrap gap-2 text-sm">
+                    {(requestMetrics.get(row.id)?.linesMissingSourceLoc ?? 0) > 0 ? (
+                      <span className="ui-chip ui-chip--warn">
+                        {requestMetrics.get(row.id)?.linesMissingSourceLoc ?? 0} LOC pendiente
+                      </span>
+                    ) : null}
+                    {(requestMetrics.get(row.id)?.linesPartialPrep ?? 0) > 0 ? (
+                      <span className="ui-chip ui-chip--warn">
+                        {requestMetrics.get(row.id)?.linesPartialPrep ?? 0} corta
+                      </span>
+                    ) : null}
+                    {(requestMetrics.get(row.id)?.linesLikelyShortage ?? 0) > 0 ? (
+                      <span className="ui-chip ui-chip--warn">
+                        {requestMetrics.get(row.id)?.linesLikelyShortage ?? 0} faltante
+                      </span>
+                    ) : null}
+                    {(requestMetrics.get(row.id)?.linesWithoutCoveringLoc ?? 0) > 0 ? (
+                      <span className="ui-chip ui-chip--warn">
+                        {requestMetrics.get(row.id)?.linesWithoutCoveringLoc ?? 0} partir linea
+                      </span>
+                    ) : null}
+                    {(requestMetrics.get(row.id)?.linesMissingSourceLoc ?? 0) === 0 &&
+                    (requestMetrics.get(row.id)?.linesPartialPrep ?? 0) === 0 &&
+                    (requestMetrics.get(row.id)?.linesLikelyShortage ?? 0) === 0 &&
+                    (requestMetrics.get(row.id)?.linesWithoutCoveringLoc ?? 0) === 0 ? (
+                      <span className="ui-chip ui-chip--success">Lista para preparar</span>
+                    ) : null}
                   </div>
 
                   {(requestMetrics.get(row.id)?.linesLikelyShortage ?? 0) > 0 ||
@@ -358,9 +346,9 @@ export default async function RemissionsPreparePage() {
                   <div className="mt-4 flex flex-col gap-3 sm:flex-row sm:justify-end">
                     <Link
                       href={`/inventory/remissions/${row.id}?from=prepare`}
-                      className="ui-btn ui-btn--brand w-full sm:w-auto"
+                      className="ui-btn ui-btn--brand h-12 w-full px-6 text-base font-semibold sm:w-auto"
                     >
-                      Abrir preparacion
+                      Preparar ahora
                     </Link>
                   </div>
                 </div>

@@ -1009,7 +1009,6 @@ export default async function RemissionDetailPage({
         .limit(500)
     : { data: [] as LocRow[] };
   const originLocRows = (locsFromSite ?? []) as LocRow[];
-  const originLocMap = new Map(originLocRows.map((loc) => [loc.id, loc.code ?? loc.id]));
   locIdsFromSite = originLocRows.map((row) => row.id);
 
   const { data: stockByLocData } =
@@ -1083,6 +1082,8 @@ export default async function RemissionDetailPage({
   const canEditReceiveItems =
     access.canReceive && ["in_transit", "partial"].includes(currentStatus);
   const canEditArea = access.canCancel || canEditPrepareItems;
+  const isProductionView = access.fromSiteType === "production_center" && access.canPrepare;
+  const isSatelliteView = access.toSiteType === "satellite" && access.canReceive;
   const pendingReceiptLines = itemRows.filter((item) => {
     const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
     const accountedQty = roundQuantity(
@@ -1101,22 +1102,6 @@ export default async function RemissionDetailPage({
     const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
     const plannedQty = Math.max(preparedQty, shippedQty);
     return canEditPrepareItems && showSourceLocSelector && plannedQty > 0 && !item.source_location_id;
-  }).length;
-  const linesOverSiteStock = itemRows.filter((item) => {
-    const preparedQty = roundQuantity(Number(item.prepared_quantity ?? 0));
-    const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
-    const plannedQty = Math.max(preparedQty, shippedQty);
-    const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
-    return canEditPrepareItems && plannedQty > availableSite;
-  }).length;
-  const linesOverSelectedLocStock = itemRows.filter((item) => {
-    const preparedQty = roundQuantity(Number(item.prepared_quantity ?? 0));
-    const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
-    const plannedQty = Math.max(preparedQty, shippedQty);
-    if (!canEditPrepareItems || !item.source_location_id) return false;
-    const availableAtSelectedLoc =
-      stockByLocValueMap.get(`${item.source_location_id}|${item.product_id}`) ?? 0;
-    return plannedQty > availableAtSelectedLoc;
   }).length;
   const linesPartialPreparation = itemRows.filter((item) => {
     const requestedQty = roundQuantity(Number(item.quantity ?? 0));
@@ -1154,6 +1139,11 @@ export default async function RemissionDetailPage({
     : canEditReceiveItems
       ? "Recepcion en destino"
       : formatStatus(request.status).label;
+  const roleFlowLabel = isProductionView
+    ? "Centro solo prepara y despacha."
+    : isSatelliteView
+      ? "Tu sede solo recibe y confirma."
+      : "Vista operativa";
   const activeSignals = canEditPrepareItems
     ? linesMissingSourceLoc + linesPartialPreparation + linesWithoutCoveringLoc
     : canEditReceiveItems
@@ -1208,7 +1198,7 @@ export default async function RemissionDetailPage({
       <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <p className="mt-1 ui-caption">
-            Vista: {access.fromSiteType === "production_center" ? "Bodega (Centro)" : "Sede satelite"} | Rol: {access.roleLabel || "sin rol"}
+            {roleFlowLabel} Vista: {access.fromSiteType === "production_center" ? "Bodega (Centro)" : "Sede satelite"}.
           </p>
         </div>
       </div>
@@ -1269,9 +1259,9 @@ export default async function RemissionDetailPage({
           </div>
           <div className="mt-3 ui-caption">
             {canEditPrepareItems
-              ? `${linesMissingSourceLoc} LOC pendiente · ${linesPartialPreparation} parciales · ${linesWithoutCoveringLoc} sin LOC suficiente`
+              ? "Centro prepara y confirma lo que sale."
               : canEditReceiveItems
-                ? `${pendingReceiptLines} por conciliar · ${shortageLines} con faltante · ${receivedLines} recibidas`
+                ? "Tu sede registra lo recibido y, si hace falta, el faltante."
                 : "Sin acciones operativas pendientes."}
           </div>
         </div>
@@ -1291,33 +1281,35 @@ export default async function RemissionDetailPage({
       ) : null}
 
       <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
-        <div className="ui-h3">Acciones</div>
-        <form action={updateStatus} className="mt-4 grid gap-3 sm:grid-cols-2 xl:flex xl:flex-wrap">
+        <div className="ui-h3">
+          {isProductionView ? "Siguiente accion en Centro" : isSatelliteView ? "Siguiente accion en tu sede" : "Acciones"}
+        </div>
+        <form action={updateStatus} className="mt-4 grid gap-3 sm:grid-cols-2">
           <input type="hidden" name="request_id" value={request.id} />
           <input type="hidden" name="return_origin" value={cameFromPrepareQueue ? "prepare" : ""} />
           {canPrepareAction ? (
             <button
               name="action"
               value="prepare"
-              className="ui-btn ui-btn--ghost"
+              className="ui-btn ui-btn--ghost h-14 w-full text-base font-semibold"
             >
-              Marcar preparado
+              Empezar preparacion
             </button>
           ) : null}
           {canTransitAction ? (
             <button
               name="action"
               value="transit"
-              className="ui-btn ui-btn--brand"
+              className="ui-btn ui-btn--brand h-14 w-full text-base font-semibold"
             >
-              Marcar en viaje
+              Despachar a destino
             </button>
           ) : null}
           {canReceiveAction ? (
             <button
               name="action"
               value="receive"
-              className="ui-btn ui-btn--ghost"
+              className="ui-btn ui-btn--brand h-14 w-full text-base font-semibold"
             >
               Confirmar recepción
             </button>
@@ -1326,16 +1318,16 @@ export default async function RemissionDetailPage({
             <button
               name="action"
               value="receive_partial"
-              className="ui-btn ui-btn--ghost"
+              className="ui-btn ui-btn--ghost h-14 w-full text-base font-semibold"
             >
-              Guardar parcial
+              Guardar recepcion parcial
             </button>
           ) : null}
           {canCancelAction ? (
             <button
               name="action"
               value="cancel"
-              className="ui-btn ui-btn--danger"
+              className="ui-btn ui-btn--danger h-14 w-full text-base font-semibold sm:col-span-2"
             >
               Cancelar
             </button>
@@ -1356,9 +1348,9 @@ export default async function RemissionDetailPage({
       <div className="ui-panel ui-remission-section ui-fade-up ui-delay-3">
         <div className="ui-h3">
           {canEditPrepareItems
-            ? "Preparación y despacho"
+            ? "Preparar salida"
             : canEditReceiveItems
-              ? "Recepción en destino"
+              ? "Recibir remision"
               : "Items de la remision"}
         </div>
         <form action={updateItems} className="mt-4 space-y-4 pb-24 lg:pb-0">
@@ -1366,37 +1358,13 @@ export default async function RemissionDetailPage({
           <input type="hidden" name="return_origin" value={cameFromPrepareQueue ? "prepare" : ""} />
 
           {canEditPrepareItems ? (
-            <div className="grid gap-3 sm:grid-cols-3 xl:grid-cols-5">
-              <div className="ui-remission-kpi">
-                <div className="ui-caption">Lineas con LOC pendiente</div>
-                <div className="mt-1 text-2xl font-semibold text-[var(--ui-text)]">
-                  {linesMissingSourceLoc}
-                </div>
-              </div>
-              <div className="ui-remission-kpi" data-tone="cool">
-                <div className="ui-caption">Lineas pasadas de stock sede</div>
-                <div className="mt-1 text-2xl font-semibold text-[var(--ui-text)]">
-                  {linesOverSiteStock}
-                </div>
-              </div>
-              <div className="ui-remission-kpi" data-tone="cool">
-                <div className="ui-caption">Lineas pasadas de stock LOC</div>
-                <div className="mt-1 text-2xl font-semibold text-[var(--ui-text)]">
-                  {linesOverSelectedLocStock}
-                </div>
-              </div>
-              <div className="ui-remission-kpi">
-                <div className="ui-caption">Preparacion corta</div>
-                <div className="mt-1 text-2xl font-semibold text-[var(--ui-text)]">
-                  {linesPartialPreparation}
-                </div>
-              </div>
-              <div className="ui-remission-kpi" data-tone="success">
-                <div className="ui-caption">Sin LOC unico suficiente</div>
-                <div className="mt-1 text-2xl font-semibold text-[var(--ui-text)]">
-                  {linesWithoutCoveringLoc}
-                </div>
-              </div>
+            <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3 text-sm text-[var(--ui-muted)]">
+              <span className="font-semibold text-[var(--ui-text)]">Flujo:</span> elige el LOC, marca cuánto preparas y luego confirma cuánto sale.
+            </div>
+          ) : null}
+          {canEditReceiveItems ? (
+            <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3 text-sm text-[var(--ui-muted)]">
+              <span className="font-semibold text-[var(--ui-text)]">Flujo:</span> registra lo recibido. Si algo faltó, guarda la diferencia aquí mismo.
             </div>
           ) : null}
 
@@ -1404,7 +1372,6 @@ export default async function RemissionDetailPage({
             {itemRows.map((item) => {
               const requestedQty = roundQuantity(Number(item.quantity ?? 0));
               const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
-              const locLines = stockByLocByProduct.get(item.product_id) ?? [];
               const locCandidates = stockByLocCandidates.get(item.product_id) ?? [];
               const bestLocCandidate = locCandidates[0] ?? null;
               const preparedQty = roundQuantity(Number(item.prepared_quantity ?? 0));
@@ -1414,9 +1381,6 @@ export default async function RemissionDetailPage({
               const plannedQty = Math.max(preparedQty, shippedQty);
               const accountedQty = roundQuantity(receivedQty + shortageQty);
               const stockOk = availableSite >= (item.quantity ?? 0);
-              const sourceLocLabel = item.source_location_id
-                ? originLocMap.get(item.source_location_id) ?? item.source_location_id.slice(0, 8)
-                : "-";
               const availableAtSelectedLoc = item.source_location_id
                 ? stockByLocValueMap.get(`${item.source_location_id}|${item.product_id}`) ?? 0
                 : 0;
@@ -1496,99 +1460,70 @@ export default async function RemissionDetailPage({
                       ? "ui-chip ui-chip--success"
                       : "ui-chip"
                   : formatStatus(item.item_status).className;
+              const itemUnitLabel =
+                item.stock_unit_code ?? item.unit ?? item.product?.unit ?? "";
+              const prepareStepLabel = !item.source_location_id
+                ? "Paso 1: elige el LOC"
+                : preparedQty <= 0
+                  ? "Paso 2: indica cuánto preparas"
+                  : shippedQty <= 0
+                    ? "Paso 3: confirma cuánto sale"
+                    : "Lista para despacho";
+              const receiveStepLabel =
+                receivedQty <= 0 && shortageQty <= 0
+                  ? "Paso 1: registra lo recibido"
+                  : linePartialReceipt
+                    ? "Pendiente de conciliación"
+                    : "Línea conciliada";
+              const stepLabel = canEditPrepareItems
+                ? prepareStepLabel
+                : canEditReceiveItems
+                  ? receiveStepLabel
+                  : lineStatusLabel;
+              const primaryHint = canEditPrepareItems
+                ? missingSourceLoc
+                  ? "Selecciona primero el LOC de origen."
+                  : overSiteStock
+                    ? "La cantidad supera el stock total de la sede."
+                    : overLocStock
+                      ? "La cantidad supera el stock del LOC elegido."
+                      : lineWithoutCoveringLoc
+                        ? "La sede sí tiene stock, pero toca repartir esta línea entre varios LOCs."
+                        : linePreparationPartial
+                          ? "La preparación va corta frente a lo solicitado."
+                          : "Elige el LOC y completa la cantidad a despachar."
+                : canEditReceiveItems
+                  ? linePartialReceipt
+                    ? `Van ${receivedQty} ${itemUnitLabel} recibidas y ${shortageQty} ${itemUnitLabel} faltantes.`
+                    : linePendingReceipt
+                      ? "Registra lo recibido y, si aplica, el faltante."
+                      : "Esta línea todavía no tiene envío confirmado."
+                  : "";
               return (
-              <div key={item.id} className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-4 sm:p-5">
+              <div key={item.id} className="rounded-[28px] border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-4 sm:p-5">
                 <div className="flex flex-wrap items-start justify-between gap-3">
-                  <div className="ui-h3">
-                    {item.product?.name ?? item.product_id}
+                  <div className="space-y-2">
+                    <div className="ui-h3">{item.product?.name ?? item.product_id}</div>
+                    <div className="flex flex-wrap items-center gap-2 text-sm">
+                      <span className="rounded-full bg-white px-3 py-1 font-semibold text-[var(--ui-text)] shadow-sm">
+                        Solicitado: {requestedQty} {itemUnitLabel}
+                      </span>
+                      <span className="rounded-full border border-[var(--ui-border)] px-3 py-1 text-[var(--ui-muted)]">
+                        {stepLabel}
+                      </span>
+                    </div>
                   </div>
                   <span className={lineStatusClassName}>{lineStatusLabel}</span>
                 </div>
-                <div className="mt-1 ui-caption">
-                  Producto: <span className="font-mono">{item.product_id}</span>
-                  {" "}Solicitado: {requestedQty} {item.stock_unit_code ?? item.unit ?? item.product?.unit ?? ""}
-                  {" "}· LOC origen: {sourceLocLabel}
-                </div>
-                {missingSourceLoc ? (
-                  <div className="mt-2 ui-alert ui-alert--warn">
-                    Esta linea ya tiene cantidad preparada/enviada pero todavía no tiene LOC origen seleccionado.
-                  </div>
-                ) : null}
-                {overSiteStock ? (
-                  <div className="mt-2 ui-alert ui-alert--warn">
-                    La cantidad preparada/enviada de esta linea supera el stock disponible en la sede origen.
-                  </div>
-                ) : null}
-                {overLocStock ? (
-                  <div className="mt-2 ui-alert ui-alert--warn">
-                    La cantidad preparada/enviada de esta linea supera el stock del LOC origen seleccionado.
-                  </div>
-                ) : null}
-                {linePreparationPartial ? (
-                  <div className="mt-2 ui-alert ui-alert--warn">
-                    Esta linea va corta frente a lo solicitado: solicitado {requestedQty}, preparado/enviado {plannedQty}. Si despachas así, la remisión probablemente terminará parcial.
-                  </div>
-                ) : null}
-                {lineWithoutCoveringLoc ? (
-                  <div className="mt-2 ui-alert ui-alert--warn">
-                    La sede sí tiene stock suficiente para esta linea, pero ningún LOC único cubre {targetQtyForLoc}. Ajusta cantidad o parte la linea para repartir la preparación en más de un LOC.
-                  </div>
-                ) : null}
-                {linePartialReceipt ? (
-                  <div className="mt-2 ui-alert ui-alert--warn">
-                    Esta linea quedó parcial: enviado {shippedQty}, recibido {receivedQty}, faltante {shortageQty}.
-                  </div>
-                ) : null}
-                {canEditPrepareItems && fromSiteId ? (
-                  <div className="mt-2 ui-panel-soft px-3 py-2 text-sm">
-                    <span className="font-semibold text-[var(--ui-text)]">Stock en origen:</span>{" "}
-                    <span className={stockOk ? "text-[var(--ui-success)]" : "text-[var(--ui-brand-700)]"}>
-                      {availableSite} {item.unit ?? item.product?.unit ?? ""}
-                    </span>
-                    {locLines.length > 0 ? (
-                      <span className="ml-2 text-zinc-600">
-                        por LOC: {locLines.join(" · ")}
-                      </span>
-                    ) : null}
-                    {item.source_location_id ? (
-                      <span className="ml-2 text-zinc-600">
-                        seleccionado: {availableAtSelectedLoc}
-                      </span>
-                    ) : null}
-                  </div>
-                ) : null}
-                {canEditPrepareItems && locCandidates.length > 0 ? (
-                  <div className="mt-2 ui-panel-soft px-3 py-2 text-sm text-[var(--ui-muted)]">
-                    <span className="font-semibold text-[var(--ui-text)]">LOC sugeridos:</span>{" "}
-                    {locCandidates.slice(0, 3).map((candidate, index) => {
-                      const isBest = index === 0;
-                      const isSelected = candidate.locationId === item.source_location_id;
-                      const suffix = [
-                        isBest ? "recomendado" : "",
-                        isSelected ? "seleccionado" : "",
-                      ]
-                        .filter(Boolean)
-                        .join(", ");
-                      return (
-                        <span key={`${item.id}-${candidate.locationId}`} className="mr-2 inline-flex">
-                          {candidate.code}: {candidate.qty}
-                          {suffix ? ` (${suffix})` : ""}
-                        </span>
-                      );
-                    })}
-                    {selectedLocIsNotBest ? (
-                      <span className="block mt-1">
-                        El LOC seleccionado no es el que más stock tiene para esta linea.
-                      </span>
-                    ) : null}
+                {primaryHint ? (
+                  <div className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-white px-3 py-3 text-sm text-[var(--ui-muted)]">
+                    {primaryHint}
                   </div>
                 ) : null}
                 {canSplitLine ? (
                   <div className="mt-3 rounded-2xl border border-dashed border-[var(--ui-border)] bg-white px-3 py-3">
                     <div className="text-sm font-semibold text-[var(--ui-text)]">Partir linea</div>
-                    <p className="mt-1 ui-caption">
-                      Usa este escape hatch de v1 antes de preparar o enviar. Se crea una linea nueva con parte de la cantidad para que puedas asignar otro LOC origen.
-                    </p>
+                    <p className="mt-1 ui-caption">Se crea una línea nueva para usar otro LOC.</p>
                     <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
                       <label className="flex min-w-0 flex-1 flex-col gap-1">
                         <span className="ui-caption">Cantidad para la nueva linea</span>
@@ -1610,14 +1545,14 @@ export default async function RemissionDetailPage({
                       </button>
                     </div>
                     <div className="mt-2 ui-caption">
-                      Sugerencia inicial: crear una linea con {suggestedSplitQty} desde {bestLocCandidate?.code ?? "el mejor LOC disponible"} y dejar {remainingSplitQty} en la linea actual.
+                      Sugerencia: {suggestedSplitQty} desde {bestLocCandidate?.code ?? "el mejor LOC"} y {remainingSplitQty} en la línea actual.
                     </div>
                   </div>
                 ) : null}
 
                 <input type="hidden" name="item_id" value={item.id} />
 
-                <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-6">
+                <div className="mt-4 grid gap-3 xl:grid-cols-[1.2fr_0.9fr_0.9fr]">
                   {showSourceLocSelector && canEditPrepareItems ? (
                     <label className="flex flex-col gap-1">
                       <span className="ui-caption">LOC origen</span>
@@ -1633,29 +1568,71 @@ export default async function RemissionDetailPage({
                           </option>
                         ))}
                       </select>
+                      {fromSiteId ? (
+                        <div className="mt-2 space-y-2 rounded-2xl border border-[var(--ui-border)] bg-white px-3 py-3 text-sm text-[var(--ui-muted)]">
+                          <div>
+                            <span className="font-semibold text-[var(--ui-text)]">Stock en origen:</span>{" "}
+                            <span className={stockOk ? "text-[var(--ui-success)]" : "text-[var(--ui-brand-700)]"}>
+                              {availableSite} {itemUnitLabel}
+                            </span>
+                          </div>
+                          {locCandidates.length > 0 ? (
+                            <div className="flex flex-wrap gap-2">
+                              {locCandidates.slice(0, 3).map((candidate, index) => {
+                                const isBest = index === 0;
+                                const isSelected = candidate.locationId === item.source_location_id;
+                                return (
+                                  <span
+                                    key={`${item.id}-${candidate.locationId}`}
+                                    className={`rounded-full px-3 py-1 ${
+                                      isSelected
+                                        ? "bg-[var(--ui-brand-50)] text-[var(--ui-brand-700)]"
+                                        : "bg-[var(--ui-bg-soft)] text-[var(--ui-muted)]"
+                                    }`}
+                                  >
+                                    {candidate.code}: {candidate.qty}
+                                    {isBest ? " recomendado" : ""}
+                                  </span>
+                                );
+                              })}
+                            </div>
+                          ) : null}
+                          {selectedLocIsNotBest ? (
+                            <div>Hay otro LOC con mejor cobertura para esta línea.</div>
+                          ) : null}
+                        </div>
+                      ) : null}
                     </label>
                   ) : (
                     <input type="hidden" name="source_location_id" value={item.source_location_id ?? ""} />
                   )}
                   {canEditPrepareItems ? (
-                    <label className="flex flex-col gap-1">
-                      <span className="ui-caption">Preparado</span>
-                      <input
-                        name="prepared_quantity"
-                        defaultValue={item.prepared_quantity ?? 0}
-                        className="ui-input h-10 min-w-0"
-                      />
-                    </label>
+                    item.source_location_id ? (
+                      <label className="flex flex-col gap-1">
+                        <span className="ui-caption">Preparado</span>
+                        <input
+                          name="prepared_quantity"
+                          defaultValue={item.prepared_quantity ?? 0}
+                          className="ui-input h-12 min-w-0"
+                        />
+                      </label>
+                    ) : (
+                      <input type="hidden" name="prepared_quantity" value={item.prepared_quantity ?? 0} />
+                    )
                   ) : null}
                   {canEditPrepareItems ? (
-                    <label className="flex flex-col gap-1">
-                      <span className="ui-caption">Enviado</span>
-                      <input
-                        name="shipped_quantity"
-                        defaultValue={item.shipped_quantity ?? 0}
-                        className="ui-input h-10 min-w-0"
-                      />
-                    </label>
+                    item.source_location_id ? (
+                      <label className="flex flex-col gap-1">
+                        <span className="ui-caption">Enviado</span>
+                        <input
+                          name="shipped_quantity"
+                          defaultValue={item.shipped_quantity ?? 0}
+                          className="ui-input h-12 min-w-0"
+                        />
+                      </label>
+                    ) : (
+                      <input type="hidden" name="shipped_quantity" value={item.shipped_quantity ?? 0} />
+                    )
                   ) : null}
                   {canEditReceiveItems ? (
                     <label className="flex flex-col gap-1">
@@ -1663,7 +1640,7 @@ export default async function RemissionDetailPage({
                       <input
                         name="received_quantity"
                         defaultValue={item.received_quantity ?? 0}
-                        className="ui-input h-10 min-w-0"
+                        className="ui-input h-12 min-w-0"
                       />
                     </label>
                   ) : null}
@@ -1673,28 +1650,38 @@ export default async function RemissionDetailPage({
                       <input
                         name="shortage_quantity"
                         defaultValue={item.shortage_quantity ?? 0}
-                        className="ui-input h-10 min-w-0"
+                        className="ui-input h-12 min-w-0"
                       />
                     </label>
                   ) : null}
-                  {canEditArea ? (
-                    <label className="flex flex-col gap-1">
-                      <span className="ui-caption">Área</span>
-                      <select
-                        name="item_area_kind"
-                        defaultValue={item.production_area_kind ?? ""}
-                        className="ui-input h-10 min-w-0"
-                      >
-                        <option value="">(sin area)</option>
-                        {areaKindRows.map((row) => (
-                          <option key={row.code} value={row.code}>
-                            {row.name ?? row.code}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  ) : null}
                 </div>
+                {canEditArea ? (
+                  <details className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-white px-3 py-3">
+                    <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+                      Opciones avanzadas
+                    </summary>
+                    <div className="mt-3 max-w-xs">
+                      <label className="flex flex-col gap-1">
+                        <span className="ui-caption">Área</span>
+                        <select
+                          name="item_area_kind"
+                          defaultValue={item.production_area_kind ?? ""}
+                          className="ui-input h-12 min-w-0"
+                        >
+                          <option value="">(sin area)</option>
+                          {areaKindRows.map((row) => (
+                            <option key={row.code} value={row.code}>
+                              {row.name ?? row.code}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    </div>
+                  </details>
+                ) : null}
+                {!canEditArea ? (
+                  <input type="hidden" name="item_area_kind" value={item.production_area_kind ?? ""} />
+                ) : null}
               </div>
             );
             })}
