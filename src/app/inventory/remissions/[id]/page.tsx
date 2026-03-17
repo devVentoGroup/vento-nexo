@@ -1537,6 +1537,11 @@ export default async function RemissionDetailPage({
     candidates.sort((a, b) => b.qty - a.qty || a.code.localeCompare(b.code));
   }
   const originLocById = new Map(originLocRows.map((row) => [row.id, row]));
+  const lineIdsByProduct = new Map<string, string[]>();
+  for (const item of itemRows) {
+    if (!lineIdsByProduct.has(item.product_id)) lineIdsByProduct.set(item.product_id, []);
+    lineIdsByProduct.get(item.product_id)!.push(item.id);
+  }
 
   if (!request) {
     return (
@@ -1865,7 +1870,25 @@ export default async function RemissionDetailPage({
             {itemRows.map((item) => {
               const requestedQty = roundQuantity(Number(item.quantity ?? 0));
               const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
-              const locCandidates = stockByLocCandidates.get(item.product_id) ?? [];
+              const lineIdsForProduct = lineIdsByProduct.get(item.product_id) ?? [item.id];
+              const splitLineIndex = Math.max(lineIdsForProduct.indexOf(item.id), 0) + 1;
+              const plannedQtyPreview = Math.max(
+                roundQuantity(Number(item.prepared_quantity ?? 0)),
+                roundQuantity(Number(item.shipped_quantity ?? 0)),
+              );
+              const targetQtyForOrdering = plannedQtyPreview > 0 ? plannedQtyPreview : requestedQty;
+              const locCandidates = [...(stockByLocCandidates.get(item.product_id) ?? [])].sort((a, b) => {
+                const aCovers = a.qty >= targetQtyForOrdering;
+                const bCovers = b.qty >= targetQtyForOrdering;
+                if (aCovers && !bCovers) return -1;
+                if (!aCovers && bCovers) return 1;
+                if (aCovers && bCovers) {
+                  const aSlack = a.qty - targetQtyForOrdering;
+                  const bSlack = b.qty - targetQtyForOrdering;
+                  return aSlack - bSlack || a.code.localeCompare(b.code);
+                }
+                return b.qty - a.qty || a.code.localeCompare(b.code);
+              });
               const quickLocCandidates = locCandidates.slice(0, 3);
               const bestLocCandidate = locCandidates[0] ?? null;
               const selectedOriginLoc = item.source_location_id
@@ -1944,6 +1967,13 @@ export default async function RemissionDetailPage({
               const remainingReceiptQty = roundQuantity(Math.max(shippedQty - receivedQty, 0));
               const splitFormId = `split-line-form-${item.id}`;
               const manualLocFormId = `manual-loc-form-${item.id}`;
+              const prepareShortcutFormId = `prepare-shortcut-form-${item.id}`;
+              const clearPrepareShortcutFormId = `clear-prepare-shortcut-form-${item.id}`;
+              const shipShortcutFormId = `ship-shortcut-form-${item.id}`;
+              const clearShipShortcutFormId = `clear-ship-shortcut-form-${item.id}`;
+              const receiveAllShortcutFormId = `receive-all-shortcut-form-${item.id}`;
+              const markShortageShortcutFormId = `mark-shortage-shortcut-form-${item.id}`;
+              const clearReceiveShortcutFormId = `clear-receive-shortcut-form-${item.id}`;
               const lineStatusLabel = canEditPrepareItems
                 ? missingSourceLoc
                   ? "LOC pendiente"
@@ -2021,9 +2051,14 @@ export default async function RemissionDetailPage({
                   <div className="space-y-2">
                     <div className="ui-h3">{item.product?.name ?? item.product_id}</div>
                     <div className="flex flex-wrap items-center gap-2 text-sm">
-                      <span className="rounded-full bg-white px-3 py-1 font-semibold text-[var(--ui-text)] shadow-sm">
-                        Solicitado: {requestedQty} {itemUnitLabel}
+                      <span className="rounded-full border border-amber-200 bg-amber-50 px-3.5 py-1.5 text-sm font-semibold text-amber-950 shadow-sm">
+                        {requestedQty} {itemUnitLabel} por preparar
                       </span>
+                      {lineIdsForProduct.length > 1 ? (
+                        <span className="rounded-full border border-[var(--ui-border)] bg-white px-3 py-1 text-[13px] font-semibold text-[var(--ui-text)] shadow-sm">
+                          Línea {splitLineIndex} de {lineIdsForProduct.length}
+                        </span>
+                      ) : null}
                       <span className="rounded-full border border-[var(--ui-border)] px-3 py-1 text-[var(--ui-muted)]">
                         {stepLabel}
                       </span>
@@ -2186,9 +2221,8 @@ export default async function RemissionDetailPage({
                           </div>
                           <div className="mt-3 flex flex-wrap gap-3">
                             <button
-                              formAction={applyPrepareShortcut}
-                              name="line_shortcut_target"
-                              value={`${item.id}|prepare_auto`}
+                              type="submit"
+                              form={prepareShortcutFormId}
                               className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold"
                               disabled={quickPrepareQty <= 0}
                             >
@@ -2196,9 +2230,8 @@ export default async function RemissionDetailPage({
                             </button>
                             {preparedQty > 0 ? (
                               <button
-                                formAction={applyPrepareShortcut}
-                                name="line_shortcut_target"
-                                value={`${item.id}|clear_prepare`}
+                                type="submit"
+                                form={clearPrepareShortcutFormId}
                                 className="ui-btn ui-btn--ghost h-12 px-5 text-base font-semibold"
                               >
                                 Limpiar
@@ -2238,9 +2271,8 @@ export default async function RemissionDetailPage({
                           </div>
                           <div className="mt-3 flex flex-wrap gap-3">
                             <button
-                              formAction={applyPrepareShortcut}
-                              name="line_shortcut_target"
-                              value={`${item.id}|ship_prepared`}
+                              type="submit"
+                              form={shipShortcutFormId}
                               className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold"
                               disabled={preparedQty <= 0}
                             >
@@ -2250,9 +2282,8 @@ export default async function RemissionDetailPage({
                             </button>
                             {shippedQty > 0 ? (
                               <button
-                                formAction={applyPrepareShortcut}
-                                name="line_shortcut_target"
-                                value={`${item.id}|clear_ship`}
+                                type="submit"
+                                form={clearShipShortcutFormId}
                                 className="ui-btn ui-btn--ghost h-12 px-5 text-base font-semibold"
                               >
                                 Limpiar
@@ -2293,9 +2324,8 @@ export default async function RemissionDetailPage({
                         </div>
                         <div className="mt-3 flex flex-wrap gap-3">
                           <button
-                            formAction={applyReceiveShortcut}
-                            name="line_receive_target"
-                            value={`${item.id}|receive_all`}
+                            type="submit"
+                            form={receiveAllShortcutFormId}
                             className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold"
                             disabled={shippedQty <= 0}
                           >
@@ -2303,9 +2333,8 @@ export default async function RemissionDetailPage({
                           </button>
                           {shippedQty > 0 && remainingReceiptQty > 0 ? (
                             <button
-                              formAction={applyReceiveShortcut}
-                              name="line_receive_target"
-                              value={`${item.id}|mark_shortage`}
+                              type="submit"
+                              form={markShortageShortcutFormId}
                               className="ui-btn ui-btn--ghost h-12 px-5 text-base font-semibold"
                             >
                               Marcar faltante {remainingReceiptQty} {itemUnitLabel}
@@ -2313,9 +2342,8 @@ export default async function RemissionDetailPage({
                           ) : null}
                           {accountedQty > 0 ? (
                             <button
-                              formAction={applyReceiveShortcut}
-                              name="line_receive_target"
-                              value={`${item.id}|clear_receive`}
+                              type="submit"
+                              form={clearReceiveShortcutFormId}
                               className="ui-btn ui-btn--ghost h-12 px-5 text-base font-semibold"
                             >
                               Limpiar
@@ -2392,7 +2420,7 @@ export default async function RemissionDetailPage({
           </div>
         </form>
 
-        {canEditPrepareItems ? (
+        {canEditPrepareItems || canEditReceiveItems ? (
           <div className="hidden" aria-hidden="true">
             {itemRows.map((item) => {
               const locCandidates = stockByLocCandidates.get(item.product_id) ?? [];
@@ -2425,8 +2453,8 @@ export default async function RemissionDetailPage({
               const manualLocFormId = `manual-loc-form-${item.id}`;
 
               return (
-                <>
-                  {canSplitLine ? (
+                <div key={`hidden-actions-${item.id}`}>
+                  {canEditPrepareItems && canSplitLine ? (
                     <form key={splitFormId} id={splitFormId} action={splitItem}>
                       <input type="hidden" name="request_id" value={request.id} />
                       <input
@@ -2439,7 +2467,7 @@ export default async function RemissionDetailPage({
                     </form>
                   ) : null}
 
-                  {!canSplitLine ? (
+                  {canEditPrepareItems && !canSplitLine ? (
                     <>
                       <form id={manualLocFormId} action={chooseSourceLoc}>
                         <input type="hidden" name="request_id" value={request.id} />
@@ -2472,7 +2500,79 @@ export default async function RemissionDetailPage({
                       })}
                     </>
                   ) : null}
-                </>
+
+                  {canEditPrepareItems ? (
+                    <>
+                      <form id={`prepare-shortcut-form-${item.id}`} action={applyPrepareShortcut}>
+                        <input type="hidden" name="request_id" value={request.id} />
+                        <input
+                          type="hidden"
+                          name="return_origin"
+                          value={cameFromPrepareQueue ? "prepare" : ""}
+                        />
+                        <input type="hidden" name="line_shortcut_target" value={`${item.id}|prepare_auto`} />
+                      </form>
+                      <form id={`clear-prepare-shortcut-form-${item.id}`} action={applyPrepareShortcut}>
+                        <input type="hidden" name="request_id" value={request.id} />
+                        <input
+                          type="hidden"
+                          name="return_origin"
+                          value={cameFromPrepareQueue ? "prepare" : ""}
+                        />
+                        <input type="hidden" name="line_shortcut_target" value={`${item.id}|clear_prepare`} />
+                      </form>
+                      <form id={`ship-shortcut-form-${item.id}`} action={applyPrepareShortcut}>
+                        <input type="hidden" name="request_id" value={request.id} />
+                        <input
+                          type="hidden"
+                          name="return_origin"
+                          value={cameFromPrepareQueue ? "prepare" : ""}
+                        />
+                        <input type="hidden" name="line_shortcut_target" value={`${item.id}|ship_prepared`} />
+                      </form>
+                      <form id={`clear-ship-shortcut-form-${item.id}`} action={applyPrepareShortcut}>
+                        <input type="hidden" name="request_id" value={request.id} />
+                        <input
+                          type="hidden"
+                          name="return_origin"
+                          value={cameFromPrepareQueue ? "prepare" : ""}
+                        />
+                        <input type="hidden" name="line_shortcut_target" value={`${item.id}|clear_ship`} />
+                      </form>
+                    </>
+                  ) : null}
+                  {canEditReceiveItems ? (
+                    <>
+                      <form id={`receive-all-shortcut-form-${item.id}`} action={applyReceiveShortcut}>
+                        <input type="hidden" name="request_id" value={request.id} />
+                        <input
+                          type="hidden"
+                          name="return_origin"
+                          value={cameFromPrepareQueue ? "prepare" : ""}
+                        />
+                        <input type="hidden" name="line_receive_target" value={`${item.id}|receive_all`} />
+                      </form>
+                      <form id={`mark-shortage-shortcut-form-${item.id}`} action={applyReceiveShortcut}>
+                        <input type="hidden" name="request_id" value={request.id} />
+                        <input
+                          type="hidden"
+                          name="return_origin"
+                          value={cameFromPrepareQueue ? "prepare" : ""}
+                        />
+                        <input type="hidden" name="line_receive_target" value={`${item.id}|mark_shortage`} />
+                      </form>
+                      <form id={`clear-receive-shortcut-form-${item.id}`} action={applyReceiveShortcut}>
+                        <input type="hidden" name="request_id" value={request.id} />
+                        <input
+                          type="hidden"
+                          name="return_origin"
+                          value={cameFromPrepareQueue ? "prepare" : ""}
+                        />
+                        <input type="hidden" name="line_receive_target" value={`${item.id}|clear_receive`} />
+                      </form>
+                    </>
+                  ) : null}
+                </div>
               );
             })}
           </div>

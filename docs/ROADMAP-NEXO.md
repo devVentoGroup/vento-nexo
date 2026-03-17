@@ -275,3 +275,11 @@ Follow-up:
   - elegir un `LOC` desde tarjeta sugerida o desde `Ver mas LOCs` ya no cae en `Selecciona un LOC para continuar`, porque ahora cada accion envia su propio formulario explicito y no depende del formulario global de items;
   - `Dividir automaticamente` ya no cae en `Falta la linea a partir`, por la misma razon;
   - ademas, los CTA superiores (`Empezar preparacion`, `Despachar`, `Cancelar`) se bajaron de peso en escritorio para que no se vean sobredimensionados fuera de tablet/movil.
+- se corrigio un segundo bloque del flujo de preparacion por lineas partidas:
+  - las acciones rapidas `Preparar`, `Enviar`, `Recibir` y `Marcar faltante` tambien quedaron desacopladas del formulario grande para que no vuelvan a caer en `No se pudo aplicar la accion rapida`;
+  - la sugerencia de `LOC` ya no prioriza simplemente el stock mas alto, sino el mejor ajuste para la cantidad de esa linea (`best fit`);
+  - cuando un mismo producto se divide en varias lineas, ahora cada tarjeta marca `Linea X de N` y resalta mejor la cantidad a preparar para que no se pierda entre el ruido visual.
+- `locations` ya tiene una capa de saneamiento para LOCs actuales:
+  - se agregaron sugerencias automaticas de nombre humano a partir de `zona + pasillo + nivel`, sin tocar el codigo tecnico;
+  - el listado muestra esa sugerencia cuando un LOC sigue sin `description`;
+  - hay accion para aplicar la sugerencia una por una o en lote sobre los LOCs visibles, con la idea de que la operacion deje de depender de leer `LOC-...` para entender desde donde saca o guarda stock.

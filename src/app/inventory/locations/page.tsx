@@ -6,6 +6,7 @@ import { redirect } from "next/navigation";
 import { LocCreateForm } from "@/features/inventory/locations/loc-create-form";
 import { LocDeleteButton } from "@/features/inventory/locations/loc-delete-button";
 import { LocEditForm } from "@/features/inventory/locations/loc-edit-form";
+import { STANDARD_LOCATION_ZONES } from "@/features/inventory/locations/location-form-options";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { safeDecodeURIComponent } from "@/lib/url";
@@ -40,6 +41,41 @@ function siteCodeFromName(name: string): SiteCode | null {
   if (n.includes("vento group")) return "VGR";
 
   return null;
+}
+
+const ZONE_LABEL_MAP = new Map<string, string>(
+  STANDARD_LOCATION_ZONES.map((option) => [
+    option.code,
+    option.label.replace(/\s*\([^)]*\)\s*/g, "").trim(),
+  ]),
+);
+
+function humanizeLocSegment(value: string | null | undefined) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+  const upper = raw.toUpperCase();
+  if (upper === "MAIN") return "principal";
+  if (upper === "PICK") return "picking";
+  if (upper === "PREP") return "preparacion";
+  if (upper === "DSP") return "despacho";
+  return raw;
+}
+
+function suggestLocationDescription(loc: Pick<LocationRow, "zone" | "aisle" | "level" | "code" | "description">) {
+  const currentDescription = String(loc.description ?? "").trim();
+  if (currentDescription) return currentDescription;
+
+  const zoneCode = String(loc.zone ?? "").trim().toUpperCase();
+  const zoneLabel = ZONE_LABEL_MAP.get(zoneCode) || humanizeLocSegment(zoneCode) || "Ubicacion";
+  const aisle = humanizeLocSegment(loc.aisle);
+  const level = humanizeLocSegment(loc.level);
+
+  const parts = [zoneLabel];
+  if (aisle) parts.push(aisle);
+  if (level) parts.push(`nivel ${level}`);
+  const suggested = parts.join(" · ").trim();
+
+  return suggested || String(loc.code ?? "").trim() || "Ubicacion";
 }
 
 export default async function InventoryLocationsPage({
@@ -332,6 +368,116 @@ export default async function InventoryLocationsPage({
     redirect("/inventory/locations?updated=1");
   }
 
+  async function applySuggestedNameAction(formData: FormData) {
+    "use server";
+
+    const supabase = await createClient();
+    const { data } = await supabase.auth.getUser();
+    const user = data.user ?? null;
+    if (!user) {
+      redirect(
+        `/inventory/locations?error=${encodeURIComponent("Sesión requerida")}`,
+      );
+    }
+
+    const { data: emp } = await supabase
+      .from("employees")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+    const role = String((emp as { role?: string } | null)?.role ?? "");
+    if (!["propietario", "gerente_general"].includes(role)) {
+      redirect(
+        `/inventory/locations?error=${encodeURIComponent("Solo propietarios pueden renombrar LOCs.")}`,
+      );
+    }
+
+    const locId = String(formData.get("loc_id") ?? "").trim();
+    const suggestedName = String(formData.get("suggested_name") ?? "").trim();
+    if (!locId || !suggestedName) {
+      redirect(
+        `/inventory/locations?error=${encodeURIComponent("Falta LOC o nombre sugerido.")}`,
+      );
+    }
+
+    const { error } = await supabase
+      .from("inventory_locations")
+      .update({ description: suggestedName })
+      .eq("id", locId);
+
+    if (error) {
+      redirect(
+        `/inventory/locations?error=${encodeURIComponent(error.message)}`,
+      );
+    }
+
+    revalidatePath("/inventory/locations");
+    redirect("/inventory/locations?updated=1");
+  }
+
+  async function applySuggestedNamesBatchAction() {
+    "use server";
+
+    const supabase = await createClient();
+    const { data } = await supabase.auth.getUser();
+    const user = data.user ?? null;
+    if (!user) {
+      redirect(
+        `/inventory/locations?error=${encodeURIComponent("Sesión requerida")}`,
+      );
+    }
+
+    const { data: emp } = await supabase
+      .from("employees")
+      .select("role")
+      .eq("id", user.id)
+      .maybeSingle();
+    const role = String((emp as { role?: string } | null)?.role ?? "");
+    if (!["propietario", "gerente_general"].includes(role)) {
+      redirect(
+        `/inventory/locations?error=${encodeURIComponent("Solo propietarios pueden renombrar LOCs.")}`,
+      );
+    }
+
+    let batchQuery = supabase
+      .from("inventory_locations")
+      .select("id,code,zone,aisle,level,description,site_id")
+      .order("code", { ascending: true })
+      .limit(500);
+
+    if (filterSiteId) batchQuery = batchQuery.eq("site_id", filterSiteId);
+    if (filterZone) batchQuery = batchQuery.eq("zone", filterZone);
+    if (filterCode) batchQuery = batchQuery.ilike("code", `%${filterCode}%`);
+
+    const { data: rows, error } = await batchQuery;
+    if (error) {
+      redirect(
+        `/inventory/locations?error=${encodeURIComponent(error.message)}`,
+      );
+    }
+
+    const unnamedRows = ((rows ?? []) as LocationRow[]).filter(
+      (row) => !String(row.description ?? "").trim(),
+    );
+
+    for (const row of unnamedRows) {
+      const suggestedName = suggestLocationDescription(row);
+      const { error: updateError } = await supabase
+        .from("inventory_locations")
+        .update({ description: suggestedName })
+        .eq("id", row.id);
+
+      if (updateError) {
+        redirect(
+          `/inventory/locations?error=${encodeURIComponent(updateError.message)}`,
+        );
+      }
+    }
+
+    revalidatePath("/inventory/locations");
+    redirect("/inventory/locations?updated=1");
+  }
+
   let locationsQuery = supabase
     .from("inventory_locations")
     .select("id,code,zone,aisle,level,site_id,description")
@@ -354,6 +500,7 @@ export default async function InventoryLocationsPage({
   const editingLoc = editId ? locationRows.find((l) => l.id === editId) ?? null : null;
   const isEditingLoc = Boolean(canEditLoc && editingLoc);
   const requestedEditButNotFound = Boolean(editId) && canEditLoc && !editingLoc;
+  const unnamedLocationRows = locationRows.filter((loc) => !String(loc.description ?? "").trim());
   const baseQuery = new URLSearchParams();
   if (filterSiteId) baseQuery.set("site_id", filterSiteId);
   if (filterZone) baseQuery.set("zone", filterZone);
@@ -472,6 +619,59 @@ export default async function InventoryLocationsPage({
         </div>
       ) : null}
 
+      {canEditLoc && unnamedLocationRows.length > 0 ? (
+        <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="ui-h3">LOCs sin nombre visible</div>
+              <div className="mt-1 ui-body-muted">
+                El código técnico se conserva. Aquí solo estás agregando el nombre humano que verá la operación.
+              </div>
+            </div>
+            <form action={applySuggestedNamesBatchAction}>
+              <button type="submit" className="ui-btn ui-btn--ghost">
+                Aplicar sugerencias visibles
+              </button>
+            </form>
+          </div>
+
+          <div className="mt-4 grid gap-3">
+            {unnamedLocationRows.slice(0, 12).map((loc) => {
+              const suggestedName = suggestLocationDescription(loc);
+              return (
+                <div key={loc.id} className="ui-panel-soft flex flex-wrap items-center justify-between gap-3 p-4">
+                  <div className="space-y-1">
+                    <div className="text-sm font-semibold text-[var(--ui-text)]">{loc.code ?? "LOC sin codigo"}</div>
+                    <div className="text-sm text-[var(--ui-muted)]">
+                      Sugerencia: <strong className="text-[var(--ui-text)]">{suggestedName}</strong>
+                    </div>
+                  </div>
+                  <form action={applySuggestedNameAction} className="flex items-center gap-2">
+                    <input type="hidden" name="loc_id" value={loc.id} />
+                    <input type="hidden" name="suggested_name" value={suggestedName} />
+                    <button type="submit" className="ui-btn ui-btn--brand">
+                      Usar sugerencia
+                    </button>
+                    <Link
+                      href={`/inventory/locations?${baseQuery.toString() ? `${baseQuery.toString()}&` : ""}edit=${encodeURIComponent(loc.id)}`}
+                      className="ui-btn ui-btn--ghost"
+                    >
+                      Editar
+                    </Link>
+                  </form>
+                </div>
+              );
+            })}
+          </div>
+
+          {unnamedLocationRows.length > 12 ? (
+            <div className="mt-3 ui-caption">
+              Se muestran 12 sugerencias primero. Puedes aplicar todas las visibles o editar una por una.
+            </div>
+          ) : null}
+        </div>
+      ) : null}
+
       <div className="ui-panel ui-remission-section ui-fade-up ui-delay-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -558,7 +758,14 @@ export default async function InventoryLocationsPage({
               {locationRows.map((loc) => (
                 <tr key={loc.id} className="ui-body">
                   <TableCell>
-                    {loc.description?.trim() || "Sin nombre"}
+                    <div className="space-y-1">
+                      <div>{loc.description?.trim() || "Sin nombre"}</div>
+                      {!loc.description?.trim() ? (
+                        <div className="ui-caption">
+                          Sugerido: {suggestLocationDescription(loc)}
+                        </div>
+                      ) : null}
+                    </div>
                   </TableCell>
                   <TableCell className="font-mono">
                     {loc.code}

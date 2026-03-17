@@ -42,7 +42,7 @@ LOCs en `Centro`:
 - `LOC-CP-SBX-B1-01`
 - `LOC-CP-SBX-C1-01`
 
-Stock inicial:
+Stock inicial:  
 - `SBXV1-INS-001`: `12 un` en `LOC-CP-SBX-A1-01`
 - `SBXV1-VTA-002`: `12 un` en `LOC-CP-SBX-A1-01`
 - `SBXV1-VTA-001`: `3 un` en `LOC-CP-SBX-B1-01`
