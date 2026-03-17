@@ -294,3 +294,7 @@ Follow-up:
   - la cantidad a preparar queda mas protagonista;
   - la etiqueta principal ahora dice `Ahora: ...` o `Hecha`, para que el operario entienda rapido que sigue;
   - el LOC elegido ya no compite con todas las opciones a la vez; cuando ya existe, la pantalla lo resume y deja `Cambiar LOC` en segundo plano.
+- se mejoro la confianza visual del cambio de estado en detalle de remisiones:
+  - la linea tocada vuelve marcada con un realce verde y mensaje inline (`Preparacion guardada`, `Salida confirmada`, etc.), en vez de depender solo del aviso global;
+  - el badge principal de cantidad ya cambia con el estado (`por preparar`, `preparadas`, `listas`, `recibidas`);
+  - se corrigio un falso negativo visual donde, aun con un LOC ya elegido, seguia apareciendo `No hay LOC con stock para este producto`.
