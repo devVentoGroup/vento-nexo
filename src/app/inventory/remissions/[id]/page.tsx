@@ -53,11 +53,6 @@ type SiteRow = {
   site_type: string | null;
 };
 
-type AreaKindRow = {
-  code: string;
-  name: string | null;
-};
-
 type RestockItemRow = {
   id: string;
   product_id: string;
@@ -597,6 +592,21 @@ async function splitItem(formData: FormData) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: error.message }));
   }
 
+  if (currentStatus === "pending") {
+    const { error: requestError } = await supabase
+      .from("restock_requests")
+      .update({
+        status: "preparing",
+        prepared_at: new Date().toISOString(),
+        prepared_by: user.id,
+        status_updated_at: new Date().toISOString(),
+      })
+      .eq("id", requestId);
+    if (requestError) {
+      redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: requestError.message }));
+    }
+  }
+
   redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, ok: "split_item" }));
 }
 
@@ -710,6 +720,21 @@ async function chooseSourceLoc(formData: FormData) {
 
   if (error) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: error.message }));
+  }
+
+  if (currentStatus === "pending") {
+    const { error: requestError } = await supabase
+      .from("restock_requests")
+      .update({
+        status: "preparing",
+        prepared_at: new Date().toISOString(),
+        prepared_by: user.id,
+        status_updated_at: new Date().toISOString(),
+      })
+      .eq("id", requestId);
+    if (requestError) {
+      redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: requestError.message }));
+    }
   }
 
   redirect(
@@ -913,6 +938,21 @@ async function applyPrepareShortcut(formData: FormData) {
 
   if (error) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: error.message }));
+  }
+
+  if (currentStatus === "pending") {
+    const { error: requestError } = await supabase
+      .from("restock_requests")
+      .update({
+        status: "preparing",
+        prepared_at: new Date().toISOString(),
+        prepared_by: user.id,
+        status_updated_at: new Date().toISOString(),
+      })
+      .eq("id", requestId);
+    if (requestError) {
+      redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: requestError.message }));
+    }
   }
 
   redirect(
@@ -1488,13 +1528,7 @@ export default async function RemissionDetailPage({
     .eq("request_id", id)
     .order("created_at", { ascending: true });
 
-  const { data: areaKinds } = await supabase
-    .from("area_kinds")
-    .select("code, name")
-    .order("code", { ascending: true });
-
   const itemRows = (items ?? []) as unknown as RestockItemRow[];
-  const areaKindRows = (areaKinds ?? []) as AreaKindRow[];
   const showSourceLocSelector =
     access.canPrepare && access.fromSiteType === "production_center";
 
@@ -1602,17 +1636,14 @@ export default async function RemissionDetailPage({
   }
 
   const currentStatus = String(request.status ?? "");
-  const canPrepareAction = access.canPrepare && currentStatus === "pending";
   const canTransitAction = access.canTransit && currentStatus === "preparing";
   const canReceiveAction =
     access.canReceive && ["in_transit", "partial"].includes(currentStatus);
   const canReceivePartialAction = access.canReceive && currentStatus === "in_transit";
-  const canCancelAction = access.canCancel && !["closed", "cancelled"].includes(currentStatus);
   const canEditPrepareItems =
     access.canPrepare && ["pending", "preparing"].includes(currentStatus);
   const canEditReceiveItems =
     access.canReceive && ["in_transit", "partial"].includes(currentStatus);
-  const canEditArea = access.canCancel || canEditPrepareItems;
   const isProductionView = access.fromSiteType === "production_center" && access.canPrepare;
   const isSatelliteView = access.toSiteType === "satellite" && access.canReceive;
   const pendingReceiptLines = itemRows.filter((item) => {
@@ -1661,7 +1692,8 @@ export default async function RemissionDetailPage({
   }).length;
   const canTransitNow = canTransitAction && dispatchReadyLines > 0 && dispatchBlockedLines === 0;
   const hasPrimaryTopAction =
-    canPrepareAction || canTransitNow || canReceiveAction || canReceivePartialAction;
+    canTransitNow || canReceiveAction || canReceivePartialAction;
+  const showTopActionPanel = canTransitAction || canReceiveAction || canReceivePartialAction;
   let responsibleActor = "Sin actor operativo pendiente.";
   if (["pending", "preparing"].includes(currentStatus)) {
     responsibleActor = `${access.fromSiteName || "Centro"} / bodega`;
@@ -1822,6 +1854,7 @@ export default async function RemissionDetailPage({
         </div>
       ) : null}
 
+      {showTopActionPanel ? (
       <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
         <div className="ui-h3">
           {isProductionView ? "Acción principal" : isSatelliteView ? "Acción principal" : "Acciones"}
@@ -1829,15 +1862,6 @@ export default async function RemissionDetailPage({
         <form action={updateStatus} className="mt-4 flex flex-col gap-3">
           <input type="hidden" name="request_id" value={request.id} />
           <input type="hidden" name="return_origin" value={cameFromPrepareQueue ? "prepare" : ""} />
-          {canPrepareAction ? (
-            <button
-              name="action"
-              value="prepare"
-              className="ui-btn ui-btn--brand h-12 w-full text-sm font-semibold md:w-auto md:min-w-[220px] md:px-5 md:text-[15px]"
-            >
-              Empezar preparacion
-            </button>
-          ) : null}
           {canTransitAction ? (
             canTransitNow ? (
               <button
@@ -1871,29 +1895,14 @@ export default async function RemissionDetailPage({
               Guardar recepcion parcial
             </button>
           ) : null}
-          {canCancelAction ? (
-            <details className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3 md:max-w-sm">
-              <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
-                Más acciones
-              </summary>
-              <div className="mt-3">
-                <button
-                  name="action"
-                  value="cancel"
-                  className="ui-btn ui-btn--ghost h-12 w-full text-sm font-semibold md:px-5 md:text-[15px]"
-                >
-                  Cancelar remisión
-                </button>
-              </div>
-            </details>
-          ) : null}
         </form>
-        {!hasPrimaryTopAction && !canCancelAction ? (
+        {!hasPrimaryTopAction ? (
           <div className="mt-3 ui-caption">
-            No hay acciones disponibles para tu rol en el estado actual.
+            Completa primero las líneas para desbloquear la siguiente acción.
           </div>
         ) : null}
       </div>
+      ) : null}
 
       <div className="ui-panel ui-remission-section ui-fade-up ui-delay-3">
         <div className="ui-h3">
@@ -2331,15 +2340,14 @@ export default async function RemissionDetailPage({
                             <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
                               Cambiar o ajustar
                             </summary>
-                            <div className="mt-3">
-                              <label className="flex flex-col gap-1">
-                                <span className="ui-caption">Preparado</span>
-                                <input
-                                  name="prepared_quantity"
-                                  defaultValue={item.prepared_quantity ?? 0}
-                                  className="ui-input h-12 min-w-0"
-                                />
-                              </label>
+                            <div className="mt-3 flex flex-wrap gap-3">
+                              <button
+                                type="submit"
+                                form={clearPrepareShortcutFormId}
+                                className="ui-btn ui-btn--ghost h-12 px-5 text-base font-semibold"
+                              >
+                                Limpiar preparación
+                              </button>
                             </div>
                           </details>
                         </div>
@@ -2398,69 +2406,15 @@ export default async function RemissionDetailPage({
                               </button>
                             ) : null}
                           </div>
-                          <div className="mt-3 grid gap-3 md:grid-cols-2">
-                            <label className="flex flex-col gap-1">
-                              <span className="ui-caption">Recibido</span>
-                              <input
-                                name="received_quantity"
-                                defaultValue={item.received_quantity ?? 0}
-                                className="ui-input h-12 min-w-0"
-                              />
-                            </label>
-                            <label className="flex flex-col gap-1">
-                              <span className="ui-caption">Faltante</span>
-                              <input
-                                name="shortage_quantity"
-                                defaultValue={item.shortage_quantity ?? 0}
-                                className="ui-input h-12 min-w-0"
-                              />
-                            </label>
-                          </div>
                         </details>
                       </div>
                     ) : null}
                   </div>
                 </div>
-                {canEditArea ? (
-                  <details className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-white px-3 py-3">
-                    <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
-                      Opciones avanzadas
-                    </summary>
-                    <div className="mt-3 max-w-xs">
-                      <label className="flex flex-col gap-1">
-                        <span className="ui-caption">Área</span>
-                        <select
-                          name="item_area_kind"
-                          defaultValue={item.production_area_kind ?? ""}
-                          className="ui-input h-12 min-w-0"
-                        >
-                          <option value="">(sin area)</option>
-                          {areaKindRows.map((row) => (
-                            <option key={row.code} value={row.code}>
-                              {row.name ?? row.code}
-                            </option>
-                          ))}
-                        </select>
-                      </label>
-                    </div>
-                  </details>
-                ) : null}
-                {!canEditArea ? (
-                  <input type="hidden" name="item_area_kind" value={item.production_area_kind ?? ""} />
-                ) : null}
+                <input type="hidden" name="item_area_kind" value={item.production_area_kind ?? ""} />
               </div>
             );
             })}
-          </div>
-
-          <div className="sticky bottom-0 z-20 -mx-4 border-t border-[var(--ui-border)] bg-white/95 px-4 py-3 backdrop-blur lg:static lg:mx-0 lg:border-0 lg:bg-transparent lg:px-0 lg:py-0">
-            <button className="ui-btn ui-btn--brand w-full lg:w-auto">
-            {canEditPrepareItems
-              ? "Guardar preparación"
-              : canEditReceiveItems
-                ? "Guardar recepción"
-                : "Guardar items"}
-          </button>
           </div>
         </form>
 

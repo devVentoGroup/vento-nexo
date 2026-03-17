@@ -298,3 +298,8 @@ Follow-up:
   - la linea tocada vuelve marcada con un realce verde y mensaje inline (`Preparacion guardada`, `Salida confirmada`, etc.), en vez de depender solo del aviso global;
   - el badge principal de cantidad ya cambia con el estado (`por preparar`, `preparadas`, `listas`, `recibidas`);
   - se corrigio un falso negativo visual donde, aun con un LOC ya elegido, seguia apareciendo `No hay LOC con stock para este producto`.
+- se corrigio la logica base de la preparacion para quitar duplicaciones del flujo:
+  - ya no existe `Empezar preparacion` como CTA previo; la remision entra en `preparing` al tocar la primera accion real de linea (`elegir LOC`, `dividir`, `preparar`);
+  - se quito `Guardar preparación / Guardar recepción` global, porque las lineas ya persisten cada accion por separado;
+  - se quitaron inputs manuales visibles que no tenian un guardado inmediato asociado;
+  - la pantalla ahora apunta a un modelo mas claro: una accion real por linea, y la accion global (`Despachar`, `Recibir`) solo cuando el estado ya la permite.
