@@ -271,3 +271,7 @@ Follow-up:
   - `setup` ahora comunica mejor que hoy la impresora se deja lista via Browser Print, sin vender Bluetooth/Wi-Fi como si ya estuvieran resueltos dentro de Nexo;
   - `jobs` se recorto a flujo principal `elegir formato -> cola -> vista previa -> imprimir`, moviendo pruebas finas a un plegable;
   - la vista previa de `LOC QR` ya muestra explicitamente el destino real del QR.
+- en detalle de remisiones se corrigieron dos fallos reales del flujo tactil:
+  - elegir un `LOC` desde tarjeta sugerida o desde `Ver mas LOCs` ya no cae en `Selecciona un LOC para continuar`, porque ahora cada accion envia su propio formulario explicito y no depende del formulario global de items;
+  - `Dividir automaticamente` ya no cae en `Falta la linea a partir`, por la misma razon;
+  - ademas, los CTA superiores (`Empezar preparacion`, `Despachar`, `Cancelar`) se bajaron de peso en escritorio para que no se vean sobredimensionados fuera de tablet/movil.

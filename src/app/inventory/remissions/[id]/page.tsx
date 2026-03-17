@@ -548,7 +548,9 @@ async function splitItem(formData: FormData) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "Falta la linea a partir." }));
   }
 
-  const splitQuantity = parseNumber(asText(formData.get(`split_quantity_${itemId}`)));
+  const splitQuantity = parseNumber(
+    asText(formData.get(`split_quantity_${itemId}`)) || asText(formData.get("split_quantity"))
+  );
   if (splitQuantity <= 0) {
     redirect(
       buildRemissionDetailHref({
@@ -614,6 +616,9 @@ async function chooseSourceLoc(formData: FormData) {
 
   if (!itemId) {
     itemId = asText(formData.get("choose_loc_item_id"));
+  }
+  if (!locationId) {
+    locationId = asText(formData.get("choose_loc_location_id"));
   }
   if (!locationId && itemId) {
     locationId = asText(formData.get(`manual_loc_id_${itemId}`));
@@ -1772,14 +1777,14 @@ export default async function RemissionDetailPage({
         <div className="ui-h3">
           {isProductionView ? "Siguiente accion en Centro" : isSatelliteView ? "Siguiente accion en tu sede" : "Acciones"}
         </div>
-        <form action={updateStatus} className="mt-4 grid gap-3 sm:grid-cols-2">
+        <form action={updateStatus} className="mt-4 flex flex-col gap-3 sm:flex-row sm:flex-wrap">
           <input type="hidden" name="request_id" value={request.id} />
           <input type="hidden" name="return_origin" value={cameFromPrepareQueue ? "prepare" : ""} />
           {canPrepareAction ? (
             <button
               name="action"
               value="prepare"
-              className="ui-btn ui-btn--ghost h-14 w-full text-base font-semibold"
+              className="ui-btn ui-btn--ghost h-12 w-full text-sm font-semibold md:w-auto md:min-w-[220px] md:px-5 md:text-[15px]"
             >
               Empezar preparacion
             </button>
@@ -1788,7 +1793,7 @@ export default async function RemissionDetailPage({
             <button
               name="action"
               value="transit"
-              className="ui-btn ui-btn--brand h-14 w-full text-base font-semibold"
+              className="ui-btn ui-btn--brand h-12 w-full text-sm font-semibold md:w-auto md:min-w-[220px] md:px-5 md:text-[15px]"
             >
               Despachar a destino
             </button>
@@ -1797,7 +1802,7 @@ export default async function RemissionDetailPage({
             <button
               name="action"
               value="receive"
-              className="ui-btn ui-btn--brand h-14 w-full text-base font-semibold"
+              className="ui-btn ui-btn--brand h-12 w-full text-sm font-semibold md:w-auto md:min-w-[220px] md:px-5 md:text-[15px]"
             >
               Confirmar recepción
             </button>
@@ -1806,7 +1811,7 @@ export default async function RemissionDetailPage({
             <button
               name="action"
               value="receive_partial"
-              className="ui-btn ui-btn--ghost h-14 w-full text-base font-semibold"
+              className="ui-btn ui-btn--ghost h-12 w-full text-sm font-semibold md:w-auto md:min-w-[220px] md:px-5 md:text-[15px]"
             >
               Guardar recepcion parcial
             </button>
@@ -1815,7 +1820,7 @@ export default async function RemissionDetailPage({
             <button
               name="action"
               value="cancel"
-              className="ui-btn ui-btn--danger h-14 w-full text-base font-semibold sm:col-span-2"
+              className="ui-btn ui-btn--danger h-12 w-full text-sm font-semibold md:w-auto md:min-w-[180px] md:px-5 md:text-[15px]"
             >
               Cancelar
             </button>
@@ -1937,6 +1942,8 @@ export default async function RemissionDetailPage({
               const lineCompleteReceipt =
                 canEditReceiveItems && shippedQty > 0 && accountedQty === shippedQty;
               const remainingReceiptQty = roundQuantity(Math.max(shippedQty - receivedQty, 0));
+              const splitFormId = `split-line-form-${item.id}`;
+              const manualLocFormId = `manual-loc-form-${item.id}`;
               const lineStatusLabel = canEditPrepareItems
                 ? missingSourceLoc
                   ? "LOC pendiente"
@@ -2040,10 +2047,15 @@ export default async function RemissionDetailPage({
                       <div className="rounded-2xl bg-[var(--ui-bg-soft)] px-3 py-3 text-sm text-[var(--ui-muted)]">
                         {suggestedSplitQty} {itemUnitLabel} desde {bestLocCandidate?.label ?? "el mejor LOC"} y {remainingSplitQty} {itemUnitLabel} en la línea restante.
                       </div>
+                      <input
+                        type="hidden"
+                        name={`split_quantity_${item.id}`}
+                        value={suggestedSplitQty}
+                        form={splitFormId}
+                      />
                       <button
-                        formAction={splitItem}
-                        name="split_item_id"
-                        value={item.id}
+                        type="submit"
+                        form={splitFormId}
                         className="ui-btn ui-btn--brand h-12 w-full px-5 text-base font-semibold sm:w-auto"
                       >
                         Dividir automáticamente
@@ -2086,9 +2098,8 @@ export default async function RemissionDetailPage({
                               return (
                                 <button
                                   key={`${item.id}-${candidate.locationId}`}
-                                  formAction={chooseSourceLoc}
-                                  name="choose_loc_target"
-                                  value={`${item.id}|${candidate.locationId}`}
+                                  type="submit"
+                                  form={`choose-loc-form-${item.id}-${candidate.locationId}`}
                                   className={`rounded-2xl border px-4 py-4 text-left shadow-sm transition ${
                                     isSelected
                                       ? "border-emerald-300 bg-emerald-50 text-emerald-950"
@@ -2137,6 +2148,7 @@ export default async function RemissionDetailPage({
                               <span className="ui-caption">Otro LOC</span>
                               <select
                                 name={`manual_loc_id_${item.id}`}
+                                form={manualLocFormId}
                                 defaultValue={item.source_location_id ?? ""}
                                 className="ui-input h-12 min-w-0"
                               >
@@ -2149,9 +2161,8 @@ export default async function RemissionDetailPage({
                               </select>
                             </label>
                             <button
-                              formAction={chooseSourceLoc}
-                              name="choose_loc_item_id"
-                              value={item.id}
+                              type="submit"
+                              form={manualLocFormId}
                               className="ui-btn ui-btn--ghost h-12 w-full text-base font-semibold md:w-auto"
                             >
                               Usar este LOC
@@ -2380,6 +2391,92 @@ export default async function RemissionDetailPage({
           </button>
           </div>
         </form>
+
+        {canEditPrepareItems ? (
+          <div className="hidden" aria-hidden="true">
+            {itemRows.map((item) => {
+              const locCandidates = stockByLocCandidates.get(item.product_id) ?? [];
+              const quickLocCandidates = locCandidates.slice(0, 3);
+              const requestedQty = roundQuantity(Number(item.quantity ?? 0));
+              const preparedQty = roundQuantity(Number(item.prepared_quantity ?? 0));
+              const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
+              const receivedQty = roundQuantity(Number(item.received_quantity ?? 0));
+              const shortageQty = roundQuantity(Number(item.shortage_quantity ?? 0));
+              const targetQtyForLoc = Math.max(preparedQty, shippedQty) > 0 ? Math.max(preparedQty, shippedQty) : requestedQty;
+              const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
+              const bestLocCandidate = locCandidates[0] ?? null;
+              const lineWithoutCoveringLoc =
+                targetQtyForLoc > 0 &&
+                targetQtyForLoc <= availableSite &&
+                (bestLocCandidate?.qty ?? 0) < targetQtyForLoc;
+              const canSplitLine =
+                lineWithoutCoveringLoc &&
+                requestedQty > 0 &&
+                preparedQty === 0 &&
+                shippedQty === 0 &&
+                receivedQty === 0 &&
+                shortageQty === 0 &&
+                (bestLocCandidate?.qty ?? 0) > 0 &&
+                (bestLocCandidate?.qty ?? 0) < requestedQty;
+              const suggestedSplitQty = canSplitLine
+                ? roundQuantity(Math.min(bestLocCandidate?.qty ?? 0, requestedQty))
+                : 0;
+              const splitFormId = `split-line-form-${item.id}`;
+              const manualLocFormId = `manual-loc-form-${item.id}`;
+
+              return (
+                <>
+                  {canSplitLine ? (
+                    <form key={splitFormId} id={splitFormId} action={splitItem}>
+                      <input type="hidden" name="request_id" value={request.id} />
+                      <input
+                        type="hidden"
+                        name="return_origin"
+                        value={cameFromPrepareQueue ? "prepare" : ""}
+                      />
+                      <input type="hidden" name="split_item_id" value={item.id} />
+                      <input type="hidden" name="split_quantity" value={suggestedSplitQty} />
+                    </form>
+                  ) : null}
+
+                  {!canSplitLine ? (
+                    <>
+                      <form id={manualLocFormId} action={chooseSourceLoc}>
+                        <input type="hidden" name="request_id" value={request.id} />
+                        <input
+                          type="hidden"
+                          name="return_origin"
+                          value={cameFromPrepareQueue ? "prepare" : ""}
+                        />
+                        <input type="hidden" name="choose_loc_item_id" value={item.id} />
+                      </form>
+
+                      {quickLocCandidates.map((candidate) => {
+                        const formId = `choose-loc-form-${item.id}-${candidate.locationId}`;
+                        return (
+                          <form key={formId} id={formId} action={chooseSourceLoc}>
+                            <input type="hidden" name="request_id" value={request.id} />
+                            <input
+                              type="hidden"
+                              name="return_origin"
+                              value={cameFromPrepareQueue ? "prepare" : ""}
+                            />
+                            <input type="hidden" name="choose_loc_item_id" value={item.id} />
+                            <input
+                              type="hidden"
+                              name="choose_loc_location_id"
+                              value={candidate.locationId}
+                            />
+                          </form>
+                        );
+                      })}
+                    </>
+                  ) : null}
+                </>
+              );
+            })}
+          </div>
+        ) : null}
       </div>
     </div>
   );
