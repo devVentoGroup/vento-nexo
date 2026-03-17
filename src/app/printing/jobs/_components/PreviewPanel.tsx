@@ -64,8 +64,8 @@ export function PreviewPanel({
     <div className="mt-6 ui-panel ui-remission-section">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="ui-h3">Vista previa</div>
-          <div className="mt-1 ui-caption">Revisa antes de imprimir.</div>
+          <div className="ui-h3">3. Vista previa</div>
+          <div className="mt-1 ui-caption">Confirma rápido y manda a imprimir.</div>
         </div>
       </div>
 
@@ -210,6 +210,13 @@ export function PreviewPanel({
           {previewMode === "auto"
             ? "Mostrando simulación."
             : "Cambia a modo mock si quieres seguir revisando."}
+        </div>
+      ) : null}
+
+      {previewLocVariant === "qr" && previewQrUrl ? (
+        <div className="mt-3 rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3">
+          <div className="text-sm font-semibold text-cyan-900">Destino del QR</div>
+          <div className="mt-1 break-all text-xs text-cyan-900">{previewQrUrl}</div>
         </div>
       ) : null}
 

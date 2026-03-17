@@ -10,7 +10,7 @@ import {
   type ProductUomProfile,
 } from "@/lib/inventory/uom";
 
-type LocOption = { id: string; code: string | null; zone: string | null };
+type LocOption = { id: string; code: string | null; zone: string | null; description?: string | null };
 type ProductOption = {
   id: string;
   name: string | null;
@@ -33,8 +33,20 @@ type Props = {
   products: ProductOption[];
   defaultUomProfiles?: ProductUomProfile[];
   siteId: string;
+  openedFromQr?: boolean;
+  mode?: "satellite" | "center" | "general";
+  siteLabel?: string;
   action: (formData: FormData) => void | Promise<void>;
 };
+
+function buildLocLabel(loc: LocOption | null | undefined) {
+  if (!loc) return "Sin LOC";
+  const description = String(loc.description ?? "").trim();
+  const zone = String(loc.zone ?? "").trim();
+  const code = String(loc.code ?? "").trim();
+  if (description && code) return `${description} · ${code}`;
+  return description || zone || code || loc.id;
+}
 
 function createRow(id: number): Row {
   return { id, productId: "", quantity: "", inputUnitCode: "", inputUomProfileId: "", notes: "" };
@@ -46,6 +58,9 @@ export function WithdrawForm({
   products,
   defaultUomProfiles = [],
   siteId,
+  openedFromQr = false,
+  mode = "general",
+  siteLabel = "",
   action,
 }: Props) {
   const [locationId, setLocationId] = useState((defaultLocationId || locations[0]?.id) ?? "");
@@ -81,8 +96,8 @@ export function WithdrawForm({
     () =>
       locations.map((loc) => ({
         value: loc.id,
-        label: loc.code ?? loc.zone ?? loc.id,
-        searchText: `${loc.code ?? ""} ${loc.zone ?? ""}`,
+        label: buildLocLabel(loc),
+        searchText: `${loc.code ?? ""} ${loc.zone ?? ""} ${loc.description ?? ""}`,
       })),
     [locations]
   );
@@ -112,6 +127,13 @@ export function WithdrawForm({
 
   const canSubmit = Boolean(siteId && locationId && linesReady.length > 0);
   const totalCaptured = linesReady.reduce((sum, row) => sum + Number(row.quantity), 0);
+  const selectedLocLabel = buildLocLabel(selectedLocation);
+  const modeHint =
+    mode === "satellite"
+      ? "Escanea el LOC, confirma qué sale y registra."
+      : mode === "center"
+        ? "Confirma la salida real desde este LOC y sigue."
+        : "Registra solo lo que realmente sale de este LOC.";
 
   const addRow = () => {
     setRows((prev) => [...prev, createRow((prev.at(-1)?.id ?? -1) + 1)]);
@@ -151,20 +173,17 @@ export function WithdrawForm({
               <div className="ui-h3">Origen</div>
               <div className="ui-caption mt-1">Confirma el LOC desde donde sale el inventario.</div>
             </div>
-            <Link href="/inventory/stock" className="ui-btn ui-btn--ghost ui-btn--sm w-full sm:w-auto">
-              Ver stock
-            </Link>
           </div>
 
           <div className="rounded-2xl border border-[var(--ui-brand)]/20 bg-[linear-gradient(135deg,rgba(245,158,11,0.18)_0%,rgba(255,255,255,0.92)_100%)] p-4 shadow-sm sm:p-5">
             <div className="ui-caption font-semibold text-[var(--ui-brand)]">
-              {defaultLocationId ? "LOC abierto desde QR" : "LOC activo"}
+              {openedFromQr ? "LOC abierto desde QR" : "LOC activo"}
             </div>
             <div className="mt-2 text-lg font-semibold text-[var(--ui-text)] sm:text-xl">
-              {selectedLocation?.code ?? selectedLocation?.zone ?? selectedLocation?.id ?? "Sin LOC"}
+              {selectedLocLabel}
             </div>
             <div className="mt-1 text-sm text-[var(--ui-muted)]">
-              Todo el retiro se descuenta de este LOC y de la sede activa.
+              {modeHint} {siteLabel ? `Sede: ${siteLabel}.` : ""}
             </div>
           </div>
 
@@ -179,19 +198,26 @@ export function WithdrawForm({
             </div>
           </div>
 
-          <label className="flex flex-col gap-2">
-            <span className="ui-label">Cambiar LOC manualmente</span>
-            <SearchableSingleSelect
-              name="location_id"
-              value={locationId}
-              onValueChange={setLocationId}
-              options={locationOptions}
-              placeholder="Selecciona LOC"
-              searchPlaceholder="Buscar LOC..."
-              sheetTitle="Selecciona LOC"
-              dropdownMode="inline"
-            />
-          </label>
+          <details className="rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3">
+            <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+              {openedFromQr ? "Cambiar LOC manualmente" : "Mas acciones para este LOC"}
+            </summary>
+            <div className="mt-3 space-y-3">
+              <SearchableSingleSelect
+                name="location_id"
+                value={locationId}
+                onValueChange={setLocationId}
+                options={locationOptions}
+                placeholder="Selecciona LOC"
+                searchPlaceholder="Buscar LOC..."
+                sheetTitle="Selecciona LOC"
+                dropdownMode="inline"
+              />
+              <Link href="/inventory/stock" className="ui-btn ui-btn--ghost h-12 w-full text-sm font-semibold sm:w-auto">
+                Ver stock
+              </Link>
+            </div>
+          </details>
         </section>
 
         <section className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-4">
@@ -331,31 +357,37 @@ export function WithdrawForm({
                     </label>
                   </div>
 
-                  <label className="mt-3 flex flex-col gap-1">
-                    <span className="ui-label">Nota opcional</span>
-                    <input
-                      name="item_notes"
-                      placeholder="Ej. produccion, merma, mise en place"
-                      value={row.notes}
-                      onChange={(event) =>
-                        setRows((prev) =>
-                          prev.map((current) =>
-                            current.id === row.id ? { ...current, notes: event.target.value } : current
-                          )
-                        )
-                      }
-                      className="ui-input h-11"
-                    />
-                  </label>
-
                   <input type="hidden" name="item_input_uom_profile_id" value={row.inputUomProfileId} />
                   <input type="hidden" name="item_quantity_in_input" value={row.quantity} />
 
-                  {conversionLabel ? (
-                    <div className="mt-3 rounded-xl border border-[var(--ui-border)] bg-white px-3 py-2 text-xs text-[var(--ui-muted)]">
-                      Conversion: {conversionLabel}
+                  <details className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3">
+                    <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+                      Detalles opcionales
+                    </summary>
+                    <div className="mt-3 space-y-3">
+                      <label className="flex flex-col gap-1">
+                        <span className="ui-label">Nota opcional</span>
+                        <input
+                          name="item_notes"
+                          placeholder="Ej. produccion, merma, mise en place"
+                          value={row.notes}
+                          onChange={(event) =>
+                            setRows((prev) =>
+                              prev.map((current) =>
+                                current.id === row.id ? { ...current, notes: event.target.value } : current
+                              )
+                            )
+                          }
+                          className="ui-input h-11"
+                        />
+                      </label>
+                      {conversionLabel ? (
+                        <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-2 text-xs text-[var(--ui-muted)]">
+                          Conversion: {conversionLabel}
+                        </div>
+                      ) : null}
                     </div>
-                  ) : null}
+                  </details>
                 </div>
               );
             })}
@@ -373,7 +405,7 @@ export function WithdrawForm({
           <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
             <div className="ui-caption">LOC</div>
             <div className="mt-1 font-semibold text-[var(--ui-text)]">
-              {selectedLocation?.code ?? selectedLocation?.zone ?? selectedLocation?.id ?? "Sin LOC"}
+              {selectedLocLabel}
             </div>
           </div>
 
@@ -417,7 +449,7 @@ export function WithdrawForm({
       <div className="fixed inset-x-0 bottom-0 z-30 border-t border-[var(--ui-border)] bg-white/95 p-3 backdrop-blur lg:hidden">
         <div className="mx-auto flex max-w-3xl items-center gap-3">
           <div className="min-w-0 flex-1">
-            <div className="text-xs text-[var(--ui-muted)]">{selectedLocation?.code ?? "Sin LOC"}</div>
+            <div className="text-xs text-[var(--ui-muted)]">{selectedLocLabel}</div>
             <div className="text-sm font-semibold text-[var(--ui-text)]">{linesReady.length} items listos</div>
           </div>
           <button type="submit" form="withdraw-quick-form" className="ui-btn ui-btn--brand h-12 min-w-[160px]" disabled={!canSubmit}>

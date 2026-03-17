@@ -19,6 +19,7 @@ import { ProductStorageFields } from "@/features/inventory/catalog/product-stora
 import {
   CatalogCategoryContextForm,
   CatalogHintPanel,
+  CatalogOptionalDetails,
   CatalogSection,
 } from "@/features/inventory/catalog/catalog-ui";
 import {
@@ -991,32 +992,37 @@ export default async function NewProductPage({
 
       {errorMsg && <div className="ui-alert ui-alert--error">Error: {errorMsg}</div>}
 
-      <CatalogHintPanel title="Norte del catalogo v1">
-        <p>
-          Aqui creas el <strong className="text-[var(--ui-text)]">producto maestro</strong>. La categoria de esta
-          pantalla es operativa: sirve para inventario, abastecimiento y setup por sede.
-        </p>
-        <p>
-          Precios, menus y visibilidad por negocio pueden existir hoy como compatibilidad, pero no son el centro de
-          este flujo.
-        </p>
-      </CatalogHintPanel>
-
-      {isQuickMode ? (
-        <CatalogHintPanel title="Modo rapido v1">
-          Usa este modo para cargar maestros criticos de v1. Si necesitas proveedores detallados, fotos, recetas o configuracion avanzada, cambia al formulario completo.
+      <CatalogOptionalDetails
+        title="Criterio de esta ficha"
+        summary="Abre este bloque solo si necesitas ver el marco v1 o cambiar el arbol operativo disponible."
+      >
+        <CatalogHintPanel title="Norte del catalogo v1">
+          <p>
+            Aqui creas el <strong className="text-[var(--ui-text)]">producto maestro</strong>. La categoria de esta
+            pantalla es operativa: sirve para inventario, abastecimiento y setup por sede.
+          </p>
+          <p>
+            Precios, menus y visibilidad por negocio pueden existir hoy como compatibilidad, pero no son el centro de
+            este flujo.
+          </p>
         </CatalogHintPanel>
-      ) : isSaleCategoryKind ? null : (
-        <CatalogCategoryContextForm
-          hiddenFields={[{ name: "type", value: typeKey }]}
-          categoryScope={categoryScope}
-          categorySiteId={effectiveCategorySiteId}
-          categoryDomain={categoryDomain}
-          showDomain={shouldShowCategoryDomain(categoryKind)}
-          categoryDomainOptions={categoryDomainOptions}
-          sites={sitesList.map((site) => ({ id: site.id, name: site.name }))}
-        />
-      )}
+
+        {isQuickMode ? (
+          <CatalogHintPanel title="Modo rapido v1">
+            Usa este modo para cargar maestros criticos de v1. Si necesitas proveedores detallados, fotos, recetas o configuracion avanzada, cambia al formulario completo.
+          </CatalogHintPanel>
+        ) : isSaleCategoryKind ? null : (
+          <CatalogCategoryContextForm
+            hiddenFields={[{ name: "type", value: typeKey }]}
+            categoryScope={categoryScope}
+            categorySiteId={effectiveCategorySiteId}
+            categoryDomain={categoryDomain}
+            showDomain={shouldShowCategoryDomain(categoryKind)}
+            categoryDomainOptions={categoryDomainOptions}
+            sites={sitesList.map((site) => ({ id: site.id, name: site.name }))}
+          />
+        )}
+      </CatalogOptionalDetails>
 
       <RequiredFieldsGuardForm action={createProduct} className="space-y-8">
         <input type="hidden" name="_type_key" value={typeKey} />
@@ -1097,19 +1103,23 @@ export default async function NewProductPage({
 
         {/* Guia: proveedores (solo insumo) */}
         {config.hasSuppliers ? (
-          <section className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)] space-y-2">
-            <p className="font-semibold text-[var(--ui-text)]">Guia rapida de unidades (casos reales)</p>
-            <p>
-              <strong className="text-[var(--ui-text)]">Queso gouda:</strong> base = lonja/un, compra = 1 paquete de 10 un, receta = 2 un.
-            </p>
-            <p>
-              <strong className="text-[var(--ui-text)]">Jugo de naranja:</strong> base = ml, compra = 1 botella de 1 l, receta = ml.
-            </p>
-            <p>
-              <strong className="text-[var(--ui-text)]">Cloro:</strong> base = ml, compra = galon, remision = botella 1 l, uso final = taza (convertida a ml).
-            </p>
-            <p>Regla: el sistema guarda stock y costo en unidad base; compra/remision se convierten automaticamente.</p>
-          </section>
+          <CatalogOptionalDetails
+            title="Guia rapida de unidades"
+            summary="Casos reales para validar unidades base y de compra sin saturar la ficha."
+          >
+            <div className="text-sm text-[var(--ui-muted)] space-y-2">
+              <p>
+                <strong className="text-[var(--ui-text)]">Queso gouda:</strong> base = lonja/un, compra = 1 paquete de 10 un, receta = 2 un.
+              </p>
+              <p>
+                <strong className="text-[var(--ui-text)]">Jugo de naranja:</strong> base = ml, compra = 1 botella de 1 l, receta = ml.
+              </p>
+              <p>
+                <strong className="text-[var(--ui-text)]">Cloro:</strong> base = ml, compra = galon, remision = botella 1 l, uso final = taza (convertida a ml).
+              </p>
+              <p>Regla: el sistema guarda stock y costo en unidad base; compra/remision se convierten automaticamente.</p>
+            </div>
+          </CatalogOptionalDetails>
         ) : null}
 
         {config.hasSuppliers && !isQuickMode && (
@@ -1135,7 +1145,10 @@ export default async function NewProductPage({
         )}
 
         {config.hasSuppliers && isQuickMode ? (
-          <section className="space-y-4">
+          <CatalogOptionalDetails
+            title="Empaque para remision"
+            summary="Abre este bloque solo si este item se solicita en remisiones con un empaque distinto a la unidad base."
+          >
             <div className="ui-panel">
               <div className="ui-h3">Empaque para remision (v1 rapido)</div>
               <p className="mt-1 text-sm text-[var(--ui-muted)]">
@@ -1178,14 +1191,14 @@ export default async function NewProductPage({
             <section className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
               Proveedor y costos detallados quedan opcionales en v1. Puedes completar esa informacion despues desde la ficha del producto o por carga asistida.
             </section>
-          </section>
+          </CatalogOptionalDetails>
         ) : null}
 
         {/* Receta se gestiona fuera de v1 */}
         {config.hasRecipe && !isQuickMode && (
-          <CatalogSection
+          <CatalogOptionalDetails
             title="Receta y produccion"
-            description="Esta configuracion queda fuera del flujo operativo v1."
+            summary="Esta configuracion queda fuera del flujo operativo v1."
           >
             <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
               <p>
@@ -1201,7 +1214,7 @@ export default async function NewProductPage({
                 Abrir continuidad externa
               </a>
             </div>
-          </CatalogSection>
+          </CatalogOptionalDetails>
         )}
 
         {!isQuickMode ? (
@@ -1210,6 +1223,7 @@ export default async function NewProductPage({
           currentUrl={null}
           productId={`draft-${typeKey}`}
           footerText="Si no subes fotos ahora, puedes cargarlas despues desde la ficha de edicion."
+          collapsible
         />
         ) : null}
 

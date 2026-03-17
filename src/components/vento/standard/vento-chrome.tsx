@@ -388,6 +388,9 @@ export function VentoChrome({
     () => [
       "access",
       "inventory.remissions",
+      "inventory.remissions.request",
+      "inventory.remissions.prepare",
+      "inventory.remissions.receive",
       "inventory.entries_emergency",
       "inventory.transfers",
       "inventory.withdraw",
@@ -457,6 +460,43 @@ export function VentoChrome({
   }, [currentSiteId, activeSiteId, permissionCodes]);
 
   const can = (code?: string) => (code ? Boolean(permMap[code]) : false);
+  const normalizedRole = String(role ?? "").toLowerCase();
+  const isManagementRole = ["propietario", "gerente_general", "admin", "manager", "gerente"].includes(
+    normalizedRole
+  );
+  const currentSiteType = String(currentSite?.site_type ?? "").toLowerCase();
+  const isSatelliteFocusMode = currentSiteType === "satellite" && !isManagementRole;
+  const isProductionFocusMode = currentSiteType === "production_center" && !isManagementRole;
+  const focusAllowedHrefs = isSatelliteFocusMode
+    ? new Set(["/", "/inventory/remissions", "/scanner"])
+    : isProductionFocusMode
+      ? new Set(["/", "/inventory/remissions", "/inventory/entries", "/scanner"])
+      : null;
+
+  const adaptNavItem = (item: NavItem): NavItem => {
+    if (item.href === "/inventory/remissions" && isSatelliteFocusMode) {
+      return {
+        ...item,
+        label: "Pedir y recibir",
+        description: "Tu sede solo solicita y confirma.",
+      };
+    }
+    if (item.href === "/inventory/remissions" && isProductionFocusMode) {
+      return {
+        ...item,
+        label: "Preparar remisiones",
+        description: "Centro prepara y despacha solicitudes.",
+      };
+    }
+    if (item.href === "/inventory/entries" && isProductionFocusMode) {
+      return {
+        ...item,
+        label: "Entradas de Centro",
+        description: "Recibe y registra entradas de contingencia.",
+      };
+    }
+    return item;
+  };
 
   const isItemVisible = (item: NavItem) => {
     if (!permissionsReady) return false;
@@ -475,7 +515,10 @@ export function VentoChrome({
     ? []
     : NAV_GROUPS.map((group) => ({
         label: group.label,
-        items: group.items.filter((item) => isItemVisible(item)),
+        items: group.items
+          .map((item) => adaptNavItem(item))
+          .filter((item) => isItemVisible(item))
+          .filter((item) => (focusAllowedHrefs ? focusAllowedHrefs.has(item.href) : true)),
       })).filter((group) => group.items.length > 0);
 
   return (
@@ -514,6 +557,13 @@ export function VentoChrome({
               Sede activa
             </div>
             <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">{currentSiteLabel}</div>
+            {isSatelliteFocusMode || isProductionFocusMode ? (
+              <div className="mt-2 text-xs text-[var(--ui-muted)]">
+                {isSatelliteFocusMode
+                  ? "Modo satélite: pedir, recibir y seguir."
+                  : "Modo Centro: preparar, despachar y seguir."}
+              </div>
+            ) : null}
           </div>
 
           <nav className="flex flex-1 flex-col gap-4 overflow-y-auto pr-1">

@@ -457,7 +457,7 @@ function PrintingJobsContent() {
     if (!code) return "";
     const base = window.location?.origin ?? "";
     if (!base) return "";
-    return `${base.replace(/\/$/, "")}/inventory/withdraw?loc=${encodeURIComponent(code)}`;
+    return `${base.replace(/\/$/, "")}/inventory/locations/open?loc=${encodeURIComponent(code)}`;
   }, [previewLocVariant, previewItems]);
   const activePrinterLabel =
     devices.find((d) => String(d?.uid) === String(selectedUid))?.name ??
@@ -477,7 +477,7 @@ function PrintingJobsContent() {
               Etiquetas listas para salir
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--ui-muted)] sm:text-base">
-              Selecciona tipo, arma cola, revisa vista previa y manda a imprimir sin salir del mismo flujo.
+              El flujo aquí debe sentirse así: eliges formato, armas la cola, revisas y mandas a imprimir. Lo técnico queda atrás.
             </p>
           </div>
           <div className="ui-remission-kpis">
@@ -554,27 +554,9 @@ function PrintingJobsContent() {
             className="ui-btn ui-btn--ghost"
             onClick={printAll}
             type="button"
+            disabled={!hasQueue}
           >
             Imprimir cola
-          </button>
-
-          {preset.columns === 3 && (
-            <button
-              className="ui-btn ui-btn--ghost"
-              onClick={printOneTestRow3Up}
-              type="button"
-              title="Imprime una fila de 3 etiquetas de prueba"
-            >
-              Imprimir una de prueba (3-up)
-            </button>
-          )}
-
-          <button
-            className="ui-btn ui-btn--ghost"
-            onClick={printAlignmentTest}
-            type="button"
-          >
-            Probar posición
           </button>
 
           <div className="ml-auto flex min-w-[280px] items-center gap-3">
@@ -615,6 +597,31 @@ function PrintingJobsContent() {
         {status ? (
           <div className="mt-3 ui-panel-soft px-4 py-3 ui-body">{status}</div>
         ) : null}
+
+        <details className="mt-4 rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3">
+          <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+            Pruebas y ajuste fino
+          </summary>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {preset.columns === 3 ? (
+              <button
+                className="ui-btn ui-btn--ghost"
+                onClick={printOneTestRow3Up}
+                type="button"
+                title="Imprime una fila de 3 etiquetas de prueba"
+              >
+                Prueba 3-up
+              </button>
+            ) : null}
+            <button
+              className="ui-btn ui-btn--ghost"
+              onClick={printAlignmentTest}
+              type="button"
+            >
+              Probar posición
+            </button>
+          </div>
+        </details>
       </div>
 
       <div className="grid gap-6 md:grid-cols-2 ui-fade-up ui-delay-2">

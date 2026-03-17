@@ -40,7 +40,7 @@ export default function PrintingSetupPage() {
                 Configuración de impresora Zebra
               </h1>
               <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--ui-muted)] sm:text-base">
-                Deja una impresora lista para imprimir sin tener que pelear con pasos técnicos innecesarios.
+                Deja una impresora lista para imprimir. La idea aquí no es aprender Zebra, sino salir con una impresora conectada.
               </p>
             </div>
             <div className="ui-remission-kpis">
@@ -72,8 +72,8 @@ export default function PrintingSetupPage() {
         <section className="ui-panel ui-panel--halo ui-remission-section ui-fade-up ui-delay-1 space-y-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <div className="ui-h3">Paso rápido</div>
-              <div className="mt-1 ui-caption">1. Activa Browser Print. 2. Detecta. 3. Conecta. 4. Ve a imprimir.</div>
+              <div className="ui-h3">Dejar lista esta impresora</div>
+              <div className="mt-1 ui-caption">Solo tres acciones visibles: detectar, conectar y volver a imprimir.</div>
             </div>
             <div className="flex flex-wrap gap-2">
               <button
@@ -148,19 +148,19 @@ export default function PrintingSetupPage() {
 
         <section className="grid gap-6 xl:grid-cols-[1.2fr_0.8fr]">
           <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-4">
-            <div className="ui-h3">Si no detecta la impresora</div>
+            <div className="ui-h3">Qué esperar de esta conexión</div>
             <div className="space-y-3 ui-body-muted">
               <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-4">
                 <div className="font-semibold text-[var(--ui-text)]">USB</div>
-                <div className="mt-1 text-sm">Es la ruta más estable. Conecta por cable, abre Browser Print y vuelve a detectar.</div>
+                <div className="mt-1 text-sm">Es la ruta más estable para salir a operar ya.</div>
               </div>
               <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-4">
                 <div className="font-semibold text-[var(--ui-text)]">Bluetooth</div>
-                <div className="mt-1 text-sm">Primero hay que activarlo una vez con Zebra Setup Utility. Después Windows la empareja y Browser Print la ve como dispositivo local.</div>
+                <div className="mt-1 text-sm">Requiere preparación previa en Zebra Setup Utility. Aún no lo resolvemos dentro de Nexo.</div>
               </div>
               <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-4">
                 <div className="font-semibold text-[var(--ui-text)]">Wi-Fi</div>
-                <div className="mt-1 text-sm">Nexo no configura IP ni red directamente. La impresora debe quedar expuesta al equipo por Browser Print o driver Zebra.</div>
+                <div className="mt-1 text-sm">Hoy Nexo no configura IP o red directa; depende del puente Browser Print.</div>
               </div>
             </div>
           </div>
@@ -196,7 +196,7 @@ export default function PrintingSetupPage() {
 
         <details className="ui-panel-soft ui-fade-up ui-delay-3">
           <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
-            Ver pasos detallados y troubleshooting
+            Abrir troubleshooting técnico
           </summary>
           <div className="mt-4 space-y-6">
             <div className="space-y-3">

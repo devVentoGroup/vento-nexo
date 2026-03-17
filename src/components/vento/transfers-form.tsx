@@ -39,8 +39,13 @@ export function TransfersForm({ locations, products, defaultUomProfiles = [], ac
     () => locations.find((loc) => loc.id === toLocId) ?? null,
     [toLocId, locations]
   );
+  const hasOrigin = Boolean(fromLocId);
   const sameLocation = fromLocId !== "" && fromLocId === toLocId;
   const canSubmit = Boolean(fromLocId) && Boolean(toLocId) && !sameLocation;
+  const destinationOptions = useMemo(
+    () => locations.filter((loc) => loc.id !== fromLocId),
+    [fromLocId, locations]
+  );
 
   return (
     <form className="space-y-6 pb-24 lg:pb-0" action={action}>
@@ -83,35 +88,50 @@ export function TransfersForm({ locations, products, defaultUomProfiles = [], ac
             </select>
           </label>
 
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">LOC destino</span>
-            <select
-              name="to_loc_id"
-              className="ui-input"
-              value={toLocId}
-              onChange={(event) => setToLocId(event.target.value)}
-              required
-            >
-              <option value="">Selecciona LOC destino</option>
-              {locations.map((loc) => (
-                <option key={loc.id} value={loc.id}>
-                  {loc.code ?? loc.name ?? loc.id}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1 md:col-span-2">
-            <span className="ui-label">Notas</span>
-            <input
-              name="notes"
-              className="ui-input"
-              placeholder="Observaciones del traslado"
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-            />
-          </label>
+          {hasOrigin ? (
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">LOC destino</span>
+              <select
+                name="to_loc_id"
+                className="ui-input"
+                value={toLocId}
+                onChange={(event) => setToLocId(event.target.value)}
+                required
+              >
+                <option value="">Selecciona LOC destino</option>
+                {destinationOptions.map((loc) => (
+                  <option key={loc.id} value={loc.id}>
+                    {loc.code ?? loc.name ?? loc.id}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : (
+            <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-4 text-sm text-[var(--ui-muted)]">
+              Primero elige el origen. Enseguida aparece el destino.
+            </div>
+          )}
         </div>
+
+        {hasOrigin ? (
+          <details className="rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3">
+            <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+              Nota opcional
+            </summary>
+            <div className="mt-3">
+              <label className="flex flex-col gap-1">
+                <span className="ui-label">Notas</span>
+                <input
+                  name="notes"
+                  className="ui-input"
+                  placeholder="Observaciones del traslado"
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                />
+              </label>
+            </div>
+          </details>
+        ) : null}
 
         {sameLocation ? (
           <div className="ui-alert ui-alert--error">
@@ -120,25 +140,33 @@ export function TransfersForm({ locations, products, defaultUomProfiles = [], ac
         ) : null}
       </section>
 
-      <section className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="ui-h3">Productos</div>
-            <div className="ui-caption mt-1">Captura lo que realmente se mueve entre ambos LOCs.</div>
+      {canSubmit ? (
+        <section className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="ui-h3">Productos</div>
+              <div className="ui-caption mt-1">Captura lo que realmente se mueve entre ambos LOCs.</div>
+            </div>
+            <div className="rounded-full border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-1 text-xs font-semibold text-[var(--ui-muted)]">
+              {locations.length} LOCs disponibles
+            </div>
           </div>
-          <div className="rounded-full border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-1 text-xs font-semibold text-[var(--ui-muted)]">
-            {locations.length} LOCs disponibles
-          </div>
-        </div>
 
-        <TransfersItems products={products} defaultUomProfiles={defaultUomProfiles} />
-      </section>
+          <TransfersItems products={products} defaultUomProfiles={defaultUomProfiles} />
+        </section>
+      ) : (
+        <section className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
+          <div className="ui-alert ui-alert--neutral">
+            Primero define origen y destino. Luego aparecen los productos del traslado.
+          </div>
+        </section>
+      )}
 
       <div className="ui-mobile-sticky-footer ui-fade-up ui-delay-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ui-border)] bg-white/92 px-4 py-3 backdrop-blur">
         <div className="text-sm text-[var(--ui-muted)]">
           {(selectedFrom?.code ?? selectedFrom?.name ?? "Sin origen")} → {(selectedTo?.code ?? selectedTo?.name ?? "Sin destino")}
         </div>
-        <button type="submit" className="ui-btn ui-btn--brand" disabled={!canSubmit}>
+        <button type="submit" className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold" disabled={!canSubmit}>
           Registrar traslado
         </button>
       </div>

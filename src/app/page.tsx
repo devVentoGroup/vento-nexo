@@ -64,6 +64,10 @@ type ActionLink = {
 
 type ActionSectionId = "operate" | "verify" | "configure" | "utilities";
 
+function isActionLink(value: ActionLink | null): value is ActionLink {
+  return Boolean(value);
+}
+
 const STATUS_LABELS: Record<string, string> = {
   pending: "pendiente",
   preparing: "preparando",
@@ -230,8 +234,8 @@ function Icon({ name, className }: { name?: IconName; className?: string }) {
 function ActionCard({ action }: { action: ActionLink }) {
   const isPrimary = action.tone === "primary";
   const buttonClass = isPrimary
-    ? "ui-btn ui-btn--brand"
-    : "ui-btn ui-btn--ghost";
+    ? "ui-btn ui-btn--brand h-12 px-5 text-base font-semibold"
+    : "ui-btn ui-btn--ghost h-11 px-4";
 
   return (
     <div className={`ui-card ${isPrimary ? "ui-panel--halo" : ""}`.trim()}>
@@ -340,6 +344,10 @@ export default async function Home({
     roleLabel = roleRow?.name ?? effectiveRole;
   }
   const displayName = String(employee?.alias ?? employee?.full_name ?? user.email ?? "Usuario");
+  const normalizedRole = effectiveRole.toLowerCase();
+  const isManagementRole = ["propietario", "gerente_general", "admin", "manager", "gerente"].includes(
+    normalizedRole
+  );
 
   const { data: employeeSites } = await supabase
     .from("employee_sites")
@@ -506,6 +514,32 @@ export default async function Home({
   const canRunAdjustments = canAdjustmentsPermission;
   const canViewStock = canStockPermission;
   const canManageLocations = isProductionCenter && canLocationsPermission;
+  const isOperatorFocusMode = !isManagementRole && (isProductionCenter || isSatellite);
+  const focusActionIds = isSatellite
+    ? new Set(["request-remission", "receive-remissions", "scanner"])
+    : isProductionCenter
+      ? new Set(["prepare-remissions", "entries", "scanner"])
+      : null;
+  const heroModeLabel = isSatellite
+    ? "Modo satelite"
+    : isProductionCenter
+      ? "Modo Centro"
+      : "Modo operativo";
+  const heroTitle = isOperatorFocusMode
+    ? isSatellite
+      ? "Pide y recibe desde tu sede"
+      : "Prepara y despacha desde Centro"
+    : `Bienvenido, ${displayName}`;
+  const heroSubtitle = isOperatorFocusMode
+    ? isSatellite
+      ? "Tu pantalla debe reducirse a pedir abastecimiento, seguir el estado y confirmar recepción."
+      : "Tu pantalla debe arrancar en solicitudes por preparar, confirmar salida y seguir al siguiente pedido."
+    : "Cockpit operativo v1 para inventario base, entradas, stock y abastecimiento interno entre sedes.";
+  const heroHint = isOperatorFocusMode
+    ? isSatellite
+      ? "Hoy te toca actuar rápido: pedir, revisar y recibir. Nada más."
+      : "Hoy te toca preparar, despachar y seguir con la siguiente solicitud."
+    : "El flujo diario de esta version es simple: producto maestro, movimiento fisico, conteo y setup.";
 
   let remissionRows: RemissionRow[] = [];
   if (activeSiteId && canViewRemissions) {
@@ -522,6 +556,16 @@ export default async function Home({
     const { data: remissions } = await remissionsQuery;
     remissionRows = (remissions ?? []) as RemissionRow[];
   }
+  const activeRemissionStatuses = new Set(["pending", "preparing", "in_transit", "partial"]);
+  const receiveNowRow = remissionRows.find((row) =>
+    ["in_transit", "partial"].includes(String(row.status ?? ""))
+  );
+  const prepareNowRow = remissionRows.find((row) =>
+    ["pending", "preparing"].includes(String(row.status ?? ""))
+  );
+  const operatorRecentRows = isOperatorFocusMode
+    ? remissionRows.filter((row) => activeRemissionStatuses.has(String(row.status ?? ""))).slice(0, 4)
+    : remissionRows;
 
   const actions: ActionLink[] = [
     {
@@ -702,34 +746,116 @@ export default async function Home({
     },
   ];
 
-  const primaryActions = actions.filter((action) => action.visible && action.tone === "primary");
-  const secondaryActionSections = (Object.entries(ACTION_SECTIONS) as [
+  const filteredActions = isOperatorFocusMode && focusActionIds
+    ? actions.filter((action) => action.visible && focusActionIds.has(action.id))
+    : actions.filter((action) => action.visible);
+  const operatorImmediateActions: ActionLink[] = isOperatorFocusMode
+    ? isSatellite
+      ? ([
+          receiveNowRow && canViewRemissions
+            ? {
+                id: "receive-now",
+                section: "operate",
+                title: "Recibir ahora",
+                description: "Tienes una remision en tránsito o parcial lista para conciliar.",
+                href: `/inventory/remissions/${receiveNowRow.id}`,
+                cta: "Abrir recepción",
+                tone: "primary" as const,
+                visible: true,
+                icon: "package" as const,
+              }
+            : canRequestRemission
+              ? {
+                  id: "request-remission",
+                  section: "operate",
+                  title: "Solicitar abastecimiento",
+                  description: "Pide insumos y sigue el estado desde esta misma sede.",
+                  href: "/inventory/remissions",
+                  cta: "Nueva solicitud",
+                  tone: "primary" as const,
+                visible: true,
+                icon: "package" as const,
+              }
+            : null,
+          canRequestRemission && receiveNowRow
+            ? {
+                id: "request-next",
+                section: "operate",
+                title: "Crear otra solicitud",
+                description: "Cuando termines de recibir, aquí mismo puedes pedir otra remision.",
+                href: "/inventory/remissions",
+                cta: "Solicitar",
+                tone: "secondary" as const,
+                visible: true,
+                icon: "package" as const,
+              }
+            : null,
+        ] as Array<ActionLink | null>).filter(isActionLink)
+      : isProductionCenter
+        ? ([
+            canPrepareRemission
+              ? {
+                  id: "prepare-now",
+                  section: "operate",
+                  title: prepareNowRow ? "Preparar ahora" : "Abrir cola",
+                  description: prepareNowRow
+                    ? "Hay una solicitud activa esperando picking o despacho."
+                    : "Entra directo a la cola de preparación de Centro.",
+                  href: prepareNowRow
+                    ? `/inventory/remissions/${prepareNowRow.id}?from=prepare`
+                    : "/inventory/remissions/prepare",
+                  cta: prepareNowRow ? "Abrir solicitud" : "Abrir cola",
+                  tone: "primary" as const,
+                  visible: true,
+                  icon: "package" as const,
+                }
+              : null,
+            canCreateEntries
+              ? {
+                  id: "entries",
+                  section: "operate",
+                  title: "Registrar entrada",
+                  description: "Usa entradas solo cuando toca cargar o corregir inventario en Centro.",
+                  href: "/inventory/entries",
+                  cta: "Registrar",
+                  tone: "secondary" as const,
+                  visible: true,
+                  icon: "layers" as const,
+                }
+              : null,
+          ] as Array<ActionLink | null>).filter(isActionLink)
+        : []
+    : [];
+  const primaryActions = isOperatorFocusMode
+    ? operatorImmediateActions
+    : filteredActions.filter((action) => action.tone === "primary");
+  const secondaryActionSections = isOperatorFocusMode
+    ? []
+    : (Object.entries(ACTION_SECTIONS) as [
     ActionSectionId,
     (typeof ACTION_SECTIONS)[ActionSectionId],
   ][])
-    .map(([id, meta]) => ({
-      id,
-      ...meta,
-      actions: actions.filter(
-        (action) => action.visible && action.tone !== "primary" && action.section === id
-      ),
-    }))
-    .filter((section) => section.actions.length > 0);
+        .map(([id, meta]) => ({
+          id,
+          ...meta,
+          actions: filteredActions.filter((action) => action.tone !== "primary" && action.section === id),
+        }))
+        .filter((section) => section.actions.length > 0);
 
   return (
     <div className="ui-scene w-full space-y-6">
       <div className="ui-remission-hero ui-fade-up">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="ui-caption">NEXO · Inventario</div>
+            <div className="ui-caption">NEXO · Inventario · {heroModeLabel}</div>
             <h1 className="mt-2 ui-h1">
-              Bienvenido, {displayName}
+              {heroTitle}
             </h1>
             <p className="mt-2 ui-body-muted">
-              Cockpit operativo v1 para inventario base, entradas, stock y abastecimiento interno entre sedes.
+              {heroSubtitle}
             </p>
             <p className="mt-2 ui-caption">
-              El flujo diario de esta version es simple: producto maestro, movimiento fisico, conteo y setup.
+              {heroHint}
             </p>
             <div className="mt-3 flex flex-wrap items-center gap-2 ui-caption">
               <span className="ui-chip">
@@ -753,20 +879,30 @@ export default async function Home({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            <Link
-              href="/inventory/settings/checklist"
-              className="ui-btn ui-btn--ghost"
-            >
-              <Icon name="clipboard" className="h-4 w-4" />
-              Checklist v1
-            </Link>
-            {canViewRemissions ? (
+            {!isOperatorFocusMode ? (
               <Link
-                href="/inventory/remissions"
-                className="ui-btn ui-btn--brand"
+                href="/inventory/settings/checklist"
+                className="ui-btn ui-btn--ghost"
+              >
+                <Icon name="clipboard" className="h-4 w-4" />
+                Checklist v1
+              </Link>
+            ) : null}
+            {isSatellite && canViewRemissions ? (
+              <Link
+                href={receiveNowRow ? `/inventory/remissions/${receiveNowRow.id}` : "/inventory/remissions"}
+                className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold"
               >
                 <Icon name="package" className="h-4 w-4" />
-                Abastecimiento
+                {receiveNowRow ? "Recibir ahora" : "Pedir y recibir"}
+              </Link>
+            ) : isProductionCenter && canPrepareRemission ? (
+              <Link
+                href={prepareNowRow ? `/inventory/remissions/${prepareNowRow.id}?from=prepare` : "/inventory/remissions/prepare"}
+                className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold"
+              >
+                <Icon name="package" className="h-4 w-4" />
+                {prepareNowRow ? "Abrir siguiente" : "Preparar ahora"}
               </Link>
             ) : canViewStock ? (
               <Link
@@ -785,30 +921,60 @@ export default async function Home({
             <div className="ui-h3">Sede activa</div>
             <div className="mt-1 ui-caption">{activeSiteName || "Sin sede"}</div>
           </div>
-          <form method="get" className="flex items-center gap-3">
-            <select
-              name="site_id"
-              defaultValue={activeSiteId}
-              className="ui-input"
-            >
-              {employeeSiteRows.map((row) => {
-                const siteId = row.site_id ?? "";
-                if (!siteId) return null;
-                const site = siteMap.get(siteId);
-                const label = site?.name ? `${site.name}` : siteId;
-                const suffix = row.is_primary ? " (principal)" : "";
-                return (
-                  <option key={siteId} value={siteId}>
-                    {label}
-                    {suffix}
-                  </option>
-                );
-              })}
-            </select>
-            <button className="ui-btn ui-btn--ghost">
-              Cambiar
-            </button>
-          </form>
+          {isOperatorFocusMode ? (
+            <details className="rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3">
+              <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+                Cambiar sede
+              </summary>
+              <form method="get" className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+                <select
+                  name="site_id"
+                  defaultValue={activeSiteId}
+                  className="ui-input"
+                >
+                  {employeeSiteRows.map((row) => {
+                    const siteId = row.site_id ?? "";
+                    if (!siteId) return null;
+                    const site = siteMap.get(siteId);
+                    const label = site?.name ? `${site.name}` : siteId;
+                    const suffix = row.is_primary ? " (principal)" : "";
+                    return (
+                      <option key={siteId} value={siteId}>
+                        {label}
+                        {suffix}
+                      </option>
+                    );
+                  })}
+                </select>
+                <button className="ui-btn ui-btn--ghost">Usar sede</button>
+              </form>
+            </details>
+          ) : (
+            <form method="get" className="flex items-center gap-3">
+              <select
+                name="site_id"
+                defaultValue={activeSiteId}
+                className="ui-input"
+              >
+                {employeeSiteRows.map((row) => {
+                  const siteId = row.site_id ?? "";
+                  if (!siteId) return null;
+                  const site = siteMap.get(siteId);
+                  const label = site?.name ? `${site.name}` : siteId;
+                  const suffix = row.is_primary ? " (principal)" : "";
+                  return (
+                    <option key={siteId} value={siteId}>
+                      {label}
+                      {suffix}
+                    </option>
+                  );
+                })}
+              </select>
+              <button className="ui-btn ui-btn--ghost">
+                Cambiar
+              </button>
+            </form>
+          )}
         </div>
 
         {!activeSiteId ? (
@@ -821,10 +987,10 @@ export default async function Home({
       <div className="ui-panel ui-remission-section ui-fade-up ui-delay-1">
         <div className="ui-section-title">
           <Icon name="sparkles" />
-          Siguiente paso
+          {isOperatorFocusMode ? "Tu trabajo ahora" : "Siguiente paso"}
         </div>
         {primaryActions.length ? (
-          <div className="mt-4 grid gap-4 md:grid-cols-3">
+          <div className={`mt-4 grid gap-4 ${isOperatorFocusMode ? "md:grid-cols-2" : "md:grid-cols-3"}`}>
             {primaryActions.map((action) => (
               <ActionCard key={action.id} action={action} />
             ))}
@@ -832,7 +998,11 @@ export default async function Home({
         ) : (
           <EmptyState
             title="No hay acciones inmediatas"
-            description="Usa las secciones de abajo para entrar al flujo correcto segun tu rol y sede."
+            description={
+              isOperatorFocusMode
+                ? "Cuando haya una tarea lista para tu rol aparecerá aquí arriba."
+                : "Usa las secciones de abajo para entrar al flujo correcto segun tu rol y sede."
+            }
           />
         )}
       </div>
@@ -852,10 +1022,14 @@ export default async function Home({
           <div>
             <div className="ui-section-title">
               <Icon name="package" />
-              Abastecimiento reciente
+              {isOperatorFocusMode ? "Lo pendiente" : "Abastecimiento reciente"}
             </div>
             <div className="mt-1 ui-body-muted">
-              {isProductionCenter
+              {isOperatorFocusMode
+                ? isProductionCenter
+                  ? "Solo lo que sigue preparar o despachar desde Centro."
+                  : "Solo las remisiones activas que todavía te toca seguir o recibir."
+                : isProductionCenter
                 ? "Solicitudes abiertas para preparar o despachar."
                 : "Solicitudes abiertas y recepciones pendientes para tu sede."}
             </div>
@@ -874,30 +1048,38 @@ export default async function Home({
               <tr>
                 <TableHeaderCell>Fecha</TableHeaderCell>
                 <TableHeaderCell>Estado</TableHeaderCell>
-                <TableHeaderCell>Origen</TableHeaderCell>
-                <TableHeaderCell>Destino</TableHeaderCell>
+                {!isOperatorFocusMode || isSatellite ? <TableHeaderCell>Origen</TableHeaderCell> : null}
+                {!isOperatorFocusMode || isProductionCenter ? <TableHeaderCell>Destino</TableHeaderCell> : null}
                 <TableHeaderCell>Acciones</TableHeaderCell>
               </tr>
             </thead>
             <tbody>
-              {remissionRows.map((row) => (
+              {operatorRecentRows.map((row) => (
                 <tr key={row.id} className="ui-body">
                   <TableCell className="font-mono">
                     {formatDate(row.created_at)}
                   </TableCell>
                   <TableCell>{statusLabel(row.status)}</TableCell>
-                  <TableCell>
-                    {siteMap.get(row.from_site_id ?? "")?.name ?? row.from_site_id ?? "-"}
-                  </TableCell>
-                  <TableCell>
-                    {siteMap.get(row.to_site_id ?? "")?.name ?? row.to_site_id ?? "-"}
-                  </TableCell>
+                  {!isOperatorFocusMode || isSatellite ? (
+                    <TableCell>
+                      {siteMap.get(row.from_site_id ?? "")?.name ?? row.from_site_id ?? "-"}
+                    </TableCell>
+                  ) : null}
+                  {!isOperatorFocusMode || isProductionCenter ? (
+                    <TableCell>
+                      {siteMap.get(row.to_site_id ?? "")?.name ?? row.to_site_id ?? "-"}
+                    </TableCell>
+                  ) : null}
                   <TableCell>
                     <Link
                       href={`/inventory/remissions/${row.id}`}
                       className="ui-body font-semibold underline decoration-zinc-200 underline-offset-4"
                     >
-                      Ver detalle
+                      {isProductionCenter
+                        ? "Preparar"
+                        : ["in_transit", "partial"].includes(String(row.status ?? ""))
+                          ? "Recibir"
+                          : "Ver detalle"}
                     </Link>
                   </TableCell>
                 </tr>
@@ -905,7 +1087,7 @@ export default async function Home({
 
               {!canViewRemissions ? (
                 <tr>
-                  <TableCell colSpan={5}>
+                  <TableCell colSpan={isOperatorFocusMode ? 4 : 5}>
                     <EmptyState
                       title="Sin permiso de abastecimiento"
                       description="Solicita acceso para consultar solicitudes y recepciones entre sedes."
@@ -914,16 +1096,16 @@ export default async function Home({
                 </tr>
               ) : !activeSiteId ? (
                 <tr>
-                  <TableCell colSpan={5}>
+                  <TableCell colSpan={isOperatorFocusMode ? 4 : 5}>
                     <EmptyState
                       title="Selecciona una sede"
                       description="Elige una sede para ver remisiones recientes."
                     />
                   </TableCell>
                 </tr>
-              ) : remissionRows.length === 0 ? (
+              ) : operatorRecentRows.length === 0 ? (
                 <tr>
-                  <TableCell colSpan={5}>
+                  <TableCell colSpan={isOperatorFocusMode ? 4 : 5}>
                     <EmptyState
                       title="Sin movimientos recientes"
                       description="Cuando se creen solicitudes de abastecimiento apareceran aqui."

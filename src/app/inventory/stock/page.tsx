@@ -51,6 +51,7 @@ type EmployeeSiteRow = {
 type SiteRow = {
   id: string;
   name: string | null;
+  site_type: string | null;
 };
 
 type CategoryRow = InventoryCategoryRow;
@@ -145,6 +146,10 @@ export default async function InventoryStockPage({
     .maybeSingle();
   const userRole = String((employeeRow as { role?: string } | null)?.role ?? "");
   const canExportByLoc = ["gerente_general", "propietario"].includes(userRole);
+  const normalizedRole = userRole.toLowerCase();
+  const isManagementRole = ["gerente_general", "propietario", "admin", "manager", "gerente"].includes(
+    normalizedRole
+  );
 
   const { data: employeeSites } = await supabase
     .from("employee_sites")
@@ -185,7 +190,7 @@ export default async function InventoryStockPage({
   const { data: sites } = siteIds.length
     ? await supabase
         .from("sites")
-        .select("id,name")
+        .select("id,name,site_type")
         .in("id", siteIds)
         .order("name", { ascending: true })
     : { data: [] as SiteRow[] };
@@ -195,6 +200,11 @@ export default async function InventoryStockPage({
   const siteNamesById = Object.fromEntries(
     siteRows.map((row) => [row.id, row.name ?? row.id])
   );
+  const selectedSite = siteId ? siteRows.find((row) => row.id === siteId) ?? null : null;
+  const selectedSiteType = String(selectedSite?.site_type ?? "").toLowerCase();
+  const isProductionCenter = selectedSiteType === "production_center";
+  const isSatellite = selectedSiteType === "satellite";
+  const isOperatorFocusMode = !isManagementRole && (isProductionCenter || isSatellite);
 
   const allCategoryRows = await loadCategoryRows(supabase);
   const categoryMap = new Map(allCategoryRows.map((row) => [row.id, row]));
@@ -450,6 +460,21 @@ export default async function InventoryStockPage({
   }, 0);
   const siteLabel = siteId ? siteNameMap.get(siteId) ?? siteId : "Todas las sedes";
   const locCount = siteId ? locList.length : 0;
+  const heroTitle = isOperatorFocusMode
+    ? isSatellite
+      ? "Verifica stock para pedir o recibir"
+      : "Verifica stock para preparar y despachar"
+    : "Stock por sede";
+  const heroSubtitle = isOperatorFocusMode
+    ? isSatellite
+      ? "Consulta rápido si tu sede tiene saldo, qué LOCs están activos y desde aquí vuelve a pedir o recibir."
+      : "Usa esta vista para confirmar saldo, ubicar producto por LOC y seguir con preparación o conteo."
+    : "Lee el inventario actual y entra a conteos, movimientos o vista por LOC sin cambiar de flujo.";
+  const heroModeLabel = isSatellite
+    ? "Modo satelite"
+    : isProductionCenter
+      ? "Modo Centro"
+      : "Modo verificacion";
   const activeFilterCount = [
     searchQuery,
     productType,
@@ -468,12 +493,12 @@ export default async function InventoryStockPage({
       <section className="ui-remission-hero ui-fade-up">
         <div className="ui-remission-hero-grid">
           <div>
-            <span className="ui-chip ui-chip--brand">{siteLabel}</span>
+            <span className="ui-chip ui-chip--brand">{heroModeLabel} · {siteLabel}</span>
             <h1 className="mt-4 text-3xl font-semibold tracking-[-0.03em] text-[var(--ui-text)]">
-              Stock por sede
+              {heroTitle}
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--ui-muted)] sm:text-base">
-              Lee el inventario actual y entra a conteos, movimientos o vista por LOC sin cambiar de flujo.
+              {heroSubtitle}
             </p>
           </div>
 
@@ -506,6 +531,21 @@ export default async function InventoryStockPage({
         </div>
 
         <div className="flex flex-wrap gap-2">
+          {isSatellite ? (
+            <Link href="/inventory/remissions" className="ui-btn ui-btn--brand">
+              Pedir / recibir
+            </Link>
+          ) : null}
+          {isProductionCenter ? (
+            <Link href="/inventory/remissions/prepare" className="ui-btn ui-btn--brand">
+              Preparar remisiones
+            </Link>
+          ) : null}
+          {isOperatorFocusMode ? (
+            <Link href="/scanner" className="ui-btn ui-btn--ghost">
+              Scanner
+            </Link>
+          ) : null}
           {siteId && locList.length > 0 ? (
             viewByLoc ? (
               <Link
@@ -560,8 +600,12 @@ export default async function InventoryStockPage({
       <div className="ui-panel ui-panel--halo ui-remission-section ui-fade-up ui-delay-1">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <div className="ui-h3">Filtros</div>
-            <div className="mt-1 ui-caption">Afina vista, categoria y ubicaciones sin salir de stock.</div>
+            <div className="ui-h3">{isOperatorFocusMode ? "Buscar rapido" : "Filtros"}</div>
+            <div className="mt-1 ui-caption">
+              {isOperatorFocusMode
+                ? "Primero busca el producto o el LOC. Los filtros avanzados quedan abajo si de verdad los necesitas."
+                : "Afina vista, categoria y ubicaciones sin salir de stock."}
+            </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <span className="ui-chip">{siteLabel}</span>
@@ -590,82 +634,6 @@ export default async function InventoryStockPage({
               ))}
             </select>
           </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Tipo de producto</span>
-            <select name="product_type" defaultValue={productType} className="ui-input">
-              {productTypeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Categoria aplica a</span>
-            <select name="category_kind" defaultValue={categoryKind ?? ""} className="ui-input">
-              {categoryKindOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Alcance de categoria</span>
-            <select name="category_scope" defaultValue={categoryScope} className="ui-input">
-              {categoryScopeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          {categoryScope === "site" ? (
-            <label className="flex flex-col gap-1 sm:col-span-2">
-              <span className="ui-label">Sede para categorias</span>
-              <select name="category_site_id" defaultValue={categorySiteId} className="ui-input">
-                <option value="">Seleccionar sede</option>
-                {siteIds.map((id) => (
-                  <option key={id} value={id}>
-                    {siteNameMap.get(id) ?? id}
-                  </option>
-                ))}
-              </select>
-              <span className="ui-caption">Solo aplica cuando el alcance es Sede activa.</span>
-            </label>
-          ) : (
-            <input type="hidden" name="category_site_id" value="" />
-          )}
-
-          {shouldShowCategoryDomain(categoryKind) ? (
-            <label className="flex flex-col gap-1">
-              <span className="ui-label">Dominio de venta</span>
-              <select name="category_domain" defaultValue={categoryDomain} className="ui-input">
-                <option value="">Todos</option>
-                {categoryDomainOptions.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          ) : (
-            <input type="hidden" name="category_domain" value="" />
-          )}
-
-          <CategoryTreeFilter
-            categories={categoryRows}
-            selectedCategoryId={effectiveCategoryId}
-            siteNamesById={siteNamesById}
-            className="sm:col-span-2 lg:col-span-4"
-            label="Categoria"
-            emptyOptionLabel="Todas"
-            maxVisibleOptions={10}
-          />
 
           <label className="flex flex-col gap-1 sm:col-span-2 lg:col-span-4">
             <span className="ui-label">Sede</span>
@@ -705,6 +673,169 @@ export default async function InventoryStockPage({
               </label>
             </>
           ) : null}
+
+          {isOperatorFocusMode ? (
+            <details className="sm:col-span-2 lg:col-span-4 rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3">
+              <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+                Filtros avanzados
+              </summary>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <label className="flex flex-col gap-1">
+                  <span className="ui-label">Tipo de producto</span>
+                  <select name="product_type" defaultValue={productType} className="ui-input">
+                    {productTypeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  <span className="ui-label">Categoria aplica a</span>
+                  <select name="category_kind" defaultValue={categoryKind ?? ""} className="ui-input">
+                    {categoryKindOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="flex flex-col gap-1">
+                  <span className="ui-label">Alcance de categoria</span>
+                  <select name="category_scope" defaultValue={categoryScope} className="ui-input">
+                    {categoryScopeOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                {shouldShowCategoryDomain(categoryKind) ? (
+                  <label className="flex flex-col gap-1">
+                    <span className="ui-label">Dominio de venta</span>
+                    <select name="category_domain" defaultValue={categoryDomain} className="ui-input">
+                      <option value="">Todos</option>
+                      {categoryDomainOptions.map((opt) => (
+                        <option key={opt.value} value={opt.value}>
+                          {opt.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <input type="hidden" name="category_domain" value="" />
+                )}
+
+                {categoryScope === "site" ? (
+                  <label className="flex flex-col gap-1 sm:col-span-2">
+                    <span className="ui-label">Sede para categorias</span>
+                    <select name="category_site_id" defaultValue={categorySiteId} className="ui-input">
+                      <option value="">Seleccionar sede</option>
+                      {siteIds.map((id) => (
+                        <option key={id} value={id}>
+                          {siteNameMap.get(id) ?? id}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="ui-caption">Solo aplica cuando el alcance es Sede activa.</span>
+                  </label>
+                ) : (
+                  <input type="hidden" name="category_site_id" value="" />
+                )}
+
+                <CategoryTreeFilter
+                  categories={categoryRows}
+                  selectedCategoryId={effectiveCategoryId}
+                  siteNamesById={siteNamesById}
+                  className="sm:col-span-2 lg:col-span-4"
+                  label="Categoria"
+                  emptyOptionLabel="Todas"
+                  maxVisibleOptions={10}
+                />
+              </div>
+            </details>
+          ) : (
+            <>
+              <label className="flex flex-col gap-1">
+                <span className="ui-label">Tipo de producto</span>
+                <select name="product_type" defaultValue={productType} className="ui-input">
+                  {productTypeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="ui-label">Categoria aplica a</span>
+                <select name="category_kind" defaultValue={categoryKind ?? ""} className="ui-input">
+                  {categoryKindOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <label className="flex flex-col gap-1">
+                <span className="ui-label">Alcance de categoria</span>
+                <select name="category_scope" defaultValue={categoryScope} className="ui-input">
+                  {categoryScopeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              {categoryScope === "site" ? (
+                <label className="flex flex-col gap-1 sm:col-span-2">
+                  <span className="ui-label">Sede para categorias</span>
+                  <select name="category_site_id" defaultValue={categorySiteId} className="ui-input">
+                    <option value="">Seleccionar sede</option>
+                    {siteIds.map((id) => (
+                      <option key={id} value={id}>
+                        {siteNameMap.get(id) ?? id}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="ui-caption">Solo aplica cuando el alcance es Sede activa.</span>
+                </label>
+              ) : (
+                <input type="hidden" name="category_site_id" value="" />
+              )}
+
+              {shouldShowCategoryDomain(categoryKind) ? (
+                <label className="flex flex-col gap-1">
+                  <span className="ui-label">Dominio de venta</span>
+                  <select name="category_domain" defaultValue={categoryDomain} className="ui-input">
+                    <option value="">Todos</option>
+                    {categoryDomainOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              ) : (
+                <input type="hidden" name="category_domain" value="" />
+              )}
+
+              <CategoryTreeFilter
+                categories={categoryRows}
+                selectedCategoryId={effectiveCategoryId}
+                siteNamesById={siteNamesById}
+                className="sm:col-span-2 lg:col-span-4"
+                label="Categoria"
+                emptyOptionLabel="Todas"
+                maxVisibleOptions={10}
+              />
+            </>
+          )}
 
           <div className="sm:col-span-2 lg:col-span-4 flex gap-2">
             <button className="ui-btn ui-btn--brand">Aplicar filtros</button>

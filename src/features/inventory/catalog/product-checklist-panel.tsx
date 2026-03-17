@@ -1,4 +1,4 @@
-import { CatalogHintPanel } from "@/features/inventory/catalog/catalog-ui";
+import { CatalogOptionalDetails } from "@/features/inventory/catalog/catalog-ui";
 
 type ProductChecklistPanelProps = {
   items: string[];
@@ -10,10 +10,13 @@ export function ProductChecklistPanel({
   title = "Checklist rapido antes de guardar",
 }: ProductChecklistPanelProps) {
   return (
-    <CatalogHintPanel title={title}>
+    <CatalogOptionalDetails
+      title={title}
+      summary="Abre este bloque solo si quieres validar el cierre antes de guardar."
+    >
       {items.map((item, index) => (
         <p key={`${index + 1}-${item}`}>{index + 1}) {item}</p>
       ))}
-    </CatalogHintPanel>
+    </CatalogOptionalDetails>
   );
 }

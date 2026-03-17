@@ -49,25 +49,25 @@ export function LocEditForm({ loc, action, cancelHref }: Props) {
       <section className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="ui-h3">Ubicación</div>
-            <div className="ui-caption mt-1">Corrige identidad y zona del LOC seleccionado.</div>
+            <div className="ui-h3">Nombre y zona</div>
+            <div className="ui-caption mt-1">Primero corrige lo que la gente usa para reconocer esta ubicación.</div>
           </div>
           <div className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-900">
-            {loc.id.slice(0, 8)}
+            {loc.zone ?? "Sin zona"}
           </div>
         </div>
 
         <div className="grid gap-3 ui-mobile-stack md:grid-cols-2">
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Codigo</span>
+          <label className="flex flex-col gap-1 md:col-span-2">
+            <span className="ui-label">Nombre visible del LOC</span>
             <input
               type="text"
-              value={code}
+              value={description}
               onChange={(event) => {
-                setCode(event.target.value.toUpperCase());
+                setDescription(event.target.value);
               }}
               className="ui-input"
-              placeholder="LOC-CP-BOD-EST01"
+              placeholder="Descripcion corta para reconocerlo rapido"
             />
           </label>
           <label className="flex flex-col gap-1">
@@ -88,11 +88,36 @@ export function LocEditForm({ loc, action, cancelHref }: Props) {
           </label>
         </div>
 
-        <div className="ui-caption">Codigo y zona son obligatorios para guardar.</div>
+        <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
+          {description.trim()
+            ? `Este LOC se mostrara como "${description.trim()}" en la operacion.`
+            : "Si le das un nombre corto, será más fácil encontrarlo al preparar o retirar stock."}
+        </div>
       </section>
 
-      <section className="ui-panel ui-remission-section ui-fade-up ui-delay-3 space-y-4">
-        <div className="ui-h3">Detalle</div>
+      <details className="ui-panel ui-remission-section ui-fade-up ui-delay-3 space-y-4">
+        <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
+          <div>
+            <div className="ui-h3">Codigo tecnico</div>
+            <div className="ui-caption mt-1">Abre esto solo si necesitas corregir el identificador interno.</div>
+          </div>
+          <span className="ui-chip">Opcional</span>
+        </summary>
+
+        <div className="grid gap-3 pt-2 ui-mobile-stack md:grid-cols-2">
+          <label className="flex flex-col gap-1">
+            <span className="ui-label">Codigo</span>
+            <input
+              type="text"
+              value={code}
+              onChange={(event) => {
+                setCode(event.target.value.toUpperCase());
+              }}
+              className="ui-input"
+              placeholder="LOC-CP-BOD-EST01"
+            />
+          </label>
+        </div>
 
         <div className="grid gap-3 ui-mobile-stack md:grid-cols-3">
           <label className="flex flex-col gap-1">
@@ -119,24 +144,14 @@ export function LocEditForm({ loc, action, cancelHref }: Props) {
               placeholder="N0"
             />
           </label>
-          <label className="flex flex-col gap-1 md:col-span-3">
-            <span className="ui-label">Descripcion</span>
-            <input
-              type="text"
-              value={description}
-              onChange={(event) => {
-                setDescription(event.target.value);
-              }}
-              className="ui-input"
-              placeholder="Descripcion opcional"
-            />
-          </label>
         </div>
-      </section>
+
+        <div className="ui-caption">Codigo y zona siguen siendo obligatorios para guardar.</div>
+      </details>
 
       <div className="ui-mobile-sticky-footer ui-fade-up ui-delay-4 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ui-border)] bg-white/92 px-4 py-3 backdrop-blur">
         <div className="text-sm text-[var(--ui-muted)]">
-          {code || "-"} · {zone || "-"}
+          {description.trim() || code || "-"} · {zone || "-"}
         </div>
         <Link href={cancelHref} className="ui-btn ui-btn--ghost">
           Cancelar

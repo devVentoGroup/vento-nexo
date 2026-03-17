@@ -57,8 +57,8 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
       <section className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="ui-h3">Ubicación</div>
-            <div className="ui-caption mt-1">Define la sede y la zona operativa.</div>
+            <div className="ui-h3">Nombre y sede</div>
+            <div className="ui-caption mt-1">Empieza por lo que la gente reconocerá al operar.</div>
           </div>
           <div className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-900">
             {selectedSite?.code ?? "Sin sede"}
@@ -66,6 +66,18 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
         </div>
 
         <div className="grid gap-4 ui-mobile-stack sm:grid-cols-2">
+          <label className="flex flex-col gap-1 sm:col-span-2">
+            <span className="ui-label">Nombre visible del LOC</span>
+            <input
+              type="text"
+              value={description}
+              onChange={(event) => {
+                setDescription(event.target.value);
+              }}
+              placeholder="Ej: Estanteria harinas, Nevera postres, Picking bebidas"
+              className="ui-input"
+            />
+          </label>
           <label className="flex flex-col gap-1">
             <span className="ui-label">Sede</span>
             <select
@@ -101,13 +113,23 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
             </select>
           </label>
         </div>
-
+        <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
+          {description.trim()
+            ? `Se mostrara como "${description.trim()}" en sugerencias y remisiones.`
+            : "Si le pones un nombre corto, el LOC será más fácil de reconocer en tablet."}
+        </div>
       </section>
 
-      <section className="ui-panel ui-remission-section ui-fade-up ui-delay-3 space-y-4">
-        <div className="ui-h3">Código</div>
+      <details className="ui-panel ui-remission-section ui-fade-up ui-delay-3 space-y-4">
+        <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
+          <div>
+            <div className="ui-h3">Codigo tecnico</div>
+            <div className="ui-caption mt-1">Abre esto solo si quieres ajustar el identificador interno.</div>
+          </div>
+          <span className="ui-chip">Opcional</span>
+        </summary>
 
-        <div className="grid gap-4 ui-mobile-stack sm:grid-cols-3">
+        <div className="grid gap-4 pt-2 ui-mobile-stack sm:grid-cols-3">
           <label className="flex flex-col gap-1">
             <span className="ui-label">Pasillo / identificador</span>
             <input
@@ -121,7 +143,7 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
             />
           </label>
           <label className="flex flex-col gap-1">
-            <span className="ui-label">Nivel (opcional)</span>
+            <span className="ui-label">Nivel</span>
             <input
               type="text"
               value={level}
@@ -129,18 +151,6 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
                 setLevel(event.target.value.toUpperCase().replace(/\s/g, ""));
               }}
               placeholder="N0, 1"
-              className="ui-input"
-            />
-          </label>
-          <label className="flex flex-col gap-1 sm:col-span-3">
-            <span className="ui-label">Descripcion (opcional)</span>
-            <input
-              type="text"
-              value={description}
-              onChange={(event) => {
-                setDescription(event.target.value);
-              }}
-              placeholder="Ej: Estanteria 1"
               className="ui-input"
             />
           </label>
@@ -152,11 +162,11 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
             {codigoGenerado || "-"}
           </div>
         </div>
-      </section>
+      </details>
 
       <div className="ui-mobile-sticky-footer ui-fade-up ui-delay-4 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ui-border)] bg-white/92 px-4 py-3 backdrop-blur">
         <div className="text-sm text-[var(--ui-muted)]">
-          {selectedSite?.label ?? "Sin sede"} · {codigoGenerado || "-"}
+          {description.trim() || "LOC sin nombre"} · {selectedSite?.label ?? "Sin sede"}
         </div>
         <button
           type="submit"

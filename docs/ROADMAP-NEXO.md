@@ -215,3 +215,59 @@ Follow-up:
 - se corrigio el sandbox para que los `product_site_settings` de `SBXV1-*` queden con `audience = BOTH`, porque remisiones filtra por audiencia operativa y con `null` no aparecian en `Saudo`.
 - en detalle de remisiones, la preparacion paso a flujo progresivo: menos KPIs, sin UUIDs visibles, menos paneles tecnicos y campos que aparecen por etapa (`LOC -> preparado -> enviado`).
 - hub/detalle de remisiones quedaron mas dirigidos por rol y sede: `Centro` ve preparar/despachar con CTA grandes; `satelite` ve pedir/recibir con copy corto y menos decisiones simultaneas. El siguiente refinamiento UX debe seguir empujando acciones tactiles y revelar campos solo cuando hacen falta.
+- se definio criterio transversal de experiencia por rol en `docs/EXPERIENCIA-OPERATIVA-POR-ROL-V1.md` y se aplico el primer corte a `home` y `sidebar`: satelite entra en pedir/recibir; centro entra en preparar/despachar; gestion mantiene una vista mas amplia.
+- `stock`, `scanner` y `withdraw` ya entraron en ese mismo criterio:
+  - `stock` muestra home/cta y filtros mas cortos para operacion; deja categoria y taxonomia en filtros avanzados cuando el usuario es operario;
+  - `scanner` ahora se comporta como enrutador de accion inmediata segun contexto, no como decodificador tecnico;
+  - `withdraw` ya prioriza el LOC escaneado, oculta el cambio manual detras de un plegable y refuerza el retiro rapido desde tablet/celular.
+- `entries`, `transfers` y `adjust` ya recibieron el siguiente corte progresivo:
+  - `entries` deja proveedor/fecha al frente y manda factura/notas a detalles opcionales;
+  - `transfers` no deja capturar items hasta que origen y destino ya estan definidos;
+  - `adjust` cambia de cantidad con signo a flujo mas natural: `sumar/restar` + cantidad, con costo/evidencia escondidos como opcionales.
+- tambien se simplificaron las filas internas de `entries` y `transfers`:
+  - cada item ahora comunica `Listo/Pendiente` y deja visibles solo producto, cantidad, unidad y, cuando aplica, LOC;
+  - notas, conversiones, costo y otros datos secundarios quedan escondidos en detalles opcionales;
+  - se corrigio el envio de `FormData` para que filas incompletas no rompan la alineacion de arrays al guardar.
+- en detalle de remisiones, la seleccion de `LOC` ya no depende primero de un `select`:
+  - ahora aparecen 2-3 LOC sugeridos como tarjetas tactiles para tocar y seguir;
+  - elegir un LOC guarda la linea y habilita el siguiente paso (`preparado` / `enviado`);
+  - el selector completo queda como respaldo dentro de `Ver más LOCs`.
+- tambien en detalle de remisiones, `preparado` y `enviado` ya pasaron a acciones rapidas por linea:
+  - `Preparar` propone una accion principal segun el stock del LOC elegido;
+  - `Enviar` propone `enviar preparado` como siguiente paso natural;
+  - la escritura manual queda escondida en `Ajustar manualmente`, como respaldo y no como entrada principal.
+- la recepcion por linea ya sigue el mismo criterio:
+  - `Recibir todo` y `Marcar faltante` aparecen como acciones principales;
+  - `Limpiar` queda disponible cuando ya hubo movimiento en la linea;
+  - `Recibido/Faltante` manual quedan escondidos en `Ajustar manualmente`.
+- `home` y el hub de `remisiones` ya se recortaron mas para operacion:
+  - satelite entra con foco en recibir primero y crear nueva solicitud solo cuando hace falta;
+  - Centro entra con foco en abrir la siguiente solicitud o la cola de preparacion;
+  - cambio de sede y configuracion contextual ya no quedan tan expuestos en primer plano para operarios.
+- el mismo criterio ya se aplico a `scanner`, `withdraw` y `entries`:
+  - `scanner` deja una sola accion principal visible y manda formatos/acciones secundarias a plegables;
+  - `withdraw` deja el LOC activo al frente y esconde cambio manual + notas/detalles como respaldo;
+  - `entries` ya no muestra captura de productos hasta que proveedor/fecha (y motivo si aplica) esten completos.
+- tambien se ajustaron `transfers` y `adjust` con el mismo criterio:
+  - `transfers` ya no muestra destino ni nota hasta que el origen esta definido;
+  - `adjust` ya no pide motivo/evidencia desde el inicio; primero se elige producto, sentido y cantidad, y luego aparece el motivo.
+- `locations` y `catalog` ya recibieron un recorte similar para bajar ruido administrativo:
+  - `locations` ahora prioriza `nombre visible + sede + zona`; el codigo tecnico queda plegado y el listado muestra primero el nombre humano del LOC;
+  - `catalog` movio criterio v1, arbol de categorias, guias, foto, checklist y otros bloques de apoyo a paneles opcionales, para dejar al frente solo lo necesario para crear o editar el maestro.
+- se empezo a materializar el flujo `QR de LOC -> landing -> retiro o contenido`:
+  - se creo un resolver de QR por codigo (`inventory/locations/open`) para no depender de abrir retiro directo;
+  - ya existe una landing por LOC con dos acciones claras: `Retirar de aqui` y `Ver contenido`;
+  - tambien quedo el primer `LOC Board`, pensado para tablet/pantalla fija, con contenido visual del LOC y acceso a modo kiosco;
+  - scanner e impresion de etiquetas ahora apuntan a esa nueva landing en lugar de mandar directo a retiro.
+- el `LOC Board` ya recibio el primer corte de kiosco real:
+  - actualizacion automatica cada 30s;
+  - sello visible de ultima actualizacion;
+  - composicion mas limpia para pantalla fija cuando se abre con `?kiosk=1`.
+- tambien ya existe un `Zona Board`:
+  - permite ver varios LOCs de una misma zona en una sola pantalla fija;
+  - se enlaza desde la landing del LOC y desde el board individual;
+  - queda como la opcion mas realista antes de pensar en una pantalla por cada LOC.
+- se hizo el primer corte de orden en `printing`:
+  - `setup` ahora comunica mejor que hoy la impresora se deja lista via Browser Print, sin vender Bluetooth/Wi-Fi como si ya estuvieran resueltos dentro de Nexo;
+  - `jobs` se recorto a flujo principal `elegir formato -> cola -> vista previa -> imprimir`, moviendo pruebas finas a un plegable;
+  - la vista previa de `LOC QR` ya muestra explicitamente el destino real del QR.

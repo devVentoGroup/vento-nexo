@@ -13,6 +13,7 @@ import { ProductUomProfilePanel } from "@/features/inventory/catalog/product-uom
 import {
   CatalogCategoryContextForm,
   CatalogHintPanel,
+  CatalogOptionalDetails,
   CatalogSection,
 } from "@/features/inventory/catalog/catalog-ui";
 import {
@@ -1208,24 +1209,20 @@ export default async function ProductCatalogDetailPage({
 
       {errorMsg ? <div className="ui-alert ui-alert--error">Error: {errorMsg}</div> : null}
       {okMsg ? <div className="ui-alert ui-alert--success">{okMsg}</div> : null}
-      <CatalogHintPanel title="Ficha maestra v1">
-        <p>
-          Esta ficha concentra la identidad operativa del producto: categoria operativa, unidades, costo base,
-          proveedor y setup por sede.
-        </p>
-        <p>
-          La logica comercial por negocio no se define aqui. La compatibilidad de v1 sigue guardandose por debajo,
-          pero ya no es el centro del flujo.
-        </p>
-      </CatalogHintPanel>
-      {hasSuppliers && profileRow?.costing_mode === "auto_primary_supplier" && autoCostReadinessReason ? (
-        <div className="ui-alert ui-alert--warn">
-          Auto-costo incompleto: {autoCostReadinessReason}
-        </div>
-      ) : null}
-
-      {canEdit ? (
-        <>
+      <CatalogOptionalDetails
+        title="Criterio de esta ficha"
+        summary="Abre este bloque solo si necesitas revisar el marco v1 o cambiar el arbol operativo visible."
+      >
+        <CatalogHintPanel title="Ficha maestra v1">
+          <p>
+            Esta ficha concentra la identidad operativa del producto: categoria operativa, unidades, costo base,
+            proveedor y setup por sede.
+          </p>
+          <p>
+            La logica comercial por negocio no se define aqui. La compatibilidad de v1 sigue guardandose por debajo,
+            pero ya no es el centro del flujo.
+          </p>
+        </CatalogHintPanel>
         {isSaleCategoryKind ? null : (
           <CatalogCategoryContextForm
             hiddenFields={from ? [{ name: "from", value: from }] : []}
@@ -1237,7 +1234,15 @@ export default async function ProductCatalogDetailPage({
             sites={sitesList.map((site) => ({ id: site.id, name: site.name }))}
           />
         )}
+      </CatalogOptionalDetails>
+      {hasSuppliers && profileRow?.costing_mode === "auto_primary_supplier" && autoCostReadinessReason ? (
+        <div className="ui-alert ui-alert--warn">
+          Auto-costo incompleto: {autoCostReadinessReason}
+        </div>
+      ) : null}
 
+      {canEdit ? (
+        <>
         <form action={updateProduct} className="space-y-8">
           <input type="hidden" name="product_id" value={productRow.id} />
           <input type="hidden" name="return_to" value={from} />
@@ -1277,9 +1282,9 @@ export default async function ProductCatalogDetailPage({
 
           {/* Receta y produccion ahora viven en FOGO */}
           {hasRecipe && (
-            <CatalogSection
+            <CatalogOptionalDetails
               title="Receta y produccion"
-              description="Esta configuracion queda fuera del flujo operativo v1."
+              summary="Esta configuracion queda fuera del flujo operativo v1."
             >
               <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)] space-y-2">
                 <p>
@@ -1294,7 +1299,7 @@ export default async function ProductCatalogDetailPage({
                   Abrir continuidad externa
                 </a>
               </div>
-            </CatalogSection>
+            </CatalogOptionalDetails>
           )}
 
           <CatalogSection
@@ -1388,6 +1393,7 @@ export default async function ProductCatalogDetailPage({
             description="Imagen principal para identificar rapidamente el item en catalogo y listados."
             currentUrl={productRow.image_url}
             productId={productRow.id}
+            collapsible
           />
 
           <ProductSiteAvailabilitySection
@@ -1456,13 +1462,18 @@ export default async function ProductCatalogDetailPage({
         </div>
       )}
 
-      <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
-        <strong className="text-[var(--ui-text)]">Ubicaciones (LOCs)</strong> - Crea las en{" "}
-        <Link href="/inventory/locations" className="font-medium underline decoration-[var(--ui-border)] underline-offset-2">
-          Inventario / Ubicaciones
-        </Link>
-        . En Entradas asignas cada item a un LOC al recibir.
-      </div>
+      <CatalogOptionalDetails
+        title="Ubicaciones (LOCs)"
+        summary="Abre este recordatorio solo si necesitas revisar donde se crean y como se asignan."
+      >
+        <div className="text-sm text-[var(--ui-muted)]">
+          Crea los LOCs en{" "}
+          <Link href="/inventory/locations" className="font-medium underline decoration-[var(--ui-border)] underline-offset-2">
+            Inventario / Ubicaciones
+          </Link>
+          . En Entradas asignas cada item a un LOC al recibir.
+        </div>
+      </CatalogOptionalDetails>
     </div>
   );
 }

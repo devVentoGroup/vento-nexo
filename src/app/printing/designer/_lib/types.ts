@@ -54,7 +54,7 @@ export function buildLocLayout(
 ): LabelElement[] {
   const isHorizontal = widthMm > heightMm;
   const ventoCode = `VENTO|LOC|${loc.code}`;
-  const qrUrl = `${baseUrl}/inventory/withdraw?loc=${encodeURIComponent(loc.code)}`;
+  const qrUrl = `${baseUrl}/inventory/locations/open?loc=${encodeURIComponent(loc.code)}`;
 
   if (isHorizontal) {
     // Horizontal: text top-right, barcodes left, code bottom-right

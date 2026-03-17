@@ -284,15 +284,43 @@ export function EntriesItems({
       {rows.map((row, idx) => {
         const isLast = idx === rows.length - 1;
         const defaultProfile = row.productId ? defaultProfileByProduct.get(row.productId) ?? null : null;
+        const selectedProduct =
+          row.productId ? products.find((product) => product.id === row.productId) ?? null : null;
+        const stockUnitCode =
+          selectedProduct?.stock_unit_code ?? selectedProduct?.unit ?? "";
         const conversionLabel = defaultProfile
-          ? `${defaultProfile.qty_in_input_unit} ${defaultProfile.input_unit_code} = ${defaultProfile.qty_in_stock_unit} ${products.find((p) => p.id === row.productId)?.stock_unit_code ?? products.find((p) => p.id === row.productId)?.unit ?? "un"}`
+          ? `${defaultProfile.qty_in_input_unit} ${defaultProfile.input_unit_code} = ${defaultProfile.qty_in_stock_unit} ${stockUnitCode || "un"}`
           : "";
+        const isReady =
+          Boolean(row.productId) &&
+          Boolean(row.locationId) &&
+          Boolean(row.inputUnitCode) &&
+          (Number(row.received) > 0 || Number(row.declared) > 0);
         return (
           <div key={row.id} className="space-y-3">
-            <div className="ui-card grid gap-3 md:grid-cols-8">
+            <div className="rounded-2xl border border-[var(--ui-border)] bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(247,250,252,0.96)_100%)] p-4 shadow-sm sm:p-5">
+              <div className="mb-3 flex items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <div className="text-sm font-semibold text-[var(--ui-text)]">Item {idx + 1}</div>
+                  <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${isReady ? "border border-emerald-200 bg-emerald-50 text-emerald-900" : "border border-slate-200 bg-slate-100 text-slate-700"}`}>
+                    {isReady ? "Listo" : "Pendiente"}
+                  </span>
+                </div>
+                {rows.length > 1 ? (
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn--ghost ui-btn--sm"
+                    onClick={() => removeRow(row.id)}
+                  >
+                    Quitar
+                  </button>
+                ) : null}
+              </div>
+
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
               <SearchableSingleSelect
                 name="item_product_id"
-                className="md:col-span-2"
+                className="md:col-span-2 xl:col-span-2"
                 value={row.productId}
                 onValueChange={(next) => {
                   const product = products.find((p) => p.id === next);
@@ -340,132 +368,179 @@ export function EntriesItems({
                 sheetTitle="Selecciona producto"
               />
 
-              <input
-                name="item_quantity_declared"
-                placeholder="Cantidad declarada"
-                className="ui-input"
-                value={row.declared}
-                onChange={(event) =>
-                  setRows((prev) =>
-                    prev.map((current) =>
-                      current.id === row.id ? { ...current, declared: event.target.value } : current
-                    )
-                  )
-                }
-              />
+              {row.productId ? (
+                <>
+                  <label className="flex flex-col gap-1">
+                    <span className="ui-label">Cantidad recibida</span>
+                    <input
+                      name="item_quantity_received"
+                      placeholder="0"
+                      className="ui-input h-12"
+                      value={row.received}
+                      onChange={(event) =>
+                        setRows((prev) =>
+                          prev.map((current) =>
+                            current.id === row.id
+                              ? {
+                                  ...current,
+                                  received: event.target.value,
+                                  declared: current.declared || event.target.value,
+                                }
+                              : current
+                          )
+                        )
+                      }
+                    />
+                  </label>
 
-              <input
-                name="item_quantity_received"
-                placeholder="Cantidad recibida"
-                className="ui-input"
-                value={row.received}
-                onChange={(event) =>
-                  setRows((prev) =>
-                    prev.map((current) =>
-                      current.id === row.id ? { ...current, received: event.target.value } : current
-                    )
-                  )
-                }
-              />
+                  <label className="flex flex-col gap-1">
+                    <span className="ui-label">Unidad</span>
+                    <select
+                      name="item_input_unit_code"
+                      className="ui-input h-12"
+                      value={row.inputUnitCode}
+                      onChange={(event) =>
+                        setRows((prev) =>
+                          prev.map((current) =>
+                            current.id === row.id
+                              ? {
+                                  ...current,
+                                  inputUnitCode: normalizeUnitCode(event.target.value),
+                                  inputUomProfileId:
+                                    defaultProfile &&
+                                    normalizeUnitCode(defaultProfile.input_unit_code) ===
+                                      normalizeUnitCode(event.target.value)
+                                      ? defaultProfile.id
+                                      : "",
+                                }
+                              : current
+                          )
+                        )
+                      }
+                      required
+                    >
+                      <option value="">Unidad captura</option>
+                      {units.map((unit) => (
+                        <option key={unit.code} value={unit.code}>
+                          {unit.code} - {unit.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
 
-              <input
-                name="item_input_unit_cost"
-                placeholder="Costo unitario"
-                className="ui-input"
-                value={row.inputUnitCost}
-                onChange={(event) =>
-                  setRows((prev) =>
-                    prev.map((current) =>
-                      current.id !== row.id
-                        ? current
-                        : {
-                            ...current,
-                            inputUnitCost: event.target.value,
-                            costSource:
-                              event.target.value.trim() === ""
-                                ? "fallback_product_cost"
-                                : current.purchaseOrderItemId
-                                  ? "po_prefill"
-                                  : "manual",
-                          }
-                    )
-                  )
-                }
-              />
-
-              <select
-                name="item_input_unit_code"
-                className="ui-input"
-                value={row.inputUnitCode}
-                onChange={(event) =>
-                  setRows((prev) =>
-                    prev.map((current) =>
-                      current.id === row.id
-                        ? {
-                            ...current,
-                            inputUnitCode: normalizeUnitCode(event.target.value),
-                            inputUomProfileId:
-                              defaultProfile &&
-                              normalizeUnitCode(defaultProfile.input_unit_code) ===
-                                normalizeUnitCode(event.target.value)
-                                ? defaultProfile.id
-                                : "",
-                          }
-                        : current
-                    )
-                  )
-                }
-                required
-              >
-                <option value="">Unidad captura</option>
-                {units.map((unit) => (
-                  <option key={unit.code} value={unit.code}>
-                    {unit.code} - {unit.name}
-                  </option>
-                ))}
-              </select>
-
-              <SearchableSingleSelect
-                name="item_location_id"
-                className="md:col-span-2"
-                value={row.locationId}
-                onValueChange={(next) =>
-                  setRows((prev) =>
-                    prev.map((current) =>
-                      current.id === row.id ? { ...current, locationId: next } : current
-                    )
-                  )
-                }
-                options={locationOptions}
-                placeholder="Selecciona LOC"
-                searchPlaceholder="Buscar LOC..."
-                sheetTitle="Selecciona LOC"
-              />
-
-              <div className="flex flex-col gap-2 sm:flex-row md:col-span-2">
-                <input
-                  name="item_notes"
-                  placeholder="Notas (opcional)"
-                  className="ui-input"
-                  value={row.notes}
-                  onChange={(event) =>
-                    setRows((prev) =>
-                      prev.map((current) =>
-                        current.id === row.id ? { ...current, notes: event.target.value } : current
+                  <SearchableSingleSelect
+                    name="item_location_id"
+                    className="md:col-span-2 xl:col-span-2"
+                    value={row.locationId}
+                    onValueChange={(next) =>
+                      setRows((prev) =>
+                        prev.map((current) =>
+                          current.id === row.id ? { ...current, locationId: next } : current
+                        )
                       )
-                    )
-                  }
-                />
-                {rows.length > 1 ? (
-                  <button
-                    type="button"
-                    className="ui-btn ui-btn--ghost"
-                    onClick={() => removeRow(row.id)}
-                  >
-                    Quitar
-                  </button>
-                ) : null}
+                    }
+                    options={locationOptions}
+                    placeholder="Selecciona LOC"
+                    searchPlaceholder="Buscar LOC..."
+                    sheetTitle="Selecciona LOC"
+                  />
+                </>
+              ) : (
+                <>
+                  <input type="hidden" name="item_quantity_declared" value={row.declared} />
+                  <input type="hidden" name="item_quantity_received" value={row.received} />
+                  <input type="hidden" name="item_input_unit_code" value={row.inputUnitCode} />
+                  <input type="hidden" name="item_input_unit_cost" value={row.inputUnitCost} />
+                  <input type="hidden" name="item_location_id" value={row.locationId} />
+                  <input type="hidden" name="item_notes" value={row.notes} />
+                </>
+              )}
               </div>
+
+              {row.productId ? (
+                <details className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3">
+                  <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+                    Detalles opcionales
+                  </summary>
+                  <div className="mt-4 grid gap-3 md:grid-cols-2">
+                    <label className="flex flex-col gap-1">
+                      <span className="ui-label">Cantidad declarada</span>
+                      <input
+                        name="item_quantity_declared"
+                        placeholder="Cantidad declarada"
+                        className="ui-input"
+                        value={row.declared}
+                        onChange={(event) =>
+                          setRows((prev) =>
+                            prev.map((current) =>
+                              current.id === row.id ? { ...current, declared: event.target.value } : current
+                            )
+                          )
+                        }
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-1">
+                      <span className="ui-label">Costo unitario</span>
+                      <input
+                        name="item_input_unit_cost"
+                        placeholder="Costo unitario"
+                        className="ui-input"
+                        value={row.inputUnitCost}
+                        onChange={(event) =>
+                          setRows((prev) =>
+                            prev.map((current) =>
+                              current.id !== row.id
+                                ? current
+                                : {
+                                    ...current,
+                                    inputUnitCost: event.target.value,
+                                    costSource:
+                                      event.target.value.trim() === ""
+                                        ? "fallback_product_cost"
+                                        : current.purchaseOrderItemId
+                                          ? "po_prefill"
+                                          : "manual",
+                                  }
+                            )
+                          )
+                        }
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-1 md:col-span-2">
+                      <span className="ui-label">Notas</span>
+                      <input
+                        name="item_notes"
+                        placeholder="Notas (opcional)"
+                        className="ui-input"
+                        value={row.notes}
+                        onChange={(event) =>
+                          setRows((prev) =>
+                            prev.map((current) =>
+                              current.id === row.id ? { ...current, notes: event.target.value } : current
+                            )
+                          )
+                        }
+                      />
+                    </label>
+
+                    <div className="md:col-span-2 space-y-2 text-xs text-[var(--ui-muted)]">
+                      <div>
+                        Unidad canónica: {stockUnitCode || "-"}
+                      </div>
+                      <div>
+                        {row.costSource === "supplier_prefill"
+                          ? "Costo sugerido desde proveedor para esta línea."
+                          : "Si dejas costo vacío, se intenta proveedor y luego costo actual del producto."}
+                      </div>
+                      {conversionLabel ? <div>Unidad operativa sugerida: {conversionLabel}</div> : null}
+                    </div>
+                  </div>
+                </details>
+              ) : (
+                <input type="hidden" name="item_details_collapsed" value="1" />
+              )}
 
               <input
                 type="hidden"
@@ -475,29 +550,12 @@ export function EntriesItems({
               <input type="hidden" name="item_input_uom_profile_id" value={row.inputUomProfileId} />
               <input type="hidden" name="item_cost_source" value={row.costSource} />
 
-              <div className="md:col-span-8 text-xs text-[var(--ui-muted)]">
-                Unidad canonica:{" "}
-                {products.find((p) => p.id === row.productId)?.stock_unit_code ??
-                  products.find((p) => p.id === row.productId)?.unit ??
-                  "-"}
-              </div>
-              <div className="md:col-span-8 text-xs text-[var(--ui-muted)]">
-                {row.costSource === "supplier_prefill"
-                  ? "Costo sugerido desde proveedor para esta linea."
-                  : "Si dejas costo vacio, se intenta proveedor y luego costo actual del producto."}
-              </div>
-              {conversionLabel ? (
-                <div className="md:col-span-8 text-xs text-[var(--ui-muted)]">
-                  Unidad operativa sugerida: {conversionLabel}
-                </div>
+              {isLast ? (
+                <button type="button" className="ui-btn ui-btn--ghost mt-3 w-fit" onClick={addRow}>
+                  + Agregar otro item
+                </button>
               ) : null}
             </div>
-
-            {isLast ? (
-              <button type="button" className="ui-btn ui-btn--ghost w-fit" onClick={addRow}>
-                + Agregar otro item
-              </button>
-            ) : null}
           </div>
         );
       })}

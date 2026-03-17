@@ -65,8 +65,8 @@ export function ConfigPanel({
     <div className="ui-panel ui-remission-section">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="ui-h3">Configuración</div>
-          <div className="mt-1 ui-caption">Define el tipo de etiqueta y solo abre ajustes finos cuando de verdad hagan falta.</div>
+          <div className="ui-h3">1. Formato</div>
+          <div className="mt-1 ui-caption">Primero elige qué vas a imprimir. Lo fino queda escondido hasta que haga falta.</div>
         </div>
         <span className="ui-chip ui-chip--brand">{preset.label}</span>
       </div>
@@ -298,6 +298,11 @@ export function ConfigPanel({
             <div className="mt-2 ui-caption text-[var(--ui-muted)]">
               Al elegir una ubicación se usa la etiqueta estándar de LOC.
             </div>
+            {preset.id === "LOC_50x70_QR" ? (
+              <div className="mt-2 ui-caption text-[var(--ui-brand-700)]">
+                El QR abre la landing del LOC, no retiro directo.
+              </div>
+            ) : null}
           </>
         ) : null}
 

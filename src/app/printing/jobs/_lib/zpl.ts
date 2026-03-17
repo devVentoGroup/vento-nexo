@@ -177,7 +177,7 @@ export function buildSingleLabelZpl(opts: {
   } else if (isLoc70Qr) {
     // --- LOC 50×70 QR grande: vertical, centrado ---
     const baseUrl = (opts.baseUrlForQr ?? "").replace(/\/$/, "");
-    const withdrawUrl = `${baseUrl}/inventory/withdraw?loc=${encodeURIComponent(code)}`;
+    const withdrawUrl = `${baseUrl}/inventory/locations/open?loc=${encodeURIComponent(code)}`;
 
     // Title at top
     parts.push(buildTextBlock({ x: marginX, y: 12, h: 28, w: 28, maxWidthDots: maxTextWidth, lines: 1, align: "L", text: titleStr }));
@@ -204,8 +204,6 @@ export function buildSingleLabelZpl(opts: {
       parts.push(buildTextBlock({ x: marginX, y: yNote, h: isProd ? 20 : 22, w: isProd ? 20 : 22, maxWidthDots: maxTextWidth, lines: isProd ? 2 : 1, align: "L", text: note }));
     }
     const yBarcode = 70;
-    const dmSizeGuess = dmModuleDots * 26;
-    const dmX = Math.max(marginX, Math.floor((widthDots - dmSizeGuess) / 2));
     if (barcodeKind === "datamatrix") {
       parts.push(buildDataMatrixField({ x: marginX, y: yBarcode, moduleDots: dmModuleDots, data: encoded }));
     } else {

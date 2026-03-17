@@ -6,7 +6,6 @@ import { requireAppAccess } from "@/lib/auth/guard";
 import { checkPermissionWithRoleOverride } from "@/lib/auth/role-override";
 import { createClient } from "@/lib/supabase/server";
 import { RemissionsCreateForm } from "@/components/vento/remissions-create-form";
-import { PageHeader } from "@/components/vento/standard/page-header";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { safeDecodeURIComponent } from "@/lib/url";
 import {
@@ -722,6 +721,15 @@ export default async function RemissionsPage({
   const receivedCount = remissionRows.filter((row) =>
     ["received", "closed"].includes(String(row.status ?? ""))
   ).length;
+  const openRemissionRows = remissionRows.filter((row) =>
+    ["pending", "preparing", "in_transit", "partial"].includes(String(row.status ?? ""))
+  );
+  const nextReceiveRow = remissionRows.find((row) =>
+    ["in_transit", "partial"].includes(String(row.status ?? ""))
+  );
+  const nextPrepareRow = remissionRows.find((row) =>
+    ["pending", "preparing"].includes(String(row.status ?? ""))
+  );
   const heroViewLabel =
     viewMode === "all"
       ? "Todas las sedes"
@@ -740,6 +748,28 @@ export default async function RemissionsPage({
       : canCreate
         ? "Elige productos y envía la solicitud. Luego solo sigues el estado."
         : "Aquí solo aparecen las remisiones que todavía te toca recibir.";
+  const heroPrimaryHref =
+    viewMode === "bodega"
+      ? nextPrepareRow
+        ? `/inventory/remissions/${nextPrepareRow.id}?from=prepare`
+        : "/inventory/remissions/prepare"
+      : nextReceiveRow
+        ? `/inventory/remissions/${nextReceiveRow.id}`
+        : canCreate
+          ? "#nueva-remision"
+          : "/inventory/remissions";
+  const heroPrimaryLabel =
+    viewMode === "bodega"
+      ? nextPrepareRow
+        ? "Abrir siguiente"
+        : "Abrir cola"
+      : nextReceiveRow
+        ? "Recibir ahora"
+        : canCreate
+          ? "Nueva solicitud"
+          : "Ver remisiones";
+  const compactOperatorView = viewMode !== "all";
+  const tableRows = compactOperatorView ? openRemissionRows : remissionRows;
   const fulfillmentSiteIdsForStock = fulfillmentSiteRows
     .map((site) => site.id)
     .filter((id): id is string => Boolean(id));
@@ -760,28 +790,26 @@ export default async function RemissionsPage({
 
   return (
     <div className="ui-scene w-full space-y-6">
-      <PageHeader
-        title="Remisiones"
-        subtitle="Solicitudes entre sedes."
-        actions={
-          isProductionCenter && !requesterOnlyRole ? (
-            <Link href="/inventory/remissions/prepare" className="ui-btn ui-btn--brand">
-              Abrir cola de preparacion
-            </Link>
-          ) : null
-        }
-      />
-
       <section className="ui-remission-hero ui-fade-up">
         <div className="ui-remission-hero-grid">
-          <div>
-            <span className="ui-chip ui-chip--brand">{heroViewLabel}</span>
-            <h2 className="mt-4 text-3xl font-semibold tracking-[-0.03em] text-[var(--ui-text)]">
-              {heroTitle}
-            </h2>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--ui-muted)] sm:text-base">
-              {heroSubtitle}
-            </p>
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <span className="ui-chip ui-chip--brand">{heroViewLabel}</span>
+              <h2 className="mt-4 text-3xl font-semibold tracking-[-0.03em] text-[var(--ui-text)]">
+                {heroTitle}
+              </h2>
+              <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--ui-muted)] sm:text-base">
+                {heroSubtitle}
+              </p>
+            </div>
+            {activeSiteId ? (
+              <Link
+                href={heroPrimaryHref}
+                className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold"
+              >
+                {heroPrimaryLabel}
+              </Link>
+            ) : null}
           </div>
           <div className="ui-remission-kpis">
             <div className="ui-remission-kpi">
@@ -832,31 +860,62 @@ export default async function RemissionsPage({
                   : "Sede satélite"}
             </div>
           </div>
-          <form method="get" className="flex items-center gap-3">
-            <select
-              name="site_id"
-              defaultValue={activeSiteId}
-              className="ui-input"
-            >
-              {canViewAll ? <option value="">Todas las sedes</option> : null}
-              {employeeSiteRows.map((row) => {
-                const siteId = row.site_id ?? "";
-                if (!siteId) return null;
-                const site = siteMap.get(siteId);
-                const label = site?.name ? `${site.name}` : siteId;
-                const suffix = row.is_primary ? " (principal)" : "";
-                return (
-                  <option key={siteId} value={siteId}>
-                    {label}
-                    {suffix}
-                  </option>
-                );
-              })}
-            </select>
-            <button className="ui-btn ui-btn--ghost">
-              Cambiar
-            </button>
-          </form>
+          {compactOperatorView ? (
+            <details className="rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3">
+              <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+                Cambiar sede
+              </summary>
+              <form method="get" className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+                <select
+                  name="site_id"
+                  defaultValue={activeSiteId}
+                  className="ui-input"
+                >
+                  {canViewAll ? <option value="">Todas las sedes</option> : null}
+                  {employeeSiteRows.map((row) => {
+                    const siteId = row.site_id ?? "";
+                    if (!siteId) return null;
+                    const site = siteMap.get(siteId);
+                    const label = site?.name ? `${site.name}` : siteId;
+                    const suffix = row.is_primary ? " (principal)" : "";
+                    return (
+                      <option key={siteId} value={siteId}>
+                        {label}
+                        {suffix}
+                      </option>
+                    );
+                  })}
+                </select>
+                <button className="ui-btn ui-btn--ghost">Usar sede</button>
+              </form>
+            </details>
+          ) : (
+            <form method="get" className="flex items-center gap-3">
+              <select
+                name="site_id"
+                defaultValue={activeSiteId}
+                className="ui-input"
+              >
+                {canViewAll ? <option value="">Todas las sedes</option> : null}
+                {employeeSiteRows.map((row) => {
+                  const siteId = row.site_id ?? "";
+                  if (!siteId) return null;
+                  const site = siteMap.get(siteId);
+                  const label = site?.name ? `${site.name}` : siteId;
+                  const suffix = row.is_primary ? " (principal)" : "";
+                  return (
+                    <option key={siteId} value={siteId}>
+                      {label}
+                      {suffix}
+                    </option>
+                  );
+                })}
+              </select>
+              <button className="ui-btn ui-btn--ghost">
+                Cambiar
+              </button>
+            </form>
+          )}
         </div>
 
         {!activeSiteId ? (
@@ -914,23 +973,48 @@ export default async function RemissionsPage({
         ) : null}
 
         {canCreateWithConfiguredCatalog ? (
-          <div className="mt-4">
-            <RemissionsCreateForm
-              action={createRemission}
-              toSiteId={activeSiteId}
-              toSiteName={activeSiteName}
-              fromSiteOptions={fulfillmentSiteRows.map((site) => ({
-                id: site.id,
-                name: site.name ?? site.id,
-              }))}
-              defaultFromSiteId={selectedFromSiteId}
-              products={productRows}
-              categoryNameById={Object.fromEntries(categoryNameById)}
-              defaultUomProfiles={defaultUomProfiles}
-              areaOptions={areaOptions}
-              originStockRows={originStockRows}
-            />
-          </div>
+          openRemissionRows.length > 0 ? (
+            <details id="nueva-remision" className="mt-4 rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3">
+              <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+                Crear otra solicitud
+              </summary>
+              <div className="mt-4">
+                <RemissionsCreateForm
+                  action={createRemission}
+                  toSiteId={activeSiteId}
+                  toSiteName={activeSiteName}
+                  fromSiteOptions={fulfillmentSiteRows.map((site) => ({
+                    id: site.id,
+                    name: site.name ?? site.id,
+                  }))}
+                  defaultFromSiteId={selectedFromSiteId}
+                  products={productRows}
+                  categoryNameById={Object.fromEntries(categoryNameById)}
+                  defaultUomProfiles={defaultUomProfiles}
+                  areaOptions={areaOptions}
+                  originStockRows={originStockRows}
+                />
+              </div>
+            </details>
+          ) : (
+            <div className="mt-4" id="nueva-remision">
+              <RemissionsCreateForm
+                action={createRemission}
+                toSiteId={activeSiteId}
+                toSiteName={activeSiteName}
+                fromSiteOptions={fulfillmentSiteRows.map((site) => ({
+                  id: site.id,
+                  name: site.name ?? site.id,
+                }))}
+                defaultFromSiteId={selectedFromSiteId}
+                products={productRows}
+                categoryNameById={Object.fromEntries(categoryNameById)}
+                defaultUomProfiles={defaultUomProfiles}
+                areaOptions={areaOptions}
+                originStockRows={originStockRows}
+              />
+            </div>
+          )
         ) : null}
       </div>
 
@@ -945,7 +1029,7 @@ export default async function RemissionsPage({
                   : "Remisiones de la sede"}
             </div>
             <div className="mt-1 ui-caption">
-              {remissionRows.length} registro(s) visibles en esta vista
+              {(compactOperatorView ? tableRows : remissionRows).length} registro(s) visibles en esta vista
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -961,14 +1045,14 @@ export default async function RemissionsPage({
               <tr>
                 <TableHeaderCell>Fecha</TableHeaderCell>
                 <TableHeaderCell>Estado</TableHeaderCell>
-                <TableHeaderCell>Origen</TableHeaderCell>
-                <TableHeaderCell>Destino</TableHeaderCell>
-                <TableHeaderCell>Notas</TableHeaderCell>
+                {viewMode !== "bodega" ? <TableHeaderCell>Origen</TableHeaderCell> : null}
+                {viewMode !== "satélite" ? <TableHeaderCell>Destino</TableHeaderCell> : null}
+                {!compactOperatorView ? <TableHeaderCell>Notas</TableHeaderCell> : null}
                 <TableHeaderCell>Acciones</TableHeaderCell>
               </tr>
             </thead>
             <tbody>
-              {remissionRows.map((row) => {
+              {tableRows.map((row) => {
                 const fromSiteId = row.from_site_id ?? "";
                 const toSiteId = row.to_site_id ?? "";
                 return (
@@ -979,28 +1063,36 @@ export default async function RemissionsPage({
                         {formatStatus(row.status).label}
                       </span>
                     </TableCell>
-                    <TableCell>
-                      {siteMap.get(fromSiteId)?.name ?? fromSiteId}
-                    </TableCell>
-                    <TableCell>
-                      {siteMap.get(toSiteId)?.name ?? toSiteId}
-                    </TableCell>
-                    <TableCell>{row.notes ?? ""}</TableCell>
+                    {viewMode !== "bodega" ? (
+                      <TableCell>
+                        {siteMap.get(fromSiteId)?.name ?? fromSiteId}
+                      </TableCell>
+                    ) : null}
+                    {viewMode !== "satélite" ? (
+                      <TableCell>
+                        {siteMap.get(toSiteId)?.name ?? toSiteId}
+                      </TableCell>
+                    ) : null}
+                    {!compactOperatorView ? <TableCell>{row.notes ?? ""}</TableCell> : null}
                     <TableCell>
                       <Link
                         href={`/inventory/remissions/${row.id}`}
                         className="ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
                       >
-                        {viewMode === "bodega" ? "Preparar" : "Abrir"}
+                        {viewMode === "bodega"
+                          ? "Preparar"
+                          : ["in_transit", "partial"].includes(String(row.status ?? ""))
+                            ? "Recibir"
+                            : "Ver"}
                       </Link>
                     </TableCell>
                   </tr>
                 );
               })}
 
-              {!remissions?.length ? (
+              {!tableRows.length ? (
                 <tr>
-                  <TableCell colSpan={6} className="ui-empty">
+                  <TableCell colSpan={compactOperatorView ? 4 : 6} className="ui-empty">
                     No hay remisiones todavía.
                   </TableCell>
                 </tr>

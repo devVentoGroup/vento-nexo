@@ -92,11 +92,16 @@ export function EntriesForm({
   const [notes, setNotes] = useState(defaultNotes ?? "");
   const [emergencyReason, setEmergencyReason] = useState("");
   const showCustomSupplier = supplierId === "__new__";
+  const hasSupplierContext = showCustomSupplier ? supplierCustomName.trim().length > 0 : supplierId.trim().length > 0;
+  const hasDateContext = receivedAt.trim().length > 0;
+  const hasEmergencyContext = !emergencyOnly || emergencyReason.trim().length > 0;
+  const canCaptureProducts = hasSupplierContext && hasDateContext && hasEmergencyContext;
 
   const selectedSupplierName = useMemo(() => {
     if (showCustomSupplier) return supplierCustomName.trim() || "Proveedor manual";
     return suppliers.find((supplier) => supplier.id === supplierId)?.name ?? "Proveedor sin nombre";
   }, [showCustomSupplier, supplierCustomName, supplierId, suppliers]);
+  const hasPurchaseOrder = Boolean(purchaseOrderId);
 
   return (
     <form className="space-y-6 pb-24 lg:pb-0" action={action}>
@@ -108,7 +113,11 @@ export function EntriesForm({
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="ui-h3">Contexto</div>
-            <div className="ui-caption mt-1">Proveedor, documento y fecha para esta entrada.</div>
+            <div className="ui-caption mt-1">
+              {hasPurchaseOrder
+                ? "Confirma proveedor y fecha. Lo demás queda como apoyo."
+                : "Primero confirma proveedor y fecha. Los detalles opcionales van abajo."}
+            </div>
           </div>
           <div className="flex flex-wrap gap-2 text-xs font-semibold">
             <span className="rounded-full border border-slate-200 bg-slate-100 px-3 py-1 text-slate-700">
@@ -154,17 +163,6 @@ export function EntriesForm({
           ) : null}
 
           <label className="flex flex-col gap-1">
-            <span className="ui-label">Factura / documento</span>
-            <input
-              name="invoice_number"
-              className="ui-input"
-              placeholder="FAC-0001"
-              value={invoiceNumber}
-              onChange={(event) => setInvoiceNumber(event.target.value)}
-            />
-          </label>
-
-          <label className="flex flex-col gap-1">
             <span className="ui-label">Fecha de recepcion</span>
             <input
               type="date"
@@ -172,17 +170,6 @@ export function EntriesForm({
               className="ui-input"
               value={receivedAt}
               onChange={(event) => setReceivedAt(event.target.value)}
-            />
-          </label>
-
-          <label className="flex flex-col gap-1 md:col-span-2">
-            <span className="ui-label">Notas</span>
-            <input
-              name="notes"
-              className="ui-input"
-              placeholder="Notas opcionales"
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
             />
           </label>
 
@@ -200,29 +187,70 @@ export function EntriesForm({
             </label>
           ) : null}
         </div>
+
+        <details className="rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3">
+          <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+            Detalles opcionales
+          </summary>
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Factura / documento</span>
+              <input
+                name="invoice_number"
+                className="ui-input"
+                placeholder="FAC-0001"
+                value={invoiceNumber}
+                onChange={(event) => setInvoiceNumber(event.target.value)}
+              />
+            </label>
+
+            <label className="flex flex-col gap-1 md:col-span-2">
+              <span className="ui-label">Notas</span>
+              <input
+                name="notes"
+                className="ui-input"
+                placeholder="Notas opcionales"
+                value={notes}
+                onChange={(event) => setNotes(event.target.value)}
+              />
+            </label>
+          </div>
+        </details>
       </section>
 
       <section className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <div className="ui-h3">Productos</div>
-            <div className="ui-caption mt-1">Captura lo declarado y lo realmente recibido.</div>
+            <div className="ui-caption mt-1">
+              {canCaptureProducts
+                ? "Captura lo declarado y lo realmente recibido."
+                : "Primero completa proveedor y fecha para empezar a capturar."}
+            </div>
           </div>
-          <div className="rounded-full border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-1 text-xs font-semibold text-[var(--ui-muted)]">
-            {locations.length} LOCs disponibles
-          </div>
+          {canCaptureProducts ? (
+            <div className="rounded-full border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-1 text-xs font-semibold text-[var(--ui-muted)]">
+              {locations.length} LOCs disponibles
+            </div>
+          ) : null}
         </div>
 
-        <EntriesItems
-          products={products}
-          units={units}
-          locations={locations}
-          selectedSupplierId={supplierId}
-          supplierCostRows={supplierCostRows}
-          defaultLocationId={defaultLocationId}
-          defaultUomProfiles={defaultUomProfiles}
-          initialRows={initialRows}
-        />
+        {canCaptureProducts ? (
+          <EntriesItems
+            products={products}
+            units={units}
+            locations={locations}
+            selectedSupplierId={supplierId}
+            supplierCostRows={supplierCostRows}
+            defaultLocationId={defaultLocationId}
+            defaultUomProfiles={defaultUomProfiles}
+            initialRows={initialRows}
+          />
+        ) : (
+          <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-4 text-sm text-[var(--ui-muted)]">
+            Completa el contexto arriba y enseguida aparecen los productos para registrar la entrada.
+          </div>
+        )}
       </section>
 
       <div className="ui-mobile-sticky-footer ui-fade-up ui-delay-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ui-border)] bg-white/92 px-4 py-3 backdrop-blur">
@@ -230,7 +258,7 @@ export function EntriesForm({
           {selectedSupplierName}
           {invoiceNumber.trim() ? ` · ${invoiceNumber.trim()}` : ""}
         </div>
-        <button type="submit" className="ui-btn ui-btn--brand">
+        <button type="submit" className="ui-btn ui-btn--brand" disabled={!canCaptureProducts}>
           Guardar entrada
         </button>
       </div>

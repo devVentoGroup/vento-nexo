@@ -370,13 +370,13 @@ export default async function InventoryLocationsPage({
               <h1 className="ui-h1">Ubicaciones</h1>
               <p className="ui-body-muted">
                 {isEditingLoc
-                  ? "Corrige identidad y metadatos del LOC seleccionado sin mezclarlo con alta nueva."
-                  : "Crea y administra LOCs con una convención clara y un listado filtrable por sede, zona y código."}
+                  ? "Corrige solo la ubicacion seleccionada y vuelve al listado."
+                  : "Crea LOCs con nombre humano primero y deja el codigo tecnico en segundo plano."}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
-                {isEditingLoc ? "Modo edicion" : "Alta de LOC"}
+                {isEditingLoc ? "Editar ubicacion" : "Nueva ubicacion"}
               </span>
               <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
                 {siteOptions.length} sedes
@@ -408,9 +408,9 @@ export default async function InventoryLocationsPage({
               <div className="ui-remission-kpi-note">Disponibles para crear o filtrar ubicaciones</div>
             </article>
             <article className="ui-remission-kpi" data-tone="success">
-              <div className="ui-remission-kpi-label">Estado</div>
+              <div className="ui-remission-kpi-label">Accion</div>
               <div className="ui-remission-kpi-value">{isEditingLoc ? "Editar" : "Crear"}</div>
-              <div className="ui-remission-kpi-note">Alta limpia o edicion aislada segun el modo activo</div>
+              <div className="ui-remission-kpi-note">Una sola tarea visible segun el modo actual</div>
             </article>
           </div>
         </div>
@@ -443,17 +443,10 @@ export default async function InventoryLocationsPage({
       {canEditLoc && editingLoc ? (
         <>
           <div className="ui-panel ui-remission-section ui-fade-up ui-delay-1 space-y-3">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="ui-h3">Editando {editingLoc.code ?? editingLoc.id}</div>
-                <p className="mt-1 text-sm text-[var(--ui-muted)]">
-                  En este modo solo se muestran los cambios del LOC seleccionado para evitar mezclar edición con alta nueva.
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <span className="ui-chip">{editingLoc.zone ?? "Sin zona"}</span>
-                <span className="ui-chip">{editingLoc.aisle ?? "Sin pasillo"}</span>
-              </div>
+            <div className="ui-h3">{editingLoc.description?.trim() || editingLoc.code || "Editar ubicacion"}</div>
+            <div className="flex flex-wrap gap-2 text-sm text-[var(--ui-muted)]">
+              <span className="ui-chip">{editingLoc.zone ?? "Sin zona"}</span>
+              {editingLoc.code ? <span className="ui-chip">{editingLoc.code}</span> : null}
             </div>
           </div>
 
@@ -462,30 +455,9 @@ export default async function InventoryLocationsPage({
             action={updateLocAction}
             cancelHref={cancelHref}
           />
-
-          <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-3 text-sm text-[var(--ui-muted)]">
-            <div className="font-semibold text-[var(--ui-text)]">¿Necesitas crear otra ubicación?</div>
-            <p>
-              Sal del modo edición para volver al formulario de alta limpia y evitar confundir cambios sobre un LOC existente con una ubicación nueva.
-            </p>
-            <div>
-              <Link href={cancelHref} className="ui-btn ui-btn--ghost">
-                Ir a alta nueva
-              </Link>
-            </div>
-          </div>
         </>
       ) : (
         <div className="space-y-4">
-          <div className="ui-panel ui-remission-section ui-fade-up ui-delay-1 space-y-3">
-            <div>
-              <div className="ui-h3">Alta de ubicación</div>
-              <p className="mt-1 text-sm text-[var(--ui-muted)]">
-                Crea un LOC nuevo con la convención estándar. Si luego necesitas corregir uno existente, entra desde el listado en modo edición.
-              </p>
-            </div>
-          </div>
-
           <LocCreateForm
             sites={siteOptions}
             defaultSiteId={defaultSiteId}
@@ -505,7 +477,7 @@ export default async function InventoryLocationsPage({
           <div>
             <div className="ui-h3">Listado</div>
             <div className="mt-1 ui-body-muted">
-              Filtra por sede, zona o código. Máx. 500 registros.
+              Busca por sede, zona o codigo. Max. 500 registros.
             </div>
           </div>
           <div className="rounded-full border border-slate-200 bg-[var(--ui-bg-soft)] px-3 py-1 text-xs font-semibold text-[var(--ui-muted)]">
@@ -513,71 +485,81 @@ export default async function InventoryLocationsPage({
           </div>
         </div>
 
-        <form
-          method="get"
-          action="/inventory/locations"
-          className="mt-4 flex flex-wrap items-end gap-3"
-        >
-          <label className="flex flex-col gap-1">
-            <span className="ui-caption font-medium">Sede</span>
-            <select
-              name="site_id"
-              defaultValue={filterSiteId}
-              className="ui-input min-w-[180px]"
-            >
-              <option value="">Todas</option>
-              {siteOptions.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="ui-caption font-medium">Zona</span>
-            <input
-              type="text"
-              name="zone"
-              defaultValue={filterZone}
-              placeholder="Ej: BODEGA, FRIO"
-              className="ui-input min-w-[120px]"
-            />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="ui-caption font-medium">Código (contiene)</span>
-            <input
-              type="text"
-              name="code"
-              defaultValue={filterCode}
-              placeholder="Ej: LOC-CP"
-              className="ui-input min-w-[140px]"
-            />
-          </label>
-          <button type="submit" className="ui-btn ui-btn--brand">
-            Filtrar
-          </button>
-          <Link
-            href="/inventory/locations"
-            className="ui-btn ui-btn--ghost"
+        <details className="mt-4 ui-panel-soft p-4">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+            <span className="font-semibold text-[var(--ui-text)]">Refinar listado</span>
+            <span className="ui-chip">Opcional</span>
+          </summary>
+          <form
+            method="get"
+            action="/inventory/locations"
+            className="mt-4 flex flex-wrap items-end gap-3"
           >
-            Limpiar
-          </Link>
-        </form>
+            <label className="flex flex-col gap-1">
+              <span className="ui-caption font-medium">Sede</span>
+              <select
+                name="site_id"
+                defaultValue={filterSiteId}
+                className="ui-input min-w-[180px]"
+              >
+                <option value="">Todas</option>
+                {siteOptions.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="ui-caption font-medium">Zona</span>
+              <input
+                type="text"
+                name="zone"
+                defaultValue={filterZone}
+                placeholder="Ej: BODEGA, FRIO"
+                className="ui-input min-w-[120px]"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="ui-caption font-medium">Codigo (contiene)</span>
+              <input
+                type="text"
+                name="code"
+                defaultValue={filterCode}
+                placeholder="Ej: LOC-CP"
+                className="ui-input min-w-[140px]"
+              />
+            </label>
+            <button type="submit" className="ui-btn ui-btn--brand">
+              Filtrar
+            </button>
+            <Link
+              href="/inventory/locations"
+              className="ui-btn ui-btn--ghost"
+            >
+              Limpiar
+            </Link>
+          </form>
+        </details>
 
         <div className="mt-4 overflow-x-auto">
           <Table>
             <thead>
               <tr>
+                <TableHeaderCell>Nombre</TableHeaderCell>
                 <TableHeaderCell>Código</TableHeaderCell>
                 <TableHeaderCell>Zona</TableHeaderCell>
-                <TableHeaderCell>Aisle</TableHeaderCell>
-                <TableHeaderCell>Level</TableHeaderCell>
+                <TableHeaderCell>Pasillo</TableHeaderCell>
+                <TableHeaderCell>Nivel</TableHeaderCell>
                 {canEditLoc || canDeleteLoc ? <TableHeaderCell>Acciones</TableHeaderCell> : null}
               </tr>
             </thead>
             <tbody>
               {locationRows.map((loc) => (
                 <tr key={loc.id} className="ui-body">
+                  <TableCell>
+                    {loc.description?.trim() || "Sin nombre"}
+                  </TableCell>
                   <TableCell className="font-mono">
                     {loc.code}
                   </TableCell>
@@ -617,7 +599,7 @@ export default async function InventoryLocationsPage({
 
               {!error && (!locations || locations.length === 0) ? (
                 <tr>
-                  <TableCell className="ui-empty" colSpan={canEditLoc || canDeleteLoc ? 5 : 4}>
+                  <TableCell className="ui-empty" colSpan={canEditLoc || canDeleteLoc ? 6 : 5}>
                     No hay LOCs para mostrar (o RLS no te permite verlos).
                   </TableCell>
                 </tr>

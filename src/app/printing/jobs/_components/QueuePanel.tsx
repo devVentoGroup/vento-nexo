@@ -26,8 +26,8 @@ export function QueuePanel({
     <div className="ui-panel ui-remission-section">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="ui-h3">Cola de etiquetas</div>
-          <div className="mt-1 ui-caption">Una línea por etiqueta.</div>
+          <div className="ui-h3">2. Cola</div>
+          <div className="mt-1 ui-caption">Una línea por etiqueta. Aquí solo preparas lo que saldrá.</div>
         </div>
         <div className="flex gap-2">
           <span className="ui-chip">{parsedQueueLength} en cola</span>

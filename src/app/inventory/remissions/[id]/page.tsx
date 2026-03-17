@@ -78,7 +78,33 @@ type RestockItemRow = {
   } | null;
 };
 
-type LocRow = { id: string; code: string | null };
+type LocRow = {
+  id: string;
+  code: string | null;
+  zone?: string | null;
+  aisle?: string | null;
+  level?: string | null;
+  description?: string | null;
+};
+
+function buildLocFriendlyLabel(loc: Partial<LocRow> | null | undefined): string {
+  if (!loc) return "LOC";
+  const description = String(loc.description ?? "").trim();
+  if (description) return description;
+  const parts = [
+    String(loc.zone ?? "").trim(),
+    String(loc.aisle ?? "").trim() ? `Pasillo ${String(loc.aisle ?? "").trim()}` : "",
+    String(loc.level ?? "").trim() ? `Nivel ${String(loc.level ?? "").trim()}` : "",
+  ].filter(Boolean);
+  return parts.join(" · ") || String(loc.code ?? "").trim() || "LOC";
+}
+
+function buildLocDisplayLabel(loc: Partial<LocRow> | null | undefined): string {
+  if (!loc) return "LOC";
+  const friendly = buildLocFriendlyLabel(loc);
+  const code = String(loc.code ?? "").trim();
+  return code && friendly !== code ? `${friendly} · ${code}` : friendly;
+}
 
 function formatStatus(status?: string | null) {
   const value = String(status ?? "").trim();
@@ -564,6 +590,450 @@ async function splitItem(formData: FormData) {
   redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, ok: "split_item" }));
 }
 
+async function chooseSourceLoc(formData: FormData) {
+  "use server";
+
+  const supabase = await createClient();
+  const { data: userRes } = await supabase.auth.getUser();
+  const user = userRes.user ?? null;
+  const requestId = asText(formData.get("request_id"));
+  const returnOrigin = normalizeReturnOrigin(asText(formData.get("return_origin")));
+  if (!user) {
+    redirect(await buildShellLoginUrl(buildRemissionDetailHref({ requestId, from: returnOrigin })));
+  }
+
+  const target = asText(formData.get("choose_loc_target"));
+  let itemId = "";
+  let locationId = "";
+
+  if (target.includes("|")) {
+    const [parsedItemId, parsedLocationId] = target.split("|");
+    itemId = parsedItemId.trim();
+    locationId = parsedLocationId.trim();
+  }
+
+  if (!itemId) {
+    itemId = asText(formData.get("choose_loc_item_id"));
+  }
+  if (!locationId && itemId) {
+    locationId = asText(formData.get(`manual_loc_id_${itemId}`));
+  }
+
+  if (!itemId || !locationId) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: "Selecciona un LOC para continuar.",
+      })
+    );
+  }
+
+  const { data: request } = await supabase
+    .from("restock_requests")
+    .select("from_site_id,to_site_id,status")
+    .eq("id", requestId)
+    .single();
+
+  const access = await loadAccessContext(supabase, user.id, request);
+  const currentStatus = String(request?.status ?? "");
+  if (!access.canPrepare || !["pending", "preparing"].includes(currentStatus)) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: "Solo puedes elegir LOC mientras la remision esta pendiente o preparando.",
+      })
+    );
+  }
+
+  const fromSiteId = String(request?.from_site_id ?? "").trim();
+  if (!fromSiteId) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: "No se encontro sede origen para la remision.",
+      })
+    );
+  }
+
+  const { data: itemRow } = await supabase
+    .from("restock_request_items")
+    .select("id")
+    .eq("id", itemId)
+    .eq("request_id", requestId)
+    .single();
+  if (!itemRow) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: "La linea seleccionada no pertenece a esta remision.",
+      })
+    );
+  }
+
+  const { data: locRow } = await supabase
+    .from("inventory_locations")
+    .select("id")
+    .eq("id", locationId)
+    .eq("site_id", fromSiteId)
+    .single();
+  if (!locRow) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: "Ese LOC no pertenece a la sede origen.",
+      })
+    );
+  }
+
+  const { error } = await supabase
+    .from("restock_request_items")
+    .update({ source_location_id: locationId })
+    .eq("id", itemId);
+
+  if (error) {
+    redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: error.message }));
+  }
+
+  redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, ok: "loc_selected" }));
+}
+
+async function applyPrepareShortcut(formData: FormData) {
+  "use server";
+
+  const supabase = await createClient();
+  const { data: userRes } = await supabase.auth.getUser();
+  const user = userRes.user ?? null;
+  const requestId = asText(formData.get("request_id"));
+  const returnOrigin = normalizeReturnOrigin(asText(formData.get("return_origin")));
+  if (!user) {
+    redirect(await buildShellLoginUrl(buildRemissionDetailHref({ requestId, from: returnOrigin })));
+  }
+
+  const target = asText(formData.get("line_shortcut_target"));
+  const [itemId, shortcut] = target.split("|").map((value) => value.trim());
+  if (!itemId || !shortcut) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: "No se pudo aplicar la acción rápida.",
+      })
+    );
+  }
+
+  const { data: request } = await supabase
+    .from("restock_requests")
+    .select("from_site_id,to_site_id,status")
+    .eq("id", requestId)
+    .single();
+
+  const access = await loadAccessContext(supabase, user.id, request);
+  const currentStatus = String(request?.status ?? "");
+  if (!access.canPrepare || !["pending", "preparing"].includes(currentStatus)) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: "Solo puedes preparar mientras la remision esta pendiente o preparando.",
+      })
+    );
+  }
+
+  const { data: itemRow } = await supabase
+    .from("restock_request_items")
+    .select("id,product_id,quantity,source_location_id,prepared_quantity,shipped_quantity")
+    .eq("id", itemId)
+    .eq("request_id", requestId)
+    .single();
+
+  if (!itemRow) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: "La línea seleccionada no pertenece a esta remision.",
+      })
+    );
+  }
+
+  let nextPrepared = roundQuantity(Number(itemRow.prepared_quantity ?? 0));
+  let nextShipped = roundQuantity(Number(itemRow.shipped_quantity ?? 0));
+  const requestedQty = roundQuantity(Number(itemRow.quantity ?? 0));
+  const sourceLocId = String(itemRow.source_location_id ?? "").trim();
+
+  let availableAtLoc = 0;
+  if (shortcut !== "clear_prepare" && shortcut !== "clear_ship") {
+    if (!sourceLocId) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          error: "Selecciona primero el LOC de origen.",
+        })
+      );
+    }
+
+    const { data: locStockRow } = await supabase
+      .from("inventory_stock_by_location")
+      .select("current_qty")
+      .eq("location_id", sourceLocId)
+      .eq("product_id", itemRow.product_id)
+      .maybeSingle();
+
+    availableAtLoc = roundQuantity(Number(locStockRow?.current_qty ?? 0));
+  }
+
+  switch (shortcut) {
+    case "prepare_auto": {
+      const suggestedQty = roundQuantity(Math.min(requestedQty, availableAtLoc));
+      if (suggestedQty <= 0) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: "Ese LOC no tiene stock disponible para preparar esta línea.",
+          })
+        );
+      }
+      nextPrepared = suggestedQty;
+      if (nextShipped > nextPrepared) nextShipped = nextPrepared;
+      break;
+    }
+    case "ship_prepared": {
+      if (nextPrepared <= 0) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: "Primero marca cuánto preparas.",
+          })
+        );
+      }
+      nextShipped = nextPrepared;
+      break;
+    }
+    case "clear_prepare": {
+      nextPrepared = 0;
+      nextShipped = 0;
+      break;
+    }
+    case "clear_ship": {
+      nextShipped = 0;
+      break;
+    }
+    default:
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          error: "Acción rápida no soportada.",
+        })
+      );
+  }
+
+  if (nextPrepared < 0 || nextShipped < 0) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: "Las cantidades no pueden ser negativas.",
+      })
+    );
+  }
+  if (requestedQty > 0 && nextPrepared > requestedQty) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: `Cantidad preparada (${nextPrepared}) mayor que solicitada (${requestedQty}).`,
+      })
+    );
+  }
+  if (requestedQty > 0 && nextShipped > requestedQty) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: `Cantidad enviada (${nextShipped}) mayor que solicitada (${requestedQty}).`,
+      })
+    );
+  }
+  if (nextShipped > nextPrepared) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: `Cantidad enviada (${nextShipped}) no puede superar la preparada (${nextPrepared}).`,
+      })
+    );
+  }
+  if (sourceLocId && Math.max(nextPrepared, nextShipped) > availableAtLoc) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: `La cantidad elegida supera el stock disponible en el LOC (${availableAtLoc}).`,
+      })
+    );
+  }
+
+  const { error } = await supabase
+    .from("restock_request_items")
+    .update({
+      prepared_quantity: nextPrepared,
+      shipped_quantity: nextShipped,
+    })
+    .eq("id", itemId);
+
+  if (error) {
+    redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: error.message }));
+  }
+
+  redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, ok: "line_shortcut" }));
+}
+
+async function applyReceiveShortcut(formData: FormData) {
+  "use server";
+
+  const supabase = await createClient();
+  const { data: userRes } = await supabase.auth.getUser();
+  const user = userRes.user ?? null;
+  const requestId = asText(formData.get("request_id"));
+  const returnOrigin = normalizeReturnOrigin(asText(formData.get("return_origin")));
+  if (!user) {
+    redirect(await buildShellLoginUrl(buildRemissionDetailHref({ requestId, from: returnOrigin })));
+  }
+
+  const target = asText(formData.get("line_receive_target"));
+  const [itemId, shortcut] = target.split("|").map((value) => value.trim());
+  if (!itemId || !shortcut) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: "No se pudo aplicar la acción rápida de recepción.",
+      })
+    );
+  }
+
+  const { data: request } = await supabase
+    .from("restock_requests")
+    .select("from_site_id,to_site_id,status")
+    .eq("id", requestId)
+    .single();
+
+  const access = await loadAccessContext(supabase, user.id, request);
+  const currentStatus = String(request?.status ?? "");
+  if (!access.canReceive || !["in_transit", "partial"].includes(currentStatus)) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: "Solo puedes registrar recepción mientras la remision está en tránsito o parcial.",
+      })
+    );
+  }
+
+  const { data: itemRow } = await supabase
+    .from("restock_request_items")
+    .select("id,shipped_quantity,received_quantity,shortage_quantity")
+    .eq("id", itemId)
+    .eq("request_id", requestId)
+    .single();
+
+  if (!itemRow) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: "La línea seleccionada no pertenece a esta remisión.",
+      })
+    );
+  }
+
+  const shippedQty = roundQuantity(Number(itemRow.shipped_quantity ?? 0));
+  let nextReceived = roundQuantity(Number(itemRow.received_quantity ?? 0));
+  let nextShortage = roundQuantity(Number(itemRow.shortage_quantity ?? 0));
+
+  switch (shortcut) {
+    case "receive_all":
+      if (shippedQty <= 0) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: "Esta línea no tiene envío confirmado todavía.",
+          })
+        );
+      }
+      nextReceived = shippedQty;
+      nextShortage = 0;
+      break;
+    case "mark_shortage":
+      if (shippedQty <= 0) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: "Esta línea no tiene envío confirmado todavía.",
+          })
+        );
+      }
+      nextShortage = roundQuantity(Math.max(shippedQty - nextReceived, 0));
+      break;
+    case "clear_receive":
+      nextReceived = 0;
+      nextShortage = 0;
+      break;
+    default:
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          error: "Acción rápida de recepción no soportada.",
+        })
+      );
+  }
+
+  if (nextReceived < 0 || nextShortage < 0) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: "Recibido y faltante no pueden ser negativos.",
+      })
+    );
+  }
+  if (nextReceived + nextShortage > shippedQty) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: `Recibido + faltante (${nextReceived + nextShortage}) no puede superar enviado (${shippedQty}).`,
+      })
+    );
+  }
+
+  const { error } = await supabase
+    .from("restock_request_items")
+    .update({
+      received_quantity: nextReceived,
+      shortage_quantity: nextShortage,
+    })
+    .eq("id", itemId);
+
+  if (error) {
+    redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: error.message }));
+  }
+
+  redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, ok: "line_shortcut" }));
+}
+
 async function updateStatus(formData: FormData) {
   "use server";
 
@@ -942,6 +1412,10 @@ export default async function RemissionDetailPage({
     ? "Remisión creada."
     : sp.ok === "items_updated"
       ? "Ítems actualizados."
+      : sp.ok === "line_shortcut"
+        ? "Línea actualizada."
+      : sp.ok === "loc_selected"
+        ? "LOC seleccionado."
       : sp.ok === "split_item"
         ? "Linea partida. Ya puedes asignar un LOC distinto por linea."
       : sp.ok === "status_updated"
@@ -988,7 +1462,18 @@ export default async function RemissionDetailPage({
   // Fase 2.1: stock disponible por sede y por LOC en origen (solo lectura al preparar)
   const fromSiteId = request?.from_site_id ?? "";
   type StockBySiteRow = { product_id: string; current_qty: number | null };
-  type StockByLocRow = { location_id: string; product_id: string; current_qty: number | null; location?: { code: string | null } | null };
+  type StockByLocRow = {
+    location_id: string;
+    product_id: string;
+    current_qty: number | null;
+    location?: {
+      code: string | null;
+      zone?: string | null;
+      aisle?: string | null;
+      level?: string | null;
+      description?: string | null;
+    } | null;
+  };
   const { data: stockBySiteData } = fromSiteId
     ? await supabase
         .from("inventory_stock_by_site")
@@ -1001,9 +1486,9 @@ export default async function RemissionDetailPage({
 
   let locIdsFromSite: string[] = [];
   const { data: locsFromSite } = fromSiteId
-    ? await supabase
-        .from("inventory_locations")
-        .select("id,code")
+      ? await supabase
+          .from("inventory_locations")
+        .select("id,code,zone,aisle,level,description")
         .eq("site_id", fromSiteId)
         .order("code", { ascending: true })
         .limit(500)
@@ -1015,7 +1500,7 @@ export default async function RemissionDetailPage({
     fromSiteId && locIdsFromSite.length > 0
       ? await supabase
           .from("inventory_stock_by_location")
-          .select("location_id,product_id,current_qty,location:inventory_locations(code)")
+          .select("location_id,product_id,current_qty,location:inventory_locations(code,zone,aisle,level,description)")
           .in("location_id", locIdsFromSite)
           .gt("current_qty", 0)
       : { data: [] as StockByLocRow[] };
@@ -1024,10 +1509,11 @@ export default async function RemissionDetailPage({
   const stockByLocValueMap = new Map<string, number>();
   const stockByLocCandidates = new Map<
     string,
-    Array<{ locationId: string; code: string; qty: number }>
+    Array<{ locationId: string; code: string; label: string; qty: number }>
   >();
   for (const row of stockByLocRows) {
     const code = row.location?.code ?? row.location_id?.slice(0, 8) ?? "";
+    const label = buildLocFriendlyLabel(row.location);
     const qty = Number(row.current_qty ?? 0);
     stockByLocValueMap.set(`${row.location_id}|${row.product_id}`, qty);
     if (!qty) continue;
@@ -1038,12 +1524,14 @@ export default async function RemissionDetailPage({
     stockByLocCandidates.get(key)!.push({
       locationId: row.location_id,
       code,
+      label,
       qty,
     });
   }
   for (const candidates of stockByLocCandidates.values()) {
     candidates.sort((a, b) => b.qty - a.qty || a.code.localeCompare(b.code));
   }
+  const originLocById = new Map(originLocRows.map((row) => [row.id, row]));
 
   if (!request) {
     return (
@@ -1373,7 +1861,18 @@ export default async function RemissionDetailPage({
               const requestedQty = roundQuantity(Number(item.quantity ?? 0));
               const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
               const locCandidates = stockByLocCandidates.get(item.product_id) ?? [];
+              const quickLocCandidates = locCandidates.slice(0, 3);
               const bestLocCandidate = locCandidates[0] ?? null;
+              const selectedOriginLoc = item.source_location_id
+                ? originLocById.get(item.source_location_id) ?? null
+                : null;
+              const selectedOriginLabel = item.source_location_id
+                ? buildLocDisplayLabel(selectedOriginLoc ?? {
+                    id: item.source_location_id,
+                    code: null,
+                    description: locCandidates.find((candidate) => candidate.locationId === item.source_location_id)?.label ?? null,
+                  })
+                : "";
               const preparedQty = roundQuantity(Number(item.prepared_quantity ?? 0));
               const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
               const receivedQty = roundQuantity(Number(item.received_quantity ?? 0));
@@ -1384,6 +1883,17 @@ export default async function RemissionDetailPage({
               const availableAtSelectedLoc = item.source_location_id
                 ? stockByLocValueMap.get(`${item.source_location_id}|${item.product_id}`) ?? 0
                 : 0;
+              const itemUnitLabel =
+                item.stock_unit_code ?? item.unit ?? item.product?.unit ?? "";
+              const quickPrepareQty = roundQuantity(
+                Math.min(requestedQty, Math.max(availableAtSelectedLoc, 0))
+              );
+              const quickPrepareText =
+                quickPrepareQty > 0
+                  ? quickPrepareQty < requestedQty
+                    ? `Preparar ${quickPrepareQty} ${itemUnitLabel}`
+                    : `Preparar ${requestedQty} ${itemUnitLabel}`
+                  : "Sin stock en este LOC";
               const missingSourceLoc = canEditPrepareItems && showSourceLocSelector && plannedQty > 0 && !item.source_location_id;
               const overSiteStock = canEditPrepareItems && plannedQty > availableSite;
               const overLocStock =
@@ -1426,6 +1936,7 @@ export default async function RemissionDetailPage({
                 canEditReceiveItems && accountedQty > 0 && accountedQty < shippedQty;
               const lineCompleteReceipt =
                 canEditReceiveItems && shippedQty > 0 && accountedQty === shippedQty;
+              const remainingReceiptQty = roundQuantity(Math.max(shippedQty - receivedQty, 0));
               const lineStatusLabel = canEditPrepareItems
                 ? missingSourceLoc
                   ? "LOC pendiente"
@@ -1460,8 +1971,6 @@ export default async function RemissionDetailPage({
                       ? "ui-chip ui-chip--success"
                       : "ui-chip"
                   : formatStatus(item.item_status).className;
-              const itemUnitLabel =
-                item.stock_unit_code ?? item.unit ?? item.product?.unit ?? "";
               const prepareStepLabel = !item.source_location_id
                 ? "Paso 1: elige el LOC"
                 : preparedQty <= 0
@@ -1488,7 +1997,7 @@ export default async function RemissionDetailPage({
                     : overLocStock
                       ? "La cantidad supera el stock del LOC elegido."
                       : lineWithoutCoveringLoc
-                        ? "La sede sí tiene stock, pero toca repartir esta línea entre varios LOCs."
+                        ? "Ningún LOC alcanza solo. Divide esta línea y sigue."
                         : linePreparationPartial
                           ? "La preparación va corta frente a lo solicitado."
                           : "Elige el LOC y completa la cantidad a despachar."
@@ -1521,139 +2030,313 @@ export default async function RemissionDetailPage({
                   </div>
                 ) : null}
                 {canSplitLine ? (
-                  <div className="mt-3 rounded-2xl border border-dashed border-[var(--ui-border)] bg-white px-3 py-3">
-                    <div className="text-sm font-semibold text-[var(--ui-text)]">Partir linea</div>
-                    <p className="mt-1 ui-caption">Se crea una línea nueva para usar otro LOC.</p>
-                    <div className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-end">
-                      <label className="flex min-w-0 flex-1 flex-col gap-1">
-                        <span className="ui-caption">Cantidad para la nueva linea</span>
-                        <input
-                          name={`split_quantity_${item.id}`}
-                          defaultValue={suggestedSplitQty}
-                          inputMode="decimal"
-                          step="any"
-                          className="ui-input h-10 min-w-0"
-                        />
-                      </label>
+                  <div className="mt-3 rounded-2xl border border-dashed border-[var(--ui-border)] bg-white px-4 py-4">
+                    <div className="text-sm font-semibold text-[var(--ui-text)]">Ningún LOC alcanza solo</div>
+                    <p className="mt-1 ui-caption">
+                      Divide automáticamente esta línea para seguir con dos líneas más simples.
+                    </p>
+                    <input type="hidden" name={`split_quantity_${item.id}`} value={suggestedSplitQty} />
+                    <div className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div className="rounded-2xl bg-[var(--ui-bg-soft)] px-3 py-3 text-sm text-[var(--ui-muted)]">
+                        {suggestedSplitQty} {itemUnitLabel} desde {bestLocCandidate?.label ?? "el mejor LOC"} y {remainingSplitQty} {itemUnitLabel} en la línea restante.
+                      </div>
                       <button
                         formAction={splitItem}
                         name="split_item_id"
                         value={item.id}
-                        className="ui-btn ui-btn--ghost w-full sm:w-auto"
+                        className="ui-btn ui-btn--brand h-12 w-full px-5 text-base font-semibold sm:w-auto"
                       >
-                        Partir linea
+                        Dividir automáticamente
                       </button>
-                    </div>
-                    <div className="mt-2 ui-caption">
-                      Sugerencia: {suggestedSplitQty} desde {bestLocCandidate?.code ?? "el mejor LOC"} y {remainingSplitQty} en la línea actual.
                     </div>
                   </div>
                 ) : null}
 
                 <input type="hidden" name="item_id" value={item.id} />
 
-                <div className="mt-4 grid gap-3 xl:grid-cols-[1.2fr_0.9fr_0.9fr]">
-                  {showSourceLocSelector && canEditPrepareItems ? (
-                    <label className="flex flex-col gap-1">
-                      <span className="ui-caption">LOC origen</span>
-                      <select
-                        name="source_location_id"
-                        defaultValue={item.source_location_id ?? ""}
-                        className="ui-input h-12 min-w-0"
-                      >
-                        <option value="">Selecciona LOC</option>
-                        {originLocRows.map((loc) => (
-                          <option key={loc.id} value={loc.id}>
-                            {loc.code ?? loc.id}
-                          </option>
-                        ))}
-                      </select>
-                      {fromSiteId ? (
-                        <div className="mt-2 space-y-2 rounded-2xl border border-[var(--ui-border)] bg-white px-3 py-3 text-sm text-[var(--ui-muted)]">
-                          <div>
-                            <span className="font-semibold text-[var(--ui-text)]">Stock en origen:</span>{" "}
-                            <span className={stockOk ? "text-[var(--ui-success)]" : "text-[var(--ui-brand-700)]"}>
-                              {availableSite} {itemUnitLabel}
-                            </span>
+                <div className="mt-4 space-y-3">
+                  {showSourceLocSelector && canEditPrepareItems && !canSplitLine ? (
+                    <>
+                      <input type="hidden" name="source_location_id" value={item.source_location_id ?? ""} />
+                      <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="space-y-1">
+                            <div className="text-sm font-semibold text-[var(--ui-text)]">
+                              {item.source_location_id ? "LOC elegido" : "Elige de dónde sale"}
+                            </div>
+                            <div className="text-sm text-[var(--ui-muted)]">
+                              Stock en origen:{" "}
+                              <span className={stockOk ? "font-semibold text-[var(--ui-success)]" : "font-semibold text-[var(--ui-brand-700)]"}>
+                                {availableSite} {itemUnitLabel}
+                              </span>
+                            </div>
                           </div>
-                          {locCandidates.length > 0 ? (
-                            <div className="flex flex-wrap gap-2">
-                              {locCandidates.slice(0, 3).map((candidate, index) => {
-                                const isBest = index === 0;
-                                const isSelected = candidate.locationId === item.source_location_id;
-                                return (
-                                  <span
-                                    key={`${item.id}-${candidate.locationId}`}
-                                    className={`rounded-full px-3 py-1 ${
-                                      isSelected
-                                        ? "bg-[var(--ui-brand-50)] text-[var(--ui-brand-700)]"
-                                        : "bg-[var(--ui-bg-soft)] text-[var(--ui-muted)]"
-                                    }`}
-                                  >
-                                    {candidate.code}: {candidate.qty}
-                                    {isBest ? " recomendado" : ""}
-                                  </span>
-                                );
-                              })}
+                          {item.source_location_id ? (
+                            <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">
+                              {selectedOriginLabel}
                             </div>
                           ) : null}
-                          {selectedLocIsNotBest ? (
-                            <div>Hay otro LOC con mejor cobertura para esta línea.</div>
-                          ) : null}
                         </div>
-                      ) : null}
-                    </label>
+
+                        {quickLocCandidates.length > 0 ? (
+                          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+                            {quickLocCandidates.map((candidate, index) => {
+                              const isBest = index === 0;
+                              const isSelected = candidate.locationId === item.source_location_id;
+                              return (
+                                <button
+                                  key={`${item.id}-${candidate.locationId}`}
+                                  formAction={chooseSourceLoc}
+                                  name="choose_loc_target"
+                                  value={`${item.id}|${candidate.locationId}`}
+                                  className={`rounded-2xl border px-4 py-4 text-left shadow-sm transition ${
+                                    isSelected
+                                      ? "border-emerald-300 bg-emerald-50 text-emerald-950"
+                                      : isBest
+                                        ? "border-amber-200 bg-amber-50 text-[var(--ui-text)] hover:border-amber-300 hover:bg-amber-100"
+                                        : "border-[var(--ui-border)] bg-[var(--ui-bg-soft)] text-[var(--ui-text)] hover:border-[var(--ui-brand)] hover:bg-white"
+                                  }`}
+                                >
+                                  <div className="flex items-center justify-between gap-3">
+                                    <span className="text-base font-semibold">{candidate.label}</span>
+                                    <span className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                                      isSelected
+                                        ? "bg-emerald-200 text-emerald-900"
+                                        : isBest
+                                          ? "bg-amber-200 text-amber-900"
+                                          : "bg-white text-[var(--ui-muted)]"
+                                    }`}>
+                                      {isSelected ? "Elegido" : isBest ? "Recomendado" : "Disponible"}
+                                    </span>
+                                  </div>
+                                  <div className="mt-2 text-sm text-[var(--ui-muted)]">
+                                    {candidate.qty} {itemUnitLabel} disponibles
+                                  </div>
+                                </button>
+                              );
+                            })}
+                          </div>
+                        ) : (
+                          <div className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3 text-sm text-[var(--ui-muted)]">
+                            No hay LOC con stock para este producto.
+                          </div>
+                        )}
+
+                        {selectedLocIsNotBest && bestLocCandidate ? (
+                          <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                            Hay un LOC que cubre mejor esta línea: <strong>{bestLocCandidate.label}</strong>.
+                          </div>
+                        ) : null}
+
+                        <details className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3">
+                          <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+                            Ver más LOCs
+                          </summary>
+                          <div className="mt-3 flex flex-col gap-3 md:max-w-xl">
+                            <label className="flex flex-col gap-1">
+                              <span className="ui-caption">Otro LOC</span>
+                              <select
+                                name={`manual_loc_id_${item.id}`}
+                                defaultValue={item.source_location_id ?? ""}
+                                className="ui-input h-12 min-w-0"
+                              >
+                                <option value="">Selecciona LOC</option>
+                                {originLocRows.map((loc) => (
+                                  <option key={loc.id} value={loc.id}>
+                                    {buildLocDisplayLabel(loc)}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <button
+                              formAction={chooseSourceLoc}
+                              name="choose_loc_item_id"
+                              value={item.id}
+                              className="ui-btn ui-btn--ghost h-12 w-full text-base font-semibold md:w-auto"
+                            >
+                              Usar este LOC
+                            </button>
+                          </div>
+                        </details>
+                      </div>
+                    </>
                   ) : (
                     <input type="hidden" name="source_location_id" value={item.source_location_id ?? ""} />
                   )}
-                  {canEditPrepareItems ? (
-                    item.source_location_id ? (
-                      <label className="flex flex-col gap-1">
-                        <span className="ui-caption">Preparado</span>
-                        <input
-                          name="prepared_quantity"
-                          defaultValue={item.prepared_quantity ?? 0}
-                          className="ui-input h-12 min-w-0"
-                        />
-                      </label>
-                    ) : (
-                      <input type="hidden" name="prepared_quantity" value={item.prepared_quantity ?? 0} />
-                    )
-                  ) : null}
-                  {canEditPrepareItems ? (
-                    item.source_location_id ? (
-                      <label className="flex flex-col gap-1">
-                        <span className="ui-caption">Enviado</span>
-                        <input
-                          name="shipped_quantity"
-                          defaultValue={item.shipped_quantity ?? 0}
-                          className="ui-input h-12 min-w-0"
-                        />
-                      </label>
-                    ) : (
-                      <input type="hidden" name="shipped_quantity" value={item.shipped_quantity ?? 0} />
-                    )
-                  ) : null}
-                  {canEditReceiveItems ? (
-                    <label className="flex flex-col gap-1">
-                      <span className="ui-caption">Recibido</span>
-                      <input
-                        name="received_quantity"
-                        defaultValue={item.received_quantity ?? 0}
-                        className="ui-input h-12 min-w-0"
-                      />
-                    </label>
-                  ) : null}
-                  {canEditReceiveItems ? (
-                    <label className="flex flex-col gap-1">
-                      <span className="ui-caption">Faltante</span>
-                      <input
-                        name="shortage_quantity"
-                        defaultValue={item.shortage_quantity ?? 0}
-                        className="ui-input h-12 min-w-0"
-                      />
-                    </label>
-                  ) : null}
+                  <div className="grid gap-3 xl:grid-cols-[0.9fr_0.9fr]">
+                    {canEditPrepareItems ? (
+                      item.source_location_id ? (
+                        <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
+                          <div className="text-sm font-semibold text-[var(--ui-text)]">Paso 2 · Preparar</div>
+                          <div className="mt-1 text-sm text-[var(--ui-muted)]">
+                            {preparedQty > 0
+                              ? `Marcado: ${preparedQty} ${itemUnitLabel}`
+                              : "Marca cuánto separas para esta salida."}
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-3">
+                            <button
+                              formAction={applyPrepareShortcut}
+                              name="line_shortcut_target"
+                              value={`${item.id}|prepare_auto`}
+                              className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold"
+                              disabled={quickPrepareQty <= 0}
+                            >
+                              {quickPrepareText}
+                            </button>
+                            {preparedQty > 0 ? (
+                              <button
+                                formAction={applyPrepareShortcut}
+                                name="line_shortcut_target"
+                                value={`${item.id}|clear_prepare`}
+                                className="ui-btn ui-btn--ghost h-12 px-5 text-base font-semibold"
+                              >
+                                Limpiar
+                              </button>
+                            ) : null}
+                          </div>
+                          <details className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3">
+                            <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+                              Ajustar manualmente
+                            </summary>
+                            <div className="mt-3">
+                              <label className="flex flex-col gap-1">
+                                <span className="ui-caption">Preparado</span>
+                                <input
+                                  name="prepared_quantity"
+                                  defaultValue={item.prepared_quantity ?? 0}
+                                  className="ui-input h-12 min-w-0"
+                                />
+                              </label>
+                            </div>
+                          </details>
+                        </div>
+                      ) : (
+                        <input type="hidden" name="prepared_quantity" value={item.prepared_quantity ?? 0} />
+                      )
+                    ) : null}
+                    {canEditPrepareItems ? (
+                      item.source_location_id ? (
+                        <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
+                          <div className="text-sm font-semibold text-[var(--ui-text)]">Paso 3 · Enviar</div>
+                          <div className="mt-1 text-sm text-[var(--ui-muted)]">
+                            {shippedQty > 0
+                              ? `Marcado: ${shippedQty} ${itemUnitLabel}`
+                              : preparedQty > 0
+                                ? "Confirma cuánto sale hoy."
+                                : "Primero marca cuánto preparas."}
+                          </div>
+                          <div className="mt-3 flex flex-wrap gap-3">
+                            <button
+                              formAction={applyPrepareShortcut}
+                              name="line_shortcut_target"
+                              value={`${item.id}|ship_prepared`}
+                              className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold"
+                              disabled={preparedQty <= 0}
+                            >
+                              {preparedQty > 0
+                                ? `Enviar ${preparedQty} ${itemUnitLabel}`
+                                : "Enviar preparado"}
+                            </button>
+                            {shippedQty > 0 ? (
+                              <button
+                                formAction={applyPrepareShortcut}
+                                name="line_shortcut_target"
+                                value={`${item.id}|clear_ship`}
+                                className="ui-btn ui-btn--ghost h-12 px-5 text-base font-semibold"
+                              >
+                                Limpiar
+                              </button>
+                            ) : null}
+                          </div>
+                          <details className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3">
+                            <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+                              Ajustar manualmente
+                            </summary>
+                            <div className="mt-3">
+                              <label className="flex flex-col gap-1">
+                                <span className="ui-caption">Enviado</span>
+                                <input
+                                  name="shipped_quantity"
+                                  defaultValue={item.shipped_quantity ?? 0}
+                                  className="ui-input h-12 min-w-0"
+                                />
+                              </label>
+                            </div>
+                          </details>
+                        </div>
+                      ) : (
+                        <input type="hidden" name="shipped_quantity" value={item.shipped_quantity ?? 0} />
+                      )
+                    ) : null}
+                    {canEditReceiveItems ? (
+                      <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
+                        <div className="text-sm font-semibold text-[var(--ui-text)]">Paso 1 · Recibir</div>
+                        <div className="mt-1 text-sm text-[var(--ui-muted)]">
+                          {lineCompleteReceipt
+                            ? `Recepción completa: ${receivedQty} ${itemUnitLabel}.`
+                            : linePartialReceipt
+                              ? `Van ${receivedQty} ${itemUnitLabel} recibidas.`
+                              : shippedQty > 0
+                                ? `${shippedQty} ${itemUnitLabel} salieron hacia esta sede.`
+                                : "Esta línea todavía no tiene envío confirmado."}
+                        </div>
+                        <div className="mt-3 flex flex-wrap gap-3">
+                          <button
+                            formAction={applyReceiveShortcut}
+                            name="line_receive_target"
+                            value={`${item.id}|receive_all`}
+                            className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold"
+                            disabled={shippedQty <= 0}
+                          >
+                            {shippedQty > 0 ? `Recibir ${shippedQty} ${itemUnitLabel}` : "Recibir todo"}
+                          </button>
+                          {shippedQty > 0 && remainingReceiptQty > 0 ? (
+                            <button
+                              formAction={applyReceiveShortcut}
+                              name="line_receive_target"
+                              value={`${item.id}|mark_shortage`}
+                              className="ui-btn ui-btn--ghost h-12 px-5 text-base font-semibold"
+                            >
+                              Marcar faltante {remainingReceiptQty} {itemUnitLabel}
+                            </button>
+                          ) : null}
+                          {accountedQty > 0 ? (
+                            <button
+                              formAction={applyReceiveShortcut}
+                              name="line_receive_target"
+                              value={`${item.id}|clear_receive`}
+                              className="ui-btn ui-btn--ghost h-12 px-5 text-base font-semibold"
+                            >
+                              Limpiar
+                            </button>
+                          ) : null}
+                        </div>
+                        <details className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3">
+                          <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+                            Ajustar manualmente
+                          </summary>
+                          <div className="mt-3 grid gap-3 md:grid-cols-2">
+                            <label className="flex flex-col gap-1">
+                              <span className="ui-caption">Recibido</span>
+                              <input
+                                name="received_quantity"
+                                defaultValue={item.received_quantity ?? 0}
+                                className="ui-input h-12 min-w-0"
+                              />
+                            </label>
+                            <label className="flex flex-col gap-1">
+                              <span className="ui-caption">Faltante</span>
+                              <input
+                                name="shortage_quantity"
+                                defaultValue={item.shortage_quantity ?? 0}
+                                className="ui-input h-12 min-w-0"
+                              />
+                            </label>
+                          </div>
+                        </details>
+                      </div>
+                    ) : null}
+                  </div>
                 </div>
                 {canEditArea ? (
                   <details className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-white px-3 py-3">

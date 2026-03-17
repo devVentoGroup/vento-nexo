@@ -235,8 +235,10 @@ async function submitWithdraw(formData: FormData) {
   redirect("/inventory/withdraw?ok=1");
 }
 
-type LocRow = { id: string; code: string | null; zone: string | null };
+type LocRow = { id: string; code: string | null; zone: string | null; description?: string | null };
 type ProductRow = { id: string; name: string | null; unit: string | null; stock_unit_code: string | null };
+type SiteRow = { id: string; name: string | null; site_type: string | null };
+type EmployeePageRow = { site_id: string | null; role: string | null };
 
 export default async function WithdrawPage({
   searchParams,
@@ -249,6 +251,7 @@ export default async function WithdrawPage({
   const siteIdParam = sp.site_id ? String(sp.site_id).trim() : "";
   const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
   const okMsg = sp.ok ? "Retiro registrado." : "";
+  const openedFromQr = Boolean(locIdParam || locCodeParam);
 
   const { supabase, user } = await requireAppAccess({
     appId: "nexo",
@@ -256,11 +259,12 @@ export default async function WithdrawPage({
     permissionCode: "inventory.withdraw",
   });
 
-  const { data: employee } = await supabase
+  const { data: employeeData } = await supabase
     .from("employees")
-    .select("site_id")
+    .select("site_id,role")
     .eq("id", user.id)
     .single();
+  const employee = (employeeData ?? null) as EmployeePageRow | null;
 
   const { data: settings } = await supabase
     .from("employee_settings")
@@ -277,7 +281,7 @@ export default async function WithdrawPage({
   if (siteId) {
     const locQuery = supabase
       .from("inventory_locations")
-      .select("id,code,zone")
+      .select("id,code,zone,description")
       .eq("site_id", siteId)
       .order("code", { ascending: true })
       .limit(200);
@@ -300,7 +304,7 @@ export default async function WithdrawPage({
   if (locations.length === 0 && locCodeParam) {
     const { data: locByCode } = await supabase
       .from("inventory_locations")
-      .select("id,code,zone,site_id")
+      .select("id,code,zone,description,site_id")
       .ilike("code", locCodeParam)
       .limit(5);
     const found = (locByCode ?? []) as (LocRow & { site_id?: string })[];
@@ -310,7 +314,7 @@ export default async function WithdrawPage({
       defaultLocationId = match.id;
       const { data: locData } = await supabase
         .from("inventory_locations")
-        .select("id,code,zone")
+        .select("id,code,zone,description")
         .eq("site_id", siteId)
         .order("code", { ascending: true })
         .limit(200);
@@ -370,6 +374,37 @@ export default async function WithdrawPage({
     : { data: [] as ProductUomProfile[] };
   const defaultUomProfiles = (uomProfilesDataForPage ?? []) as ProductUomProfile[];
   const selectedLocation = locations.find((location) => location.id === defaultLocationId) ?? null;
+  const normalizedRole = String(employee?.role ?? "").toLowerCase();
+  const isManagementRole = ["propietario", "gerente_general", "admin", "manager", "gerente"].includes(
+    normalizedRole
+  );
+  const { data: activeSiteData } = siteId
+    ? await supabase
+        .from("sites")
+        .select("id,name,site_type")
+        .eq("id", siteId)
+        .maybeSingle()
+    : { data: null as SiteRow | null };
+  const activeSite = (activeSiteData ?? null) as SiteRow | null;
+  const siteType = String(activeSite?.site_type ?? "").toLowerCase();
+  const mode = !isManagementRole && siteType === "satellite"
+    ? "satellite"
+    : !isManagementRole && siteType === "production_center"
+      ? "center"
+      : "general";
+  const heroModeLabel = mode === "satellite" ? "Modo satelite" : mode === "center" ? "Modo Centro" : "Modo retiro";
+  const heroTitle =
+    mode === "satellite"
+      ? "Retira desde el LOC activo"
+      : mode === "center"
+        ? "Registra salida desde Centro"
+        : "Retirar insumos";
+  const heroSubtitle =
+    mode === "satellite"
+      ? "Escanea el LOC, confirma qué sale y registra el retiro sin mezclarte con otras pantallas."
+      : mode === "center"
+        ? "Usa este flujo para descontar consumos reales desde un LOC y seguir rápido con la operación."
+        : "Registra la salida real desde un LOC. Si abriste el formulario desde el QR, el origen ya queda listo para capturar.";
 
   return (
     <div className="ui-scene w-full space-y-6">
@@ -378,10 +413,9 @@ export default async function WithdrawPage({
           <div className="space-y-4">
             <div className="space-y-2">
               <Link href="/inventory/stock" className="ui-caption underline">Volver a stock</Link>
-              <h1 className="ui-h1">Retirar insumos</h1>
-              <p className="ui-body-muted">
-                Registra la salida real desde un LOC. Si abriste el formulario desde el QR, el origen ya queda listo para capturar.
-              </p>
+              <div className="ui-caption">{heroModeLabel}</div>
+              <h1 className="ui-h1">{heroTitle}</h1>
+              <p className="ui-body-muted">{heroSubtitle}</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
@@ -389,7 +423,7 @@ export default async function WithdrawPage({
               </span>
               {selectedLocation ? (
                 <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-900">
-                  LOC {selectedLocation.code ?? selectedLocation.zone ?? selectedLocation.id}
+                  LOC {selectedLocation.description ?? selectedLocation.zone ?? selectedLocation.code ?? selectedLocation.id}
                 </span>
               ) : null}
               <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
@@ -401,10 +435,10 @@ export default async function WithdrawPage({
             <article className="ui-remission-kpi" data-tone="warm">
               <div className="ui-remission-kpi-label">LOC activo</div>
               <div className="ui-remission-kpi-value">
-                {selectedLocation?.code ?? selectedLocation?.zone ?? "Sin LOC"}
+                {selectedLocation?.description ?? selectedLocation?.zone ?? selectedLocation?.code ?? "Sin LOC"}
               </div>
               <div className="ui-remission-kpi-note">
-                {selectedLocation?.zone || "El retiro se descuenta del LOC seleccionado"}
+                {selectedLocation?.code || "El retiro se descuenta del LOC seleccionado"}
               </div>
             </article>
             <article className="ui-remission-kpi" data-tone="cool">
@@ -437,6 +471,9 @@ export default async function WithdrawPage({
         products={productRows}
         defaultUomProfiles={defaultUomProfiles}
         siteId={siteId}
+        openedFromQr={openedFromQr}
+        mode={mode}
+        siteLabel={activeSite?.name ?? ""}
         action={submitWithdraw}
       />
     </div>

@@ -1,4 +1,7 @@
-import { CatalogSection } from "@/features/inventory/catalog/catalog-ui";
+import {
+  CatalogOptionalDetails,
+  CatalogSection,
+} from "@/features/inventory/catalog/catalog-ui";
 import { ProductImageUpload } from "@/features/inventory/catalog/product-image-upload";
 
 type ProductPhotoSectionProps = {
@@ -6,6 +9,7 @@ type ProductPhotoSectionProps = {
   productId: string;
   currentUrl: string | null;
   footerText?: string;
+  collapsible?: boolean;
 };
 
 export function ProductPhotoSection({
@@ -13,12 +17,10 @@ export function ProductPhotoSection({
   productId,
   currentUrl,
   footerText,
+  collapsible = false,
 }: ProductPhotoSectionProps) {
-  return (
-    <CatalogSection
-      title="Foto del producto"
-      description={description}
-    >
+  const content = (
+    <>
       <div className="grid gap-4">
         <ProductImageUpload
           name="image_url"
@@ -29,6 +31,26 @@ export function ProductPhotoSection({
         />
       </div>
       {footerText ? <div className="text-xs text-[var(--ui-muted)]">{footerText}</div> : null}
+    </>
+  );
+
+  if (collapsible) {
+    return (
+      <CatalogOptionalDetails
+        title="Foto del producto"
+        summary={description}
+      >
+        {content}
+      </CatalogOptionalDetails>
+    );
+  }
+
+  return (
+    <CatalogSection
+      title="Foto del producto"
+      description={description}
+    >
+      {content}
     </CatalogSection>
   );
 }

@@ -13,6 +13,15 @@ type CatalogHintPanelProps = {
   className?: string;
 };
 
+type CatalogOptionalDetailsProps = {
+  title: string;
+  summary?: string;
+  badge?: string;
+  children: ReactNode;
+  className?: string;
+  defaultOpen?: boolean;
+};
+
 type CatalogCategoryContextFormProps = {
   hiddenFields?: Array<{ name: string; value: string }>;
   categoryScope: string;
@@ -60,6 +69,31 @@ export function CatalogHintPanel({
   );
 }
 
+export function CatalogOptionalDetails({
+  title,
+  summary,
+  badge = "Opcional",
+  children,
+  className = "",
+  defaultOpen = false,
+}: CatalogOptionalDetailsProps) {
+  return (
+    <details
+      open={defaultOpen}
+      className={`ui-panel ui-remission-section space-y-4 ${className}`.trim()}
+    >
+      <summary className="flex cursor-pointer list-none items-start justify-between gap-3">
+        <div className="space-y-1">
+          <h2 className="ui-h3">{title}</h2>
+          {summary ? <p className="text-sm text-[var(--ui-muted)]">{summary}</p> : null}
+        </div>
+        <span className="ui-chip shrink-0">{badge}</span>
+      </summary>
+      <div className="space-y-4">{children}</div>
+    </details>
+  );
+}
+
 export function CatalogCategoryContextForm({
   hiddenFields = [],
   categoryScope,
@@ -77,7 +111,7 @@ export function CatalogCategoryContextForm({
       ))}
 
       <div className="sm:col-span-2 lg:col-span-4 ui-caption">
-        Este selector solo define el arbol de categoria operativa disponible en esta vista.
+        Ajusta solo el arbol operativo visible en esta pantalla.
       </div>
 
       <label className="flex flex-col gap-1">

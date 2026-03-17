@@ -21,7 +21,8 @@ type Props = {
 export function AdjustForm({ products, siteId, siteName, currentStock }: Props) {
   const router = useRouter();
   const [productId, setProductId] = useState<string>("");
-  const [quantityDelta, setQuantityDelta] = useState<string>("");
+  const [adjustMode, setAdjustMode] = useState<"add" | "remove">("remove");
+  const [quantityValue, setQuantityValue] = useState<string>("");
   const [reason, setReason] = useState<string>("");
   const [evidence, setEvidence] = useState<string>("");
   const [unitCostForAdjust, setUnitCostForAdjust] = useState<string>("");
@@ -30,12 +31,13 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
 
   const selectedProduct = products.find((p) => p.id === productId);
   const currentQty = productId ? currentStock[productId] ?? 0 : 0;
-  const deltaNum = (() => {
-    const v = quantityDelta.trim();
+  const rawQuantityNum = (() => {
+    const v = quantityValue.trim();
     if (v === "" || v == null) return null;
     const n = Number(v);
-    return Number.isFinite(n) ? n : null;
+    return Number.isFinite(n) && n > 0 ? n : null;
   })();
+  const deltaNum = rawQuantityNum != null ? (adjustMode === "add" ? rawQuantityNum : rawQuantityNum * -1) : null;
   const newQty = deltaNum != null ? currentQty + deltaNum : null;
 
   const canSubmit =
@@ -105,7 +107,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
               value={productId}
               onChange={(event) => {
                 setProductId(event.target.value);
-                setQuantityDelta("");
+                setQuantityValue("");
               }}
               required
               className="ui-input"
@@ -133,104 +135,159 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
               <div className="mt-1 font-semibold">
                 {productId ? `${currentQty.toLocaleString()} ${selectedProduct?.unit ?? "unidades"}` : "Selecciona un producto"}
               </div>
+              </div>
             </div>
-          </div>
 
+          <details className="rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3">
+            <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+              Mas acciones
+            </summary>
+            <div className="mt-3">
+              <Link href={`/inventory/stock?site_id=${encodeURIComponent(siteId)}`} className="ui-btn ui-btn--ghost">
+                Ver stock
+              </Link>
+            </div>
+          </details>
         </section>
 
-        <section className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <div className="ui-h3">Detalle</div>
-              <div className="ui-caption mt-1">Define el cambio y deja el motivo registrado.</div>
-            </div>
-            {deltaNum != null && deltaNum !== 0 && productId ? (
-              <div className={`rounded-full px-3 py-1 text-xs font-semibold ${newQty != null && newQty >= 0 ? "border border-emerald-200 bg-emerald-50 text-emerald-900" : "border border-red-200 bg-red-50 text-red-900"}`}>
-                Resultado {newQty?.toLocaleString()} {selectedProduct?.unit ?? "un"}
+        {productId ? (
+          <section className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="ui-h3">Cambio</div>
+                <div className="ui-caption mt-1">Elige si sumas o restas y luego registra el motivo.</div>
               </div>
-            ) : null}
-          </div>
-
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">
-              Ajuste (cantidad) <span className="text-[var(--ui-danger)]">*</span>
-            </span>
-            <div className="flex items-center gap-2">
-              <input
-                type="number"
-                step="any"
-                value={quantityDelta}
-                onChange={(event) => {
-                  setQuantityDelta(event.target.value);
-                }}
-                placeholder="Ej: +10 o -5"
-                required
-                className="ui-input flex-1"
-              />
-              {selectedProduct?.unit ? <span className="ui-body-muted">{selectedProduct.unit}</span> : null}
+              {deltaNum != null && deltaNum !== 0 ? (
+                <div className={`rounded-full px-3 py-1 text-xs font-semibold ${newQty != null && newQty >= 0 ? "border border-emerald-200 bg-emerald-50 text-emerald-900" : "border border-red-200 bg-red-50 text-red-900"}`}>
+                  Resultado {newQty?.toLocaleString()} {selectedProduct?.unit ?? "un"}
+                </div>
+              ) : null}
             </div>
-            {deltaNum != null && deltaNum !== 0 && productId ? (
-              <div className="mt-2 text-sm font-medium text-zinc-700">
-                Stock resultante:{" "}
-                <span className={newQty != null && newQty >= 0 ? "text-green-600" : "text-red-600"}>
-                  {newQty?.toLocaleString()} {selectedProduct?.unit ?? "unidades"}
-                </span>
-              </div>
-            ) : null}
-          </label>
 
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">
-              Motivo <span className="text-[var(--ui-danger)]">*</span>
-            </span>
-            <textarea
-              value={reason}
-              onChange={(event) => {
-                setReason(event.target.value);
-              }}
-              placeholder="Ej: Merma detectada, correccion por conteo, producto danado."
-              required
-              rows={3}
-              className="ui-input"
-            />
-          </label>
+            <div className="grid gap-3 md:grid-cols-2">
+              <button
+                type="button"
+                onClick={() => setAdjustMode("remove")}
+                className={`rounded-2xl border px-4 py-4 text-left transition ${
+                  adjustMode === "remove"
+                    ? "border-amber-300 bg-amber-50 text-amber-950"
+                    : "border-[var(--ui-border)] bg-white text-[var(--ui-text)]"
+                }`}
+              >
+                <div className="text-sm font-semibold">Restar stock</div>
+                <div className="mt-1 text-xs text-[var(--ui-muted)]">Merma, daño, corrección o faltante.</div>
+              </button>
+              <button
+                type="button"
+                onClick={() => setAdjustMode("add")}
+                className={`rounded-2xl border px-4 py-4 text-left transition ${
+                  adjustMode === "add"
+                    ? "border-emerald-300 bg-emerald-50 text-emerald-950"
+                    : "border-[var(--ui-border)] bg-white text-[var(--ui-text)]"
+                }`}
+              >
+                <div className="text-sm font-semibold">Sumar stock</div>
+                <div className="mt-1 text-xs text-[var(--ui-muted)]">Hallazgo, corrección o sobrante validado.</div>
+              </button>
+            </div>
 
-          {deltaNum != null && deltaNum > 0 ? (
             <label className="flex flex-col gap-1">
-              <span className="ui-label">Costo unitario del ajuste (opcional)</span>
-              <input
-                type="number"
-                step="0.01"
-                min="0"
-                value={unitCostForAdjust}
-                onChange={(event) => {
-                  setUnitCostForAdjust(event.target.value);
-                }}
-                placeholder="Si lo dejas vacio, no cambia costo promedio"
-                className="ui-input"
-              />
+              <span className="ui-label">
+                Cantidad <span className="text-[var(--ui-danger)]">*</span>
+              </span>
+              <div className="flex items-center gap-2">
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  value={quantityValue}
+                  onChange={(event) => {
+                    setQuantityValue(event.target.value);
+                  }}
+                  placeholder="Cantidad"
+                  required
+                  className="ui-input flex-1"
+                />
+                {selectedProduct?.unit ? <span className="ui-body-muted">{selectedProduct.unit}</span> : null}
+              </div>
+              {deltaNum != null && deltaNum !== 0 ? (
+                <div className="mt-2 text-sm font-medium text-zinc-700">
+                  Stock resultante:{" "}
+                  <span className={newQty != null && newQty >= 0 ? "text-green-600" : "text-red-600"}>
+                    {newQty?.toLocaleString()} {selectedProduct?.unit ?? "unidades"}
+                  </span>
+                </div>
+              ) : null}
             </label>
-          ) : null}
 
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Evidencia (opcional)</span>
-            <textarea
-              value={evidence}
-              onChange={(event) => {
-                setEvidence(event.target.value);
-              }}
-              placeholder="Ej: reporte de supervisor, foto, incidencia."
-              rows={2}
-              className="ui-input"
-            />
-          </label>
+            {deltaNum != null && deltaNum !== 0 ? (
+              <>
+                <label className="flex flex-col gap-1">
+                  <span className="ui-label">
+                    Motivo <span className="text-[var(--ui-danger)]">*</span>
+                  </span>
+                  <textarea
+                    value={reason}
+                    onChange={(event) => {
+                      setReason(event.target.value);
+                    }}
+                    placeholder="Ej: Merma detectada, correccion por conteo, producto danado."
+                    required
+                    rows={3}
+                    className="ui-input"
+                  />
+                </label>
 
-          {!canSubmit ? (
-            <div className="ui-alert ui-alert--warn">
-              Completa producto, cantidad distinta de 0 y motivo.
+                <details className="rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3">
+                  <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+                    Evidencia y costo opcionales
+                  </summary>
+                  <div className="mt-4 space-y-3">
+                    {deltaNum != null && deltaNum > 0 ? (
+                      <label className="flex flex-col gap-1">
+                        <span className="ui-label">Costo unitario del ajuste</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0"
+                          value={unitCostForAdjust}
+                          onChange={(event) => {
+                            setUnitCostForAdjust(event.target.value);
+                          }}
+                          placeholder="Si lo dejas vacio, no cambia costo promedio"
+                          className="ui-input"
+                        />
+                      </label>
+                    ) : null}
+
+                    <label className="flex flex-col gap-1">
+                      <span className="ui-label">Evidencia</span>
+                      <textarea
+                        value={evidence}
+                        onChange={(event) => {
+                          setEvidence(event.target.value);
+                        }}
+                        placeholder="Ej: reporte de supervisor, foto, incidencia."
+                        rows={2}
+                        className="ui-input"
+                      />
+                    </label>
+                  </div>
+                </details>
+              </>
+            ) : (
+              <div className="ui-alert ui-alert--warn">
+                Elige si sumas o restas y luego marca la cantidad. Enseguida aparece el motivo.
+              </div>
+            )}
+          </section>
+        ) : (
+          <section className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
+            <div className="ui-alert ui-alert--neutral">
+              Primero selecciona el producto. Después aparece el cambio a registrar.
             </div>
-          ) : null}
-        </section>
+          </section>
+        )}
 
         <div className="ui-mobile-sticky-footer ui-fade-up ui-delay-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ui-border)] bg-white/92 px-4 py-3 backdrop-blur">
           <div className="text-sm text-[var(--ui-muted)]">
@@ -240,13 +297,10 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
           <Link href={`/inventory/adjust?site_id=${encodeURIComponent(siteId)}`} className="ui-btn ui-btn--ghost">
             Limpiar
           </Link>
-          <Link href={`/inventory/stock?site_id=${encodeURIComponent(siteId)}`} className="ui-btn ui-btn--ghost">
-            Ver stock
-          </Link>
           <button
             type="submit"
             disabled={!canSubmit}
-            className="ui-btn ui-btn--brand disabled:opacity-50 disabled:cursor-not-allowed"
+            className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {loading ? "Guardando..." : "Registrar ajuste"}
           </button>

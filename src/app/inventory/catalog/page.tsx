@@ -9,7 +9,10 @@ import {
   type PurchaseSuggestionRow,
 } from "@/features/inventory/catalog/catalog-results-panel";
 import { CatalogToolbar } from "@/features/inventory/catalog/catalog-toolbar";
-import { CatalogHintPanel } from "@/features/inventory/catalog/catalog-ui";
+import {
+  CatalogHintPanel,
+  CatalogOptionalDetails,
+} from "@/features/inventory/catalog/catalog-ui";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { getCategoryDomainOptions } from "@/lib/constants";
@@ -955,39 +958,51 @@ export default async function InventoryCatalogPage({
 
       {okMsg ? <div className="ui-alert ui-alert--success">{okMsg}</div> : null}
       {errorMsg ? <div className="ui-alert ui-alert--error">Error: {errorMsg}</div> : null}
-      <CatalogHintPanel title="Norte de esta vista">
-        <p>
-          Esta pantalla gobierna el <strong className="text-[var(--ui-text)]">producto maestro</strong> y su salud
-          operativa. La categoria aqui es operativa, no comercial.
-        </p>
-        <p>
-          La vista de compras es continuidad de v2 para ORIGO y no debe contaminar la operacion diaria de v1.
-        </p>
-      </CatalogHintPanel>
+      <CatalogOptionalDetails
+        title="Criterio de esta vista"
+        summary="Abre este bloque solo si necesitas revisar el marco v1 o refinar mucho la vista."
+      >
+        <CatalogHintPanel title="Norte de esta vista">
+          <p>
+            Esta pantalla gobierna el <strong className="text-[var(--ui-text)]">producto maestro</strong> y su salud
+            operativa. La categoria aqui es operativa, no comercial.
+          </p>
+          <p>
+            La vista de compras es continuidad de v2 para ORIGO y no debe contaminar la operacion diaria de v1.
+          </p>
+        </CatalogHintPanel>
+      </CatalogOptionalDetails>
 
       <CatalogToolbar tabs={tabLinks} actions={toolbarActions} />
 
-      <CatalogFiltersPanel
-        activeTab={activeTab}
-        siteId={siteId}
-        categoryKind={categoryKind}
-        searchQuery={searchQuery}
-        clearHref={clearHref}
-        hasAdvancedFilters={hasAdvancedFilters}
-        categoryScope={categoryScope}
-        stockAlert={stockAlert}
-        viewMode={viewMode}
-        effectiveSupplierId={effectiveSupplierId}
-        suppliers={suppliersFilterRows}
-        categorySiteId={activeSiteId}
-        sites={siteRows}
-        showCategoryDomain={shouldShowCategoryDomain(categoryKind)}
-        categoryDomain={categoryDomain}
-        categoryDomainOptions={categoryDomainOptions}
-        categoryRows={categoryRows}
-        effectiveCategoryId={effectiveCategoryId}
-        siteNamesById={siteNamesById}
-      />
+      <CatalogOptionalDetails
+        title="Refinar vista"
+        summary="Busqueda y tab ya cubren lo principal. Abre esto solo si necesitas filtros adicionales."
+        badge={hasAdvancedFilters ? "Activos" : "Opcional"}
+        defaultOpen={hasAdvancedFilters}
+      >
+        <CatalogFiltersPanel
+          activeTab={activeTab}
+          siteId={siteId}
+          categoryKind={categoryKind}
+          searchQuery={searchQuery}
+          clearHref={clearHref}
+          hasAdvancedFilters={hasAdvancedFilters}
+          categoryScope={categoryScope}
+          stockAlert={stockAlert}
+          viewMode={viewMode}
+          effectiveSupplierId={effectiveSupplierId}
+          suppliers={suppliersFilterRows}
+          categorySiteId={activeSiteId}
+          sites={siteRows}
+          showCategoryDomain={shouldShowCategoryDomain(categoryKind)}
+          categoryDomain={categoryDomain}
+          categoryDomainOptions={categoryDomainOptions}
+          categoryRows={categoryRows}
+          effectiveCategoryId={effectiveCategoryId}
+          siteNamesById={siteNamesById}
+        />
+      </CatalogOptionalDetails>
 
       <CatalogResultsPanel
         activeTabLabel={activeTabLabel}
