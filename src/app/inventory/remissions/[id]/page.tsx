@@ -2223,18 +2223,17 @@ export default async function RemissionDetailPage({
         <div className="ui-h3">
           {isProductionView ? "Acción principal" : isSatelliteView ? "Acción principal" : "Acciones"}
         </div>
-        <form action={updateStatus} className="mt-4 flex flex-col gap-3">
-          <input type="hidden" name="request_id" value={request.id} />
-          <input type="hidden" name="return_origin" value={cameFromPrepareQueue ? "prepare" : ""} />
+        <div className="mt-4 flex flex-col gap-3">
           {canTransitAction ? (
             canTransitNow ? (
-              <button
-                name="action"
-                value="transit"
-                className="ui-btn ui-btn--action ui-btn--compact w-full text-sm font-semibold sm:w-auto sm:min-w-[180px]"
-              >
-                Despachar a destino
-              </button>
+              <form action={updateStatus}>
+                <input type="hidden" name="request_id" value={request.id} />
+                <input type="hidden" name="return_origin" value={cameFromPrepareQueue ? "prepare" : ""} />
+                <input type="hidden" name="action" value="transit" />
+                <button className="ui-btn ui-btn--action ui-btn--compact w-full text-sm font-semibold sm:w-auto sm:min-w-[180px]">
+                  Despachar a destino
+                </button>
+              </form>
             ) : (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
                 Aún no puedes despachar. Faltan <strong>{dispatchBlockedLines}</strong> linea(s) por completar.
@@ -2242,44 +2241,46 @@ export default async function RemissionDetailPage({
             )
           ) : null}
           {canReceiveAction ? (
-            <button
-              name="action"
-              value="receive"
-              className="ui-btn ui-btn--action ui-btn--compact w-full text-sm font-semibold sm:w-auto sm:min-w-[180px]"
-            >
-              Confirmar recepción
-            </button>
+            <form action={updateStatus}>
+              <input type="hidden" name="request_id" value={request.id} />
+              <input type="hidden" name="return_origin" value={cameFromPrepareQueue ? "prepare" : ""} />
+              <input type="hidden" name="action" value="receive" />
+              <button className="ui-btn ui-btn--action ui-btn--compact w-full text-sm font-semibold sm:w-auto sm:min-w-[180px]">
+                Confirmar recepción
+              </button>
+            </form>
           ) : null}
           {canReceivePartialAction ? (
-            <button
-              name="action"
-              value="receive_partial"
-              className="ui-btn ui-btn--action ui-btn--compact w-full text-sm font-semibold sm:w-auto sm:min-w-[180px]"
-            >
-              Guardar recepcion parcial
-            </button>
+            <form action={updateStatus}>
+              <input type="hidden" name="request_id" value={request.id} />
+              <input type="hidden" name="return_origin" value={cameFromPrepareQueue ? "prepare" : ""} />
+              <input type="hidden" name="action" value="receive_partial" />
+              <button className="ui-btn ui-btn--action ui-btn--compact w-full text-sm font-semibold sm:w-auto sm:min-w-[180px]">
+                Guardar recepcion parcial
+              </button>
+            </form>
           ) : null}
           {canCancelAction ? (
             <>
-              <button
-                name="action"
-                value="cancel"
-                className="ui-btn ui-btn--ghost ui-btn--compact w-full text-sm font-semibold sm:w-auto sm:min-w-[180px]"
-                formAction={updateStatus}
-              >
-                Cancelar remision
-              </button>
-              <button
-                name="action"
-                value="delete"
-                className="ui-btn ui-btn--danger ui-btn--compact w-full text-sm font-semibold sm:w-auto sm:min-w-[180px]"
-                formAction={updateStatus}
-              >
-                Eliminar remision
-              </button>
+              <form action={updateStatus}>
+                <input type="hidden" name="request_id" value={request.id} />
+                <input type="hidden" name="return_origin" value={cameFromPrepareQueue ? "prepare" : ""} />
+                <input type="hidden" name="action" value="cancel" />
+                <button className="ui-btn ui-btn--ghost ui-btn--compact w-full text-sm font-semibold sm:w-auto sm:min-w-[180px]">
+                  Cancelar remision
+                </button>
+              </form>
+              <form action={updateStatus}>
+                <input type="hidden" name="request_id" value={request.id} />
+                <input type="hidden" name="return_origin" value={cameFromPrepareQueue ? "prepare" : ""} />
+                <input type="hidden" name="action" value="delete" />
+                <button className="ui-btn ui-btn--danger ui-btn--compact w-full text-sm font-semibold sm:w-auto sm:min-w-[180px]">
+                  Eliminar remision
+                </button>
+              </form>
             </>
           ) : null}
-        </form>
+        </div>
         {!hasPrimaryTopAction ? (
           <div className="mt-3 ui-caption">
             Completa primero las líneas para desbloquear la siguiente acción.
@@ -2415,13 +2416,15 @@ export default async function RemissionDetailPage({
                         ? "Pendiente de recepción"
                         : "Sin envío"
                   : formatStatus(
-                      deriveItemStatus({
-                        requestedQty,
-                        preparedQty,
-                        shippedQty,
-                        receivedQty,
-                        shortageQty,
-                      })
+                      currentStatus === "cancelled"
+                        ? "cancelled"
+                        : deriveItemStatus({
+                            requestedQty,
+                            preparedQty,
+                            shippedQty,
+                            receivedQty,
+                            shortageQty,
+                          })
                     ).label;
               const prepareStepLabel = !item.source_location_id
                 ? "Paso 1: elige el LOC"
