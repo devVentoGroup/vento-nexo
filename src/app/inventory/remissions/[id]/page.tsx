@@ -1285,6 +1285,9 @@ async function updateStatus(formData: FormData) {
   if (action === "cancel" && !access.canCancel) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "No tienes permiso para cancelar." }));
   }
+  if (action === "delete" && !access.canCancel) {
+    redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "No tienes permiso para eliminar." }));
+  }
 
   if (action === "prepare" && currentStatus !== "pending") {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "Solo puedes preparar una remision pendiente." }));
@@ -1300,6 +1303,22 @@ async function updateStatus(formData: FormData) {
   }
   if (action === "receive_partial" && currentStatus !== "in_transit") {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "Solo puedes registrar recepcion parcial desde en transito." }));
+  }
+  if (action === "delete") {
+    const { error } = await supabase.from("restock_requests").delete().eq("id", requestId);
+    if (error) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          error: `No se pudo eliminar la remision: ${error.message}`,
+        })
+      );
+    }
+    if (returnOrigin === "prepare") {
+      redirect("/inventory/remissions/prepare?ok=deleted");
+    }
+    redirect("/inventory/remissions?ok=deleted");
   }
   const sourceLocDeductions: Array<{
     locationId: string;
@@ -1813,9 +1832,11 @@ export default async function RemissionDetailPage({
     return canEditPrepareItems && requestedQty > 0 && shippedQty <= 0;
   }).length;
   const canTransitNow = canTransitAction && dispatchReadyLines > 0 && dispatchBlockedLines === 0;
+  const canCancelAction = access.canCancel;
   const hasPrimaryTopAction =
-    canTransitNow || canReceiveAction || canReceivePartialAction;
-  const showTopActionPanel = canTransitAction || canReceiveAction || canReceivePartialAction;
+    canTransitNow || canReceiveAction || canReceivePartialAction || canCancelAction;
+  const showTopActionPanel =
+    canTransitAction || canReceiveAction || canReceivePartialAction || canCancelAction;
   let responsibleActor = "Sin actor operativo pendiente.";
   if (["pending", "preparing"].includes(currentStatus)) {
     responsibleActor = `${access.fromSiteName || "Centro"} / bodega`;
@@ -2016,6 +2037,26 @@ export default async function RemissionDetailPage({
             >
               Guardar recepcion parcial
             </button>
+          ) : null}
+          {canCancelAction ? (
+            <>
+              <button
+                name="action"
+                value="cancel"
+                className="ui-btn ui-btn--ghost ui-btn--compact w-full text-sm font-semibold sm:w-auto sm:min-w-[180px]"
+                formAction={updateStatus}
+              >
+                Cancelar remision
+              </button>
+              <button
+                name="action"
+                value="delete"
+                className="ui-btn ui-btn--danger ui-btn--compact w-full text-sm font-semibold sm:w-auto sm:min-w-[180px]"
+                formAction={updateStatus}
+              >
+                Eliminar remision
+              </button>
+            </>
           ) : null}
         </form>
         {!hasPrimaryTopAction ? (
