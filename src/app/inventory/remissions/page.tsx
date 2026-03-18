@@ -241,16 +241,60 @@ function canCancelRemissionByRole(role: string): boolean {
   return ["propietario", "gerente", "gerente_general"].includes(role);
 }
 
+type RemissionListAction = "view" | "cancel" | "delete" | "reverse_cancel";
+
+function hasReversalMarker(notes: string | null | undefined): boolean {
+  return String(notes ?? "").includes("[REVERSA_APLICADA");
+}
+
+function getListActionsForRemission(
+  status: string | null | undefined,
+  notes: string | null | undefined,
+  canManage: boolean,
+  canReverse: boolean
+): RemissionListAction[] {
+  const normalizedStatus = String(status ?? "").trim();
+  const actions: RemissionListAction[] = ["view"];
+  if (!canManage) return actions;
+
+  if (["pending", "preparing"].includes(normalizedStatus)) {
+    actions.push("cancel", "delete");
+    return actions;
+  }
+
+  if (canReverse && ["in_transit", "partial", "received", "closed"].includes(normalizedStatus)) {
+    actions.push("reverse_cancel");
+    return actions;
+  }
+
+  if (normalizedStatus === "cancelled") {
+    if (canReverse && !hasReversalMarker(notes)) actions.push("reverse_cancel");
+    actions.push("delete");
+    return actions;
+  }
+
+  return actions;
+}
+
 function toFriendlyRemissionActionError(rawMessage: string): string {
   const msg = String(rawMessage ?? "").toLowerCase();
   if (
     msg.includes("restock_request_items_request_id_fkey") ||
     msg.includes("restock_request_items")
   ) {
-    return "No se pudo eliminar porque la remisión aún tiene ítems relacionados. Intenta de nuevo o usa Cancelar.";
+    return "No se pudo eliminar porque la remisión aún tiene ítems relacionados.";
   }
   if (msg.includes("related_restock_request_id") || msg.includes("inventory_movements")) {
     return "No se puede eliminar porque ya tiene movimientos de inventario asociados. Se canceló para conservar trazabilidad.";
+  }
+  if (msg.includes("already_reversed")) {
+    return "Esta remisión ya fue anulada con reversa.";
+  }
+  if (msg.includes("request_not_found")) {
+    return "La remisión ya no existe o no está disponible.";
+  }
+  if (msg.includes("permission_denied_reverse")) {
+    return "No tienes permisos para anular con reversa esta remisión.";
   }
   if (msg.includes("permission denied") || msg.includes("row-level security") || msg.includes("rls")) {
     return "No tienes permisos para ejecutar esta acción sobre la remisión.";
@@ -270,7 +314,7 @@ async function runRemissionListAction(formData: FormData) {
 
   const requestId = asText(formData.get("request_id"));
   const action = asText(formData.get("action"));
-  if (!requestId || !["cancel", "delete"].includes(action)) {
+  if (!requestId || !["cancel", "delete", "reverse_cancel"].includes(action)) {
     redirect(
       "/inventory/remissions?error=" +
         encodeURIComponent("Acción inválida para la remisión.")
@@ -286,7 +330,7 @@ async function runRemissionListAction(formData: FormData) {
 
   const { data: request } = await supabase
     .from("restock_requests")
-    .select("id,status,from_site_id,to_site_id")
+    .select("id,status,from_site_id,to_site_id,notes")
     .eq("id", requestId)
     .maybeSingle();
 
@@ -328,6 +372,14 @@ async function runRemissionListAction(formData: FormData) {
         encodeURIComponent("No tienes permisos para esta acción.")
     );
   }
+  const canReverseScope = canGlobal || (canFrom && canTo);
+  const actionMatrix = getListActionsForRemission(request.status, request.notes, true, canReverseScope);
+  if (!actionMatrix.includes(action as RemissionListAction)) {
+    redirect(
+      "/inventory/remissions?error=" +
+        encodeURIComponent("Esa acción no aplica para el estado actual de la remisión.")
+    );
+  }
 
   if (action === "cancel") {
     const { error } = await supabase
@@ -345,6 +397,22 @@ async function runRemissionListAction(formData: FormData) {
       );
     }
     redirect("/inventory/remissions?ok=" + encodeURIComponent("Remisión cancelada."));
+  }
+
+  if (action === "reverse_cancel") {
+    const { error: reverseError } = await supabase.rpc("reverse_restock_request", {
+      p_request_id: requestId,
+    });
+    if (reverseError) {
+      redirect(
+        "/inventory/remissions?error=" +
+          encodeURIComponent(toFriendlyRemissionActionError(reverseError.message))
+      );
+    }
+    redirect(
+      "/inventory/remissions?ok=" +
+        encodeURIComponent("Remisión anulada con reversa de inventario aplicada.")
+    );
   }
 
   const deleteRequest = async () =>
@@ -743,6 +811,11 @@ export default async function RemissionsPage({
     actualRole,
   });
   const canManageRemissionActions = canCancelPermission && canCancelRemissionByRole(actualRole);
+  const employeeAccessibleSiteIds = new Set(
+    employeeSiteRows
+      .map((row) => String(row.site_id ?? "").trim())
+      .filter(Boolean)
+  );
 
   const { data: routes } = await supabase
     .from("site_supply_routes")
@@ -1194,6 +1267,16 @@ export default async function RemissionsPage({
               {actionRows.map((row) => {
                 const fromSiteId = row.from_site_id ?? "";
                 const toSiteId = row.to_site_id ?? "";
+                const rowCanFrom = canCancelPermission && employeeAccessibleSiteIds.has(fromSiteId);
+                const rowCanTo = canCancelPermission && employeeAccessibleSiteIds.has(toSiteId);
+                const rowCanManageBasic = canManageRemissionActions && (canViewAll || rowCanFrom || rowCanTo);
+                const rowCanReverse = canManageRemissionActions && (canViewAll || (rowCanFrom && rowCanTo));
+                const rowActions = getListActionsForRemission(
+                  row.status,
+                  row.notes,
+                  rowCanManageBasic,
+                  rowCanReverse
+                );
                 return (
                   <tr key={row.id} className="ui-body">
                     <TableCell>{formatDateTime(row.created_at)}</TableCell>
@@ -1222,10 +1305,10 @@ export default async function RemissionsPage({
                           {viewMode === "bodega"
                             ? "Preparar"
                             : ["in_transit", "partial"].includes(String(row.status ?? ""))
-                              ? "Recibir"
-                              : "Ver"}
+                            ? "Recibir"
+                            : "Ver"}
                         </Link>
-                        {canManageRemissionActions && String(row.status ?? "") !== "cancelled" ? (
+                        {rowActions.includes("cancel") ? (
                           <form action={runRemissionListAction}>
                             <input type="hidden" name="request_id" value={row.id} />
                             <input type="hidden" name="action" value="cancel" />
@@ -1234,7 +1317,16 @@ export default async function RemissionsPage({
                             </button>
                           </form>
                         ) : null}
-                        {canManageRemissionActions ? (
+                        {rowActions.includes("reverse_cancel") ? (
+                          <form action={runRemissionListAction}>
+                            <input type="hidden" name="request_id" value={row.id} />
+                            <input type="hidden" name="action" value="reverse_cancel" />
+                            <button className="ui-btn ui-btn--action ui-btn--compact px-3 text-sm font-semibold">
+                              Anular + reversa
+                            </button>
+                          </form>
+                        ) : null}
+                        {rowActions.includes("delete") ? (
                           <form action={runRemissionListAction}>
                             <input type="hidden" name="request_id" value={row.id} />
                             <input type="hidden" name="action" value="delete" />
@@ -1320,6 +1412,16 @@ export default async function RemissionsPage({
               {historyRows.slice(0, 20).map((row) => {
                 const fromSiteId = row.from_site_id ?? "";
                 const toSiteId = row.to_site_id ?? "";
+                const rowCanFrom = canCancelPermission && employeeAccessibleSiteIds.has(fromSiteId);
+                const rowCanTo = canCancelPermission && employeeAccessibleSiteIds.has(toSiteId);
+                const rowCanManageBasic = canManageRemissionActions && (canViewAll || rowCanFrom || rowCanTo);
+                const rowCanReverse = canManageRemissionActions && (canViewAll || (rowCanFrom && rowCanTo));
+                const rowActions = getListActionsForRemission(
+                  row.status,
+                  row.notes,
+                  rowCanManageBasic,
+                  rowCanReverse
+                );
                 return (
                   <tr key={row.id} className="ui-body">
                     <TableCell>{formatDateTime(row.created_at)}</TableCell>
@@ -1343,7 +1445,7 @@ export default async function RemissionsPage({
                         >
                           Ver
                         </Link>
-                        {canManageRemissionActions && String(row.status ?? "") !== "cancelled" ? (
+                        {rowActions.includes("cancel") ? (
                           <form action={runRemissionListAction}>
                             <input type="hidden" name="request_id" value={row.id} />
                             <input type="hidden" name="action" value="cancel" />
@@ -1352,7 +1454,16 @@ export default async function RemissionsPage({
                             </button>
                           </form>
                         ) : null}
-                        {canManageRemissionActions ? (
+                        {rowActions.includes("reverse_cancel") ? (
+                          <form action={runRemissionListAction}>
+                            <input type="hidden" name="request_id" value={row.id} />
+                            <input type="hidden" name="action" value="reverse_cancel" />
+                            <button className="ui-btn ui-btn--action ui-btn--compact px-3 text-sm font-semibold">
+                              Anular + reversa
+                            </button>
+                          </form>
+                        ) : null}
+                        {rowActions.includes("delete") ? (
                           <form action={runRemissionListAction}>
                             <input type="hidden" name="request_id" value={row.id} />
                             <input type="hidden" name="action" value="delete" />

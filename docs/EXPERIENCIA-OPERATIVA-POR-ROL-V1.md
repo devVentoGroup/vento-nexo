@@ -219,6 +219,65 @@ Ese cambio arregla la mayor parte del problema de logica del flujo.
 - obligar al operario a leer instrucciones largas para saber por donde empezar;
 - depender de refresh completos sin un cambio de estado claramente visible dentro de la propia linea.
 
+## Decisión aplicada · Cancelar vs Eliminar vs Anular con reversa
+
+Para `v1`, estas acciones ya no se exponen dentro del detalle de una remisión. Se operan desde la bandeja (`lista/historial`) en la columna `Acciones`.
+
+- `Cancelar`: corta el flujo documental y deja trazabilidad.
+- `Eliminar`: solo debe borrar cuando no hay trazabilidad bloqueante.
+- `Anular + reversa`: cancela y revierte inventario cuando la remisión ya impactó stock.
+
+Regla práctica:
+- si hubo salida/recepción (`in_transit`, `partial`, `received`, `closed`), priorizar `Anular + reversa`;
+- si fue error temprano sin trazabilidad, usar `Eliminar`.
+
+### Matriz v1 (rol + estado + acción)
+
+Supuesto de rol:
+- solo `propietario`, `gerente` y `gerente_general` ven acciones destructivas (`Cancelar`, `Eliminar`, `Anular + reversa`);
+- además deben tener permiso `inventory.remissions.cancel` en al menos una sede relacionada.
+
+Alcance por sedes:
+- `Cancelar` y `Eliminar`: requieren alcance en `origen` o `destino` (o permiso global).
+- `Anular + reversa`: requiere alcance en `origen` **y** `destino` (o permiso global), porque afecta stock de ambos lados.
+
+Estados y acciones visibles:
+
+1. `pending`
+- `Ver`
+- `Cancelar`
+- `Eliminar`
+
+2. `preparing`
+- `Ver`
+- `Cancelar`
+- `Eliminar`
+
+3. `in_transit`
+- `Ver`
+- `Anular + reversa`
+
+4. `partial`
+- `Ver`
+- `Anular + reversa`
+
+5. `received`
+- `Ver`
+- `Anular + reversa`
+
+6. `closed` (legado)
+- `Ver`
+- `Anular + reversa`
+
+7. `cancelled`
+- `Ver`
+- `Eliminar`
+- `Anular + reversa` solo si no tiene marcador `[REVERSA_APLICADA]` en `notes`.
+
+Regla backend:
+- la API valida la misma matriz; no basta con ocultar botones en UI.
+- `Cancelar/Eliminar` desde detalle quedan bloqueadas; esas acciones solo se ejecutan desde la bandeja.
+
 ### Decision de implementacion
 
 Desde este punto:

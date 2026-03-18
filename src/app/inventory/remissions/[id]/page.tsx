@@ -252,7 +252,7 @@ function toFriendlyRemissionActionError(rawMessage: string): string {
     msg.includes("restock_request_items_request_id_fkey") ||
     msg.includes("restock_request_items")
   ) {
-    return "No se pudo eliminar porque la remisión aún tiene ítems relacionados. Intenta de nuevo o usa Cancelar.";
+    return "No se pudo eliminar porque la remisión aún tiene ítems relacionados.";
   }
   if (msg.includes("related_restock_request_id") || msg.includes("inventory_movements")) {
     return "No se puede eliminar porque ya tiene movimientos de inventario asociados.";
@@ -1445,6 +1445,15 @@ async function updateStatus(formData: FormData) {
   }
   if (action === "delete" && !access.canCancel) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "No tienes permiso para eliminar." }));
+  }
+  if (action === "cancel" || action === "delete") {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: "Esta acción se ejecuta desde la bandeja de remisiones.",
+      })
+    );
   }
 
   if (action === "prepare" && currentStatus !== "pending") {
