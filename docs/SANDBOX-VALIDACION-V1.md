@@ -55,7 +55,9 @@ Fecha: `2026-03-18`
   - Ítem:
     - `SANDBOX V1 Harina normal` · `4 Unidades`
 - Cambiar a rol/sede: `bodeguero` en `Centro de Producción`.
-- Preparar y despachar la cantidad total.
+- Preparar la cantidad total (dejar lista para despacho).
+- Cambiar a rol/sede: `conductor` en `Centro de Producción`.
+- Despachar a destino (pasar a `in_transit`).
 - Cambiar a rol/sede: `cajero` (o `barista`/`cocinero`) en `Saudo`.
 - Recibir cantidad total.
 - Resultado esperado:
@@ -75,7 +77,9 @@ Fecha: `2026-03-18`
 - En preparación:
   - Usar `Dividir automáticamente` cuando aplique.
   - Confirmar que quedan 2 líneas operativas (4 y 1).
-  - Preparar y enviar ambas líneas.
+  - Preparar ambas líneas.
+- Cambiar a rol/sede: `conductor` en `Centro de Producción`.
+- Despachar ambas líneas.
 - Cambiar a rol/sede: `cajero` (o `barista`/`cocinero`) en `Saudo`.
 - Recibir total.
 - Resultado esperado:

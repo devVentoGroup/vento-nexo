@@ -10,11 +10,11 @@ export const ROLE_OPTIONS: Array<{ value: string; label: string }> = [
   { value: "gerente_general", label: "Gerente general" },
   { value: "gerente", label: "Gerente" },
   { value: "bodeguero", label: "Bodeguero" },
+  { value: "conductor", label: "Conductor" },
   { value: "cajero", label: "Cajero" },
   { value: "barista", label: "Barista" },
   { value: "cocinero", label: "Cocinero" },
   { value: "repostero", label: "Repostero" },
   { value: "panadero", label: "Panadero" },
   { value: "pastelero", label: "Pastelero" },
-  { value: "logistica", label: "Logistica" },
 ];

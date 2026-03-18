@@ -325,8 +325,8 @@ Migracion aplicada en remoto:
 La matriz de remisiones queda definida en `role_permissions` (BD), no en hardcode de frontend:
 - `propietario`, `gerente_general`: `remissions + request + prepare + receive + cancel + all_sites` (`global`).
 - `gerente`: `remissions + request + prepare + receive + cancel` (`site`).
-- `bodeguero`: `remissions + prepare + receive` (`site`).
-- `conductor`: `remissions + prepare + receive` (`site`).
+- `bodeguero`: `remissions + prepare` (`site`).
+- `conductor`: `remissions + prepare + receive + transit` (`site`).
 - `cajero`, `barista`, `cocinero` (solo `satellite`): `remissions + request + receive` (`site_type=satellite`).
 
 Resultado:

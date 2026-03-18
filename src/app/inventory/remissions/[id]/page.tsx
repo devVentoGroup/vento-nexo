@@ -18,6 +18,7 @@ const APP_ID = "nexo";
 
 const PERMISSIONS = {
   remissionsPrepare: "inventory.remissions.prepare",
+  remissionsTransit: "inventory.remissions.transit",
   remissionsReceive: "inventory.remissions.receive",
   remissionsCancel: "inventory.remissions.cancel",
 };
@@ -351,6 +352,15 @@ async function loadAccessContext(
         actualRole: role,
       })
     : false;
+  const canTransitPermission = fromSiteId
+    ? await checkPermissionWithRoleOverride({
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.remissionsTransit,
+        context: { siteId: fromSiteId },
+        actualRole: role,
+      })
+    : false;
   const canCancelPermission = await checkPermissionWithRoleOverride({
     supabase,
     appId: APP_ID,
@@ -361,7 +371,7 @@ async function loadAccessContext(
   const canCancel = canCancelPermission;
 
   const canPrepare = fromSiteType === "production_center" && canPreparePermission;
-  const canTransit = canPrepare;
+  const canTransit = fromSiteType === "production_center" && canTransitPermission;
   const canReceive = toSiteType === "satellite" && canReceivePermission;
   const canClose = canReceive || canCancel;
 
