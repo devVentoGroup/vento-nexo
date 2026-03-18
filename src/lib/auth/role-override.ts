@@ -25,8 +25,6 @@ export function canUseRoleOverride(
 
 type RolePermissionRow = {
   scope_type?: string | null;
-  scope_site_id?: string | null;
-  scope_area_id?: string | null;
   scope_site_type?: string | null;
   scope_area_kind?: string | null;
   permission?: { code?: string | null; app?: { code?: string | null } | null } | null;
@@ -49,7 +47,7 @@ async function loadRolePermissions(supabase: SupabaseClient, role: string) {
   const { data: permissions, error } = await supabase
     .from("role_permissions")
     .select(
-      "scope_type,scope_site_id,scope_area_id,scope_site_type,scope_area_kind,permission:app_permissions(code,app:apps(code))"
+      "scope_type,scope_site_type,scope_area_kind,permission:app_permissions(code,app:apps(code))"
     )
     .eq("role", role)
     .eq("is_allowed", true);
@@ -64,8 +62,8 @@ async function loadRolePermissions(supabase: SupabaseClient, role: string) {
       return {
         code,
         scope_type: row.scope_type ?? null,
-        scope_site_id: row.scope_site_id ?? null,
-        scope_area_id: row.scope_area_id ?? null,
+        scope_site_id: null,
+        scope_area_id: null,
         scope_site_type: row.scope_site_type ?? null,
         scope_area_kind: row.scope_area_kind ?? null,
       };
