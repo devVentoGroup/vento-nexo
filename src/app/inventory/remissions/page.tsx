@@ -1156,7 +1156,17 @@ export default async function RemissionsPage({
 
         {!canCreate && viewMode === "satélite" ? (
           <div className="mt-4 ui-alert ui-alert--neutral">
-            Esta vista queda en modo recepción. Cuando una remisión salga desde Centro, aquí podrás abrirla y recibirla.
+            {activeSiteId && !canRequestPermission ? (
+              <>
+                No puedes crear remisiones en esta sede porque falta el permiso{" "}
+                <code>nexo.inventory.remissions.request</code> para tu rol actual.
+                Verifica rol/sede activa y permisos en BD.
+              </>
+            ) : (
+              <>
+                Esta vista queda en modo recepción. Cuando una remisión salga desde Centro, aquí podrás abrirla y recibirla.
+              </>
+            )}
           </div>
         ) : null}
 
