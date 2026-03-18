@@ -76,6 +76,162 @@ Debe ver:
   - centro ve preparar/despachar;
   - detalle revela controles por etapa.
 
+## Arquitectura UX correcta para remisiones
+
+En remisiones, el problema ya no es un boton o una card aislada. El problema es de arquitectura: se intentaron mezclar `pedir`, `preparar`, `despachar` y `recibir` dentro de superficies que siguen sintiendose como formularios o detalles parcheados, en vez de tratar la remision como un documento central que cambia por estado.
+
+La regla correcta para `v1` queda asi:
+
+- la **remision** es la entidad central;
+- la experiencia cambia segun `estado + rol + sede`;
+- preparacion y recepcion son **modos operativos** del mismo documento;
+- la operacion debe sentirse como `ver -> tocar accion principal -> seguir`.
+
+### Estados operativos de referencia
+
+- `draft`
+- `pending`
+- `preparing`
+- `in_transit`
+- `received`
+- `cancelled`
+
+Notas:
+- `received` sigue siendo el final visible de `v1`;
+- `closed` no vuelve como estado operativo visible;
+- si mas adelante hace falta `with_issue`, se agrega como continuidad, no como condicion para cerrar `v1`.
+
+### Estructura correcta del modulo
+
+#### 1. Bandeja de remisiones
+
+Debe ser la entrada principal del modulo.
+
+Debe mostrar:
+- buscador;
+- filtros por `estado`, `origen`, `destino`, `fecha`, `prioridad`;
+- KPIs cortos;
+- lista de remisiones;
+- accion rapida acorde al estado.
+
+Vista recomendada:
+- tabla operativa como principal;
+- kanban solo como vista alterna futura.
+
+#### 2. Nueva remision
+
+Solo sirve para originar la solicitud.
+
+Debe incluir:
+- origen;
+- destino;
+- fecha requerida;
+- prioridad;
+- productos;
+- cantidades;
+- observaciones.
+
+No debe incluir:
+- preparacion;
+- despacho;
+- recepcion;
+- decisiones de bodega.
+
+La sensacion correcta es “armar una solicitud”, no “llenar un formulario pesado”.
+
+#### 3. Detalle de remision
+
+Debe ser el documento central y estable.
+
+Debe concentrar:
+- cabecera con consecutivo, estado, prioridad, origen, destino y fechas;
+- timeline del proceso;
+- historial y responsables;
+- resumen de lineas;
+- CTA principal segun el estado.
+
+El detalle sirve para entender el documento. No debe convertirse en la superficie donde se hacen todos los micro-movimientos tacticos de la operacion.
+
+#### 4. Modo preparacion
+
+Es una variante operativa del detalle para `Centro`.
+
+Debe sentirse como picking:
+- lista limpia de lineas;
+- cantidad solicitada;
+- cantidad pendiente;
+- incidencias;
+- responsable preparando;
+- progreso general;
+- una accion principal por linea.
+
+No debe sentirse como:
+- formulario largo;
+- pantalla administrativa;
+- coleccion de cards decorativas;
+- cadena de botones que obliga a refrescar y reinterpretar toda la pantalla.
+
+#### 5. Modo recepcion
+
+Es otra variante operativa del detalle para satelite.
+
+Debe priorizar:
+- `Recibir todo`;
+- `Recibir con novedad`;
+- `Marcar faltante`;
+- evidencia o nota solo cuando haga falta.
+
+El satelite no necesita ver logica de `LOC`, picking interno o decisiones propias de bodega del `Centro`.
+
+### Regla de oro
+
+No pensar en:
+- pagina de pedir;
+- pagina de preparar;
+- pagina de enviar;
+- pagina de recibir.
+
+Pensar en:
+- bandeja;
+- documento central;
+- modos de trabajo por estado.
+
+Ese cambio arregla la mayor parte del problema de logica del flujo.
+
+### Criterios visuales para el rediseño
+
+- Una accion principal por vista.
+- La remision debe entenderse en 3 segundos:
+  - que es;
+  - para donde va;
+  - en que estado esta;
+  - que falta.
+- El estado y el progreso pesan mas que la decoracion.
+- Las lineas del producto mandan mas que los contenedores.
+- Preparacion y recepcion deben sentirse como checklist operativo, no como formulario editable.
+- Si una accion cambia el estado, el feedback debe verse en la misma linea y no depender solo de un aviso global.
+
+### Que no se debe volver a hacer
+
+- seguir parchando la vista actual del detalle como si esa fuera la arquitectura correcta;
+- mezclar validacion, picking, despacho y recepcion dentro de la misma superficie editable;
+- mostrar varios botones primarios compitiendo;
+- obligar al operario a leer instrucciones largas para saber por donde empezar;
+- depender de refresh completos sin un cambio de estado claramente visible dentro de la propia linea.
+
+### Decision de implementacion
+
+Desde este punto:
+
+1. Se congela el enfoque de “seguir ajustando el detalle actual” como solucion principal.
+2. El siguiente rediseño de remisiones debe salir de esta estructura:
+   - `Bandeja`
+   - `Nueva remision`
+   - `Detalle`
+   - `Modo preparacion`
+   - `Modo recepcion`
+3. Cualquier mejora puntual anterior a ese rediseño debe respetar esa arquitectura futura y no profundizar la deuda visual o logica.
+
 ## Referencias externas usadas
 
 - Odoo Barcode / Inventory operations: la operacion movil se organiza por tarea (`receipts`, `internal transfers`, `delivery orders`) y escaneo dirigido, no por menu tecnico global.

@@ -769,7 +769,10 @@ export default async function RemissionsPage({
           ? "Nueva solicitud"
           : "Ver remisiones";
   const compactOperatorView = viewMode !== "all";
-  const tableRows = compactOperatorView ? openRemissionRows : remissionRows;
+  const actionRows = openRemissionRows;
+  const historyRows = remissionRows.filter((row) =>
+    ["received", "closed", "cancelled"].includes(String(row.status ?? ""))
+  );
   const fulfillmentSiteIdsForStock = fulfillmentSiteRows
     .map((site) => site.id)
     .filter((id): id is string => Boolean(id));
@@ -972,50 +975,6 @@ export default async function RemissionsPage({
           </div>
         ) : null}
 
-        {canCreateWithConfiguredCatalog ? (
-          openRemissionRows.length > 0 ? (
-            <details id="nueva-remision" className="mt-4 rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3">
-              <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
-                Crear otra solicitud
-              </summary>
-              <div className="mt-4">
-                <RemissionsCreateForm
-                  action={createRemission}
-                  toSiteId={activeSiteId}
-                  toSiteName={activeSiteName}
-                  fromSiteOptions={fulfillmentSiteRows.map((site) => ({
-                    id: site.id,
-                    name: site.name ?? site.id,
-                  }))}
-                  defaultFromSiteId={selectedFromSiteId}
-                  products={productRows}
-                  categoryNameById={Object.fromEntries(categoryNameById)}
-                  defaultUomProfiles={defaultUomProfiles}
-                  areaOptions={areaOptions}
-                  originStockRows={originStockRows}
-                />
-              </div>
-            </details>
-          ) : (
-            <div className="mt-4" id="nueva-remision">
-              <RemissionsCreateForm
-                action={createRemission}
-                toSiteId={activeSiteId}
-                toSiteName={activeSiteName}
-                fromSiteOptions={fulfillmentSiteRows.map((site) => ({
-                  id: site.id,
-                  name: site.name ?? site.id,
-                }))}
-                defaultFromSiteId={selectedFromSiteId}
-                products={productRows}
-                categoryNameById={Object.fromEntries(categoryNameById)}
-                defaultUomProfiles={defaultUomProfiles}
-                areaOptions={areaOptions}
-                originStockRows={originStockRows}
-              />
-            </div>
-          )
-        ) : null}
       </div>
 
       <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
@@ -1023,13 +982,17 @@ export default async function RemissionsPage({
           <div>
             <div className="ui-h3">
               {viewMode === "bodega"
-                ? "Solicitudes por preparar"
-                : requesterOnlyRole
-                  ? "Mis remisiones"
-                  : "Remisiones de la sede"}
+                ? "Requieren accion ahora"
+                : nextReceiveRow
+                  ? "Requieren accion ahora"
+                  : canCreate
+                    ? "Solicitudes abiertas"
+                    : requesterOnlyRole
+                      ? "Mis remisiones abiertas"
+                      : "Remisiones abiertas"}
             </div>
             <div className="mt-1 ui-caption">
-              {(compactOperatorView ? tableRows : remissionRows).length} registro(s) visibles en esta vista
+              {actionRows.length} remision(es) pendientes, preparando, en transito o parciales
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -1052,7 +1015,7 @@ export default async function RemissionsPage({
               </tr>
             </thead>
             <tbody>
-              {tableRows.map((row) => {
+              {actionRows.map((row) => {
                 const fromSiteId = row.from_site_id ?? "";
                 const toSiteId = row.to_site_id ?? "";
                 return (
@@ -1090,10 +1053,108 @@ export default async function RemissionsPage({
                 );
               })}
 
-              {!tableRows.length ? (
+              {!actionRows.length ? (
                 <tr>
                   <TableCell colSpan={compactOperatorView ? 4 : 6} className="ui-empty">
-                    No hay remisiones todavía.
+                    No hay remisiones que requieran accion en este momento.
+                  </TableCell>
+                </tr>
+              ) : null}
+            </tbody>
+          </Table>
+        </div>
+      </div>
+
+      {canCreateWithConfiguredCatalog ? (
+        <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2" id="nueva-remision">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <div className="ui-h3">Nueva remision</div>
+              <div className="mt-1 ui-caption">
+                Esta vista solo sirve para crear una solicitud nueva.
+              </div>
+            </div>
+          </div>
+          <div className="mt-4">
+            <RemissionsCreateForm
+              action={createRemission}
+              toSiteId={activeSiteId}
+              toSiteName={activeSiteName}
+              fromSiteOptions={fulfillmentSiteRows.map((site) => ({
+                id: site.id,
+                name: site.name ?? site.id,
+              }))}
+              defaultFromSiteId={selectedFromSiteId}
+              products={productRows}
+              categoryNameById={Object.fromEntries(categoryNameById)}
+              defaultUomProfiles={defaultUomProfiles}
+              areaOptions={areaOptions}
+              originStockRows={originStockRows}
+            />
+          </div>
+        </div>
+      ) : null}
+
+      <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
+        <div className="flex flex-wrap items-end justify-between gap-3">
+          <div>
+            <div className="ui-h3">Historial reciente</div>
+            <div className="mt-1 ui-caption">
+              {historyRows.length} remision(es) ya recibidas o canceladas
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className="ui-chip ui-chip--success">{receivedCount} recibidas</span>
+          </div>
+        </div>
+
+        <div className="mt-4 overflow-x-auto">
+          <Table>
+            <thead>
+              <tr>
+                <TableHeaderCell>Fecha</TableHeaderCell>
+                <TableHeaderCell>Estado</TableHeaderCell>
+                {viewMode !== "bodega" ? <TableHeaderCell>Origen</TableHeaderCell> : null}
+                {viewMode !== "satélite" ? <TableHeaderCell>Destino</TableHeaderCell> : null}
+                {!compactOperatorView ? <TableHeaderCell>Notas</TableHeaderCell> : null}
+                <TableHeaderCell>Acciones</TableHeaderCell>
+              </tr>
+            </thead>
+            <tbody>
+              {historyRows.slice(0, 20).map((row) => {
+                const fromSiteId = row.from_site_id ?? "";
+                const toSiteId = row.to_site_id ?? "";
+                return (
+                  <tr key={row.id} className="ui-body">
+                    <TableCell>{formatDateTime(row.created_at)}</TableCell>
+                    <TableCell>
+                      <span className={formatStatus(row.status).className}>
+                        {formatStatus(row.status).label}
+                      </span>
+                    </TableCell>
+                    {viewMode !== "bodega" ? (
+                      <TableCell>{siteMap.get(fromSiteId)?.name ?? fromSiteId}</TableCell>
+                    ) : null}
+                    {viewMode !== "satélite" ? (
+                      <TableCell>{siteMap.get(toSiteId)?.name ?? toSiteId}</TableCell>
+                    ) : null}
+                    {!compactOperatorView ? <TableCell>{row.notes ?? ""}</TableCell> : null}
+                    <TableCell>
+                      <Link
+                        href={`/inventory/remissions/${row.id}`}
+                        className="ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
+                      >
+                        Ver
+                      </Link>
+                    </TableCell>
+                  </tr>
+                );
+              })}
+
+              {!historyRows.length ? (
+                <tr>
+                  <TableCell colSpan={compactOperatorView ? 4 : 6} className="ui-empty">
+                    Todavia no hay historial reciente.
                   </TableCell>
                 </tr>
               ) : null}

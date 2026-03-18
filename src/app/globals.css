@@ -1,21 +1,21 @@
 @import "tailwindcss";
 
 :root {
-  --ui-bg: #F3F6F9;
-  --ui-bg-2: #EDF2F6;
+  --ui-bg: #F2F5F8;
+  --ui-bg-2: #EAF0F5;
   --ui-surface: #FFFFFF;
-  --ui-surface-2: #EEF2F6;
-  --ui-bg-soft: #F7FAFC;
-  --ui-border: #C9D2DB;
+  --ui-surface-2: #EEF3F7;
+  --ui-bg-soft: #F6F9FC;
+  --ui-border: #C8D2DC;
   --ui-text: #111827;
   --ui-muted: #5E6A78;
   --ui-primary: #1F2937;
   --ui-primary-hover: #111827;
   --ui-on-primary: #FFFFFF;
-  --ui-brand: #F59E0B;
-  --ui-brand-600: #92400E;
-  --ui-brand-700: #7C2D12;
-  --ui-brand-soft: rgba(245, 158, 11, 0.14);
+  --ui-brand: #D4A43A;
+  --ui-brand-600: #7C5B1E;
+  --ui-brand-700: #684A14;
+  --ui-brand-soft: rgba(212, 164, 58, 0.16);
   --ui-success: #16A34A;
   --ui-success-soft: rgba(22, 163, 74, 0.12);
   --ui-danger: #DC2626;
@@ -23,10 +23,10 @@
   --ui-neutral-soft: rgba(17, 24, 39, 0.06);
   --ui-radius-card: 16px;
   --ui-radius-control: 12px;
-  --ui-shadow-1: 0 12px 28px rgba(15, 23, 42, 0.10);
-  --ui-shadow-2: 0 22px 64px rgba(15, 23, 42, 0.16);
-  --ui-shadow-soft: 0 1px 0 rgba(15, 23, 42, 0.04), 0 8px 24px rgba(15, 23, 42, 0.08);
-  --ui-glow: 0 0 0 1px rgba(245, 158, 11, 0.08), 0 16px 40px rgba(245, 158, 11, 0.12);
+  --ui-shadow-1: 0 10px 24px rgba(15, 23, 42, 0.08);
+  --ui-shadow-2: 0 18px 48px rgba(15, 23, 42, 0.12);
+  --ui-shadow-soft: 0 1px 0 rgba(15, 23, 42, 0.04), 0 6px 18px rgba(15, 23, 42, 0.07);
+  --ui-glow: 0 0 0 1px rgba(212, 164, 58, 0.08), 0 14px 34px rgba(212, 164, 58, 0.10);
 
   --background: var(--ui-bg);
   --foreground: var(--ui-text);
@@ -41,8 +41,8 @@
 
 body {
   background:
-    radial-gradient(1100px 620px at 0% -20%, rgba(248, 250, 252, 0.95) 0%, rgba(248, 250, 252, 0) 60%),
-    radial-gradient(900px 620px at 100% 0%, rgba(255, 246, 225, 0.32) 0%, rgba(255, 246, 225, 0) 60%),
+    radial-gradient(1100px 620px at 0% -20%, rgba(248, 251, 254, 0.94) 0%, rgba(248, 251, 254, 0) 60%),
+    radial-gradient(900px 620px at 100% 0%, rgba(240, 225, 186, 0.26) 0%, rgba(240, 225, 186, 0) 60%),
     linear-gradient(180deg, var(--ui-bg) 0%, var(--ui-bg-2) 100%);
   color: var(--foreground);
   font-family: var(--font-manrope, Arial, Helvetica, sans-serif);
@@ -107,11 +107,11 @@ body {
 .ui-remission-hero {
   position: relative;
   overflow: hidden;
-  border: 1px solid rgba(245, 158, 11, 0.18);
+  border: 1px solid rgba(212, 164, 58, 0.22);
   border-radius: 24px;
   padding: 24px;
   background:
-    radial-gradient(420px 220px at 0% 0%, rgba(245, 158, 11, 0.18) 0%, rgba(245, 158, 11, 0) 70%),
+    radial-gradient(420px 220px at 0% 0%, rgba(212, 164, 58, 0.16) 0%, rgba(212, 164, 58, 0) 70%),
     radial-gradient(360px 220px at 100% 0%, rgba(14, 116, 144, 0.16) 0%, rgba(14, 116, 144, 0) 74%),
     linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(247, 250, 252, 0.98) 100%);
   box-shadow: var(--ui-shadow-2);
@@ -124,7 +124,7 @@ body {
   width: 280px;
   height: 280px;
   border-radius: 999px;
-  background: radial-gradient(circle, rgba(245, 158, 11, 0.18) 0%, rgba(245, 158, 11, 0) 72%);
+  background: radial-gradient(circle, rgba(212, 164, 58, 0.16) 0%, rgba(212, 164, 58, 0) 72%);
   pointer-events: none;
 }
 
@@ -156,7 +156,7 @@ body {
   position: absolute;
   inset: 0 auto 0 0;
   width: 4px;
-  background: linear-gradient(180deg, var(--ui-brand) 0%, #F97316 100%);
+  background: linear-gradient(180deg, #D8B061 0%, #B6842A 100%);
 }
 
 .ui-remission-kpi[data-tone="cool"]::before {
@@ -276,7 +276,7 @@ body {
 .ui-chip--brand {
   background: var(--ui-brand-soft);
   color: var(--ui-brand-600);
-  border-color: rgba(245, 158, 11, 0.25);
+  border-color: rgba(212, 164, 58, 0.28);
 }
 
 .ui-chip--success {
@@ -286,9 +286,9 @@ body {
 }
 
 .ui-chip--warn {
-  background: rgba(245, 158, 11, 0.12);
+  background: rgba(212, 164, 58, 0.14);
   color: var(--ui-brand-700);
-  border-color: rgba(245, 158, 11, 0.22);
+  border-color: rgba(212, 164, 58, 0.28);
 }
 
 .ui-title {
@@ -385,21 +385,44 @@ body {
   border-radius: var(--ui-radius-control);
   font-size: 1rem;
   font-weight: 600;
-  transition: all 120ms ease;
+  transition: background-color 160ms ease, transform 140ms ease, box-shadow 160ms ease, border-color 160ms ease;
   gap: 8px;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
 }
 
 .ui-btn--brand {
-  background: var(--ui-brand);
-  color: var(--ui-on-primary);
+  background: linear-gradient(180deg, #E3BE68 0%, #D4A43A 100%);
+  color: #4A3510;
+  border: 1px solid rgba(124, 91, 30, 0.24);
+  box-shadow: 0 6px 16px rgba(124, 91, 30, 0.16);
 }
 
 .ui-btn--brand:hover {
-  background: var(--ui-brand-600);
+  background: linear-gradient(180deg, #E6C47A 0%, #C9972E 100%);
   transform: translateY(-1px);
-  box-shadow: var(--ui-shadow-2);
+  box-shadow: 0 12px 24px rgba(124, 91, 30, 0.22);
+}
+
+.ui-btn--action {
+  background: linear-gradient(180deg, #F0DCB0 0%, #E4C07A 100%);
+  color: #5A4216;
+  border: 1px solid rgba(124, 91, 30, 0.24);
+  box-shadow: 0 4px 14px rgba(124, 91, 30, 0.14);
+}
+
+.ui-btn--action:hover {
+  background: linear-gradient(180deg, #F2E2BC 0%, #D9B169 100%);
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(124, 91, 30, 0.2);
+}
+
+.ui-btn--compact {
+  height: 44px;
+  border-radius: 12px;
+  padding: 0 14px;
+  font-size: 0.93rem;
+  font-weight: 600;
 }
 
 .ui-btn--primary {

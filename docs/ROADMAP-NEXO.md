@@ -303,3 +303,42 @@ Follow-up:
   - se quito `Guardar preparación / Guardar recepción` global, porque las lineas ya persisten cada accion por separado;
   - se quitaron inputs manuales visibles que no tenian un guardado inmediato asociado;
   - la pantalla ahora apunta a un modelo mas claro: una accion real por linea, y la accion global (`Despachar`, `Recibir`) solo cuando el estado ya la permite.
+- se dio un siguiente corte para bajar el numero de toques en preparacion:
+  - una tarjeta de `LOC` sugerido ya puede dejar la linea lista en un solo toque cuando ese LOC cubre completa la cantidad;
+  - cuando la linea ya tiene LOC, el boton principal paso a ser `Dejar lista ...` en lugar de `Preparar` y luego `Enviar`;
+  - con eso el flujo esperado para bodega baja a: `dividir -> tocar LOC/linea -> despachar`, en vez de `elegir LOC -> preparar -> enviar -> guardar`.
+- ajuste visual fino en detalle de remisiones:
+  - los CTA principales pasaron a estilo mas compacto y menos vistoso en desktop;
+  - se estandarizo el label de unidad para que `un` se muestre como `Unidades`, mejorando lectura para operacion.
+- se reconoce que, aun con esos ajustes, el problema de remisiones sigue siendo de arquitectura y no de microcopys o cards:
+  - la vista actual todavia mezcla demasiadas capas del flujo;
+  - se congela el enfoque de seguir parchando el detalle actual como solucion principal;
+  - la arquitectura correcta ya queda documentada en `docs/EXPERIENCIA-OPERATIVA-POR-ROL-V1.md`:
+    - `Bandeja`
+    - `Nueva remision`
+    - `Detalle`
+    - `Modo preparacion`
+    - `Modo recepcion`
+  - el siguiente rediseño real de remisiones debe partir de ese modelo, no de la vista actual.
+
+### Reorientacion inmediata de remisiones
+
+Lo siguiente ya no es “seguir afinando botones” en el detalle actual.
+
+El frente correcto queda asi:
+
+1. Rehacer la `Bandeja de remisiones` como entrada principal del modulo.
+2. Dejar `Nueva remision` como vista exclusiva de solicitud.
+3. Rehacer `Detalle de remision` como documento central con timeline, responsables, historial y contexto estable.
+4. Sacar `Modo preparacion` como variante operativa del detalle para `Centro`.
+5. Sacar `Modo recepcion` como variante operativa del detalle para satelite.
+
+Objetivo:
+- bajar carga mental;
+- bajar cantidad de toques;
+- hacer evidente el siguiente paso;
+- dejar de depender de leer para operar.
+- primer corte ya ejecutado sobre esa direccion:
+  - `/inventory/remissions` dejo de mezclar en un mismo bloque el contexto, la creacion y toda la lista;
+  - la pantalla ya se separa en `Requieren accion ahora`, `Nueva remision` y `Historial reciente`;
+  - esto deja a remisiones mucho mas cerca de `bandeja + crear`, y marca mejor el siguiente frente: `detalle + modo preparacion + modo recepcion`.

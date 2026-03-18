@@ -164,6 +164,16 @@ function parseNumber(value: string) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function formatUnitLabel(value: string | null | undefined): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "Unidades";
+  const normalized = raw.toLowerCase();
+  if (["un", "u", "unit", "units", "unidad", "unidades"].includes(normalized)) {
+    return "Unidades";
+  }
+  return raw;
+}
+
 function normalizeReturnOrigin(value: string | null | undefined): "" | "prepare" {
   return String(value ?? "").trim() === "prepare" ? "prepare" : "";
 }
@@ -623,6 +633,7 @@ async function chooseSourceLoc(formData: FormData) {
   }
 
   const target = asText(formData.get("choose_loc_target"));
+  const chooseLocMode = asText(formData.get("choose_loc_mode"));
   let itemId = "";
   let locationId = "";
 
@@ -683,7 +694,7 @@ async function chooseSourceLoc(formData: FormData) {
 
   const { data: itemRow } = await supabase
     .from("restock_request_items")
-    .select("id")
+    .select("id,product_id,quantity,prepared_quantity,shipped_quantity")
     .eq("id", itemId)
     .eq("request_id", requestId)
     .single();
@@ -713,9 +724,32 @@ async function chooseSourceLoc(formData: FormData) {
     );
   }
 
+  let updates: Record<string, string | number | null> = { source_location_id: locationId };
+
+  if (chooseLocMode === "complete_line") {
+    const requestedQty = roundQuantity(Number(itemRow?.quantity ?? 0));
+    const preparedQty = roundQuantity(Number(itemRow?.prepared_quantity ?? 0));
+    const shippedQty = roundQuantity(Number(itemRow?.shipped_quantity ?? 0));
+    const { data: locStockRow } = await supabase
+      .from("inventory_stock_by_location")
+      .select("current_qty")
+      .eq("location_id", locationId)
+      .eq("product_id", String(itemRow?.product_id ?? ""))
+      .maybeSingle();
+    const availableAtLoc = roundQuantity(Number(locStockRow?.current_qty ?? 0));
+
+    if (requestedQty > 0 && preparedQty <= 0 && shippedQty <= 0 && availableAtLoc >= requestedQty) {
+      updates = {
+        ...updates,
+        prepared_quantity: requestedQty,
+        shipped_quantity: requestedQty,
+      };
+    }
+  }
+
   const { error } = await supabase
     .from("restock_request_items")
-    .update({ source_location_id: locationId })
+    .update(updates)
     .eq("id", itemId);
 
   if (error) {
@@ -743,7 +777,12 @@ async function chooseSourceLoc(formData: FormData) {
       from: returnOrigin,
       ok: "loc_selected",
       line: itemId,
-      event: "loc",
+      event:
+        chooseLocMode === "complete_line" &&
+        typeof updates.prepared_quantity === "number" &&
+        typeof updates.shipped_quantity === "number"
+          ? "complete_line"
+          : "loc",
     })
   );
 }
@@ -835,6 +874,29 @@ async function applyPrepareShortcut(formData: FormData) {
   }
 
   switch (shortcut) {
+    case "complete_line": {
+      if (requestedQty <= 0) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: "Esta línea no tiene cantidad solicitada válida.",
+          })
+        );
+      }
+      if (availableAtLoc < requestedQty) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: "Ese LOC no cubre completa la línea. Cambia LOC o divide la remisión.",
+          })
+        );
+      }
+      nextPrepared = requestedQty;
+      nextShipped = requestedQty;
+      break;
+    }
     case "prepare_auto": {
       const suggestedQty = roundQuantity(Math.min(requestedQty, availableAtLoc));
       if (suggestedQty <= 0) {
@@ -1867,7 +1929,7 @@ export default async function RemissionDetailPage({
               <button
                 name="action"
                 value="transit"
-                className="ui-btn ui-btn--brand h-12 w-full text-sm font-semibold md:w-auto md:min-w-[220px] md:px-5 md:text-[15px]"
+                className="ui-btn ui-btn--action ui-btn--compact w-full text-sm font-semibold sm:w-auto sm:min-w-[180px]"
               >
                 Despachar a destino
               </button>
@@ -1881,7 +1943,7 @@ export default async function RemissionDetailPage({
             <button
               name="action"
               value="receive"
-              className="ui-btn ui-btn--brand h-12 w-full text-sm font-semibold md:w-auto md:min-w-[220px] md:px-5 md:text-[15px]"
+              className="ui-btn ui-btn--action ui-btn--compact w-full text-sm font-semibold sm:w-auto sm:min-w-[180px]"
             >
               Confirmar recepción
             </button>
@@ -1890,7 +1952,7 @@ export default async function RemissionDetailPage({
             <button
               name="action"
               value="receive_partial"
-              className="ui-btn ui-btn--brand h-12 w-full text-sm font-semibold md:w-auto md:min-w-[220px] md:px-5 md:text-[15px]"
+              className="ui-btn ui-btn--action ui-btn--compact w-full text-sm font-semibold sm:w-auto sm:min-w-[180px]"
             >
               Guardar recepcion parcial
             </button>
@@ -1960,17 +2022,9 @@ export default async function RemissionDetailPage({
               const availableAtSelectedLoc = item.source_location_id
                 ? stockByLocValueMap.get(`${item.source_location_id}|${item.product_id}`) ?? 0
                 : 0;
-              const itemUnitLabel =
-                item.stock_unit_code ?? item.unit ?? item.product?.unit ?? "";
-              const quickPrepareQty = roundQuantity(
-                Math.min(requestedQty, Math.max(availableAtSelectedLoc, 0))
+              const itemUnitLabel = formatUnitLabel(
+                item.stock_unit_code ?? item.unit ?? item.product?.unit ?? ""
               );
-              const quickPrepareText =
-                quickPrepareQty > 0
-                  ? quickPrepareQty < requestedQty
-                    ? `Preparar ${quickPrepareQty} ${itemUnitLabel}`
-                    : `Preparar ${requestedQty} ${itemUnitLabel}`
-                  : "Sin stock en este LOC";
               const missingSourceLoc = canEditPrepareItems && showSourceLocSelector && plannedQty > 0 && !item.source_location_id;
               const overSiteStock = canEditPrepareItems && plannedQty > availableSite;
               const overLocStock =
@@ -2010,9 +2064,8 @@ export default async function RemissionDetailPage({
               const remainingReceiptQty = roundQuantity(Math.max(shippedQty - receivedQty, 0));
               const splitFormId = `split-line-form-${item.id}`;
               const manualLocFormId = `manual-loc-form-${item.id}`;
-              const prepareShortcutFormId = `prepare-shortcut-form-${item.id}`;
+              const completeLineShortcutFormId = `complete-line-shortcut-form-${item.id}`;
               const clearPrepareShortcutFormId = `clear-prepare-shortcut-form-${item.id}`;
-              const shipShortcutFormId = `ship-shortcut-form-${item.id}`;
               const clearShipShortcutFormId = `clear-ship-shortcut-form-${item.id}`;
               const receiveAllShortcutFormId = `receive-all-shortcut-form-${item.id}`;
               const markShortageShortcutFormId = `mark-shortage-shortcut-form-${item.id}`;
@@ -2065,11 +2118,11 @@ export default async function RemissionDetailPage({
                         ? "Ningún LOC alcanza solo."
                         : linePreparationPartial
                           ? "La preparación va corta frente a lo solicitado."
-                          : ""
-                : canEditReceiveItems
-                  ? linePartialReceipt
-                    ? `Van ${receivedQty} ${itemUnitLabel} recibidas y ${shortageQty} ${itemUnitLabel} faltantes.`
-                    : ""
+                  : ""
+              : canEditReceiveItems
+                ? linePartialReceipt
+                  ? `Van ${receivedQty} ${itemUnitLabel} recibidas y ${shortageQty} ${itemUnitLabel} faltantes.`
+                  : ""
                   : "";
               const nextTaskLabel = canEditPrepareItems
                 ? canSplitLine
@@ -2098,6 +2151,8 @@ export default async function RemissionDetailPage({
                   ? ""
                   : activeLineEvent === "loc"
                     ? "LOC guardado."
+                    : activeLineEvent === "complete_line"
+                      ? "Línea lista para despacho."
                     : activeLineEvent === "prepare_auto"
                       ? "Preparación guardada."
                       : activeLineEvent === "ship_prepared"
@@ -2170,7 +2225,7 @@ export default async function RemissionDetailPage({
                       <button
                         type="submit"
                         form={splitFormId}
-                        className="ui-btn ui-btn--brand h-12 w-full px-5 text-base font-semibold md:w-auto"
+                        className="ui-btn ui-btn--action ui-btn--compact w-full px-4 text-sm font-semibold sm:w-auto"
                       >
                         Dividir automáticamente
                       </button>
@@ -2218,7 +2273,7 @@ export default async function RemissionDetailPage({
                                           ? "bg-amber-200 text-amber-900"
                                           : "bg-white text-[var(--ui-muted)]"
                                     }`}>
-                                      {isSelected ? "Elegido" : isBest ? "Recomendado" : "Disponible"}
+                                      {isSelected ? "Elegido" : candidate.qty >= requestedQty ? "Tocar y listo" : isBest ? "Recomendado" : "Disponible"}
                                     </span>
                                   </div>
                                   <div className="mt-2 text-sm text-[var(--ui-muted)]">
@@ -2300,10 +2355,11 @@ export default async function RemissionDetailPage({
                           <div className="mt-3">
                             <button
                               type="submit"
-                              form={shipShortcutFormId}
-                              className="ui-btn ui-btn--brand h-12 w-full px-5 text-base font-semibold md:w-auto"
+                              form={completeLineShortcutFormId}
+                              className="ui-btn ui-btn--action ui-btn--compact w-full px-4 text-sm font-semibold sm:w-auto"
+                              disabled={availableAtSelectedLoc < requestedQty}
                             >
-                              Enviar {preparedQty} {itemUnitLabel}
+                              Dejar lista la línea
                             </button>
                           </div>
                           <details className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3">
@@ -2329,11 +2385,13 @@ export default async function RemissionDetailPage({
                           <div className="mt-3">
                             <button
                               type="submit"
-                              form={prepareShortcutFormId}
-                              className="ui-btn ui-btn--brand h-12 w-full px-5 text-base font-semibold md:w-auto"
-                              disabled={quickPrepareQty <= 0}
+                              form={completeLineShortcutFormId}
+                              className="ui-btn ui-btn--action ui-btn--compact w-full px-4 text-sm font-semibold sm:w-auto"
+                              disabled={availableAtSelectedLoc < requestedQty}
                             >
-                              {quickPrepareText}
+                              {availableAtSelectedLoc >= requestedQty
+                                ? `Dejar lista ${requestedQty} ${itemUnitLabel}`
+                                : `No alcanza para ${requestedQty} ${itemUnitLabel}`}
                             </button>
                           </div>
                           <details className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3">
@@ -2376,7 +2434,7 @@ export default async function RemissionDetailPage({
                           <button
                             type="submit"
                             form={receiveAllShortcutFormId}
-                            className="ui-btn ui-btn--brand h-12 w-full px-5 text-base font-semibold md:w-auto"
+                            className="ui-btn ui-btn--action ui-btn--compact w-full px-4 text-sm font-semibold sm:w-auto"
                             disabled={shippedQty <= 0}
                           >
                             {shippedQty > 0 ? `Recibir ${shippedQty} ${itemUnitLabel}` : "Recibir todo"}
@@ -2493,6 +2551,7 @@ export default async function RemissionDetailPage({
                               name="choose_loc_location_id"
                               value={candidate.locationId}
                             />
+                            <input type="hidden" name="choose_loc_mode" value="complete_line" />
                           </form>
                         );
                       })}
@@ -2501,6 +2560,15 @@ export default async function RemissionDetailPage({
 
                   {canEditPrepareItems ? (
                     <>
+                      <form id={`complete-line-shortcut-form-${item.id}`} action={applyPrepareShortcut}>
+                        <input type="hidden" name="request_id" value={request.id} />
+                        <input
+                          type="hidden"
+                          name="return_origin"
+                          value={cameFromPrepareQueue ? "prepare" : ""}
+                        />
+                        <input type="hidden" name="line_shortcut_target" value={`${item.id}|complete_line`} />
+                      </form>
                       <form id={`prepare-shortcut-form-${item.id}`} action={applyPrepareShortcut}>
                         <input type="hidden" name="request_id" value={request.id} />
                         <input
