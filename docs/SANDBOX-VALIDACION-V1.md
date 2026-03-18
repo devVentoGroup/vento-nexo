@@ -109,5 +109,6 @@ Correcciones aplicadas en detalle de remision (`/inventory/remissions/[id]`):
 - recepcion parcial por linea ahora sincroniza estado de la remision automaticamente (`in_transit` -> `partial`) para reflejar progreso real en pantalla;
 - estado visual por linea ahora se calcula por cantidades reales (solicitado/preparado/enviado/recibido/faltante), evitando chips en `Pendiente` cuando la remision ya fue recibida;
 - `Eliminar remision` ahora valida eliminacion real: si no se puede borrar por trazabilidad, devuelve error claro o aplica fallback de `cancelled` con mensaje explicito;
+- acciones `Cancelar/Eliminar` movidas al listado de remisiones (abiertas e historial), fuera del detalle por documento;
 - botones de accion ajustados a estilo menos agresivo (paleta y densidad visual mas sobria);
 - unidad `un` se normaliza a texto `Unidades` en vistas operativas.

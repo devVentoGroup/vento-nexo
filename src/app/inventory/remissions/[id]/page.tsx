@@ -1446,38 +1446,61 @@ async function updateStatus(formData: FormData) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "Solo puedes registrar recepcion parcial desde en transito." }));
   }
   if (action === "delete") {
-    const { data: deletedRows, error } = await supabase
-      .from("restock_requests")
-      .delete()
-      .eq("id", requestId)
-      .select("id");
+    const deleteRequest = async () =>
+      supabase.from("restock_requests").delete().eq("id", requestId).select("id");
+
+    let { data: deletedRows, error } = await deleteRequest();
 
     if (error) {
-      const fallbackNow = new Date().toISOString();
-      const { error: cancelFallbackError } = await supabase
-        .from("restock_requests")
-        .update({
-          status: "cancelled",
-          cancelled_at: fallbackNow,
-          status_updated_at: fallbackNow,
-        })
-        .eq("id", requestId);
-      if (!cancelFallbackError) {
+      const hasMovementTrace =
+        /inventory_movements/i.test(error.message) ||
+        /related_restock_request_id/i.test(error.message);
+
+      if (!hasMovementTrace) {
+        const { error: deleteItemsError } = await supabase
+          .from("restock_request_items")
+          .delete()
+          .eq("request_id", requestId);
+
+        if (!deleteItemsError) {
+          const retry = await deleteRequest();
+          deletedRows = retry.data;
+          error = retry.error;
+        } else {
+          error = deleteItemsError;
+        }
+      }
+
+      if (error && hasMovementTrace) {
+        const fallbackNow = new Date().toISOString();
+        const { error: cancelFallbackError } = await supabase
+          .from("restock_requests")
+          .update({
+            status: "cancelled",
+            cancelled_at: fallbackNow,
+            status_updated_at: fallbackNow,
+          })
+          .eq("id", requestId);
+        if (!cancelFallbackError) {
+          redirect(
+            buildRemissionDetailHref({
+              requestId,
+              from: returnOrigin,
+              ok: "No se pudo eliminar por trazabilidad. Se canceló la remisión.",
+            })
+          );
+        }
+      }
+
+      if (error) {
         redirect(
           buildRemissionDetailHref({
             requestId,
             from: returnOrigin,
-            ok: "No se pudo eliminar por trazabilidad. Se canceló la remisión.",
+            error: `No se pudo eliminar la remision: ${error.message}`,
           })
         );
       }
-      redirect(
-        buildRemissionDetailHref({
-          requestId,
-          from: returnOrigin,
-          error: `No se pudo eliminar la remision: ${error.message}`,
-        })
-      );
     }
 
     if (!deletedRows || deletedRows.length === 0) {
@@ -1485,7 +1508,7 @@ async function updateStatus(formData: FormData) {
         buildRemissionDetailHref({
           requestId,
           from: returnOrigin,
-          error: "No se pudo eliminar la remisión. Puede estar bloqueada por permisos o trazabilidad.",
+          error: "No se pudo eliminar la remisión. Puede estar bloqueada por permisos o no existir.",
         })
       );
     }
@@ -2053,11 +2076,10 @@ export default async function RemissionDetailPage({
     return canEditPrepareItems && requestedQty > 0 && shippedQty <= 0;
   }).length;
   const canTransitNow = canTransitAction && dispatchReadyLines > 0 && dispatchBlockedLines === 0;
-  const canCancelAction = access.canCancel;
   const hasPrimaryTopAction =
-    canTransitNow || canReceiveAction || canReceivePartialAction || canCancelAction;
+    canTransitNow || canReceiveAction || canReceivePartialAction;
   const showTopActionPanel =
-    canTransitAction || canReceiveAction || canReceivePartialAction || canCancelAction;
+    canTransitAction || canReceiveAction || canReceivePartialAction;
   let responsibleActor = "Sin actor operativo pendiente.";
   if (["pending", "preparing"].includes(currentStatus)) {
     responsibleActor = `${access.fromSiteName || "Centro"} / bodega`;
@@ -2259,26 +2281,6 @@ export default async function RemissionDetailPage({
                 Guardar recepcion parcial
               </button>
             </form>
-          ) : null}
-          {canCancelAction ? (
-            <>
-              <form action={updateStatus}>
-                <input type="hidden" name="request_id" value={request.id} />
-                <input type="hidden" name="return_origin" value={cameFromPrepareQueue ? "prepare" : ""} />
-                <input type="hidden" name="action" value="cancel" />
-                <button className="ui-btn ui-btn--ghost ui-btn--compact w-full text-sm font-semibold sm:w-auto sm:min-w-[180px]">
-                  Cancelar remision
-                </button>
-              </form>
-              <form action={updateStatus}>
-                <input type="hidden" name="request_id" value={request.id} />
-                <input type="hidden" name="return_origin" value={cameFromPrepareQueue ? "prepare" : ""} />
-                <input type="hidden" name="action" value="delete" />
-                <button className="ui-btn ui-btn--danger ui-btn--compact w-full text-sm font-semibold sm:w-auto sm:min-w-[180px]">
-                  Eliminar remision
-                </button>
-              </form>
-            </>
           ) : null}
         </div>
         {!hasPrimaryTopAction ? (

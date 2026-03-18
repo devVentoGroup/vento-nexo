@@ -22,6 +22,7 @@ const APP_ID = "nexo";
 const PERMISSIONS = {
   remissionsRequest: "inventory.remissions.request",
   remissionsAllSites: "inventory.remissions.all_sites",
+  remissionsCancel: "inventory.remissions.cancel",
 };
 
 type SearchParams = {
@@ -234,6 +235,157 @@ function isRequesterOnlyRole(role: string): boolean {
 
 function isWarehouseRole(role: string): boolean {
   return role === "bodeguero";
+}
+
+function canCancelRemissionByRole(role: string): boolean {
+  return ["propietario", "gerente", "gerente_general"].includes(role);
+}
+
+async function runRemissionListAction(formData: FormData) {
+  "use server";
+
+  const supabase = await createClient();
+  const { data: userRes } = await supabase.auth.getUser();
+  const user = userRes.user ?? null;
+  if (!user) {
+    redirect(await buildShellLoginUrl("/inventory/remissions"));
+  }
+
+  const requestId = asText(formData.get("request_id"));
+  const action = asText(formData.get("action"));
+  if (!requestId || !["cancel", "delete"].includes(action)) {
+    redirect(
+      "/inventory/remissions?error=" +
+        encodeURIComponent("Acción inválida para la remisión.")
+    );
+  }
+
+  const { data: employee } = await supabase
+    .from("employees")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+  const actualRole = String(employee?.role ?? "");
+
+  const { data: request } = await supabase
+    .from("restock_requests")
+    .select("id,status,from_site_id,to_site_id")
+    .eq("id", requestId)
+    .maybeSingle();
+
+  if (!request) {
+    redirect(
+      "/inventory/remissions?error=" +
+        encodeURIComponent("La remisión no existe o no está disponible.")
+    );
+  }
+
+  const canFrom = request.from_site_id
+    ? await checkPermissionWithRoleOverride({
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.remissionsCancel,
+        context: { siteId: request.from_site_id },
+        actualRole,
+      })
+    : false;
+  const canTo = request.to_site_id
+    ? await checkPermissionWithRoleOverride({
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.remissionsCancel,
+        context: { siteId: request.to_site_id },
+        actualRole,
+      })
+    : false;
+  const canGlobal = await checkPermissionWithRoleOverride({
+    supabase,
+    appId: APP_ID,
+    code: PERMISSIONS.remissionsCancel,
+    actualRole,
+  });
+  const canCancel = canCancelRemissionByRole(actualRole) && (canFrom || canTo || canGlobal);
+  if (!canCancel) {
+    redirect(
+      "/inventory/remissions?error=" +
+        encodeURIComponent("No tienes permisos para esta acción.")
+    );
+  }
+
+  if (action === "cancel") {
+    const { error } = await supabase
+      .from("restock_requests")
+      .update({
+        status: "cancelled",
+        cancelled_at: new Date().toISOString(),
+        status_updated_at: new Date().toISOString(),
+      })
+      .eq("id", requestId);
+    if (error) {
+      redirect(
+        "/inventory/remissions?error=" +
+          encodeURIComponent(`No se pudo cancelar: ${error.message}`)
+      );
+    }
+    redirect("/inventory/remissions?ok=" + encodeURIComponent("Remisión cancelada."));
+  }
+
+  const deleteRequest = async () =>
+    supabase.from("restock_requests").delete().eq("id", requestId).select("id");
+  let { data: deletedRows, error } = await deleteRequest();
+
+  if (error) {
+    const hasMovementTrace =
+      /inventory_movements/i.test(error.message) ||
+      /related_restock_request_id/i.test(error.message);
+
+    if (!hasMovementTrace) {
+      const { error: deleteItemsError } = await supabase
+        .from("restock_request_items")
+        .delete()
+        .eq("request_id", requestId);
+      if (!deleteItemsError) {
+        const retry = await deleteRequest();
+        deletedRows = retry.data;
+        error = retry.error;
+      } else {
+        error = deleteItemsError;
+      }
+    }
+
+    if (error && hasMovementTrace) {
+      const { error: cancelErr } = await supabase
+        .from("restock_requests")
+        .update({
+          status: "cancelled",
+          cancelled_at: new Date().toISOString(),
+          status_updated_at: new Date().toISOString(),
+        })
+        .eq("id", requestId);
+      if (!cancelErr) {
+        redirect(
+          "/inventory/remissions?ok=" +
+            encodeURIComponent("No se pudo eliminar por trazabilidad. Se canceló la remisión.")
+        );
+      }
+    }
+
+    if (error) {
+      redirect(
+        "/inventory/remissions?error=" +
+          encodeURIComponent(`No se pudo eliminar: ${error.message}`)
+      );
+    }
+  }
+
+  if (!deletedRows || deletedRows.length === 0) {
+    redirect(
+      "/inventory/remissions?error=" +
+        encodeURIComponent("No se pudo eliminar la remisión.")
+    );
+  }
+
+  redirect("/inventory/remissions?ok=" + encodeURIComponent("Remisión eliminada."));
 }
 
 async function createRemission(formData: FormData) {
@@ -567,6 +719,13 @@ export default async function RemissionsPage({
   const requesterOnlyRole = isRequesterOnlyRole(actualRole);
   const warehouseRole = isWarehouseRole(actualRole);
   const canCreate = viewMode === "satélite" && canRequestPermission && !warehouseRole;
+  const canCancelPermission = await checkPermissionWithRoleOverride({
+    supabase,
+    appId: APP_ID,
+    code: PERMISSIONS.remissionsCancel,
+    actualRole,
+  });
+  const canManageRemissionActions = canCancelPermission && canCancelRemissionByRole(actualRole);
 
   const { data: routes } = await supabase
     .from("site_supply_routes")
@@ -1038,16 +1197,36 @@ export default async function RemissionsPage({
                     ) : null}
                     {!compactOperatorView ? <TableCell>{row.notes ?? ""}</TableCell> : null}
                     <TableCell>
-                      <Link
-                        href={`/inventory/remissions/${row.id}`}
-                        className="ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
-                      >
-                        {viewMode === "bodega"
-                          ? "Preparar"
-                          : ["in_transit", "partial"].includes(String(row.status ?? ""))
-                            ? "Recibir"
-                            : "Ver"}
-                      </Link>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Link
+                          href={`/inventory/remissions/${row.id}`}
+                          className="ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
+                        >
+                          {viewMode === "bodega"
+                            ? "Preparar"
+                            : ["in_transit", "partial"].includes(String(row.status ?? ""))
+                              ? "Recibir"
+                              : "Ver"}
+                        </Link>
+                        {canManageRemissionActions && String(row.status ?? "") !== "cancelled" ? (
+                          <form action={runRemissionListAction}>
+                            <input type="hidden" name="request_id" value={row.id} />
+                            <input type="hidden" name="action" value="cancel" />
+                            <button className="ui-btn ui-btn--ghost ui-btn--compact px-3 text-sm font-semibold">
+                              Cancelar
+                            </button>
+                          </form>
+                        ) : null}
+                        {canManageRemissionActions ? (
+                          <form action={runRemissionListAction}>
+                            <input type="hidden" name="request_id" value={row.id} />
+                            <input type="hidden" name="action" value="delete" />
+                            <button className="ui-btn ui-btn--danger ui-btn--compact px-3 text-sm font-semibold">
+                              Eliminar
+                            </button>
+                          </form>
+                        ) : null}
+                      </div>
                     </TableCell>
                   </tr>
                 );
@@ -1140,12 +1319,32 @@ export default async function RemissionsPage({
                     ) : null}
                     {!compactOperatorView ? <TableCell>{row.notes ?? ""}</TableCell> : null}
                     <TableCell>
-                      <Link
-                        href={`/inventory/remissions/${row.id}`}
-                        className="ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
-                      >
-                        Ver
-                      </Link>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Link
+                          href={`/inventory/remissions/${row.id}`}
+                          className="ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
+                        >
+                          Ver
+                        </Link>
+                        {canManageRemissionActions && String(row.status ?? "") !== "cancelled" ? (
+                          <form action={runRemissionListAction}>
+                            <input type="hidden" name="request_id" value={row.id} />
+                            <input type="hidden" name="action" value="cancel" />
+                            <button className="ui-btn ui-btn--ghost ui-btn--compact px-3 text-sm font-semibold">
+                              Cancelar
+                            </button>
+                          </form>
+                        ) : null}
+                        {canManageRemissionActions ? (
+                          <form action={runRemissionListAction}>
+                            <input type="hidden" name="request_id" value={row.id} />
+                            <input type="hidden" name="action" value="delete" />
+                            <button className="ui-btn ui-btn--danger ui-btn--compact px-3 text-sm font-semibold">
+                              Eliminar
+                            </button>
+                          </form>
+                        ) : null}
+                      </div>
                     </TableCell>
                   </tr>
                 );
