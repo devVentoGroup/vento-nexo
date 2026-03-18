@@ -100,22 +100,38 @@ async function resolveContextMeta(
   return { siteType, areaKind };
 }
 
+async function loadAccessibleSiteIds(supabase: SupabaseClient): Promise<Set<string>> {
+  const { data: rows, error } = await supabase
+    .from("employee_sites")
+    .select("site_id")
+    .eq("is_active", true);
+  if (error || !rows) return new Set();
+  return new Set(
+    rows
+      .map((row: { site_id?: string | null }) => String(row.site_id ?? "").trim())
+      .filter(Boolean)
+  );
+}
+
 function scopeMatches(
   entry: RolePermissionEntry,
   context: { siteId?: string | null; areaId?: string | null },
-  meta: { siteType: string | null; areaKind: string | null }
+  meta: { siteType: string | null; areaKind: string | null },
+  access: { siteIds: Set<string> }
 ) {
   const scopeType = entry.scope_type;
   if (!scopeType || scopeType === "global") return true;
 
   if (scopeType === "site") {
     if (!context.siteId) return false;
+    if (!access.siteIds.has(context.siteId)) return false;
     if (entry.scope_site_id && entry.scope_site_id !== context.siteId) return false;
     return true;
   }
 
   if (scopeType === "site_type") {
     if (!context.siteId || !meta.siteType) return false;
+    if (!access.siteIds.has(context.siteId)) return false;
     if (entry.scope_site_type && entry.scope_site_type !== meta.siteType) return false;
     return true;
   }
@@ -150,11 +166,14 @@ export async function isPermissionAllowedForRole(
   const needsSiteType = matching.some((entry) => entry.scope_type === "site_type");
   const needsAreaKind = matching.some((entry) => entry.scope_type === "area_kind");
   const needsMeta = needsSiteType || needsAreaKind;
+  const accessibleSiteIds = await loadAccessibleSiteIds(supabase);
   const meta = needsMeta
     ? await resolveContextMeta(supabase, context.siteId ?? null, context.areaId ?? null)
     : { siteType: null, areaKind: null };
 
-  return matching.some((entry) => scopeMatches(entry, context, meta));
+  return matching.some((entry) =>
+    scopeMatches(entry, context, meta, { siteIds: accessibleSiteIds })
+  );
 }
 
 export async function checkPermissionWithRoleOverride({
