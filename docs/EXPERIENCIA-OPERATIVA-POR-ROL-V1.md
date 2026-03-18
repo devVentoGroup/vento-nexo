@@ -32,6 +32,15 @@ No debe ver como flujo principal:
 - configuraciones;
 - paneles tecnicos de bodega.
 
+Quien solicita remisiones en satelite (v1):
+- `cocinero`
+- `barista`
+- `cajero`
+
+Roles de gestión en sede satélite:
+- supervisan y corrigen;
+- no usan el flujo de solicitud como actor principal.
+
 ### Centro de produccion / bodega
 
 Responsabilidad diaria:

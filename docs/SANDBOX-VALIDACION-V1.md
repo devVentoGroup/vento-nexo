@@ -123,7 +123,7 @@ Adicional:
 Ejecutar esta validación con 3 perfiles:
 - `propietario` o `gerente_general` (gestión completa);
 - `bodeguero` (operación centro);
-- usuario satélite con permiso de solicitar/recibir.
+- usuario satélite operativo de rol `cocinero`, `barista` o `cajero` (solicita/recibe).
 
 ### Casos por estado y acción
 

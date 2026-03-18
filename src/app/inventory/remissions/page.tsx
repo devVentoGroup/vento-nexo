@@ -233,8 +233,8 @@ function isRequesterOnlyRole(role: string): boolean {
   return ["cocinero", "barista", "cajero"].includes(role);
 }
 
-function isWarehouseRole(role: string): boolean {
-  return role === "bodeguero";
+function canRequestRemissionByRole(role: string): boolean {
+  return ["cocinero", "barista", "cajero"].includes(role);
 }
 
 function canCancelRemissionByRole(role: string): boolean {
@@ -590,10 +590,10 @@ async function createRemission(formData: FormData) {
     context: { siteId: toSiteId },
     actualRole,
   });
-  if (actualRole === "bodeguero") {
+  if (!canRequestRemissionByRole(actualRole)) {
     redirect(
       "/inventory/remissions?error=" +
-        encodeURIComponent("Bodega no puede crear solicitudes. Usa la vista de preparar remisiones.")
+        encodeURIComponent("Solo cocineros, baristas o cajeros de sede pueden pedir remisiones.")
     );
   }
   if (!canRequest) {
@@ -802,8 +802,8 @@ export default async function RemissionsPage({
 
   const viewMode = isAllSites ? "all" : isProductionCenter ? "bodega" : "satélite";
   const requesterOnlyRole = isRequesterOnlyRole(actualRole);
-  const warehouseRole = isWarehouseRole(actualRole);
-  const canCreate = viewMode === "satélite" && canRequestPermission && !warehouseRole;
+  const canCreateByRole = canRequestRemissionByRole(actualRole);
+  const canCreate = viewMode === "satélite" && canRequestPermission && canCreateByRole;
   const canCancelPermission = await checkPermissionWithRoleOverride({
     supabase,
     appId: APP_ID,
