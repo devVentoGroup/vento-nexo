@@ -155,6 +155,10 @@ function isRequesterOnlyRole(role: string): boolean {
   return ["cocinero", "barista", "cajero"].includes(role);
 }
 
+function canCancelRemissionByRole(role: string): boolean {
+  return ["propietario", "gerente", "gerente_general"].includes(role);
+}
+
 function asText(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -270,13 +274,14 @@ async function loadAccessContext(
         actualRole: role,
       })
     : false;
-  const canCancel = await checkPermissionWithRoleOverride({
+  const canCancelPermission = await checkPermissionWithRoleOverride({
     supabase,
     appId: APP_ID,
     code: PERMISSIONS.remissionsCancel,
     context: { siteId: fromSiteId || toSiteId || null },
     actualRole: role,
   });
+  const canCancel = canCancelRemissionByRole(effectiveRole) && canCancelPermission;
 
   const canPrepare = fromSiteType === "production_center" && canPreparePermission;
   const canTransit = canPrepare;
