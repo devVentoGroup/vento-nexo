@@ -53,6 +53,19 @@ export async function requireAppAccess({
     const normalizedCodes = permissionCodes.map((code) =>
       normalizePermissionCode(appId, code)
     );
+
+    // If user already has direct permission, do not force role-override evaluation.
+    // This keeps employee-level overrides effective in test mode.
+    const directChecks = await Promise.all(
+      normalizedCodes.map((code) =>
+        client.rpc("has_permission", { p_permission_code: code })
+      )
+    );
+    const allDirectAllowed = directChecks.every((res) => !res.error && Boolean(res.data));
+    if (allDirectAllowed) {
+      return { supabase: client, user };
+    }
+
     const overrideRole = await getRoleOverrideFromCookies();
     let canOverride = false;
     let actualRole = "";

@@ -7,6 +7,10 @@ import {
   checkPermissionWithRoleOverride,
   getRoleOverrideFromCookies,
 } from "@/lib/auth/role-override";
+import {
+  buildOperationalBlockMessage,
+  getOperationalContext,
+} from "@/lib/auth/operational-context";
 import { normalizeUnitCode, roundQuantity } from "@/lib/inventory/uom";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
@@ -290,6 +294,36 @@ function buildRemissionDetailHref(params: {
     : `/inventory/remissions/${params.requestId}`;
 }
 
+async function enforceOperationalGateOrRedirect(params: {
+  supabase: SupabaseClient;
+  userId: string;
+  siteId: string | null | undefined;
+  requestId: string;
+  returnOrigin: "" | "prepare";
+  fallbackMessage: string;
+}) {
+  const { supabase, userId, siteId, requestId, returnOrigin, fallbackMessage } = params;
+  const normalizedSiteId = String(siteId ?? "").trim();
+  if (!normalizedSiteId) return;
+
+  const opContext = await getOperationalContext({
+    supabase,
+    employeeId: userId,
+    siteId: normalizedSiteId,
+    appCode: APP_ID,
+  });
+
+  if (!opContext?.can_operate) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: buildOperationalBlockMessage(opContext, fallbackMessage),
+      })
+    );
+  }
+}
+
 async function loadAccessContext(
   supabase: SupabaseClient,
   userId: string,
@@ -415,6 +449,27 @@ async function updateItems(formData: FormData) {
   const allowReceived =
     access.canReceive && ["in_transit", "partial"].includes(currentStatus);
   const allowArea = access.canCancel || allowPrepared;
+
+  if (allowPrepared) {
+    await enforceOperationalGateOrRedirect({
+      supabase,
+      userId: user.id,
+      siteId: request?.from_site_id,
+      requestId,
+      returnOrigin,
+      fallbackMessage: "No puedes preparar esta remisión en este momento.",
+    });
+  }
+  if (allowReceived) {
+    await enforceOperationalGateOrRedirect({
+      supabase,
+      userId: user.id,
+      siteId: request?.to_site_id,
+      requestId,
+      returnOrigin,
+      fallbackMessage: "No puedes recibir esta remisión en este momento.",
+    });
+  }
 
   const itemIds = formData.getAll("item_id").map((v) => String(v).trim());
   const prepared = formData.getAll("prepared_quantity").map((v) => String(v).trim());
@@ -717,6 +772,15 @@ async function splitItem(formData: FormData) {
     );
   }
 
+  await enforceOperationalGateOrRedirect({
+    supabase,
+    userId: user.id,
+    siteId: request?.from_site_id,
+    requestId,
+    returnOrigin,
+    fallbackMessage: "No puedes preparar esta remisión en este momento.",
+  });
+
   const { error } = await supabase.rpc("split_restock_request_item", {
     p_item_id: itemId,
     p_split_quantity: splitQuantity,
@@ -805,6 +869,15 @@ async function chooseSourceLoc(formData: FormData) {
     );
   }
 
+  await enforceOperationalGateOrRedirect({
+    supabase,
+    userId: user.id,
+    siteId: request?.from_site_id,
+    requestId,
+    returnOrigin,
+    fallbackMessage: "No puedes preparar esta remisión en este momento.",
+  });
+
   const fromSiteId = String(request?.from_site_id ?? "").trim();
   if (!fromSiteId) {
     redirect(
@@ -815,6 +888,15 @@ async function chooseSourceLoc(formData: FormData) {
       })
     );
   }
+
+  await enforceOperationalGateOrRedirect({
+    supabase,
+    userId: user.id,
+    siteId: request?.from_site_id,
+    requestId,
+    returnOrigin,
+    fallbackMessage: "No puedes preparar esta remisión en este momento.",
+  });
 
   const { data: itemRow } = await supabase
     .from("restock_request_items")
@@ -1235,6 +1317,15 @@ async function applyReceiveShortcut(formData: FormData) {
     );
   }
 
+  await enforceOperationalGateOrRedirect({
+    supabase,
+    userId: user.id,
+    siteId: request?.to_site_id,
+    requestId,
+    returnOrigin,
+    fallbackMessage: "No puedes recibir esta remisión en este momento.",
+  });
+
   const { data: itemRow } = await supabase
     .from("restock_request_items")
     .select("id,quantity,prepared_quantity,shipped_quantity,received_quantity,shortage_quantity")
@@ -1456,6 +1547,28 @@ async function updateStatus(formData: FormData) {
         error: "Esta acción se ejecuta desde la bandeja de remisiones.",
       })
     );
+  }
+
+  if (action === "prepare" || action === "transit") {
+    await enforceOperationalGateOrRedirect({
+      supabase,
+      userId: user.id,
+      siteId: request?.from_site_id,
+      requestId,
+      returnOrigin,
+      fallbackMessage: "No puedes preparar/despachar esta remisión en este momento.",
+    });
+  }
+
+  if (action === "receive" || action === "receive_partial") {
+    await enforceOperationalGateOrRedirect({
+      supabase,
+      userId: user.id,
+      siteId: request?.to_site_id,
+      requestId,
+      returnOrigin,
+      fallbackMessage: "No puedes recibir esta remisión en este momento.",
+    });
   }
 
   if (action === "prepare" && currentStatus !== "pending") {

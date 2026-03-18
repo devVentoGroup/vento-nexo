@@ -1,6 +1,7 @@
 ﻿import Link from "next/link";
 
 import { requireAppAccess } from "@/lib/auth/guard";
+import { checkPermissionWithRoleOverride } from "@/lib/auth/role-override";
 
 export const dynamic = "force-dynamic";
 
@@ -90,15 +91,21 @@ export default async function RemissionsPreparePage() {
     .single();
 
   const role = String((employeeRow as { role?: string } | null)?.role ?? "");
-  const canPrepareByRole = ["bodeguero", "propietario", "gerente_general"].includes(role);
-  if (!canPrepareByRole) {
+  const canPreparePermission = await checkPermissionWithRoleOverride({
+    supabase,
+    appId: "nexo",
+    code: "inventory.remissions.prepare",
+    context: { siteId },
+    actualRole: role,
+  });
+  if (!canPreparePermission) {
     return (
       <div className="w-full">
         <Link href="/inventory/remissions" className="ui-caption underline">
           Volver al hub de remisiones
         </Link>
         <div className="mt-4 ui-alert ui-alert--neutral">
-          Esta vista es para bodegueros, gerentes y propietarios. Tu rol actual no tiene acceso.
+          Tu rol actual no tiene permiso para preparar remisiones en esta sede.
         </div>
       </div>
     );

@@ -4,6 +4,10 @@ import { redirect } from "next/navigation";
 
 import { requireAppAccess } from "@/lib/auth/guard";
 import { checkPermissionWithRoleOverride } from "@/lib/auth/role-override";
+import {
+  buildOperationalBlockMessage,
+  getOperationalContext,
+} from "@/lib/auth/operational-context";
 import { createClient } from "@/lib/supabase/server";
 import { RemissionsCreateForm } from "@/components/vento/remissions-create-form";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
@@ -569,6 +573,23 @@ async function createRemission(formData: FormData) {
 
   if (!toSiteId || !fromSiteId) {
     redirect("/inventory/remissions?error=" + encodeURIComponent("Debes definir origen y destino."));
+  }
+  const opContext = await getOperationalContext({
+    supabase,
+    employeeId: user.id,
+    siteId: toSiteId,
+    appCode: APP_ID,
+  });
+  if (!opContext?.can_operate) {
+    redirect(
+      "/inventory/remissions?error=" +
+        encodeURIComponent(
+          buildOperationalBlockMessage(
+            opContext,
+            "No puedes solicitar remisiones en este momento para esta sede."
+          )
+        )
+    );
   }
 
   const canRequest = await checkPermissionWithRoleOverride({

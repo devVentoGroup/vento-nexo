@@ -9,6 +9,21 @@ Fecha: `2026-03-18`
 - No crear roles nuevos.
 - Usar tus usuarios actuales + selector de rol/override en Nexo.
 - Cada caso es autocontenido: incluye rol, sede, datos, pasos y resultado.
+- Gate operativo activo (BD): para `nexo` se exige turno vigente + check-in activo + coincidencia de sede.
+- Excepción de gestión: quien tenga permiso `nexo.inventory.remissions.all_sites` puede operar sin bloqueo por gate.
+- Excepción explícita por rol: `propietario` y `gerente_general` quedan fuera del gate (no requieren turno/check-in).
+
+## Estado técnico aplicado
+
+- Migración aplicada: `20260318233000_nexo_operational_context_policy_v1.sql`.
+- Ajuste aplicado: `20260318234000_nexo_operational_context_owner_manager_bypass.sql`.
+- Override temporal aplicado (cuenta de pruebas): `20260318235000_nexo_temp_full_access_user_override.sql` + `20260318235500_nexo_temp_full_access_user_override_fallback.sql`.
+  - Efecto: esa cuenta tiene permisos globales de `nexo` aunque cambie el rol activo en modo prueba.
+- Objetos nuevos:
+  - Tabla `public.app_operation_policies`.
+  - RPC `public.get_operational_context(...)`.
+- Uso en NEXO:
+  - Acciones críticas de remisiones bloquean con mensaje claro si el contexto operativo no cumple.
 
 ## Datos base del sandbox
 
