@@ -1369,6 +1369,24 @@ async function updateStatus(formData: FormData) {
   }
 
   const action = asText(formData.get("action"));
+  const allowedActions = new Set([
+    "prepare",
+    "transit",
+    "receive",
+    "receive_partial",
+    "close",
+    "cancel",
+    "delete",
+  ]);
+  if (!allowedActions.has(action)) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: "Accion invalida. Vuelve a intentar desde el botón correspondiente.",
+      })
+    );
+  }
 
   const { data: request } = await supabase
     .from("restock_requests")
@@ -1793,7 +1811,20 @@ async function updateStatus(formData: FormData) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: error.message }));
   }
 
-  redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, ok: "status_updated" }));
+  const okCodeByAction: Record<string, string> = {
+    prepare: "preparing_started",
+    transit: "transit_started",
+    receive: "received_complete",
+    receive_partial: "received_partial",
+    cancel: "cancelled",
+  };
+  redirect(
+    buildRemissionDetailHref({
+      requestId,
+      from: returnOrigin,
+      ok: okCodeByAction[action] ?? "status_updated",
+    })
+  );
 }
 
 export default async function RemissionDetailPage({
@@ -1818,6 +1849,16 @@ export default async function RemissionDetailPage({
         ? "Linea partida. Ya puedes asignar un LOC distinto por linea."
       : sp.ok === "status_updated"
         ? "Estado actualizado."
+        : sp.ok === "preparing_started"
+          ? "Preparación iniciada."
+          : sp.ok === "transit_started"
+            ? "Remisión enviada a tránsito."
+            : sp.ok === "received_partial"
+              ? "Recepción parcial registrada."
+              : sp.ok === "received_complete"
+                ? "Recepción completa registrada."
+                : sp.ok === "cancelled"
+                  ? "Remisión cancelada."
         : sp.ok
           ? safeDecodeURIComponent(sp.ok)
           : "";
