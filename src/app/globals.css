@@ -380,11 +380,11 @@ body {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 56px;
-  padding: 0 20px;
+  height: 50px;
+  padding: 0 18px;
   border-radius: var(--ui-radius-control);
-  font-size: 1rem;
-  font-weight: 600;
+  font-size: 0.97rem;
+  font-weight: 550;
   transition: background-color 160ms ease, transform 140ms ease, box-shadow 160ms ease, border-color 160ms ease;
   gap: 8px;
   -webkit-tap-highlight-color: transparent;
@@ -405,24 +405,24 @@ body {
 }
 
 .ui-btn--action {
-  background: linear-gradient(180deg, #F0DCB0 0%, #E4C07A 100%);
-  color: #5A4216;
-  border: 1px solid rgba(124, 91, 30, 0.24);
-  box-shadow: 0 4px 14px rgba(124, 91, 30, 0.14);
+  background: linear-gradient(180deg, #EFE2C7 0%, #E7CF9E 100%);
+  color: #4B3A1B;
+  border: 1px solid rgba(112, 85, 35, 0.24);
+  box-shadow: 0 3px 10px rgba(124, 91, 30, 0.11);
 }
 
 .ui-btn--action:hover {
-  background: linear-gradient(180deg, #F2E2BC 0%, #D9B169 100%);
+  background: linear-gradient(180deg, #F2E7D1 0%, #E0C28A 100%);
   transform: translateY(-1px);
-  box-shadow: 0 10px 20px rgba(124, 91, 30, 0.2);
+  box-shadow: 0 8px 18px rgba(124, 91, 30, 0.16);
 }
 
 .ui-btn--compact {
-  height: 44px;
+  height: 40px;
   border-radius: 12px;
-  padding: 0 14px;
-  font-size: 0.93rem;
-  font-weight: 600;
+  padding: 0 12px;
+  font-size: 0.9rem;
+  font-weight: 540;
 }
 
 .ui-btn--primary {
@@ -437,14 +437,16 @@ body {
 }
 
 .ui-btn--danger {
-  background: var(--ui-danger);
-  color: var(--ui-on-primary);
+  background: linear-gradient(180deg, #FDE7E7 0%, #F8D0D0 100%);
+  color: #7A1F1F;
+  border: 1px solid rgba(170, 47, 47, 0.25);
+  box-shadow: 0 2px 8px rgba(170, 47, 47, 0.12);
 }
 
 .ui-btn--danger:hover {
-  background: #B91C1C;
+  background: linear-gradient(180deg, #FCDDDD 0%, #F5C4C4 100%);
   transform: translateY(-1px);
-  box-shadow: var(--ui-shadow-2);
+  box-shadow: 0 7px 16px rgba(170, 47, 47, 0.18);
 }
 
 .ui-btn--ghost {

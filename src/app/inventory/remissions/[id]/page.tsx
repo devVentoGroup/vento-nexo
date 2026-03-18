@@ -125,6 +125,74 @@ function formatStatus(status?: string | null) {
   }
 }
 
+function deriveItemStatus(params: {
+  requestedQty: number;
+  preparedQty: number;
+  shippedQty: number;
+  receivedQty: number;
+  shortageQty: number;
+}): "pending" | "preparing" | "in_transit" | "partial" | "received" {
+  const requestedQty = roundQuantity(Number(params.requestedQty ?? 0));
+  const preparedQty = roundQuantity(Number(params.preparedQty ?? 0));
+  const shippedQty = roundQuantity(Number(params.shippedQty ?? 0));
+  const receivedQty = roundQuantity(Number(params.receivedQty ?? 0));
+  const shortageQty = roundQuantity(Number(params.shortageQty ?? 0));
+  const accountedQty = roundQuantity(receivedQty + shortageQty);
+
+  if (shippedQty > 0) {
+    if (accountedQty >= shippedQty) return "received";
+    if (accountedQty > 0) return "partial";
+    return "in_transit";
+  }
+  if (preparedQty > 0) return "preparing";
+  if (requestedQty > 0) return "pending";
+  return "pending";
+}
+
+async function syncReceiveRequestStatus(params: {
+  supabase: SupabaseClient;
+  requestId: string;
+  userId: string;
+}) {
+  const { supabase, requestId, userId } = params;
+  const { data: receiveRows, error: receiveRowsError } = await supabase
+    .from("restock_request_items")
+    .select("shipped_quantity,received_quantity,shortage_quantity")
+    .eq("request_id", requestId);
+
+  if (receiveRowsError) {
+    return receiveRowsError.message;
+  }
+
+  const rows = (receiveRows ?? []) as Array<{
+    shipped_quantity: number | null;
+    received_quantity: number | null;
+    shortage_quantity: number | null;
+  }>;
+  let anyAccounted = false;
+
+  for (const row of rows) {
+    const shippedQty = roundQuantity(Number(row.shipped_quantity ?? 0));
+    const receivedQty = roundQuantity(Number(row.received_quantity ?? 0));
+    const shortageQty = roundQuantity(Number(row.shortage_quantity ?? 0));
+    const accountedQty = roundQuantity(receivedQty + shortageQty);
+    if (accountedQty > 0) anyAccounted = true;
+    if (shippedQty <= 0) continue;
+  }
+
+  const now = new Date().toISOString();
+  const status = anyAccounted ? "partial" : "in_transit";
+  const { error } = await supabase
+    .from("restock_requests")
+    .update({
+      status,
+      ...(anyAccounted ? { received_at: now, received_by: userId } : {}),
+      status_updated_at: now,
+    })
+    .eq("id", requestId);
+  return error?.message ?? null;
+}
+
 function formatDateTime(value: string | null | undefined): string {
   const raw = String(value ?? "").trim();
   if (!raw) return "-";
@@ -516,6 +584,7 @@ async function updateItems(formData: FormData) {
     if (!itemId) continue;
 
     const updates: Record<string, number | string | null> = {};
+    const itemState = itemStateById.get(itemId);
 
     if (allowPrepared) {
       updates.prepared_quantity = parseNumber(prepared[i] ?? "0");
@@ -530,6 +599,37 @@ async function updateItems(formData: FormData) {
 
     if (allowArea) {
       updates.production_area_kind = areaKinds[i] || null;
+    }
+
+    if (itemState) {
+      const requestedQty = roundQuantity(Number(itemState.quantity ?? 0));
+      const preparedQty = roundQuantity(
+        Number(
+          allowPrepared ? updates.prepared_quantity ?? 0 : itemState.prepared_quantity ?? 0
+        )
+      );
+      const shippedQty = roundQuantity(
+        Number(
+          allowPrepared ? updates.shipped_quantity ?? 0 : itemState.shipped_quantity ?? 0
+        )
+      );
+      const receivedQty = roundQuantity(
+        Number(
+          allowReceived ? updates.received_quantity ?? 0 : itemState.received_quantity ?? 0
+        )
+      );
+      const shortageQty = roundQuantity(
+        Number(
+          allowReceived ? updates.shortage_quantity ?? 0 : itemState.shortage_quantity ?? 0
+        )
+      );
+      updates.item_status = deriveItemStatus({
+        requestedQty,
+        preparedQty,
+        shippedQty,
+        receivedQty,
+        shortageQty,
+      });
     }
 
     if (!Object.keys(updates).length) {
@@ -1034,6 +1134,13 @@ async function applyPrepareShortcut(formData: FormData) {
     .update({
       prepared_quantity: nextPrepared,
       shipped_quantity: nextShipped,
+      item_status: deriveItemStatus({
+        requestedQty,
+        preparedQty: nextPrepared,
+        shippedQty: nextShipped,
+        receivedQty: 0,
+        shortageQty: 0,
+      }),
     })
     .eq("id", itemId);
 
@@ -1111,7 +1218,7 @@ async function applyReceiveShortcut(formData: FormData) {
 
   const { data: itemRow } = await supabase
     .from("restock_request_items")
-    .select("id,shipped_quantity,received_quantity,shortage_quantity")
+    .select("id,quantity,prepared_quantity,shipped_quantity,received_quantity,shortage_quantity")
     .eq("id", itemId)
     .eq("request_id", requestId)
     .single();
@@ -1215,11 +1322,27 @@ async function applyReceiveShortcut(formData: FormData) {
     .update({
       received_quantity: nextReceived,
       shortage_quantity: nextShortage,
+      item_status: deriveItemStatus({
+        requestedQty: roundQuantity(Number(itemRow.quantity ?? 0)),
+        preparedQty: roundQuantity(Number(itemRow.prepared_quantity ?? 0)),
+        shippedQty,
+        receivedQty: nextReceived,
+        shortageQty: nextShortage,
+      }),
     })
     .eq("id", itemId);
 
   if (error) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: error.message }));
+  }
+
+  const syncError = await syncReceiveRequestStatus({
+    supabase,
+    requestId,
+    userId: user.id,
+  });
+  if (syncError) {
+    redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: syncError }));
   }
 
   redirect(
@@ -1305,8 +1428,31 @@ async function updateStatus(formData: FormData) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "Solo puedes registrar recepcion parcial desde en transito." }));
   }
   if (action === "delete") {
-    const { error } = await supabase.from("restock_requests").delete().eq("id", requestId);
+    const { data: deletedRows, error } = await supabase
+      .from("restock_requests")
+      .delete()
+      .eq("id", requestId)
+      .select("id");
+
     if (error) {
+      const fallbackNow = new Date().toISOString();
+      const { error: cancelFallbackError } = await supabase
+        .from("restock_requests")
+        .update({
+          status: "cancelled",
+          cancelled_at: fallbackNow,
+          status_updated_at: fallbackNow,
+        })
+        .eq("id", requestId);
+      if (!cancelFallbackError) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            ok: "No se pudo eliminar por trazabilidad. Se canceló la remisión.",
+          })
+        );
+      }
       redirect(
         buildRemissionDetailHref({
           requestId,
@@ -1315,6 +1461,17 @@ async function updateStatus(formData: FormData) {
         })
       );
     }
+
+    if (!deletedRows || deletedRows.length === 0) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          error: "No se pudo eliminar la remisión. Puede estar bloqueada por permisos o trazabilidad.",
+        })
+      );
+    }
+
     if (returnOrigin === "prepare") {
       redirect("/inventory/remissions/prepare?ok=deleted");
     }
@@ -1455,11 +1612,13 @@ async function updateStatus(formData: FormData) {
   if (action === "receive" || action === "receive_partial") {
     const { data: itemsData } = await supabase
       .from("restock_request_items")
-      .select("id,product_id,shipped_quantity,received_quantity,shortage_quantity")
+      .select("id,product_id,quantity,prepared_quantity,shipped_quantity,received_quantity,shortage_quantity")
       .eq("request_id", requestId);
     const itemRows = (itemsData ?? []) as Array<{
       id: string;
       product_id: string;
+      quantity: number | null;
+      prepared_quantity: number | null;
       shipped_quantity: number | null;
       received_quantity: number | null;
       shortage_quantity: number | null;
@@ -1493,6 +1652,27 @@ async function updateStatus(formData: FormData) {
       }
       if (accountedQty > 0) anyAccountedQty = true;
       if (shippedQty > 0 && accountedQty !== shippedQty) allFullyAccounted = false;
+
+      const nextItemStatus = deriveItemStatus({
+        requestedQty: roundQuantity(Number(row.quantity ?? 0)),
+        preparedQty: roundQuantity(Number(row.prepared_quantity ?? 0)),
+        shippedQty,
+        receivedQty,
+        shortageQty,
+      });
+      const { error: itemStatusError } = await supabase
+        .from("restock_request_items")
+        .update({ item_status: nextItemStatus })
+        .eq("id", row.id);
+      if (itemStatusError) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: itemStatusError.message,
+          })
+        );
+      }
     }
 
     if (!anyAccountedQty) {
@@ -2193,7 +2373,15 @@ export default async function RemissionDetailPage({
                       : linePendingReceipt
                         ? "Pendiente de recepción"
                         : "Sin envío"
-                  : formatStatus(item.item_status).label;
+                  : formatStatus(
+                      deriveItemStatus({
+                        requestedQty,
+                        preparedQty,
+                        shippedQty,
+                        receivedQty,
+                        shortageQty,
+                      })
+                    ).label;
               const prepareStepLabel = !item.source_location_id
                 ? "Paso 1: elige el LOC"
                 : preparedQty <= 0

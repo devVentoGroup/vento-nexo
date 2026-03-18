@@ -102,3 +102,12 @@ No elimina:
 - productos reales;
 - categorias reales;
 - rutas operativas reales fuera del sandbox.
+
+## Actualizacion 2026-03-18
+
+Correcciones aplicadas en detalle de remision (`/inventory/remissions/[id]`):
+- recepcion parcial por linea ahora sincroniza estado de la remision automaticamente (`in_transit` -> `partial`) para reflejar progreso real en pantalla;
+- estado visual por linea ahora se calcula por cantidades reales (solicitado/preparado/enviado/recibido/faltante), evitando chips en `Pendiente` cuando la remision ya fue recibida;
+- `Eliminar remision` ahora valida eliminacion real: si no se puede borrar por trazabilidad, devuelve error claro o aplica fallback de `cancelled` con mensaje explicito;
+- botones de accion ajustados a estilo menos agresivo (paleta y densidad visual mas sobria);
+- unidad `un` se normaliza a texto `Unidades` en vistas operativas.
