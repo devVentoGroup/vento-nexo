@@ -310,6 +310,9 @@ Follow-up:
 - ajuste visual fino en detalle de remisiones:
   - los CTA principales pasaron a estilo mas compacto y menos vistoso en desktop;
   - se estandarizo el label de unidad para que `un` se muestre como `Unidades`, mejorando lectura para operacion.
+- recepcion parcial en detalle de remisiones:
+  - `Cambiar o ajustar` ya permite registrar `cantidad recibida` distinta al total enviado;
+  - el faltante se calcula automaticamente como `enviado - recibido`, para cerrar casos parciales (Caso C) sin forzar `todo o nada`.
 - se reconoce que, aun con esos ajustes, el problema de remisiones sigue siendo de arquitectura y no de microcopys o cards:
   - la vista actual todavia mezcla demasiadas capas del flujo;
   - se congela el enfoque de seguir parchando el detalle actual como solucion principal;

@@ -850,6 +850,7 @@ async function applyPrepareShortcut(formData: FormData) {
   let nextShipped = roundQuantity(Number(itemRow.shipped_quantity ?? 0));
   const requestedQty = roundQuantity(Number(itemRow.quantity ?? 0));
   const sourceLocId = String(itemRow.source_location_id ?? "").trim();
+  const manualPrepareRaw = asText(formData.get("prepare_qty"));
 
   let availableAtLoc = 0;
   if (shortcut !== "clear_prepare" && shortcut !== "clear_ship") {
@@ -923,6 +924,39 @@ async function applyPrepareShortcut(formData: FormData) {
         );
       }
       nextShipped = nextPrepared;
+      break;
+    }
+    case "set_prepare_partial": {
+      const partialQty = roundQuantity(parseNumber(manualPrepareRaw || "0"));
+      if (partialQty <= 0) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: "Define una cantidad parcial mayor a 0.",
+          })
+        );
+      }
+      if (requestedQty > 0 && partialQty > requestedQty) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: `La cantidad parcial (${partialQty}) no puede superar la solicitada (${requestedQty}).`,
+          })
+        );
+      }
+      if (availableAtLoc > 0 && partialQty > availableAtLoc) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: `La cantidad parcial (${partialQty}) supera el stock del LOC (${availableAtLoc}).`,
+          })
+        );
+      }
+      nextPrepared = partialQty;
+      nextShipped = partialQty;
       break;
     }
     case "clear_prepare": {
@@ -1090,6 +1124,8 @@ async function applyReceiveShortcut(formData: FormData) {
   const shippedQty = roundQuantity(Number(itemRow.shipped_quantity ?? 0));
   let nextReceived = roundQuantity(Number(itemRow.received_quantity ?? 0));
   let nextShortage = roundQuantity(Number(itemRow.shortage_quantity ?? 0));
+  const manualReceiveRaw = asText(formData.get("receive_qty"));
+  const manualShortageRaw = asText(formData.get("shortage_qty"));
 
   switch (shortcut) {
     case "receive_all":
@@ -1121,6 +1157,25 @@ async function applyReceiveShortcut(formData: FormData) {
       nextReceived = 0;
       nextShortage = 0;
       break;
+    case "set_partial": {
+      if (shippedQty <= 0) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: "Esta línea no tiene envío confirmado todavía.",
+          })
+        );
+      }
+      const receivedQtyManual = roundQuantity(parseNumber(manualReceiveRaw || "0"));
+      const shortageQtyManual =
+        manualShortageRaw === ""
+          ? roundQuantity(Math.max(shippedQty - receivedQtyManual, 0))
+          : roundQuantity(parseNumber(manualShortageRaw));
+      nextReceived = receivedQtyManual;
+      nextShortage = shortageQtyManual;
+      break;
+    }
     default:
       redirect(
         buildRemissionDetailHref({
@@ -2065,11 +2120,13 @@ export default async function RemissionDetailPage({
               const splitFormId = `split-line-form-${item.id}`;
               const manualLocFormId = `manual-loc-form-${item.id}`;
               const completeLineShortcutFormId = `complete-line-shortcut-form-${item.id}`;
+              const setPartialPrepareFormId = `set-partial-prepare-form-${item.id}`;
               const clearPrepareShortcutFormId = `clear-prepare-shortcut-form-${item.id}`;
               const clearShipShortcutFormId = `clear-ship-shortcut-form-${item.id}`;
               const receiveAllShortcutFormId = `receive-all-shortcut-form-${item.id}`;
               const markShortageShortcutFormId = `mark-shortage-shortcut-form-${item.id}`;
               const clearReceiveShortcutFormId = `clear-receive-shortcut-form-${item.id}`;
+              const setPartialReceiveFormId = `set-partial-receive-form-${item.id}`;
               const lineStatusLabel = canEditPrepareItems
                 ? missingSourceLoc
                   ? "LOC pendiente"
@@ -2153,12 +2210,16 @@ export default async function RemissionDetailPage({
                     ? "LOC guardado."
                     : activeLineEvent === "complete_line"
                       ? "Línea lista para despacho."
-                    : activeLineEvent === "prepare_auto"
+                        : activeLineEvent === "prepare_auto"
                       ? "Preparación guardada."
+                      : activeLineEvent === "set_prepare_partial"
+                        ? "Envío parcial guardado."
                       : activeLineEvent === "ship_prepared"
                         ? "Salida confirmada."
                         : activeLineEvent === "receive_all"
                           ? "Recepción guardada."
+                          : activeLineEvent === "set_partial"
+                            ? "Recepción parcial guardada."
                           : activeLineEvent === "mark_shortage"
                             ? "Faltante guardado."
                             : activeLineEvent === "clear_prepare" || activeLineEvent === "clear_ship" || activeLineEvent === "clear_receive"
@@ -2366,6 +2427,31 @@ export default async function RemissionDetailPage({
                             <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
                               Cambiar o ajustar
                             </summary>
+                            <div className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-white p-3">
+                              <div className="ui-caption">Enviar cantidad parcial</div>
+                              <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
+                                <label className="flex min-w-0 flex-1 flex-col gap-1">
+                                  <span className="ui-caption">Cantidad a enviar</span>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min={0}
+                                    max={Math.min(requestedQty, availableAtSelectedLoc)}
+                                    name="prepare_qty"
+                                    defaultValue={preparedQty > 0 ? preparedQty : Math.min(requestedQty, availableAtSelectedLoc)}
+                                    form={setPartialPrepareFormId}
+                                    className="ui-input h-11"
+                                  />
+                                </label>
+                                <button
+                                  type="submit"
+                                  form={setPartialPrepareFormId}
+                                  className="ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
+                                >
+                                  Guardar parcial
+                                </button>
+                              </div>
+                            </div>
                             <div className="mt-3 flex flex-wrap gap-3">
                               <button
                                 type="submit"
@@ -2398,6 +2484,31 @@ export default async function RemissionDetailPage({
                             <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
                               Cambiar o ajustar
                             </summary>
+                            <div className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-white p-3">
+                              <div className="ui-caption">Enviar cantidad parcial</div>
+                              <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
+                                <label className="flex min-w-0 flex-1 flex-col gap-1">
+                                  <span className="ui-caption">Cantidad a enviar</span>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min={0}
+                                    max={Math.min(requestedQty, availableAtSelectedLoc)}
+                                    name="prepare_qty"
+                                    defaultValue={Math.min(requestedQty, availableAtSelectedLoc)}
+                                    form={setPartialPrepareFormId}
+                                    className="ui-input h-11"
+                                  />
+                                </label>
+                                <button
+                                  type="submit"
+                                  form={setPartialPrepareFormId}
+                                  className="ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
+                                >
+                                  Guardar parcial
+                                </button>
+                              </div>
+                            </div>
                             <div className="mt-3 flex flex-wrap gap-3">
                               <button
                                 type="submit"
@@ -2464,6 +2575,33 @@ export default async function RemissionDetailPage({
                               </button>
                             ) : null}
                           </div>
+                          {shippedQty > 0 ? (
+                            <div className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-white p-3">
+                              <div className="ui-caption">Recibir cantidad diferente</div>
+                              <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
+                                <label className="flex min-w-0 flex-1 flex-col gap-1">
+                                  <span className="ui-caption">Cantidad recibida</span>
+                                  <input
+                                    type="number"
+                                    step="0.01"
+                                    min={0}
+                                    max={shippedQty}
+                                    name="receive_qty"
+                                    defaultValue={receivedQty > 0 ? receivedQty : shippedQty}
+                                    form={setPartialReceiveFormId}
+                                    className="ui-input h-11"
+                                  />
+                                </label>
+                                <button
+                                  type="submit"
+                                  form={setPartialReceiveFormId}
+                                  className="ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
+                                >
+                                  Guardar parcial
+                                </button>
+                              </div>
+                            </div>
+                          ) : null}
                         </details>
                       </div>
                     ) : null}
@@ -2578,6 +2716,15 @@ export default async function RemissionDetailPage({
                         />
                         <input type="hidden" name="line_shortcut_target" value={`${item.id}|prepare_auto`} />
                       </form>
+                      <form id={`set-partial-prepare-form-${item.id}`} action={applyPrepareShortcut}>
+                        <input type="hidden" name="request_id" value={request.id} />
+                        <input
+                          type="hidden"
+                          name="return_origin"
+                          value={cameFromPrepareQueue ? "prepare" : ""}
+                        />
+                        <input type="hidden" name="line_shortcut_target" value={`${item.id}|set_prepare_partial`} />
+                      </form>
                       <form id={`clear-prepare-shortcut-form-${item.id}`} action={applyPrepareShortcut}>
                         <input type="hidden" name="request_id" value={request.id} />
                         <input
@@ -2635,6 +2782,15 @@ export default async function RemissionDetailPage({
                           value={cameFromPrepareQueue ? "prepare" : ""}
                         />
                         <input type="hidden" name="line_receive_target" value={`${item.id}|clear_receive`} />
+                      </form>
+                      <form id={`set-partial-receive-form-${item.id}`} action={applyReceiveShortcut}>
+                        <input type="hidden" name="request_id" value={request.id} />
+                        <input
+                          type="hidden"
+                          name="return_origin"
+                          value={cameFromPrepareQueue ? "prepare" : ""}
+                        />
+                        <input type="hidden" name="line_receive_target" value={`${item.id}|set_partial`} />
                       </form>
                     </>
                   ) : null}
