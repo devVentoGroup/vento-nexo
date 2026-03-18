@@ -229,18 +229,6 @@ function formatDateTime(value: string | null | undefined): string {
   }).format(date);
 }
 
-function isRequesterOnlyRole(role: string): boolean {
-  return ["cocinero", "barista", "cajero"].includes(role);
-}
-
-function canRequestRemissionByRole(role: string): boolean {
-  return ["cocinero", "barista", "cajero"].includes(role);
-}
-
-function canCancelRemissionByRole(role: string): boolean {
-  return ["propietario", "gerente", "gerente_general"].includes(role);
-}
-
 type RemissionListAction = "view" | "cancel" | "delete" | "reverse_cancel";
 
 function hasReversalMarker(notes: string | null | undefined): boolean {
@@ -365,7 +353,7 @@ async function runRemissionListAction(formData: FormData) {
     code: PERMISSIONS.remissionsCancel,
     actualRole,
   });
-  const canCancel = canCancelRemissionByRole(actualRole) && (canFrom || canTo || canGlobal);
+  const canCancel = canFrom || canTo || canGlobal;
   if (!canCancel) {
     redirect(
       "/inventory/remissions?error=" +
@@ -590,12 +578,6 @@ async function createRemission(formData: FormData) {
     context: { siteId: toSiteId },
     actualRole,
   });
-  if (!canRequestRemissionByRole(actualRole)) {
-    redirect(
-      "/inventory/remissions?error=" +
-        encodeURIComponent("Solo cocineros, baristas o cajeros de sede pueden pedir remisiones.")
-    );
-  }
   if (!canRequest) {
     redirect(
       "/inventory/remissions?error=" +
@@ -801,16 +783,14 @@ export default async function RemissionsPage({
     : false;
 
   const viewMode = isAllSites ? "all" : isProductionCenter ? "bodega" : "satélite";
-  const requesterOnlyRole = isRequesterOnlyRole(actualRole);
-  const canCreateByRole = canRequestRemissionByRole(actualRole);
-  const canCreate = viewMode === "satélite" && canRequestPermission && canCreateByRole;
+  const canCreate = viewMode === "satélite" && canRequestPermission;
   const canCancelPermission = await checkPermissionWithRoleOverride({
     supabase,
     appId: APP_ID,
     code: PERMISSIONS.remissionsCancel,
     actualRole,
   });
-  const canManageRemissionActions = canCancelPermission && canCancelRemissionByRole(actualRole);
+  const canManageRemissionActions = canCancelPermission;
   const employeeAccessibleSiteIds = new Set(
     employeeSiteRows
       .map((row) => String(row.site_id ?? "").trim())
@@ -863,10 +843,6 @@ export default async function RemissionsPage({
         ? remissionsQuery.eq("from_site_id", activeSiteId)
         : remissionsQuery.eq("to_site_id", activeSiteId);
   }
-  if (viewMode === "satélite" && requesterOnlyRole) {
-    remissionsQuery = remissionsQuery.eq("created_by", user.id);
-  }
-
   const { data: remissions } = await remissionsQuery;
   const remissionRows = (remissions ?? []) as RemissionRow[];
 
@@ -1236,9 +1212,7 @@ export default async function RemissionsPage({
                   ? "Requieren accion ahora"
                   : canCreate
                     ? "Solicitudes abiertas"
-                    : requesterOnlyRole
-                      ? "Mis remisiones abiertas"
-                      : "Remisiones abiertas"}
+                    : "Remisiones abiertas"}
             </div>
             <div className="mt-1 ui-caption">
               {actionRows.length} remision(es) pendientes, preparando, en transito o parciales

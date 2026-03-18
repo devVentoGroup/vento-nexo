@@ -219,14 +219,6 @@ function formatDate(value: string | null | undefined): string {
   }).format(date);
 }
 
-function isRequesterOnlyRole(role: string): boolean {
-  return ["cocinero", "barista", "cajero"].includes(role);
-}
-
-function canCancelRemissionByRole(role: string): boolean {
-  return ["propietario", "gerente", "gerente_general"].includes(role);
-}
-
 function asText(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -366,7 +358,7 @@ async function loadAccessContext(
     context: { siteId: fromSiteId || toSiteId || null },
     actualRole: role,
   });
-  const canCancel = canCancelRemissionByRole(effectiveRole) && canCancelPermission;
+  const canCancel = canCancelPermission;
 
   const canPrepare = fromSiteType === "production_center" && canPreparePermission;
   const canTransit = canPrepare;
@@ -2029,19 +2021,6 @@ export default async function RemissionDetailPage({
           {backLabel}
         </Link>
         <div className="mt-4 ui-alert ui-alert--error">Remisión no encontrada o sin acceso.</div>
-      </div>
-    );
-  }
-
-  if (isRequesterOnlyRole(access.role) && request.created_by !== user.id) {
-    return (
-      <div className="w-full">
-        <Link href={backHref} className="ui-body-muted underline">
-          {backLabel}
-        </Link>
-        <div className="mt-4 ui-alert ui-alert--error">
-          Esta remision no fue creada por ti. Los roles operativos solo pueden ver sus propias solicitudes.
-        </div>
       </div>
     );
   }

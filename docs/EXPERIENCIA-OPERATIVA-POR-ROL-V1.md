@@ -33,13 +33,12 @@ No debe ver como flujo principal:
 - paneles tecnicos de bodega.
 
 Quien solicita remisiones en satelite (v1):
-- `cocinero`
-- `barista`
-- `cajero`
+- lo define `BD` mediante permisos (`inventory.remissions.request`) por rol y sede.
+- recomendacion operativa: asignar este permiso a roles que operan faltantes en piso.
 
 Roles de gestión en sede satélite:
-- supervisan y corrigen;
-- no usan el flujo de solicitud como actor principal.
+- supervisan y corrigen por permisos administrativos;
+- no dependen de hardcode en frontend.
 
 ### Centro de produccion / bodega
 
@@ -317,3 +316,20 @@ Toda pantalla nueva o refactor de `Nexo` debe responder primero:
 1. Quien usa esta pantalla?
 2. Que accion concreta vino a ejecutar?
 3. Que NO necesita ver para completar esa accion?
+
+## Actualizacion 2026-03-18 · Permisos en BD aplicados
+
+Migracion aplicada en remoto:
+- `20260318202000_nexo_remissions_permissions_matrix_v1.sql`
+
+La matriz de remisiones queda definida en `role_permissions` (BD), no en hardcode de frontend:
+- `propietario`, `gerente_general`: `remissions + request + prepare + receive + cancel + all_sites` (`global`).
+- `gerente`: `remissions + request + prepare + receive + cancel` (`site`).
+- `bodeguero`: `remissions + prepare + receive` (`site`).
+- `conductor`: `remissions + prepare + receive` (`site`).
+- `cajero`, `barista`, `cocinero` (solo `satellite`): `remissions + request + receive` (`site_type=satellite`).
+
+Resultado:
+- solicitar remision para satelites queda en roles operativos de piso;
+- cancelacion/anulacion queda reservada a gestion;
+- la logica de acceso se gobierna por BD y funciones `has_permission(...)`.
