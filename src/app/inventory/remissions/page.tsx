@@ -241,6 +241,23 @@ function canCancelRemissionByRole(role: string): boolean {
   return ["propietario", "gerente", "gerente_general"].includes(role);
 }
 
+function toFriendlyRemissionActionError(rawMessage: string): string {
+  const msg = String(rawMessage ?? "").toLowerCase();
+  if (
+    msg.includes("restock_request_items_request_id_fkey") ||
+    msg.includes("restock_request_items")
+  ) {
+    return "No se pudo eliminar porque la remisión aún tiene ítems relacionados. Intenta de nuevo o usa Cancelar.";
+  }
+  if (msg.includes("related_restock_request_id") || msg.includes("inventory_movements")) {
+    return "No se puede eliminar porque ya tiene movimientos de inventario asociados. Se canceló para conservar trazabilidad.";
+  }
+  if (msg.includes("permission denied") || msg.includes("row-level security") || msg.includes("rls")) {
+    return "No tienes permisos para ejecutar esta acción sobre la remisión.";
+  }
+  return "No se pudo completar la acción sobre la remisión. Intenta nuevamente.";
+}
+
 async function runRemissionListAction(formData: FormData) {
   "use server";
 
@@ -324,7 +341,7 @@ async function runRemissionListAction(formData: FormData) {
     if (error) {
       redirect(
         "/inventory/remissions?error=" +
-          encodeURIComponent(`No se pudo cancelar: ${error.message}`)
+          encodeURIComponent(toFriendlyRemissionActionError(error.message))
       );
     }
     redirect("/inventory/remissions?ok=" + encodeURIComponent("Remisión cancelada."));
@@ -373,7 +390,7 @@ async function runRemissionListAction(formData: FormData) {
     if (error) {
       redirect(
         "/inventory/remissions?error=" +
-          encodeURIComponent(`No se pudo eliminar: ${error.message}`)
+          encodeURIComponent(toFriendlyRemissionActionError(error.message))
       );
     }
   }

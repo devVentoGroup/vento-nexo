@@ -246,6 +246,23 @@ function formatUnitLabel(value: string | null | undefined): string {
   return raw;
 }
 
+function toFriendlyRemissionActionError(rawMessage: string): string {
+  const msg = String(rawMessage ?? "").toLowerCase();
+  if (
+    msg.includes("restock_request_items_request_id_fkey") ||
+    msg.includes("restock_request_items")
+  ) {
+    return "No se pudo eliminar porque la remisión aún tiene ítems relacionados. Intenta de nuevo o usa Cancelar.";
+  }
+  if (msg.includes("related_restock_request_id") || msg.includes("inventory_movements")) {
+    return "No se puede eliminar porque ya tiene movimientos de inventario asociados.";
+  }
+  if (msg.includes("permission denied") || msg.includes("row-level security") || msg.includes("rls")) {
+    return "No tienes permisos para ejecutar esta acción sobre la remisión.";
+  }
+  return "No se pudo completar la acción sobre la remisión. Intenta nuevamente.";
+}
+
 function normalizeReturnOrigin(value: string | null | undefined): "" | "prepare" {
   return String(value ?? "").trim() === "prepare" ? "prepare" : "";
 }
@@ -1497,7 +1514,7 @@ async function updateStatus(formData: FormData) {
           buildRemissionDetailHref({
             requestId,
             from: returnOrigin,
-            error: `No se pudo eliminar la remision: ${error.message}`,
+            error: toFriendlyRemissionActionError(error.message),
           })
         );
       }
