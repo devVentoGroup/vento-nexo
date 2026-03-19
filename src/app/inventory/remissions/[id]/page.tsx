@@ -299,7 +299,7 @@ async function loadAccessContext(
 ): Promise<AccessContext> {
   const { data: employee } = await supabase
     .from("employees")
-    .select("role")
+    .select("role,site_id")
     .eq("id", userId)
     .single();
 
@@ -307,12 +307,14 @@ async function loadAccessContext(
   const overrideRole = await getRoleOverrideFromCookies();
   const canOverrideRole = canUseRoleOverride(role, overrideRole);
   const effectiveRole = canOverrideRole ? String(overrideRole) : role;
-  const operationalContext = await getOperationalContext({
-    supabase,
-    employeeId: userId,
-    appCode: APP_ID,
-  });
-  const selectedSiteId = String(operationalContext?.selected_site_id ?? "").trim();
+  const { data: settings } = await supabase
+    .from("employee_settings")
+    .select("selected_site_id")
+    .eq("employee_id", userId)
+    .maybeSingle();
+  const selectedSiteId = String(
+    settings?.selected_site_id ?? employee?.site_id ?? ""
+  ).trim();
   let roleLabel = effectiveRole || "sin rol";
   if (effectiveRole) {
     const { data: roleRow } = await supabase
