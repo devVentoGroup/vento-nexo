@@ -481,7 +481,7 @@ export function RemissionPrepareWorkbench({
                 className="ui-btn ui-btn--action h-11 px-4 text-sm font-semibold"
                 disabled={!readyMarked || !allReady}
               >
-                Poner en tránsito
+                Marcar lista para despacho
               </button>
             </form>
           </div>

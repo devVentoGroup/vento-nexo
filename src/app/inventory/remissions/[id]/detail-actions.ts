@@ -478,6 +478,127 @@ export async function commitPreparationDraft(formData: FormData) {
     }
   }
 
+  const nowIso = new Date().toISOString();
+  const { error: reqErr } = await supabase
+    .from("restock_requests")
+    .update({
+      status: "preparing",
+      prepared_at: nowIso,
+      prepared_by: user.id,
+      status_updated_at: nowIso,
+    })
+    .eq("id", requestId);
+  if (reqErr) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        siteId: activeSiteId,
+        error: reqErr.message,
+      })
+    );
+  }
+
+  redirect(
+    buildRemissionDetailHref({
+      requestId,
+      from: returnOrigin,
+      siteId: activeSiteId,
+      ok: "ready_dispatch",
+    })
+  );
+}
+
+export async function submitTransitChecklist(formData: FormData) {
+  const supabase = await createClient();
+  const { data: userRes } = await supabase.auth.getUser();
+  const user = userRes.user ?? null;
+  const requestId = asText(formData.get("request_id"));
+  const returnOrigin = normalizeReturnOrigin(asText(formData.get("return_origin")));
+  const activeSiteId = asText(formData.get("site_id"));
+  if (!user) {
+    redirect(await buildShellLoginUrl(buildRemissionDetailHref({ requestId, from: returnOrigin })));
+  }
+
+  const { data: request } = await supabase
+    .from("restock_requests")
+    .select("from_site_id,to_site_id,status")
+    .eq("id", requestId)
+    .single();
+  const access = await loadAccessContext(supabase, user.id, request, activeSiteId);
+  const currentStatus = String(request?.status ?? "");
+  if (!access.canTransit || currentStatus !== "preparing") {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        siteId: activeSiteId,
+        error: "Solo conductor autorizado puede poner en tránsito desde estado preparando.",
+      })
+    );
+  }
+
+  const { data: operationalSummary, error: operationalSummaryError } =
+    await loadRemissionOperationalSummary({
+      supabase,
+      requestId,
+    });
+  if (operationalSummaryError) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        siteId: activeSiteId,
+        error: operationalSummaryError,
+      })
+    );
+  }
+  const summary = operationalSummary as RemissionOperationalSummary;
+  if (!summary.can_transit) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        siteId: activeSiteId,
+        error: "La remisión aún no está lista para pasar a tránsito.",
+      })
+    );
+  }
+
+  const itemIds = formData.getAll("item_id").map((v) => String(v).trim());
+  const notes = formData.getAll("transit_note").map((v) => String(v).trim());
+  for (let i = 0; i < itemIds.length; i += 1) {
+    const itemId = itemIds[i];
+    if (!itemId) continue;
+    const note = notes[i] ?? "";
+    if (!note) continue;
+    const { data: existingRow } = await supabase
+      .from("restock_request_items")
+      .select("notes")
+      .eq("id", itemId)
+      .eq("request_id", requestId)
+      .maybeSingle();
+    const existing = String(existingRow?.notes ?? "").trim();
+    const composed = existing
+      ? `${existing}\nCONDUCTOR: ${note}`
+      : `CONDUCTOR: ${note}`;
+    const { error: noteErr } = await supabase
+      .from("restock_request_items")
+      .update({ notes: composed })
+      .eq("id", itemId)
+      .eq("request_id", requestId);
+    if (noteErr) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error: noteErr.message,
+        })
+      );
+    }
+  }
+
   const { error: moveErr } = await supabase.rpc("apply_restock_shipment", {
     p_request_id: requestId,
   });
@@ -497,8 +618,6 @@ export async function commitPreparationDraft(formData: FormData) {
     .from("restock_requests")
     .update({
       status: "in_transit",
-      prepared_at: nowIso,
-      prepared_by: user.id,
       in_transit_at: nowIso,
       in_transit_by: user.id,
       status_updated_at: nowIso,

@@ -27,6 +27,7 @@ const PERMISSIONS = {
   remissionsRequest: "inventory.remissions.request",
   remissionsAllSites: "inventory.remissions.all_sites",
   remissionsCancel: "inventory.remissions.cancel",
+  remissionsTransit: "inventory.remissions.transit",
 };
 
 type SearchParams = {
@@ -805,6 +806,15 @@ export default async function RemissionsPage({
         actualRole,
       })
     : false;
+  const canTransitPermission = activeSiteId
+    ? await checkPermissionWithRoleOverride({
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.remissionsTransit,
+        context: { siteId: activeSiteId },
+        actualRole,
+      })
+    : false;
 
   const viewMode = isAllSites ? "all" : isProductionCenter ? "bodega" : "satélite";
   const canCreate = viewMode === "satélite" && canRequestPermission;
@@ -999,9 +1009,11 @@ export default async function RemissionsPage({
         : "Aquí solo aparecen las remisiones que todavía te toca recibir.";
   const heroPrimaryHref =
     viewMode === "bodega"
-      ? nextPrepareRow
-        ? `/inventory/remissions/${nextPrepareRow.id}?from=prepare`
-        : "/inventory/remissions/prepare"
+      ? canTransitPermission
+        ? "/inventory/remissions/transit"
+        : nextPrepareRow
+          ? `/inventory/remissions/${nextPrepareRow.id}?from=prepare`
+          : "/inventory/remissions/prepare"
       : nextReceiveRow
         ? `/inventory/remissions/${nextReceiveRow.id}`
         : canCreate
@@ -1009,9 +1021,11 @@ export default async function RemissionsPage({
           : "/inventory/remissions";
   const heroPrimaryLabel =
     viewMode === "bodega"
-      ? nextPrepareRow
-        ? "Abrir siguiente"
-        : "Abrir cola"
+      ? canTransitPermission
+        ? "Cola tránsito"
+        : nextPrepareRow
+          ? "Abrir siguiente"
+          : "Abrir cola"
       : nextReceiveRow
         ? "Recibir ahora"
         : canCreate
@@ -1315,7 +1329,9 @@ export default async function RemissionsPage({
                           className="ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
                         >
                           {viewMode === "bodega"
-                            ? "Preparar"
+                            ? canTransitPermission && String(row.status ?? "") === "preparing"
+                              ? "Checklist tránsito"
+                              : "Preparar"
                             : ["in_transit", "partial"].includes(String(row.status ?? ""))
                             ? "Recibir"
                             : "Ver"}

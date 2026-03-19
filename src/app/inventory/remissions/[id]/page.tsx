@@ -7,6 +7,7 @@ import { safeDecodeURIComponent } from "@/lib/url";
 import { loadAccessContext } from "./detail-access";
 import {
   commitPreparationDraft,
+  submitTransitChecklist,
   updateItems,
 } from "./detail-actions";
 import { RemissionPrepareWorkbench } from "./prepare-workbench";
@@ -55,6 +56,8 @@ export default async function RemissionDetailPage({
         ? "LOC seleccionado."
       : sp.ok === "split_item"
         ? "Linea partida. Ya puedes asignar un LOC distinto por linea."
+      : sp.ok === "ready_dispatch"
+        ? "Remisión marcada para despacho."
       : sp.ok === "status_updated"
         ? "Estado actualizado."
         : sp.ok === "preparing_started"
@@ -74,15 +77,24 @@ export default async function RemissionDetailPage({
   const activeLineEvent = String(sp.event ?? "").trim();
   const lowStockWarning = sp.warning === "low_stock";
   const cameFromPrepareQueue = sp.from === "prepare";
+  const cameFromTransitQueue = sp.from === "transit";
   const activeSiteId = String(sp.site_id ?? "").trim();
-  const backHref = cameFromPrepareQueue
+  const backHref = cameFromTransitQueue
+    ? activeSiteId
+      ? `/inventory/remissions/transit?site_id=${encodeURIComponent(activeSiteId)}`
+      : "/inventory/remissions/transit"
+    : cameFromPrepareQueue
     ? activeSiteId
       ? `/inventory/remissions/prepare?site_id=${encodeURIComponent(activeSiteId)}`
       : "/inventory/remissions/prepare"
     : activeSiteId
       ? `/inventory/remissions?site_id=${encodeURIComponent(activeSiteId)}`
       : "/inventory/remissions";
-  const backLabel = cameFromPrepareQueue ? "Volver a cola de preparacion" : "Volver a remisiones";
+  const backLabel = cameFromTransitQueue
+    ? "Volver a cola de tránsito"
+    : cameFromPrepareQueue
+      ? "Volver a cola de preparacion"
+      : "Volver a remisiones";
 
   const { supabase, user } = await requireAppAccess({
     appId: APP_ID,
@@ -199,6 +211,7 @@ export default async function RemissionDetailPage({
   const canStartPreparationNow =
     access.canPrepare && currentStatus === "pending" && summary.can_start_prepare;
   const canTransitNow = canTransitAction && summary.can_transit;
+  const isConductorTransitReview = !canEditPrepareItems && canTransitAction;
   const isReadyToDispatch = currentStatus === "preparing" && summary.can_transit;
   const hasPrimaryTopAction = canStartPreparationNow || canTransitNow;
   const showTopActionPanel = canTransitAction || (access.canPrepare && currentStatus === "pending");
@@ -217,11 +230,13 @@ export default async function RemissionDetailPage({
   if (isReadyToDispatch) {
     responsibleActor = `${access.fromSiteName || "Centro"} / listo para despacho`;
   }
-  const phaseLabel = canEditPrepareItems
-    ? "Preparacion en Centro"
-    : canEditReceiveItems
-      ? "Recepcion en destino"
-      : null;
+  const phaseLabel = isConductorTransitReview
+    ? "Modo Conductor"
+    : canEditPrepareItems
+      ? "Modo Bodeguero"
+      : canEditReceiveItems
+        ? "Recepcion en destino"
+        : null;
   const stateSupportText = canEditPrepareItems
     ? "Centro prepara y confirma lo que sale."
     : canEditReceiveItems
@@ -236,8 +251,10 @@ export default async function RemissionDetailPage({
   const stateSupportTextEffective = isReadyToDispatch
     ? "Preparación completa. Esta remisión ya quedó lista para despacho."
     : stateSupportText;
-  const roleFlowLabel = isProductionView
-    ? "Centro solo prepara y despacha."
+  const roleFlowLabel = isConductorTransitReview
+    ? "Conductor valida checklist y pone en tránsito."
+    : isProductionView
+    ? "Bodeguero prepara y marca lista para despacho."
     : isSatelliteView
       ? "Tu sede solo recibe y confirma."
       : "Vista operativa";
@@ -322,6 +339,15 @@ export default async function RemissionDetailPage({
             <p className="mt-1 ui-caption">
               {roleFlowLabel} Vista: {access.fromSiteType === "production_center" ? "Bodega (Centro)" : "Sede satelite"}.
             </p>
+            {isConductorTransitReview ? (
+              <div className="mt-2 inline-flex items-center rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-900">
+                Checklist de tránsito activo
+              </div>
+            ) : canEditPrepareItems ? (
+              <div className="mt-2 inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900">
+                Preparación de bodega activa
+              </div>
+            ) : null}
           </div>
         </div>
       ) : null}
@@ -334,6 +360,12 @@ export default async function RemissionDetailPage({
 
       {okMsg ? (
         <div className="ui-alert ui-alert--success ui-fade-up ui-delay-1">{okMsg}</div>
+      ) : null}
+
+      {sp.ok === "ready_dispatch" ? (
+        <div className="ui-alert ui-alert--success ui-fade-up ui-delay-1">
+          Remisión marcada para despacho. Conductor debe validar checklist y poner en tránsito.
+        </div>
       ) : null}
 
       {isReadyToDispatch ? (
@@ -374,7 +406,7 @@ export default async function RemissionDetailPage({
         </div>
       ) : null}
 
-      {!canEditPrepareItems && showTopActionPanel ? (
+      {!isConductorTransitReview && !canEditPrepareItems && showTopActionPanel ? (
         <RemissionTopActions
           title={isProductionView ? "Acción principal" : isSatelliteView ? "Acción principal" : "Acciones"}
           requestId={request.id}
@@ -392,10 +424,65 @@ export default async function RemissionDetailPage({
         />
       ) : null}
 
+      {isConductorTransitReview ? (
+        <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
+          <div className="ui-h3">Modo Conductor · Checklist de tránsito</div>
+          <div className="mt-1 ui-caption">
+            Valida línea por línea y agrega nota opcional antes de poner en tránsito.
+          </div>
+          <form action={submitTransitChecklist} className="mt-4 space-y-3">
+            <input type="hidden" name="request_id" value={request.id} />
+            <input
+              type="hidden"
+              name="return_origin"
+              value={cameFromPrepareQueue ? "prepare" : cameFromTransitQueue ? "transit" : ""}
+            />
+            <input type="hidden" name="site_id" value={activeSiteId} />
+            {itemRows.map((item) => {
+              const productName = item.product?.name ?? item.product_id;
+              const preparedQty = roundQuantity(Number(item.prepared_quantity ?? 0));
+              const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
+              const plannedQty = Math.max(preparedQty, shippedQty);
+              return (
+                <div
+                  key={`transit-check-${item.id}`}
+                  className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3"
+                >
+                  <input type="hidden" name="item_id" value={item.id} />
+                  <div className="text-sm font-semibold text-[var(--ui-text)]">{productName}</div>
+                  <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                    Cantidad lista: {plannedQty} · LOC: {item.source_location_id || "Sin LOC"}
+                  </div>
+                  <textarea
+                    name="transit_note"
+                    className="ui-input mt-2 min-h-[64px] w-full"
+                    placeholder="Nota opcional de conductor para esta línea..."
+                  />
+                </div>
+              );
+            })}
+            <button
+              type="submit"
+              className="ui-btn ui-btn--action h-12 px-5 text-base font-semibold"
+              disabled={!canTransitNow}
+            >
+              Poner en tránsito
+            </button>
+            {!canTransitNow ? (
+              <div className="ui-caption">
+                Aún no está lista para tránsito: completa preparación en todas las líneas.
+              </div>
+            ) : null}
+          </form>
+        </div>
+      ) : null}
+
       <div className="ui-panel ui-remission-section ui-fade-up ui-delay-3">
         <div className="ui-h3">
-          {canEditPrepareItems
-            ? "Preparar salida"
+          {isConductorTransitReview
+            ? "Resumen de insumos listos"
+            : canEditPrepareItems
+            ? "Modo Bodeguero · Preparar salida"
             : canEditReceiveItems
               ? "Recibir remision"
               : compactSatelliteView
