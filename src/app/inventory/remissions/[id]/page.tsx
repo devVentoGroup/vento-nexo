@@ -941,7 +941,7 @@ async function chooseSourceLoc(formData: FormData) {
       updates = {
         ...updates,
         prepared_quantity: requestedQty,
-        shipped_quantity: requestedQty,
+        shipped_quantity: 0,
       };
     }
   }
@@ -978,8 +978,7 @@ async function chooseSourceLoc(formData: FormData) {
       line: itemId,
       event:
         chooseLocMode === "complete_line" &&
-        typeof updates.prepared_quantity === "number" &&
-        typeof updates.shipped_quantity === "number"
+        typeof updates.prepared_quantity === "number"
           ? "complete_line"
           : "loc",
     })
@@ -1095,7 +1094,7 @@ async function applyPrepareShortcut(formData: FormData) {
         );
       }
       nextPrepared = requestedQty;
-      nextShipped = requestedQty;
+      nextShipped = 0;
       break;
     }
     case "prepare_auto": {
@@ -1110,7 +1109,7 @@ async function applyPrepareShortcut(formData: FormData) {
         );
       }
       nextPrepared = suggestedQty;
-      if (nextShipped > nextPrepared) nextShipped = nextPrepared;
+      nextShipped = 0;
       break;
     }
     case "ship_prepared": {
@@ -1156,7 +1155,7 @@ async function applyPrepareShortcut(formData: FormData) {
         );
       }
       nextPrepared = partialQty;
-      nextShipped = partialQty;
+      nextShipped = 0;
       break;
     }
     case "clear_prepare": {
@@ -2200,12 +2199,12 @@ export default async function RemissionDetailPage({
     return canEditPrepareItems && targetQty > 0 && targetQty <= availableSite && bestLocQty < targetQty;
   }).length;
   const dispatchReadyLines = itemRows.filter(
-    (item) => roundQuantity(Number(item.shipped_quantity ?? 0)) > 0
+    (item) => roundQuantity(Number(item.prepared_quantity ?? 0)) > 0
   ).length;
   const dispatchBlockedLines = itemRows.filter((item) => {
     const requestedQty = roundQuantity(Number(item.quantity ?? 0));
-    const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
-    return canEditPrepareItems && requestedQty > 0 && shippedQty <= 0;
+    const preparedQty = roundQuantity(Number(item.prepared_quantity ?? 0));
+    return canEditPrepareItems && requestedQty > 0 && preparedQty <= 0;
   }).length;
   const canTransitNow = canTransitAction && dispatchReadyLines > 0 && dispatchBlockedLines === 0;
   const hasPrimaryTopAction = canTransitNow;
