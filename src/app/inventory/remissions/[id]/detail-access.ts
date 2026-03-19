@@ -78,7 +78,9 @@ export async function loadAccessContext(
     .eq("employee_id", userId)
     .maybeSingle();
   const selectedSiteId = String(
-    activeSiteId ?? settings?.selected_site_id ?? employee?.site_id ?? ""
+    activeSiteId && String(activeSiteId).trim()
+      ? activeSiteId
+      : settings?.selected_site_id ?? employee?.site_id ?? ""
   ).trim();
 
   const fromSiteId = request?.from_site_id ?? "";
