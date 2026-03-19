@@ -6,8 +6,10 @@ import { roundQuantity } from "@/lib/inventory/uom";
 import { safeDecodeURIComponent } from "@/lib/url";
 import { loadAccessContext } from "./detail-access";
 import {
+  commitPreparationDraft,
   updateItems,
 } from "./detail-actions";
+import { RemissionPrepareWorkbench } from "./prepare-workbench";
 import { RemissionLineCard } from "./detail-line-card";
 import { RemissionLineHiddenActions } from "./detail-line-hidden-actions";
 import { RemissionHeroSection, RemissionSummarySection } from "./detail-sections";
@@ -197,6 +199,7 @@ export default async function RemissionDetailPage({
   const canStartPreparationNow =
     access.canPrepare && currentStatus === "pending" && summary.can_start_prepare;
   const canTransitNow = canTransitAction && summary.can_transit;
+  const isReadyToDispatch = currentStatus === "preparing" && summary.can_transit;
   const hasPrimaryTopAction = canStartPreparationNow || canTransitNow;
   const showTopActionPanel = canTransitAction || (access.canPrepare && currentStatus === "pending");
   let responsibleActor = "Sin actor operativo pendiente.";
@@ -210,6 +213,9 @@ export default async function RemissionDetailPage({
     responsibleActor = "Flujo terminado";
   } else if (currentStatus === "cancelled") {
     responsibleActor = "Remisión cancelada";
+  }
+  if (isReadyToDispatch) {
+    responsibleActor = `${access.fromSiteName || "Centro"} / listo para despacho`;
   }
   const phaseLabel = canEditPrepareItems
     ? "Preparacion en Centro"
@@ -227,6 +233,9 @@ export default async function RemissionDetailPage({
           : currentStatus === "cancelled"
             ? "La remisión fue cancelada y ya no tiene acciones disponibles."
             : "Sin acciones operativas pendientes.";
+  const stateSupportTextEffective = isReadyToDispatch
+    ? "Preparación completa. Esta remisión ya quedó lista para despacho."
+    : stateSupportText;
   const roleFlowLabel = isProductionView
     ? "Centro solo prepara y despacha."
     : isSatelliteView
@@ -239,11 +248,53 @@ export default async function RemissionDetailPage({
       ? pendingReceiptLines + shortageLines
       : 0;
   const currentStatusMeta = formatStatus(currentStatus);
+  const currentStatusMetaEffective = isReadyToDispatch
+    ? { label: "Lista para despacho", className: "ui-chip ui-chip--success" }
+    : currentStatusMeta;
   const expectedDateLabel = request.expected_date
     ? formatDate(request.expected_date ?? null)
     : "Sin fecha esperada";
   const createdAtLabel = formatDateTime(request.created_at);
   const notesLabel = request.notes ?? "-";
+  const draftPrepareLines = canEditPrepareItems
+    ? itemRows.map((item) => {
+        const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
+        const lineIdsForProduct = lineIdsByProduct.get(item.product_id) ?? [item.id];
+        const vm = buildRemissionLineVm({
+          item,
+          currentStatus,
+          canEditPrepareItems,
+          canEditReceiveItems,
+          showSourceLocSelector,
+          availableSite,
+          lineIdsForProduct,
+          locCandidates: stockByLocCandidates.get(item.product_id) ?? [],
+          originLocById,
+          stockByLocValueMap,
+          activeLineId,
+          activeLineEvent,
+        });
+        return {
+          id: item.id,
+          baseItemId: item.id,
+          productName: item.product?.name ?? item.product_id,
+          requestedQty: roundQuantity(Number(item.quantity ?? 0)),
+          unitLabel: vm.itemUnitLabel,
+          selectedLocId: String(item.source_location_id ?? ""),
+          recommendedLocId: vm.bestLocCandidate?.locationId ?? "",
+          locOptions: vm.locCandidates.map((loc) => ({
+            id: loc.locationId,
+            label: loc.label,
+            qty: loc.qty,
+          })),
+          dispatchQty: roundQuantity(
+            Number(item.shipped_quantity ?? item.prepared_quantity ?? 0)
+          ),
+          shortageReason: "",
+          isVirtualSplit: false,
+        };
+      })
+    : [];
 
   return (
     <div className="ui-scene w-full space-y-6 pb-28 lg:pb-6">
@@ -251,8 +302,8 @@ export default async function RemissionDetailPage({
         backHref={backHref}
         backLabel={backLabel}
         phaseLabel={phaseLabel}
-        statusLabel={currentStatusMeta.label}
-        statusClassName={currentStatusMeta.className}
+        statusLabel={currentStatusMetaEffective.label}
+        statusClassName={currentStatusMetaEffective.className}
         requestId={request.id}
         fromSiteName={access.fromSiteName || "-"}
         toSiteName={access.toSiteName || "-"}
@@ -285,6 +336,12 @@ export default async function RemissionDetailPage({
         <div className="ui-alert ui-alert--success ui-fade-up ui-delay-1">{okMsg}</div>
       ) : null}
 
+      {isReadyToDispatch ? (
+        <div className="ui-alert ui-alert--success ui-fade-up ui-delay-1">
+          Remisión lista para despacho. Siguiente paso: <strong>Despachar a destino</strong>.
+        </div>
+      ) : null}
+
       {lowStockWarning ? (
         <div className="ui-alert ui-alert--warn ui-fade-up ui-delay-1">
           Algunos productos pueden no tener stock suficiente en Centro. Bodega verificara al preparar.
@@ -298,9 +355,9 @@ export default async function RemissionDetailPage({
         expectedDateLabel={expectedDateLabel}
         createdAtLabel={createdAtLabel}
         notes={notesLabel}
-        currentStatusClassName={currentStatusMeta.className}
-        currentStatusLabel={currentStatusMeta.label}
-        stateSupportText={stateSupportText}
+        currentStatusClassName={currentStatusMetaEffective.className}
+        currentStatusLabel={currentStatusMetaEffective.label}
+        stateSupportText={stateSupportTextEffective}
         responsibleActor={responsibleActor}
       />
 
@@ -317,7 +374,7 @@ export default async function RemissionDetailPage({
         </div>
       ) : null}
 
-      {showTopActionPanel ? (
+      {!canEditPrepareItems && showTopActionPanel ? (
         <RemissionTopActions
           title={isProductionView ? "Acción principal" : isSatelliteView ? "Acción principal" : "Acciones"}
           requestId={request.id}
@@ -345,6 +402,17 @@ export default async function RemissionDetailPage({
                 ? "Productos"
                 : "Items de la remision"}
         </div>
+        {canEditPrepareItems ? (
+          <div className="mt-4 pb-28 lg:pb-24">
+            <RemissionPrepareWorkbench
+              requestId={request.id}
+              returnOrigin={cameFromPrepareQueue ? "prepare" : ""}
+              siteId={activeSiteId}
+              lines={draftPrepareLines}
+              onCommit={commitPreparationDraft}
+            />
+          </div>
+        ) : (
         <form action={updateItems} className="mt-4 space-y-4 pb-24 lg:pb-0">
           <input type="hidden" name="request_id" value={request.id} />
           <input type="hidden" name="return_origin" value={cameFromPrepareQueue ? "prepare" : ""} />
@@ -384,8 +452,9 @@ export default async function RemissionDetailPage({
             })}
           </div>
         </form>
+        )}
 
-        {canEditPrepareItems || canEditReceiveItems ? (
+        {!canEditPrepareItems && (canEditPrepareItems || canEditReceiveItems) ? (
           <div className="hidden" aria-hidden="true">
             {itemRows.map((item) => {
               const availableSite = stockBySiteMap.get(item.product_id) ?? 0;

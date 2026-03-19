@@ -25,6 +25,7 @@ export function RemissionLineCard({
   const splitFormId = `split-line-form-${item.id}`;
   const manualLocFormId = `manual-loc-form-${item.id}`;
   const completeLineShortcutFormId = `complete-line-shortcut-form-${item.id}`;
+  const shipShortcutFormId = `ship-shortcut-form-${item.id}`;
   const setPartialPrepareFormId = `set-partial-prepare-form-${item.id}`;
   const clearPrepareShortcutFormId = `clear-prepare-shortcut-form-${item.id}`;
   const clearShipShortcutFormId = `clear-ship-shortcut-form-${item.id}`;
@@ -35,7 +36,7 @@ export function RemissionLineCard({
 
   return (
     <div
-      className={`rounded-[24px] border p-4 transition ${
+      className={`rounded-2xl border p-4 transition ${
         vm.isActiveLine
           ? "border-emerald-300 bg-emerald-50/60 shadow-[0_0_0_2px_rgba(16,185,129,0.12)]"
           : "border-[var(--ui-border)] bg-[var(--ui-bg-soft)]"
@@ -58,17 +59,17 @@ export function RemissionLineCard({
         <span className={vm.taskBadgeClassName}>{vm.nextTaskLabel}</span>
       </div>
       {vm.isActiveLine ? (
-        <div className="mt-3 rounded-2xl border border-emerald-200 bg-white px-3 py-2.5 text-sm font-semibold text-emerald-900">
+        <div className="mt-3 rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-900">
           {vm.activeLineMessage}
         </div>
       ) : null}
       {vm.primaryHint ? (
-        <div className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-white px-3 py-2.5 text-sm text-[var(--ui-muted)]">
+        <div className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] px-3 py-2 text-sm text-[var(--ui-muted)]">
           {vm.primaryHint}
         </div>
       ) : null}
       {vm.canSplitLine ? (
-        <div className="mt-3 rounded-2xl border border-dashed border-[var(--ui-border)] bg-white px-4 py-4">
+        <div className="mt-3 rounded-xl border border-dashed border-[var(--ui-border)] bg-[var(--ui-bg)] px-4 py-3">
           <div className="text-sm text-[var(--ui-muted)]">
             Se va a dividir en <strong>{vm.suggestedSplitQty} + {vm.remainingSplitQty} {vm.itemUnitLabel}</strong>.
           </div>
@@ -96,9 +97,9 @@ export function RemissionLineCard({
         {showSourceLocSelector && canEditPrepareItems && !vm.canSplitLine ? (
           <>
             <input type="hidden" name="source_location_id" value={item.source_location_id ?? ""} />
-            <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
+            <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3">
               {item.source_location_id ? (
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900">
+                <div className="rounded-xl border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-900">
                   {vm.selectedOriginLabel} · {vm.availableAtSelectedLoc} {vm.itemUnitLabel}
                 </div>
               ) : null}
@@ -113,7 +114,7 @@ export function RemissionLineCard({
                         key={`${item.id}-${candidate.locationId}`}
                         type="submit"
                         form={`choose-loc-form-${item.id}-${candidate.locationId}`}
-                        className={`rounded-2xl border px-4 py-4 text-left shadow-sm transition ${
+                        className={`rounded-xl border px-4 py-3 text-left transition ${
                           isSelected
                             ? "border-emerald-300 bg-emerald-50 text-emerald-950"
                             : isBest
@@ -141,12 +142,12 @@ export function RemissionLineCard({
                   })}
                 </div>
               ) : !item.source_location_id ? (
-                <div className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3 text-sm text-[var(--ui-muted)]">
+                <div className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] px-3 py-2 text-sm text-[var(--ui-muted)]">
                   No hay LOC con stock para este producto.
                 </div>
               ) : null}
 
-              <details className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3">
+              <details className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] px-3 py-2">
                 <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
                   {item.source_location_id ? "Cambiar LOC" : "Ver más LOCs"}
                 </summary>
@@ -170,7 +171,7 @@ export function RemissionLineCard({
                   <button
                     type="submit"
                     form={manualLocFormId}
-                    className="ui-btn ui-btn--ghost h-12 w-full text-base font-semibold md:w-auto"
+                    className="ui-btn ui-btn--ghost h-11 w-full text-sm font-semibold md:w-auto"
                   >
                     Usar este LOC
                   </button>
@@ -184,12 +185,12 @@ export function RemissionLineCard({
         <div className="space-y-3">
           {canEditPrepareItems && item.source_location_id && currentStatus === "preparing" ? (
             vm.shippedQty > 0 ? (
-              <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
                 <div className="text-sm font-semibold text-emerald-950">Hecha</div>
                 <div className="mt-1 text-sm text-emerald-900">
                   Ya quedaron marcadas {vm.shippedQty} {vm.itemUnitLabel} para esta línea.
                 </div>
-                <details className="mt-3 rounded-2xl border border-emerald-200 bg-white px-4 py-3">
+                <details className="mt-3 rounded-xl border border-emerald-200 bg-[var(--ui-bg)] px-3 py-2">
                   <summary className="cursor-pointer text-sm font-semibold text-emerald-950">
                     Cambiar esta línea
                   </summary>
@@ -205,25 +206,25 @@ export function RemissionLineCard({
                 </details>
               </div>
             ) : vm.preparedQty > 0 ? (
-              <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
+              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3">
                 <div className="text-sm text-[var(--ui-muted)]">
                   Preparado: <strong className="text-[var(--ui-text)]">{vm.preparedQty} {vm.itemUnitLabel}</strong>
                 </div>
                 <div className="mt-3">
                   <button
                     type="submit"
-                    form={completeLineShortcutFormId}
+                    form={shipShortcutFormId}
                     className="ui-btn ui-btn--action ui-btn--compact w-full px-4 text-sm font-semibold sm:w-auto"
                     disabled={vm.availableAtSelectedLoc < vm.requestedQty}
                   >
-                    Dejar lista la línea
+                    Marcar lista para despacho
                   </button>
                 </div>
-                <details className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3">
+                <details className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] px-3 py-2">
                   <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
                     Cambiar o ajustar
                   </summary>
-                  <div className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-white p-3">
+                  <div className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3">
                     <div className="ui-caption">Enviar cantidad parcial</div>
                     <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
                       <label className="flex min-w-0 flex-1 flex-col gap-1">
@@ -260,7 +261,7 @@ export function RemissionLineCard({
                 </details>
               </div>
             ) : (
-              <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
+              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3">
                 <div className="text-sm text-[var(--ui-muted)]">
                   LOC: <strong className="text-[var(--ui-text)]">{vm.selectedOriginLabel}</strong>
                 </div>
@@ -276,11 +277,11 @@ export function RemissionLineCard({
                       : `No alcanza para ${vm.requestedQty} ${vm.itemUnitLabel}`}
                   </button>
                 </div>
-                <details className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3">
+                <details className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] px-3 py-2">
                   <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
                     Cambiar o ajustar
                   </summary>
-                  <div className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-white p-3">
+                  <div className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3">
                     <div className="ui-caption">Preparar cantidad parcial</div>
                     <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
                       <label className="flex min-w-0 flex-1 flex-col gap-1">
@@ -324,7 +325,7 @@ export function RemissionLineCard({
             </>
           ) : null}
           {canEditPrepareItems && item.source_location_id && currentStatus === "pending" ? (
-            <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
+            <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3">
               <div className="text-sm text-[var(--ui-muted)]">
                 LOC: <strong className="text-[var(--ui-text)]">{vm.selectedOriginLabel}</strong>
               </div>
@@ -335,7 +336,7 @@ export function RemissionLineCard({
           ) : null}
           {canEditReceiveItems ? (
             vm.lineCompleteReceipt ? (
-              <div className="rounded-2xl border border-emerald-200 bg-[linear-gradient(135deg,rgba(236,253,245,0.95),rgba(255,255,255,0.98))] p-4 shadow-[0_18px_40px_-28px_rgba(16,185,129,0.45)]">
+              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <div className="text-sm font-semibold text-emerald-900">
@@ -349,7 +350,7 @@ export function RemissionLineCard({
                 </div>
               </div>
             ) : (
-              <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
+              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3">
                 <div className="text-sm font-semibold text-[var(--ui-text)]">
                   Ahora: recibir
                 </div>
@@ -370,7 +371,7 @@ export function RemissionLineCard({
                     {vm.shippedQty > 0 ? `Recibir ${vm.shippedQty} ${vm.itemUnitLabel}` : "Recibir todo"}
                   </button>
                 </div>
-                <details className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3">
+                <details className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] px-3 py-2">
                   <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
                     Cambiar o ajustar
                   </summary>
@@ -395,7 +396,7 @@ export function RemissionLineCard({
                     ) : null}
                   </div>
                   {vm.shippedQty > 0 ? (
-                    <div className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-white p-3">
+                    <div className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3">
                       <div className="ui-caption">Recibir cantidad diferente</div>
                       <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
                         <label className="flex min-w-0 flex-1 flex-col gap-1">

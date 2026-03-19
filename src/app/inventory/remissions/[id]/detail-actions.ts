@@ -308,6 +308,223 @@ export async function updateItems(formData: FormData) {
   redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, ok: "items_updated" }));
 }
 
+type CommitLinePayload = {
+  id: string;
+  baseItemId: string;
+  selectedLocId: string;
+  dispatchQty: number;
+  requestedQty: number;
+  shortageReason: string;
+  isVirtualSplit: boolean;
+};
+
+type CommitSplitPayload = {
+  tempLineId: string;
+  sourceItemId: string;
+  splitQuantity: number;
+};
+
+export async function commitPreparationDraft(formData: FormData) {
+  const supabase = await createClient();
+  const { data: userRes } = await supabase.auth.getUser();
+  const user = userRes.user ?? null;
+  const requestId = asText(formData.get("request_id"));
+  const returnOrigin = normalizeReturnOrigin(asText(formData.get("return_origin")));
+  const activeSiteId = asText(formData.get("site_id"));
+  const payloadRaw = asText(formData.get("payload"));
+  if (!user) {
+    redirect(await buildShellLoginUrl(buildRemissionDetailHref({ requestId, from: returnOrigin })));
+  }
+
+  let parsed: { lines?: CommitLinePayload[]; splitDrafts?: CommitSplitPayload[] } = {};
+  try {
+    parsed = JSON.parse(payloadRaw || "{}");
+  } catch {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        siteId: activeSiteId,
+        error: "No se pudo leer el borrador de preparación.",
+      })
+    );
+  }
+
+  const lines = Array.isArray(parsed.lines) ? parsed.lines : [];
+  const splitDrafts = Array.isArray(parsed.splitDrafts) ? parsed.splitDrafts : [];
+  if (!lines.length) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        siteId: activeSiteId,
+        error: "No hay líneas para despachar.",
+      })
+    );
+  }
+
+  const { data: request } = await supabase
+    .from("restock_requests")
+    .select("from_site_id,to_site_id,status")
+    .eq("id", requestId)
+    .single();
+
+  const access = await loadAccessContext(supabase, user.id, request, activeSiteId);
+  if (!access.canPrepare) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        siteId: activeSiteId,
+        error: "No tienes permiso para preparar/despachar esta remisión.",
+      })
+    );
+  }
+
+  await enforceOperationalGateOrRedirect({
+    supabase,
+    userId: user.id,
+    siteId: request?.from_site_id,
+    requestId,
+    returnOrigin,
+    fallbackMessage: "No puedes despachar esta remisión en este momento.",
+  });
+
+  const virtualToRealId = new Map<string, string>();
+  for (const splitDraft of splitDrafts) {
+    const splitQty = Number(splitDraft.splitQuantity ?? 0);
+    if (!splitDraft.sourceItemId || !splitDraft.tempLineId || splitQty <= 0) continue;
+    const { data: newItemId, error } = await supabase.rpc("split_restock_request_item", {
+      p_item_id: splitDraft.sourceItemId,
+      p_split_quantity: splitQty,
+    });
+    if (error || !newItemId) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error: error?.message || "No se pudo partir una línea.",
+        })
+      );
+    }
+    virtualToRealId.set(splitDraft.tempLineId, String(newItemId));
+  }
+
+  for (const line of lines) {
+    const lineId = line.isVirtualSplit
+      ? virtualToRealId.get(line.id) ?? ""
+      : String(line.id ?? "").trim();
+    const selectedLocId = String(line.selectedLocId ?? "").trim();
+    const requestedQty = roundQuantity(Number(line.requestedQty ?? 0));
+    const dispatchQty = roundQuantity(Number(line.dispatchQty ?? 0));
+    const shortageReason = String(line.shortageReason ?? "").trim();
+
+    if (!lineId || !selectedLocId) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error: "Todas las líneas deben tener LOC seleccionado.",
+        })
+      );
+    }
+    if (dispatchQty < 0 || dispatchQty > requestedQty) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error: "Hay líneas con cantidad a despachar inválida.",
+        })
+      );
+    }
+    if (dispatchQty < requestedQty && !shortageReason) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error: "Debes registrar motivo de faltante en todas las líneas incompletas.",
+        })
+      );
+    }
+
+    const noteSuffix =
+      dispatchQty < requestedQty
+        ? `FALTANTE ORIGEN: ${shortageReason}`
+        : null;
+
+    const { error: lineErr } = await supabase
+      .from("restock_request_items")
+      .update({
+        source_location_id: selectedLocId,
+        prepared_quantity: dispatchQty,
+        shipped_quantity: dispatchQty,
+        notes: noteSuffix,
+      })
+      .eq("id", lineId)
+      .eq("request_id", requestId);
+    if (lineErr) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error: lineErr.message,
+        })
+      );
+    }
+  }
+
+  const { error: moveErr } = await supabase.rpc("apply_restock_shipment", {
+    p_request_id: requestId,
+  });
+  if (moveErr) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        siteId: activeSiteId,
+        error: moveErr.message,
+      })
+    );
+  }
+
+  const nowIso = new Date().toISOString();
+  const { error: reqErr } = await supabase
+    .from("restock_requests")
+    .update({
+      status: "in_transit",
+      prepared_at: nowIso,
+      prepared_by: user.id,
+      in_transit_at: nowIso,
+      in_transit_by: user.id,
+      status_updated_at: nowIso,
+    })
+    .eq("id", requestId);
+  if (reqErr) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        siteId: activeSiteId,
+        error: reqErr.message,
+      })
+    );
+  }
+
+  redirect(
+    buildRemissionDetailHref({
+      requestId,
+      from: returnOrigin,
+      siteId: activeSiteId,
+      ok: "transit_started",
+    })
+  );
+}
+
 export async function splitItem(formData: FormData) {
   const supabase = await createClient();
   const { data: userRes } = await supabase.auth.getUser();
