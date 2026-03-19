@@ -4,6 +4,7 @@ import {
   canUseRoleOverride,
   checkPermissionWithRoleOverride,
   getRoleOverrideFromCookies,
+  isPermissionAllowedForRole,
 } from "@/lib/auth/role-override";
 import {
   buildOperationalBlockMessage,
@@ -72,6 +73,26 @@ export async function loadAccessContext(
   const overrideRole = await getRoleOverrideFromCookies();
   const canOverrideRole = canUseRoleOverride(role, overrideRole);
   const effectiveRole = canOverrideRole ? String(overrideRole) : role;
+  /** Modo prueba: no mezclar permisos directos del empleado (ej. propietario) con la simulación. */
+  const remissionSimulateRoleOverride = canOverrideRole && Boolean(overrideRole);
+
+  async function remissionPermission(
+    code: string,
+    siteId: string | null | undefined
+  ): Promise<boolean> {
+    const sid = String(siteId ?? "").trim();
+    if (!sid) return false;
+    if (remissionSimulateRoleOverride) {
+      return isPermissionAllowedForRole(supabase, effectiveRole, APP_ID, code, { siteId: sid });
+    }
+    return checkPermissionWithRoleOverride({
+      supabase,
+      appId: APP_ID,
+      code,
+      context: { siteId: sid },
+      actualRole: role,
+    });
+  }
   const { data: settings } = await supabase
     .from("employee_settings")
     .select("selected_site_id")
@@ -102,40 +123,22 @@ export async function loadAccessContext(
   const fromSiteName = String(siteMap.get(fromSiteId)?.name ?? fromSiteId ?? "");
   const toSiteName = String(siteMap.get(toSiteId)?.name ?? toSiteId ?? "");
 
-  const canPreparePermission = fromSiteId
-    ? await checkPermissionWithRoleOverride({
-        supabase,
-        appId: APP_ID,
-        code: PERMISSIONS.remissionsPrepare,
-        context: { siteId: fromSiteId },
-        actualRole: role,
-      })
-    : false;
-  const canReceivePermission = toSiteId
-    ? await checkPermissionWithRoleOverride({
-        supabase,
-        appId: APP_ID,
-        code: PERMISSIONS.remissionsReceive,
-        context: { siteId: toSiteId },
-        actualRole: role,
-      })
-    : false;
-  const canTransitPermission = fromSiteId
-    ? await checkPermissionWithRoleOverride({
-        supabase,
-        appId: APP_ID,
-        code: PERMISSIONS.remissionsTransit,
-        context: { siteId: fromSiteId },
-        actualRole: role,
-      })
-    : false;
-  const canCancel = await checkPermissionWithRoleOverride({
-    supabase,
-    appId: APP_ID,
-    code: PERMISSIONS.remissionsCancel,
-    context: { siteId: fromSiteId || toSiteId || null },
-    actualRole: role,
-  });
+  const canPreparePermission = await remissionPermission(
+    PERMISSIONS.remissionsPrepare,
+    fromSiteId
+  );
+  const canReceivePermission = await remissionPermission(
+    PERMISSIONS.remissionsReceive,
+    toSiteId
+  );
+  const canTransitPermission = await remissionPermission(
+    PERMISSIONS.remissionsTransit,
+    fromSiteId
+  );
+  const canCancel = await remissionPermission(
+    PERMISSIONS.remissionsCancel,
+    fromSiteId || toSiteId || null
+  );
 
   const actingOnFromSite = Boolean(selectedSiteId) && selectedSiteId === fromSiteId;
   const actingOnToSite = Boolean(selectedSiteId) && selectedSiteId === toSiteId;
