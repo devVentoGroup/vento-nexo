@@ -14,6 +14,7 @@ import { ConductorTransitChecklistForm } from "./conductor-transit-checklist-for
 import { RemissionPrepareWorkbench } from "./prepare-workbench";
 import { RemissionLineCard } from "./detail-line-card";
 import { RemissionLineHiddenActions } from "./detail-line-hidden-actions";
+import { ReceiveBatchLineWrapper, ReceiveBatchShell } from "./receive-batch-shell";
 import { RemissionHeroSection, RemissionSummarySection } from "./detail-sections";
 import { buildRemissionLineVm } from "./detail-line-vm";
 import { loadOriginStockContext } from "./detail-stock";
@@ -218,6 +219,18 @@ export default async function RemissionDetailPage({
     access.canPrepare && currentStatus === "pending" && summary.can_start_prepare;
   const canTransitNow = canTransitAction && summary.can_transit;
   const isConductorTransitReview = !canEditPrepareItems && canTransitAction;
+  const isReceiveDestinationFlow = canEditReceiveItems && !canEditPrepareItems;
+  const receiveBatchEligibleIds = isReceiveDestinationFlow
+    ? itemRows
+        .filter((item) => {
+          const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
+          const receivedQty = roundQuantity(Number(item.received_quantity ?? 0));
+          const shortageQty = roundQuantity(Number(item.shortage_quantity ?? 0));
+          const accountedQty = roundQuantity(receivedQty + shortageQty);
+          return shippedQty > 0 && accountedQty < shippedQty;
+        })
+        .map((item) => item.id)
+    : [];
   const isReadyToDispatch = currentStatus === "preparing" && summary.can_transit;
   const editPrepareRaw = sp.edit_prepare;
   const editPrepareVal = Array.isArray(editPrepareRaw) ? editPrepareRaw[0] : editPrepareRaw;
@@ -516,22 +529,45 @@ export default async function RemissionDetailPage({
         </div>
       ) : null}
 
-      <div className="ui-panel ui-remission-section ui-fade-up ui-delay-3">
-        <div className="ui-h3">
-          {isConductorTransitReview
-            ? "Resumen de insumos listos"
-            : canEditPrepareItems
-            ? allowPrepareCorrection
-              ? "Modo Bodeguero · Corregir preparación"
-              : isReadyToDispatch
-                ? "Modo Bodeguero · Lista para despacho"
-                : "Modo Bodeguero · Preparar salida"
-            : canEditReceiveItems
-              ? "Recibir remision"
-              : compactSatelliteView
-                ? "Productos"
-                : "Items de la remision"}
-        </div>
+      <div
+        className={
+          isReceiveDestinationFlow
+            ? "ui-panel ui-remission-section ui-fade-up ui-delay-3 overflow-hidden border-stone-200/80 bg-gradient-to-b from-emerald-50/40 via-[var(--ui-bg)] to-[var(--ui-bg)]"
+            : "ui-panel ui-remission-section ui-fade-up ui-delay-3"
+        }
+      >
+        {isReceiveDestinationFlow ? (
+          <div className="mb-5">
+            <span className="inline-flex items-center rounded-full bg-emerald-100/90 px-3 py-1 text-xs font-bold uppercase tracking-wider text-emerald-900/85 ring-1 ring-emerald-200/60">
+              Recepción
+            </span>
+            <h2 className="mt-3 text-2xl font-bold tracking-tight text-stone-900 sm:text-3xl">
+              Recibir remisión
+            </h2>
+            <p className="mt-2 max-w-2xl text-base leading-relaxed text-stone-600 sm:text-lg">
+              Marca cada línea con la casilla al verificar el físico; nada se guarda hasta{" "}
+              <strong className="text-stone-800">Registrar recepción</strong> abajo. Usa{" "}
+              <strong className="text-stone-800">Más opciones</strong> si hubo faltante o otra
+              cantidad.
+            </p>
+          </div>
+        ) : (
+          <div className="ui-h3">
+            {isConductorTransitReview
+              ? "Resumen de insumos listos"
+              : canEditPrepareItems
+                ? allowPrepareCorrection
+                  ? "Modo Bodeguero · Corregir preparación"
+                  : isReadyToDispatch
+                    ? "Modo Bodeguero · Lista para despacho"
+                    : "Modo Bodeguero · Preparar salida"
+                : canEditReceiveItems
+                  ? "Recibir remision"
+                  : compactSatelliteView
+                    ? "Productos"
+                    : "Items de la remision"}
+          </div>
+        )}
         {canEditPrepareItems ? (
           <div
             className={
@@ -564,46 +600,100 @@ export default async function RemissionDetailPage({
               }
             />
           </div>
-        ) : (
-        <form action={updateItems} className="mt-4 space-y-4 pb-24 lg:pb-0">
-          <input type="hidden" name="request_id" value={request.id} />
-          <input type="hidden" name="return_origin" value={cameFromPrepareQueue ? "prepare" : ""} />
-          <input type="hidden" name="site_id" value={activeSiteId} />
+        ) : isReceiveDestinationFlow ? (
+          <ReceiveBatchShell
+            requestId={request.id}
+            returnOrigin={cameFromPrepareQueue ? "prepare" : ""}
+            siteId={activeSiteId}
+            eligibleItemIds={receiveBatchEligibleIds}
+          >
+            <form action={updateItems} className="mt-4 space-y-4">
+              <input type="hidden" name="request_id" value={request.id} />
+              <input type="hidden" name="return_origin" value={cameFromPrepareQueue ? "prepare" : ""} />
+              <input type="hidden" name="site_id" value={activeSiteId} />
 
-          <div className="space-y-3">
-            {itemRows.map((item) => {
-              const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
-              const lineIdsForProduct = lineIdsByProduct.get(item.product_id) ?? [item.id];
-              const vm = buildRemissionLineVm({
-                item,
-                currentStatus,
-                canEditPrepareItems,
-                canEditReceiveItems,
-                showSourceLocSelector,
-                availableSite,
-                lineIdsForProduct,
-                locCandidates: stockByLocCandidates.get(item.product_id) ?? [],
-                originLocById,
-                stockByLocValueMap,
-                activeLineId,
-                activeLineEvent,
-              });
-              return (
-                <RemissionLineCard
-                  key={item.id}
-                  item={item}
-                  vm={vm}
-                  currentStatus={currentStatus}
-                  canEditPrepareItems={canEditPrepareItems}
-                  canEditReceiveItems={canEditReceiveItems}
-                  showSourceLocSelector={showSourceLocSelector}
-                  lineIdsForProduct={lineIdsForProduct}
-                  originLocRows={originLocRows}
-                />
-              );
-            })}
-          </div>
-        </form>
+              <div className="space-y-5 sm:space-y-6">
+                {itemRows.map((item) => {
+                  const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
+                  const lineIdsForProduct = lineIdsByProduct.get(item.product_id) ?? [item.id];
+                  const vm = buildRemissionLineVm({
+                    item,
+                    currentStatus,
+                    canEditPrepareItems,
+                    canEditReceiveItems,
+                    showSourceLocSelector,
+                    availableSite,
+                    lineIdsForProduct,
+                    locCandidates: stockByLocCandidates.get(item.product_id) ?? [],
+                    originLocById,
+                    stockByLocValueMap,
+                    activeLineId,
+                    activeLineEvent,
+                  });
+                  const batchEligible = receiveBatchEligibleIds.includes(item.id);
+                  return (
+                    <ReceiveBatchLineWrapper
+                      key={item.id}
+                      itemId={item.id}
+                      batchEligible={batchEligible}
+                    >
+                      <RemissionLineCard
+                        item={item}
+                        vm={vm}
+                        currentStatus={currentStatus}
+                        canEditPrepareItems={canEditPrepareItems}
+                        canEditReceiveItems={canEditReceiveItems}
+                        showSourceLocSelector={showSourceLocSelector}
+                        lineIdsForProduct={lineIdsForProduct}
+                        originLocRows={originLocRows}
+                        batchReceiveMode
+                      />
+                    </ReceiveBatchLineWrapper>
+                  );
+                })}
+              </div>
+            </form>
+          </ReceiveBatchShell>
+        ) : (
+          <form action={updateItems} className="mt-4 space-y-4 pb-24 lg:pb-0">
+            <input type="hidden" name="request_id" value={request.id} />
+            <input type="hidden" name="return_origin" value={cameFromPrepareQueue ? "prepare" : ""} />
+            <input type="hidden" name="site_id" value={activeSiteId} />
+
+            <div className="space-y-3">
+              {itemRows.map((item) => {
+                const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
+                const lineIdsForProduct = lineIdsByProduct.get(item.product_id) ?? [item.id];
+                const vm = buildRemissionLineVm({
+                  item,
+                  currentStatus,
+                  canEditPrepareItems,
+                  canEditReceiveItems,
+                  showSourceLocSelector,
+                  availableSite,
+                  lineIdsForProduct,
+                  locCandidates: stockByLocCandidates.get(item.product_id) ?? [],
+                  originLocById,
+                  stockByLocValueMap,
+                  activeLineId,
+                  activeLineEvent,
+                });
+                return (
+                  <RemissionLineCard
+                    key={item.id}
+                    item={item}
+                    vm={vm}
+                    currentStatus={currentStatus}
+                    canEditPrepareItems={canEditPrepareItems}
+                    canEditReceiveItems={canEditReceiveItems}
+                    showSourceLocSelector={showSourceLocSelector}
+                    lineIdsForProduct={lineIdsForProduct}
+                    originLocRows={originLocRows}
+                  />
+                );
+              })}
+            </div>
+          </form>
         )}
 
         {!canEditPrepareItems && (canEditPrepareItems || canEditReceiveItems) ? (

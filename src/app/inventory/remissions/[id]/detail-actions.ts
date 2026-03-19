@@ -1870,3 +1870,148 @@ export async function applyReceiveShortcut(formData: FormData) {
     })
   );
 }
+
+/**
+ * Recepción en escritorio: confirma "recibir todo" en varias líneas en un solo envío.
+ * Misma regla que `receive_all` en `applyReceiveShortcut` por ítem.
+ */
+export async function applyReceiveBatchConfirm(formData: FormData) {
+  const supabase = await createClient();
+  const { data: userRes } = await supabase.auth.getUser();
+  const user = userRes.user ?? null;
+  const requestId = asText(formData.get("request_id"));
+  const returnOrigin = normalizeReturnOrigin(asText(formData.get("return_origin")));
+  const activeSiteId = asText(formData.get("site_id"));
+  if (!user) {
+    redirect(await buildShellLoginUrl(buildRemissionDetailHref({ requestId, from: returnOrigin })));
+  }
+
+  const rawIds = formData
+    .getAll("batch_receive_item_id")
+    .map((value) => asText(value).trim())
+    .filter(Boolean);
+  const itemIds = [...new Set(rawIds)];
+
+  if (itemIds.length === 0) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: "Selecciona al menos una línea para registrar la recepción.",
+      })
+    );
+  }
+
+  const { data: request } = await supabase
+    .from("restock_requests")
+    .select("from_site_id,to_site_id,status")
+    .eq("id", requestId)
+    .single();
+
+  const access = await loadAccessContext(supabase, user.id, request, activeSiteId);
+  const currentStatus = String(request?.status ?? "");
+  if (!access.canReceive || !["in_transit", "partial"].includes(currentStatus)) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: "Solo puedes registrar recepción mientras la remision está en tránsito o parcial.",
+      })
+    );
+  }
+
+  await enforceOperationalGateOrRedirect({
+    supabase,
+    userId: user.id,
+    siteId: request?.to_site_id,
+    requestId,
+    returnOrigin,
+    fallbackMessage: "No puedes recibir esta remisión en este momento.",
+  });
+
+  let appliedCount = 0;
+
+  for (const itemId of itemIds) {
+    const { data: itemRow } = await supabase
+      .from("restock_request_items")
+      .select("id,quantity,prepared_quantity,shipped_quantity,received_quantity,shortage_quantity")
+      .eq("id", itemId)
+      .eq("request_id", requestId)
+      .single();
+
+    if (!itemRow) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          error: "Una de las líneas seleccionadas no pertenece a esta remisión.",
+        })
+      );
+    }
+
+    const shippedQty = roundQuantity(Number(itemRow.shipped_quantity ?? 0));
+    const receivedNow = roundQuantity(Number(itemRow.received_quantity ?? 0));
+    const shortageNow = roundQuantity(Number(itemRow.shortage_quantity ?? 0));
+    const accounted = roundQuantity(receivedNow + shortageNow);
+
+    if (shippedQty <= 0) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          error:
+            "Una de las líneas no tiene envío confirmado. Actualiza la página o quítala de la selección.",
+        })
+      );
+    }
+
+    if (accounted >= shippedQty) {
+      continue;
+    }
+
+    const finalReceived = shippedQty;
+    const finalShortage = 0;
+
+    if (finalReceived + finalShortage > shippedQty) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          error: `Recibido + faltante no puede superar enviado (${shippedQty}).`,
+        })
+      );
+    }
+
+    const { error } = await supabase
+      .from("restock_request_items")
+      .update({
+        received_quantity: finalReceived,
+        shortage_quantity: finalShortage,
+      })
+      .eq("id", itemId);
+
+    if (error) {
+      redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: error.message }));
+    }
+    appliedCount += 1;
+  }
+
+  const syncError = await syncReceiveRequestStatus({
+    supabase,
+    requestId,
+  });
+  if (syncError) {
+    redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: syncError }));
+  }
+
+  redirect(
+    buildRemissionDetailHref({
+      requestId,
+      from: returnOrigin,
+      ok:
+        appliedCount === 0
+          ? "Las líneas seleccionadas ya estaban conciliadas; no hubo cambios."
+          : `Recepción confirmada: ${appliedCount} línea(s).`,
+    })
+  );
+}

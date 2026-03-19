@@ -10,6 +10,8 @@ type RemissionLineCardProps = {
   showSourceLocSelector: boolean;
   lineIdsForProduct: string[];
   originLocRows: LocRow[];
+  /** Recepción en destino: oculta el botón “Recibir X” (se usa barra global + checkboxes). */
+  batchReceiveMode?: boolean;
 };
 
 export function RemissionLineCard({
@@ -21,6 +23,7 @@ export function RemissionLineCard({
   showSourceLocSelector,
   lineIdsForProduct,
   originLocRows,
+  batchReceiveMode = false,
 }: RemissionLineCardProps) {
   const splitFormId = `split-line-form-${item.id}`;
   const manualLocFormId = `manual-loc-form-${item.id}`;
@@ -34,39 +37,104 @@ export function RemissionLineCard({
   const clearReceiveShortcutFormId = `clear-receive-shortcut-form-${item.id}`;
   const setPartialReceiveFormId = `set-partial-receive-form-${item.id}`;
 
-  return (
-    <div
-      className={`rounded-2xl border p-4 transition ${
+  const isReceiveOnly = canEditReceiveItems && !canEditPrepareItems;
+
+  const rootClass = isReceiveOnly
+    ? [
+        "relative overflow-hidden rounded-2xl border transition sm:rounded-3xl",
+        "p-4 pl-[1.15rem] sm:p-5 sm:pl-6",
+        vm.isActiveLine
+          ? "border-emerald-400 bg-gradient-to-br from-emerald-50/95 to-white shadow-[0_12px_40px_-16px_rgba(5,150,105,0.35)] ring-2 ring-emerald-200/60"
+          : vm.lineCompleteReceipt
+            ? "border-emerald-200/90 bg-gradient-to-br from-emerald-50/50 via-white to-white shadow-md shadow-stone-900/[0.05]"
+            : "border-stone-200/90 bg-white shadow-md shadow-stone-900/[0.06]",
+      ].join(" ")
+    : [
+        "rounded-2xl border p-4 transition",
         vm.isActiveLine
           ? "border-emerald-300 bg-emerald-50/60 shadow-[0_0_0_2px_rgba(16,185,129,0.12)]"
-          : "border-[var(--ui-border)] bg-[var(--ui-bg-soft)]"
-      }`}
-    >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="space-y-2">
-          <div className="ui-h3">{item.product?.name ?? item.product_id}</div>
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="rounded-full border border-amber-200 bg-amber-50 px-3.5 py-1.5 text-[15px] font-semibold text-amber-950 shadow-sm">
-              {vm.quantityBadgeText}
-            </span>
-            {lineIdsForProduct.length > 1 ? (
-              <span className="rounded-full border border-[var(--ui-border)] bg-white px-3 py-1 text-[13px] font-semibold text-[var(--ui-text)] shadow-sm">
-                Línea {vm.splitLineIndex} de {lineIdsForProduct.length}
+          : "border-[var(--ui-border)] bg-[var(--ui-bg-soft)]",
+      ].join(" ");
+
+  return (
+    <div className={rootClass}>
+      {isReceiveOnly ? (
+        <div
+          className={[
+            "absolute bottom-0 left-0 top-0 w-1 rounded-l-2xl sm:w-1.5 sm:rounded-l-3xl",
+            vm.lineCompleteReceipt
+              ? "bg-gradient-to-b from-emerald-400 to-emerald-600"
+              : "bg-gradient-to-b from-teal-400 to-emerald-500",
+          ].join(" ")}
+          aria-hidden
+        />
+      ) : null}
+
+      <div className={isReceiveOnly ? "relative min-w-0" : undefined}>
+      {isReceiveOnly ? (
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+          <div className="min-w-0 flex-1">
+            <h3 className="text-xl font-bold leading-snug tracking-tight text-stone-900 sm:text-2xl">
+              {item.product?.name ?? item.product_id}
+            </h3>
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              <span className="rounded-full bg-teal-50 px-3 py-1.5 text-sm font-bold text-teal-950 ring-1 ring-teal-200/90 sm:px-3.5 sm:py-2 sm:text-base">
+                {vm.quantityBadgeText}
               </span>
-            ) : null}
+              {lineIdsForProduct.length > 1 ? (
+                <span className="rounded-full bg-stone-50 px-3 py-1.5 text-sm font-semibold text-stone-700 ring-1 ring-stone-200/90">
+                  Línea {vm.splitLineIndex} de {lineIdsForProduct.length}
+                </span>
+              ) : null}
+            </div>
           </div>
+          {vm.lineCompleteReceipt ? (
+            <span className="inline-flex shrink-0 items-center rounded-full bg-emerald-100 px-3 py-1.5 text-xs font-bold uppercase tracking-wide text-emerald-900 ring-1 ring-emerald-200/80 sm:text-sm">
+              Conciliada
+            </span>
+          ) : vm.nextTaskLabel === "Lista" ? (
+            <span className={vm.taskBadgeClassName}>{vm.nextTaskLabel}</span>
+          ) : null}
         </div>
-        <span className={vm.taskBadgeClassName}>{vm.nextTaskLabel}</span>
-      </div>
+      ) : (
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="space-y-2">
+            <div className="ui-h3">{item.product?.name ?? item.product_id}</div>
+            <div className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-3.5 py-1.5 text-[15px] font-semibold text-amber-950 shadow-sm">
+                {vm.quantityBadgeText}
+              </span>
+              {lineIdsForProduct.length > 1 ? (
+                <span className="rounded-full border border-[var(--ui-border)] bg-white px-3 py-1 text-[13px] font-semibold text-[var(--ui-text)] shadow-sm">
+                  Línea {vm.splitLineIndex} de {lineIdsForProduct.length}
+                </span>
+              ) : null}
+            </div>
+          </div>
+          <span className={vm.taskBadgeClassName}>{vm.nextTaskLabel}</span>
+        </div>
+      )}
       {vm.isActiveLine ? (
-        <div className="mt-3 rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-900">
+        <div
+          className={
+            isReceiveOnly
+              ? "mt-3 rounded-xl bg-emerald-100/90 px-4 py-2.5 text-base font-semibold text-emerald-950 ring-1 ring-emerald-200/70"
+              : "mt-3 rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-900"
+          }
+        >
           {vm.activeLineMessage}
         </div>
       ) : null}
       {vm.primaryHint ? (
-        <div className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] px-3 py-2 text-sm text-[var(--ui-muted)]">
-          {vm.primaryHint}
-        </div>
+        isReceiveOnly ? (
+          <p className="mt-3 rounded-lg bg-amber-50/90 px-3 py-2 text-base leading-snug text-amber-950 ring-1 ring-amber-200/60">
+            {vm.primaryHint}
+          </p>
+        ) : (
+          <div className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] px-3 py-2 text-sm text-[var(--ui-muted)]">
+            {vm.primaryHint}
+          </div>
+        )
       ) : null}
       {vm.canSplitLine ? (
         <div className="mt-3 rounded-xl border border-dashed border-[var(--ui-border)] bg-[var(--ui-bg)] px-4 py-3">
@@ -336,97 +404,227 @@ export function RemissionLineCard({
           ) : null}
           {canEditReceiveItems ? (
             vm.lineCompleteReceipt ? (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
-                <div className="flex flex-wrap items-center justify-between gap-3">
-                  <div>
-                    <div className="text-sm font-semibold text-emerald-900">
-                      Recepción completa
-                    </div>
-                    <div className="mt-1 text-sm text-emerald-800/80">
-                      Quedó conciliada con {vm.receivedQty} {vm.itemUnitLabel} recibidas.
-                    </div>
-                  </div>
-                  <span className="ui-chip ui-chip--success">Todo listo</span>
+              <div
+                className={
+                  isReceiveOnly
+                    ? "mt-5 flex flex-col gap-3 border-t border-emerald-100/90 pt-5 sm:flex-row sm:items-center sm:justify-between"
+                    : "rounded-xl border border-emerald-200 bg-emerald-50 p-3"
+                }
+              >
+                <div>
+                  <p
+                    className={
+                      isReceiveOnly
+                        ? "text-lg font-bold text-emerald-900 sm:text-xl"
+                        : "text-sm font-semibold text-emerald-900"
+                    }
+                  >
+                    Recepción completa
+                  </p>
+                  <p
+                    className={
+                      isReceiveOnly
+                        ? "mt-1 text-base text-emerald-800/90 sm:text-lg"
+                        : "mt-1 text-sm text-emerald-800/80"
+                    }
+                  >
+                    {vm.receivedQty} {vm.itemUnitLabel} conciliadas en esta línea.
+                  </p>
                 </div>
+                <span
+                  className={
+                    isReceiveOnly
+                      ? "inline-flex w-fit shrink-0 items-center rounded-full bg-emerald-600 px-4 py-2 text-sm font-bold text-white shadow-sm shadow-emerald-900/15"
+                      : "ui-chip ui-chip--success"
+                  }
+                >
+                  Todo listo
+                </span>
               </div>
             ) : (
-              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3">
-                <div className="text-sm font-semibold text-[var(--ui-text)]">
-                  Ahora: recibir
-                </div>
-                <div className="mt-1 text-sm text-[var(--ui-muted)]">
-                  {vm.linePartialReceipt
-                    ? `Van ${vm.receivedQty} ${vm.itemUnitLabel} recibidas.`
-                    : vm.shippedQty > 0
-                      ? `${vm.shippedQty} ${vm.itemUnitLabel} salieron hacia esta sede.`
-                      : "Esta línea todavía no tiene envío confirmado."}
-                </div>
-                <div className="mt-3">
+              <div
+                className={
+                  isReceiveOnly
+                    ? "mt-5 space-y-4 border-t border-stone-100 pt-5"
+                    : "mt-0 space-y-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3"
+                }
+              >
+                <p
+                  className={
+                    isReceiveOnly
+                      ? "text-base leading-relaxed text-stone-600 sm:text-lg"
+                      : "text-sm font-semibold text-[var(--ui-text)]"
+                  }
+                >
+                  {isReceiveOnly
+                    ? batchReceiveMode
+                      ? vm.linePartialReceipt
+                        ? `Ya registraste ${vm.receivedQty} ${vm.itemUnitLabel}. Marca la casilla cuando hayas verificado el físico; la barra inferior registra todo junto, o usa Más opciones para faltante o parcial.`
+                        : vm.shippedQty > 0
+                          ? `${vm.shippedQty} ${vm.itemUnitLabel} enviadas desde el centro. Marca la casilla cuando las tengas listas; la confirmación es global abajo.`
+                          : "Esta línea aún no tiene envío confirmado hacia tu sede."
+                      : vm.linePartialReceipt
+                        ? `Ya registraste ${vm.receivedQty} ${vm.itemUnitLabel}. Puedes completar la línea o ajustar abajo si hace falta.`
+                        : vm.shippedQty > 0
+                          ? `${vm.shippedQty} ${vm.itemUnitLabel} enviadas desde el centro. Confirma que recibiste todo.`
+                          : "Esta línea aún no tiene envío confirmado hacia tu sede."
+                    : vm.linePartialReceipt
+                      ? `Van ${vm.receivedQty} ${vm.itemUnitLabel} recibidas.`
+                      : vm.shippedQty > 0
+                        ? `${vm.shippedQty} ${vm.itemUnitLabel} salieron hacia esta sede.`
+                        : "Esta línea todavía no tiene envío confirmado."}
+                </p>
+                {!isReceiveOnly ? (
+                  <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
+                    Acción principal
+                  </div>
+                ) : null}
+                {!(isReceiveOnly && batchReceiveMode) ? (
                   <button
                     type="submit"
                     form={receiveAllShortcutFormId}
-                    className="ui-btn ui-btn--action ui-btn--compact w-full px-4 text-sm font-semibold sm:w-auto"
                     disabled={vm.shippedQty <= 0}
+                    className={
+                      isReceiveOnly
+                        ? "h-14 w-full rounded-2xl bg-gradient-to-r from-teal-600 to-emerald-600 px-6 text-lg font-bold text-white shadow-lg shadow-teal-900/20 transition hover:from-teal-500 hover:to-emerald-500 hover:shadow-xl disabled:cursor-not-allowed disabled:from-stone-300 disabled:to-stone-300 disabled:text-stone-500 disabled:opacity-70 disabled:shadow-none"
+                        : "ui-btn ui-btn--action ui-btn--compact w-full px-4 text-sm font-semibold sm:w-auto"
+                    }
                   >
-                    {vm.shippedQty > 0 ? `Recibir ${vm.shippedQty} ${vm.itemUnitLabel}` : "Recibir todo"}
+                    {vm.shippedQty > 0
+                      ? `Recibir ${vm.shippedQty} ${vm.itemUnitLabel}`
+                      : "Nada por recibir aún"}
                   </button>
-                </div>
-                <details className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] px-3 py-2">
-                  <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
-                    Cambiar o ajustar
+                ) : null}
+
+                <details
+                  className={
+                    isReceiveOnly
+                      ? "group rounded-2xl border border-dashed border-stone-200/90 bg-stone-50/60 open:border-stone-300 open:bg-stone-50"
+                      : "rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] px-3 py-2"
+                  }
+                >
+                  <summary
+                    className={
+                      isReceiveOnly
+                        ? "cursor-pointer list-none px-4 py-3.5 marker:content-none [&::-webkit-details-marker]:hidden sm:px-5 sm:py-4"
+                        : "cursor-pointer text-sm font-semibold text-[var(--ui-text)]"
+                    }
+                  >
+                    {isReceiveOnly ? (
+                      <span className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+                        <span className="text-base font-semibold text-stone-800 sm:text-lg">
+                          Más opciones
+                        </span>
+                        <span className="text-sm font-normal text-stone-500">
+                          Faltante · cantidad distinta · limpiar
+                        </span>
+                      </span>
+                    ) : (
+                      "Cambiar o ajustar"
+                    )}
                   </summary>
-                  <div className="mt-3 flex flex-wrap gap-3">
-                    {vm.shippedQty > 0 && vm.remainingReceiptQty > 0 ? (
-                      <button
-                        type="submit"
-                        form={markShortageShortcutFormId}
-                        className="ui-btn ui-btn--ghost h-12 px-5 text-base font-semibold"
-                      >
-                        Marcar faltante {vm.remainingReceiptQty} {vm.itemUnitLabel}
-                      </button>
-                    ) : null}
-                    {vm.accountedQty > 0 ? (
-                      <button
-                        type="submit"
-                        form={clearReceiveShortcutFormId}
-                        className="ui-btn ui-btn--ghost h-12 px-5 text-base font-semibold"
-                      >
-                        Limpiar
-                      </button>
-                    ) : null}
-                  </div>
-                  {vm.shippedQty > 0 ? (
-                    <div className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3">
-                      <div className="ui-caption">Recibir cantidad diferente</div>
-                      <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
-                        <label className="flex min-w-0 flex-1 flex-col gap-1">
-                          <span className="ui-caption">Cantidad recibida</span>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min={0}
-                            max={vm.shippedQty}
-                            name="receive_qty"
-                            defaultValue={vm.receivedQty > 0 ? vm.receivedQty : vm.shippedQty}
-                            form={setPartialReceiveFormId}
-                            className="ui-input h-11"
-                          />
-                        </label>
+                  <div
+                    className={
+                      isReceiveOnly
+                        ? "space-y-5 border-t border-stone-200/80 px-4 pb-5 pt-4 sm:px-5"
+                        : "mt-3 space-y-3"
+                    }
+                  >
+                    <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                      {vm.shippedQty > 0 && vm.remainingReceiptQty > 0 ? (
                         <button
                           type="submit"
-                          form={setPartialReceiveFormId}
-                          className="ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
+                          form={markShortageShortcutFormId}
+                          className={
+                            isReceiveOnly
+                              ? "h-12 rounded-xl border border-amber-200 bg-amber-50 px-5 text-base font-semibold text-amber-950 transition hover:bg-amber-100"
+                              : "ui-btn ui-btn--ghost h-12 px-5 text-base font-semibold"
+                          }
                         >
-                          Guardar parcial
+                          Marcar faltante {vm.remainingReceiptQty} {vm.itemUnitLabel}
                         </button>
-                      </div>
+                      ) : null}
+                      {vm.accountedQty > 0 ? (
+                        <button
+                          type="submit"
+                          form={clearReceiveShortcutFormId}
+                          className={
+                            isReceiveOnly
+                              ? "h-12 rounded-xl border border-stone-200 bg-white px-5 text-base font-semibold text-stone-700 transition hover:bg-stone-50"
+                              : "ui-btn ui-btn--ghost h-12 px-5 text-base font-semibold"
+                          }
+                        >
+                          Limpiar recepción
+                        </button>
+                      ) : null}
                     </div>
-                  ) : null}
+                    {vm.shippedQty > 0 ? (
+                      <div className={isReceiveOnly ? "space-y-3" : "space-y-2"}>
+                        <div>
+                          <p
+                            className={
+                              isReceiveOnly
+                                ? "text-sm font-semibold text-stone-800 sm:text-base"
+                                : "ui-caption"
+                            }
+                          >
+                            {isReceiveOnly
+                              ? "Recibir otra cantidad"
+                              : "Recibir cantidad diferente"}
+                          </p>
+                          {isReceiveOnly ? (
+                            <p className="mt-1 text-sm text-stone-500">
+                              Si no llegó todo lo enviado, indica cuánto recibiste.
+                            </p>
+                          ) : null}
+                        </div>
+                        <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
+                          <label className="flex min-w-0 flex-1 flex-col gap-1.5">
+                            <span
+                              className={
+                                isReceiveOnly
+                                  ? "text-sm font-medium text-stone-700"
+                                  : "ui-caption"
+                              }
+                            >
+                              Cantidad recibida
+                            </span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min={0}
+                              max={vm.shippedQty}
+                              name="receive_qty"
+                              defaultValue={vm.receivedQty > 0 ? vm.receivedQty : vm.shippedQty}
+                              form={setPartialReceiveFormId}
+                              className={
+                                isReceiveOnly
+                                  ? "ui-input h-12 text-lg font-semibold tabular-nums"
+                                  : "ui-input h-11"
+                              }
+                            />
+                          </label>
+                          <button
+                            type="submit"
+                            form={setPartialReceiveFormId}
+                            className={
+                              isReceiveOnly
+                                ? "h-12 shrink-0 rounded-xl bg-stone-800 px-6 text-base font-bold text-white transition hover:bg-stone-700"
+                                : "ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
+                            }
+                          >
+                            Guardar parcial
+                          </button>
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
                 </details>
               </div>
             )
           ) : null}
         </div>
+      </div>
       </div>
       <input type="hidden" name="item_area_kind" value={item.production_area_kind ?? ""} />
     </div>
