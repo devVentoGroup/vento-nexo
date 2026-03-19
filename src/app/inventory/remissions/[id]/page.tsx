@@ -32,6 +32,7 @@ import {
   formatUnitLabel,
   loadRemissionOperationalSummary,
 } from "./detail-utils";
+import { buildPrepareFingerprintHash } from "./prepare-fingerprint";
 
 export const dynamic = "force-dynamic";
 const APP_ID = "nexo";
@@ -213,6 +214,10 @@ export default async function RemissionDetailPage({
   const canTransitNow = canTransitAction && summary.can_transit;
   const isConductorTransitReview = !canEditPrepareItems && canTransitAction;
   const isReadyToDispatch = currentStatus === "preparing" && summary.can_transit;
+  const editPrepareRaw = sp.edit_prepare;
+  const editPrepareVal = Array.isArray(editPrepareRaw) ? editPrepareRaw[0] : editPrepareRaw;
+  const editPrepareRequested = String(editPrepareVal ?? "").trim() === "1";
+  const allowPrepareCorrection = isReadyToDispatch && editPrepareRequested;
   const hasPrimaryTopAction = canStartPreparationNow || canTransitNow;
   const showTopActionPanel = canTransitAction || (access.canPrepare && currentStatus === "pending");
   let responsibleActor = "Sin actor operativo pendiente.";
@@ -233,7 +238,9 @@ export default async function RemissionDetailPage({
   const phaseLabel = isConductorTransitReview
     ? "Modo Conductor"
     : canEditPrepareItems
-      ? "Modo Bodeguero"
+      ? allowPrepareCorrection
+        ? "Modo Bodeguero · Corregir"
+        : "Modo Bodeguero"
       : canEditReceiveItems
         ? "Recepcion en destino"
         : null;
@@ -313,6 +320,25 @@ export default async function RemissionDetailPage({
       })
     : [];
 
+  const detailNavFrom = cameFromPrepareQueue
+    ? "prepare"
+    : cameFromTransitQueue
+      ? "transit"
+      : undefined;
+  const prepareSummaryHref = buildRemissionDetailHref({
+    requestId: request.id,
+    siteId: activeSiteId || undefined,
+    from: detailNavFrom,
+  });
+  const correctPrepareWorkbenchHref = buildRemissionDetailHref({
+    requestId: request.id,
+    siteId: activeSiteId || undefined,
+    from: detailNavFrom,
+    editPrepare: true,
+  });
+
+  const transitPrepareFingerprint = buildPrepareFingerprintHash(itemRows);
+
   return (
     <div className="ui-scene w-full space-y-6 pb-28 lg:pb-6">
       <RemissionHeroSection
@@ -344,8 +370,14 @@ export default async function RemissionDetailPage({
                 Checklist de tránsito activo
               </div>
             ) : canEditPrepareItems ? (
-              <div className="mt-2 inline-flex items-center rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900">
-                Preparación de bodega activa
+              <div
+                className={`mt-2 inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
+                  allowPrepareCorrection
+                    ? "bg-amber-200 text-amber-950"
+                    : "bg-amber-100 text-amber-900"
+                }`}
+              >
+                {allowPrepareCorrection ? "Corrigiendo preparación" : "Preparación de bodega activa"}
               </div>
             ) : null}
           </div>
@@ -438,6 +470,7 @@ export default async function RemissionDetailPage({
               value={cameFromPrepareQueue ? "prepare" : cameFromTransitQueue ? "transit" : ""}
             />
             <input type="hidden" name="site_id" value={activeSiteId} />
+            <input type="hidden" name="prepare_fingerprint" value={transitPrepareFingerprint} />
             {itemRows.map((item) => {
               const productName = item.product?.name ?? item.product_id;
               const preparedQty = roundQuantity(Number(item.prepared_quantity ?? 0));
@@ -482,7 +515,11 @@ export default async function RemissionDetailPage({
           {isConductorTransitReview
             ? "Resumen de insumos listos"
             : canEditPrepareItems
-            ? "Modo Bodeguero · Preparar salida"
+            ? allowPrepareCorrection
+              ? "Modo Bodeguero · Corregir preparación"
+              : isReadyToDispatch
+                ? "Modo Bodeguero · Lista para despacho"
+                : "Modo Bodeguero · Preparar salida"
             : canEditReceiveItems
               ? "Recibir remision"
               : compactSatelliteView
@@ -490,13 +527,35 @@ export default async function RemissionDetailPage({
                 : "Items de la remision"}
         </div>
         {canEditPrepareItems ? (
-          <div className="mt-4 pb-28 lg:pb-24">
+          <div
+            className={
+              isReadyToDispatch && !allowPrepareCorrection ? "mt-4 pb-6" : "mt-4 pb-28 lg:pb-24"
+            }
+          >
+            {allowPrepareCorrection ? (
+              <div className="ui-alert ui-alert--warn mb-3 ui-fade-up">
+                <p className="text-sm font-medium text-[var(--ui-text)]">
+                  Estás corrigiendo una remisión que ya estaba lista para despacho. El conductor debe
+                  volver a revisar antes de poner en tránsito.
+                </p>
+                <Link
+                  href={prepareSummaryHref}
+                  className="mt-2 inline-block text-sm font-semibold text-[var(--ui-text)] underline underline-offset-4"
+                >
+                  Ver solo resumen
+                </Link>
+              </div>
+            ) : null}
             <RemissionPrepareWorkbench
               requestId={request.id}
               returnOrigin={cameFromPrepareQueue ? "prepare" : ""}
               siteId={activeSiteId}
               lines={draftPrepareLines}
               onCommit={commitPreparationDraft}
+              dispatchReadySummary={isReadyToDispatch && !allowPrepareCorrection}
+              correctPrepareHref={
+                isReadyToDispatch ? correctPrepareWorkbenchHref : undefined
+              }
             />
           </div>
         ) : (

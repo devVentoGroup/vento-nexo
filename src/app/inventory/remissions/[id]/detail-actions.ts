@@ -20,6 +20,7 @@ import {
   syncReceiveRequestStatus,
   toFriendlyRemissionActionError,
 } from "./detail-utils";
+import { buildPrepareFingerprintHash } from "./prepare-fingerprint";
 
 export async function updateItems(formData: FormData) {
   const supabase = await createClient();
@@ -563,6 +564,36 @@ export async function submitTransitChecklist(formData: FormData) {
         error: "La remisión aún no está lista para pasar a tránsito.",
       })
     );
+  }
+
+  const submittedPrepareFingerprint = asText(formData.get("prepare_fingerprint"));
+  if (submittedPrepareFingerprint) {
+    const { data: fpRows, error: fpErr } = await supabase
+      .from("restock_request_items")
+      .select("id,quantity,source_location_id,prepared_quantity,shipped_quantity")
+      .eq("request_id", requestId);
+    if (fpErr) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error: fpErr.message,
+        })
+      );
+    }
+    const currentFp = buildPrepareFingerprintHash(fpRows ?? []);
+    if (currentFp !== submittedPrepareFingerprint) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error:
+            "La preparación cambió mientras revisabas. Actualiza la página y vuelve a confirmar el tránsito.",
+        })
+      );
+    }
   }
 
   const itemIds = formData.getAll("item_id").map((v) => String(v).trim());

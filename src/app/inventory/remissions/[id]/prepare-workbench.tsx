@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 type LocOption = {
@@ -35,7 +36,16 @@ type PrepareWorkbenchProps = {
   siteId: string;
   lines: DraftLine[];
   onCommit: (formData: FormData) => void | Promise<void>;
+  /** Si true, la remisión ya está lista para despacho: solo resumen, sin editar ni acciones. */
+  dispatchReadySummary?: boolean;
+  /** En resumen listo: enlace con ?edit_prepare=1 para volver a editar. */
+  correctPrepareHref?: string;
 };
+
+type PrepareWorkbenchInteractiveProps = Omit<
+  PrepareWorkbenchProps,
+  "dispatchReadySummary" | "correctPrepareHref"
+>;
 
 function clampQty(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
@@ -199,13 +209,99 @@ function suggestedSplitQtyForMultiloc(line: DraftLine): number {
   return Math.max(1, Math.floor(rq / 2));
 }
 
-export function RemissionPrepareWorkbench({
+function RemissionPrepareReadonlySummary({
+  lines,
+  correctPrepareHref,
+}: {
+  lines: DraftLine[];
+  correctPrepareHref?: string;
+}) {
+  return (
+    <>
+      <p className="mb-3 text-sm text-[var(--ui-muted)]">
+        Preparación registrada. El conductor revisa y pone en tránsito desde su cola.
+      </p>
+      {correctPrepareHref ? (
+        <div className="mb-3">
+          <Link
+            href={correctPrepareHref}
+            className="ui-btn ui-btn--ghost inline-flex h-10 items-center px-4 text-sm font-semibold"
+          >
+            Corregir preparación
+          </Link>
+        </div>
+      ) : null}
+      <div className="overflow-hidden rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)]">
+        <div className="hidden grid-cols-[minmax(220px,1.2fr)_minmax(260px,1.3fr)_120px_minmax(220px,1fr)_120px] gap-3 border-b border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ui-muted)] lg:grid">
+          <div>Insumo</div>
+          <div>LOC</div>
+          <div>Cantidad</div>
+          <div>Faltante</div>
+          <div>Estado</div>
+        </div>
+        {lines.map((line) => {
+          const hasShortage = line.dispatchQty < line.requestedQty;
+          const tone = getLineTone(line);
+          const locEntry = line.locOptions.find((loc) => loc.id === line.selectedLocId);
+          const locText = locEntry
+            ? `${locEntry.label} · ${locEntry.qty} ${line.unitLabel}`
+            : (line.selectedLocId || "Sin LOC").trim() || "Sin LOC";
+          return (
+            <div key={line.id} className="border-t border-[var(--ui-border)] first:border-t-0">
+              <div className="grid gap-3 px-4 py-3 lg:grid-cols-[minmax(220px,1.2fr)_minmax(260px,1.3fr)_120px_minmax(220px,1fr)_120px] lg:items-start">
+                <div>
+                  <div className="text-sm font-semibold text-[var(--ui-text)]">{line.productName}</div>
+                  <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                    Solicitado: {line.requestedQty} {line.unitLabel}
+                  </div>
+                </div>
+                <div className="text-sm text-[var(--ui-text)]">{locText}</div>
+                <div className="text-sm font-medium text-[var(--ui-text)]">
+                  {line.dispatchQty} {line.unitLabel}
+                </div>
+                <div>
+                  {hasShortage ? (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 px-2 py-2 text-xs text-amber-950">
+                      <span className="font-semibold">Faltante: </span>
+                      {line.shortageReason.trim() || "—"}
+                    </div>
+                  ) : (
+                    <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-2 text-xs text-emerald-800">
+                      Sin faltante
+                    </div>
+                  )}
+                </div>
+                <div>
+                  <span
+                    className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                      tone === "ok"
+                        ? "bg-emerald-100 text-emerald-900"
+                        : tone === "warn"
+                          ? "bg-amber-100 text-amber-900"
+                          : tone === "error"
+                            ? "bg-rose-100 text-rose-900"
+                            : "bg-[var(--ui-bg-soft)] text-[var(--ui-muted)]"
+                    }`}
+                  >
+                    {getLineToneLabel(tone)}
+                  </span>
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+function RemissionPrepareWorkbenchInteractive({
   requestId,
   returnOrigin,
   siteId,
   lines: initialLines,
   onCommit,
-}: PrepareWorkbenchProps) {
+}: PrepareWorkbenchInteractiveProps) {
   const [lines, setLines] = useState<DraftLine[]>(() =>
     applySmartAllocation(initialLines.map((line) => normalizeLine(line)), false)
   );
@@ -552,3 +648,22 @@ export function RemissionPrepareWorkbench({
   );
 }
 
+export function RemissionPrepareWorkbench(props: PrepareWorkbenchProps) {
+  if (props.dispatchReadySummary) {
+    return (
+      <RemissionPrepareReadonlySummary
+        lines={props.lines}
+        correctPrepareHref={props.correctPrepareHref}
+      />
+    );
+  }
+  return (
+    <RemissionPrepareWorkbenchInteractive
+      requestId={props.requestId}
+      returnOrigin={props.returnOrigin}
+      siteId={props.siteId}
+      lines={props.lines}
+      onCommit={props.onCommit}
+    />
+  );
+}

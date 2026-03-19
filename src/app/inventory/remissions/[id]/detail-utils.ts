@@ -9,6 +9,8 @@ export type SearchParams = {
   line?: string;
   event?: string;
   site_id?: string;
+  /** 1 = bodega vuelve a editar una remisión ya lista para despacho */
+  edit_prepare?: string;
 };
 
 export type AccessContext = {
@@ -268,6 +270,8 @@ export function buildRemissionDetailHref(params: {
   line?: string | null;
   event?: string | null;
   siteId?: string | null;
+  /** Abre el workbench de preparación aunque ya esté lista para despacho */
+  editPrepare?: boolean;
 }) {
   const query = new URLSearchParams();
   const from = normalizeReturnOrigin(params.from);
@@ -277,14 +281,17 @@ export function buildRemissionDetailHref(params: {
   const line = String(params.line ?? "").trim();
   const event = String(params.event ?? "").trim();
   const siteId = String(params.siteId ?? "").trim();
+  const rawFrom = String(params.from ?? "").trim();
 
   if (from) query.set("from", from);
+  if (!from && rawFrom === "transit") query.set("from", "transit");
   if (error) query.set("error", error);
   if (ok) query.set("ok", ok);
   if (warning) query.set("warning", warning);
   if (line) query.set("line", line);
   if (event) query.set("event", event);
   if (siteId) query.set("site_id", siteId);
+  if (params.editPrepare) query.set("edit_prepare", "1");
 
   const search = query.toString();
   return search
