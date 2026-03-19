@@ -157,49 +157,11 @@ function deriveItemStatus(params: {
 async function syncReceiveRequestStatus(params: {
   supabase: SupabaseClient;
   requestId: string;
-  userId: string;
 }) {
-  const { supabase, requestId, userId } = params;
-  const { data: receiveRows, error: receiveRowsError } = await supabase
-    .from("restock_request_items")
-    .select("shipped_quantity,received_quantity,shortage_quantity")
-    .eq("request_id", requestId);
-
-  if (receiveRowsError) {
-    return receiveRowsError.message;
-  }
-
-  const rows = (receiveRows ?? []) as Array<{
-    shipped_quantity: number | null;
-    received_quantity: number | null;
-    shortage_quantity: number | null;
-  }>;
-  let anyAccounted = false;
-  let allFullyAccounted = true;
-  let anyShipped = false;
-
-  for (const row of rows) {
-    const shippedQty = roundQuantity(Number(row.shipped_quantity ?? 0));
-    const receivedQty = roundQuantity(Number(row.received_quantity ?? 0));
-    const shortageQty = roundQuantity(Number(row.shortage_quantity ?? 0));
-    const accountedQty = roundQuantity(receivedQty + shortageQty);
-    if (accountedQty > 0) anyAccounted = true;
-    if (shippedQty <= 0) continue;
-    anyShipped = true;
-    if (accountedQty !== shippedQty) allFullyAccounted = false;
-  }
-
-  const now = new Date().toISOString();
-  const status =
-    anyShipped && allFullyAccounted ? "received" : anyAccounted ? "partial" : "in_transit";
-  const { error } = await supabase
-    .from("restock_requests")
-    .update({
-      status,
-      ...(anyAccounted ? { received_at: now, received_by: userId } : {}),
-      status_updated_at: now,
-    })
-    .eq("id", requestId);
+  const { supabase, requestId } = params;
+  const { error } = await supabase.rpc("sync_restock_request_status_from_items", {
+    p_request_id: requestId,
+  });
   return error?.message ?? null;
 }
 
@@ -1454,7 +1416,6 @@ async function applyReceiveShortcut(formData: FormData) {
   const syncError = await syncReceiveRequestStatus({
     supabase,
     requestId,
-    userId: user.id,
   });
   if (syncError) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: syncError }));
@@ -2154,16 +2115,6 @@ export default async function RemissionDetailPage({
   }
 
   const currentStatus = String(request.status ?? "");
-  const canTransitAction = access.canTransit && currentStatus === "preparing";
-  const canReceiveAction =
-    access.canReceive && ["in_transit", "partial"].includes(currentStatus);
-  const canReceivePartialAction = access.canReceive && currentStatus === "in_transit";
-  const canEditPrepareItems =
-    access.canPrepare && ["pending", "preparing"].includes(currentStatus);
-  const canEditReceiveItems =
-    access.canReceive && ["in_transit", "partial"].includes(currentStatus);
-  const isProductionView = access.fromSiteType === "production_center" && access.canPrepare;
-  const isSatelliteView = access.toSiteType === "satellite" && access.canReceive;
   const pendingReceiptLines = itemRows.filter((item) => {
     const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
     const accountedQty = roundQuantity(
@@ -2177,6 +2128,16 @@ export default async function RemissionDetailPage({
   const receivedLines = itemRows.filter(
     (item) => roundQuantity(Number(item.received_quantity ?? 0)) > 0
   ).length;
+  const canTransitAction = access.canTransit && currentStatus === "preparing";
+  const canReceiveAction =
+    access.canReceive && ["in_transit", "partial"].includes(currentStatus);
+  const canReceivePartialAction = access.canReceive && currentStatus === "in_transit";
+  const canEditPrepareItems =
+    access.canPrepare && ["pending", "preparing"].includes(currentStatus);
+  const canEditReceiveItems =
+    access.canReceive && ["in_transit", "partial"].includes(currentStatus);
+  const isProductionView = access.fromSiteType === "production_center" && access.canPrepare;
+  const isSatelliteView = access.toSiteType === "satellite" && access.canReceive;
   const linesMissingSourceLoc = itemRows.filter((item) => {
     const preparedQty = roundQuantity(Number(item.prepared_quantity ?? 0));
     const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
@@ -2262,8 +2223,8 @@ export default async function RemissionDetailPage({
               {phaseLabel ? (
                 <span className="ui-chip ui-chip--brand">{phaseLabel}</span>
               ) : null}
-              <span className={formatStatus(request.status).className}>
-                {formatStatus(request.status).label}
+              <span className={formatStatus(currentStatus).className}>
+                {formatStatus(currentStatus).label}
               </span>
             </div>
             <h1 className="mt-4 text-3xl font-semibold tracking-[-0.03em] text-[var(--ui-text)]">
@@ -2351,8 +2312,8 @@ export default async function RemissionDetailPage({
         <div className="ui-panel ui-panel--halo ui-remission-section ui-fade-up ui-delay-2">
         <div className="ui-h3">Estado</div>
         <div className="mt-3 flex flex-wrap gap-2">
-          <span className={formatStatus(request.status).className}>
-            {formatStatus(request.status).label}
+          <span className={formatStatus(currentStatus).className}>
+            {formatStatus(currentStatus).label}
           </span>
           {phaseLabel ? <span className="ui-chip">{phaseLabel}</span> : null}
         </div>

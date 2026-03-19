@@ -137,6 +137,10 @@ Fecha: `2026-03-18`
 - Resultado esperado:
   - La UI y backend respetan la matriz de permisos en BD.
 
+## Notas técnicas de validación
+
+- 2026-03-19: se corrigió la causa raíz del bug donde algunas remisiones quedaban en `Recepción parcial` aunque todas sus líneas ya estuvieran conciliadas. La sincronización del estado padre quedó centralizada en BD con `public.sync_restock_request_status_from_items(uuid)` y el trigger `trg_sync_restock_request_status_from_items` sobre `restock_request_items`. La migración `20260319091901_nexo_restock_request_status_sync.sql` también ejecuta backfill sobre remisiones no canceladas/cerradas para reparar estados heredados.
+
 ## Cierre y limpieza de sandbox
 
 Cuando termines validación, ejecutar desde `vento-shell`:
