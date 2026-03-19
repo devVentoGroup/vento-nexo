@@ -22,8 +22,11 @@ Fecha: `2026-03-18`
 - Objetos nuevos:
   - Tabla `public.app_operation_policies`.
   - RPC `public.get_operational_context(...)`.
+  - RPC `public.get_restock_request_operational_summary(...)`.
 - Uso en NEXO:
   - Acciones críticas de remisiones bloquean con mensaje claro si el contexto operativo no cumple.
+  - La pantalla de detalle de remisiones ahora consume el resumen operativo desde BD para habilitar `Empezar preparación`, `Despachar` y validaciones de recepción.
+  - `restock_request_items.item_status` ya no depende del frontend: Supabase lo recalcula con `public.compute_restock_item_status(...)` y el trigger `trg_sync_restock_item_status`.
 
 ## Datos base del sandbox
 
