@@ -166,7 +166,6 @@ export function RemissionPrepareWorkbench({
     applySmartAllocation(initialLines.map((line) => normalizeLine(line)), false)
   );
   const [splitDrafts, setSplitDrafts] = useState<SplitDraft[]>([]);
-  const [readyMarked, setReadyMarked] = useState(false);
   const [splitTargetId, setSplitTargetId] = useState<string>("");
   const [splitQtyInput, setSplitQtyInput] = useState<string>("");
 
@@ -216,7 +215,6 @@ export function RemissionPrepareWorkbench({
       });
       return applySmartAllocation(patched, true);
     });
-    setReadyMarked(false);
   };
 
   const openSplit = (lineId: string) => {
@@ -266,7 +264,6 @@ export function RemissionPrepareWorkbench({
 
     setSplitTargetId("");
     setSplitQtyInput("");
-    setReadyMarked(false);
   };
 
   const payload = JSON.stringify({
@@ -284,13 +281,6 @@ export function RemissionPrepareWorkbench({
 
   return (
     <>
-      <div className="mb-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3">
-        <div className="text-sm font-semibold text-[var(--ui-text)]">Preparación operativa</div>
-        <div className="mt-1 text-xs text-[var(--ui-muted)]">
-          Selecciona LOC, define cantidad a despachar y registra motivo si hay faltante. Nada cambia estado hasta confirmar tránsito.
-        </div>
-      </div>
-
       <div className="overflow-hidden rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)]">
         <div className="hidden grid-cols-[minmax(220px,1.2fr)_minmax(260px,1.3fr)_120px_minmax(220px,1fr)_120px] gap-3 border-b border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ui-muted)] lg:grid">
           <div>Insumo</div>
@@ -442,20 +432,8 @@ export function RemissionPrepareWorkbench({
         <div className="mx-auto flex max-w-6xl flex-col gap-2 md:flex-row md:items-center md:justify-between">
           <div className="text-sm text-[var(--ui-text)]">
             <strong>{progress.done}/{progress.total}</strong> líneas listas
-            {blockers.missingLoc > 0 ? ` · ${blockers.missingLoc} sin LOC` : ""}
-            {blockers.invalidQty > 0 ? ` · ${blockers.invalidQty} qty inválida` : ""}
-            {blockers.missingReason > 0 ? ` · ${blockers.missingReason} sin motivo` : ""}
           </div>
-          <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
-              onClick={() => setReadyMarked(allReady)}
-              className={`ui-btn h-11 px-4 text-sm font-semibold ${
-                readyMarked ? "ui-btn--action" : "ui-btn--ghost"
-              }`}
-            >
-              {readyMarked ? "Lista para despacho" : "Marcar lista para despacho"}
-            </button>
+          <div className="flex flex-wrap items-center gap-3 md:gap-4">
             <button
               type="button"
               onClick={() => {
@@ -465,9 +443,8 @@ export function RemissionPrepareWorkbench({
                     false
                   )
                 );
-                setReadyMarked(false);
               }}
-              className="ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
+              className="text-left text-sm font-medium text-[var(--ui-text)]/55 underline-offset-4 transition hover:text-[var(--ui-text)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ui-ring)]"
             >
               Reoptimizar asignación
             </button>
@@ -479,7 +456,7 @@ export function RemissionPrepareWorkbench({
               <button
                 type="submit"
                 className="ui-btn ui-btn--action h-11 px-4 text-sm font-semibold"
-                disabled={!readyMarked || !allReady}
+                disabled={!allReady}
               >
                 Marcar lista para despacho
               </button>
