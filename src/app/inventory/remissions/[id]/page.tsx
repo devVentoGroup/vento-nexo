@@ -2218,6 +2218,7 @@ export default async function RemissionDetailPage({
     : isSatelliteView
       ? "Tu sede solo recibe y confirma."
       : "Vista operativa";
+  const compactSatelliteView = isSatelliteView && !isProductionView;
   const activeSignals = canEditPrepareItems
     ? linesMissingSourceLoc + linesPartialPreparation + linesWithoutCoveringLoc
     : canEditReceiveItems
@@ -2247,37 +2248,58 @@ export default async function RemissionDetailPage({
               {access.fromSiteName || "-"} → {access.toSiteName || "-"}
             </p>
           </div>
-          <div className="ui-remission-kpis">
-            <div className="ui-remission-kpi">
-              <div className="ui-remission-kpi-label">Actor actual</div>
-              <div className="mt-2 text-base font-semibold text-[var(--ui-text)]">{responsibleActor}</div>
-              <div className="ui-remission-kpi-note">Responsable operativo visible</div>
-            </div>
-            <div className="ui-remission-kpi" data-tone="cool">
-              <div className="ui-remission-kpi-label">Lineas</div>
-              <div className="ui-remission-kpi-value">{itemRows.length}</div>
-              <div className="ui-remission-kpi-note">Items dentro de la remision</div>
-            </div>
-            <div className="ui-remission-kpi" data-tone={activeSignals > 0 ? "warm" : "success"}>
-              <div className="ui-remission-kpi-label">Señales activas</div>
-              <div className="ui-remission-kpi-value">{activeSignals}</div>
-              <div className="ui-remission-kpi-note">
-                {request.expected_date
-                  ? `Entrega esperada ${formatDate(request.expected_date ?? null)}`
-                  : "Sin fecha esperada"}
+          {compactSatelliteView ? (
+            <div className="ui-remission-kpis">
+              <div className="ui-remission-kpi" data-tone={currentStatus === "received" ? "success" : "cool"}>
+                <div className="ui-remission-kpi-label">Lineas</div>
+                <div className="ui-remission-kpi-value">{itemRows.length}</div>
+                <div className="ui-remission-kpi-note">Productos por revisar</div>
+              </div>
+              <div className="ui-remission-kpi" data-tone={activeSignals > 0 ? "warm" : "success"}>
+                <div className="ui-remission-kpi-label">Entrega</div>
+                <div className="ui-remission-kpi-value">{activeSignals}</div>
+                <div className="ui-remission-kpi-note">
+                  {request.expected_date
+                    ? formatDate(request.expected_date ?? null)
+                    : "Sin fecha esperada"}
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="ui-remission-kpis">
+              <div className="ui-remission-kpi">
+                <div className="ui-remission-kpi-label">Actor actual</div>
+                <div className="mt-2 text-base font-semibold text-[var(--ui-text)]">{responsibleActor}</div>
+                <div className="ui-remission-kpi-note">Responsable operativo visible</div>
+              </div>
+              <div className="ui-remission-kpi" data-tone="cool">
+                <div className="ui-remission-kpi-label">Lineas</div>
+                <div className="ui-remission-kpi-value">{itemRows.length}</div>
+                <div className="ui-remission-kpi-note">Items dentro de la remision</div>
+              </div>
+              <div className="ui-remission-kpi" data-tone={activeSignals > 0 ? "warm" : "success"}>
+                <div className="ui-remission-kpi-label">Señales activas</div>
+                <div className="ui-remission-kpi-value">{activeSignals}</div>
+                <div className="ui-remission-kpi-note">
+                  {request.expected_date
+                    ? `Entrega esperada ${formatDate(request.expected_date ?? null)}`
+                    : "Sin fecha esperada"}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
-      <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-        <div>
-          <p className="mt-1 ui-caption">
-            {roleFlowLabel} Vista: {access.fromSiteType === "production_center" ? "Bodega (Centro)" : "Sede satelite"}.
-          </p>
+      {!compactSatelliteView ? (
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <p className="mt-1 ui-caption">
+              {roleFlowLabel} Vista: {access.fromSiteType === "production_center" ? "Bodega (Centro)" : "Sede satelite"}.
+            </p>
+          </div>
         </div>
-      </div>
+      ) : null}
 
       {errorMsg ? (
         <div className="ui-alert ui-alert--error ui-fade-up ui-delay-1">
@@ -2295,49 +2317,76 @@ export default async function RemissionDetailPage({
         </div>
       ) : null}
 
-      <div className="grid gap-6 xl:grid-cols-[1.6fr_0.9fr]">
+      {compactSatelliteView ? (
         <div className="ui-panel ui-remission-section ui-fade-up ui-delay-1">
-          <div className="ui-h3">Detalle</div>
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5 ui-body">
+          <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <div className="ui-caption">Origen</div>
-              <div>{access.fromSiteName || "-"}</div>
+              <div className="ui-h3">Resumen</div>
+              <div className="mt-3 ui-body">
+                Llega desde <strong>{access.fromSiteName || "-"}</strong> hacia <strong>{access.toSiteName || "-"}</strong>.
+              </div>
+              <div className="mt-2 ui-caption">
+                {request.expected_date
+                  ? `Entrega esperada: ${formatDate(request.expected_date ?? null)}`
+                  : "Sin fecha esperada"}
+              </div>
+              {request.notes ? (
+                <div className="mt-2 ui-caption">Nota: {request.notes}</div>
+              ) : null}
             </div>
-            <div>
-              <div className="ui-caption">Destino</div>
-              <div>{access.toSiteName || "-"}</div>
+            <div className="flex flex-wrap gap-2">
+              <span className={formatStatus(currentStatus).className}>
+                {formatStatus(currentStatus).label}
+              </span>
             </div>
-            <div>
-              <div className="ui-caption">Creada</div>
-              <div>{formatDateTime(request.created_at)}</div>
+          </div>
+          <div className="mt-3 ui-caption">{stateSupportText}</div>
+        </div>
+      ) : (
+        <div className="grid gap-6 xl:grid-cols-[1.6fr_0.9fr]">
+          <div className="ui-panel ui-remission-section ui-fade-up ui-delay-1">
+            <div className="ui-h3">Detalle</div>
+            <div className="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-5 ui-body">
+              <div>
+                <div className="ui-caption">Origen</div>
+                <div>{access.fromSiteName || "-"}</div>
+              </div>
+              <div>
+                <div className="ui-caption">Destino</div>
+                <div>{access.toSiteName || "-"}</div>
+              </div>
+              <div>
+                <div className="ui-caption">Creada</div>
+                <div>{formatDateTime(request.created_at)}</div>
+              </div>
+              <div>
+                <div className="ui-caption">Fecha esperada</div>
+                <div>{formatDate(request.expected_date ?? null)}</div>
+              </div>
+              <div>
+                <div className="ui-caption">Notas</div>
+                <div>{request.notes ?? "-"}</div>
+              </div>
             </div>
-            <div>
-              <div className="ui-caption">Fecha esperada</div>
-              <div>{formatDate(request.expected_date ?? null)}</div>
+          </div>
+
+          <div className="ui-panel ui-panel--halo ui-remission-section ui-fade-up ui-delay-2">
+            <div className="ui-h3">Estado</div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <span className={formatStatus(currentStatus).className}>
+                {formatStatus(currentStatus).label}
+              </span>
+              {phaseLabel ? <span className="ui-chip">{phaseLabel}</span> : null}
             </div>
-            <div>
-              <div className="ui-caption">Notas</div>
-              <div>{request.notes ?? "-"}</div>
+            <div className="mt-3 ui-caption">
+              Actor actual: <strong>{responsibleActor}</strong>
+            </div>
+            <div className="mt-3 ui-caption">
+              {stateSupportText}
             </div>
           </div>
         </div>
-
-        <div className="ui-panel ui-panel--halo ui-remission-section ui-fade-up ui-delay-2">
-        <div className="ui-h3">Estado</div>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <span className={formatStatus(currentStatus).className}>
-            {formatStatus(currentStatus).label}
-          </span>
-          {phaseLabel ? <span className="ui-chip">{phaseLabel}</span> : null}
-        </div>
-        <div className="mt-3 ui-caption">
-          Actor actual: <strong>{responsibleActor}</strong>
-        </div>
-        <div className="mt-3 ui-caption">
-          {stateSupportText}
-        </div>
-      </div>
-      </div>
+      )}
 
       {currentStatus === "partial" && (pendingReceiptLines > 0 || shortageLines > 0) ? (
         <div className="ui-alert ui-alert--warn ui-fade-up ui-delay-2">
@@ -2409,7 +2458,9 @@ export default async function RemissionDetailPage({
             ? "Preparar salida"
             : canEditReceiveItems
               ? "Recibir remision"
-              : "Items de la remision"}
+              : compactSatelliteView
+                ? "Productos"
+                : "Items de la remision"}
         </div>
         <form action={updateItems} className="mt-4 space-y-4 pb-24 lg:pb-0">
           <input type="hidden" name="request_id" value={request.id} />
