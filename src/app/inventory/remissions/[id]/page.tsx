@@ -487,13 +487,21 @@ export default async function RemissionDetailPage({
       ) : null}
 
       {isConductorTransitReview ? (
-        <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
-          <div className="text-xl font-bold tracking-tight text-[var(--ui-text)] sm:text-2xl">
-            Modo Conductor · Checklist de tránsito
+        <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2 overflow-hidden border-stone-200/80 bg-gradient-to-b from-amber-50/40 via-[var(--ui-bg)] to-[var(--ui-bg)]">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between sm:gap-4">
+            <div>
+              <span className="inline-flex items-center rounded-full bg-amber-100/90 px-3 py-1 text-xs font-bold uppercase tracking-wider text-amber-900/80 ring-1 ring-amber-200/60">
+                Conductor
+              </span>
+              <h2 className="mt-3 text-2xl font-bold tracking-tight text-stone-900 sm:text-3xl">
+                Checklist de tránsito
+              </h2>
+              <p className="mt-2 max-w-xl text-base leading-relaxed text-stone-600 sm:text-lg">
+                Marca cada ítem al verificarlo. Las notas y la ubicación están en el panel opcional de
+                abajo.
+              </p>
+            </div>
           </div>
-          <p className="mt-2 text-base leading-snug text-[var(--ui-muted)] sm:text-lg">
-            Revisa cada ítem en grande, marca como verificado y, si hace falta, abre la nota opcional.
-          </p>
           <ConductorTransitChecklistForm
             formAction={submitTransitChecklist}
             requestId={request.id}
