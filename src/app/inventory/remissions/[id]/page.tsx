@@ -175,6 +175,8 @@ async function syncReceiveRequestStatus(params: {
     shortage_quantity: number | null;
   }>;
   let anyAccounted = false;
+  let allFullyAccounted = true;
+  let anyShipped = false;
 
   for (const row of rows) {
     const shippedQty = roundQuantity(Number(row.shipped_quantity ?? 0));
@@ -183,10 +185,13 @@ async function syncReceiveRequestStatus(params: {
     const accountedQty = roundQuantity(receivedQty + shortageQty);
     if (accountedQty > 0) anyAccounted = true;
     if (shippedQty <= 0) continue;
+    anyShipped = true;
+    if (accountedQty !== shippedQty) allFullyAccounted = false;
   }
 
   const now = new Date().toISOString();
-  const status = anyAccounted ? "partial" : "in_transit";
+  const status =
+    anyShipped && allFullyAccounted ? "received" : anyAccounted ? "partial" : "in_transit";
   const { error } = await supabase
     .from("restock_requests")
     .update({
@@ -2353,7 +2358,7 @@ export default async function RemissionDetailPage({
         </div>
       </div>
 
-      {currentStatus === "partial" ? (
+      {currentStatus === "partial" && (pendingReceiptLines > 0 || shortageLines > 0) ? (
         <div className="ui-alert ui-alert--warn ui-fade-up ui-delay-2">
           Recepción parcial activa. Hay <strong>{pendingReceiptLines}</strong> linea(s) con cantidades todavía por conciliar y <strong>{shortageLines}</strong> con faltante registrado.
           {receivedLines > 0 ? ` También hay ${receivedLines} linea(s) con recepción registrada.` : ""}
@@ -2934,82 +2939,96 @@ export default async function RemissionDetailPage({
                       </>
                     ) : null}
                     {canEditReceiveItems ? (
-                      <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
-                        <div className="text-sm font-semibold text-[var(--ui-text)]">
-                          {lineCompleteReceipt ? "Hecha" : "Ahora: recibir"}
+                      lineCompleteReceipt ? (
+                        <div className="rounded-2xl border border-emerald-200 bg-[linear-gradient(135deg,rgba(236,253,245,0.95),rgba(255,255,255,0.98))] p-4 shadow-[0_18px_40px_-28px_rgba(16,185,129,0.45)]">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <div className="text-sm font-semibold text-emerald-900">
+                                Recepción completa
+                              </div>
+                              <div className="mt-1 text-sm text-emerald-800/80">
+                                Quedó conciliada con {receivedQty} {itemUnitLabel} recibidas.
+                              </div>
+                            </div>
+                            <span className="ui-chip ui-chip--success">Todo listo</span>
+                          </div>
                         </div>
-                        <div className="mt-1 text-sm text-[var(--ui-muted)]">
-                          {lineCompleteReceipt
-                            ? `Recepción completa: ${receivedQty} ${itemUnitLabel}.`
-                            : linePartialReceipt
+                      ) : (
+                        <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
+                          <div className="text-sm font-semibold text-[var(--ui-text)]">
+                            Ahora: recibir
+                          </div>
+                          <div className="mt-1 text-sm text-[var(--ui-muted)]">
+                            {linePartialReceipt
                               ? `Van ${receivedQty} ${itemUnitLabel} recibidas.`
                               : shippedQty > 0
                                 ? `${shippedQty} ${itemUnitLabel} salieron hacia esta sede.`
                                 : "Esta línea todavía no tiene envío confirmado."}
-                        </div>
-                        <div className="mt-3">
-                          <button
-                            type="submit"
-                            form={receiveAllShortcutFormId}
-                            className="ui-btn ui-btn--action ui-btn--compact w-full px-4 text-sm font-semibold sm:w-auto"
-                            disabled={shippedQty <= 0}
-                          >
-                            {shippedQty > 0 ? `Recibir ${shippedQty} ${itemUnitLabel}` : "Recibir todo"}
-                          </button>
-                        </div>
-                        <details className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3">
-                          <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
-                            Cambiar o ajustar
-                          </summary>
-                          <div className="mt-3 flex flex-wrap gap-3">
-                            {shippedQty > 0 && remainingReceiptQty > 0 ? (
-                              <button
-                                type="submit"
-                                form={markShortageShortcutFormId}
-                                className="ui-btn ui-btn--ghost h-12 px-5 text-base font-semibold"
-                              >
-                                Marcar faltante {remainingReceiptQty} {itemUnitLabel}
-                              </button>
-                            ) : null}
-                            {accountedQty > 0 ? (
-                              <button
-                                type="submit"
-                                form={clearReceiveShortcutFormId}
-                                className="ui-btn ui-btn--ghost h-12 px-5 text-base font-semibold"
-                              >
-                                Limpiar
-                              </button>
-                            ) : null}
                           </div>
-                          {shippedQty > 0 ? (
-                            <div className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-white p-3">
-                              <div className="ui-caption">Recibir cantidad diferente</div>
-                              <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
-                                <label className="flex min-w-0 flex-1 flex-col gap-1">
-                                  <span className="ui-caption">Cantidad recibida</span>
-                                  <input
-                                    type="number"
-                                    step="0.01"
-                                    min={0}
-                                    max={shippedQty}
-                                    name="receive_qty"
-                                    defaultValue={receivedQty > 0 ? receivedQty : shippedQty}
-                                    form={setPartialReceiveFormId}
-                                    className="ui-input h-11"
-                                  />
-                                </label>
+                          <div className="mt-3">
+                            <button
+                              type="submit"
+                              form={receiveAllShortcutFormId}
+                              className="ui-btn ui-btn--action ui-btn--compact w-full px-4 text-sm font-semibold sm:w-auto"
+                              disabled={shippedQty <= 0}
+                            >
+                              {shippedQty > 0 ? `Recibir ${shippedQty} ${itemUnitLabel}` : "Recibir todo"}
+                            </button>
+                          </div>
+                          <details className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3">
+                            <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+                              Cambiar o ajustar
+                            </summary>
+                            <div className="mt-3 flex flex-wrap gap-3">
+                              {shippedQty > 0 && remainingReceiptQty > 0 ? (
                                 <button
                                   type="submit"
-                                  form={setPartialReceiveFormId}
-                                  className="ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
+                                  form={markShortageShortcutFormId}
+                                  className="ui-btn ui-btn--ghost h-12 px-5 text-base font-semibold"
                                 >
-                                  Guardar parcial
+                                  Marcar faltante {remainingReceiptQty} {itemUnitLabel}
                                 </button>
-                              </div>
+                              ) : null}
+                              {accountedQty > 0 ? (
+                                <button
+                                  type="submit"
+                                  form={clearReceiveShortcutFormId}
+                                  className="ui-btn ui-btn--ghost h-12 px-5 text-base font-semibold"
+                                >
+                                  Limpiar
+                                </button>
+                              ) : null}
                             </div>
-                          ) : null}
-                        </details>
-                      </div>
+                            {shippedQty > 0 ? (
+                              <div className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-white p-3">
+                                <div className="ui-caption">Recibir cantidad diferente</div>
+                                <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
+                                  <label className="flex min-w-0 flex-1 flex-col gap-1">
+                                    <span className="ui-caption">Cantidad recibida</span>
+                                    <input
+                                      type="number"
+                                      step="0.01"
+                                      min={0}
+                                      max={shippedQty}
+                                      name="receive_qty"
+                                      defaultValue={receivedQty > 0 ? receivedQty : shippedQty}
+                                      form={setPartialReceiveFormId}
+                                      className="ui-input h-11"
+                                    />
+                                  </label>
+                                  <button
+                                    type="submit"
+                                    form={setPartialReceiveFormId}
+                                    className="ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
+                                  >
+                                    Guardar parcial
+                                  </button>
+                                </div>
+                              </div>
+                            ) : null}
+                          </details>
+                        </div>
+                      )
                     ) : null}
                   </div>
                 </div>
