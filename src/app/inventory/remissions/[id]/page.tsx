@@ -39,6 +39,7 @@ type SearchParams = {
 type AccessContext = {
   role: string;
   roleLabel: string;
+  selectedSiteId: string;
   fromSiteType: string;
   toSiteType: string;
   fromSiteName: string;
@@ -306,6 +307,12 @@ async function loadAccessContext(
   const overrideRole = await getRoleOverrideFromCookies();
   const canOverrideRole = canUseRoleOverride(role, overrideRole);
   const effectiveRole = canOverrideRole ? String(overrideRole) : role;
+  const operationalContext = await getOperationalContext({
+    supabase,
+    employeeId: userId,
+    appCode: APP_ID,
+  });
+  const selectedSiteId = String(operationalContext?.selected_site_id ?? "").trim();
   let roleLabel = effectiveRole || "sin rol";
   if (effectiveRole) {
     const { data: roleRow } = await supabase
@@ -371,14 +378,20 @@ async function loadAccessContext(
   });
   const canCancel = canCancelPermission;
 
-  const canPrepare = fromSiteType === "production_center" && canPreparePermission;
-  const canTransit = fromSiteType === "production_center" && canTransitPermission;
-  const canReceive = toSiteType === "satellite" && canReceivePermission;
+  const actingOnFromSite = Boolean(selectedSiteId) && selectedSiteId === fromSiteId;
+  const actingOnToSite = Boolean(selectedSiteId) && selectedSiteId === toSiteId;
+  const canPrepare =
+    fromSiteType === "production_center" && canPreparePermission && actingOnFromSite;
+  const canTransit =
+    fromSiteType === "production_center" && canTransitPermission && actingOnFromSite;
+  const canReceive =
+    toSiteType === "satellite" && canReceivePermission && actingOnToSite;
   const canClose = canReceive || canCancel;
 
   return {
     role,
     roleLabel,
+    selectedSiteId,
     fromSiteType,
     toSiteType,
     fromSiteName,

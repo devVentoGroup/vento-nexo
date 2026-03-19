@@ -724,9 +724,12 @@ async function createRemission(formData: FormData) {
     }
   }
 
-  const params = new URLSearchParams({ ok: "created" });
+  const params = new URLSearchParams({
+    ok: "Remisión creada.",
+    site_id: toSiteId,
+  });
   if (hasLowStock) params.set("warning", "low_stock");
-  redirect(`/inventory/remissions/${request.id}?${params.toString()}`);
+  redirect(`/inventory/remissions?${params.toString()}`);
 }
 
 export default async function RemissionsPage({
