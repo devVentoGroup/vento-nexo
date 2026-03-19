@@ -923,28 +923,7 @@ async function chooseSourceLoc(formData: FormData) {
     );
   }
 
-  let updates: Record<string, string | number | null> = { source_location_id: locationId };
-
-  if (chooseLocMode === "complete_line") {
-    const requestedQty = roundQuantity(Number(itemRow?.quantity ?? 0));
-    const preparedQty = roundQuantity(Number(itemRow?.prepared_quantity ?? 0));
-    const shippedQty = roundQuantity(Number(itemRow?.shipped_quantity ?? 0));
-    const { data: locStockRow } = await supabase
-      .from("inventory_stock_by_location")
-      .select("current_qty")
-      .eq("location_id", locationId)
-      .eq("product_id", String(itemRow?.product_id ?? ""))
-      .maybeSingle();
-    const availableAtLoc = roundQuantity(Number(locStockRow?.current_qty ?? 0));
-
-    if (requestedQty > 0 && preparedQty <= 0 && shippedQty <= 0 && availableAtLoc >= requestedQty) {
-      updates = {
-        ...updates,
-        prepared_quantity: requestedQty,
-        shipped_quantity: 0,
-      };
-    }
-  }
+  const updates: Record<string, string | number | null> = { source_location_id: locationId };
 
   const { error } = await supabase
     .from("restock_request_items")
@@ -955,32 +934,13 @@ async function chooseSourceLoc(formData: FormData) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: error.message }));
   }
 
-  if (currentStatus === "pending") {
-    const { error: requestError } = await supabase
-      .from("restock_requests")
-      .update({
-        status: "preparing",
-        prepared_at: new Date().toISOString(),
-        prepared_by: user.id,
-        status_updated_at: new Date().toISOString(),
-      })
-      .eq("id", requestId);
-    if (requestError) {
-      redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: requestError.message }));
-    }
-  }
-
   redirect(
     buildRemissionDetailHref({
       requestId,
       from: returnOrigin,
       ok: "loc_selected",
       line: itemId,
-      event:
-        chooseLocMode === "complete_line" &&
-        typeof updates.prepared_quantity === "number"
-          ? "complete_line"
-          : "loc",
+      event: "loc",
     })
   );
 }
@@ -2802,7 +2762,7 @@ export default async function RemissionDetailPage({
                                           ? "bg-amber-200 text-amber-900"
                                           : "bg-white text-[var(--ui-muted)]"
                                     }`}>
-                                      {isSelected ? "Elegido" : candidate.qty >= requestedQty ? "Tocar y listo" : isBest ? "Recomendado" : "Disponible"}
+                                      {isSelected ? "Elegido" : isBest ? "Recomendado" : "Disponible"}
                                     </span>
                                   </div>
                                   <div className="mt-2 text-sm text-[var(--ui-muted)]">
@@ -2944,7 +2904,7 @@ export default async function RemissionDetailPage({
                               disabled={availableAtSelectedLoc < requestedQty}
                             >
                               {availableAtSelectedLoc >= requestedQty
-                                ? `Dejar lista ${requestedQty} ${itemUnitLabel}`
+                                ? `Preparar ${requestedQty} ${itemUnitLabel}`
                                 : `No alcanza para ${requestedQty} ${itemUnitLabel}`}
                             </button>
                           </div>
@@ -2953,7 +2913,7 @@ export default async function RemissionDetailPage({
                               Cambiar o ajustar
                             </summary>
                             <div className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-white p-3">
-                              <div className="ui-caption">Enviar cantidad parcial</div>
+                              <div className="ui-caption">Preparar cantidad parcial</div>
                               <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
                                 <label className="flex min-w-0 flex-1 flex-col gap-1">
                                   <span className="ui-caption">Cantidad a enviar</span>
@@ -3174,7 +3134,7 @@ export default async function RemissionDetailPage({
                               name="choose_loc_location_id"
                               value={candidate.locationId}
                             />
-                            <input type="hidden" name="choose_loc_mode" value="complete_line" />
+                            <input type="hidden" name="choose_loc_mode" value="select_only" />
                           </form>
                         );
                       })}
