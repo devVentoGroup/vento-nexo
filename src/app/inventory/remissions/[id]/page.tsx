@@ -782,21 +782,6 @@ async function splitItem(formData: FormData) {
     redirect(detailHref({ error: error.message }));
   }
 
-  if (currentStatus === "pending") {
-    const { error: requestError } = await supabase
-      .from("restock_requests")
-      .update({
-        status: "preparing",
-        prepared_at: new Date().toISOString(),
-        prepared_by: user.id,
-        status_updated_at: new Date().toISOString(),
-      })
-      .eq("id", requestId);
-    if (requestError) {
-      redirect(detailHref({ error: requestError.message }));
-    }
-  }
-
   redirect(detailHref({ ok: "split_item" }));
 }
 
@@ -1202,7 +1187,7 @@ async function applyPrepareShortcut(formData: FormData) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: error.message }));
   }
 
-  if (currentStatus === "pending") {
+  if (currentStatus === "pending" && nextPrepared > 0) {
     const { error: requestError } = await supabase
       .from("restock_requests")
       .update({
