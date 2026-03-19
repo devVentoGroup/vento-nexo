@@ -14,8 +14,11 @@ begin
   order by pc.created_at asc
   limit 1;
 
+  -- En BD vacía (reset local) el padre legacy aún no existe: viene de datos previos o de migraciones posteriores.
+  -- No fallar la cadena de migraciones; 20260318150000 asume estas hojas solo si ya había catálogo legacy.
   if parent_category_id is null then
-    raise exception 'No se encontro la categoria padre bases-de-reposteria-y-rellenos (preparacion)';
+    raise notice 'Skip nexo_preparaciones_dulces_categories: sin padre bases-de-reposteria-y-rellenos (preparacion)';
+    return;
   end if;
 
   insert into public.product_categories (

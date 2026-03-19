@@ -151,7 +151,9 @@ export async function loadAccessContext(
     fromSiteName,
     toSiteName,
     canPrepare:
-      fromSiteType === "production_center" && canPreparePermission && actingOnFromSite,
+      fromSiteType === "production_center" &&
+      canPreparePermission &&
+      actingOnFromSite,
     canTransit:
       fromSiteType === "production_center" && canTransitPermission && actingOnFromSite,
     canReceive:
