@@ -36,6 +36,35 @@ type PrepareWorkbenchProps = {
   onCommit: (formData: FormData) => void | Promise<void>;
 };
 
+function clampQty(value: number, min: number, max: number) {
+  return Math.min(Math.max(value, min), max);
+}
+
+function suggestedQtyForLoc(line: DraftLine, locId: string) {
+  const loc = line.locOptions.find((entry) => entry.id === locId);
+  const available = Number(loc?.qty ?? 0);
+  return roundQty(clampQty(available, 0, line.requestedQty));
+}
+
+function normalizeLine(line: DraftLine): DraftLine {
+  const selectedLocId = line.selectedLocId || line.recommendedLocId || "";
+  let dispatchQty = roundQty(Number(line.dispatchQty ?? 0));
+
+  if (!selectedLocId) {
+    dispatchQty = roundQty(clampQty(dispatchQty, 0, line.requestedQty));
+    return { ...line, selectedLocId, dispatchQty };
+  }
+
+  const suggestedQty = suggestedQtyForLoc(line, selectedLocId);
+  if (dispatchQty <= 0) {
+    dispatchQty = suggestedQty;
+  } else {
+    dispatchQty = roundQty(clampQty(dispatchQty, 0, line.requestedQty));
+  }
+
+  return { ...line, selectedLocId, dispatchQty };
+}
+
 function roundQty(value: number) {
   return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
 }
@@ -66,7 +95,7 @@ export function RemissionPrepareWorkbench({
   lines: initialLines,
   onCommit,
 }: PrepareWorkbenchProps) {
-  const [lines, setLines] = useState<DraftLine[]>(initialLines);
+  const [lines, setLines] = useState<DraftLine[]>(() => initialLines.map(normalizeLine));
   const [splitDrafts, setSplitDrafts] = useState<SplitDraft[]>([]);
   const [readyMarked, setReadyMarked] = useState(false);
   const [splitTargetId, setSplitTargetId] = useState<string>("");
@@ -102,9 +131,21 @@ export function RemissionPrepareWorkbench({
   }, [lines]);
 
   const updateLine = (lineId: string, patch: Partial<DraftLine>) => {
-    setLines((prev) =>
-      prev.map((line) => (line.id === lineId ? { ...line, ...patch } : line))
-    );
+    setLines((prev) => {
+      return prev.map((line) => {
+        if (line.id !== lineId) return line;
+        const next = { ...line, ...patch };
+        if (Object.prototype.hasOwnProperty.call(patch, "selectedLocId")) {
+          const selectedLocId = String(patch.selectedLocId ?? "").trim();
+          if (selectedLocId) {
+            next.dispatchQty = suggestedQtyForLoc(next, selectedLocId);
+            if (next.dispatchQty >= next.requestedQty) next.shortageReason = "";
+          }
+        }
+        next.dispatchQty = roundQty(clampQty(Number(next.dispatchQty ?? 0), 0, next.requestedQty));
+        return next;
+      });
+    });
     setReadyMarked(false);
   };
 
@@ -199,15 +240,13 @@ export function RemissionPrepareWorkbench({
                     Solicitado: {line.requestedQty} {line.unitLabel}
                   </div>
                   {line.recommendedLocId ? (
-                    <button
-                      type="button"
-                      className="mt-2 text-xs font-semibold text-emerald-700 underline"
-                      onClick={() => updateLine(line.id, { selectedLocId: line.recommendedLocId })}
-                    >
-                      Usar LOC recomendado:{" "}
-                      {line.locOptions.find((loc) => loc.id === line.recommendedLocId)?.label ??
-                        line.recommendedLocId}
-                    </button>
+                    <div className="mt-2 text-xs text-emerald-700">
+                      Recomendado aplicado:{" "}
+                      <strong>
+                        {line.locOptions.find((loc) => loc.id === line.recommendedLocId)?.label ??
+                          line.recommendedLocId}
+                      </strong>
+                    </div>
                   ) : null}
                 </div>
 
