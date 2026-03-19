@@ -14,7 +14,10 @@ type ProfileMenuProps = {
   role?: string;
   email?: string | null;
   sites?: Array<{ id: string; name: string | null }>;
+  activeSiteId?: string;
 };
+
+const SITE_OVERRIDE_COOKIE = "nexo_site_override_id";
 
 function initialsFrom(value?: string) {
   const text = (value ?? "").trim();
@@ -24,7 +27,7 @@ function initialsFrom(value?: string) {
   return letters.join("") || "VG";
 }
 
-export function ProfileMenu({ name, role, email, sites }: ProfileMenuProps) {
+export function ProfileMenu({ name, role, email, sites, activeSiteId: baseActiveSiteId }: ProfileMenuProps) {
   const [open, setOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
   const [overrideRole, setOverrideRole] = useState<string | null>(null);
@@ -42,7 +45,7 @@ export function ProfileMenu({ name, role, email, sites }: ProfileMenuProps) {
     () => new Map(ROLE_OPTIONS.map((item) => [item.value, item.label])),
     []
   );
-  const activeSiteId = searchParams.get("site_id") ?? "";
+  const activeSiteId = searchParams.get("site_id") ?? baseActiveSiteId ?? "";
 
   const handleSignOut = async () => {
     try {
@@ -65,6 +68,16 @@ export function ProfileMenu({ name, role, email, sites }: ProfileMenuProps) {
     document.cookie = `${ROLE_OVERRIDE_COOKIE}=${value}; path=/; max-age=${maxAge}`;
   };
 
+  const setSiteCookieValue = (value: string | null) => {
+    if (typeof document === "undefined") return;
+    if (!value) {
+      document.cookie = `${SITE_OVERRIDE_COOKIE}=; path=/; max-age=0`;
+      return;
+    }
+    const maxAge = 60 * 60 * 24 * 30;
+    document.cookie = `${SITE_OVERRIDE_COOKIE}=${value}; path=/; max-age=${maxAge}`;
+  };
+
   const handleRoleOverride = (value: string | null) => {
     setOverrideRole(value);
     setCookieValue(value);
@@ -72,6 +85,7 @@ export function ProfileMenu({ name, role, email, sites }: ProfileMenuProps) {
   };
 
   const handleSiteChange = async (nextSiteId: string) => {
+    setSiteCookieValue(nextSiteId || null);
     const supabase = createClient();
     const {
       data: { user },

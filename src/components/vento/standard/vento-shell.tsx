@@ -1,5 +1,6 @@
 import { createClient } from "@/lib/supabase/server";
 import { VentoChrome } from "./vento-chrome";
+import { cookies } from "next/headers";
 
 type SiteRow = {
   id: string;
@@ -53,8 +54,15 @@ export async function VentoShell({ children }: { children: React.ReactNode }) {
       .eq("employee_id", user.id)
       .maybeSingle();
     const selectedSiteCandidate = String(employeeSettings?.selected_site_id ?? "").trim();
+    const cookieStore = await cookies();
+    const cookieSiteCandidate = String(
+      cookieStore.get("nexo_site_override_id")?.value ?? ""
+    ).trim();
     if (selectedSiteCandidate && siteIds.includes(selectedSiteCandidate)) {
       selectedSiteId = selectedSiteCandidate;
+    }
+    if (cookieSiteCandidate && siteIds.includes(cookieSiteCandidate)) {
+      selectedSiteId = cookieSiteCandidate;
     }
 
     const defaultSiteId = employeeSiteRows[0]?.site_id ?? employeeRow?.site_id ?? "";
