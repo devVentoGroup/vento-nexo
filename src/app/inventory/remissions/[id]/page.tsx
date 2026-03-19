@@ -31,6 +31,8 @@ import {
   formatStatus,
   formatUnitLabel,
   loadRemissionOperationalSummary,
+  parseShortageReasonFromItemNotes,
+  plannedDispatchQtyFromItem,
 } from "./detail-utils";
 import { buildPrepareFingerprintHash } from "./prepare-fingerprint";
 
@@ -47,33 +49,35 @@ export default async function RemissionDetailPage({
   const { id } = await params;
   const sp = (await searchParams) ?? {};
   const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
-  const okMsg = sp.ok === "created"
-    ? "Remisión creada."
-    : sp.ok === "items_updated"
-      ? "Ítems actualizados."
-      : sp.ok === "line_shortcut"
-        ? "Línea actualizada."
-      : sp.ok === "loc_selected"
-        ? "LOC seleccionado."
-      : sp.ok === "split_item"
-        ? "Linea partida. Ya puedes asignar un LOC distinto por linea."
-      : sp.ok === "ready_dispatch"
-        ? "Remisión marcada para despacho."
-      : sp.ok === "status_updated"
-        ? "Estado actualizado."
-        : sp.ok === "preparing_started"
-          ? "Preparación iniciada."
-          : sp.ok === "transit_started"
-            ? "Remisión enviada a tránsito."
-            : sp.ok === "received_partial"
-              ? "Recepción parcial registrada."
-              : sp.ok === "received_complete"
-                ? "Recepción completa registrada."
-                : sp.ok === "cancelled"
-                  ? "Remisión cancelada."
-        : sp.ok
-          ? safeDecodeURIComponent(sp.ok)
-          : "";
+  /** ready_dispatch se muestra en un solo banner dedicado (evita triplicar avisos). */
+  const okMsg =
+    sp.ok === "ready_dispatch"
+      ? ""
+      : sp.ok === "created"
+        ? "Remisión creada."
+        : sp.ok === "items_updated"
+          ? "Ítems actualizados."
+          : sp.ok === "line_shortcut"
+            ? "Línea actualizada."
+            : sp.ok === "loc_selected"
+              ? "LOC seleccionado."
+              : sp.ok === "split_item"
+                ? "Linea partida. Ya puedes asignar un LOC distinto por linea."
+                : sp.ok === "status_updated"
+                  ? "Estado actualizado."
+                  : sp.ok === "preparing_started"
+                    ? "Preparación iniciada."
+                    : sp.ok === "transit_started"
+                      ? "Remisión enviada a tránsito."
+                      : sp.ok === "received_partial"
+                        ? "Recepción parcial registrada."
+                        : sp.ok === "received_complete"
+                          ? "Recepción completa registrada."
+                          : sp.ok === "cancelled"
+                            ? "Remisión cancelada."
+                            : sp.ok
+                              ? safeDecodeURIComponent(sp.ok)
+                              : "";
   const activeLineId = String(sp.line ?? "").trim();
   const activeLineEvent = String(sp.event ?? "").trim();
   const lowStockWarning = sp.warning === "low_stock";
@@ -115,7 +119,7 @@ export default async function RemissionDetailPage({
   const { data: items } = await supabase
     .from("restock_request_items")
     .select(
-      "id, product_id, quantity, unit, input_qty, input_unit_code, stock_unit_code, source_location_id, prepared_quantity, shipped_quantity, received_quantity, shortage_quantity, item_status, production_area_kind, product:products(name,unit,stock_unit_code)"
+      "id, product_id, quantity, unit, input_qty, input_unit_code, stock_unit_code, source_location_id, prepared_quantity, shipped_quantity, received_quantity, shortage_quantity, notes, item_status, production_area_kind, product:products(name,unit,stock_unit_code)"
     )
     .eq("request_id", id)
     .order("created_at", { ascending: true });
@@ -311,10 +315,8 @@ export default async function RemissionDetailPage({
             label: loc.label,
             qty: loc.qty,
           })),
-          dispatchQty: roundQuantity(
-            Number(item.shipped_quantity ?? item.prepared_quantity ?? 0)
-          ),
-          shortageReason: "",
+          dispatchQty: plannedDispatchQtyFromItem(item),
+          shortageReason: parseShortageReasonFromItemNotes(item.notes),
           isVirtualSplit: false,
         };
       })
@@ -396,11 +398,11 @@ export default async function RemissionDetailPage({
 
       {sp.ok === "ready_dispatch" ? (
         <div className="ui-alert ui-alert--success ui-fade-up ui-delay-1">
-          Remisión marcada para despacho. Conductor debe validar checklist y poner en tránsito.
+          Cambios guardados: la remisión quedó <strong>lista para despacho</strong>. El conductor debe
+          revisar el checklist y poner en tránsito; siguiente paso operativo:{" "}
+          <strong>despachar a destino</strong>.
         </div>
-      ) : null}
-
-      {isReadyToDispatch ? (
+      ) : isReadyToDispatch ? (
         <div className="ui-alert ui-alert--success ui-fade-up ui-delay-1">
           Remisión lista para despacho. Siguiente paso: <strong>Despachar a destino</strong>.
         </div>

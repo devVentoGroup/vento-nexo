@@ -47,6 +47,8 @@ export type RestockItemRow = {
   shipped_quantity: number | null;
   received_quantity: number | null;
   shortage_quantity: number | null;
+  /** Incluye prefijos como FALTANTE ORIGEN: tras commit de preparación */
+  notes?: string | null;
   item_status: string | null;
   production_area_kind: string | null;
   product: {
@@ -259,6 +261,30 @@ export function toFriendlyRemissionActionError(rawMessage: string): string {
 
 export function normalizeReturnOrigin(value: string | null | undefined): "" | "prepare" {
   return String(value ?? "").trim() === "prepare" ? "prepare" : "";
+}
+
+/** Cantidad “en salida” mostrada en UI: no usar shipped ?? prepared (0 enviado anula preparado). */
+export function plannedDispatchQtyFromItem(row: {
+  prepared_quantity?: number | string | null;
+  shipped_quantity?: number | string | null;
+}): number {
+  const prep = roundQuantity(Number(row.prepared_quantity ?? 0));
+  const ship = roundQuantity(Number(row.shipped_quantity ?? 0));
+  return roundQuantity(Math.max(prep, ship));
+}
+
+const FALTANTE_ORIGEN_PREFIX = "FALTANTE ORIGEN:";
+
+export function parseShortageReasonFromItemNotes(notes: string | null | undefined): string {
+  const raw = String(notes ?? "").trim();
+  if (!raw) return "";
+  for (const line of raw.split("\n")) {
+    const t = line.trim();
+    if (t.startsWith(FALTANTE_ORIGEN_PREFIX)) {
+      return t.slice(FALTANTE_ORIGEN_PREFIX.length).trim();
+    }
+  }
+  return "";
 }
 
 export function buildRemissionDetailHref(params: {
