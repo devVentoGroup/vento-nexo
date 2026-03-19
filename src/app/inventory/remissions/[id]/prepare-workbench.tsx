@@ -179,69 +179,43 @@ export function RemissionPrepareWorkbench({
         </div>
       </div>
 
-      <div className="space-y-3">
+      <div className="overflow-hidden rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)]">
+        <div className="hidden grid-cols-[minmax(220px,1.2fr)_minmax(260px,1.3fr)_120px_minmax(220px,1fr)_120px] gap-3 border-b border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ui-muted)] lg:grid">
+          <div>Insumo</div>
+          <div>LOC</div>
+          <div>Cantidad</div>
+          <div>Faltante</div>
+          <div>Estado</div>
+        </div>
         {lines.map((line) => {
           const hasShortage = line.dispatchQty < line.requestedQty;
           const tone = getLineTone(line);
           return (
-            <div
-              key={line.id}
-              className={`rounded-xl border p-4 ${
-                tone === "ok"
-                  ? "border-emerald-300 bg-emerald-50/50"
-                  : tone === "warn"
-                    ? "border-amber-300 bg-amber-50/40"
-                    : tone === "error"
-                      ? "border-rose-300 bg-rose-50/40"
-                      : "border-[var(--ui-border)] bg-[var(--ui-bg)]"
-              }`}
-            >
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-semibold text-[var(--ui-text)]">{line.productName}</div>
-                  <div className="text-xs text-[var(--ui-muted)]">
+            <div key={line.id} className="border-t border-[var(--ui-border)] first:border-t-0">
+              <div className="grid gap-3 px-4 py-3 lg:grid-cols-[minmax(220px,1.2fr)_minmax(260px,1.3fr)_120px_minmax(220px,1fr)_120px] lg:items-start">
+                <div>
+                  <div className="text-sm font-semibold text-[var(--ui-text)]">{line.productName}</div>
+                  <div className="mt-1 text-xs text-[var(--ui-muted)]">
                     Solicitado: {line.requestedQty} {line.unitLabel}
                   </div>
+                  {line.recommendedLocId ? (
+                    <button
+                      type="button"
+                      className="mt-2 text-xs font-semibold text-emerald-700 underline"
+                      onClick={() => updateLine(line.id, { selectedLocId: line.recommendedLocId })}
+                    >
+                      Usar LOC recomendado:{" "}
+                      {line.locOptions.find((loc) => loc.id === line.recommendedLocId)?.label ??
+                        line.recommendedLocId}
+                    </button>
+                  ) : null}
                 </div>
-                <span
-                  className={`rounded-full px-2.5 py-1 text-[11px] font-semibold ${
-                    tone === "ok"
-                      ? "bg-emerald-100 text-emerald-900"
-                      : tone === "warn"
-                        ? "bg-amber-100 text-amber-900"
-                        : tone === "error"
-                          ? "bg-rose-100 text-rose-900"
-                          : "bg-[var(--ui-bg-soft)] text-[var(--ui-muted)]"
-                  }`}
-                >
-                  {getLineToneLabel(tone)}
-                </span>
-              </div>
 
-              {line.recommendedLocId ? (
-                <div className="mt-2 flex flex-wrap items-center gap-2 rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm">
-                  <span className="text-emerald-900">LOC recomendado:</span>
-                  <strong className="text-emerald-950">
-                    {line.locOptions.find((loc) => loc.id === line.recommendedLocId)?.label ??
-                      line.recommendedLocId}
-                  </strong>
-                  <button
-                    type="button"
-                    className="text-xs font-semibold text-emerald-900 underline"
-                    onClick={() => updateLine(line.id, { selectedLocId: line.recommendedLocId })}
-                  >
-                    Usar recomendado
-                  </button>
-                </div>
-              ) : null}
-
-              <div className="mt-3 grid gap-3 md:grid-cols-12">
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs text-[var(--ui-muted)]">LOC</span>
+                <div className="flex flex-col gap-2">
                   <select
                     value={line.selectedLocId}
                     onChange={(e) => updateLine(line.id, { selectedLocId: e.target.value })}
-                    className="ui-input h-11 md:col-span-6"
+                    className="ui-input h-10"
                   >
                     <option value="">Selecciona LOC</option>
                     {line.locOptions.map((loc) => (
@@ -250,10 +224,17 @@ export function RemissionPrepareWorkbench({
                       </option>
                     ))}
                   </select>
-                </label>
+                  <button
+                    type="button"
+                    onClick={() => openSplit(line.id)}
+                    className="ui-btn ui-btn--ghost h-9 text-xs font-semibold"
+                    disabled={line.isVirtualSplit || line.dispatchQty > 0}
+                  >
+                    Partir línea
+                  </button>
+                </div>
 
-                <label className="flex flex-col gap-1">
-                  <span className="text-xs text-[var(--ui-muted)]">Cantidad a despachar</span>
+                <div>
                   <input
                     type="number"
                     min={0}
@@ -265,35 +246,41 @@ export function RemissionPrepareWorkbench({
                         dispatchQty: parseQty(e.target.value, 0),
                       })
                     }
-                    className="ui-input h-11"
+                    className="ui-input h-10 w-full"
                   />
-                </label>
+                </div>
 
-                <div className="flex items-end">
-                  <button
-                    type="button"
-                    onClick={() => openSplit(line.id)}
-                    className="ui-btn ui-btn--ghost h-11 w-full text-sm font-semibold"
-                    disabled={line.isVirtualSplit || line.dispatchQty > 0}
+                <div>
+                  {hasShortage ? (
+                    <textarea
+                      value={line.shortageReason}
+                      onChange={(e) => updateLine(line.id, { shortageReason: e.target.value })}
+                      className="ui-input min-h-[60px] w-full"
+                      placeholder="Motivo obligatorio..."
+                    />
+                  ) : (
+                    <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-2 text-xs text-emerald-800">
+                      Sin faltante
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <span
+                    className={`inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold ${
+                      tone === "ok"
+                        ? "bg-emerald-100 text-emerald-900"
+                        : tone === "warn"
+                          ? "bg-amber-100 text-amber-900"
+                          : tone === "error"
+                            ? "bg-rose-100 text-rose-900"
+                            : "bg-[var(--ui-bg-soft)] text-[var(--ui-muted)]"
+                    }`}
                   >
-                    Partir línea
-                  </button>
+                    {getLineToneLabel(tone)}
+                  </span>
                 </div>
               </div>
-
-              {hasShortage ? (
-                <label className="mt-3 flex flex-col gap-1">
-                  <span className="text-xs font-semibold text-amber-900">
-                    Motivo del faltante (obligatorio)
-                  </span>
-                  <textarea
-                    value={line.shortageReason}
-                    onChange={(e) => updateLine(line.id, { shortageReason: e.target.value })}
-                    className="ui-input min-h-[70px]"
-                    placeholder="Ejemplo: LOC sin stock suficiente, producto incompleto, merma detectada..."
-                  />
-                </label>
-              ) : null}
             </div>
           );
         })}
