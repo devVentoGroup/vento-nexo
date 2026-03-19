@@ -419,6 +419,7 @@ async function updateItems(formData: FormData) {
   const user = userRes.user ?? null;
   const requestId = asText(formData.get("request_id"));
   const returnOrigin = normalizeReturnOrigin(asText(formData.get("return_origin")));
+  const activeSiteId = asText(formData.get("site_id"));
   if (!user) {
     redirect(await buildShellLoginUrl(buildRemissionDetailHref({ requestId, from: returnOrigin })));
   }
@@ -718,13 +719,27 @@ async function splitItem(formData: FormData) {
   const user = userRes.user ?? null;
   const requestId = asText(formData.get("request_id"));
   const returnOrigin = normalizeReturnOrigin(asText(formData.get("return_origin")));
+  const activeSiteId = asText(formData.get("site_id"));
+  const detailHref = (extra: {
+    error?: string | null;
+    ok?: string | null;
+    warning?: string | null;
+    line?: string | null;
+    event?: string | null;
+  } = {}) =>
+    buildRemissionDetailHref({
+      requestId,
+      from: returnOrigin,
+      siteId: activeSiteId,
+      ...extra,
+    });
   if (!user) {
-    redirect(await buildShellLoginUrl(buildRemissionDetailHref({ requestId, from: returnOrigin })));
+    redirect(await buildShellLoginUrl(detailHref()));
   }
 
   const itemId = asText(formData.get("split_item_id"));
   if (!itemId) {
-    redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "Falta la linea a partir." }));
+    redirect(detailHref({ error: "Falta la linea a partir." }));
   }
 
   const splitQuantity = parseNumber(
@@ -732,11 +747,7 @@ async function splitItem(formData: FormData) {
   );
   if (splitQuantity <= 0) {
     redirect(
-      buildRemissionDetailHref({
-        requestId,
-        from: returnOrigin,
-        error: "Define una cantidad valida para partir la linea.",
-      })
+      detailHref({ error: "Define una cantidad valida para partir la linea." })
     );
   }
 
@@ -746,17 +757,11 @@ async function splitItem(formData: FormData) {
     .eq("id", requestId)
     .single();
 
-  const access = await loadAccessContext(supabase, user.id, request);
+  const access = await loadAccessContext(supabase, user.id, request, activeSiteId);
   const currentStatus = String(request?.status ?? "");
 
   if (!access.canPrepare || !["pending", "preparing"].includes(currentStatus)) {
-    redirect(
-      buildRemissionDetailHref({
-        requestId,
-        from: returnOrigin,
-        error: "Solo puedes partir lineas mientras la remision esta pendiente o preparando.",
-      })
-    );
+    redirect(detailHref({ error: "Solo puedes partir lineas mientras la remision esta pendiente o preparando." }));
   }
 
   await enforceOperationalGateOrRedirect({
@@ -774,7 +779,7 @@ async function splitItem(formData: FormData) {
   });
 
   if (error) {
-    redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: error.message }));
+    redirect(detailHref({ error: error.message }));
   }
 
   if (currentStatus === "pending") {
@@ -788,11 +793,11 @@ async function splitItem(formData: FormData) {
       })
       .eq("id", requestId);
     if (requestError) {
-      redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: requestError.message }));
+      redirect(detailHref({ error: requestError.message }));
     }
   }
 
-  redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, ok: "split_item" }));
+  redirect(detailHref({ ok: "split_item" }));
 }
 
 async function chooseSourceLoc(formData: FormData) {
@@ -803,6 +808,7 @@ async function chooseSourceLoc(formData: FormData) {
   const user = userRes.user ?? null;
   const requestId = asText(formData.get("request_id"));
   const returnOrigin = normalizeReturnOrigin(asText(formData.get("return_origin")));
+  const activeSiteId = asText(formData.get("site_id"));
   if (!user) {
     redirect(await buildShellLoginUrl(buildRemissionDetailHref({ requestId, from: returnOrigin })));
   }
@@ -844,7 +850,7 @@ async function chooseSourceLoc(formData: FormData) {
     .eq("id", requestId)
     .single();
 
-  const access = await loadAccessContext(supabase, user.id, request);
+  const access = await loadAccessContext(supabase, user.id, request, activeSiteId);
   const currentStatus = String(request?.status ?? "");
   if (!access.canPrepare || !["pending", "preparing"].includes(currentStatus)) {
     redirect(
@@ -988,6 +994,7 @@ async function applyPrepareShortcut(formData: FormData) {
   const user = userRes.user ?? null;
   const requestId = asText(formData.get("request_id"));
   const returnOrigin = normalizeReturnOrigin(asText(formData.get("return_origin")));
+  const activeSiteId = asText(formData.get("site_id"));
   if (!user) {
     redirect(await buildShellLoginUrl(buildRemissionDetailHref({ requestId, from: returnOrigin })));
   }
@@ -1010,7 +1017,7 @@ async function applyPrepareShortcut(formData: FormData) {
     .eq("id", requestId)
     .single();
 
-  const access = await loadAccessContext(supabase, user.id, request);
+  const access = await loadAccessContext(supabase, user.id, request, activeSiteId);
   const currentStatus = String(request?.status ?? "");
   if (!access.canPrepare || !["pending", "preparing"].includes(currentStatus)) {
     redirect(
@@ -1270,6 +1277,7 @@ async function applyReceiveShortcut(formData: FormData) {
   const user = userRes.user ?? null;
   const requestId = asText(formData.get("request_id"));
   const returnOrigin = normalizeReturnOrigin(asText(formData.get("return_origin")));
+  const activeSiteId = asText(formData.get("site_id"));
   if (!user) {
     redirect(await buildShellLoginUrl(buildRemissionDetailHref({ requestId, from: returnOrigin })));
   }
@@ -1292,7 +1300,7 @@ async function applyReceiveShortcut(formData: FormData) {
     .eq("id", requestId)
     .single();
 
-  const access = await loadAccessContext(supabase, user.id, request);
+  const access = await loadAccessContext(supabase, user.id, request, activeSiteId);
   const currentStatus = String(request?.status ?? "");
   if (!access.canReceive || !["in_transit", "partial"].includes(currentStatus)) {
     redirect(
@@ -1460,6 +1468,7 @@ async function updateStatus(formData: FormData) {
   const user = userRes.user ?? null;
   const requestId = asText(formData.get("request_id"));
   const returnOrigin = normalizeReturnOrigin(asText(formData.get("return_origin")));
+  const activeSiteId = asText(formData.get("site_id"));
   if (!user) {
     redirect(await buildShellLoginUrl(buildRemissionDetailHref({ requestId, from: returnOrigin })));
   }
@@ -1490,7 +1499,7 @@ async function updateStatus(formData: FormData) {
     .eq("id", requestId)
     .single();
 
-  const access = await loadAccessContext(supabase, user.id, request);
+  const access = await loadAccessContext(supabase, user.id, request, activeSiteId);
   const currentStatus = String(request?.status ?? "");
 
   if (action === "prepare" && !access.canPrepare) {
@@ -2481,6 +2490,7 @@ export default async function RemissionDetailPage({
         <form action={updateItems} className="mt-4 space-y-4 pb-24 lg:pb-0">
           <input type="hidden" name="request_id" value={request.id} />
           <input type="hidden" name="return_origin" value={cameFromPrepareQueue ? "prepare" : ""} />
+          <input type="hidden" name="site_id" value={activeSiteId} />
 
           <div className="space-y-3">
             {itemRows.map((item) => {
@@ -3129,6 +3139,7 @@ export default async function RemissionDetailPage({
                         name="return_origin"
                         value={cameFromPrepareQueue ? "prepare" : ""}
                       />
+                      <input type="hidden" name="site_id" value={activeSiteId} />
                       <input type="hidden" name="split_item_id" value={item.id} />
                       <input type="hidden" name="split_quantity" value={suggestedSplitQty} />
                     </form>
@@ -3143,6 +3154,7 @@ export default async function RemissionDetailPage({
                           name="return_origin"
                           value={cameFromPrepareQueue ? "prepare" : ""}
                         />
+                        <input type="hidden" name="site_id" value={activeSiteId} />
                         <input type="hidden" name="choose_loc_item_id" value={item.id} />
                       </form>
 
@@ -3156,6 +3168,7 @@ export default async function RemissionDetailPage({
                               name="return_origin"
                               value={cameFromPrepareQueue ? "prepare" : ""}
                             />
+                            <input type="hidden" name="site_id" value={activeSiteId} />
                             <input type="hidden" name="choose_loc_item_id" value={item.id} />
                             <input
                               type="hidden"
@@ -3178,6 +3191,7 @@ export default async function RemissionDetailPage({
                           name="return_origin"
                           value={cameFromPrepareQueue ? "prepare" : ""}
                         />
+                        <input type="hidden" name="site_id" value={activeSiteId} />
                         <input type="hidden" name="line_shortcut_target" value={`${item.id}|complete_line`} />
                       </form>
                       <form id={`prepare-shortcut-form-${item.id}`} action={applyPrepareShortcut}>
@@ -3187,6 +3201,7 @@ export default async function RemissionDetailPage({
                           name="return_origin"
                           value={cameFromPrepareQueue ? "prepare" : ""}
                         />
+                        <input type="hidden" name="site_id" value={activeSiteId} />
                         <input type="hidden" name="line_shortcut_target" value={`${item.id}|prepare_auto`} />
                       </form>
                       <form id={`set-partial-prepare-form-${item.id}`} action={applyPrepareShortcut}>
@@ -3196,6 +3211,7 @@ export default async function RemissionDetailPage({
                           name="return_origin"
                           value={cameFromPrepareQueue ? "prepare" : ""}
                         />
+                        <input type="hidden" name="site_id" value={activeSiteId} />
                         <input type="hidden" name="line_shortcut_target" value={`${item.id}|set_prepare_partial`} />
                       </form>
                       <form id={`clear-prepare-shortcut-form-${item.id}`} action={applyPrepareShortcut}>
@@ -3205,6 +3221,7 @@ export default async function RemissionDetailPage({
                           name="return_origin"
                           value={cameFromPrepareQueue ? "prepare" : ""}
                         />
+                        <input type="hidden" name="site_id" value={activeSiteId} />
                         <input type="hidden" name="line_shortcut_target" value={`${item.id}|clear_prepare`} />
                       </form>
                       <form id={`ship-shortcut-form-${item.id}`} action={applyPrepareShortcut}>
@@ -3214,6 +3231,7 @@ export default async function RemissionDetailPage({
                           name="return_origin"
                           value={cameFromPrepareQueue ? "prepare" : ""}
                         />
+                        <input type="hidden" name="site_id" value={activeSiteId} />
                         <input type="hidden" name="line_shortcut_target" value={`${item.id}|ship_prepared`} />
                       </form>
                       <form id={`clear-ship-shortcut-form-${item.id}`} action={applyPrepareShortcut}>
@@ -3223,6 +3241,7 @@ export default async function RemissionDetailPage({
                           name="return_origin"
                           value={cameFromPrepareQueue ? "prepare" : ""}
                         />
+                        <input type="hidden" name="site_id" value={activeSiteId} />
                         <input type="hidden" name="line_shortcut_target" value={`${item.id}|clear_ship`} />
                       </form>
                     </>
@@ -3236,6 +3255,7 @@ export default async function RemissionDetailPage({
                           name="return_origin"
                           value={cameFromPrepareQueue ? "prepare" : ""}
                         />
+                        <input type="hidden" name="site_id" value={activeSiteId} />
                         <input type="hidden" name="line_receive_target" value={`${item.id}|receive_all`} />
                       </form>
                       <form id={`mark-shortage-shortcut-form-${item.id}`} action={applyReceiveShortcut}>
@@ -3245,6 +3265,7 @@ export default async function RemissionDetailPage({
                           name="return_origin"
                           value={cameFromPrepareQueue ? "prepare" : ""}
                         />
+                        <input type="hidden" name="site_id" value={activeSiteId} />
                         <input type="hidden" name="line_receive_target" value={`${item.id}|mark_shortage`} />
                       </form>
                       <form id={`clear-receive-shortcut-form-${item.id}`} action={applyReceiveShortcut}>
@@ -3254,6 +3275,7 @@ export default async function RemissionDetailPage({
                           name="return_origin"
                           value={cameFromPrepareQueue ? "prepare" : ""}
                         />
+                        <input type="hidden" name="site_id" value={activeSiteId} />
                         <input type="hidden" name="line_receive_target" value={`${item.id}|clear_receive`} />
                       </form>
                       <form id={`set-partial-receive-form-${item.id}`} action={applyReceiveShortcut}>
@@ -3263,6 +3285,7 @@ export default async function RemissionDetailPage({
                           name="return_origin"
                           value={cameFromPrepareQueue ? "prepare" : ""}
                         />
+                        <input type="hidden" name="site_id" value={activeSiteId} />
                         <input type="hidden" name="line_receive_target" value={`${item.id}|set_partial`} />
                       </form>
                     </>
