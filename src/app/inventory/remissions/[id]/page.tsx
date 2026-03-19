@@ -10,6 +10,7 @@ import {
   submitTransitChecklist,
   updateItems,
 } from "./detail-actions";
+import { ConductorTransitChecklistForm } from "./conductor-transit-checklist-form";
 import { RemissionPrepareWorkbench } from "./prepare-workbench";
 import { RemissionLineCard } from "./detail-line-card";
 import { RemissionLineHiddenActions } from "./detail-line-hidden-actions";
@@ -341,6 +342,33 @@ export default async function RemissionDetailPage({
 
   const transitPrepareFingerprint = buildPrepareFingerprintHash(itemRows);
 
+  const conductorTransitLines = itemRows.map((item) => {
+    const preparedQty = roundQuantity(Number(item.prepared_quantity ?? 0));
+    const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
+    const plannedQty = Math.max(preparedQty, shippedQty);
+    const locId = item.source_location_id ?? null;
+    const locRow = locId ? originLocById.get(locId) : undefined;
+    let locDetail: string | null = null;
+    if (locId) {
+      if (locRow) {
+        const label = buildLocDisplayLabel(locRow);
+        locDetail = label === "LOC" ? `ID ${locId.slice(0, 8)}…` : label;
+      } else {
+        locDetail = `ID ubicación ${locId.slice(0, 8)}…`;
+      }
+    }
+    const unitLabel = formatUnitLabel(
+      item.stock_unit_code ?? item.unit ?? item.product?.stock_unit_code
+    );
+    return {
+      id: item.id,
+      productName: String(item.product?.name ?? item.product_id),
+      quantity: plannedQty,
+      unitLabel,
+      locDetail,
+    };
+  });
+
   return (
     <div className="ui-scene w-full space-y-6 pb-28 lg:pb-6">
       <RemissionHeroSection
@@ -460,55 +488,23 @@ export default async function RemissionDetailPage({
 
       {isConductorTransitReview ? (
         <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
-          <div className="ui-h3">Modo Conductor · Checklist de tránsito</div>
-          <div className="mt-1 ui-caption">
-            Valida línea por línea y agrega nota opcional antes de poner en tránsito.
+          <div className="text-xl font-bold tracking-tight text-[var(--ui-text)] sm:text-2xl">
+            Modo Conductor · Checklist de tránsito
           </div>
-          <form action={submitTransitChecklist} className="mt-4 space-y-3">
-            <input type="hidden" name="request_id" value={request.id} />
-            <input
-              type="hidden"
-              name="return_origin"
-              value={cameFromPrepareQueue ? "prepare" : cameFromTransitQueue ? "transit" : ""}
-            />
-            <input type="hidden" name="site_id" value={activeSiteId} />
-            <input type="hidden" name="prepare_fingerprint" value={transitPrepareFingerprint} />
-            {itemRows.map((item) => {
-              const productName = item.product?.name ?? item.product_id;
-              const preparedQty = roundQuantity(Number(item.prepared_quantity ?? 0));
-              const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
-              const plannedQty = Math.max(preparedQty, shippedQty);
-              return (
-                <div
-                  key={`transit-check-${item.id}`}
-                  className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3"
-                >
-                  <input type="hidden" name="item_id" value={item.id} />
-                  <div className="text-sm font-semibold text-[var(--ui-text)]">{productName}</div>
-                  <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                    Cantidad lista: {plannedQty} · LOC: {item.source_location_id || "Sin LOC"}
-                  </div>
-                  <textarea
-                    name="transit_note"
-                    className="ui-input mt-2 min-h-[64px] w-full"
-                    placeholder="Nota opcional de conductor para esta línea..."
-                  />
-                </div>
-              );
-            })}
-            <button
-              type="submit"
-              className="ui-btn ui-btn--action h-12 px-5 text-base font-semibold"
-              disabled={!canTransitNow}
-            >
-              Poner en tránsito
-            </button>
-            {!canTransitNow ? (
-              <div className="ui-caption">
-                Aún no está lista para tránsito: completa preparación en todas las líneas.
-              </div>
-            ) : null}
-          </form>
+          <p className="mt-2 text-base leading-snug text-[var(--ui-muted)] sm:text-lg">
+            Revisa cada ítem en grande, marca como verificado y, si hace falta, abre la nota opcional.
+          </p>
+          <ConductorTransitChecklistForm
+            formAction={submitTransitChecklist}
+            requestId={request.id}
+            returnOrigin={
+              cameFromPrepareQueue ? "prepare" : cameFromTransitQueue ? "transit" : ""
+            }
+            siteId={activeSiteId}
+            prepareFingerprint={transitPrepareFingerprint}
+            lines={conductorTransitLines}
+            canTransitNow={canTransitNow}
+          />
         </div>
       ) : null}
 
