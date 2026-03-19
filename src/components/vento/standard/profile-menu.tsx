@@ -71,7 +71,22 @@ export function ProfileMenu({ name, role, email, sites }: ProfileMenuProps) {
     router.refresh();
   };
 
-  const handleSiteChange = (nextSiteId: string) => {
+  const handleSiteChange = async (nextSiteId: string) => {
+    const supabase = createClient();
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    if (user) {
+      await supabase.from("employee_settings").upsert(
+        {
+          employee_id: user.id,
+          selected_site_id: nextSiteId || null,
+        },
+        { onConflict: "employee_id" }
+      );
+    }
+
     const params = new URLSearchParams(searchParams.toString());
     if (nextSiteId) {
       params.set("site_id", nextSiteId);

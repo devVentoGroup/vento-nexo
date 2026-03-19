@@ -1018,6 +1018,10 @@ export default async function RemissionsPage({
           ? "Nueva solicitud"
           : "Ver remisiones";
   const compactOperatorView = viewMode !== "all";
+  const detailHrefForRow = (rowId: string) =>
+    activeSiteId
+      ? `/inventory/remissions/${rowId}?site_id=${encodeURIComponent(activeSiteId)}`
+      : `/inventory/remissions/${rowId}`;
   const actionRows = openRemissionRows;
   const historyRows = remissionRows.filter((row) =>
     ["received", "closed", "cancelled"].includes(String(row.status ?? ""))
@@ -1307,7 +1311,7 @@ export default async function RemissionsPage({
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-2">
                         <Link
-                          href={`/inventory/remissions/${row.id}`}
+                          href={detailHrefForRow(row.id)}
                           className="ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
                         >
                           {viewMode === "bodega"
@@ -1448,7 +1452,7 @@ export default async function RemissionsPage({
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-2">
                         <Link
-                          href={`/inventory/remissions/${row.id}`}
+                          href={detailHrefForRow(row.id)}
                           className="ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
                         >
                           Ver

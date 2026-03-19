@@ -34,6 +34,7 @@ type SearchParams = {
   from?: string;
   line?: string;
   event?: string;
+  site_id?: string;
 };
 
 type AccessContext = {
@@ -240,6 +241,7 @@ function buildRemissionDetailHref(params: {
   warning?: string | null;
   line?: string | null;
   event?: string | null;
+  siteId?: string | null;
 }) {
   const query = new URLSearchParams();
   const from = normalizeReturnOrigin(params.from);
@@ -248,6 +250,7 @@ function buildRemissionDetailHref(params: {
   const warning = String(params.warning ?? "").trim();
   const line = String(params.line ?? "").trim();
   const event = String(params.event ?? "").trim();
+  const siteId = String(params.siteId ?? "").trim();
 
   if (from) query.set("from", from);
   if (error) query.set("error", error);
@@ -255,6 +258,7 @@ function buildRemissionDetailHref(params: {
   if (warning) query.set("warning", warning);
   if (line) query.set("line", line);
   if (event) query.set("event", event);
+  if (siteId) query.set("site_id", siteId);
 
   const search = query.toString();
   return search
@@ -295,7 +299,8 @@ async function enforceOperationalGateOrRedirect(params: {
 async function loadAccessContext(
   supabase: SupabaseClient,
   userId: string,
-  request: { from_site_id?: string | null; to_site_id?: string | null } | null
+  request: { from_site_id?: string | null; to_site_id?: string | null } | null,
+  activeSiteId?: string | null
 ): Promise<AccessContext> {
   const { data: employee } = await supabase
     .from("employees")
@@ -313,7 +318,7 @@ async function loadAccessContext(
     .eq("employee_id", userId)
     .maybeSingle();
   const selectedSiteId = String(
-    settings?.selected_site_id ?? employee?.site_id ?? ""
+    activeSiteId ?? settings?.selected_site_id ?? employee?.site_id ?? ""
   ).trim();
   let roleLabel = effectiveRole || "sin rol";
   if (effectiveRole) {
@@ -2011,12 +2016,21 @@ export default async function RemissionDetailPage({
   const activeLineEvent = String(sp.event ?? "").trim();
   const lowStockWarning = sp.warning === "low_stock";
   const cameFromPrepareQueue = sp.from === "prepare";
-  const backHref = cameFromPrepareQueue ? "/inventory/remissions/prepare" : "/inventory/remissions";
+  const activeSiteId = String(sp.site_id ?? "").trim();
+  const backHref = cameFromPrepareQueue
+    ? activeSiteId
+      ? `/inventory/remissions/prepare?site_id=${encodeURIComponent(activeSiteId)}`
+      : "/inventory/remissions/prepare"
+    : activeSiteId
+      ? `/inventory/remissions?site_id=${encodeURIComponent(activeSiteId)}`
+      : "/inventory/remissions";
   const backLabel = cameFromPrepareQueue ? "Volver a cola de preparacion" : "Volver a remisiones";
 
   const { supabase, user } = await requireAppAccess({
     appId: APP_ID,
-    returnTo: `/inventory/remissions/${id}`,
+    returnTo: activeSiteId
+      ? `/inventory/remissions/${id}?site_id=${encodeURIComponent(activeSiteId)}`
+      : `/inventory/remissions/${id}`,
   });
 
   const { data: request } = await supabase
@@ -2025,7 +2039,7 @@ export default async function RemissionDetailPage({
     .eq("id", id)
     .single();
 
-  const access = await loadAccessContext(supabase, user.id, request);
+  const access = await loadAccessContext(supabase, user.id, request, activeSiteId);
 
   const { data: items } = await supabase
     .from("restock_request_items")
