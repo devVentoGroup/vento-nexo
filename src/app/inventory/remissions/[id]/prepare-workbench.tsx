@@ -20,6 +20,7 @@ type DraftLine = {
   dispatchQty: number;
   shortageReason: string;
   isVirtualSplit: boolean;
+  manualLocked?: boolean;
 };
 
 type SplitDraft = {
@@ -44,6 +45,72 @@ function suggestedQtyForLoc(line: DraftLine, locId: string) {
   const loc = line.locOptions.find((entry) => entry.id === locId);
   const available = Number(loc?.qty ?? 0);
   return roundQty(clampQty(available, 0, line.requestedQty));
+}
+
+function applySmartAllocation(inputLines: DraftLine[], preserveManual: boolean): DraftLine[] {
+  const lines = inputLines.map((line) => ({ ...line }));
+  const byProduct = new Map<string, DraftLine[]>();
+
+  for (const line of lines) {
+    const key = `${line.productName}__${line.unitLabel}`;
+    if (!byProduct.has(key)) byProduct.set(key, []);
+    byProduct.get(key)!.push(line);
+  }
+
+  for (const [, productLines] of byProduct) {
+    const locRemaining = new Map<string, number>();
+    for (const line of productLines) {
+      for (const loc of line.locOptions) {
+        const current = Number(locRemaining.get(loc.id) ?? 0);
+        if (loc.qty > current) locRemaining.set(loc.id, Number(loc.qty));
+      }
+    }
+
+    if (preserveManual) {
+      for (const line of productLines) {
+        if (!line.manualLocked || !line.selectedLocId) continue;
+        const current = Number(locRemaining.get(line.selectedLocId) ?? 0);
+        const reserved = roundQty(
+          clampQty(Number(line.dispatchQty ?? 0), 0, Number(line.requestedQty ?? 0))
+        );
+        locRemaining.set(line.selectedLocId, roundQty(Math.max(0, current - reserved)));
+      }
+    }
+
+    const autoLines = productLines
+      .filter((line) => !(preserveManual && line.manualLocked))
+      .sort((a, b) => Number(b.requestedQty) - Number(a.requestedQty));
+
+    for (const line of autoLines) {
+      const ranked = line.locOptions
+        .map((loc) => {
+          const remaining = Number(locRemaining.get(loc.id) ?? 0);
+          const alloc = roundQty(Math.min(remaining, Number(line.requestedQty)));
+          const shortage = roundQty(Math.max(0, Number(line.requestedQty) - alloc));
+          const slack = roundQty(Math.max(0, remaining - alloc));
+          return { locId: loc.id, remaining, alloc, shortage, slack };
+        })
+        .sort((a, b) => {
+          if (a.shortage !== b.shortage) return a.shortage - b.shortage;
+          if (a.slack !== b.slack) return a.slack - b.slack;
+          return b.remaining - a.remaining;
+        });
+
+      const best = ranked[0];
+      if (!best || best.remaining <= 0) {
+        line.selectedLocId = "";
+        line.dispatchQty = 0;
+        continue;
+      }
+
+      line.selectedLocId = best.locId;
+      line.dispatchQty = best.alloc;
+      if (best.alloc >= line.requestedQty) line.shortageReason = "";
+      locRemaining.set(best.locId, roundQty(Math.max(0, best.remaining - best.alloc)));
+    }
+  }
+
+  return lines.map((line) => normalizeLine(line));
 }
 
 function normalizeLine(line: DraftLine): DraftLine {
@@ -95,7 +162,9 @@ export function RemissionPrepareWorkbench({
   lines: initialLines,
   onCommit,
 }: PrepareWorkbenchProps) {
-  const [lines, setLines] = useState<DraftLine[]>(() => initialLines.map(normalizeLine));
+  const [lines, setLines] = useState<DraftLine[]>(() =>
+    applySmartAllocation(initialLines.map((line) => normalizeLine(line)), false)
+  );
   const [splitDrafts, setSplitDrafts] = useState<SplitDraft[]>([]);
   const [readyMarked, setReadyMarked] = useState(false);
   const [splitTargetId, setSplitTargetId] = useState<string>("");
@@ -132,9 +201,9 @@ export function RemissionPrepareWorkbench({
 
   const updateLine = (lineId: string, patch: Partial<DraftLine>) => {
     setLines((prev) => {
-      return prev.map((line) => {
+      const patched = prev.map((line) => {
         if (line.id !== lineId) return line;
-        const next = { ...line, ...patch };
+        const next = { ...line, ...patch, manualLocked: true };
         if (Object.prototype.hasOwnProperty.call(patch, "selectedLocId")) {
           const selectedLocId = String(patch.selectedLocId ?? "").trim();
           if (selectedLocId) {
@@ -145,6 +214,7 @@ export function RemissionPrepareWorkbench({
         next.dispatchQty = roundQty(clampQty(Number(next.dispatchQty ?? 0), 0, next.requestedQty));
         return next;
       });
+      return applySmartAllocation(patched, true);
     });
     setReadyMarked(false);
   };
@@ -171,6 +241,7 @@ export function RemissionPrepareWorkbench({
       selectedLocId: "",
       shortageReason: "",
       isVirtualSplit: true,
+      manualLocked: false,
     };
 
     setLines((prev) => {
@@ -181,7 +252,7 @@ export function RemissionPrepareWorkbench({
       );
       const insertIndex = next.findIndex((line) => line.id === splitTarget.id);
       next.splice(insertIndex + 1, 0, virtualLine);
-      return next;
+      return applySmartAllocation(next, true);
     });
 
     setSplitDrafts((prev) => [
@@ -241,10 +312,10 @@ export function RemissionPrepareWorkbench({
                   </div>
                   {line.recommendedLocId ? (
                     <div className="mt-2 text-xs text-emerald-700">
-                      Recomendado aplicado:{" "}
+                      Asignación inteligente:{" "}
                       <strong>
-                        {line.locOptions.find((loc) => loc.id === line.recommendedLocId)?.label ??
-                          line.recommendedLocId}
+                        {(line.locOptions.find((loc) => loc.id === line.selectedLocId)?.label ??
+                          line.selectedLocId) || "Sin LOC"}
                       </strong>
                     </div>
                   ) : null}
@@ -384,6 +455,21 @@ export function RemissionPrepareWorkbench({
               }`}
             >
               {readyMarked ? "Lista para despacho" : "Marcar lista para despacho"}
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                setLines((prev) =>
+                  applySmartAllocation(
+                    prev.map((line) => ({ ...line, manualLocked: false })),
+                    false
+                  )
+                );
+                setReadyMarked(false);
+              }}
+              className="ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
+            >
+              Reoptimizar asignación
             </button>
             <form action={onCommit}>
               <input type="hidden" name="request_id" value={requestId} />
