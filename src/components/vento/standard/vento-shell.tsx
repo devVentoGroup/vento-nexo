@@ -42,13 +42,23 @@ export async function VentoShell({ children }: { children: React.ReactNode }) {
       .limit(50);
 
     const employeeSiteRows = (employeeSites ?? []) as EmployeeSiteRow[];
-    const defaultSiteId =
-      employeeSiteRows[0]?.site_id ?? employeeRow?.site_id ?? "";
-    activeSiteId = defaultSiteId ?? "";
-
     const siteIds = employeeSiteRows
       .map((row) => row.site_id)
       .filter((id): id is string => Boolean(id));
+
+    let selectedSiteId = "";
+    const { data: employeeSettings } = await supabase
+      .from("employee_settings")
+      .select("selected_site_id")
+      .eq("employee_id", user.id)
+      .maybeSingle();
+    const selectedSiteCandidate = String(employeeSettings?.selected_site_id ?? "").trim();
+    if (selectedSiteCandidate && siteIds.includes(selectedSiteCandidate)) {
+      selectedSiteId = selectedSiteCandidate;
+    }
+
+    const defaultSiteId = employeeSiteRows[0]?.site_id ?? employeeRow?.site_id ?? "";
+    activeSiteId = selectedSiteId || defaultSiteId || "";
 
     if (siteIds.length) {
       const { data: siteRows } = await supabase
