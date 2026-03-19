@@ -2217,9 +2217,7 @@ export default async function RemissionDetailPage({
   } else if (["in_transit", "partial"].includes(currentStatus)) {
     responsibleActor = `${access.toSiteName || "Destino"} / recepción`;
   } else if (currentStatus === "received") {
-    responsibleActor = access.canClose
-      ? "Cierre administrativo opcional"
-      : "Recepción completa registrada";
+    responsibleActor = "Recepción completada";
   } else if (currentStatus === "closed") {
     responsibleActor = "Flujo terminado";
   } else if (currentStatus === "cancelled") {
@@ -2229,7 +2227,18 @@ export default async function RemissionDetailPage({
     ? "Preparacion en Centro"
     : canEditReceiveItems
       ? "Recepcion en destino"
-      : formatStatus(request.status).label;
+      : null;
+  const stateSupportText = canEditPrepareItems
+    ? "Centro prepara y confirma lo que sale."
+    : canEditReceiveItems
+      ? "Tu sede registra lo recibido y, si hace falta, el faltante."
+      : currentStatus === "received"
+        ? "Todo quedó recibido y conciliado."
+        : currentStatus === "closed"
+          ? "La remisión quedó cerrada sin tareas operativas pendientes."
+          : currentStatus === "cancelled"
+            ? "La remisión fue cancelada y ya no tiene acciones disponibles."
+            : "Sin acciones operativas pendientes.";
   const roleFlowLabel = isProductionView
     ? "Centro solo prepara y despacha."
     : isSatelliteView
@@ -2250,7 +2259,9 @@ export default async function RemissionDetailPage({
               {backLabel}
             </Link>
             <div className="mt-4 flex flex-wrap items-center gap-2">
-              <span className="ui-chip ui-chip--brand">{phaseLabel}</span>
+              {phaseLabel ? (
+                <span className="ui-chip ui-chip--brand">{phaseLabel}</span>
+              ) : null}
               <span className={formatStatus(request.status).className}>
                 {formatStatus(request.status).label}
               </span>
@@ -2338,24 +2349,20 @@ export default async function RemissionDetailPage({
         </div>
 
         <div className="ui-panel ui-panel--halo ui-remission-section ui-fade-up ui-delay-2">
-          <div className="ui-h3">Estado</div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <span className={formatStatus(request.status).className}>
-              {formatStatus(request.status).label}
-            </span>
-            <span className="ui-chip">{phaseLabel}</span>
-          </div>
-          <div className="mt-3 ui-caption">
-            Actor actual: <strong>{responsibleActor}</strong>
-          </div>
-          <div className="mt-3 ui-caption">
-            {canEditPrepareItems
-              ? "Centro prepara y confirma lo que sale."
-              : canEditReceiveItems
-                ? "Tu sede registra lo recibido y, si hace falta, el faltante."
-                : "Sin acciones operativas pendientes."}
-          </div>
+        <div className="ui-h3">Estado</div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <span className={formatStatus(request.status).className}>
+            {formatStatus(request.status).label}
+          </span>
+          {phaseLabel ? <span className="ui-chip">{phaseLabel}</span> : null}
         </div>
+        <div className="mt-3 ui-caption">
+          Actor actual: <strong>{responsibleActor}</strong>
+        </div>
+        <div className="mt-3 ui-caption">
+          {stateSupportText}
+        </div>
+      </div>
       </div>
 
       {currentStatus === "partial" && (pendingReceiptLines > 0 || shortageLines > 0) ? (
