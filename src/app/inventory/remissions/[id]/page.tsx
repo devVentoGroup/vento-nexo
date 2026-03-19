@@ -2204,10 +2204,8 @@ export default async function RemissionDetailPage({
     return canEditPrepareItems && requestedQty > 0 && shippedQty <= 0;
   }).length;
   const canTransitNow = canTransitAction && dispatchReadyLines > 0 && dispatchBlockedLines === 0;
-  const hasPrimaryTopAction =
-    canTransitNow || canReceiveAction || canReceivePartialAction;
-  const showTopActionPanel =
-    canTransitAction || canReceiveAction || canReceivePartialAction;
+  const hasPrimaryTopAction = canTransitNow;
+  const showTopActionPanel = canTransitAction;
   let responsibleActor = "Sin actor operativo pendiente.";
   if (["pending", "preparing"].includes(currentStatus)) {
     responsibleActor = `${access.fromSiteName || "Centro"} / bodega`;
