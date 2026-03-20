@@ -334,6 +334,7 @@ export function ReceiveBatchCompactLine({
 type ReceiveBatchCompactProductLineProps = {
   productId: string;
   itemIds: string[];
+  itemShippedQtys: number[];
   productName: string;
   unitLabel: string;
   shippedQtyTotal: number;
@@ -342,6 +343,7 @@ type ReceiveBatchCompactProductLineProps = {
 
 export function ReceiveBatchCompactProductLine({
   itemIds,
+  itemShippedQtys,
   productName,
   unitLabel,
   shippedQtyTotal,
@@ -353,14 +355,47 @@ export function ReceiveBatchCompactProductLine({
   const allSelected = itemIds.length > 0 && itemIds.every((id) => selected.has(id));
   const anySelected = itemIds.some((id) => selected.has(id));
 
+  const [partialTotalInput, setPartialTotalInput] = useState<string>("");
+
   const onToggleProduct = (next: boolean) => {
     for (const id of itemIds) toggle(id, next);
+    if (!next) {
+      setPartialTotalInput("");
+      for (const id of itemIds) setReceiveQty(id, "");
+    }
   };
 
   const noteValue = itemIds.length > 0 ? notes[itemIds[0]] ?? "" : "";
-  const canEditQty = itemIds.length === 1;
-  const soleItemId = itemIds[0];
-  const receiveQtyValue = soleItemId ? receiveQty[soleItemId] ?? "" : "";
+
+  const allocatePartialTotalToLines = (rawValue: string) => {
+    const trimmed = rawValue.trim();
+    if (!trimmed) {
+      for (const id of itemIds) setReceiveQty(id, "");
+      return;
+    }
+    const normalized = trimmed.replace(",", ".");
+    const manualTotal = Number(normalized);
+    if (!Number.isFinite(manualTotal) || manualTotal < 0) {
+      for (const id of itemIds) setReceiveQty(id, "");
+      return;
+    }
+
+    let remaining = manualTotal;
+    for (let i = 0; i < itemIds.length; i += 1) {
+      const id = itemIds[i];
+      const lineShipped = itemShippedQtys[i] ?? 0;
+      const alloc = Math.max(0, Math.min(lineShipped, remaining));
+      setReceiveQty(id, String(alloc));
+      remaining -= alloc;
+      if (remaining <= 0) {
+        // En esta línea ya no hay restante: lo demás queda en 0.
+        for (let j = i + 1; j < itemIds.length; j += 1) {
+          setReceiveQty(itemIds[j], "0");
+        }
+        break;
+      }
+    }
+  };
 
   return (
     <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3 shadow-sm">
@@ -415,32 +450,34 @@ export function ReceiveBatchCompactProductLine({
         </div>
       </details>
 
-      {canEditQty ? (
-        <details className="mt-2 group">
-          <summary className="cursor-pointer list-none select-none text-sm text-[var(--ui-muted)]">
-            Cantidad recibida (parcial)
-          </summary>
-          <div className="mt-2">
-            <label className="block text-xs font-semibold text-[var(--ui-muted)]">
-              Recibir
-            </label>
-            <input
-              type="number"
-              step="any"
-              min={0}
-              max={shippedQtyTotal}
-              disabled={!allSelected}
-              value={receiveQtyValue}
-              onChange={(e) => setReceiveQty(soleItemId, e.target.value)}
-              className="mt-1 ui-input h-11 w-full rounded-xl disabled:cursor-not-allowed disabled:bg-stone-50"
-              placeholder={`${shippedQtyTotal} ${unitLabel}`}
-            />
-            <p className="mt-1 text-[11px] leading-snug text-stone-500">
-              Si pones un valor menor, el sistema registra faltante automático para esa línea.
-            </p>
-          </div>
-        </details>
-      ) : null}
+      <details className="mt-2 group">
+        <summary className="cursor-pointer list-none select-none text-sm text-[var(--ui-muted)]">
+          Recibir parcial (opcional)
+        </summary>
+        <div className="mt-2">
+          <label className="block text-xs font-semibold text-[var(--ui-muted)]">
+            Recibir ahora
+          </label>
+          <input
+            type="number"
+            step="any"
+            min={0}
+            max={shippedQtyTotal}
+            disabled={!allSelected}
+            value={partialTotalInput}
+            onChange={(e) => {
+              const v = e.target.value;
+              setPartialTotalInput(v);
+              allocatePartialTotalToLines(v);
+            }}
+            className="mt-1 ui-input h-11 w-full rounded-xl disabled:cursor-not-allowed disabled:bg-stone-50"
+            placeholder={`${shippedQtyTotal} ${unitLabel}`}
+          />
+          <p className="mt-1 text-[11px] leading-snug text-stone-500">
+            Si pones un valor menor, el sistema registra faltante automático para el producto.
+          </p>
+        </div>
+      </details>
     </div>
   );
 }

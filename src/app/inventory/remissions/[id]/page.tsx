@@ -654,12 +654,16 @@ export default async function RemissionDetailPage({
                   }, 0);
 
                   const itemIds = groupItems.map((it) => it.id);
+                  const itemShippedQtys = groupItems.map((it) =>
+                    roundQuantity(Number(it.shipped_quantity ?? 0))
+                  );
 
                   return (
                     <ReceiveBatchCompactProductLine
                       key={productId}
                       productId={productId}
                       itemIds={itemIds}
+                      itemShippedQtys={itemShippedQtys}
                       productName={productName}
                       unitLabel={unitLabel}
                       shippedQtyTotal={shippedQtyTotal}
