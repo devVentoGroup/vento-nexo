@@ -2298,31 +2298,37 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
       continue;
     }
 
-    let finalReceived = shippedQty;
-    let finalShortage = roundQuantity(Number(itemRow.shortage_quantity ?? 0));
+    const pendingQty = roundQuantity(Math.max(shippedQty - receivedNow - shortageNow, 0));
+
+    let finalReceived = receivedNow;
+    let finalShortage = shortageNow;
 
     if (receiveQtyManual !== null) {
       if (receiveQtyManual < 0) {
-        redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "Cantidad recibida no puede ser negativa." }));
-      }
-      if (receiveQtyManual > shippedQty) {
         redirect(
           buildRemissionDetailHref({
             requestId,
             from: returnOrigin,
-            error: `La cantidad recibida (${receiveQtyManual}) supera el enviado (${shippedQty}).`,
+            error: "Cantidad recibida no puede ser negativa.",
           })
         );
       }
 
-      finalReceived = receiveQtyManual;
-      // En recepción parcial abierta no convertimos automáticamente la diferencia en faltante.
-      // Solo actualizamos lo realmente recibido.
-      if (receiveQtyManual < shippedQty) {
-        finalShortage = 0;
-      } else {
-        finalShortage = 0;
+      if (receiveQtyManual > pendingQty) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: `La cantidad recibida ahora (${receiveQtyManual}) supera el pendiente por resolver (${pendingQty}).`,
+          })
+        );
       }
+
+      finalReceived = roundQuantity(receivedNow + receiveQtyManual);
+      finalShortage = shortageNow;
+    } else {
+      finalReceived = roundQuantity(receivedNow + pendingQty);
+      finalShortage = shortageNow;
     }
 
     if (finalReceived + finalShortage > shippedQty) {

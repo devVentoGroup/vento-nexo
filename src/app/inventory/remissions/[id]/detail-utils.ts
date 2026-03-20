@@ -136,8 +136,8 @@ export function deriveItemStatus(params: {
   const accountedQty = roundQuantity(receivedQty + shortageQty);
 
   if (shippedQty > 0) {
-    // "received" solo si lo recibido completa el envío.
-    if (receivedQty >= shippedQty) return "received";
+    // La línea queda conciliada cuando lo recibido + faltante registrado cubre todo lo enviado.
+    if (accountedQty >= shippedQty) return "received";
     if (accountedQty > 0) return "partial";
     return "in_transit";
   }

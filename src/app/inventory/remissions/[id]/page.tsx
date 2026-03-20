@@ -9,6 +9,7 @@ import {
   commitPreparationDraft,
   submitTransitChecklist,
   updateItems,
+  updateStatus,
 } from "./detail-actions";
 import { ConductorTransitChecklistForm } from "./conductor-transit-checklist-form";
 import { RemissionPrepareWorkbench } from "./prepare-workbench";
@@ -227,8 +228,10 @@ export default async function RemissionDetailPage({
       .filter((item) => {
         const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
         const receivedQty = roundQuantity(Number(item.received_quantity ?? 0));
-        // El shortage es alerta/faltante; el "pendiente" real depende solo de received.
-        return shippedQty > 0 && receivedQty < shippedQty;
+        const shortageQty = roundQuantity(Number(item.shortage_quantity ?? 0));
+        const pendingQty = roundQuantity(Math.max(shippedQty - receivedQty - shortageQty, 0));
+
+        return shippedQty > 0 && pendingQty > 0;
       })
       .map((item) => item.id)
     : [];
@@ -718,14 +721,48 @@ export default async function RemissionDetailPage({
             eligibleProductGroups={receiveBatchEligibleProductGroups}
           >
             {isReceivePartialFollowUp ? (
-              <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-                <strong>Recepción parcial abierta.</strong> Usa este paso para registrar una llegada adicional de lo pendiente.
+              <>
+                <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                  <strong>Recepción parcial abierta.</strong> Usa este paso para registrar una llegada adicional de lo pendiente.
+                  {totalPendingResolutionQty > 0 ? (
+                    <>
+                      {" "}Todavía quedan <strong>{totalPendingResolutionQty}</strong> unidad(es) por resolver.
+                    </>
+                  ) : null}
+                </div>
+
                 {totalPendingResolutionQty > 0 ? (
-                  <>
-                    {" "}Todavía quedan <strong>{totalPendingResolutionQty}</strong> unidad(es) por resolver.
-                  </>
+                  <div className="mb-4 rounded-2xl border border-stone-200 bg-white px-4 py-4 shadow-sm">
+                    <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                      <div>
+                        <div className="text-sm font-semibold text-[var(--ui-text)]">
+                          ¿Ya no llegará más mercancía?
+                        </div>
+                        <div className="mt-1 text-sm text-[var(--ui-muted)]">
+                          Cierra toda la diferencia pendiente como faltante registrado.
+                        </div>
+                      </div>
+
+                      <form action={updateStatus} className="shrink-0">
+                        <input type="hidden" name="request_id" value={request.id} />
+                        <input
+                          type="hidden"
+                          name="return_origin"
+                          value={cameFromPrepareQueue ? "prepare" : ""}
+                        />
+                        <input type="hidden" name="site_id" value={activeSiteId} />
+                        <input type="hidden" name="action" value="resolve_shortage" />
+                        <button
+                          type="submit"
+                          className="inline-flex h-10 items-center justify-center rounded-xl border border-amber-300 bg-amber-100 px-4 text-sm font-semibold text-amber-950 transition hover:bg-amber-200"
+                        >
+                          Cerrar diferencia como faltante
+                        </button>
+                      </form>
+                    </div>
+                  </div>
                 ) : null}
-              </div>
+              </>
             ) : null}
 
             <div className="mt-4 space-y-3 sm:space-y-4">
@@ -759,9 +796,12 @@ export default async function RemissionDetailPage({
                   }, 0);
 
                   const itemIds = groupItems.map((it) => it.id);
-                  const itemShippedQtys = groupItems.map((it) =>
-                    roundQuantity(Number(it.shipped_quantity ?? 0))
-                  );
+                  const itemPendingQtys = groupItems.map((it) => {
+                    const shipped = roundQuantity(Number(it.shipped_quantity ?? 0));
+                    const received = roundQuantity(Number(it.received_quantity ?? 0));
+                    const shortage = roundQuantity(Number(it.shortage_quantity ?? 0));
+                    return roundQuantity(Math.max(shipped - received - shortage, 0));
+                  });
 
                   const receivedQtyTotal = groupItems.reduce((acc, it) => {
                     const received = roundQuantity(Number(it.received_quantity ?? 0));
@@ -801,7 +841,7 @@ export default async function RemissionDetailPage({
                         key={productId}
                         productId={productId}
                         itemIds={itemIds}
-                        itemShippedQtys={itemShippedQtys}
+                        itemPendingQtys={itemPendingQtys}
                         productName={productName}
                         unitLabel={unitLabel}
                         shippedQtyTotal={shippedQtyTotal}

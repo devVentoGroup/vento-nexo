@@ -203,7 +203,7 @@ function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockP
             disabled={selectedProductsCount === 0 || noEligible}
             className="h-10 w-full min-w-[180px] rounded-lg bg-gradient-to-r from-teal-600 to-emerald-600 px-4 text-sm font-bold text-white shadow-lg shadow-teal-900/25 transition hover:from-teal-500 hover:to-emerald-500 disabled:cursor-not-allowed disabled:from-stone-300 disabled:to-stone-300 disabled:text-stone-500 disabled:shadow-none lg:w-auto"
           >
-            Registrar recepción
+            Confirmar llegada
           </button>
         </form>
       </div>
@@ -334,7 +334,7 @@ export function ReceiveBatchCompactLine({
 type ReceiveBatchCompactProductLineProps = {
   productId: string;
   itemIds: string[];
-  itemShippedQtys: number[];
+  itemPendingQtys: number[];
   productName: string;
   unitLabel: string;
   shippedQtyTotal: number;
@@ -343,7 +343,7 @@ type ReceiveBatchCompactProductLineProps = {
 
 export function ReceiveBatchCompactProductLine({
   itemIds,
-  itemShippedQtys,
+  itemPendingQtys,
   productName,
   unitLabel,
   shippedQtyTotal,
@@ -373,22 +373,26 @@ export function ReceiveBatchCompactProductLine({
       for (const id of itemIds) setReceiveQty(id, "");
       return;
     }
+
     const normalized = trimmed.replace(",", ".");
     const manualTotal = Number(normalized);
+
     if (!Number.isFinite(manualTotal) || manualTotal < 0) {
       for (const id of itemIds) setReceiveQty(id, "");
       return;
     }
 
-    let remaining = manualTotal;
+    let remaining = Math.min(manualTotal, pendingQtyTotal);
+
     for (let i = 0; i < itemIds.length; i += 1) {
       const id = itemIds[i];
-      const lineShipped = itemShippedQtys[i] ?? 0;
-      const alloc = Math.max(0, Math.min(lineShipped, remaining));
+      const linePending = itemPendingQtys[i] ?? 0;
+      const alloc = Math.max(0, Math.min(linePending, remaining));
+
       setReceiveQty(id, String(alloc));
       remaining -= alloc;
+
       if (remaining <= 0) {
-        // En esta línea ya no hay restante: lo demás queda en 0.
         for (let j = i + 1; j < itemIds.length; j += 1) {
           setReceiveQty(itemIds[j], "0");
         }
@@ -452,7 +456,7 @@ export function ReceiveBatchCompactProductLine({
 
       <details className="mt-2 group">
         <summary className="cursor-pointer list-none select-none text-sm text-[var(--ui-muted)]">
-          Recibir parcial (registra faltante)
+          Registrar llegada parcial
         </summary>
         <div className="mt-2">
           <label className="block text-xs font-semibold text-[var(--ui-muted)]">
@@ -462,7 +466,7 @@ export function ReceiveBatchCompactProductLine({
             type="number"
             step="any"
             min={0}
-            max={shippedQtyTotal}
+            max={pendingQtyTotal}
             disabled={!allSelected}
             value={partialTotalInput}
             onChange={(e) => {
@@ -471,11 +475,11 @@ export function ReceiveBatchCompactProductLine({
               allocatePartialTotalToLines(v);
             }}
             className="mt-1 ui-input h-11 w-full rounded-xl disabled:cursor-not-allowed disabled:bg-stone-50"
-            placeholder={`${shippedQtyTotal} ${unitLabel}`}
+            placeholder={`${pendingQtyTotal} ${unitLabel}`}
           />
           <p className="mt-1 text-[11px] leading-snug text-stone-500">
-            Si pones un valor menor, el sistema registra faltante automático y la remisión queda
-            en `Recepción parcial` hasta que un gerente/propietario la cierre manualmente.
+            Si ingresas una cantidad menor al pendiente, el sistema registra solo lo recibido ahora
+            y deja la diferencia pendiente para seguimiento posterior.
           </p>
         </div>
       </details>
