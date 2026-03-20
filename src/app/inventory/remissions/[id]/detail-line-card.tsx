@@ -44,7 +44,7 @@ export function RemissionLineCard({
     ? [
         "relative overflow-hidden border transition",
         isBatchReceiveOnly
-          ? "rounded-xl p-3 pl-[1.05rem] sm:p-3 sm:pl-5"
+          ? "rounded-xl p-3 pl-[1.6rem] sm:p-3 sm:pl-6"
           : "rounded-2xl p-4 pl-[1.15rem] sm:p-5 sm:pl-6 sm:rounded-3xl",
         vm.isActiveLine
           ? "border-emerald-400 bg-gradient-to-br from-emerald-50/95 to-white shadow-[0_12px_40px_-16px_rgba(5,150,105,0.35)] ring-2 ring-emerald-200/60"
