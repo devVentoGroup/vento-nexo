@@ -15,6 +15,7 @@ type ReceiveBatchContextValue = {
   selected: ReadonlySet<string>;
   toggle: (itemId: string, on: boolean) => void;
   eligibleIds: readonly string[];
+  productGroups: Array<{ productId: string; itemIds: string[] }>;
   selectAllEligible: () => void;
   clearSelection: () => void;
   notes: Record<string, string>;
@@ -35,7 +36,7 @@ type ReceiveBatchShellProps = {
   requestId: string;
   returnOrigin: string;
   siteId: string;
-  eligibleItemIds: string[];
+  eligibleProductGroups: Array<{ productId: string; itemIds: string[] }>;
   children: ReactNode;
 };
 
@@ -43,11 +44,16 @@ export function ReceiveBatchShell({
   requestId,
   returnOrigin,
   siteId,
-  eligibleItemIds,
+  eligibleProductGroups,
   children,
 }: ReceiveBatchShellProps) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [notes, setNotes] = useState<Record<string, string>>({});
+
+  const eligibleItemIds = useMemo(
+    () => eligibleProductGroups.flatMap((g) => g.itemIds),
+    [eligibleProductGroups]
+  );
 
   const eligibleSet = useMemo(() => new Set(eligibleItemIds), [eligibleItemIds]);
 
@@ -81,12 +87,22 @@ export function ReceiveBatchShell({
       selected,
       toggle,
       eligibleIds: eligibleItemIds,
+      productGroups: eligibleProductGroups,
       selectAllEligible,
       clearSelection,
       notes,
       setNote,
     }),
-    [selected, toggle, eligibleItemIds, selectAllEligible, clearSelection, notes, setNote]
+    [
+      selected,
+      toggle,
+      eligibleItemIds,
+      eligibleProductGroups,
+      selectAllEligible,
+      clearSelection,
+      notes,
+      setNote,
+    ]
   );
 
   return (
@@ -104,10 +120,15 @@ type ReceiveBatchDockProps = {
 };
 
 function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockProps) {
-  const { selected, eligibleIds, selectAllEligible, clearSelection, notes } = useReceiveBatchContext();
-  const n = selected.size;
-  const eligibleCount = eligibleIds.length;
-  const noEligible = eligibleCount === 0;
+  const { selected, productGroups, selectAllEligible, clearSelection, notes } =
+    useReceiveBatchContext();
+
+  const eligibleProductsCount = productGroups.length;
+  const selectedProductsCount = productGroups.filter((g) =>
+    g.itemIds.every((id) => selected.has(id))
+  ).length;
+
+  const noEligible = eligibleProductsCount === 0;
 
   return (
     <div
@@ -118,7 +139,11 @@ function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockP
       <div className="w-full max-w-3xl rounded-xl border border-stone-200/90 bg-[var(--ui-bg)] p-2 shadow-sm ring-1 ring-stone-100/70 sm:p-3 lg:flex lg:items-center lg:justify-between lg:gap-6">
         <div className="min-w-0 flex-1 space-y-1">
           <p className="text-xs font-semibold text-stone-700">
-            {noEligible ? "Sin líneas pendientes." : n === 0 ? `${eligibleCount} pendientes.` : `${n} seleccionadas.`}
+            {noEligible
+              ? "Sin productos pendientes."
+              : selectedProductsCount === 0
+                ? `${eligibleProductsCount} pendiente${eligibleProductsCount === 1 ? "" : "s"}.`
+                : `${selectedProductsCount} seleccionad${selectedProductsCount === 1 ? "o" : "os"}.`}
           </p>
           {!noEligible ? (
             <div className="flex flex-wrap gap-2 pt-1">
@@ -133,7 +158,7 @@ function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockP
                 type="button"
                 className="rounded-lg border border-stone-200 bg-white px-2 py-1 text-[11px] font-semibold text-stone-700 shadow-sm transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"
                 onClick={clearSelection}
-                disabled={n === 0}
+                disabled={selectedProductsCount === 0}
               >
                 Limpiar
               </button>
@@ -159,7 +184,7 @@ function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockP
           ))}
           <button
             type="submit"
-            disabled={n === 0 || noEligible}
+            disabled={selectedProductsCount === 0 || noEligible}
             className="h-10 w-full min-w-[180px] rounded-lg bg-gradient-to-r from-teal-600 to-emerald-600 px-4 text-sm font-bold text-white shadow-lg shadow-teal-900/25 transition hover:from-teal-500 hover:to-emerald-500 disabled:cursor-not-allowed disabled:from-stone-300 disabled:to-stone-300 disabled:text-stone-500 disabled:shadow-none lg:w-auto"
           >
             Registrar recepción

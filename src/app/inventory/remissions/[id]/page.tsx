@@ -232,6 +232,22 @@ export default async function RemissionDetailPage({
         .map((item) => item.id)
     : [];
   const receiveBatchEligibleIdSet = new Set(receiveBatchEligibleIds);
+
+  const receiveBatchEligibleProductGroups = isReceiveDestinationFlow
+    ? (() => {
+        const map = new Map<string, string[]>();
+        for (const item of itemRows) {
+          if (!receiveBatchEligibleIdSet.has(item.id)) continue;
+          const list = map.get(item.product_id) ?? [];
+          list.push(item.id);
+          map.set(item.product_id, list);
+        }
+        return [...map.entries()].map(([productId, itemIds]) => ({
+          productId,
+          itemIds,
+        }));
+      })()
+    : [];
   const isReadyToDispatch = currentStatus === "preparing" && summary.can_transit;
   const editPrepareRaw = sp.edit_prepare;
   const editPrepareVal = Array.isArray(editPrepareRaw) ? editPrepareRaw[0] : editPrepareRaw;
@@ -605,7 +621,7 @@ export default async function RemissionDetailPage({
             requestId={request.id}
             returnOrigin={cameFromPrepareQueue ? "prepare" : ""}
             siteId={activeSiteId}
-            eligibleItemIds={receiveBatchEligibleIds}
+            eligibleProductGroups={receiveBatchEligibleProductGroups}
           >
             <div className="mt-4 space-y-3 sm:space-y-4">
               {(() => {
