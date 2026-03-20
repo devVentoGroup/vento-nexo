@@ -14,7 +14,7 @@ import { ConductorTransitChecklistForm } from "./conductor-transit-checklist-for
 import { RemissionPrepareWorkbench } from "./prepare-workbench";
 import { RemissionLineCard } from "./detail-line-card";
 import { RemissionLineHiddenActions } from "./detail-line-hidden-actions";
-import { ReceiveBatchLineWrapper, ReceiveBatchShell } from "./receive-batch-shell";
+import { ReceiveBatchCompactLine, ReceiveBatchShell } from "./receive-batch-shell";
 import { RemissionHeroSection, RemissionSummarySection } from "./detail-sections";
 import { buildRemissionLineVm } from "./detail-line-vm";
 import { loadOriginStockContext } from "./detail-stock";
@@ -231,6 +231,7 @@ export default async function RemissionDetailPage({
         })
         .map((item) => item.id)
     : [];
+  const receiveBatchEligibleIdSet = new Set(receiveBatchEligibleIds);
   const isReadyToDispatch = currentStatus === "preparing" && summary.can_transit;
   const editPrepareRaw = sp.edit_prepare;
   const editPrepareVal = Array.isArray(editPrepareRaw) ? editPrepareRaw[0] : editPrepareRaw;
@@ -545,10 +546,9 @@ export default async function RemissionDetailPage({
               Recibir remisión
             </h2>
             <p className="mt-2 max-w-2xl text-base leading-relaxed text-stone-600 sm:text-lg">
-              Marca cada línea con la casilla al verificar el físico; nada se guarda hasta{" "}
-              <strong className="text-stone-800">Registrar recepción</strong> abajo. Usa{" "}
-              <strong className="text-stone-800">Más opciones</strong> si hubo faltante o otra
-              cantidad.
+              Marca las líneas con la casilla. Nada se guarda hasta{" "}
+              <strong className="text-stone-800">Registrar recepción</strong>. Opcional: nota
+              debajo.
             </p>
           </div>
         ) : (
@@ -607,13 +607,10 @@ export default async function RemissionDetailPage({
             siteId={activeSiteId}
             eligibleItemIds={receiveBatchEligibleIds}
           >
-            <form action={updateItems} className="mt-4 space-y-4">
-              <input type="hidden" name="request_id" value={request.id} />
-              <input type="hidden" name="return_origin" value={cameFromPrepareQueue ? "prepare" : ""} />
-              <input type="hidden" name="site_id" value={activeSiteId} />
-
-              <div className="space-y-5 sm:space-y-6">
-                {itemRows.map((item) => {
+            <div className="mt-4 space-y-3 sm:space-y-4">
+              {itemRows
+                .filter((item) => receiveBatchEligibleIdSet.has(item.id))
+                .map((item) => {
                   const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
                   const lineIdsForProduct = lineIdsByProduct.get(item.product_id) ?? [item.id];
                   const vm = buildRemissionLineVm({
@@ -630,29 +627,19 @@ export default async function RemissionDetailPage({
                     activeLineId,
                     activeLineEvent,
                   });
-                  const batchEligible = receiveBatchEligibleIds.includes(item.id);
+
                   return (
-                    <ReceiveBatchLineWrapper
+                    <ReceiveBatchCompactLine
                       key={item.id}
                       itemId={item.id}
-                      batchEligible={batchEligible}
-                    >
-                      <RemissionLineCard
-                        item={item}
-                        vm={vm}
-                        currentStatus={currentStatus}
-                        canEditPrepareItems={canEditPrepareItems}
-                        canEditReceiveItems={canEditReceiveItems}
-                        showSourceLocSelector={showSourceLocSelector}
-                        lineIdsForProduct={lineIdsForProduct}
-                        originLocRows={originLocRows}
-                        batchReceiveMode
-                      />
-                    </ReceiveBatchLineWrapper>
+                      productName={item.product?.name ?? item.product_id}
+                      unitLabel={vm.itemUnitLabel}
+                      shippedQty={vm.shippedQty}
+                      remainingQty={vm.remainingReceiptQty}
+                    />
                   );
                 })}
-              </div>
-            </form>
+            </div>
           </ReceiveBatchShell>
         ) : (
           <form action={updateItems} className="mt-4 space-y-4 pb-24 lg:pb-0">

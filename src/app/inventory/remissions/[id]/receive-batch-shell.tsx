@@ -17,6 +17,8 @@ type ReceiveBatchContextValue = {
   eligibleIds: readonly string[];
   selectAllEligible: () => void;
   clearSelection: () => void;
+  notes: Record<string, string>;
+  setNote: (itemId: string, value: string) => void;
 };
 
 const ReceiveBatchContext = createContext<ReceiveBatchContextValue | null>(null);
@@ -45,6 +47,7 @@ export function ReceiveBatchShell({
   children,
 }: ReceiveBatchShellProps) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const [notes, setNotes] = useState<Record<string, string>>({});
 
   const eligibleSet = useMemo(() => new Set(eligibleItemIds), [eligibleItemIds]);
 
@@ -69,6 +72,10 @@ export function ReceiveBatchShell({
     setSelected(new Set());
   }, []);
 
+  const setNote = useCallback((itemId: string, value: string) => {
+    setNotes((prev) => ({ ...prev, [itemId]: value }));
+  }, []);
+
   const ctxValue = useMemo<ReceiveBatchContextValue>(
     () => ({
       selected,
@@ -76,8 +83,10 @@ export function ReceiveBatchShell({
       eligibleIds: eligibleItemIds,
       selectAllEligible,
       clearSelection,
+      notes,
+      setNote,
     }),
-    [selected, toggle, eligibleItemIds, selectAllEligible, clearSelection]
+    [selected, toggle, eligibleItemIds, selectAllEligible, clearSelection, notes, setNote]
   );
 
   return (
@@ -95,7 +104,7 @@ type ReceiveBatchDockProps = {
 };
 
 function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockProps) {
-  const { selected, eligibleIds, selectAllEligible, clearSelection } = useReceiveBatchContext();
+  const { selected, eligibleIds, selectAllEligible, clearSelection, notes } = useReceiveBatchContext();
   const n = selected.size;
   const eligibleCount = eligibleIds.length;
   const noEligible = eligibleCount === 0;
@@ -106,28 +115,23 @@ function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockP
       role="region"
       aria-label="Confirmación de recepción en bloque"
     >
-      <div className="w-full max-w-3xl rounded-xl border border-stone-200/90 bg-[var(--ui-bg)] p-3 shadow-sm ring-1 ring-stone-100/70 sm:p-4 lg:flex lg:items-center lg:justify-between lg:gap-6">
+      <div className="w-full max-w-3xl rounded-xl border border-stone-200/90 bg-[var(--ui-bg)] p-2 shadow-sm ring-1 ring-stone-100/70 sm:p-3 lg:flex lg:items-center lg:justify-between lg:gap-6">
         <div className="min-w-0 flex-1 space-y-1">
-          <p className="text-sm font-bold text-stone-900">Recepción en bloque</p>
-          <p className="text-xs leading-snug text-stone-600 sm:text-sm">
-            {noEligible
-              ? "No hay líneas pendientes de conciliar."
-              : n === 0
-                ? "Marca las líneas con la casilla. Nada se guarda hasta Registrar recepción."
-                : `Confirmarás ${n} línea${n === 1 ? "" : "s"} al 100%.`}
+          <p className="text-xs font-semibold text-stone-700">
+            {noEligible ? "Sin líneas pendientes." : n === 0 ? `${eligibleCount} pendientes.` : `${n} seleccionadas.`}
           </p>
           {!noEligible ? (
             <div className="flex flex-wrap gap-2 pt-1">
               <button
                 type="button"
-                className="rounded-lg border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-700 shadow-sm transition hover:bg-stone-50"
+                className="rounded-lg border border-stone-200 bg-white px-2 py-1 text-[11px] font-semibold text-stone-700 shadow-sm transition hover:bg-stone-50"
                 onClick={selectAllEligible}
               >
                 Marcar todas
               </button>
               <button
                 type="button"
-                className="rounded-lg border border-stone-200 bg-white px-3 py-1 text-xs font-semibold text-stone-700 shadow-sm transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"
+                className="rounded-lg border border-stone-200 bg-white px-2 py-1 text-[11px] font-semibold text-stone-700 shadow-sm transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"
                 onClick={clearSelection}
                 disabled={n === 0}
               >
@@ -144,7 +148,14 @@ function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockP
           <input type="hidden" name="return_origin" value={returnOrigin} />
           <input type="hidden" name="site_id" value={siteId} />
           {[...selected].map((id) => (
-            <input key={id} type="hidden" name="batch_receive_item_id" value={id} />
+            <span key={id}>
+              <input type="hidden" name="batch_receive_item_id" value={id} />
+              <input
+                type="hidden"
+                name="batch_receive_item_note"
+                value={notes[id] ?? ""}
+              />
+            </span>
           ))}
           <button
             type="submit"
@@ -209,6 +220,72 @@ export function ReceiveBatchLineWrapper({
         </label>
       ) : null}
       <div>{children}</div>
+    </div>
+  );
+}
+
+type ReceiveBatchCompactLineProps = {
+  itemId: string;
+  productName: string;
+  unitLabel: string;
+  shippedQty: number;
+  remainingQty: number;
+};
+
+export function ReceiveBatchCompactLine({
+  itemId,
+  productName,
+  unitLabel,
+  shippedQty,
+  remainingQty,
+}: ReceiveBatchCompactLineProps) {
+  const { selected, toggle, notes, setNote } = useReceiveBatchContext();
+  const isChecked = selected.has(itemId);
+
+  return (
+    <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3 shadow-sm">
+      <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3">
+        <label className="flex cursor-pointer items-center gap-2">
+          <input
+            type="checkbox"
+            checked={isChecked}
+            onChange={(e) => toggle(itemId, e.target.checked)}
+            className="h-5 w-5 rounded border-stone-300 text-emerald-600 focus:ring-emerald-500"
+            aria-label={`Incluir ${productName} en recepción`}
+          />
+        </label>
+
+        <div className="min-w-0 text-center">
+          <p className="truncate text-sm font-semibold text-[var(--ui-text)]">
+            {productName}
+          </p>
+        </div>
+
+        <div className="text-right">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
+            Enviado / Pendiente
+          </div>
+          <div className="text-sm font-bold tabular-nums text-[var(--ui-text)]">
+            {shippedQty} · {remainingQty} {unitLabel}
+          </div>
+        </div>
+      </div>
+
+      <details className="mt-2 group">
+        <summary className="cursor-pointer list-none select-none text-sm text-[var(--ui-muted)]">
+          Nota opcional
+        </summary>
+        <div className="mt-2">
+          <textarea
+            disabled={!isChecked}
+            value={notes[itemId] ?? ""}
+            onChange={(e) => setNote(itemId, e.target.value)}
+            className="w-full resize-none rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900 shadow-sm outline-none focus:border-emerald-300 focus:ring-0 disabled:cursor-not-allowed disabled:bg-stone-50"
+            rows={2}
+            placeholder="Opcional: incidencias o comentarios…"
+          />
+        </div>
+      </details>
     </div>
   );
 }

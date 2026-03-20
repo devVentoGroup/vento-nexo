@@ -1890,9 +1890,20 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
     .getAll("batch_receive_item_id")
     .map((value) => asText(value).trim())
     .filter(Boolean);
-  const itemIds = [...new Set(rawIds)];
+  const rawNotes = formData
+    .getAll("batch_receive_item_note")
+    .map((value) => asText(value).trim());
 
-  if (itemIds.length === 0) {
+  const pairs: Array<{ itemId: string; note: string }> = [];
+  const seen = new Set<string>();
+  for (let i = 0; i < rawIds.length; i += 1) {
+    const itemId = rawIds[i];
+    if (!itemId || seen.has(itemId)) continue;
+    pairs.push({ itemId, note: rawNotes[i] ?? "" });
+    seen.add(itemId);
+  }
+
+  if (pairs.length === 0) {
     redirect(
       buildRemissionDetailHref({
         requestId,
@@ -1930,11 +1941,14 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
   });
 
   let appliedCount = 0;
+  let notesCount = 0;
 
-  for (const itemId of itemIds) {
+  for (const { itemId, note } of pairs) {
     const { data: itemRow } = await supabase
       .from("restock_request_items")
-      .select("id,quantity,prepared_quantity,shipped_quantity,received_quantity,shortage_quantity")
+      .select(
+        "id,quantity,prepared_quantity,shipped_quantity,received_quantity,shortage_quantity,notes"
+      )
       .eq("id", itemId)
       .eq("request_id", requestId)
       .single();
@@ -1948,6 +1962,8 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
         })
       );
     }
+
+    const noteTrim = String(note ?? "").trim();
 
     const shippedQty = roundQuantity(Number(itemRow.shipped_quantity ?? 0));
     const receivedNow = roundQuantity(Number(itemRow.received_quantity ?? 0));
@@ -1966,6 +1982,25 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
     }
 
     if (accounted >= shippedQty) {
+      if (noteTrim) {
+        const existing = String(itemRow.notes ?? "").trim();
+        const composed = existing ? `${existing}\nRECEPCION: ${noteTrim}` : `RECEPCION: ${noteTrim}`;
+        const { error: noteErr } = await supabase
+          .from("restock_request_items")
+          .update({ notes: composed })
+          .eq("id", itemId)
+          .eq("request_id", requestId);
+        if (noteErr) {
+          redirect(
+            buildRemissionDetailHref({
+              requestId,
+              from: returnOrigin,
+              error: noteErr.message,
+            })
+          );
+        }
+        notesCount += 1;
+      }
       continue;
     }
 
@@ -1994,6 +2029,26 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
       redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: error.message }));
     }
     appliedCount += 1;
+
+    if (noteTrim) {
+      const existing = String(itemRow.notes ?? "").trim();
+      const composed = existing ? `${existing}\nRECEPCION: ${noteTrim}` : `RECEPCION: ${noteTrim}`;
+      const { error: noteErr } = await supabase
+        .from("restock_request_items")
+        .update({ notes: composed })
+        .eq("id", itemId)
+        .eq("request_id", requestId);
+      if (noteErr) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: noteErr.message,
+          })
+        );
+      }
+      notesCount += 1;
+    }
   }
 
   const syncError = await syncReceiveRequestStatus({
@@ -2010,8 +2065,12 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
       from: returnOrigin,
       ok:
         appliedCount === 0
-          ? "Las líneas seleccionadas ya estaban conciliadas; no hubo cambios."
-          : `Recepción confirmada: ${appliedCount} línea(s).`,
+          ? notesCount > 0
+            ? `Recepción: notas registradas en ${notesCount} línea(s).`
+            : "Las líneas seleccionadas ya estaban conciliadas; no hubo cambios."
+          : notesCount > 0
+            ? `Recepción confirmada: ${appliedCount} línea(s). Notas en ${notesCount} línea(s).`
+            : `Recepción confirmada: ${appliedCount} línea(s).`,
     })
   );
 }
