@@ -82,7 +82,7 @@ export function ReceiveBatchShell({
 
   return (
     <ReceiveBatchContext.Provider value={ctxValue}>
-      <div className="relative pb-36 lg:pb-32">{children}</div>
+      <div className="relative max-lg:pb-36 lg:pb-6">{children}</div>
       <ReceiveBatchDock requestId={requestId} returnOrigin={returnOrigin} siteId={siteId} />
     </ReceiveBatchContext.Provider>
   );
@@ -102,27 +102,32 @@ function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockP
 
   return (
     <div
-      className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 lg:px-8"
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-40 flex justify-center px-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] pt-2 max-lg:px-3 lg:static lg:pointer-events-auto lg:pb-0 lg:pt-0 lg:px-3"
       role="region"
       aria-label="Confirmación de recepción en bloque"
     >
-      <div className="pointer-events-auto w-full max-w-5xl rounded-2xl border border-emerald-200/90 bg-gradient-to-r from-emerald-50 via-white to-teal-50/90 p-4 shadow-[0_-12px_40px_-12px_rgba(5,80,60,0.35)] ring-1 ring-emerald-100/80 sm:p-5 lg:flex lg:items-center lg:justify-between lg:gap-8">
+      <div className="pointer-events-auto w-full max-w-3xl rounded-xl border border-emerald-200/90 bg-gradient-to-r from-emerald-50 via-white to-teal-50/90 p-3 shadow-[0_-10px_30px_-16px_rgba(5,80,60,0.25)] ring-1 ring-emerald-100/70 sm:p-4 lg:flex lg:items-center lg:justify-between lg:gap-6">
         <div className="min-w-0 flex-1 space-y-2">
-          <p className="text-sm font-bold text-emerald-950 lg:text-base">Recepción en bloque</p>
-          <p className="text-sm leading-snug text-stone-600">
+          <p className="text-xs font-bold text-emerald-950 sm:text-sm">Recepción en bloque</p>
+          <p className="text-xs leading-snug text-stone-600 sm:text-sm">
             {noEligible ? (
               "No hay líneas pendientes de conciliar."
             ) : n === 0 ? (
               <>
-                Marca cada producto con la casilla cuando lo hayas verificado físicamente.{" "}
-                <strong className="text-stone-800">Nada se guarda en el servidor</strong> hasta que
-                pulses <strong className="text-stone-800">Registrar recepción</strong> (
-                {eligibleCount} pendiente{eligibleCount === 1 ? "" : "s"}).
+                Marca líneas con la casilla.{" "}
+                <strong className="text-stone-800">Nada se guarda</strong> hasta que pulses{" "}
+                <strong className="text-stone-800">Registrar recepción</strong>.
+                {eligibleCount > 0 ? (
+                  <>
+                    {" "}
+                    ({eligibleCount} pendiente{eligibleCount === 1 ? "" : "s"}).
+                  </>
+                ) : null}
               </>
             ) : (
               <>
-                Vas a confirmar <strong className="text-stone-800">{n}</strong> línea
-                {n === 1 ? "" : "s"} como recibidas al 100% del envío. Revisa antes de enviar.
+                Confirmarás <strong className="text-stone-800">{n}</strong>{" "}
+                línea{n === 1 ? "" : "s"} al 100%. Revisa antes de enviar.
               </>
             )}
           </p>
@@ -148,7 +153,7 @@ function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockP
         </div>
         <form
           action={applyReceiveBatchConfirm}
-          className="mt-4 flex w-full shrink-0 flex-col gap-2 lg:mt-0 lg:w-auto lg:items-end"
+          className="mt-3 flex w-full shrink-0 flex-col gap-2 lg:mt-0 lg:w-auto lg:items-end"
         >
           <input type="hidden" name="request_id" value={requestId} />
           <input type="hidden" name="return_origin" value={returnOrigin} />
@@ -159,7 +164,7 @@ function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockP
           <button
             type="submit"
             disabled={n === 0 || noEligible}
-            className="h-12 w-full min-w-[220px] rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 px-6 text-base font-bold text-white shadow-lg shadow-teal-900/25 transition hover:from-teal-500 hover:to-emerald-500 disabled:cursor-not-allowed disabled:from-stone-300 disabled:to-stone-300 disabled:text-stone-500 disabled:shadow-none lg:w-auto"
+            className="h-10 w-full min-w-[180px] rounded-lg bg-gradient-to-r from-teal-600 to-emerald-600 px-4 text-sm font-bold text-white shadow-lg shadow-teal-900/25 transition hover:from-teal-500 hover:to-emerald-500 disabled:cursor-not-allowed disabled:from-stone-300 disabled:to-stone-300 disabled:text-stone-500 disabled:shadow-none lg:w-auto"
           >
             Registrar recepción
           </button>
@@ -184,17 +189,17 @@ export function ReceiveBatchLineWrapper({
   const isChecked = selected.has(itemId);
 
   return (
-    <div className="flex flex-col gap-3 lg:flex-row lg:items-stretch lg:gap-5">
+    <div className="flex flex-col gap-2 lg:flex-row lg:items-stretch lg:gap-3">
       {batchEligible ? (
-        <label className="flex cursor-pointer items-center gap-3 rounded-2xl border border-dashed border-emerald-200/90 bg-emerald-50/45 px-4 py-3 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50/80 lg:w-52 lg:flex-col lg:items-start lg:justify-center lg:py-4">
+        <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-emerald-200/90 bg-emerald-50/45 px-3 py-2 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50/80 lg:w-44 lg:flex-col lg:items-start lg:justify-center lg:py-3">
           <input
             type="checkbox"
             checked={isChecked}
             onChange={(e) => toggle(itemId, e.target.checked)}
             className="h-5 w-5 shrink-0 rounded border-stone-300 text-emerald-600 focus:ring-emerald-500"
           />
-          <span className="text-sm font-bold leading-snug text-emerald-950">Incluir al confirmar</span>
-          <span className="text-xs font-medium leading-snug text-emerald-900/75 lg:text-[11px]">
+          <span className="text-xs font-bold leading-snug text-emerald-950 sm:text-sm">Incluir al confirmar</span>
+          <span className="text-[10px] font-medium leading-snug text-emerald-900/75 lg:text-[10px]">
             Solo en esta pantalla hasta registrar.
           </span>
         </label>
