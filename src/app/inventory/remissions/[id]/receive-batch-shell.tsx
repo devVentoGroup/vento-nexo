@@ -289,3 +289,82 @@ export function ReceiveBatchCompactLine({
     </div>
   );
 }
+
+type ReceiveBatchCompactProductLineProps = {
+  productId: string;
+  itemIds: string[];
+  productName: string;
+  unitLabel: string;
+  shippedQtyTotal: number;
+  pendingQtyTotal: number;
+};
+
+export function ReceiveBatchCompactProductLine({
+  itemIds,
+  productName,
+  unitLabel,
+  shippedQtyTotal,
+  pendingQtyTotal,
+}: ReceiveBatchCompactProductLineProps) {
+  const { selected, toggle, notes, setNote } = useReceiveBatchContext();
+
+  const allSelected = itemIds.length > 0 && itemIds.every((id) => selected.has(id));
+  const anySelected = itemIds.some((id) => selected.has(id));
+
+  const onToggleProduct = (next: boolean) => {
+    for (const id of itemIds) toggle(id, next);
+  };
+
+  const noteValue = itemIds.length > 0 ? notes[itemIds[0]] ?? "" : "";
+
+  return (
+    <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3 shadow-sm">
+      <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3">
+        <label className="flex cursor-pointer items-center gap-2">
+          <input
+            type="checkbox"
+            checked={allSelected}
+            onChange={(e) => onToggleProduct(e.target.checked)}
+            className="h-5 w-5 rounded border-stone-300 text-emerald-600 focus:ring-emerald-500"
+            aria-label={`Incluir ${productName} en recepción`}
+          />
+          {anySelected && !allSelected ? (
+            <span className="text-[11px] font-semibold text-[var(--ui-muted)]">Parcial</span>
+          ) : null}
+        </label>
+
+        <div className="min-w-0 text-center">
+          <p className="truncate text-sm font-semibold text-[var(--ui-text)]">{productName}</p>
+        </div>
+
+        <div className="text-right">
+          <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
+            Enviado / Pendiente
+          </div>
+          <div className="text-sm font-bold tabular-nums text-[var(--ui-text)]">
+            {shippedQtyTotal} · {pendingQtyTotal} {unitLabel}
+          </div>
+        </div>
+      </div>
+
+      <details className="mt-2 group">
+        <summary className="cursor-pointer list-none select-none text-sm text-[var(--ui-muted)]">
+          Nota opcional
+        </summary>
+        <div className="mt-2">
+          <textarea
+            disabled={!allSelected}
+            value={noteValue}
+            onChange={(e) => {
+              const v = e.target.value;
+              for (const id of itemIds) setNote(id, v);
+            }}
+            className="w-full resize-none rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900 shadow-sm outline-none focus:border-emerald-300 focus:ring-0 disabled:cursor-not-allowed disabled:bg-stone-50"
+            rows={2}
+            placeholder="Opcional: incidencias o comentarios…"
+          />
+        </div>
+      </details>
+    </div>
+  );
+}

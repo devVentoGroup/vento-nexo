@@ -14,7 +14,7 @@ import { ConductorTransitChecklistForm } from "./conductor-transit-checklist-for
 import { RemissionPrepareWorkbench } from "./prepare-workbench";
 import { RemissionLineCard } from "./detail-line-card";
 import { RemissionLineHiddenActions } from "./detail-line-hidden-actions";
-import { ReceiveBatchCompactLine, ReceiveBatchShell } from "./receive-batch-shell";
+import { ReceiveBatchCompactProductLine, ReceiveBatchShell } from "./receive-batch-shell";
 import { RemissionHeroSection, RemissionSummarySection } from "./detail-sections";
 import { buildRemissionLineVm } from "./detail-line-vm";
 import { loadOriginStockContext } from "./detail-stock";
@@ -546,7 +546,7 @@ export default async function RemissionDetailPage({
               Recibir remisión
             </h2>
             <p className="mt-2 max-w-2xl text-base leading-relaxed text-stone-600 sm:text-lg">
-              Marca las líneas con la casilla. Nada se guarda hasta{" "}
+              Marca los productos con la casilla. Nada se guarda hasta{" "}
               <strong className="text-stone-800">Registrar recepción</strong>. Opcional: nota
               debajo.
             </p>
@@ -608,37 +608,50 @@ export default async function RemissionDetailPage({
             eligibleItemIds={receiveBatchEligibleIds}
           >
             <div className="mt-4 space-y-3 sm:space-y-4">
-              {itemRows
-                .filter((item) => receiveBatchEligibleIdSet.has(item.id))
-                .map((item) => {
-                  const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
-                  const lineIdsForProduct = lineIdsByProduct.get(item.product_id) ?? [item.id];
-                  const vm = buildRemissionLineVm({
-                    item,
-                    currentStatus,
-                    canEditPrepareItems,
-                    canEditReceiveItems,
-                    showSourceLocSelector,
-                    availableSite,
-                    lineIdsForProduct,
-                    locCandidates: stockByLocCandidates.get(item.product_id) ?? [],
-                    originLocById,
-                    stockByLocValueMap,
-                    activeLineId,
-                    activeLineEvent,
-                  });
+              {(() => {
+                const eligibleItems = itemRows.filter((item) => receiveBatchEligibleIdSet.has(item.id));
+                const groupsByProduct = new Map<string, typeof eligibleItems>();
+                for (const it of eligibleItems) {
+                  const list = groupsByProduct.get(it.product_id) ?? [];
+                  list.push(it);
+                  groupsByProduct.set(it.product_id, list);
+                }
+
+                return [...groupsByProduct.entries()].map(([productId, groupItems]) => {
+                  const first = groupItems[0];
+                  const productName = first?.product?.name ?? productId;
+                  const unitLabel = formatUnitLabel(
+                    first.stock_unit_code ?? first.unit ?? first.product?.unit ?? ""
+                  );
+
+                  const shippedQtyTotal = groupItems.reduce((acc, it) => {
+                    const shipped = roundQuantity(Number(it.shipped_quantity ?? 0));
+                    return acc + shipped;
+                  }, 0);
+
+                  const pendingQtyTotal = groupItems.reduce((acc, it) => {
+                    const shipped = roundQuantity(Number(it.shipped_quantity ?? 0));
+                    const received = roundQuantity(Number(it.received_quantity ?? 0));
+                    const shortage = roundQuantity(Number(it.shortage_quantity ?? 0));
+                    const pending = roundQuantity(Math.max(shipped - received - shortage, 0));
+                    return acc + pending;
+                  }, 0);
+
+                  const itemIds = groupItems.map((it) => it.id);
 
                   return (
-                    <ReceiveBatchCompactLine
-                      key={item.id}
-                      itemId={item.id}
-                      productName={item.product?.name ?? item.product_id}
-                      unitLabel={vm.itemUnitLabel}
-                      shippedQty={vm.shippedQty}
-                      remainingQty={vm.remainingReceiptQty}
+                    <ReceiveBatchCompactProductLine
+                      key={productId}
+                      productId={productId}
+                      itemIds={itemIds}
+                      productName={productName}
+                      unitLabel={unitLabel}
+                      shippedQtyTotal={shippedQtyTotal}
+                      pendingQtyTotal={pendingQtyTotal}
                     />
                   );
-                })}
+                });
+              })()}
             </div>
           </ReceiveBatchShell>
         ) : (
