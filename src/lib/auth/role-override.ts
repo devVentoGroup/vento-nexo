@@ -189,14 +189,14 @@ export async function checkPermissionWithRoleOverride({
   context?: { siteId?: string | null; areaId?: string | null };
   actualRole: string;
 }) {
-  // Always honor direct user permission (employee_permissions / role base) first.
-  // This allows temporary per-user overrides to work even when role override is active.
-  const directAllowed = await checkPermission(supabase, appId, code, context);
-  if (directAllowed) return true;
-
   const overrideRole = await getRoleOverrideFromCookies();
+
+  // In sandbox/test mode, a valid role override must behave as a strict simulation.
+  // Do not merge real user permissions with the simulated role.
   if (canUseRoleOverride(actualRole, overrideRole)) {
     return isPermissionAllowedForRole(supabase, overrideRole!, appId, code, context);
   }
-  return false;
+
+  // Without an active override, evaluate the real user permissions normally.
+  return checkPermission(supabase, appId, code, context);
 }

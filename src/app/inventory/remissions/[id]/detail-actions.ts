@@ -117,10 +117,10 @@ export async function updateItems(formData: FormData) {
     const { data: locStockRows } =
       allowSourceLocation && selectedLocIds.length > 0 && selectedProductIds.length > 0
         ? await supabase
-            .from("inventory_stock_by_location")
-            .select("location_id,product_id,current_qty")
-            .in("location_id", selectedLocIds)
-            .in("product_id", selectedProductIds)
+          .from("inventory_stock_by_location")
+          .select("location_id,product_id,current_qty")
+          .in("location_id", selectedLocIds)
+          .in("product_id", selectedProductIds)
         : { data: [] as { location_id: string; product_id: string; current_qty: number | null }[] };
     const locStockMap = new Map(
       (locStockRows ?? []).map((row) => [
@@ -630,6 +630,169 @@ export async function submitTransitChecklist(formData: FormData) {
     }
   }
 
+  const sourceLocDeductions: Array<{
+    locationId: string;
+    productId: string;
+    qty: number;
+  }> = [];
+
+  const { data: itemsData } = await supabase
+    .from("restock_request_items")
+    .select("id,product_id,quantity,prepared_quantity,shipped_quantity,source_location_id")
+    .eq("request_id", requestId);
+
+  const itemRows = (itemsData ?? []) as Array<{
+    id: string;
+    product_id: string;
+    quantity: number | null;
+    prepared_quantity: number | null;
+    shipped_quantity: number | null;
+    source_location_id: string | null;
+  }>;
+
+  if (access.fromSiteType === "production_center") {
+    const locIds = Array.from(
+      new Set(itemRows.map((row) => row.source_location_id).filter(Boolean) as string[])
+    );
+    const productIds = Array.from(new Set(itemRows.map((row) => row.product_id).filter(Boolean)));
+
+    const { data: locStockRows } =
+      locIds.length > 0 && productIds.length > 0
+        ? await supabase
+          .from("inventory_stock_by_location")
+          .select("location_id,product_id,current_qty")
+          .in("location_id", locIds)
+          .in("product_id", productIds)
+        : { data: [] as { location_id: string; product_id: string; current_qty: number | null }[] };
+
+    const locStockMap = new Map(
+      (locStockRows ?? []).map((row) => [
+        `${row.location_id}|${row.product_id}`,
+        Number(row.current_qty ?? 0),
+      ])
+    );
+
+    let anyTransitQty = false;
+
+    for (const row of itemRows) {
+      const requestedQty = roundQuantity(Number(row.quantity ?? 0));
+      const preparedQty = roundQuantity(Number(row.prepared_quantity ?? 0));
+      const shippedQty = roundQuantity(Number(row.shipped_quantity ?? 0));
+      const effectiveShippedQty = shippedQty > 0 ? shippedQty : preparedQty;
+      const effectivePreparedQty = Math.max(preparedQty, effectiveShippedQty);
+      const qty = effectiveShippedQty;
+
+      if (preparedQty < 0 || shippedQty < 0) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            siteId: activeSiteId,
+            error: "Preparado y enviado no pueden ser negativos.",
+          })
+        );
+      }
+
+      if (requestedQty > 0 && preparedQty > requestedQty) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            siteId: activeSiteId,
+            error: `Cantidad preparada (${preparedQty}) mayor que solicitada (${requestedQty}).`,
+          })
+        );
+      }
+
+      if (requestedQty > 0 && effectiveShippedQty > requestedQty) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            siteId: activeSiteId,
+            error: `Cantidad enviada (${effectiveShippedQty}) mayor que solicitada (${requestedQty}).`,
+          })
+        );
+      }
+
+      if (shippedQty > 0 && preparedQty > 0 && shippedQty > preparedQty) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            siteId: activeSiteId,
+            error: `Cantidad enviada (${shippedQty}) no puede superar la preparada (${preparedQty}).`,
+          })
+        );
+      }
+
+      if (qty <= 0) continue;
+      anyTransitQty = true;
+
+      const sourceLocId = row.source_location_id ?? "";
+      if (!sourceLocId) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            siteId: activeSiteId,
+            error: "Falta LOC origen en uno o mas items para enviar.",
+          })
+        );
+      }
+
+      const availableAtLoc = locStockMap.get(`${sourceLocId}|${row.product_id}`) ?? 0;
+      if (qty > availableAtLoc) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            siteId: activeSiteId,
+            error: `Cantidad enviada (${qty}) supera stock disponible en LOC origen (${availableAtLoc}).`,
+          })
+        );
+      }
+
+      if (effectivePreparedQty !== preparedQty || effectiveShippedQty !== shippedQty) {
+        const { error: syncErr } = await supabase
+          .from("restock_request_items")
+          .update({
+            prepared_quantity: effectivePreparedQty,
+            shipped_quantity: effectiveShippedQty,
+          })
+          .eq("id", row.id);
+
+        if (syncErr) {
+          redirect(
+            buildRemissionDetailHref({
+              requestId,
+              from: returnOrigin,
+              siteId: activeSiteId,
+              error: syncErr.message,
+            })
+          );
+        }
+      }
+
+      sourceLocDeductions.push({
+        locationId: sourceLocId,
+        productId: row.product_id,
+        qty,
+      });
+    }
+
+    if (!anyTransitQty) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error: "Define al menos una cantidad preparada o enviada mayor a 0 antes de despachar.",
+        })
+      );
+    }
+  }
+
   const { error: moveErr } = await supabase.rpc("apply_restock_shipment", {
     p_request_id: requestId,
   });
@@ -642,6 +805,25 @@ export async function submitTransitChecklist(formData: FormData) {
         error: moveErr.message,
       })
     );
+  }
+
+  for (const deduction of sourceLocDeductions) {
+    const { error: locErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
+      p_location_id: deduction.locationId,
+      p_product_id: deduction.productId,
+      p_delta: -deduction.qty,
+    });
+
+    if (locErr) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error: `No se pudo actualizar stock del LOC origen: ${locErr.message}`,
+        })
+      );
+    }
   }
 
   const nowIso = new Date().toISOString();
@@ -1155,10 +1337,10 @@ export async function updateStatus(formData: FormData) {
       const { data: locStockRows } =
         locIds.length > 0 && productIds.length > 0
           ? await supabase
-              .from("inventory_stock_by_location")
-              .select("location_id,product_id,current_qty")
-              .in("location_id", locIds)
-              .in("product_id", productIds)
+            .from("inventory_stock_by_location")
+            .select("location_id,product_id,current_qty")
+            .in("location_id", locIds)
+            .in("product_id", productIds)
           : { data: [] as { location_id: string; product_id: string; current_qty: number | null }[] };
       const locStockMap = new Map(
         (locStockRows ?? []).map((row) => [

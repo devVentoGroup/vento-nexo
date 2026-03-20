@@ -194,7 +194,10 @@ export async function loadRemissionOperationalSummary(params: {
   };
 }
 
+const UI_TIME_ZONE = "America/Bogota";
+
 const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("es-CO", {
+  timeZone: UI_TIME_ZONE,
   day: "2-digit",
   month: "2-digit",
   year: "numeric",
@@ -203,6 +206,7 @@ const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("es-CO", {
 });
 
 const DATE_FORMATTER = new Intl.DateTimeFormat("es-CO", {
+  timeZone: UI_TIME_ZONE,
   day: "2-digit",
   month: "2-digit",
   year: "numeric",
