@@ -20,6 +20,8 @@ type ReceiveBatchContextValue = {
   clearSelection: () => void;
   notes: Record<string, string>;
   setNote: (itemId: string, value: string) => void;
+  receiveQty: Record<string, string>;
+  setReceiveQty: (itemId: string, value: string) => void;
 };
 
 const ReceiveBatchContext = createContext<ReceiveBatchContextValue | null>(null);
@@ -49,6 +51,7 @@ export function ReceiveBatchShell({
 }: ReceiveBatchShellProps) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [notes, setNotes] = useState<Record<string, string>>({});
+  const [receiveQty, setReceiveQtyState] = useState<Record<string, string>>({});
 
   const eligibleItemIds = useMemo(
     () => eligibleProductGroups.flatMap((g) => g.itemIds),
@@ -82,6 +85,10 @@ export function ReceiveBatchShell({
     setNotes((prev) => ({ ...prev, [itemId]: value }));
   }, []);
 
+  const setReceiveQty = useCallback((itemId: string, value: string) => {
+    setReceiveQtyState((prev) => ({ ...prev, [itemId]: value }));
+  }, []);
+
   const ctxValue = useMemo<ReceiveBatchContextValue>(
     () => ({
       selected,
@@ -92,6 +99,8 @@ export function ReceiveBatchShell({
       clearSelection,
       notes,
       setNote,
+      receiveQty,
+      setReceiveQty,
     }),
     [
       selected,
@@ -102,6 +111,8 @@ export function ReceiveBatchShell({
       clearSelection,
       notes,
       setNote,
+      receiveQty,
+      setReceiveQty,
     ]
   );
 
@@ -120,7 +131,7 @@ type ReceiveBatchDockProps = {
 };
 
 function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockProps) {
-  const { selected, productGroups, selectAllEligible, clearSelection, notes } =
+  const { selected, productGroups, selectAllEligible, clearSelection, notes, receiveQty } =
     useReceiveBatchContext();
 
   const eligibleProductsCount = productGroups.length;
@@ -179,6 +190,11 @@ function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockP
                 type="hidden"
                 name="batch_receive_item_note"
                 value={notes[id] ?? ""}
+              />
+              <input
+                type="hidden"
+                name="batch_receive_item_receive_qty"
+                value={receiveQty[id] ?? ""}
               />
             </span>
           ))}
@@ -331,7 +347,8 @@ export function ReceiveBatchCompactProductLine({
   shippedQtyTotal,
   pendingQtyTotal,
 }: ReceiveBatchCompactProductLineProps) {
-  const { selected, toggle, notes, setNote } = useReceiveBatchContext();
+  const { selected, toggle, notes, setNote, receiveQty, setReceiveQty } =
+    useReceiveBatchContext();
 
   const allSelected = itemIds.length > 0 && itemIds.every((id) => selected.has(id));
   const anySelected = itemIds.some((id) => selected.has(id));
@@ -341,6 +358,9 @@ export function ReceiveBatchCompactProductLine({
   };
 
   const noteValue = itemIds.length > 0 ? notes[itemIds[0]] ?? "" : "";
+  const canEditQty = itemIds.length === 1;
+  const soleItemId = itemIds[0];
+  const receiveQtyValue = soleItemId ? receiveQty[soleItemId] ?? "" : "";
 
   return (
     <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3 shadow-sm">
@@ -394,6 +414,33 @@ export function ReceiveBatchCompactProductLine({
           />
         </div>
       </details>
+
+      {canEditQty ? (
+        <details className="mt-2 group">
+          <summary className="cursor-pointer list-none select-none text-sm text-[var(--ui-muted)]">
+            Cantidad recibida (parcial)
+          </summary>
+          <div className="mt-2">
+            <label className="block text-xs font-semibold text-[var(--ui-muted)]">
+              Recibir
+            </label>
+            <input
+              type="number"
+              step="any"
+              min={0}
+              max={shippedQtyTotal}
+              disabled={!allSelected}
+              value={receiveQtyValue}
+              onChange={(e) => setReceiveQty(soleItemId, e.target.value)}
+              className="mt-1 ui-input h-11 w-full rounded-xl disabled:cursor-not-allowed disabled:bg-stone-50"
+              placeholder={`${shippedQtyTotal} ${unitLabel}`}
+            />
+            <p className="mt-1 text-[11px] leading-snug text-stone-500">
+              Si pones un valor menor, el sistema registra faltante automático para esa línea.
+            </p>
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 }

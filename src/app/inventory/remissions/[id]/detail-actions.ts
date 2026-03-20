@@ -1893,6 +1893,9 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
   const rawNotes = formData
     .getAll("batch_receive_item_note")
     .map((value) => asText(value).trim());
+  const rawReceiveQty = formData
+    .getAll("batch_receive_item_receive_qty")
+    .map((value) => asText(value).trim());
 
   const pairs: Array<{ itemId: string; note: string }> = [];
   const seen = new Set<string>();
@@ -1943,7 +1946,10 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
   let appliedCount = 0;
   let notesCount = 0;
 
-  for (const { itemId, note } of pairs) {
+  for (let i = 0; i < pairs.length; i += 1) {
+    const { itemId, note } = pairs[i];
+    const receiveQtyRaw = rawReceiveQty[i] ?? "";
+    const receiveQtyManual = receiveQtyRaw === "" ? null : roundQuantity(parseNumber(receiveQtyRaw));
     const { data: itemRow } = await supabase
       .from("restock_request_items")
       .select(
@@ -2004,8 +2010,26 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
       continue;
     }
 
-    const finalReceived = shippedQty;
-    const finalShortage = 0;
+    let finalReceived = shippedQty;
+    let finalShortage = 0;
+
+    if (receiveQtyManual !== null) {
+      if (receiveQtyManual < 0) {
+        redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "Cantidad recibida no puede ser negativa." }));
+      }
+      if (receiveQtyManual > shippedQty) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: `La cantidad recibida (${receiveQtyManual}) supera el enviado (${shippedQty}).`,
+          })
+        );
+      }
+
+      finalReceived = receiveQtyManual;
+      finalShortage = roundQuantity(Math.max(shippedQty - finalReceived, 0));
+    }
 
     if (finalReceived + finalShortage > shippedQty) {
       redirect(
