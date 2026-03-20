@@ -518,7 +518,7 @@ function RemissionPrepareWorkbenchInteractive({
                   <input
                     type="number"
                     min={0}
-                    step="0.01"
+                    step="any"
                     max={line.requestedQty}
                     value={line.dispatchQty}
                     onChange={(e) =>
@@ -579,7 +579,7 @@ function RemissionPrepareWorkbenchInteractive({
                 type="number"
                 min={0}
                 max={Math.max(splitTarget.requestedQty - 0.01, 0)}
-                step="0.01"
+                step="any"
                 value={splitQtyInput}
                 onChange={(e) => setSplitQtyInput(e.target.value)}
                 className="ui-input h-11"

@@ -334,7 +334,7 @@ export function RemissionLineCard({
                         <span className="ui-caption">Cantidad a enviar</span>
                         <input
                           type="number"
-                          step="0.01"
+                          step="any"
                           min={0}
                           max={Math.min(vm.requestedQty, vm.availableAtSelectedLoc)}
                           name="prepare_qty"
@@ -391,7 +391,7 @@ export function RemissionLineCard({
                         <span className="ui-caption">Cantidad a enviar</span>
                         <input
                           type="number"
-                          step="0.01"
+                          step="any"
                           min={0}
                           max={Math.min(vm.requestedQty, vm.availableAtSelectedLoc)}
                           name="prepare_qty"
@@ -634,7 +634,7 @@ export function RemissionLineCard({
                             </span>
                             <input
                               type="number"
-                              step="0.01"
+                              step="any"
                               min={0}
                               max={vm.shippedQty}
                               name="receive_qty"

@@ -62,6 +62,7 @@ Fecha: `2026-03-18`
 - Resultado esperado:
   - Mensaje de éxito.
   - Remisión ya no aparece en pendientes ni historial.
+  - Verificado: `Caso 1 completo` (eliminación sin trazabilidad y sin fricción de permisos).
 
 2. **Caso 2 · Flujo normal completo (pending → preparing → in_transit → received)**
 - Rol/sede de inicio: `cajero` (o `barista`/`cocinero`) en `Saudo`.
@@ -81,6 +82,7 @@ Fecha: `2026-03-18`
 - Resultado esperado:
   - Estado final `received`.
   - Línea sin estado pendiente.
+  - Verificado: `Caso 2 completo` (flujo normal pending → preparing → in_transit → received sin pendientes).
 
 3. **Caso 3 · Multi-LOC con división automática**
 - Rol/sede de inicio: `cajero` (o `barista`/`cocinero`) en `Saudo`.
@@ -103,6 +105,7 @@ Fecha: `2026-03-18`
 - Resultado esperado:
   - Flujo completo sin errores de “falta línea a partir”.
   - Estado final `received`.
+  - Verificado: `Caso 3 completo` (recepción en destino confirmada sin fricción con checkbox por producto y confirm global).
 
 4. **Caso 4 · Recepción parcial**
 - Rol/sede de inicio: `cajero` (o `barista`/`cocinero`) en `Saudo`.
