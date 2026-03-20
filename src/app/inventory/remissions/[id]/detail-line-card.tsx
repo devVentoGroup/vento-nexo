@@ -38,11 +38,14 @@ export function RemissionLineCard({
   const setPartialReceiveFormId = `set-partial-receive-form-${item.id}`;
 
   const isReceiveOnly = canEditReceiveItems && !canEditPrepareItems;
+  const isBatchReceiveOnly = isReceiveOnly && batchReceiveMode;
 
   const rootClass = isReceiveOnly
     ? [
-        "relative overflow-hidden rounded-2xl border transition sm:rounded-3xl",
-        "p-4 pl-[1.15rem] sm:p-5 sm:pl-6",
+        "relative overflow-hidden border transition",
+        isBatchReceiveOnly
+          ? "rounded-xl p-3 pl-[1.05rem] sm:p-3 sm:pl-5"
+          : "rounded-2xl p-4 pl-[1.15rem] sm:p-5 sm:pl-6 sm:rounded-3xl",
         vm.isActiveLine
           ? "border-emerald-400 bg-gradient-to-br from-emerald-50/95 to-white shadow-[0_12px_40px_-16px_rgba(5,150,105,0.35)] ring-2 ring-emerald-200/60"
           : vm.lineCompleteReceipt
@@ -72,17 +75,41 @@ export function RemissionLineCard({
 
       <div className={isReceiveOnly ? "relative min-w-0" : undefined}>
       {isReceiveOnly ? (
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4">
+        <div
+          className={
+            batchReceiveMode
+              ? "flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3"
+              : "flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-4"
+          }
+        >
           <div className="min-w-0 flex-1">
-            <h3 className="text-xl font-bold leading-snug tracking-tight text-stone-900 sm:text-2xl">
+            <h3
+              className={
+                batchReceiveMode
+                  ? "text-lg font-bold leading-snug tracking-tight text-stone-900 sm:text-xl"
+                  : "text-xl font-bold leading-snug tracking-tight text-stone-900 sm:text-2xl"
+              }
+            >
               {item.product?.name ?? item.product_id}
             </h3>
-            <div className="mt-2 flex flex-wrap items-center gap-2">
-              <span className="rounded-full bg-teal-50 px-3 py-1.5 text-sm font-bold text-teal-950 ring-1 ring-teal-200/90 sm:px-3.5 sm:py-2 sm:text-base">
+            <div className={batchReceiveMode ? "mt-1.5 flex flex-wrap items-center gap-2" : "mt-2 flex flex-wrap items-center gap-2"}>
+              <span
+                className={
+                  batchReceiveMode
+                    ? "rounded-full bg-teal-50 px-2 py-1 text-xs font-bold text-teal-950 ring-1 ring-teal-200/90 sm:px-3 sm:py-1.5 sm:text-sm"
+                    : "rounded-full bg-teal-50 px-3 py-1.5 text-sm font-bold text-teal-950 ring-1 ring-teal-200/90 sm:px-3.5 sm:py-2 sm:text-base"
+                }
+              >
                 {vm.quantityBadgeText}
               </span>
               {lineIdsForProduct.length > 1 ? (
-                <span className="rounded-full bg-stone-50 px-3 py-1.5 text-sm font-semibold text-stone-700 ring-1 ring-stone-200/90">
+                <span
+                  className={
+                    batchReceiveMode
+                      ? "rounded-full bg-stone-50 px-2 py-1 text-xs font-semibold text-stone-700 ring-1 ring-stone-200/90 sm:px-3 sm:py-1.5 sm:text-sm"
+                      : "rounded-full bg-stone-50 px-3 py-1.5 text-sm font-semibold text-stone-700 ring-1 ring-stone-200/90"
+                  }
+                >
                   Línea {vm.splitLineIndex} de {lineIdsForProduct.length}
                 </span>
               ) : null}
@@ -118,7 +145,9 @@ export function RemissionLineCard({
         <div
           className={
             isReceiveOnly
-              ? "mt-3 rounded-xl bg-emerald-100/90 px-4 py-2.5 text-base font-semibold text-emerald-950 ring-1 ring-emerald-200/70"
+              ? batchReceiveMode
+                ? "mt-2 rounded-lg bg-emerald-100/90 px-3 py-2 text-sm font-semibold text-emerald-950 ring-1 ring-emerald-200/70"
+                : "mt-3 rounded-xl bg-emerald-100/90 px-4 py-2.5 text-base font-semibold text-emerald-950 ring-1 ring-emerald-200/70"
               : "mt-3 rounded-xl border border-emerald-200 bg-white px-3 py-2 text-sm font-semibold text-emerald-900"
           }
         >
@@ -127,7 +156,13 @@ export function RemissionLineCard({
       ) : null}
       {vm.primaryHint ? (
         isReceiveOnly ? (
-          <p className="mt-3 rounded-lg bg-amber-50/90 px-3 py-2 text-base leading-snug text-amber-950 ring-1 ring-amber-200/60">
+          <p
+            className={
+              batchReceiveMode
+                ? "mt-2 rounded-lg bg-amber-50/90 px-3 py-2 text-sm leading-snug text-amber-950 ring-1 ring-amber-200/60"
+                : "mt-3 rounded-lg bg-amber-50/90 px-3 py-2 text-base leading-snug text-amber-950 ring-1 ring-amber-200/60"
+            }
+          >
             {vm.primaryHint}
           </p>
         ) : (
@@ -506,7 +541,9 @@ export function RemissionLineCard({
                   <summary
                     className={
                       isReceiveOnly
-                        ? "cursor-pointer list-none px-4 py-3.5 marker:content-none [&::-webkit-details-marker]:hidden sm:px-5 sm:py-4"
+                        ? batchReceiveMode
+                          ? "cursor-pointer list-none px-3 py-2.5 marker:content-none [&::-webkit-details-marker]:hidden sm:px-4 sm:py-3"
+                          : "cursor-pointer list-none px-4 py-3.5 marker:content-none [&::-webkit-details-marker]:hidden sm:px-5 sm:py-4"
                         : "cursor-pointer text-sm font-semibold text-[var(--ui-text)]"
                     }
                   >
@@ -526,7 +563,9 @@ export function RemissionLineCard({
                   <div
                     className={
                       isReceiveOnly
-                        ? "space-y-5 border-t border-stone-200/80 px-4 pb-5 pt-4 sm:px-5"
+                        ? batchReceiveMode
+                          ? "space-y-3 border-t border-stone-200/80 px-3 pb-4 pt-3 sm:px-4"
+                          : "space-y-5 border-t border-stone-200/80 px-4 pb-5 pt-4 sm:px-5"
                         : "mt-3 space-y-3"
                     }
                   >
@@ -537,7 +576,9 @@ export function RemissionLineCard({
                           form={markShortageShortcutFormId}
                           className={
                             isReceiveOnly
-                              ? "h-12 rounded-xl border border-amber-200 bg-amber-50 px-5 text-base font-semibold text-amber-950 transition hover:bg-amber-100"
+                              ? batchReceiveMode
+                                ? "h-10 rounded-lg border border-amber-200 bg-amber-50 px-4 text-sm font-semibold text-amber-950 transition hover:bg-amber-100"
+                                : "h-12 rounded-xl border border-amber-200 bg-amber-50 px-5 text-base font-semibold text-amber-950 transition hover:bg-amber-100"
                               : "ui-btn ui-btn--ghost h-12 px-5 text-base font-semibold"
                           }
                         >
@@ -550,7 +591,9 @@ export function RemissionLineCard({
                           form={clearReceiveShortcutFormId}
                           className={
                             isReceiveOnly
-                              ? "h-12 rounded-xl border border-stone-200 bg-white px-5 text-base font-semibold text-stone-700 transition hover:bg-stone-50"
+                              ? batchReceiveMode
+                                ? "h-10 rounded-lg border border-stone-200 bg-white px-4 text-sm font-semibold text-stone-700 transition hover:bg-stone-50"
+                                : "h-12 rounded-xl border border-stone-200 bg-white px-5 text-base font-semibold text-stone-700 transition hover:bg-stone-50"
                               : "ui-btn ui-btn--ghost h-12 px-5 text-base font-semibold"
                           }
                         >
@@ -599,7 +642,9 @@ export function RemissionLineCard({
                               form={setPartialReceiveFormId}
                               className={
                                 isReceiveOnly
-                                  ? "ui-input h-12 text-lg font-semibold tabular-nums"
+                                  ? batchReceiveMode
+                                    ? "ui-input h-10 text-base font-semibold tabular-nums"
+                                    : "ui-input h-12 text-lg font-semibold tabular-nums"
                                   : "ui-input h-11"
                               }
                             />
@@ -609,7 +654,9 @@ export function RemissionLineCard({
                             form={setPartialReceiveFormId}
                             className={
                               isReceiveOnly
-                                ? "h-12 shrink-0 rounded-xl bg-stone-800 px-6 text-base font-bold text-white transition hover:bg-stone-700"
+                                ? batchReceiveMode
+                                  ? "h-10 shrink-0 rounded-lg bg-stone-800 px-5 text-sm font-bold text-white transition hover:bg-stone-700"
+                                  : "h-12 shrink-0 rounded-xl bg-stone-800 px-6 text-base font-bold text-white transition hover:bg-stone-700"
                                 : "ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
                             }
                           >

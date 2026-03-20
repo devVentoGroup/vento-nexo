@@ -189,17 +189,19 @@ export function ReceiveBatchLineWrapper({
   const isChecked = selected.has(itemId);
 
   return (
-    <div className="flex flex-col gap-2 lg:flex-row lg:items-stretch lg:gap-3">
+    <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:gap-3">
       {batchEligible ? (
-        <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-emerald-200/90 bg-emerald-50/45 px-3 py-2 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50/80 lg:w-44 lg:flex-col lg:items-start lg:justify-center lg:py-3">
+        <label className="flex cursor-pointer items-center gap-2 rounded-xl border border-dashed border-emerald-200/90 bg-emerald-50/35 px-2 py-2 shadow-sm transition hover:border-emerald-300 hover:bg-emerald-50/70 lg:w-auto lg:py-1.5 lg:px-2.5">
           <input
             type="checkbox"
             checked={isChecked}
             onChange={(e) => toggle(itemId, e.target.checked)}
-            className="h-5 w-5 shrink-0 rounded border-stone-300 text-emerald-600 focus:ring-emerald-500"
+            className="h-4 w-4 shrink-0 rounded border-stone-300 text-emerald-600 focus:ring-emerald-500"
           />
-          <span className="text-xs font-bold leading-snug text-emerald-950 sm:text-sm">Incluir al confirmar</span>
-          <span className="text-[10px] font-medium leading-snug text-emerald-900/75 lg:text-[10px]">
+          <span className="text-[11px] font-bold leading-tight text-emerald-950 sm:text-xs">
+            Incluir
+          </span>
+          <span className="text-[10px] font-medium leading-tight text-emerald-900/75 lg:hidden">
             Solo en esta pantalla hasta registrar.
           </span>
         </label>
