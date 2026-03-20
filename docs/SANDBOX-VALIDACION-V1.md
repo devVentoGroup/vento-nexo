@@ -146,6 +146,7 @@ Fecha: `2026-03-18`
 ## Notas técnicas de validación
 
 - 2026-03-19: se corrigió la causa raíz del bug donde algunas remisiones quedaban en `Recepción parcial` aunque todas sus líneas ya estuvieran conciliadas. La sincronización del estado padre quedó centralizada en BD con `public.sync_restock_request_status_from_items(uuid)` y el trigger `trg_sync_restock_request_status_from_items` sobre `restock_request_items`. La migración `20260319091901_nexo_restock_request_status_sync.sql` también ejecuta backfill sobre remisiones no canceladas/cerradas para reparar estados heredados.
+- 2026-03-19: se ajustó la lógica para que cuando `received_quantity < shipped_quantity` el faltante (`shortage_quantity`) se registre como alerta, pero el request y sus líneas permanezcan en `partial` (no “conciliado/received” automático) hasta cierre manual (gerente/propietario).
 
 ## Cierre y limpieza de sandbox
 

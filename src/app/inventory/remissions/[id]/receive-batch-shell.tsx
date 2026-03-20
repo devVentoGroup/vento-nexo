@@ -452,7 +452,7 @@ export function ReceiveBatchCompactProductLine({
 
       <details className="mt-2 group">
         <summary className="cursor-pointer list-none select-none text-sm text-[var(--ui-muted)]">
-          Recibir parcial (opcional)
+          Recibir parcial (registra faltante)
         </summary>
         <div className="mt-2">
           <label className="block text-xs font-semibold text-[var(--ui-muted)]">
@@ -474,7 +474,8 @@ export function ReceiveBatchCompactProductLine({
             placeholder={`${shippedQtyTotal} ${unitLabel}`}
           />
           <p className="mt-1 text-[11px] leading-snug text-stone-500">
-            Si pones un valor menor, el sistema registra faltante automático para el producto.
+            Si pones un valor menor, el sistema registra faltante automático y la remisión queda
+            en `Recepción parcial` hasta que un gerente/propietario la cierre manualmente.
           </p>
         </div>
       </details>

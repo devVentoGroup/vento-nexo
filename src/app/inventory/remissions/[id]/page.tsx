@@ -225,9 +225,8 @@ export default async function RemissionDetailPage({
         .filter((item) => {
           const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
           const receivedQty = roundQuantity(Number(item.received_quantity ?? 0));
-          const shortageQty = roundQuantity(Number(item.shortage_quantity ?? 0));
-          const accountedQty = roundQuantity(receivedQty + shortageQty);
-          return shippedQty > 0 && accountedQty < shippedQty;
+          // El shortage es alerta/faltante; el "pendiente" real depende solo de received.
+          return shippedQty > 0 && receivedQty < shippedQty;
         })
         .map((item) => item.id)
     : [];

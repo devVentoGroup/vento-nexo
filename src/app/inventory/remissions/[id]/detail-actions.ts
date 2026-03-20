@@ -1273,7 +1273,7 @@ export async function updateStatus(formData: FormData) {
     }>;
 
     let anyAccountedQty = false;
-    let allFullyAccounted = true;
+    let allFullyReceived = true;
     for (const row of itemRows) {
       const shippedQty = roundQuantity(Number(row.shipped_quantity ?? 0));
       const receivedQty = roundQuantity(Number(row.received_quantity ?? 0));
@@ -1299,7 +1299,9 @@ export async function updateStatus(formData: FormData) {
         );
       }
       if (accountedQty > 0) anyAccountedQty = true;
-      if (shippedQty > 0 && accountedQty !== shippedQty) allFullyAccounted = false;
+      // "receive" completa solo cuando received cubre el total enviado.
+      // El shortage se guarda como alerta/faltante, pero no debe conciliar automáticamente.
+      if (shippedQty > 0 && receivedQty !== shippedQty) allFullyReceived = false;
 
     }
 
@@ -1313,22 +1315,22 @@ export async function updateStatus(formData: FormData) {
       );
     }
 
-    if (action === "receive" && !allFullyAccounted) {
+    if (action === "receive" && !allFullyReceived) {
       redirect(
         buildRemissionDetailHref({
           requestId,
           from: returnOrigin,
-          error: "Para cerrar la recepcion completa, cada item enviado debe quedar cubierto entre recibido y faltante.",
+          error: "Para cerrar la recepcion completa, cada item enviado debe quedar totalmente recibido (received === shipped).",
         })
       );
     }
 
-    if (action === "receive_partial" && allFullyAccounted) {
+    if (action === "receive_partial" && allFullyReceived) {
       redirect(
         buildRemissionDetailHref({
           requestId,
           from: returnOrigin,
-          error: "Todas las cantidades ya quedaron cubiertas. Usa 'Recibir' para cerrar la recepcion.",
+          error: "Todas las cantidades ya quedaron totalmente recibidas. Usa 'Recibir' para cerrar la recepcion.",
         })
       );
     }

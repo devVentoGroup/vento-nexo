@@ -123,11 +123,15 @@ export function buildRemissionLineVm(params: BuildRemissionLineVmParams) {
   const remainingSplitQty = canSplitLine
     ? roundQuantity(requestedQty - suggestedSplitQty)
     : requestedQty;
-  const linePendingReceipt = canEditReceiveItems && shippedQty > 0 && accountedQty < shippedQty;
+  // El shortage es alerta/faltante, no "conciliación". Lo que determina conciliación es received.
+  const linePendingReceipt =
+    canEditReceiveItems && shippedQty > 0 && receivedQty <= 0 && shortageQty <= 0;
   const linePartialReceipt =
-    canEditReceiveItems && accountedQty > 0 && accountedQty < shippedQty;
-  const lineCompleteReceipt =
-    canEditReceiveItems && shippedQty > 0 && accountedQty === shippedQty;
+    canEditReceiveItems &&
+    shippedQty > 0 &&
+    receivedQty < shippedQty &&
+    (receivedQty > 0 || shortageQty > 0);
+  const lineCompleteReceipt = canEditReceiveItems && shippedQty > 0 && receivedQty >= shippedQty;
   const remainingReceiptQty = roundQuantity(Math.max(shippedQty - receivedQty, 0));
   const lineStatusLabel = canEditPrepareItems
     ? currentStatus === "pending"
