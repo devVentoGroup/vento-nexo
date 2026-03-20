@@ -35,6 +35,15 @@ type Row = {
 
 export type RemissionDraftRow = Row;
 
+const EMPTY_ROW: RemissionDraftRow = {
+  id: 0,
+  productId: "",
+  quantity: "",
+  inputUnitCode: "",
+  inputUomProfileId: "",
+  areaKind: "",
+};
+
 type Props = {
   products: Option[];
   categoryNameById?: Record<string, string>;
@@ -49,6 +58,7 @@ type Props = {
     }
   >;
   referenceSiteName?: string;
+  initialRows?: RemissionDraftRow[];
 };
 
 const SALE_CATEGORY_PRIORITY = [
@@ -81,17 +91,21 @@ export function RemissionsItems({
   onRowsChange,
   referenceStockByProduct = {},
   referenceSiteName = "",
+  initialRows = [],
 }: Props) {
-  const [rows, setRows] = useState<Row[]>([
-    {
-      id: 0,
-      productId: "",
-      quantity: "",
-      inputUnitCode: "",
-      inputUomProfileId: "",
-      areaKind: "",
-    },
-  ]);
+  const normalizedInitialRows = useMemo<RemissionDraftRow[]>(() => {
+    if (!initialRows.length) return [EMPTY_ROW];
+    return initialRows.map((row, index) => ({
+      id: Number.isFinite(row.id) ? row.id : index,
+      productId: String(row.productId ?? "").trim(),
+      quantity: String(row.quantity ?? "").trim(),
+      inputUnitCode: normalizeUnitCode(String(row.inputUnitCode ?? "").trim()),
+      inputUomProfileId: String(row.inputUomProfileId ?? "").trim(),
+      areaKind: String(row.areaKind ?? "").trim(),
+    }));
+  }, [initialRows]);
+
+  const [rows, setRows] = useState<Row[]>(normalizedInitialRows);
 
   const defaultProfileByProduct = useMemo(() => {
     const profilesByProduct = new Map<string, ProductUomProfile[]>();
@@ -115,6 +129,10 @@ export function RemissionsItems({
   }, [defaultUomProfiles]);
 
   useEffect(() => {
+    setRows(normalizedInitialRows);
+  }, [normalizedInitialRows]);
+
+  useEffect(() => {
     onRowsChange?.(rows);
   }, [rows, onRowsChange]);
 
@@ -122,12 +140,8 @@ export function RemissionsItems({
     setRows((prev) => [
       ...prev,
       {
-        id: prev.length,
-        productId: "",
-        quantity: "",
-        inputUnitCode: "",
-        inputUomProfileId: "",
-        areaKind: "",
+        ...EMPTY_ROW,
+        id: prev.length ? Math.max(...prev.map((row) => row.id)) + 1 : 0,
       },
     ]);
   };
@@ -141,9 +155,8 @@ export function RemissionsItems({
       const groupLabel = categoryNameById[String(item.category_id ?? "").trim()] ?? "Sin categoria";
       return {
         value: item.id,
-        label: `${item.name ?? item.id}${
-          item.stock_unit_code ? ` (${item.stock_unit_code})` : item.unit ? ` (${item.unit})` : ""
-        }`,
+        label: `${item.name ?? item.id}${item.stock_unit_code ? ` (${item.stock_unit_code})` : item.unit ? ` (${item.unit})` : ""
+          }`,
         searchText: `${item.name ?? ""} ${item.unit ?? ""} ${item.stock_unit_code ?? ""} ${groupLabel}`,
         groupLabel,
       };
@@ -178,9 +191,9 @@ export function RemissionsItems({
         const conversionInputUnit = conversionInputLabel || defaultProfile?.input_unit_code || "";
         const stockUnitWithContextLabel =
           stockUnitCode &&
-          defaultProfile &&
-          normalizeUnitCode(defaultProfile.input_unit_code) === normalizeUnitCode(stockUnitCode) &&
-          String(defaultProfile.label ?? "").trim()
+            defaultProfile &&
+            normalizeUnitCode(defaultProfile.input_unit_code) === normalizeUnitCode(stockUnitCode) &&
+            String(defaultProfile.label ?? "").trim()
             ? `${stockUnitCode} (${String(defaultProfile.label ?? "").trim()})`
             : stockUnitCode;
         const conversionLabel = defaultProfile
@@ -191,27 +204,27 @@ export function RemissionsItems({
         const referenceComparison =
           row.productId && referenceSiteName
             ? (() => {
-                try {
-                  const requestedInStock = rowReady
-                    ? convertByProductProfile({
-                        quantityInInput: Number.isFinite(quantityValue) ? quantityValue : 0,
-                        inputUnitCode: normalizeUnitCode(row.inputUnitCode || stockUnitCode),
-                        stockUnitCode,
-                        profile:
-                          row.inputUomProfileId && defaultProfile?.id === row.inputUomProfileId
-                            ? defaultProfile
-                            : null,
-                      }).quantityInStock
-                    : null;
-                  const shortage =
-                    requestedInStock !== null
-                      ? roundQuantity(Math.max(requestedInStock - availableReference, 0))
-                      : 0;
-                  return { requestedInStock, shortage };
-                } catch {
-                  return { requestedInStock: null, shortage: 0 };
-                }
-              })()
+              try {
+                const requestedInStock = rowReady
+                  ? convertByProductProfile({
+                    quantityInInput: Number.isFinite(quantityValue) ? quantityValue : 0,
+                    inputUnitCode: normalizeUnitCode(row.inputUnitCode || stockUnitCode),
+                    stockUnitCode,
+                    profile:
+                      row.inputUomProfileId && defaultProfile?.id === row.inputUomProfileId
+                        ? defaultProfile
+                        : null,
+                  }).quantityInStock
+                  : null;
+                const shortage =
+                  requestedInStock !== null
+                    ? roundQuantity(Math.max(requestedInStock - availableReference, 0))
+                    : 0;
+                return { requestedInStock, shortage };
+              } catch {
+                return { requestedInStock: null, shortage: 0 };
+              }
+            })()
             : null;
         return (
           <div key={row.id} className="space-y-3">
@@ -236,14 +249,14 @@ export function RemissionsItems({
                         prev.map((current) =>
                           current.id === row.id
                             ? {
-                                ...current,
-                                productId: nextProductId,
-                                inputUnitCode:
-                                  normalizeUnitCode(nextProfile?.input_unit_code ?? "") ||
-                                  nextStockUnitCode ||
-                                  current.inputUnitCode,
-                                inputUomProfileId: nextProfile?.id ?? "",
-                              }
+                              ...current,
+                              productId: nextProductId,
+                              inputUnitCode:
+                                normalizeUnitCode(nextProfile?.input_unit_code ?? "") ||
+                                nextStockUnitCode ||
+                                current.inputUnitCode,
+                              inputUomProfileId: nextProfile?.id ?? "",
+                            }
                             : current
                         )
                       );
@@ -290,15 +303,15 @@ export function RemissionsItems({
                         prev.map((current) =>
                           current.id === row.id
                             ? {
-                                ...current,
-                                inputUnitCode: normalizeUnitCode(event.target.value),
-                                inputUomProfileId:
-                                  defaultProfile &&
+                              ...current,
+                              inputUnitCode: normalizeUnitCode(event.target.value),
+                              inputUomProfileId:
+                                defaultProfile &&
                                   normalizeUnitCode(defaultProfile.input_unit_code) ===
-                                    normalizeUnitCode(event.target.value)
-                                    ? defaultProfile.id
-                                    : "",
-                              }
+                                  normalizeUnitCode(event.target.value)
+                                  ? defaultProfile.id
+                                  : "",
+                            }
                             : current
                         )
                       )
@@ -310,7 +323,7 @@ export function RemissionsItems({
                       <option value={stockUnitCode}>{stockUnitWithContextLabel}</option>
                     ) : null}
                     {defaultProfile &&
-                    normalizeUnitCode(defaultProfile.input_unit_code) !== normalizeUnitCode(stockUnitCode) ? (
+                      normalizeUnitCode(defaultProfile.input_unit_code) !== normalizeUnitCode(stockUnitCode) ? (
                       <option value={normalizeUnitCode(defaultProfile.input_unit_code)}>
                         {normalizeUnitCode(defaultProfile.input_unit_code)} ({defaultProfile.label})
                       </option>
@@ -352,12 +365,11 @@ export function RemissionsItems({
 
                 {referenceComparison ? (
                   <div
-                    className={`text-xs md:col-span-12 ${
-                      referenceComparison.requestedInStock !== null &&
+                    className={`text-xs md:col-span-12 ${referenceComparison.requestedInStock !== null &&
                       referenceComparison.requestedInStock > availableReference
-                        ? "text-amber-700"
-                        : "text-[var(--ui-muted)]"
-                    }`}
+                      ? "text-amber-700"
+                      : "text-[var(--ui-muted)]"
+                      }`}
                   >
                     Stock referencial en {referenceSiteName}: {availableReference} {stockUnitCode || "un"}
                     {referenceComparison.requestedInStock !== null

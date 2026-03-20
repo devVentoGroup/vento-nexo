@@ -28,6 +28,7 @@ const PERMISSIONS = {
   remissionsAllSites: "inventory.remissions.all_sites",
   remissionsCancel: "inventory.remissions.cancel",
   remissionsTransit: "inventory.remissions.transit",
+  remissionsEditOwnPending: "inventory.remissions.edit_own_pending",
 };
 
 type SearchParams = {
@@ -234,7 +235,7 @@ function formatDateTime(value: string | null | undefined): string {
   }).format(date);
 }
 
-type RemissionListAction = "view" | "cancel" | "delete" | "reverse_cancel";
+type RemissionListAction = "view" | "edit" | "cancel" | "delete" | "reverse_cancel";
 
 function hasReversalMarker(notes: string | null | undefined): boolean {
   return String(notes ?? "").includes("[REVERSA_APLICADA");
@@ -244,10 +245,16 @@ function getListActionsForRemission(
   status: string | null | undefined,
   notes: string | null | undefined,
   canManage: boolean,
-  canReverse: boolean
+  canReverse: boolean,
+  canEditOwnPending: boolean
 ): RemissionListAction[] {
   const normalizedStatus = String(status ?? "").trim();
   const actions: RemissionListAction[] = ["view"];
+
+  if (canEditOwnPending && normalizedStatus === "pending") {
+    actions.push("edit");
+  }
+
   if (!canManage) return actions;
 
   if (["pending", "preparing"].includes(normalizedStatus)) {
@@ -310,7 +317,7 @@ async function runRemissionListAction(formData: FormData) {
   if (!requestId || !["cancel", "delete", "reverse_cancel"].includes(action)) {
     redirect(
       "/inventory/remissions?error=" +
-        encodeURIComponent("Acción inválida para la remisión.")
+      encodeURIComponent("Acción inválida para la remisión.")
     );
   }
 
@@ -323,34 +330,34 @@ async function runRemissionListAction(formData: FormData) {
 
   const { data: request } = await supabase
     .from("restock_requests")
-    .select("id,status,from_site_id,to_site_id,notes")
+    .select("id,status,from_site_id,to_site_id,notes,created_by")
     .eq("id", requestId)
     .maybeSingle();
 
   if (!request) {
     redirect(
       "/inventory/remissions?error=" +
-        encodeURIComponent("La remisión no existe o no está disponible.")
+      encodeURIComponent("La remisión no existe o no está disponible.")
     );
   }
 
   const canFrom = request.from_site_id
     ? await checkPermissionWithRoleOverride({
-        supabase,
-        appId: APP_ID,
-        code: PERMISSIONS.remissionsCancel,
-        context: { siteId: request.from_site_id },
-        actualRole,
-      })
+      supabase,
+      appId: APP_ID,
+      code: PERMISSIONS.remissionsCancel,
+      context: { siteId: request.from_site_id },
+      actualRole,
+    })
     : false;
   const canTo = request.to_site_id
     ? await checkPermissionWithRoleOverride({
-        supabase,
-        appId: APP_ID,
-        code: PERMISSIONS.remissionsCancel,
-        context: { siteId: request.to_site_id },
-        actualRole,
-      })
+      supabase,
+      appId: APP_ID,
+      code: PERMISSIONS.remissionsCancel,
+      context: { siteId: request.to_site_id },
+      actualRole,
+    })
     : false;
   const canGlobal = await checkPermissionWithRoleOverride({
     supabase,
@@ -362,15 +369,33 @@ async function runRemissionListAction(formData: FormData) {
   if (!canCancel) {
     redirect(
       "/inventory/remissions?error=" +
-        encodeURIComponent("No tienes permisos para esta acción.")
+      encodeURIComponent("No tienes permisos para esta acción.")
     );
   }
   const canReverseScope = canGlobal || (canFrom && canTo);
-  const actionMatrix = getListActionsForRemission(request.status, request.notes, true, canReverseScope);
+  const canEditOwnPending =
+    String(request.created_by ?? "") === user.id &&
+    String(request.status ?? "") === "pending" &&
+    String(request.to_site_id ?? "") !== "" &&
+    (await checkPermissionWithRoleOverride({
+      supabase,
+      appId: APP_ID,
+      code: PERMISSIONS.remissionsEditOwnPending,
+      context: { siteId: request.to_site_id },
+      actualRole,
+    }));
+
+  const actionMatrix = getListActionsForRemission(
+    request.status,
+    request.notes,
+    true,
+    canReverseScope,
+    canEditOwnPending
+  );
   if (!actionMatrix.includes(action as RemissionListAction)) {
     redirect(
       "/inventory/remissions?error=" +
-        encodeURIComponent("Esa acción no aplica para el estado actual de la remisión.")
+      encodeURIComponent("Esa acción no aplica para el estado actual de la remisión.")
     );
   }
 
@@ -386,7 +411,7 @@ async function runRemissionListAction(formData: FormData) {
     if (error) {
       redirect(
         "/inventory/remissions?error=" +
-          encodeURIComponent(toFriendlyRemissionActionError(error.message))
+        encodeURIComponent(toFriendlyRemissionActionError(error.message))
       );
     }
     redirect("/inventory/remissions?ok=" + encodeURIComponent("Remisión cancelada."));
@@ -399,12 +424,12 @@ async function runRemissionListAction(formData: FormData) {
     if (reverseError) {
       redirect(
         "/inventory/remissions?error=" +
-          encodeURIComponent(toFriendlyRemissionActionError(reverseError.message))
+        encodeURIComponent(toFriendlyRemissionActionError(reverseError.message))
       );
     }
     redirect(
       "/inventory/remissions?ok=" +
-        encodeURIComponent("Remisión anulada con reversa de inventario aplicada.")
+      encodeURIComponent("Remisión anulada con reversa de inventario aplicada.")
     );
   }
 
@@ -443,7 +468,7 @@ async function runRemissionListAction(formData: FormData) {
       if (!cancelErr) {
         redirect(
           "/inventory/remissions?ok=" +
-            encodeURIComponent("No se pudo eliminar por trazabilidad. Se canceló la remisión.")
+          encodeURIComponent("No se pudo eliminar por trazabilidad. Se canceló la remisión.")
         );
       }
     }
@@ -451,7 +476,7 @@ async function runRemissionListAction(formData: FormData) {
     if (error) {
       redirect(
         "/inventory/remissions?error=" +
-          encodeURIComponent(toFriendlyRemissionActionError(error.message))
+        encodeURIComponent(toFriendlyRemissionActionError(error.message))
       );
     }
   }
@@ -459,7 +484,7 @@ async function runRemissionListAction(formData: FormData) {
   if (!deletedRows || deletedRows.length === 0) {
     redirect(
       "/inventory/remissions?error=" +
-        encodeURIComponent("No se pudo eliminar la remisión.")
+      encodeURIComponent("No se pudo eliminar la remisión.")
     );
   }
 
@@ -503,9 +528,9 @@ async function createRemission(formData: FormData) {
   const productIdsForLookup = Array.from(new Set(productIds.filter(Boolean)));
   const { data: productsData } = productIdsForLookup.length
     ? await supabase
-        .from("products")
-        .select("id,unit,stock_unit_code")
-        .in("id", productIdsForLookup)
+      .from("products")
+      .select("id,unit,stock_unit_code")
+      .in("id", productIdsForLookup)
     : { data: [] as ProductRow[] };
   const productMap = new Map(
     ((productsData ?? []) as ProductRow[]).map((product) => [product.id, product])
@@ -513,11 +538,11 @@ async function createRemission(formData: FormData) {
   const requestedUomProfileIds = Array.from(new Set(inputUomProfileIds.filter(Boolean)));
   const { data: uomProfilesData } = requestedUomProfileIds.length
     ? await supabase
-        .from("product_uom_profiles")
-        .select(
-          "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
-        )
-        .in("id", requestedUomProfileIds)
+      .from("product_uom_profiles")
+      .select(
+        "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
+      )
+      .in("id", requestedUomProfileIds)
     : { data: [] as ProductUomProfile[] };
   const uomProfileById = new Map(
     ((uomProfilesData ?? []) as ProductUomProfile[]).map((profile) => [profile.id, profile])
@@ -566,9 +591,9 @@ async function createRemission(formData: FormData) {
   } catch (error) {
     redirect(
       "/inventory/remissions?error=" +
-        encodeURIComponent(
-          error instanceof Error ? error.message : "Error en conversion de unidades."
-        )
+      encodeURIComponent(
+        error instanceof Error ? error.message : "Error en conversion de unidades."
+      )
     );
   }
 
@@ -584,12 +609,12 @@ async function createRemission(formData: FormData) {
   if (!opContext?.can_operate) {
     redirect(
       "/inventory/remissions?error=" +
-        encodeURIComponent(
-          buildOperationalBlockMessage(
-            opContext,
-            "No puedes solicitar remisiones en este momento para esta sede."
-          )
+      encodeURIComponent(
+        buildOperationalBlockMessage(
+          opContext,
+          "No puedes solicitar remisiones en este momento para esta sede."
         )
+      )
     );
   }
 
@@ -603,7 +628,7 @@ async function createRemission(formData: FormData) {
   if (!canRequest) {
     redirect(
       "/inventory/remissions?error=" +
-        encodeURIComponent("No tienes permiso para solicitar remisiones.")
+      encodeURIComponent("No tienes permiso para solicitar remisiones.")
     );
   }
 
@@ -616,14 +641,14 @@ async function createRemission(formData: FormData) {
   if (String(toSite?.site_type ?? "") !== "satellite") {
     redirect(
       "/inventory/remissions?error=" +
-        encodeURIComponent("Solo sedes satélite pueden solicitar remisiones.")
+      encodeURIComponent("Solo sedes satélite pueden solicitar remisiones.")
     );
   }
 
   if (items.length === 0) {
     redirect(
       "/inventory/remissions?error=" +
-        encodeURIComponent("Agrega al menos un producto con cantidad mayor a 0.")
+      encodeURIComponent("Agrega al menos un producto con cantidad mayor a 0.")
     );
   }
 
@@ -632,9 +657,9 @@ async function createRemission(formData: FormData) {
   if (configuredRows.length === 0) {
     redirect(
       "/inventory/remissions?error=" +
-        encodeURIComponent(
-          "Esta sede no tiene productos habilitados. Configura disponibilidad por sede en catalogo."
-        )
+      encodeURIComponent(
+        "Esta sede no tiene productos habilitados. Configura disponibilidad por sede en catalogo."
+      )
     );
   }
 
@@ -646,18 +671,18 @@ async function createRemission(formData: FormData) {
   if (allowedProductIds.size === 0) {
     redirect(
       "/inventory/remissions?error=" +
-        encodeURIComponent(
-          "Esta sede no tiene productos habilitados para su uso operativo. Ajusta Uso en sede en catalogo."
-        )
+      encodeURIComponent(
+        "Esta sede no tiene productos habilitados para su uso operativo. Ajusta Uso en sede en catalogo."
+      )
     );
   }
   const invalidItems = items.filter((item) => !allowedProductIds.has(item.product_id));
   if (invalidItems.length > 0) {
     redirect(
       "/inventory/remissions?error=" +
-        encodeURIComponent(
-          "Algunos productos no estan habilitados para esta sede o flujo operativo. Revisa disponibilidad por sede."
-        )
+      encodeURIComponent(
+        "Algunos productos no estan habilitados para esta sede o flujo operativo. Revisa disponibilidad por sede."
+      )
     );
   }
 
@@ -681,7 +706,7 @@ async function createRemission(formData: FormData) {
   if (requestErr || !request) {
     redirect(
       "/inventory/remissions?error=" +
-        encodeURIComponent(requestErr?.message ?? "No se pudo crear la remisión.")
+      encodeURIComponent(requestErr?.message ?? "No se pudo crear la remisión.")
     );
   }
 
@@ -701,7 +726,7 @@ async function createRemission(formData: FormData) {
   if (itemsErr) {
     redirect(
       "/inventory/remissions?error=" +
-        encodeURIComponent(itemsErr.message ?? "No se pudieron crear los items.")
+      encodeURIComponent(itemsErr.message ?? "No se pudieron crear los items.")
     );
   }
 
@@ -783,10 +808,10 @@ export default async function RemissionsPage({
 
   const { data: sites } = siteIds.length
     ? await supabase
-        .from("sites")
-        .select("id,name,site_type")
-        .in("id", siteIds)
-        .order("name", { ascending: true })
+      .from("sites")
+      .select("id,name,site_type")
+      .in("id", siteIds)
+      .order("name", { ascending: true })
     : { data: [] as SiteRow[] };
 
   const siteRows = (sites ?? []) as SiteRow[];
@@ -799,21 +824,21 @@ export default async function RemissionsPage({
 
   const canRequestPermission = activeSiteId
     ? await checkPermissionWithRoleOverride({
-        supabase,
-        appId: APP_ID,
-        code: PERMISSIONS.remissionsRequest,
-        context: { siteId: activeSiteId },
-        actualRole,
-      })
+      supabase,
+      appId: APP_ID,
+      code: PERMISSIONS.remissionsRequest,
+      context: { siteId: activeSiteId },
+      actualRole,
+    })
     : false;
   const canTransitPermission = activeSiteId
     ? await checkPermissionWithRoleOverride({
-        supabase,
-        appId: APP_ID,
-        code: PERMISSIONS.remissionsTransit,
-        context: { siteId: activeSiteId },
-        actualRole,
-      })
+      supabase,
+      appId: APP_ID,
+      code: PERMISSIONS.remissionsTransit,
+      context: { siteId: activeSiteId },
+      actualRole,
+    })
     : false;
 
   const viewMode = isAllSites ? "all" : isProductionCenter ? "bodega" : "satélite";
@@ -825,6 +850,15 @@ export default async function RemissionsPage({
     actualRole,
   });
   const canManageRemissionActions = canCancelPermission;
+  const canEditOwnPendingPermission = activeSiteId
+    ? await checkPermissionWithRoleOverride({
+      supabase,
+      appId: APP_ID,
+      code: PERMISSIONS.remissionsEditOwnPending,
+      context: { siteId: activeSiteId },
+      actualRole,
+    })
+    : false;
   const employeeAccessibleSiteIds = new Set(
     employeeSiteRows
       .map((row) => String(row.site_id ?? "").trim())
@@ -844,10 +878,10 @@ export default async function RemissionsPage({
 
   const { data: fulfillmentSites } = fulfillmentSiteIds.length
     ? await supabase
-        .from("sites")
-        .select("id,name,site_type")
-        .in("id", fulfillmentSiteIds)
-        .order("name", { ascending: true })
+      .from("sites")
+      .select("id,name,site_type")
+      .in("id", fulfillmentSiteIds)
+      .order("name", { ascending: true })
     : { data: [] as SiteRow[] };
 
   let fulfillmentSiteRows = (fulfillmentSites ?? []) as SiteRow[];
@@ -883,10 +917,10 @@ export default async function RemissionsPage({
   const areaFilterSiteId = canCreate ? activeSiteId : selectedFromSiteId;
   const { data: areas } = areaFilterSiteId
     ? await supabase
-        .from("areas")
-        .select("id,name,kind,site_id")
-        .eq("site_id", areaFilterSiteId)
-        .order("name", { ascending: true })
+      .from("areas")
+      .select("id,name,kind,site_id")
+      .eq("site_id", areaFilterSiteId)
+      .order("name", { ascending: true })
     : { data: [] as AreaRow[] };
 
   const areaRows = (areas ?? []) as AreaRow[];
@@ -949,9 +983,9 @@ export default async function RemissionsPage({
   );
   const { data: categoryData } = categoryIds.length
     ? await supabase
-        .from("product_categories")
-        .select("id,name,parent_id")
-        .in("id", categoryIds)
+      .from("product_categories")
+      .select("id,name,parent_id")
+      .in("id", categoryIds)
     : { data: [] as Array<{ id: string; name: string | null; parent_id: string | null }> };
   const categoryNameById = new Map(
     ((categoryData ?? []) as Array<{ id: string; name: string | null }>).map((row) => [
@@ -961,12 +995,12 @@ export default async function RemissionsPage({
   );
   const { data: uomProfilesData } = productIds.length
     ? await supabase
-        .from("product_uom_profiles")
-        .select(
-          "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
-        )
-        .in("product_id", productIds)
-        .eq("is_active", true)
+      .from("product_uom_profiles")
+      .select(
+        "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
+      )
+      .in("product_id", productIds)
+      .eq("is_active", true)
     : { data: [] as ProductUomProfile[] };
   const defaultUomProfiles = (uomProfilesData ?? []) as ProductUomProfile[];
   const canCreateWithConfiguredCatalog =
@@ -1046,10 +1080,10 @@ export default async function RemissionsPage({
   const { data: stockReferenceData } =
     canCreateWithConfiguredCatalog && fulfillmentSiteIdsForStock.length > 0 && productIds.length > 0
       ? await supabase
-          .from("inventory_stock_by_site")
-          .select("site_id,product_id,current_qty,updated_at")
-          .in("site_id", fulfillmentSiteIdsForStock)
-          .in("product_id", productIds)
+        .from("inventory_stock_by_site")
+        .select("site_id,product_id,current_qty,updated_at")
+        .in("site_id", fulfillmentSiteIdsForStock)
+        .in("product_id", productIds)
       : { data: [] as StockReferenceRow[] };
   const originStockRows = ((stockReferenceData ?? []) as StockReferenceRow[]).map((row) => ({
     siteId: row.site_id,
@@ -1297,11 +1331,18 @@ export default async function RemissionsPage({
                 const rowCanTo = canCancelPermission && employeeAccessibleSiteIds.has(toSiteId);
                 const rowCanManageBasic = canManageRemissionActions && (canViewAll || rowCanFrom || rowCanTo);
                 const rowCanReverse = canManageRemissionActions && (canViewAll || (rowCanFrom && rowCanTo));
+                const rowCanEditOwnPending =
+                  canEditOwnPendingPermission &&
+                  String(row.created_by ?? "") === user.id &&
+                  String(row.status ?? "") === "pending" &&
+                  String(row.to_site_id ?? "") === activeSiteId;
+
                 const rowActions = getListActionsForRemission(
                   row.status,
                   row.notes,
                   rowCanManageBasic,
-                  rowCanReverse
+                  rowCanReverse,
+                  rowCanEditOwnPending
                 );
                 return (
                   <tr key={row.id} className="ui-body">
@@ -1333,9 +1374,21 @@ export default async function RemissionsPage({
                               ? "Checklist tránsito"
                               : "Preparar"
                             : ["in_transit", "partial"].includes(String(row.status ?? ""))
-                            ? "Recibir"
-                            : "Ver"}
+                              ? "Recibir"
+                              : "Ver"}
                         </Link>
+                        {rowActions.includes("edit") ? (
+                          <Link
+                            href={
+                              activeSiteId
+                                ? `/inventory/remissions/${row.id}/edit?site_id=${encodeURIComponent(activeSiteId)}`
+                                : `/inventory/remissions/${row.id}/edit`
+                            }
+                            className="ui-btn ui-btn--ghost ui-btn--compact px-3 text-sm font-semibold"
+                          >
+                            Editar
+                          </Link>
+                        ) : null}
                         {rowActions.includes("cancel") ? (
                           <form action={runRemissionListAction}>
                             <input type="hidden" name="request_id" value={row.id} />
@@ -1444,11 +1497,18 @@ export default async function RemissionsPage({
                 const rowCanTo = canCancelPermission && employeeAccessibleSiteIds.has(toSiteId);
                 const rowCanManageBasic = canManageRemissionActions && (canViewAll || rowCanFrom || rowCanTo);
                 const rowCanReverse = canManageRemissionActions && (canViewAll || (rowCanFrom && rowCanTo));
+                const rowCanEditOwnPending =
+                  canEditOwnPendingPermission &&
+                  String(row.created_by ?? "") === user.id &&
+                  String(row.status ?? "") === "pending" &&
+                  String(row.to_site_id ?? "") === activeSiteId;
+
                 const rowActions = getListActionsForRemission(
                   row.status,
                   row.notes,
                   rowCanManageBasic,
-                  rowCanReverse
+                  rowCanReverse,
+                  rowCanEditOwnPending
                 );
                 return (
                   <tr key={row.id} className="ui-body">
@@ -1473,6 +1533,18 @@ export default async function RemissionsPage({
                         >
                           Ver
                         </Link>
+                        {rowActions.includes("edit") ? (
+                          <Link
+                            href={
+                              activeSiteId
+                                ? `/inventory/remissions/${row.id}/edit?site_id=${encodeURIComponent(activeSiteId)}`
+                                : `/inventory/remissions/${row.id}/edit`
+                            }
+                            className="ui-btn ui-btn--ghost ui-btn--compact px-3 text-sm font-semibold"
+                          >
+                            Editar
+                          </Link>
+                        ) : null}
                         {rowActions.includes("cancel") ? (
                           <form action={runRemissionListAction}>
                             <input type="hidden" name="request_id" value={row.id} />

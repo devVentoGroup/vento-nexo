@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import {
   convertByProductProfile,
@@ -46,6 +46,11 @@ type Props = {
   defaultUomProfiles?: ProductUomProfile[];
   areaOptions: AreaOption[];
   originStockRows?: OriginStockReference[];
+  initialExpectedDate?: string;
+  initialNotes?: string;
+  initialRows?: RemissionDraftRow[];
+  submitLabel?: string;
+  formMode?: "create" | "edit";
 };
 
 export function RemissionsCreateForm({
@@ -59,11 +64,44 @@ export function RemissionsCreateForm({
   defaultUomProfiles = [],
   areaOptions,
   originStockRows = [],
+  initialExpectedDate = "",
+  initialNotes = "",
+  initialRows = [],
+  submitLabel = "Crear remision",
+  formMode = "create",
 }: Props) {
+  const normalizedInitialRows = useMemo<RemissionDraftRow[]>(
+    () =>
+      initialRows.map((row, index) => ({
+        id: Number.isFinite(row.id) ? row.id : index,
+        productId: String(row.productId ?? "").trim(),
+        quantity: String(row.quantity ?? "").trim(),
+        inputUnitCode: normalizeUnitCode(String(row.inputUnitCode ?? "").trim()),
+        inputUomProfileId: String(row.inputUomProfileId ?? "").trim(),
+        areaKind: String(row.areaKind ?? "").trim(),
+      })),
+    [initialRows]
+  );
+
   const [fromSiteId, setFromSiteId] = useState(defaultFromSiteId);
-  const [expectedDate, setExpectedDate] = useState("");
-  const [notes, setNotes] = useState("");
-  const [draftRows, setDraftRows] = useState<RemissionDraftRow[]>([]);
+  const [expectedDate, setExpectedDate] = useState(initialExpectedDate);
+  const [notes, setNotes] = useState(initialNotes);
+  const [draftRows, setDraftRows] = useState<RemissionDraftRow[]>(normalizedInitialRows);
+  useEffect(() => {
+    setFromSiteId(defaultFromSiteId);
+  }, [defaultFromSiteId]);
+
+  useEffect(() => {
+    setExpectedDate(initialExpectedDate);
+  }, [initialExpectedDate]);
+
+  useEffect(() => {
+    setNotes(initialNotes);
+  }, [initialNotes]);
+
+  useEffect(() => {
+    setDraftRows(normalizedInitialRows);
+  }, [normalizedInitialRows]);
 
   const selectedFromSite = useMemo(
     () => fromSiteOptions.find((site) => site.id === fromSiteId) ?? null,
@@ -112,9 +150,9 @@ export function RemissionsCreateForm({
         const qty = Number(row.quantity);
         const hasContent = Boolean(
           row.productId ||
-            row.quantity.trim() ||
-            row.inputUnitCode.trim() ||
-            row.areaKind.trim()
+          row.quantity.trim() ||
+          row.inputUnitCode.trim() ||
+          row.areaKind.trim()
         );
         const valid = Boolean(row.productId && product?.name && Number.isFinite(qty) && qty > 0);
 
@@ -205,7 +243,7 @@ export function RemissionsCreateForm({
       <input type="hidden" name="to_site_id" value={toSiteId} />
 
       <section className="ui-panel space-y-4">
-        <div className="ui-h3">Solicitud</div>
+        <div className="ui-h3">{formMode === "edit" ? "Editar solicitud" : "Solicitud"}</div>
 
         <div className="grid gap-3 ui-mobile-stack md:grid-cols-2">
           <label className="flex flex-col gap-1">
@@ -269,6 +307,7 @@ export function RemissionsCreateForm({
           onRowsChange={setDraftRows}
           referenceStockByProduct={selectedOriginStockByProduct}
           referenceSiteName={selectedFromSite?.name ?? ""}
+          initialRows={normalizedInitialRows}
         />
 
         {selectedItems.length === 0 ? (
@@ -296,7 +335,7 @@ export function RemissionsCreateForm({
           {draftSummary.incompleteRows > 0 ? ` · ${draftSummary.incompleteRows} pendiente(s)` : ""}
         </div>
         <button type="submit" className="ui-btn ui-btn--brand" disabled={!canSubmit}>
-          Crear remision
+          {submitLabel}
         </button>
       </div>
     </form>
