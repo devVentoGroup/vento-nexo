@@ -1076,6 +1076,7 @@ export async function updateStatus(formData: FormData) {
     "transit",
     "receive",
     "receive_partial",
+    "resolve_shortage",
     "close",
     "cancel",
     "delete",
@@ -1126,6 +1127,16 @@ export async function updateStatus(formData: FormData) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "No puedes recibir." }));
   }
 
+  if (action === "resolve_shortage" && !access.canReceive) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: "No puedes cerrar diferencias como faltante.",
+      })
+    );
+  }
+
   if (action === "close") {
     redirect(
       buildRemissionDetailHref({
@@ -1163,7 +1174,7 @@ export async function updateStatus(formData: FormData) {
     });
   }
 
-  if (action === "receive" || action === "receive_partial") {
+  if (action === "receive" || action === "receive_partial" || action === "resolve_shortage") {
     await enforceOperationalGateOrRedirect({
       supabase,
       userId: user.id,
@@ -1208,13 +1219,23 @@ export async function updateStatus(formData: FormData) {
     );
   }
   if (
-    (action === "receive" || action === "receive_partial") &&
+    (action === "receive" || action === "receive_partial" || action === "resolve_shortage") &&
     !["in_transit", "partial"].includes(currentStatus)
   ) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "La remision debe estar en transito/parcial para recibir." }));
   }
   if (action === "receive_partial" && currentStatus !== "in_transit") {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "Solo puedes registrar recepcion parcial desde en transito." }));
+  }
+
+  if (action === "resolve_shortage" && !["in_transit", "partial"].includes(currentStatus)) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: "Solo puedes cerrar diferencias mientras la remisión siga abierta en tránsito o parcial.",
+      })
+    );
   }
   if (action === "receive" && !summary.can_complete_receive) {
     redirect(
@@ -1234,6 +1255,19 @@ export async function updateStatus(formData: FormData) {
       })
     );
   }
+
+  if (action === "resolve_shortage") {
+    if (summary.pending_receipt_lines <= 0) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          error: "No hay diferencias pendientes por cerrar como faltante.",
+        })
+      );
+    }
+  }
+
   if (action === "delete") {
     const deleteRequest = async () =>
       supabase.from("restock_requests").delete().eq("id", requestId).select("id");
@@ -1439,7 +1473,7 @@ export async function updateStatus(formData: FormData) {
     }
   }
 
-  if (action === "receive" || action === "receive_partial") {
+  if (action === "receive" || action === "receive_partial" || action === "resolve_shortage") {
     const { data: itemsData } = await supabase
       .from("restock_request_items")
       .select("id,product_id,quantity,prepared_quantity,shipped_quantity,received_quantity,shortage_quantity")
@@ -1522,6 +1556,77 @@ export async function updateStatus(formData: FormData) {
     status_updated_at: new Date().toISOString(),
   };
 
+  if (action === "resolve_shortage") {
+    const { data: itemsData } = await supabase
+      .from("restock_request_items")
+      .select("id,shipped_quantity,received_quantity,shortage_quantity")
+      .eq("request_id", requestId);
+
+    const itemRows = (itemsData ?? []) as Array<{
+      id: string;
+      shipped_quantity: number | null;
+      received_quantity: number | null;
+      shortage_quantity: number | null;
+    }>;
+
+    const hasAnyReceivedQty = itemRows.some((row) => {
+      const receivedQty = roundQuantity(Number(row.received_quantity ?? 0));
+      return receivedQty > 0;
+    });
+
+    if (!hasAnyReceivedQty) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          error: "Primero registra al menos una recepción antes de cerrar la diferencia como faltante.",
+        })
+      );
+    }
+
+    let anyResolved = false;
+
+    for (const row of itemRows) {
+      const shippedQty = roundQuantity(Number(row.shipped_quantity ?? 0));
+      const receivedQty = roundQuantity(Number(row.received_quantity ?? 0));
+      const shortageQty = roundQuantity(Number(row.shortage_quantity ?? 0));
+      const pendingQty = roundQuantity(Math.max(shippedQty - receivedQty - shortageQty, 0));
+
+      if (pendingQty <= 0) continue;
+
+      const nextShortage = roundQuantity(shortageQty + pendingQty);
+
+      const { error: itemError } = await supabase
+        .from("restock_request_items")
+        .update({
+          shortage_quantity: nextShortage,
+        })
+        .eq("id", row.id);
+
+      if (itemError) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: itemError.message,
+          })
+        );
+      }
+
+      anyResolved = true;
+    }
+
+    if (!anyResolved) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          error: "No había cantidades pendientes para cerrar como faltante.",
+        })
+      );
+    }
+  }
+
   if (action === "prepare") {
     updates.status = "preparing";
     updates.prepared_at = new Date().toISOString();
@@ -1540,7 +1645,7 @@ export async function updateStatus(formData: FormData) {
     updates.received_by = user.id;
   }
 
-  if (action === "receive_partial") {
+  if (action === "resolve_shortage") {
     updates.status = "partial";
     updates.received_at = new Date().toISOString();
     updates.received_by = user.id;
@@ -1583,7 +1688,7 @@ export async function updateStatus(formData: FormData) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: reqErr.message }));
   }
 
-  if (action === "receive" || action === "receive_partial") {
+  if (action === "receive" || action === "receive_partial" || action === "resolve_shortage") {
     const syncError = await syncReceiveRequestStatus({
       supabase,
       requestId,
@@ -1598,6 +1703,7 @@ export async function updateStatus(formData: FormData) {
     transit: "transit_started",
     receive: "received_complete",
     receive_partial: "received_partial",
+    resolve_shortage: "shortage_resolved",
     cancel: "cancelled",
   };
 
@@ -1987,12 +2093,10 @@ export async function applyReceiveShortcut(formData: FormData) {
       break;
     case "set_partial": {
       const receivedQtyManual = roundQuantity(parseNumber(manualReceiveRaw || "0"));
-      const shortageQtyManual =
-        manualShortageRaw === ""
-          ? roundQuantity(Math.max(shippedQty - receivedQtyManual, 0))
-          : roundQuantity(parseNumber(manualShortageRaw));
       nextReceived = receivedQtyManual;
-      nextShortage = shortageQtyManual;
+      // En recepción parcial abierta NO cerramos automáticamente la diferencia como faltante.
+      // El faltante definitivo se resolverá en una acción posterior separada.
+      nextShortage = roundQuantity(Number(itemRow.shortage_quantity ?? 0));
       break;
     }
     default:
@@ -2195,7 +2299,7 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
     }
 
     let finalReceived = shippedQty;
-    let finalShortage = 0;
+    let finalShortage = roundQuantity(Number(itemRow.shortage_quantity ?? 0));
 
     if (receiveQtyManual !== null) {
       if (receiveQtyManual < 0) {
@@ -2212,7 +2316,13 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
       }
 
       finalReceived = receiveQtyManual;
-      finalShortage = roundQuantity(Math.max(shippedQty - finalReceived, 0));
+      // En recepción parcial abierta no convertimos automáticamente la diferencia en faltante.
+      // Solo actualizamos lo realmente recibido.
+      if (receiveQtyManual < shippedQty) {
+        finalShortage = 0;
+      } else {
+        finalShortage = 0;
+      }
     }
 
     if (finalReceived + finalShortage > shippedQty) {
