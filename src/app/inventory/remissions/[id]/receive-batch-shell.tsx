@@ -342,13 +342,7 @@ export function ReceiveBatchCompactProductLine({
         <div className="text-right">
           <div className="space-y-0.5">
             <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
-              Enviado
-            </div>
-            <div className="text-sm font-bold tabular-nums text-[var(--ui-text)]">
-              {shippedQtyTotal} {unitLabel}
-            </div>
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
-              Por recibir
+              Recibir ahora
             </div>
             <div className="text-sm font-bold tabular-nums text-[var(--ui-text)]">
               {pendingQtyTotal} {unitLabel}
