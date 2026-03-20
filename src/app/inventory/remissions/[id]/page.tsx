@@ -91,12 +91,12 @@ export default async function RemissionDetailPage({
       ? `/inventory/remissions/transit?site_id=${encodeURIComponent(activeSiteId)}`
       : "/inventory/remissions/transit"
     : cameFromPrepareQueue
-    ? activeSiteId
-      ? `/inventory/remissions/prepare?site_id=${encodeURIComponent(activeSiteId)}`
-      : "/inventory/remissions/prepare"
-    : activeSiteId
-      ? `/inventory/remissions?site_id=${encodeURIComponent(activeSiteId)}`
-      : "/inventory/remissions";
+      ? activeSiteId
+        ? `/inventory/remissions/prepare?site_id=${encodeURIComponent(activeSiteId)}`
+        : "/inventory/remissions/prepare"
+      : activeSiteId
+        ? `/inventory/remissions?site_id=${encodeURIComponent(activeSiteId)}`
+        : "/inventory/remissions";
   const backLabel = cameFromTransitQueue
     ? "Volver a cola de tránsito"
     : cameFromPrepareQueue
@@ -220,32 +220,34 @@ export default async function RemissionDetailPage({
   const canTransitNow = canTransitAction && summary.can_transit;
   const isConductorTransitReview = !canEditPrepareItems && canTransitAction;
   const isReceiveDestinationFlow = canEditReceiveItems && !canEditPrepareItems;
+  const isReceiveFirstPass = isReceiveDestinationFlow && currentStatus === "in_transit";
+  const isReceivePartialFollowUp = isReceiveDestinationFlow && currentStatus === "partial";
   const receiveBatchEligibleIds = isReceiveDestinationFlow
     ? itemRows
-        .filter((item) => {
-          const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
-          const receivedQty = roundQuantity(Number(item.received_quantity ?? 0));
-          // El shortage es alerta/faltante; el "pendiente" real depende solo de received.
-          return shippedQty > 0 && receivedQty < shippedQty;
-        })
-        .map((item) => item.id)
+      .filter((item) => {
+        const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
+        const receivedQty = roundQuantity(Number(item.received_quantity ?? 0));
+        // El shortage es alerta/faltante; el "pendiente" real depende solo de received.
+        return shippedQty > 0 && receivedQty < shippedQty;
+      })
+      .map((item) => item.id)
     : [];
   const receiveBatchEligibleIdSet = new Set(receiveBatchEligibleIds);
 
   const receiveBatchEligibleProductGroups = isReceiveDestinationFlow
     ? (() => {
-        const map = new Map<string, string[]>();
-        for (const item of itemRows) {
-          if (!receiveBatchEligibleIdSet.has(item.id)) continue;
-          const list = map.get(item.product_id) ?? [];
-          list.push(item.id);
-          map.set(item.product_id, list);
-        }
-        return [...map.entries()].map(([productId, itemIds]) => ({
-          productId,
-          itemIds,
-        }));
-      })()
+      const map = new Map<string, string[]>();
+      for (const item of itemRows) {
+        if (!receiveBatchEligibleIdSet.has(item.id)) continue;
+        const list = map.get(item.product_id) ?? [];
+        list.push(item.id);
+        map.set(item.product_id, list);
+      }
+      return [...map.entries()].map(([productId, itemIds]) => ({
+        productId,
+        itemIds,
+      }));
+    })()
     : [];
   const isReadyToDispatch = currentStatus === "preparing" && summary.can_transit;
   const editPrepareRaw = sp.edit_prepare;
@@ -275,30 +277,34 @@ export default async function RemissionDetailPage({
       ? allowPrepareCorrection
         ? "Modo Bodeguero · Corregir"
         : "Modo Bodeguero"
-      : canEditReceiveItems
-        ? "Recepcion en destino"
-        : null;
+      : isReceivePartialFollowUp
+        ? "Recepción parcial abierta"
+        : canEditReceiveItems
+          ? "Recepción en destino"
+          : null;
   const stateSupportText = canEditPrepareItems
     ? "Centro prepara y confirma lo que sale."
-    : canEditReceiveItems
-      ? "Tu sede registra lo recibido y, si hace falta, el faltante."
-      : currentStatus === "received"
-        ? "Todo quedó recibido y conciliado."
-        : currentStatus === "closed"
-          ? "La remisión quedó cerrada sin tareas operativas pendientes."
-          : currentStatus === "cancelled"
-            ? "La remisión fue cancelada y ya no tiene acciones disponibles."
-            : "Sin acciones operativas pendientes.";
+    : isReceivePartialFollowUp
+      ? "La remisión sigue abierta: registra una llegada adicional o resuelve la diferencia pendiente."
+      : canEditReceiveItems
+        ? "Tu sede registra lo que llegó hoy. Si no llega todo, la remisión queda abierta para seguimiento."
+        : currentStatus === "received"
+          ? "Todo quedó recibido y conciliado."
+          : currentStatus === "closed"
+            ? "La remisión quedó cerrada sin tareas operativas pendientes."
+            : currentStatus === "cancelled"
+              ? "La remisión fue cancelada y ya no tiene acciones disponibles."
+              : "Sin acciones operativas pendientes.";
   const stateSupportTextEffective = isReadyToDispatch
     ? "Preparación completa. Esta remisión ya quedó lista para despacho."
     : stateSupportText;
   const roleFlowLabel = isConductorTransitReview
     ? "Conductor valida checklist y pone en tránsito."
     : isProductionView
-    ? "Bodeguero prepara y marca lista para despacho."
-    : isSatelliteView
-      ? "Tu sede solo recibe y confirma."
-      : "Vista operativa";
+      ? "Bodeguero prepara y marca lista para despacho."
+      : isSatelliteView
+        ? "Tu sede solo recibe y confirma."
+        : "Vista operativa";
   const compactSatelliteView = isSatelliteView && !isProductionView;
   const activeSignals = canEditPrepareItems
     ? linesMissingSourceLoc + linesPartialPreparation + linesWithoutCoveringLoc
@@ -309,6 +315,39 @@ export default async function RemissionDetailPage({
   const currentStatusMetaEffective = isReadyToDispatch
     ? { label: "Lista para despacho", className: "ui-chip ui-chip--success" }
     : currentStatusMeta;
+  const totalShippedQty = itemRows.reduce(
+    (sum, item) => sum + roundQuantity(Number(item.shipped_quantity ?? 0)),
+    0
+  );
+  const totalReceivedQty = itemRows.reduce(
+    (sum, item) => sum + roundQuantity(Number(item.received_quantity ?? 0)),
+    0
+  );
+  const totalShortageQty = itemRows.reduce(
+    (sum, item) => sum + roundQuantity(Number(item.shortage_quantity ?? 0)),
+    0
+  );
+  const totalPendingResolutionQty = itemRows.reduce((sum, item) => {
+    const shipped = roundQuantity(Number(item.shipped_quantity ?? 0));
+    const received = roundQuantity(Number(item.received_quantity ?? 0));
+    const shortage = roundQuantity(Number(item.shortage_quantity ?? 0));
+    return sum + roundQuantity(Math.max(shipped - received - shortage, 0));
+  }, 0);
+
+  const receivePanelTitle = isReceivePartialFollowUp
+    ? "Resolver recepción parcial"
+    : isReceiveFirstPass
+      ? "Registrar recepción"
+      : "Recibir remisión";
+
+  const receivePanelDescription = isReceivePartialFollowUp
+    ? "Esta remisión ya tiene una recepción registrada. Ahora define lo que falta por resolver: registrar una llegada adicional o cerrar la diferencia."
+    : isReceiveFirstPass
+      ? "Registra lo que llegó hoy. Si no llegó todo, la remisión quedará abierta para seguimiento."
+      : "Marca los productos con la casilla. Nada se guarda hasta registrar recepción. Nota opcional debajo.";
+
+  const partialResolutionBanner =
+    currentStatus === "partial" && (pendingReceiptLines > 0 || shortageLines > 0);
   const expectedDateLabel = request.expected_date
     ? formatDate(request.expected_date ?? null)
     : "Sin fecha esperada";
@@ -316,40 +355,40 @@ export default async function RemissionDetailPage({
   const notesLabel = request.notes ?? "-";
   const draftPrepareLines = canEditPrepareItems
     ? itemRows.map((item) => {
-        const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
-        const lineIdsForProduct = lineIdsByProduct.get(item.product_id) ?? [item.id];
-        const vm = buildRemissionLineVm({
-          item,
-          currentStatus,
-          canEditPrepareItems,
-          canEditReceiveItems,
-          showSourceLocSelector,
-          availableSite,
-          lineIdsForProduct,
-          locCandidates: stockByLocCandidates.get(item.product_id) ?? [],
-          originLocById,
-          stockByLocValueMap,
-          activeLineId,
-          activeLineEvent,
-        });
-        return {
-          id: item.id,
-          baseItemId: item.id,
-          productName: item.product?.name ?? item.product_id,
-          requestedQty: roundQuantity(Number(item.quantity ?? 0)),
-          unitLabel: vm.itemUnitLabel,
-          selectedLocId: String(item.source_location_id ?? ""),
-          recommendedLocId: vm.bestLocCandidate?.locationId ?? "",
-          locOptions: vm.locCandidates.map((loc) => ({
-            id: loc.locationId,
-            label: loc.label,
-            qty: loc.qty,
-          })),
-          dispatchQty: plannedDispatchQtyFromItem(item),
-          shortageReason: parseShortageReasonFromItemNotes(item.notes),
-          isVirtualSplit: false,
-        };
-      })
+      const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
+      const lineIdsForProduct = lineIdsByProduct.get(item.product_id) ?? [item.id];
+      const vm = buildRemissionLineVm({
+        item,
+        currentStatus,
+        canEditPrepareItems,
+        canEditReceiveItems,
+        showSourceLocSelector,
+        availableSite,
+        lineIdsForProduct,
+        locCandidates: stockByLocCandidates.get(item.product_id) ?? [],
+        originLocById,
+        stockByLocValueMap,
+        activeLineId,
+        activeLineEvent,
+      });
+      return {
+        id: item.id,
+        baseItemId: item.id,
+        productName: item.product?.name ?? item.product_id,
+        requestedQty: roundQuantity(Number(item.quantity ?? 0)),
+        unitLabel: vm.itemUnitLabel,
+        selectedLocId: String(item.source_location_id ?? ""),
+        recommendedLocId: vm.bestLocCandidate?.locationId ?? "",
+        locOptions: vm.locCandidates.map((loc) => ({
+          id: loc.locationId,
+          label: loc.label,
+          qty: loc.qty,
+        })),
+        dispatchQty: plannedDispatchQtyFromItem(item),
+        shortageReason: parseShortageReasonFromItemNotes(item.notes),
+        isVirtualSplit: false,
+      };
+    })
     : [];
 
   const detailNavFrom = cameFromPrepareQueue
@@ -430,11 +469,10 @@ export default async function RemissionDetailPage({
               </div>
             ) : canEditPrepareItems ? (
               <div
-                className={`mt-2 inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${
-                  allowPrepareCorrection
-                    ? "bg-amber-200 text-amber-950"
-                    : "bg-amber-100 text-amber-900"
-                }`}
+                className={`mt-2 inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ${allowPrepareCorrection
+                  ? "bg-amber-200 text-amber-950"
+                  : "bg-amber-100 text-amber-900"
+                  }`}
               >
                 {allowPrepareCorrection ? "Corrigiendo preparación" : "Preparación de bodega activa"}
               </div>
@@ -484,10 +522,69 @@ export default async function RemissionDetailPage({
         responsibleActor={responsibleActor}
       />
 
-      {currentStatus === "partial" && (pendingReceiptLines > 0 || shortageLines > 0) ? (
+      {partialResolutionBanner ? (
         <div className="ui-alert ui-alert--warn ui-fade-up ui-delay-2">
-          Recepción parcial activa. Hay <strong>{pendingReceiptLines}</strong> linea(s) con cantidades todavía por conciliar y <strong>{shortageLines}</strong> con faltante registrado.
-          {receivedLines > 0 ? ` También hay ${receivedLines} linea(s) con recepción registrada.` : ""}
+          <strong>Recepción parcial abierta.</strong> Faltan unidades por registrar o resolver.
+          {totalPendingResolutionQty > 0 ? (
+            <>
+              {" "}
+              Pendiente por resolver: <strong>{totalPendingResolutionQty}</strong>.
+            </>
+          ) : null}
+          {totalShortageQty > 0 ? (
+            <>
+              {" "}
+              Faltante registrado: <strong>{totalShortageQty}</strong>.
+            </>
+          ) : null}
+          {" "}Siguiente paso: registra una llegada adicional o cierra la diferencia.
+        </div>
+      ) : null}
+
+      {isReceiveDestinationFlow ? (
+        <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <div className="ui-h3">
+                {isReceivePartialFollowUp ? "Resumen de conciliación" : "Resumen de recepción"}
+              </div>
+              <div className="mt-1 ui-caption">
+                {isReceivePartialFollowUp
+                  ? "Esta remisión sigue abierta hasta que la diferencia quede resuelta."
+                  : "Verifica lo enviado contra lo que estás registrando en destino."}
+              </div>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-4">
+              <div className="ui-caption">Enviado total</div>
+              <div className="mt-2 text-2xl font-semibold text-[var(--ui-text)]">
+                {totalShippedQty}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-4">
+              <div className="ui-caption">Recibido acumulado</div>
+              <div className="mt-2 text-2xl font-semibold text-[var(--ui-text)]">
+                {totalReceivedQty}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-4">
+              <div className="ui-caption">Pendiente por resolver</div>
+              <div className="mt-2 text-2xl font-semibold text-[var(--ui-text)]">
+                {totalPendingResolutionQty}
+              </div>
+            </div>
+
+            <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-4">
+              <div className="ui-caption">Faltante registrado</div>
+              <div className="mt-2 text-2xl font-semibold text-[var(--ui-text)]">
+                {totalShortageQty}
+              </div>
+            </div>
+          </div>
         </div>
       ) : null}
 
@@ -555,15 +652,13 @@ export default async function RemissionDetailPage({
         {isReceiveDestinationFlow ? (
           <div className="mb-5">
             <span className="inline-flex items-center rounded-full bg-emerald-100/90 px-3 py-1 text-xs font-bold uppercase tracking-wider text-emerald-900/85 ring-1 ring-emerald-200/60">
-              Recepción
+              {isReceivePartialFollowUp ? "Seguimiento" : "Recepción"}
             </span>
             <h2 className="mt-3 text-2xl font-bold tracking-tight text-stone-900 sm:text-3xl">
-              Recibir remisión
+              {receivePanelTitle}
             </h2>
             <p className="mt-2 max-w-2xl text-base leading-relaxed text-stone-600 sm:text-lg">
-              Marca los productos con la casilla. Nada se guarda hasta{" "}
-              <strong className="text-stone-800">Registrar recepción</strong>. Opcional: nota
-              debajo.
+              {receivePanelDescription}
             </p>
           </div>
         ) : (
@@ -622,6 +717,17 @@ export default async function RemissionDetailPage({
             siteId={activeSiteId}
             eligibleProductGroups={receiveBatchEligibleProductGroups}
           >
+            {isReceivePartialFollowUp ? (
+              <div className="mb-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+                <strong>Recepción parcial abierta.</strong> Usa este paso para registrar una llegada adicional de lo pendiente.
+                {totalPendingResolutionQty > 0 ? (
+                  <>
+                    {" "}Todavía quedan <strong>{totalPendingResolutionQty}</strong> unidad(es) por resolver.
+                  </>
+                ) : null}
+              </div>
+            ) : null}
+
             <div className="mt-4 space-y-3 sm:space-y-4">
               {(() => {
                 const eligibleItems = itemRows.filter((item) => receiveBatchEligibleIdSet.has(item.id));
@@ -657,17 +763,51 @@ export default async function RemissionDetailPage({
                     roundQuantity(Number(it.shipped_quantity ?? 0))
                   );
 
+                  const receivedQtyTotal = groupItems.reduce((acc, it) => {
+                    const received = roundQuantity(Number(it.received_quantity ?? 0));
+                    return acc + received;
+                  }, 0);
+
+                  const shortageQtyTotal = groupItems.reduce((acc, it) => {
+                    const shortage = roundQuantity(Number(it.shortage_quantity ?? 0));
+                    return acc + shortage;
+                  }, 0);
+
                   return (
-                    <ReceiveBatchCompactProductLine
-                      key={productId}
-                      productId={productId}
-                      itemIds={itemIds}
-                      itemShippedQtys={itemShippedQtys}
-                      productName={productName}
-                      unitLabel={unitLabel}
-                      shippedQtyTotal={shippedQtyTotal}
-                      pendingQtyTotal={pendingQtyTotal}
-                    />
+                    <div className="space-y-2">
+                      <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3">
+                        <div className="flex flex-wrap items-start justify-between gap-3">
+                          <div>
+                            <div className="text-sm font-semibold text-[var(--ui-text)]">
+                              {productName}
+                            </div>
+                            <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                              Enviado: {shippedQtyTotal} {unitLabel} · Recibido acumulado: {receivedQtyTotal} {unitLabel} · Pendiente: {pendingQtyTotal} {unitLabel} · Faltante registrado: {shortageQtyTotal} {unitLabel}
+                            </div>
+                          </div>
+                          <div>
+                            {pendingQtyTotal > 0 ? (
+                              <span className="ui-chip ui-chip--warn">Pendiente por resolver</span>
+                            ) : shortageQtyTotal > 0 ? (
+                              <span className="ui-chip ui-chip--warn">Cerrado con faltante</span>
+                            ) : (
+                              <span className="ui-chip ui-chip--success">Conciliado</span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      <ReceiveBatchCompactProductLine
+                        key={productId}
+                        productId={productId}
+                        itemIds={itemIds}
+                        itemShippedQtys={itemShippedQtys}
+                        productName={productName}
+                        unitLabel={unitLabel}
+                        shippedQtyTotal={shippedQtyTotal}
+                        pendingQtyTotal={pendingQtyTotal}
+                      />
+                    </div>
                   );
                 });
               })()}
