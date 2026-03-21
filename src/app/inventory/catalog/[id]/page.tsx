@@ -594,7 +594,7 @@ async function updateProduct(formData: FormData) {
   const supplierLinesRaw = formData.get("supplier_lines");
   let hasAnySupplierLine = false;
   let hasCompletePrimarySupplier = false;
-  if (typeof supplierLinesRaw === "string" && supplierLinesRaw) {
+  if (supportsSupplierAutoCost && typeof supplierLinesRaw === "string" && supplierLinesRaw) {
     let lines: Array<{
       id?: string;
       supplier_id?: string;
@@ -619,10 +619,10 @@ async function updateProduct(formData: FormData) {
     } catch {
       redirectWithError("No se pudo leer el bloque de proveedores. Recarga la pagina e intenta de nuevo.");
     }
-    await supabase.from("product_suppliers").delete().eq("product_id", productId);
-    for (const line of lines) {
+    const nextSupplierLines = lines.filter((line) => !line._delete && Boolean(line.supplier_id));
+    hasAnySupplierLine = nextSupplierLines.length > 0;
+    for (const line of nextSupplierLines) {
       if (line._delete || !line.supplier_id) continue;
-      hasAnySupplierLine = true;
       const packQty = Number(line.purchase_pack_qty ?? line.purchase_unit_size ?? 0) || 0;
       const packUnitCode = normalizeUnitCode(
         (line.purchase_pack_unit_code as string) || stockUnitCode
@@ -729,19 +729,54 @@ async function updateProduct(formData: FormData) {
       });
       if (supplierErr) redirectWithError(supplierErr.message);
     }
-  }
-  if (supportsSupplierAutoCost && !hasAnySupplierLine) {
-    redirectWithError("Debes agregar al menos un proveedor para este producto.");
-  }
-  if (supportsSupplierAutoCost && !hasCompletePrimarySupplier) {
-    redirectWithError(
-      "Completa proveedor principal con empaque, cantidad, unidad y precio de compra."
-    );
-  }
-  if (supportsSupplierAutoCost && (!purchaseUomFromSupplier || !remissionUomFromSupplier)) {
-    redirectWithError(
-      "No se pudo convertir unidad de compra a unidad base. Revisa unidad base, unidad de compra y cantidad."
-    );
+    if (!hasAnySupplierLine) {
+      redirectWithError("Debes agregar al menos un proveedor para este producto.");
+    }
+    if (!hasCompletePrimarySupplier) {
+      redirectWithError(
+        "Completa proveedor principal con empaque, cantidad, unidad y precio de compra."
+      );
+    }
+    if (!purchaseUomFromSupplier || !remissionUomFromSupplier) {
+      redirectWithError(
+        "No se pudo convertir unidad de compra a unidad base. Revisa unidad base, unidad de compra y cantidad."
+      );
+    }
+
+    // Solo después de validar todo, aplicamos cambios para evitar perder vínculos si hay error de datos.
+    await supabase.from("product_suppliers").delete().eq("product_id", productId);
+    for (const line of nextSupplierLines) {
+      const packQty = Number(line.purchase_pack_qty ?? line.purchase_unit_size ?? 0) || 0;
+      const packUnitCode = normalizeUnitCode(
+        (line.purchase_pack_unit_code as string) || stockUnitCode
+      );
+      let purchaseUnitSizeLegacy: number | null = null;
+      if (packQty > 0 && packUnitCode) {
+        try {
+          const { quantity } = convertQuantity({
+            quantity: packQty,
+            fromUnitCode: packUnitCode,
+            toUnitCode: stockUnitCode,
+            unitMap,
+          });
+          purchaseUnitSizeLegacy = quantity;
+        } catch {
+          purchaseUnitSizeLegacy = null;
+        }
+      }
+      const purchasePrice = Number(line.purchase_price ?? 0) || null;
+      const purchasePriceIncludesTax = Boolean(line.purchase_price_includes_tax);
+      const purchaseTaxRateRaw = Number(line.purchase_tax_rate ?? 0);
+      const purchaseTaxRate =
+        Number.isFinite(purchaseTaxRateRaw) && purchaseTaxRateRaw >= 0
+          ? purchaseTaxRateRaw
+          : 0;
+      const purchasePriceNet = resolveNetPurchasePrice({
+        purchasePrice,
+        purchasePriceIncludesTax,
+        purchaseTaxRate,
+      });
+    }
   }
 
   async function upsertContextProfile(params: {
