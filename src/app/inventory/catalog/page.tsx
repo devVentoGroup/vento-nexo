@@ -898,7 +898,7 @@ export default async function InventoryCatalogPage({
       autoCostDetail,
       statusLabel: product.is_active === false ? "Inactivo" : "Activo",
       primarySupplierName,
-      fichaHref: `/inventory/catalog/${product.id}?from=${encodeURIComponent(catalogReturnUrl)}`,
+      fichaHref: `/inventory/catalog/${product.id}/ficha?from=${encodeURIComponent(catalogReturnUrl)}`,
       nextIsActive: product.is_active === false,
       toggleLabel: product.is_active === false ? "Habilitar" : "Deshabilitar",
       origoHref: rowOrigoHref,

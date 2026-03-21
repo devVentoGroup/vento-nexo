@@ -1265,6 +1265,12 @@ export default async function ProductCatalogDetailPage({
               ) : null}
             </div>
             <div className="flex items-center gap-2">
+              <Link
+                href={`/inventory/catalog/${productRow.id}/ficha?from=${encodeURIComponent(from || "/inventory/catalog")}`}
+                className="ui-btn ui-btn--ghost"
+              >
+                Ver ficha técnica
+              </Link>
               <Link href="/inventory/ai-ingestions?flow=catalog_create" className="ui-btn ui-btn--brand">
                 IA productos
               </Link>
