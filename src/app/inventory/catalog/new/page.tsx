@@ -7,7 +7,6 @@ import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { getCategoryDomainOptions } from "@/lib/constants";
-import { safeDecodeURIComponent } from "@/lib/url";
 
 import { ProductSuppliersEditor } from "@/features/inventory/catalog/product-suppliers-editor";
 import { ProductChecklistPanel } from "@/features/inventory/catalog/product-checklist-panel";
@@ -269,6 +268,42 @@ function buildOperationUnitHintFromUnits(params: {
       inputUnitCode,
       qtyInInputUnit: 1,
       qtyInStockUnit: quantity,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildRemissionFromDefaultUnit(params: {
+  defaultUnitCode: string;
+  stockUnitCode: string;
+  unitMap: ReturnType<typeof createUnitMap>;
+}):
+  | {
+      label: string;
+      inputUnitCode: string;
+      qtyInInputUnit: number;
+      qtyInStockUnit: number;
+      source: "manual";
+    }
+  | null {
+  const inputUnitCode = normalizeUnitCode(params.defaultUnitCode || "");
+  const stockUnitCode = normalizeUnitCode(params.stockUnitCode || "");
+  if (!inputUnitCode || !stockUnitCode) return null;
+  try {
+    const { quantity } = convertQuantity({
+      quantity: 1,
+      fromUnitCode: inputUnitCode,
+      toUnitCode: stockUnitCode,
+      unitMap: params.unitMap,
+    });
+    if (!Number.isFinite(quantity) || quantity <= 0) return null;
+    return {
+      label: "Unidad operativa",
+      inputUnitCode,
+      qtyInInputUnit: 1,
+      qtyInStockUnit: quantity,
+      source: "manual",
     };
   } catch {
     return null;
@@ -605,13 +640,15 @@ async function createProduct(formData: FormData) {
                 qtyInInputUnit: 1,
                 qtyInStockUnit,
               };
-              remissionUomFromSupplier = {
-                label: String(line.purchase_unit || "Empaque operativo"),
-                inputUnitCode: packUnitCode,
-                qtyInInputUnit: 1,
-                qtyInStockUnit,
-                source: "supplier_primary",
-              };
+              if (Boolean(line.use_in_operations)) {
+                remissionUomFromSupplier = {
+                  label: String(line.purchase_unit || "Empaque operativo"),
+                  inputUnitCode: packUnitCode,
+                  qtyInInputUnit: 1,
+                  qtyInStockUnit,
+                  source: "supplier_primary",
+                };
+              }
             }
           } catch {
             // keep without operational profile when conversion is invalid
@@ -651,16 +688,16 @@ async function createProduct(formData: FormData) {
         )}`
       );
     }
-    if (!purchaseUomFromSupplier || !remissionUomFromSupplier) {
+    if (!purchaseUomFromSupplier) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}&error=${encodeURIComponent(
-          "No se pudo convertir unidad de compra a unidad base. Revisa unidad base, unidad de compra y cantidad."
+          "No se pudo convertir unidad de compra a unidad base. Revisa unidad base, unidad de compra y cantidad del proveedor principal."
         )}`
       );
     }
   }
 
-  if (config.hasSuppliers && !remissionUomFromSupplier) {
+  if (!remissionUomFromSupplier) {
     const remissionInputUnitCode = normalizeUnitCode(
       asText(formData.get("remission_uom_code"))
     );
@@ -681,6 +718,22 @@ async function createProduct(formData: FormData) {
         source: "manual",
       };
     }
+  }
+
+  if (!remissionUomFromSupplier) {
+    remissionUomFromSupplier = buildRemissionFromDefaultUnit({
+      defaultUnitCode: resolvedDefaultUnit,
+      stockUnitCode,
+      unitMap,
+    });
+  }
+
+  if (!remissionUomFromSupplier) {
+    redirect(
+      `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
+        "No se pudo definir la presentacion de remision desde unidad operativa. Revisa unidad base y unidad operativa."
+      )}`
+    );
   }
 
   async function upsertContextProfile(params: {
@@ -870,7 +923,6 @@ export default async function NewProductPage({
   const sp = (await searchParams) ?? {};
   const typeKey = (sp.type ?? "insumo") as ProductTypeKey;
   const config = TYPE_CONFIG[typeKey] ?? TYPE_CONFIG.insumo;
-  const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
 
   const { supabase, user } = await requireAppAccess({
     appId: "nexo",
@@ -884,7 +936,12 @@ export default async function NewProductPage({
       .select("selected_site_id")
       .eq("employee_id", user.id)
       .maybeSingle(),
-    supabase.from("sites").select("id,name,site_type").eq("is_active", true).order("name"),
+    supabase
+      .from("sites")
+      .select("id,name,site_type")
+      .eq("is_active", true)
+      .neq("name", "App Review (Demo)")
+      .order("name"),
   ]);
   const role = String((emp as { role?: string } | null)?.role ?? "").toLowerCase();
   const canCreate = ["propietario", "gerente_general"].includes(role);
@@ -942,6 +999,20 @@ export default async function NewProductPage({
     .order("factor_to_base", { ascending: true })
     .limit(500);
   const unitsList = (unitsData ?? []) as UnitRow[];
+
+  const { data: galleryProductsData } = await supabase
+    .from("products")
+    .select("image_url,catalog_image_url")
+    .or("image_url.not.is.null,catalog_image_url.not.is.null")
+    .limit(300);
+  const existingImageUrls = Array.from(
+    new Set(
+      ((galleryProductsData ?? []) as Array<{ image_url: string | null; catalog_image_url: string | null }>)
+        .flatMap((row) => [row.image_url, row.catalog_image_url])
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean)
+    )
+  );
 
   const defaultStockUnitCode = unitsList[0]?.code ?? "un";
   const defaultUnitOptions = unitsList;
@@ -1005,8 +1076,6 @@ export default async function NewProductPage({
           </div>
         </div>
       </section>
-
-      {errorMsg && <div className="ui-alert ui-alert--error">Error: {errorMsg}</div>}
 
       <CatalogOptionalDetails
         title="Criterio de esta ficha"
@@ -1181,6 +1250,7 @@ export default async function NewProductPage({
         <ProductPhotoSection
           description="Imagen visual para identificar rapido el producto o insumo en listados y ficha."
           currentUrl={null}
+          existingImageUrls={existingImageUrls}
           productId={`draft-${typeKey}`}
           footerText="Si no subes fotos ahora, puedes cargarlas despues desde la ficha de edicion."
           collapsible

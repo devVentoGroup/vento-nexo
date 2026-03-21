@@ -10,6 +10,51 @@ type RequiredFieldsGuardFormProps = {
   persistKey?: string;
 };
 
+type ServerErrorHint = {
+  fieldName?: string;
+  message: string;
+};
+
+function normalizeErrorText(value: string): string {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function inferServerErrorHint(rawMessage: string): ServerErrorHint {
+  const normalized = normalizeErrorText(rawMessage);
+
+  if (normalized.includes("nombre")) {
+    return { fieldName: "name", message: rawMessage };
+  }
+  if (normalized.includes("categoria")) {
+    return { fieldName: "category_id", message: rawMessage };
+  }
+  if (normalized.includes("sku")) {
+    return { fieldName: "sku", message: rawMessage };
+  }
+  if (normalized.includes("unidad base")) {
+    return { fieldName: "stock_unit_code", message: rawMessage };
+  }
+  if (
+    normalized.includes("proveedor") ||
+    normalized.includes("unidad de compra") ||
+    normalized.includes("bloque de proveedores")
+  ) {
+    return { fieldName: "supplier_lines__client_validation", message: rawMessage };
+  }
+  if (
+    normalized.includes("disponibilidad por sede") ||
+    normalized.includes("seleccionar una sede")
+  ) {
+    return { fieldName: "site_settings_lines", message: rawMessage };
+  }
+
+  return { message: rawMessage };
+}
+
 export function RequiredFieldsGuardForm({
   action,
   className,
@@ -120,9 +165,42 @@ export function RequiredFieldsGuardForm({
     node.classList.add("border-[var(--ui-danger)]", "ring-1", "ring-[var(--ui-danger)]/30");
   };
 
+  const findTargetNodeByName = (form: HTMLFormElement, fieldName: string): HTMLElement | null => {
+    const escaped = fieldName.replace(/"/g, '\\"');
+    const field = form.querySelector<HTMLElement>(`[name="${escaped}"]`);
+    if (!field) return null;
+
+    const customTargetId =
+      field.getAttribute("data-required-target") ||
+      field.getAttribute("aria-controls");
+    if (customTargetId) {
+      const targetNode = document.getElementById(customTargetId);
+      if (targetNode) return targetNode;
+    }
+
+    if (field instanceof HTMLInputElement && field.type === "hidden") {
+      const trigger = form.querySelector<HTMLElement>(
+        `[data-required-trigger="true"], [id="${escaped}-add-line"]`
+      );
+      if (trigger) return trigger;
+    }
+    return field;
+  };
+
   useEffect(() => {
     if (!errorToken) return;
     restoreDraft();
+    const form = formRef.current;
+    if (!form) return;
+    clearInlineErrors(form);
+    const hint = inferServerErrorHint(errorToken);
+    const targetNode =
+      (hint.fieldName ? findTargetNodeByName(form, hint.fieldName) : null) ??
+      form.querySelector<HTMLElement>("input[name],select[name],textarea[name]");
+    if (!targetNode) return;
+    placeInlineError(targetNode, hint.message || "No se pudo guardar. Revisa los datos.");
+    targetNode.scrollIntoView({ behavior: "smooth", block: "center" });
+    targetNode.focus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [errorToken, storageKey]);
 

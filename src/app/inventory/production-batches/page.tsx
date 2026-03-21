@@ -13,9 +13,9 @@ export default async function ProductionBatchesInfoPage() {
   return (
     <div className="w-full max-w-4xl space-y-6">
       <div>
-        <h1 className="ui-h1">Produccion fuera de v1</h1>
+        <h1 className="ui-h1">Produccion integrada</h1>
         <p className="mt-2 ui-body-muted">
-          NEXO v1 sale a operar con inventario base, entradas manuales y remisiones. Produccion integrada y consumo por receta quedan fuera del arranque.
+          Esta vista consolida el estado de produccion y su impacto en inventario. Puedes operar inventario y abastecimiento sin depender de flujos legacy.
         </p>
       </div>
 
@@ -25,7 +25,7 @@ export default async function ProductionBatchesInfoPage() {
         </p>
         <div className="flex flex-wrap gap-2">
           <Link href="/inventory/settings/checklist" className="ui-btn ui-btn--brand">
-            Ver checklist v1
+            Ver checklist operativo
           </Link>
           <Link href="/inventory/catalog" className="ui-btn ui-btn--ghost">
             Ir a catalogo

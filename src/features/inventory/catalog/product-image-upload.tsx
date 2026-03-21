@@ -6,14 +6,36 @@ type Props = {
   name: string;
   label: string;
   currentUrl: string | null;
+  existingImageUrls?: string[];
   productId: string;
   kind: "product" | "catalog";
 };
 
-export function ProductImageUpload({ name, label, currentUrl, productId, kind }: Props) {
+export function ProductImageUpload({
+  name,
+  label,
+  currentUrl,
+  existingImageUrls = [],
+  productId,
+  kind,
+}: Props) {
   const [url, setUrl] = useState<string>(currentUrl ?? "");
   const [uploading, setUploading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const galleryUrls = Array.from(
+    new Set([...(currentUrl ? [currentUrl] : []), ...existingImageUrls].map((value) => value.trim()))
+  ).filter(Boolean);
+
+  const describeImage = (imageUrl: string, index: number) => {
+    try {
+      const parsed = new URL(imageUrl);
+      const segment = parsed.pathname.split("/").filter(Boolean).pop() || `imagen-${index + 1}`;
+      return decodeURIComponent(segment);
+    } catch {
+      return `Imagen ${index + 1}`;
+    }
+  };
 
   const handleFile = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -68,6 +90,23 @@ export function ProductImageUpload({ name, label, currentUrl, productId, kind }:
         ) : null}
 
         <div className="flex flex-col gap-2">
+          {galleryUrls.length ? (
+            <label className="flex flex-col gap-1 text-sm">
+              <span className="ui-label">Usar imagen ya cargada</span>
+              <select
+                className="ui-input"
+                value={url}
+                onChange={(e) => setUrl(e.target.value)}
+              >
+                <option value="">Seleccionar imagen existente</option>
+                {galleryUrls.map((imageUrl, idx) => (
+                  <option key={`${idx}-${imageUrl}`} value={imageUrl}>
+                    {describeImage(imageUrl, idx)}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <label className="ui-btn ui-btn--ghost flex cursor-pointer items-center gap-2 text-sm">
             <input
               type="file"

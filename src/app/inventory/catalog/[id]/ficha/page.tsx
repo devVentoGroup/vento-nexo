@@ -79,6 +79,47 @@ type UomProfileRow = {
   qty_in_input_unit: number | null;
   qty_in_stock_unit: number | null;
   usage_context: string | null;
+  source?: "manual" | "supplier_primary" | null;
+};
+
+type PurchaseOrderItemTraceRow = {
+  qty: number | null;
+  purchase_orders?:
+    | {
+        number: string | null;
+        status: string | null;
+        expected_date: string | null;
+        created_at: string | null;
+        suppliers?: { name: string | null } | { name: string | null }[] | null;
+      }
+    | Array<{
+        number: string | null;
+        status: string | null;
+        expected_date: string | null;
+        created_at: string | null;
+        suppliers?: { name: string | null } | { name: string | null }[] | null;
+      }>
+    | null;
+};
+
+type InventoryReceiptItemTraceRow = {
+  qty_base: number | null;
+  inventory_entries?:
+    | {
+        entry_no: string | null;
+        status: string | null;
+        entry_date: string | null;
+        created_at: string | null;
+        sites?: { name: string | null } | { name: string | null }[] | null;
+      }
+    | Array<{
+        entry_no: string | null;
+        status: string | null;
+        entry_date: string | null;
+        created_at: string | null;
+        sites?: { name: string | null } | { name: string | null }[] | null;
+      }>
+    | null;
 };
 
 function sanitizeCatalogReturnPath(value: string | undefined): string {
@@ -102,6 +143,15 @@ function formatMoney(value: number | null | undefined): string {
     currency: "COP",
     maximumFractionDigits: 0,
   }).format(value);
+}
+
+function formatDate(value: string | null | undefined): string {
+  if (!value) return "-";
+  const parsed = new Date(value);
+  if (!Number.isFinite(parsed.getTime())) return "-";
+  return new Intl.DateTimeFormat("es-CO", {
+    dateStyle: "medium",
+  }).format(parsed);
 }
 
 function normalizeTypeLabel(
@@ -169,6 +219,8 @@ export default async function ProductTechnicalSheetPage({
     stockRes,
     suppliersRes,
     uomProfilesRes,
+    purchaseOrderItemsRes,
+    receiptItemsRes,
     allCategories,
     employeeRes,
   ] = await Promise.all([
@@ -188,6 +240,7 @@ export default async function ProductTechnicalSheetPage({
       .from("sites")
       .select("id,name,is_active")
       .eq("is_active", true)
+      .neq("name", "App Review (Demo)")
       .order("name", { ascending: true }),
     supabase
       .from("product_site_settings")
@@ -206,10 +259,24 @@ export default async function ProductTechnicalSheetPage({
       .order("is_primary", { ascending: false }),
     supabase
       .from("product_uom_profiles")
-      .select("label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,usage_context")
+      .select("label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,usage_context,source")
       .eq("product_id", id)
       .eq("is_active", true)
       .eq("is_default", true),
+    supabase
+      .from("purchase_order_items")
+      .select(
+        "qty,purchase_orders(number,status,expected_date,created_at,suppliers(name))"
+      )
+      .eq("product_id", id)
+      .order("created_at", { foreignTable: "purchase_orders", ascending: false })
+      .limit(8),
+    supabase
+      .from("inventory_entry_items")
+      .select("qty_base,inventory_entries(entry_no,status,entry_date,created_at,sites(name))")
+      .eq("product_id", id)
+      .order("created_at", { foreignTable: "inventory_entries", ascending: false })
+      .limit(8),
     loadCategoryRows(supabase),
     supabase.from("employees").select("role").eq("id", user.id).maybeSingle(),
   ]);
@@ -223,6 +290,8 @@ export default async function ProductTechnicalSheetPage({
   const stockRows = (stockRes.data ?? []) as StockRow[];
   const supplierRows = (suppliersRes.data ?? []) as SupplierRow[];
   const uomProfiles = (uomProfilesRes.data ?? []) as UomProfileRow[];
+  const purchaseOrderRows = (purchaseOrderItemsRes.data ?? []) as PurchaseOrderItemTraceRow[];
+  const receiptRows = (receiptItemsRes.data ?? []) as InventoryReceiptItemTraceRow[];
 
   const role = String(employeeRes.data?.role ?? "").toLowerCase();
   const canEdit = ["propietario", "gerente_general"].includes(role);
@@ -248,6 +317,11 @@ export default async function ProductTechnicalSheetPage({
   );
   const purchaseProfile = byContext.get("purchase") ?? byContext.get("general") ?? null;
   const remissionProfile = byContext.get("remission") ?? byContext.get("general") ?? null;
+  const remissionSourceLabel = remissionProfile
+    ? remissionProfile.source === "supplier_primary"
+      ? "Proveedor (empaque en operación)"
+      : "Unidad operativa"
+    : "Unidad operativa";
 
   const stockBySite = new Map<string, number>();
   stockRows.forEach((row) => {
@@ -283,6 +357,47 @@ export default async function ProductTechnicalSheetPage({
   const isPreparation = String(product.product_type ?? "").trim().toLowerCase() === "preparacion";
   const isSale = String(product.product_type ?? "").trim().toLowerCase() === "venta";
   const isResale = String(profile?.inventory_kind ?? "").trim().toLowerCase() === "resale";
+
+  const purchaseTraceRows = purchaseOrderRows
+    .map((row, idx) => {
+      const order = Array.isArray(row.purchase_orders)
+        ? row.purchase_orders[0] ?? null
+        : row.purchase_orders ?? null;
+      const supplier = Array.isArray(order?.suppliers)
+        ? order?.suppliers[0]?.name ?? null
+        : order?.suppliers?.name ?? null;
+      return {
+        key: `po-${idx}-${order?.number ?? "sin-numero"}`,
+        orderNo: order?.number ?? "-",
+        supplierName: supplier ?? "Sin proveedor",
+        status: order?.status ?? "-",
+        date: order?.expected_date ?? order?.created_at ?? null,
+        qty: Number(row.qty ?? 0) || 0,
+      };
+    })
+    .filter((row) => row.orderNo !== "-");
+
+  const receiptTraceRows = receiptRows
+    .map((row, idx) => {
+      const receipt = Array.isArray(row.inventory_entries)
+        ? row.inventory_entries[0] ?? null
+        : row.inventory_entries ?? null;
+      const siteName = Array.isArray(receipt?.sites)
+        ? receipt?.sites[0]?.name ?? null
+        : receipt?.sites?.name ?? null;
+      return {
+        key: `re-${idx}-${receipt?.entry_no ?? "sin-numero"}`,
+        receiptNo: receipt?.entry_no ?? "-",
+        siteName: siteName ?? "Sin sede",
+        status: receipt?.status ?? "-",
+        date: receipt?.entry_date ?? receipt?.created_at ?? null,
+        qtyBase: Number(row.qty_base ?? 0) || 0,
+      };
+    })
+    .filter((row) => row.receiptNo !== "-");
+
+  const orderedTotal = purchaseTraceRows.reduce((acc, row) => acc + row.qty, 0);
+  const receivedTotal = receiptTraceRows.reduce((acc, row) => acc + row.qtyBase, 0);
 
   return (
     <div className="ui-scene w-full space-y-6">
@@ -439,7 +554,15 @@ export default async function ProductTechnicalSheetPage({
                 {normalizeUnitCode(remissionProfile.input_unit_code || "")} ={" "}
                 {formatQty(remissionProfile.qty_in_stock_unit)} {stockUnitCode})
               </p>
-            ) : null}
+            ) : (
+              <p>
+                <strong className="text-[var(--ui-text)]">Presentación remisión:</strong>{" "}
+                Unidad operativa ({defaultUnitCode})
+              </p>
+            )}
+            <p>
+              <strong className="text-[var(--ui-text)]">Fuente remisión:</strong> {remissionSourceLabel}
+            </p>
           </div>
         </article>
 
@@ -477,6 +600,94 @@ export default async function ProductTechnicalSheetPage({
               </p>
             ) : null}
           </div>
+        </article>
+      </section>
+
+      <section className="grid gap-4 lg:grid-cols-2">
+        <article className="ui-panel">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-sm font-semibold text-[var(--ui-text)]">
+              Trazabilidad ORIGO · Órdenes de compra
+            </div>
+            <div className="ui-caption">
+              {purchaseTraceRows.length} orden(es) · {formatQty(orderedTotal)} {stockUnitCode}
+            </div>
+          </div>
+          {purchaseTraceRows.length === 0 ? (
+            <p className="mt-3 text-sm text-[var(--ui-muted)]">
+              Sin órdenes de compra recientes para este producto.
+            </p>
+          ) : (
+            <div className="mt-3 overflow-auto rounded-xl border border-[var(--ui-border)]">
+              <table className="ui-table min-w-[620px] text-sm">
+                <thead>
+                  <tr>
+                    <th className="py-2 pr-4">Orden</th>
+                    <th className="py-2 pr-4">Proveedor</th>
+                    <th className="py-2 pr-4">Fecha</th>
+                    <th className="py-2 pr-4">Estado</th>
+                    <th className="py-2 pr-4">Cantidad</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {purchaseTraceRows.map((row) => (
+                    <tr key={row.key} className="border-t border-zinc-200/60">
+                      <td className="py-2.5 pr-4">{row.orderNo}</td>
+                      <td className="py-2.5 pr-4">{row.supplierName}</td>
+                      <td className="py-2.5 pr-4">{formatDate(row.date)}</td>
+                      <td className="py-2.5 pr-4">{row.status}</td>
+                      <td className="py-2.5 pr-4">
+                        {formatQty(row.qty)} {stockUnitCode}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </article>
+
+        <article className="ui-panel">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-sm font-semibold text-[var(--ui-text)]">
+              Trazabilidad ORIGO · Recepciones
+            </div>
+            <div className="ui-caption">
+              {receiptTraceRows.length} recepción(es) · {formatQty(receivedTotal)} {stockUnitCode}
+            </div>
+          </div>
+          {receiptTraceRows.length === 0 ? (
+            <p className="mt-3 text-sm text-[var(--ui-muted)]">
+              Sin remisiones/recepciones recientes para este producto.
+            </p>
+          ) : (
+            <div className="mt-3 overflow-auto rounded-xl border border-[var(--ui-border)]">
+              <table className="ui-table min-w-[620px] text-sm">
+                <thead>
+                  <tr>
+                    <th className="py-2 pr-4">Recepción</th>
+                    <th className="py-2 pr-4">Sede</th>
+                    <th className="py-2 pr-4">Fecha</th>
+                    <th className="py-2 pr-4">Estado</th>
+                    <th className="py-2 pr-4">Cantidad base</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {receiptTraceRows.map((row) => (
+                    <tr key={row.key} className="border-t border-zinc-200/60">
+                      <td className="py-2.5 pr-4">{row.receiptNo}</td>
+                      <td className="py-2.5 pr-4">{row.siteName}</td>
+                      <td className="py-2.5 pr-4">{formatDate(row.date)}</td>
+                      <td className="py-2.5 pr-4">{row.status}</td>
+                      <td className="py-2.5 pr-4">
+                        {formatQty(row.qtyBase)} {stockUnitCode}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </article>
       </section>
 
@@ -529,4 +740,3 @@ export default async function ProductTechnicalSheetPage({
     </div>
   );
 }
-

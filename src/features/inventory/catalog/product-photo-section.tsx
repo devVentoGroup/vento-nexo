@@ -8,6 +8,7 @@ type ProductPhotoSectionProps = {
   description: string;
   productId: string;
   currentUrl: string | null;
+  existingImageUrls?: string[];
   footerText?: string;
   collapsible?: boolean;
 };
@@ -16,6 +17,7 @@ export function ProductPhotoSection({
   description,
   productId,
   currentUrl,
+  existingImageUrls = [],
   footerText,
   collapsible = false,
 }: ProductPhotoSectionProps) {
@@ -26,6 +28,7 @@ export function ProductPhotoSection({
           name="image_url"
           label="Foto del producto"
           currentUrl={currentUrl}
+          existingImageUrls={existingImageUrls}
           productId={productId}
           kind="product"
         />

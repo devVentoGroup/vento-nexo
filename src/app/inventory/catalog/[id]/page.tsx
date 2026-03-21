@@ -97,6 +97,42 @@ function buildOperationUnitHintFromUnits(params: {
   }
 }
 
+function buildRemissionFromDefaultUnit(params: {
+  defaultUnitCode: string;
+  stockUnitCode: string;
+  unitMap: ReturnType<typeof createUnitMap>;
+}):
+  | {
+      label: string;
+      inputUnitCode: string;
+      qtyInInputUnit: number;
+      qtyInStockUnit: number;
+      source: "manual";
+    }
+  | null {
+  const inputUnitCode = normalizeUnitCode(params.defaultUnitCode || "");
+  const stockUnitCode = normalizeUnitCode(params.stockUnitCode || "");
+  if (!inputUnitCode || !stockUnitCode) return null;
+  try {
+    const { quantity } = convertQuantity({
+      quantity: 1,
+      fromUnitCode: inputUnitCode,
+      toUnitCode: stockUnitCode,
+      unitMap: params.unitMap,
+    });
+    if (!Number.isFinite(quantity) || quantity <= 0) return null;
+    return {
+      label: "Unidad operativa",
+      inputUnitCode,
+      qtyInInputUnit: 1,
+      qtyInStockUnit: quantity,
+      source: "manual",
+    };
+  } catch {
+    return null;
+  }
+}
+
 type ProductRow = {
   id: string;
   name: string | null;
@@ -723,12 +759,14 @@ async function updateProduct(formData: FormData) {
               qtyInInputUnit: 1,
               qtyInStockUnit,
             };
-            remissionUomFromSupplier = {
-              label: String(line.purchase_unit || "Empaque operativo"),
-              inputUnitCode: packUnitCode,
-              qtyInInputUnit: 1,
-              qtyInStockUnit,
-            };
+            if (Boolean(line.use_in_operations)) {
+              remissionUomFromSupplier = {
+                label: String(line.purchase_unit || "Empaque operativo"),
+                inputUnitCode: packUnitCode,
+                qtyInInputUnit: 1,
+                qtyInStockUnit,
+              };
+            }
           }
         } catch {
           // Keep previous profile if conversion is invalid.
@@ -743,9 +781,9 @@ async function updateProduct(formData: FormData) {
         "Completa proveedor principal con empaque, cantidad, unidad y precio de compra."
       );
     }
-    if (!purchaseUomFromSupplier || !remissionUomFromSupplier) {
+    if (!purchaseUomFromSupplier) {
       redirectWithError(
-        "No se pudo convertir unidad de compra a unidad base. Revisa unidad base, unidad de compra y cantidad."
+        "No se pudo convertir unidad de compra a unidad base. Revisa unidad base, unidad de compra y cantidad del proveedor principal."
       );
     }
 
@@ -801,6 +839,20 @@ async function updateProduct(formData: FormData) {
       });
       if (supplierErr) redirectWithError(supplierErr.message);
     }
+  }
+
+  if (!remissionUomFromSupplier) {
+    remissionUomFromSupplier = buildRemissionFromDefaultUnit({
+      defaultUnitCode: resolvedDefaultUnit,
+      stockUnitCode,
+      unitMap,
+    });
+  }
+
+  if (!remissionUomFromSupplier) {
+    redirectWithError(
+      "No se pudo definir la presentacion de remision desde unidad operativa. Revisa unidad base y unidad operativa."
+    );
   }
 
   async function upsertContextProfile(params: {
@@ -1003,7 +1055,6 @@ export default async function ProductCatalogDetailPage({
   const { id } = await params;
   const sp = (await searchParams) ?? {};
   const okMsg = sp.ok ? "Cambios guardados." : "";
-  const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
   const from = decodeCatalogReturnParam(sp.from);
 
   const { supabase, user } = await requireAppAccess({
@@ -1074,6 +1125,7 @@ export default async function ProductCatalogDetailPage({
     .from("sites")
     .select("id,name,site_type")
     .eq("is_active", true)
+    .neq("name", "App Review (Demo)")
     .order("name", { ascending: true });
   const sitesList = (sitesData ?? []) as SiteOptionRow[];
 
@@ -1115,6 +1167,20 @@ export default async function ProductCatalogDetailPage({
 
   const { data: suppliersData } = await supabase.from("suppliers").select("id,name").eq("is_active", true).order("name");
   const suppliersList = (suppliersData ?? []) as { id: string; name: string | null }[];
+
+  const { data: galleryProductsData } = await supabase
+    .from("products")
+    .select("image_url,catalog_image_url")
+    .or("image_url.not.is.null,catalog_image_url.not.is.null")
+    .limit(300);
+  const existingImageUrls = Array.from(
+    new Set(
+      ((galleryProductsData ?? []) as Array<{ image_url: string | null; catalog_image_url: string | null }>)
+        .flatMap((row) => [row.image_url, row.catalog_image_url])
+        .map((value) => String(value ?? "").trim())
+        .filter(Boolean)
+    )
+  );
 
   // Recipe data (for preparacion and venta)
   const productType = (product as ProductRow).product_type;
@@ -1302,7 +1368,6 @@ export default async function ProductCatalogDetailPage({
         </div>
       </section>
 
-      {errorMsg ? <div className="ui-alert ui-alert--error">Error: {errorMsg}</div> : null}
       {okMsg ? <div className="ui-alert ui-alert--success">{okMsg}</div> : null}
       <CatalogOptionalDetails
         title="Criterio de esta ficha"
@@ -1484,6 +1549,7 @@ export default async function ProductCatalogDetailPage({
           <ProductPhotoSection
             description="Imagen principal para identificar rapidamente el item en catalogo y listados."
             currentUrl={productRow.image_url}
+            existingImageUrls={existingImageUrls}
             productId={productRow.id}
             collapsible
           />

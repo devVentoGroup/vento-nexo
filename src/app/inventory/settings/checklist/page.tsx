@@ -30,7 +30,8 @@ export default async function ConfigChecklistPage() {
   const { data: activeSites } = await supabase
     .from("sites")
     .select("id,name,site_type")
-    .eq("is_active", true);
+    .eq("is_active", true)
+    .neq("name", "App Review (Demo)");
 
   const siteRows = (activeSites ?? []) as Array<{
     id: string;
@@ -47,7 +48,7 @@ export default async function ConfigChecklistPage() {
     label: "Centro activo",
     detail: centerSite
       ? `Centro listo: ${centerSite.name ?? centerSite.id}.`
-      : "Necesitas una sede activa tipo production_center para operar v1.",
+      : "Necesitas una sede activa tipo production_center para operar inventario.",
     href: "/inventory/settings/sites",
   });
 
@@ -56,7 +57,7 @@ export default async function ConfigChecklistPage() {
     label: "Saudo activo",
     detail: saudoSite
       ? `Satelite listo: ${saudoSite.name ?? saudoSite.id}.`
-      : "El rollout v1 arranca con Saudo como primer satelite.",
+      : "Saudo es el primer satelite operativo esperado.",
     href: "/inventory/settings/sites",
   });
 
@@ -92,7 +93,7 @@ export default async function ConfigChecklistPage() {
           .eq("is_active", true);
   checks.push({
     ok: (productSiteCount ?? 0) > 0,
-    label: "Catalogo habilitado para v1",
+    label: "Catalogo habilitado para operacion",
     detail: `${productSiteCount ?? 0} configuracion(es) activas entre Centro y Saudo.`,
     href: "/inventory/catalog?tab=insumos",
   });
@@ -124,7 +125,7 @@ export default async function ConfigChecklistPage() {
     detail:
       (stockCount ?? 0) > 0
         ? "Centro ya tiene stock cargado para arrancar remisiones."
-        : "Carga stock inicial del Centro con Entradas manuales v1.",
+        : "Carga stock inicial del Centro con entradas manuales.",
     href: "/inventory/entries",
   });
 
@@ -135,7 +136,7 @@ export default async function ConfigChecklistPage() {
     <div className="w-full">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="ui-h1">Configuracion inicial v1</h1>
+          <h1 className="ui-h1">Configuracion inicial operativa</h1>
           <p className="mt-2 ui-body-muted">
             Checklist para dejar Centro + Saudo listos para operar inventario y remisiones.
           </p>
@@ -148,7 +149,7 @@ export default async function ConfigChecklistPage() {
       <div className="mt-6 flex items-center gap-3 ui-panel-soft px-4 py-3">
         <span className="text-2xl font-bold text-[var(--ui-text)]">{completed}/{total}</span>
         <span className="text-sm text-[var(--ui-muted)]">
-          {completed === total ? "Todo configurado para v1." : "Completa los pasos pendientes para salir a operar."}
+          {completed === total ? "Todo configurado para operar." : "Completa los pasos pendientes para salir a operar."}
         </span>
       </div>
 
@@ -176,7 +177,7 @@ export default async function ConfigChecklistPage() {
       </div>
 
       <div className="mt-8 ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
-        <strong className="text-[var(--ui-text)]">Orden v1:</strong> Centro -&gt; Saudo -&gt; Ruta Saudo/Centro -&gt; Catalogo por sede -&gt; LOCs del Centro -&gt; Entrada inicial. Ver{" "}
+        <strong className="text-[var(--ui-text)]">Orden sugerido:</strong> Centro -&gt; Saudo -&gt; Ruta Saudo/Centro -&gt; Catalogo por sede -&gt; LOCs del Centro -&gt; Entrada inicial. Ver{" "}
         <Link href="/inventory/remissions" className="font-medium underline">
           Remisiones
         </Link>{" "}
