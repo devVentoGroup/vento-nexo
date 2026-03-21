@@ -489,7 +489,7 @@ async function updateProduct(formData: FormData) {
       categoryKind === "venta" &&
       (normalizeCategoryDomain(category.domain) || String(category.site_id ?? "").trim())
     ) {
-      redirectWithError("En v1 los productos de venta solo pueden usar categorias maestras globales.");
+      redirectWithError("Los productos de venta solo pueden usar categorias maestras globales.");
     }
     if (categoryKind !== "venta" && normalizeCategoryDomain(category.domain)) {
       redirectWithError("Las categorías con dominio solo se permiten para productos de venta.");
@@ -592,6 +592,8 @@ async function updateProduct(formData: FormData) {
       }
     | null = null;
   const supplierLinesRaw = formData.get("supplier_lines");
+  let hasAnySupplierLine = false;
+  let hasCompletePrimarySupplier = false;
   if (typeof supplierLinesRaw === "string" && supplierLinesRaw) {
     let lines: Array<{
       id?: string;
@@ -620,6 +622,7 @@ async function updateProduct(formData: FormData) {
     await supabase.from("product_suppliers").delete().eq("product_id", productId);
     for (const line of lines) {
       if (line._delete || !line.supplier_id) continue;
+      hasAnySupplierLine = true;
       const packQty = Number(line.purchase_pack_qty ?? line.purchase_unit_size ?? 0) || 0;
       const packUnitCode = normalizeUnitCode(
         (line.purchase_pack_unit_code as string) || stockUnitCode
@@ -650,6 +653,17 @@ async function updateProduct(formData: FormData) {
         purchasePriceIncludesTax,
         purchaseTaxRate,
       });
+      const purchaseUnitLabel = String(line.purchase_unit ?? "").trim();
+      if (
+        Boolean(line.is_primary) &&
+        purchaseUnitLabel &&
+        packQty > 0 &&
+        packUnitCode &&
+        purchasePriceNet != null &&
+        purchasePriceNet > 0
+      ) {
+        hasCompletePrimarySupplier = true;
+      }
       if (
         costingMode === "auto_primary_supplier" &&
         Boolean(line.is_primary) &&
@@ -685,14 +699,12 @@ async function updateProduct(formData: FormData) {
               qtyInInputUnit: 1,
               qtyInStockUnit,
             };
-            if (Boolean(line.use_in_operations)) {
-              remissionUomFromSupplier = {
-                label: String(line.purchase_unit || "Empaque operativo"),
-                inputUnitCode: packUnitCode,
-                qtyInInputUnit: 1,
-                qtyInStockUnit,
-              };
-            }
+            remissionUomFromSupplier = {
+              label: String(line.purchase_unit || "Empaque operativo"),
+              inputUnitCode: packUnitCode,
+              qtyInInputUnit: 1,
+              qtyInStockUnit,
+            };
           }
         } catch {
           // Keep previous profile if conversion is invalid.
@@ -717,6 +729,19 @@ async function updateProduct(formData: FormData) {
       });
       if (supplierErr) redirectWithError(supplierErr.message);
     }
+  }
+  if (supportsSupplierAutoCost && !hasAnySupplierLine) {
+    redirectWithError("Debes agregar al menos un proveedor para este producto.");
+  }
+  if (supportsSupplierAutoCost && !hasCompletePrimarySupplier) {
+    redirectWithError(
+      "Completa proveedor principal con empaque, cantidad, unidad y precio de compra."
+    );
+  }
+  if (supportsSupplierAutoCost && (!purchaseUomFromSupplier || !remissionUomFromSupplier)) {
+    redirectWithError(
+      "No se pudo convertir unidad de compra a unidad base. Revisa unidad base, unidad de compra y cantidad."
+    );
   }
 
   async function upsertContextProfile(params: {
@@ -1211,15 +1236,15 @@ export default async function ProductCatalogDetailPage({
       {okMsg ? <div className="ui-alert ui-alert--success">{okMsg}</div> : null}
       <CatalogOptionalDetails
         title="Criterio de esta ficha"
-        summary="Abre este bloque solo si necesitas revisar el marco v1 o cambiar el arbol operativo visible."
+        summary="Abre este bloque solo si necesitas revisar el marco operativo o cambiar el arbol visible."
       >
-        <CatalogHintPanel title="Ficha maestra v1">
+        <CatalogHintPanel title="Ficha maestra">
           <p>
             Esta ficha concentra la identidad operativa del producto: categoria operativa, unidades, costo base,
             proveedor y setup por sede.
           </p>
           <p>
-            La logica comercial por negocio no se define aqui. La compatibilidad de v1 sigue guardandose por debajo,
+            La logica comercial por negocio no se define aqui. La compatibilidad existente sigue guardandose por debajo,
             pero ya no es el centro del flujo.
           </p>
         </CatalogHintPanel>
@@ -1282,10 +1307,10 @@ export default async function ProductCatalogDetailPage({
 
           {/* Receta y produccion ahora viven en FOGO */}
           {hasRecipe && (
-            <CatalogOptionalDetails
-              title="Receta y produccion"
-              summary="Esta configuracion queda fuera del flujo operativo v1."
-            >
+          <CatalogOptionalDetails
+            title="Receta y produccion"
+            summary="Esta configuracion queda fuera del flujo operativo actual."
+          >
               <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)] space-y-2">
                 <p>
                   NEXO mantiene inventario, sedes y logistica. Si luego activas produccion externa, la configuracion de receta se completa fuera de NEXO.

@@ -137,7 +137,8 @@ function supportsAudience(
   requestedAudience: ProductAudience
 ): boolean {
   const normalized = normalizeAudience(configuredAudience);
-  if (!normalized) return false;
+  // Compatibilidad: filas antiguas sin audience deben seguir operando como BOTH.
+  if (!normalized) return requestedAudience !== "INTERNAL";
   if (normalized === "INTERNAL") {
     return requestedAudience === "INTERNAL";
   }
@@ -1129,7 +1130,7 @@ export default async function RemissionsPage({
             <div className="ui-remission-kpi" data-tone="success">
               <div className="ui-remission-kpi-label">Recibidas</div>
               <div className="ui-remission-kpi-value">{receivedCount}</div>
-              <div className="ui-remission-kpi-note">Cierre operativo v1</div>
+              <div className="ui-remission-kpi-note">Cierre operativo</div>
             </div>
           </div>
         </div>

@@ -156,7 +156,7 @@ export function ProductStorageFields({
             <>
               <input type="hidden" name="costing_mode" value="manual" />
               <div className="ui-input flex items-center">
-                {costingModeField.staticLabel ?? "Manual / externo (fuera de v1)"}
+                {costingModeField.staticLabel ?? "Manual / externo"}
               </div>
             </>
           )}

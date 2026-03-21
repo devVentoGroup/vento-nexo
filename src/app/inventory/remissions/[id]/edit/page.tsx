@@ -122,7 +122,8 @@ function supportsAudience(
   requestedAudience: ProductAudience
 ): boolean {
   const normalized = normalizeAudience(configuredAudience);
-  if (!normalized) return false;
+  // Compatibilidad: filas antiguas sin audience deben seguir operando como BOTH.
+  if (!normalized) return requestedAudience !== "INTERNAL";
   if (normalized === "INTERNAL") {
     return requestedAudience === "INTERNAL";
   }

@@ -184,7 +184,7 @@ export function ProductSuppliersEditor({
       <input type="hidden" name={name} value={JSON.stringify(lines)} />
 
       <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
-        <p className="font-medium text-[var(--ui-text)]">Calculadora compra -&gt; inventario</p>
+        <p className="font-medium text-[var(--ui-text)]">Fase 1 - Compra principal (proveedor)</p>
         <p className="mt-1">1) Define empaque, cantidad y unidad de compra.</p>
         <p>2) El sistema convierte a la unidad base del producto.</p>
         <p>3) Calcula el costo por unidad base automaticamente.</p>
@@ -349,8 +349,8 @@ export function ProductSuppliersEditor({
                 </div>
 
                 <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
-                  <label className="flex flex-col gap-1">
-                    <span className="ui-label">Proveedor</span>
+                  <label className="flex flex-col gap-1 rounded-xl border border-amber-200 bg-amber-50/60 p-2">
+                    <span className="ui-label">Proveedor *</span>
                     <select
                       value={line.supplier_id}
                       onChange={(event) =>
@@ -367,8 +367,8 @@ export function ProductSuppliersEditor({
                     </select>
                   </label>
 
-                  <label className="flex flex-col gap-1">
-                    <span className="ui-label">Empaque</span>
+                  <label className="flex flex-col gap-1 rounded-xl border border-amber-200 bg-amber-50/60 p-2">
+                    <span className="ui-label">Empaque *</span>
                     <input
                       type="text"
                       value={line.purchase_unit ?? ""}
@@ -380,8 +380,8 @@ export function ProductSuppliersEditor({
                     />
                   </label>
 
-                  <label className="flex flex-col gap-1">
-                    <span className="ui-label">Cantidad por empaque</span>
+                  <label className="flex flex-col gap-1 rounded-xl border border-amber-200 bg-amber-50/60 p-2">
+                    <span className="ui-label">Cantidad por empaque *</span>
                     <input
                       type="number"
                       step="0.000001"
@@ -401,8 +401,8 @@ export function ProductSuppliersEditor({
                     />
                   </label>
 
-                  <label className="flex flex-col gap-1">
-                    <span className="ui-label">Unidad de compra</span>
+                  <label className="flex flex-col gap-1 rounded-xl border border-amber-200 bg-amber-50/60 p-2">
+                    <span className="ui-label">Unidad de compra *</span>
                     <select
                       value={line.purchase_pack_unit_code ?? ""}
                       onChange={(event) =>
@@ -424,8 +424,8 @@ export function ProductSuppliersEditor({
                     </span>
                   </label>
 
-                  <label className="flex flex-col gap-1">
-                    <span className="ui-label">Precio de compra</span>
+                  <label className="flex flex-col gap-1 rounded-xl border border-amber-200 bg-amber-50/60 p-2">
+                    <span className="ui-label">Precio de compra *</span>
                     <input
                       type="number"
                       step="0.01"

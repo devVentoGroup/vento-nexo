@@ -203,7 +203,7 @@ const TYPE_CONFIG = {
   },
   venta: {
     title: "Nuevo producto de venta",
-    subtitle: "Producto final de venta. La configuracion avanzada queda fuera del arranque v1.",
+    subtitle: "Producto final de venta. Completa su ficha operativa y continuidad de receta cuando aplique.",
     productType: "venta",
     inventoryKind: "finished",
     hasSuppliers: false,
@@ -238,8 +238,6 @@ type ProductTypeKey = keyof typeof TYPE_CONFIG;
 const FOGO_BASE_URL =
   process.env.NEXT_PUBLIC_FOGO_URL?.replace(/\/$/, "") ||
   "https://fogo.ventogroup.co";
-
-const QUICK_MODE_TYPES = new Set<ProductTypeKey>(["insumo", "reventa", "asset"]);
 
 function buildFogoRecipeCreateUrl(typeKey: ProductTypeKey) {
   const url = new URL("/recipes/new", FOGO_BASE_URL);
@@ -292,8 +290,7 @@ async function createProduct(formData: FormData) {
   }
 
   const typeKey = asText(formData.get("_type_key")) as ProductTypeKey;
-  const mode = asText(formData.get("_mode"));
-  const modeQuery = mode === "quick" ? "&mode=quick" : "";
+  const modeQuery = "";
   const config = TYPE_CONFIG[typeKey] ?? TYPE_CONFIG.insumo;
 
   const name = asText(formData.get("name"));
@@ -351,7 +348,7 @@ async function createProduct(formData: FormData) {
     ) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
-          encodeURIComponent("En v1 los productos de venta solo pueden usar categorias maestras globales.")
+          encodeURIComponent("Los productos de venta solo pueden usar categorias maestras globales.")
       );
     }
     if (categoryKind !== "venta" && normalizeCategoryDomain(category.domain)) {
@@ -510,6 +507,8 @@ async function createProduct(formData: FormData) {
     | null = null;
   if (config.hasSuppliers) {
     const supplierRaw = formData.get("supplier_lines");
+    let hasAnySupplierLine = false;
+    let hasCompletePrimarySupplier = false;
     if (typeof supplierRaw === "string" && supplierRaw) {
       let lines: Array<Record<string, unknown>> = [];
       try {
@@ -523,6 +522,7 @@ async function createProduct(formData: FormData) {
       }
       for (const line of lines) {
         if ((line._delete as boolean) || !line.supplier_id) continue;
+        hasAnySupplierLine = true;
         const packQty =
           Number(line.purchase_pack_qty ?? line.purchase_unit_size ?? 0) || 0;
         const packUnitCode = normalizeUnitCode(
@@ -554,6 +554,17 @@ async function createProduct(formData: FormData) {
           purchasePriceIncludesTax,
           purchaseTaxRate,
         });
+        const purchaseUnitLabel = String(line.purchase_unit ?? "").trim();
+        if (
+          Boolean(line.is_primary) &&
+          purchaseUnitLabel &&
+          packQty > 0 &&
+          packUnitCode &&
+          purchasePriceNet != null &&
+          purchasePriceNet > 0
+        ) {
+          hasCompletePrimarySupplier = true;
+        }
         if (
           costingMode === "auto_primary_supplier" &&
           Boolean(line.is_primary) &&
@@ -594,15 +605,13 @@ async function createProduct(formData: FormData) {
                 qtyInInputUnit: 1,
                 qtyInStockUnit,
               };
-              if (Boolean(line.use_in_operations)) {
-                remissionUomFromSupplier = {
-                  label: String(line.purchase_unit || "Empaque operativo"),
-                  inputUnitCode: packUnitCode,
-                  qtyInInputUnit: 1,
-                  qtyInStockUnit,
-                  source: "supplier_primary",
-                };
-              }
+              remissionUomFromSupplier = {
+                label: String(line.purchase_unit || "Empaque operativo"),
+                inputUnitCode: packUnitCode,
+                qtyInInputUnit: 1,
+                qtyInStockUnit,
+                source: "supplier_primary",
+              };
             }
           } catch {
             // keep without operational profile when conversion is invalid
@@ -628,9 +637,30 @@ async function createProduct(formData: FormData) {
         });
       }
     }
+    if (!hasAnySupplierLine) {
+      redirect(
+        `/inventory/catalog/new?type=${typeKey}&error=${encodeURIComponent(
+          "Debes agregar al menos un proveedor para este producto."
+        )}`
+      );
+    }
+    if (!hasCompletePrimarySupplier) {
+      redirect(
+        `/inventory/catalog/new?type=${typeKey}&error=${encodeURIComponent(
+          "Completa proveedor principal con empaque, cantidad, unidad y precio de compra."
+        )}`
+      );
+    }
+    if (!purchaseUomFromSupplier || !remissionUomFromSupplier) {
+      redirect(
+        `/inventory/catalog/new?type=${typeKey}&error=${encodeURIComponent(
+          "No se pudo convertir unidad de compra a unidad base. Revisa unidad base, unidad de compra y cantidad."
+        )}`
+      );
+    }
   }
 
-  if (!remissionUomFromSupplier) {
+  if (config.hasSuppliers && !remissionUomFromSupplier) {
     const remissionInputUnitCode = normalizeUnitCode(
       asText(formData.get("remission_uom_code"))
     );
@@ -841,7 +871,6 @@ export default async function NewProductPage({
   const typeKey = (sp.type ?? "insumo") as ProductTypeKey;
   const config = TYPE_CONFIG[typeKey] ?? TYPE_CONFIG.insumo;
   const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
-  const isQuickMode = sp.mode === "quick" && QUICK_MODE_TYPES.has(typeKey);
 
   const { supabase, user } = await requireAppAccess({
     appId: "nexo",
@@ -941,30 +970,17 @@ export default async function NewProductPage({
             <div className="space-y-2">
               <Link href="/inventory/catalog" className="ui-caption underline">Volver al catalogo</Link>
               <h1 className="ui-h1">{config.title}</h1>
-              <p className="ui-body-muted">
-                {isQuickMode
-                  ? "Alta rapida v1: deja el producto listo para stock, sedes y remisiones sin completar campos avanzados."
-                  : config.subtitle}
-              </p>
+              <p className="ui-body-muted">{config.subtitle}</p>
             </div>
             <div className="flex flex-wrap gap-2">
               <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
-                {isQuickMode ? "Modo rapido" : "Formulario completo"}
+                Formulario completo
               </span>
               <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
                 {typeKey}
               </span>
             </div>
             <div className="flex items-center gap-2">
-              {isQuickMode ? (
-                <Link href={`/inventory/catalog/new?type=${typeKey}`} className="ui-btn ui-btn--ghost">
-                  Ver formulario completo
-                </Link>
-              ) : QUICK_MODE_TYPES.has(typeKey) ? (
-                <Link href={`/inventory/catalog/new?type=${typeKey}&mode=quick`} className="ui-btn ui-btn--ghost">
-                  Modo rapido v1
-                </Link>
-              ) : null}
               <Link href={`/inventory/ai-ingestions?flow=catalog_create`} className="ui-btn ui-btn--brand">
                 Cargar con IA
               </Link>
@@ -978,13 +994,13 @@ export default async function NewProductPage({
             </article>
             <article className="ui-remission-kpi" data-tone="cool">
               <div className="ui-remission-kpi-label">Modo</div>
-              <div className="ui-remission-kpi-value">{isQuickMode ? "Rapido" : "Completo"}</div>
-              <div className="ui-remission-kpi-note">Elige la profundidad segun la necesidad operativa</div>
+              <div className="ui-remission-kpi-value">Completo</div>
+              <div className="ui-remission-kpi-note">Alta definitiva con unidades, proveedor y sedes</div>
             </article>
             <article className="ui-remission-kpi" data-tone="success">
               <div className="ui-remission-kpi-label">Objetivo</div>
-              <div className="ui-remission-kpi-value">v1</div>
-              <div className="ui-remission-kpi-note">Maestro listo para stock, sedes y abastecimiento</div>
+              <div className="ui-remission-kpi-value">v2</div>
+              <div className="ui-remission-kpi-note">Maestro completo y conectado para compras y remisiones</div>
             </article>
           </div>
         </div>
@@ -994,9 +1010,9 @@ export default async function NewProductPage({
 
       <CatalogOptionalDetails
         title="Criterio de esta ficha"
-        summary="Abre este bloque solo si necesitas ver el marco v1 o cambiar el arbol operativo disponible."
+        summary="Abre este bloque solo si necesitas revisar el marco operativo o cambiar el arbol disponible."
       >
-        <CatalogHintPanel title="Norte del catalogo v1">
+        <CatalogHintPanel title="Norte del catalogo">
           <p>
             Aqui creas el <strong className="text-[var(--ui-text)]">producto maestro</strong>. La categoria de esta
             pantalla es operativa: sirve para inventario, abastecimiento y setup por sede.
@@ -1007,11 +1023,7 @@ export default async function NewProductPage({
           </p>
         </CatalogHintPanel>
 
-        {isQuickMode ? (
-          <CatalogHintPanel title="Modo rapido v1">
-            Usa este modo para cargar maestros criticos de v1. Si necesitas proveedores detallados, fotos, recetas o configuracion avanzada, cambia al formulario completo.
-          </CatalogHintPanel>
-        ) : isSaleCategoryKind ? null : (
+        {isSaleCategoryKind ? null : (
           <CatalogCategoryContextForm
             hiddenFields={[{ name: "type", value: typeKey }]}
             categoryScope={categoryScope}
@@ -1026,15 +1038,11 @@ export default async function NewProductPage({
 
       <RequiredFieldsGuardForm action={createProduct} className="space-y-8">
         <input type="hidden" name="_type_key" value={typeKey} />
-        <input type="hidden" name="_mode" value={isQuickMode ? "quick" : ""} />
+        <input type="hidden" name="_mode" value="" />
 
         <CatalogSection
           title="Datos basicos"
-          description={
-            isQuickMode
-              ? "Solo lo minimo para operar en v1: nombre, clasificacion y unidad base."
-              : "Nombre, codigo y categoria operativa. Las unidades se definen en la seccion de almacenamiento."
-          }
+          description="Nombre, codigo y categoria operativa. Las unidades se definen en la seccion de almacenamiento."
         >
           <ProductIdentityFields
             namePlaceholder={typeKey === "asset" ? "Ej. Horno industrial" : "Ej. Harina 000"}
@@ -1122,7 +1130,7 @@ export default async function NewProductPage({
           </CatalogOptionalDetails>
         ) : null}
 
-        {config.hasSuppliers && !isQuickMode && (
+        {config.hasSuppliers && (
           <CatalogSection
             title="Compra principal (proveedor)"
             description="Aqui defines como compra o factura el proveedor. El sistema convierte automaticamente a la unidad base."
@@ -1144,61 +1152,11 @@ export default async function NewProductPage({
           </CatalogSection>
         )}
 
-        {config.hasSuppliers && isQuickMode ? (
-          <CatalogOptionalDetails
-            title="Empaque para remision"
-            summary="Abre este bloque solo si este item se solicita en remisiones con un empaque distinto a la unidad base."
-          >
-            <div className="ui-panel">
-              <div className="ui-h3">Empaque para remision (v1 rapido)</div>
-              <p className="mt-1 text-sm text-[var(--ui-muted)]">
-                Define como se solicita en remisiones cuando no es por unidad base.
-                Ejemplo: 1 canasta = 12 und.
-              </p>
-              <div className="mt-4 grid gap-4 sm:grid-cols-3">
-                <label className="flex flex-col gap-1">
-                  <span className="ui-label">Nombre empaque remision</span>
-                  <input
-                    name="remission_uom_label"
-                    className="ui-input"
-                    placeholder="Canasta x12"
-                  />
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="ui-label">Unidad empaque</span>
-                  <select name="remission_uom_code" className="ui-input" defaultValue="">
-                    <option value="">(sin empaque especial)</option>
-                    {defaultUnitOptions.map((unit) => (
-                      <option key={unit.code} value={unit.code}>
-                        {unit.code} - {unit.name}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <label className="flex flex-col gap-1">
-                  <span className="ui-label">Cuanto stock base contiene 1 empaque</span>
-                  <input
-                    name="remission_uom_qty_in_stock"
-                    type="number"
-                    step="0.0001"
-                    min="0"
-                    className="ui-input"
-                    placeholder="12"
-                  />
-                </label>
-              </div>
-            </div>
-            <section className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
-              Proveedor y costos detallados quedan opcionales en v1. Puedes completar esa informacion despues desde la ficha del producto o por carga asistida.
-            </section>
-          </CatalogOptionalDetails>
-        ) : null}
-
-        {/* Receta se gestiona fuera de v1 */}
-        {config.hasRecipe && !isQuickMode && (
+        {/* Receta se gestiona fuera del flujo actual */}
+        {config.hasRecipe && (
           <CatalogOptionalDetails
             title="Receta y produccion"
-            summary="Esta configuracion queda fuera del flujo operativo v1."
+            summary="Esta configuracion queda fuera del flujo operativo actual."
           >
             <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
               <p>
@@ -1217,7 +1175,6 @@ export default async function NewProductPage({
           </CatalogOptionalDetails>
         )}
 
-        {!isQuickMode ? (
         <ProductPhotoSection
           description="Imagen visual para identificar rapido el producto o insumo en listados y ficha."
           currentUrl={null}
@@ -1225,7 +1182,6 @@ export default async function NewProductPage({
           footerText="Si no subes fotos ahora, puedes cargarlas despues desde la ficha de edicion."
           collapsible
         />
-        ) : null}
 
         <ProductSiteAvailabilitySection
           initialRows={[]}
@@ -1241,11 +1197,9 @@ export default async function NewProductPage({
 
         <ProductChecklistPanel
           items={[
-            "Unidad base definida (donde vive stock y conteo en v1).",
+            "Unidad base definida (donde vive stock y conteo).",
             config.hasSuppliers
-              ? isQuickMode
-                ? "Proveedor puede quedar pendiente en v1 si solo necesitas salir a operar."
-                : "Proveedor principal completo (empaque, cantidad, unidad y precio)."
+              ? "Proveedor principal completo (empaque, cantidad, unidad y precio)."
               : "Clasificacion y categoria revisadas para este tipo de item.",
             "Sedes configuradas (disponible, area por defecto y setup por sede).",
             "Si aplica, completa recetas, fotos o costos avanzados despues del arranque.",

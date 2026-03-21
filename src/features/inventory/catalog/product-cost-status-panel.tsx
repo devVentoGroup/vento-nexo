@@ -26,7 +26,7 @@ export function ProductCostStatusPanel({
     : hasRecipe
       ? hasComputedCost
         ? "Listo (externo)"
-        : "Pendiente (fuera de v1)"
+        : "Pendiente (externo)"
       : "Manual";
 
   return (

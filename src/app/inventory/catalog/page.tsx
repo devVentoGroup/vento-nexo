@@ -768,7 +768,7 @@ export default async function InventoryCatalogPage({
   const toolbarActions = activeTab === "productos"
     ? [
         { href: "/inventory/catalog/new?type=venta", label: "+ Producto de venta", tone: "brand" as const },
-        { href: "/inventory/catalog/new?type=reventa&mode=quick", label: "+ Reventa rapido v1", tone: "ghost" as const },
+        { href: "/inventory/catalog/new?type=reventa", label: "+ Producto de reventa", tone: "ghost" as const },
       ]
     : [
         {
@@ -778,13 +778,13 @@ export default async function InventoryCatalogPage({
               : activeTab === "preparaciones"
                 ? "preparacion"
                 : "asset"
-          }${activeTab === "insumos" || activeTab === "equipos" ? "&mode=quick" : ""}`,
+          }`,
           label: `+ Crear ${
             activeTab === "insumos"
-              ? "insumo rapido"
+              ? "insumo"
               : activeTab === "preparaciones"
                 ? "preparacion"
-                : "equipo rapido"
+                : "equipo"
           }`,
           tone: "brand" as const,
         },
@@ -852,7 +852,7 @@ export default async function InventoryCatalogPage({
         autoCostLabel = "Listo (externo)";
         autoCostTone = "success";
       } else {
-        autoCostLabel = "Pendiente (fuera de v1)";
+        autoCostLabel = "Pendiente (externo)";
         autoCostTone = "warn";
       }
     } else if (autoCostMode === "manual") {
@@ -960,7 +960,7 @@ export default async function InventoryCatalogPage({
       {errorMsg ? <div className="ui-alert ui-alert--error">Error: {errorMsg}</div> : null}
       <CatalogOptionalDetails
         title="Criterio de esta vista"
-        summary="Abre este bloque solo si necesitas revisar el marco v1 o refinar mucho la vista."
+        summary="Abre este bloque solo si necesitas revisar el marco operativo o refinar la vista."
       >
         <CatalogHintPanel title="Norte de esta vista">
           <p>
@@ -968,7 +968,7 @@ export default async function InventoryCatalogPage({
             operativa. La categoria aqui es operativa, no comercial.
           </p>
           <p>
-            La vista de compras es continuidad de v2 para ORIGO y no debe contaminar la operacion diaria de v1.
+            La vista de compras es continuidad para ORIGO y no debe contaminar la operacion diaria.
           </p>
         </CatalogHintPanel>
       </CatalogOptionalDetails>

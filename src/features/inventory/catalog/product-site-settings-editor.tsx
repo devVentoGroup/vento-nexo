@@ -266,11 +266,14 @@ export function ProductSiteSettingsEditor({
           Stock real solo en Centro (LOC). En satelites defines disponibilidad para abastecimiento interno.
         </p>
         <p className="text-xs text-[var(--ui-muted)]">
-          La marca `audience` se sigue guardando solo como compatibilidad transicional de v1.
+          La marca `audience` se mantiene como compatibilidad transicional.
         </p>
       </div>
 
       <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
+        <div className="mb-2 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-amber-800">
+          Fase 1 · Centro
+        </div>
         <div className="mb-3 border-b border-[var(--ui-border)] pb-3">
           <div className="text-sm font-semibold text-[var(--ui-text)]">Centro de produccion (stock real)</div>
           <p className="text-xs text-[var(--ui-muted)]">
@@ -410,6 +413,9 @@ export function ProductSiteSettingsEditor({
       </div>
 
       <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
+        <div className="mb-2 inline-flex rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-cyan-800">
+          Fase 2 · Sedes satelite
+        </div>
         <div className="mb-3 border-b border-[var(--ui-border)] pb-3">
           <div className="text-sm font-semibold text-[var(--ui-text)]">
             Sedes satelite (abastecimiento interno)
