@@ -76,8 +76,6 @@ export function CountInitialForm({
 
   return (
     <div className="mt-6 space-y-4">
-      {error ? <div className="ui-alert ui-alert--error">{error}</div> : null}
-
       <div className="space-y-6 pb-24 lg:pb-0">
         <section className="ui-panel ui-remission-section ui-fade-up ui-delay-3 space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -131,6 +129,7 @@ export function CountInitialForm({
               </tbody>
             </Table>
           </div>
+          {error ? <div className="ui-alert ui-alert--error">{error}</div> : null}
         </section>
 
         <div className="ui-mobile-sticky-footer ui-fade-up ui-delay-4 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ui-border)] bg-white/92 px-4 py-3 backdrop-blur">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { usePathname, useSearchParams } from "next/navigation";
 
 export type SupplierLine = {
   id?: string;
@@ -39,6 +40,12 @@ type Props = {
   stockUnitCode?: string;
   stockUnitCodeFieldId?: string;
   mode?: "simple" | "full";
+};
+
+type SupplierValidationIssue = {
+  message: string;
+  label: string;
+  targetId: string;
 };
 
 function normalizeCode(value: string | undefined | null): string {
@@ -96,6 +103,14 @@ export function ProductSuppliersEditor({
   stockUnitCodeFieldId,
   mode = "full",
 }: Props) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const hasErrorParam = Boolean(searchParams?.get("error"));
+  const draftKey = useMemo(() => {
+    const type = searchParams?.get("type") ?? "";
+    const modeParam = searchParams?.get("mode") ?? "";
+    return `nexo:supplier-lines:${pathname || "unknown"}:${name}:${type}:${modeParam}`;
+  }, [name, pathname, searchParams]);
   const isSimpleMode = mode === "simple";
   const normalizedInitialStockUnitCode = normalizeCode(stockUnitCode);
   const normalizedInitialRows =
@@ -110,6 +125,7 @@ export function ProductSuppliersEditor({
       : [{ ...buildEmptyLine(normalizedInitialStockUnitCode), is_primary: isSimpleMode }]
   );
   const [liveStockUnitCode, setLiveStockUnitCode] = useState(normalizedInitialStockUnitCode);
+  const [restoredFromDraft, setRestoredFromDraft] = useState(false);
 
   const unitsByCode = useMemo(
     () =>
@@ -125,6 +141,30 @@ export function ProductSuppliersEditor({
   const stockUnit = liveStockUnitCode
     ? unitsByCode.get(normalizeCode(liveStockUnitCode)) ?? null
     : null;
+
+  useEffect(() => {
+    if (!hasErrorParam || restoredFromDraft || typeof window === "undefined") return;
+    const raw = window.sessionStorage.getItem(draftKey);
+    if (!raw) {
+      setRestoredFromDraft(true);
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw) as SupplierLine[];
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        setLines(parsed);
+      }
+    } catch {
+      // ignore invalid draft
+    } finally {
+      setRestoredFromDraft(true);
+    }
+  }, [draftKey, hasErrorParam, restoredFromDraft]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    window.sessionStorage.setItem(draftKey, JSON.stringify(lines));
+  }, [draftKey, lines]);
 
   useEffect(() => {
     if (!stockUnitCodeFieldId) return;
@@ -178,10 +218,91 @@ export function ProductSuppliersEditor({
   }, []);
 
   const visibleLines = lines.filter((line) => !line._delete);
+  const validationIssue = useMemo<SupplierValidationIssue | null>(() => {
+    const activeLines = lines
+      .map((line, index) => ({ line, index }))
+      .filter(({ line }) => !line._delete);
+    if (activeLines.length === 0) {
+      return {
+        message: "Debes agregar al menos un proveedor para este producto.",
+        label: "al menos un proveedor",
+        targetId: `${name}-add-line`,
+      };
+    }
+
+    const linkedSuppliers = activeLines.filter(({ line }) => Boolean(line.supplier_id));
+    if (linkedSuppliers.length === 0) {
+      return {
+        message: "Debes seleccionar al menos un proveedor.",
+        label: "proveedor",
+        targetId: `${name}-line-${activeLines[0]?.index ?? 0}-supplier`,
+      };
+    }
+
+    const primaryEntry =
+      linkedSuppliers.find(({ line }) => Boolean(line.is_primary)) ??
+      linkedSuppliers[0];
+    if (!primaryEntry) return null;
+
+    const baseId = `${name}-line-${primaryEntry.index}`;
+    const packQty = Number(primaryEntry.line.purchase_pack_qty ?? primaryEntry.line.purchase_unit_size ?? 0);
+    const packUnitCode = normalizeCode(primaryEntry.line.purchase_pack_unit_code);
+    const purchaseUnitLabel = String(primaryEntry.line.purchase_unit ?? "").trim();
+    const purchasePrice = Number(primaryEntry.line.purchase_price ?? 0);
+
+    if (!purchaseUnitLabel) {
+      return {
+        message: "Completa el empaque del proveedor principal.",
+        label: "empaque del proveedor principal",
+        targetId: `${baseId}-purchase-unit`,
+      };
+    }
+    if (!(packQty > 0)) {
+      return {
+        message: "Completa la cantidad por empaque del proveedor principal.",
+        label: "cantidad por empaque",
+        targetId: `${baseId}-purchase-pack-qty`,
+      };
+    }
+    if (!packUnitCode) {
+      return {
+        message: "Selecciona la unidad de compra del proveedor principal.",
+        label: "unidad de compra",
+        targetId: `${baseId}-purchase-pack-unit`,
+      };
+    }
+    if (!(purchasePrice > 0)) {
+      return {
+        message: "Completa el precio de compra del proveedor principal.",
+        label: "precio de compra",
+        targetId: `${baseId}-purchase-price`,
+      };
+    }
+
+    const packUnit = unitsByCode.get(packUnitCode);
+    if (stockUnit && packUnit && stockUnit.family !== packUnit.family) {
+      return {
+        message:
+          "La unidad de compra no es compatible con la unidad base. Ajusta unidad base o unidad de compra.",
+        label: "unidad de compra compatible",
+        targetId: `${baseId}-purchase-pack-unit`,
+      };
+    }
+
+    return null;
+  }, [lines, name, stockUnit, unitsByCode]);
 
   return (
     <div className="space-y-4">
       <input type="hidden" name={name} value={JSON.stringify(lines)} />
+      <input
+        type="hidden"
+        name={`${name}__client_validation`}
+        value={validationIssue ? "" : "ok"}
+        data-required-custom="true"
+        data-required-label={validationIssue?.label ?? "proveedor principal completo"}
+        data-required-target={validationIssue?.targetId ?? `${name}-add-line`}
+      />
 
       <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
         <p className="font-medium text-[var(--ui-text)]">Fase 1 - Compra principal (proveedor)</p>
@@ -210,10 +331,15 @@ export function ProductSuppliersEditor({
 
       <div className="flex items-center justify-between gap-3">
         <span className="ui-label">{isSimpleMode ? "Compra principal" : "Proveedores"}</span>
-        <button type="button" onClick={addLine} className="ui-btn ui-btn--ghost text-sm">
+        <button id={`${name}-add-line`} type="button" onClick={addLine} className="ui-btn ui-btn--ghost text-sm">
           {isSimpleMode ? "+ Agregar proveedor adicional" : "+ Agregar proveedor"}
         </button>
       </div>
+      {validationIssue ? (
+        <div className="ui-alert ui-alert--error">
+          {validationIssue.message}
+        </div>
+      ) : null}
 
       {visibleLines.length === 0 ? (
         <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
@@ -313,6 +439,7 @@ export function ProductSuppliersEditor({
                     ) : (
                       <label className="flex items-center gap-1 text-xs text-[var(--ui-muted)]">
                         <input
+                          id={`${name}-line-${realIndex}-is-primary`}
                           type="checkbox"
                           checked={Boolean(line.is_primary)}
                           onChange={(event) => setPrimary(realIndex, event.target.checked)}
@@ -352,6 +479,7 @@ export function ProductSuppliersEditor({
                   <label className="flex flex-col gap-1 rounded-xl border border-amber-200 bg-amber-50/60 p-2">
                     <span className="ui-label">Proveedor *</span>
                     <select
+                      id={`${name}-line-${realIndex}-supplier`}
                       value={line.supplier_id}
                       onChange={(event) =>
                         updateLine(realIndex, { supplier_id: event.target.value })
@@ -370,6 +498,7 @@ export function ProductSuppliersEditor({
                   <label className="flex flex-col gap-1 rounded-xl border border-amber-200 bg-amber-50/60 p-2">
                     <span className="ui-label">Empaque *</span>
                     <input
+                      id={`${name}-line-${realIndex}-purchase-unit`}
                       type="text"
                       value={line.purchase_unit ?? ""}
                       onChange={(event) =>
@@ -383,6 +512,7 @@ export function ProductSuppliersEditor({
                   <label className="flex flex-col gap-1 rounded-xl border border-amber-200 bg-amber-50/60 p-2">
                     <span className="ui-label">Cantidad por empaque *</span>
                     <input
+                      id={`${name}-line-${realIndex}-purchase-pack-qty`}
                       type="number"
                       step="0.000001"
                       value={line.purchase_pack_qty ?? ""}
@@ -404,6 +534,7 @@ export function ProductSuppliersEditor({
                   <label className="flex flex-col gap-1 rounded-xl border border-amber-200 bg-amber-50/60 p-2">
                     <span className="ui-label">Unidad de compra *</span>
                     <select
+                      id={`${name}-line-${realIndex}-purchase-pack-unit`}
                       value={line.purchase_pack_unit_code ?? ""}
                       onChange={(event) =>
                         updateLine(realIndex, {
@@ -427,6 +558,7 @@ export function ProductSuppliersEditor({
                   <label className="flex flex-col gap-1 rounded-xl border border-amber-200 bg-amber-50/60 p-2">
                     <span className="ui-label">Precio de compra *</span>
                     <input
+                      id={`${name}-line-${realIndex}-purchase-price`}
                       type="number"
                       step="0.01"
                       value={line.purchase_price ?? ""}

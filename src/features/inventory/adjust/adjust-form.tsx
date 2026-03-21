@@ -27,7 +27,12 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
   const [evidence, setEvidence] = useState<string>("");
   const [unitCostForAdjust, setUnitCostForAdjust] = useState<string>("");
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [submitError, setSubmitError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<{
+    productId?: string;
+    quantity?: string;
+    reason?: string;
+  }>({});
 
   const selectedProduct = products.find((p) => p.id === productId);
   const currentQty = productId ? currentStock[productId] ?? 0 : 0;
@@ -49,9 +54,21 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!canSubmit) return;
+    const nextFieldErrors: {
+      productId?: string;
+      quantity?: string;
+      reason?: string;
+    } = {};
+    if (!productId) nextFieldErrors.productId = "Selecciona un producto.";
+    if (deltaNum == null || deltaNum === 0) nextFieldErrors.quantity = "Ingresa una cantidad mayor a 0.";
+    if (!reason.trim()) nextFieldErrors.reason = "Escribe el motivo del ajuste.";
+    if (Object.keys(nextFieldErrors).length > 0) {
+      setFieldErrors(nextFieldErrors);
+      return;
+    }
 
-    setError("");
+    setFieldErrors({});
+    setSubmitError("");
     setLoading(true);
     try {
       const res = await fetch("/api/inventory/adjust", {
@@ -71,22 +88,20 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
-        setError(data?.error ?? "Error al guardar el ajuste.");
+        setSubmitError(data?.error ?? "Error al guardar el ajuste.");
         setLoading(false);
         return;
       }
       router.push(`/inventory/stock?site_id=${encodeURIComponent(siteId)}&adjust=1`);
       return;
     } catch {
-      setError("Error de red al guardar.");
+      setSubmitError("Error de red al guardar.");
       setLoading(false);
     }
   };
 
   return (
     <div className="mt-6 space-y-4">
-      {error ? <div className="ui-alert ui-alert--error">{error}</div> : null}
-
       <form onSubmit={handleSubmit} className="space-y-6 pb-24 lg:pb-0">
         <section className="ui-panel ui-remission-section ui-fade-up ui-delay-1 space-y-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
@@ -108,6 +123,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
               onChange={(event) => {
                 setProductId(event.target.value);
                 setQuantityValue("");
+                setFieldErrors((prev) => ({ ...prev, productId: undefined }));
               }}
               required
               className="ui-input"
@@ -119,6 +135,9 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
                 </option>
               ))}
             </select>
+            {fieldErrors.productId ? (
+              <span className="text-xs font-medium text-[var(--ui-danger)]">{fieldErrors.productId}</span>
+            ) : null}
           </label>
 
           <div className="grid gap-3 ui-mobile-stack md:grid-cols-2 xl:grid-cols-3">
@@ -203,6 +222,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
                   value={quantityValue}
                   onChange={(event) => {
                     setQuantityValue(event.target.value);
+                    setFieldErrors((prev) => ({ ...prev, quantity: undefined }));
                   }}
                   placeholder="Cantidad"
                   required
@@ -218,6 +238,9 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
                   </span>
                 </div>
               ) : null}
+              {fieldErrors.quantity ? (
+                <span className="text-xs font-medium text-[var(--ui-danger)]">{fieldErrors.quantity}</span>
+              ) : null}
             </label>
 
             {deltaNum != null && deltaNum !== 0 ? (
@@ -230,12 +253,16 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
                     value={reason}
                     onChange={(event) => {
                       setReason(event.target.value);
+                      setFieldErrors((prev) => ({ ...prev, reason: undefined }));
                     }}
                     placeholder="Ej: Merma detectada, correccion por conteo, producto danado."
                     required
                     rows={3}
                     className="ui-input"
                   />
+                  {fieldErrors.reason ? (
+                    <span className="text-xs font-medium text-[var(--ui-danger)]">{fieldErrors.reason}</span>
+                  ) : null}
                 </label>
 
                 <details className="rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3">
@@ -290,6 +317,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
         )}
 
         <div className="ui-mobile-sticky-footer ui-fade-up ui-delay-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ui-border)] bg-white/92 px-4 py-3 backdrop-blur">
+          {submitError ? <div className="w-full ui-alert ui-alert--error">{submitError}</div> : null}
           <div className="text-sm text-[var(--ui-muted)]">
             {selectedProduct?.name ?? "Sin producto"}
             {newQty != null ? ` · ${newQty} ${selectedProduct?.unit ?? ""}` : ""}

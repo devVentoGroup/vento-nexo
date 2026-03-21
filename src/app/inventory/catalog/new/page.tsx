@@ -1036,7 +1036,11 @@ export default async function NewProductPage({
         )}
       </CatalogOptionalDetails>
 
-      <RequiredFieldsGuardForm action={createProduct} className="space-y-8">
+      <RequiredFieldsGuardForm
+        action={createProduct}
+        className="space-y-8"
+        persistKey={`catalog-new-${typeKey}`}
+      >
         <input type="hidden" name="_type_key" value={typeKey} />
         <input type="hidden" name="_mode" value="" />
 

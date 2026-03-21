@@ -10,6 +10,7 @@ import { ProductPurchaseSection } from "@/features/inventory/catalog/product-pur
 import { ProductSiteAvailabilitySection } from "@/features/inventory/catalog/product-site-availability-section";
 import { ProductStorageFields } from "@/features/inventory/catalog/product-storage-fields";
 import { ProductUomProfilePanel } from "@/features/inventory/catalog/product-uom-profile-panel";
+import { RequiredFieldsGuardForm } from "@/components/inventory/forms/RequiredFieldsGuardForm";
 import {
   CatalogCategoryContextForm,
   CatalogHintPanel,
@@ -710,24 +711,6 @@ async function updateProduct(formData: FormData) {
           // Keep previous profile if conversion is invalid.
         }
       }
-      const { error: supplierErr } = await supabase.from("product_suppliers").insert({
-        product_id: productId,
-        supplier_id: line.supplier_id,
-        supplier_sku: line.supplier_sku || null,
-        purchase_unit: line.purchase_unit || null,
-        purchase_unit_size: purchaseUnitSizeLegacy,
-        purchase_pack_qty: packQty > 0 ? packQty : null,
-        purchase_pack_unit_code: packUnitCode || null,
-        purchase_price: purchasePrice,
-        purchase_price_net: purchasePriceNet,
-        purchase_price_includes_tax: purchasePriceIncludesTax,
-        purchase_tax_rate: purchaseTaxRate,
-        currency: line.currency || "COP",
-        lead_time_days: line.lead_time_days ?? null,
-        min_order_qty: line.min_order_qty ?? null,
-        is_primary: Boolean(line.is_primary),
-      });
-      if (supplierErr) redirectWithError(supplierErr.message);
     }
     if (!hasAnySupplierLine) {
       redirectWithError("Debes agregar al menos un proveedor para este producto.");
@@ -776,6 +759,24 @@ async function updateProduct(formData: FormData) {
         purchasePriceIncludesTax,
         purchaseTaxRate,
       });
+      const { error: supplierErr } = await supabase.from("product_suppliers").insert({
+        product_id: productId,
+        supplier_id: line.supplier_id,
+        supplier_sku: line.supplier_sku || null,
+        purchase_unit: line.purchase_unit || null,
+        purchase_unit_size: purchaseUnitSizeLegacy,
+        purchase_pack_qty: packQty > 0 ? packQty : null,
+        purchase_pack_unit_code: packUnitCode || null,
+        purchase_price: purchasePrice,
+        purchase_price_net: purchasePriceNet,
+        purchase_price_includes_tax: purchasePriceIncludesTax,
+        purchase_tax_rate: purchaseTaxRate,
+        currency: line.currency || "COP",
+        lead_time_days: line.lead_time_days ?? null,
+        min_order_qty: line.min_order_qty ?? null,
+        is_primary: Boolean(line.is_primary),
+      });
+      if (supplierErr) redirectWithError(supplierErr.message);
     }
   }
 
@@ -1303,7 +1304,11 @@ export default async function ProductCatalogDetailPage({
 
       {canEdit ? (
         <>
-        <form action={updateProduct} className="space-y-8">
+        <RequiredFieldsGuardForm
+          action={updateProduct}
+          className="space-y-8"
+          persistKey={`catalog-edit-${productRow.id}`}
+        >
           <input type="hidden" name="product_id" value={productRow.id} />
           <input type="hidden" name="return_to" value={from} />
 
@@ -1514,7 +1519,7 @@ export default async function ProductCatalogDetailPage({
             showActiveToggle
             activeDefaultChecked={Boolean(productRow.is_active)}
           />
-        </form>
+        </RequiredFieldsGuardForm>
         </>
       ) : (
         <div className="ui-alert ui-alert--warn">
