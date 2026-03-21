@@ -1407,6 +1407,7 @@ export default async function ProductCatalogDetailPage({
               profilePanel={
                 <ProductUomProfilePanel
                   stockUnitCode={stockUnitCode}
+                  defaultUnitCode={resolvedDefaultUnit}
                   purchaseUomProfile={purchaseUomProfile}
                   remissionUomProfile={remissionUomProfile}
                 />
