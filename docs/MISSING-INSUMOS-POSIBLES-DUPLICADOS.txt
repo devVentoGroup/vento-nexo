@@ -1,0 +1,27 @@
+Posibles duplicados (revision manual, sin script)
+Fecha: 2026-03-21
+
+FORMATO: faltante -> posible existente
+
+AJI ESCAMAS -> Ají en Escamas
+ALCAPARRAS -> Alcaparras Baby
+AMAPOLA -> Semillas de Amapola
+ARROZ -> Arroz Blanco
+CHORIZO SANTARROSANO -> Chorizo Santarrozano
+CLORO 20LT -> Cloro
+CLORO*20LTR -> Cloro
+COCOA POLVO COORDILLERA -> Cocoa Superior / Chocolate 53% Cordillera
+CREMA DE COCO -> Syrup Crema de Coco
+DURAZNO -> Duraznos
+ESCENCIA VAINILLA -> Escencia de Vainilla
+ESCOBA -> Escoba con Palo
+FLOR JAMAICA -> Flor de Jamaica
+FLOR DE JAMAICA -> Flor Jamaica
+FRAMBUESAS -> Frutos del Bosque / Fresa (validar)
+FRAMNBUESAS -> FRAMBUESAS (typo)
+GINEBRA -> Ginebra Gordons
+PEREJIL -> Perejil Crespo
+PIMIENTA NEGRA -> Pimienta Negra en Pepa
+QUESO AZUL -> Queso Azul Cuña
+QUESO PARMESANO -> Queso Parmesano Cuña / Rallado
+RUGULA -> Rúgula Baby

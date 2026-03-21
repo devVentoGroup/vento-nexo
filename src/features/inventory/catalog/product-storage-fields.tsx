@@ -60,19 +60,25 @@ function TrackingOptionsPanel({
   expiryTrackingDefaultChecked,
 }: TrackingOptions) {
   return (
-    <div className="flex flex-wrap gap-6">
-      <label className="flex items-center gap-2">
-        <input type="checkbox" name="track_inventory" defaultChecked={trackInventoryDefaultChecked} />
-        <span className="ui-label">Controlar stock</span>
-      </label>
-      <label className="flex items-center gap-2">
-        <input type="checkbox" name="lot_tracking" defaultChecked={lotTrackingDefaultChecked} />
-        <span className="ui-label">Lotes</span>
-      </label>
-      <label className="flex items-center gap-2">
-        <input type="checkbox" name="expiry_tracking" defaultChecked={expiryTrackingDefaultChecked} />
-        <span className="ui-label">Vencimiento</span>
-      </label>
+    <div className="space-y-2">
+      <div className="flex flex-wrap gap-6">
+        <label className="flex items-center gap-2">
+          <input type="checkbox" name="track_inventory" defaultChecked={trackInventoryDefaultChecked} />
+          <span className="ui-label">Controlar stock</span>
+        </label>
+        <label className="flex items-center gap-2">
+          <input type="checkbox" name="lot_tracking" defaultChecked={lotTrackingDefaultChecked} />
+          <span className="ui-label">Lotes</span>
+        </label>
+        <label className="flex items-center gap-2">
+          <input type="checkbox" name="expiry_tracking" defaultChecked={expiryTrackingDefaultChecked} />
+          <span className="ui-label">Vencimiento</span>
+        </label>
+      </div>
+      <p className="text-xs text-[var(--ui-muted)]">
+        Controlar stock activa el item en entradas/salidas, remisiones, ajustes y stock. Lotes y vencimiento se
+        guardan como configuracion del item y quedan listos para trazabilidad cuando ese flujo este activo.
+      </p>
     </div>
   );
 }
@@ -118,7 +124,7 @@ export function ProductStorageFields({
           >
             {units.map((unit) => (
               <option key={unit.code} value={unit.code}>
-                {unit.code} - {unit.name} ({unit.family})
+                {unit.code} - {unit.name}
               </option>
             ))}
           </select>
@@ -130,7 +136,7 @@ export function ProductStorageFields({
           <select name="default_unit" className="ui-input" defaultValue={defaultUnitCode}>
             {units.map((unit) => (
               <option key={unit.code} value={unit.code}>
-                {unit.code} - {unit.name} ({unit.family})
+                {unit.code} - {unit.name}
               </option>
             ))}
           </select>
