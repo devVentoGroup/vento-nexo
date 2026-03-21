@@ -137,7 +137,7 @@ export function CatalogCategoryContextForm({
 
       {showDomain ? (
         <label className="flex flex-col gap-1">
-          <span className="ui-label">Dominio transicional v1</span>
+          <span className="ui-label">Dominio operativo</span>
           <select name="category_domain" defaultValue={categoryDomain} className="ui-input">
             <option value="">Todos</option>
             {categoryDomainOptions.map((option) => (

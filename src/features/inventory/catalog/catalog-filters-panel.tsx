@@ -115,7 +115,7 @@ export function CatalogFiltersPanel({
               <span className="ui-label">Vista</span>
               <select name="view_mode" defaultValue={viewMode} className="ui-input">
                 <option value="catalogo">Catalogo</option>
-                <option value="compras">Compras (continuidad v2)</option>
+                <option value="compras">Compras (ORIGO)</option>
               </select>
             </label>
 
@@ -150,7 +150,7 @@ export function CatalogFiltersPanel({
 
             {showCategoryDomain ? (
               <label className="flex flex-col gap-1">
-                <span className="ui-label">Dominio transicional v1</span>
+                <span className="ui-label">Dominio operativo</span>
                 <select name="category_domain" defaultValue={categoryDomain} className="ui-input">
                   <option value="">Todos</option>
                   {categoryDomainOptions.map((option) => (

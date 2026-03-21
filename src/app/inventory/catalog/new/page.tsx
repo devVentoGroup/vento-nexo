@@ -999,8 +999,8 @@ export default async function NewProductPage({
             </article>
             <article className="ui-remission-kpi" data-tone="success">
               <div className="ui-remission-kpi-label">Objetivo</div>
-              <div className="ui-remission-kpi-value">v2</div>
-              <div className="ui-remission-kpi-note">Maestro completo y conectado para compras y remisiones</div>
+              <div className="ui-remission-kpi-value">Definitivo</div>
+              <div className="ui-remission-kpi-note">Maestro completo conectado a compras ORIGO y remisiones</div>
             </article>
           </div>
         </div>
@@ -1012,16 +1012,15 @@ export default async function NewProductPage({
         title="Criterio de esta ficha"
         summary="Abre este bloque solo si necesitas revisar el marco operativo o cambiar el arbol disponible."
       >
-        <CatalogHintPanel title="Norte del catalogo">
-          <p>
-            Aqui creas el <strong className="text-[var(--ui-text)]">producto maestro</strong>. La categoria de esta
-            pantalla es operativa: sirve para inventario, abastecimiento y setup por sede.
-          </p>
-          <p>
-            Precios, menus y visibilidad por negocio pueden existir hoy como compatibilidad, pero no son el centro de
-            este flujo.
-          </p>
-        </CatalogHintPanel>
+          <CatalogHintPanel title="Norte del catalogo">
+            <p>
+              Aqui creas el <strong className="text-[var(--ui-text)]">producto maestro</strong>. La categoria de esta
+              pantalla es operativa: sirve para inventario, abastecimiento y setup por sede.
+            </p>
+            <p>
+              Este flujo es el definitivo para alta de insumos, productos y activos con su configuracion operativa.
+            </p>
+          </CatalogHintPanel>
 
         {isSaleCategoryKind ? null : (
           <CatalogCategoryContextForm

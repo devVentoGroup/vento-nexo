@@ -1280,8 +1280,7 @@ export default async function ProductCatalogDetailPage({
             proveedor y setup por sede.
           </p>
           <p>
-            La logica comercial por negocio no se define aqui. La compatibilidad existente sigue guardandose por debajo,
-            pero ya no es el centro del flujo.
+            Esta edicion es el flujo definitivo para mantener compras, costo automatico y abastecimiento entre sedes.
           </p>
         </CatalogHintPanel>
         {isSaleCategoryKind ? null : (

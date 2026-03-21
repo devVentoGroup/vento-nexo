@@ -86,10 +86,10 @@ export function CatalogResultsPanel({
             <summary className="flex cursor-pointer items-center justify-between gap-3">
               <div>
                 <div className="text-sm font-semibold text-[var(--ui-text)]">
-                  Ordenes sugeridas por proveedor (continuidad v2)
+                  Ordenes sugeridas por proveedor (ORIGO)
                 </div>
                 <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                  Referencia futura para ORIGO. No bloquea la operacion v1.
+                  Genera borradores de orden en ORIGO con productos bajo minimo de la sede activa.
                 </div>
               </div>
               <span className="ui-chip">{purchaseSuggestions.length} proveedor(es)</span>

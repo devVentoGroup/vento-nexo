@@ -266,7 +266,7 @@ export function ProductSiteSettingsEditor({
           Stock real solo en Centro (LOC). En satelites defines disponibilidad para abastecimiento interno.
         </p>
         <p className="text-xs text-[var(--ui-muted)]">
-          La marca `audience` se mantiene como compatibilidad transicional.
+          La marca `audience` define el destino operativo de cada sede.
         </p>
       </div>
 

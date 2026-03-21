@@ -968,7 +968,7 @@ export default async function InventoryCatalogPage({
             operativa. La categoria aqui es operativa, no comercial.
           </p>
           <p>
-            La vista de compras es continuidad para ORIGO y no debe contaminar la operacion diaria.
+            La vista de compras se integra con ORIGO para emitir ordenes sugeridas por proveedor.
           </p>
         </CatalogHintPanel>
       </CatalogOptionalDetails>
