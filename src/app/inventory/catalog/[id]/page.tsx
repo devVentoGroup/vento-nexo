@@ -242,6 +242,25 @@ function resolveCatalogTab(productTypeRaw: string, inventoryKindRaw: string): Ca
   return "insumos";
 }
 
+function resolveLockedInventoryKind(productTypeRaw: string, inventoryKindRaw: string): string {
+  const productType = String(productTypeRaw ?? "").trim().toLowerCase();
+  const inventoryKind = String(inventoryKindRaw ?? "").trim().toLowerCase();
+  if (productType === "preparacion") return "finished";
+  if (productType === "venta") return inventoryKind === "resale" ? "resale" : "finished";
+  if (productType === "insumo") return inventoryKind === "asset" ? "asset" : "ingredient";
+  return inventoryKind || "unclassified";
+}
+
+function inventoryKindLabel(kindRaw: string): string {
+  const kind = String(kindRaw ?? "").trim().toLowerCase();
+  if (kind === "ingredient") return "Insumo";
+  if (kind === "finished") return "Producto terminado";
+  if (kind === "resale") return "Reventa";
+  if (kind === "packaging") return "Empaque";
+  if (kind === "asset") return "Activo";
+  return "Sin clasificar";
+}
+
 function siteSettingRowRank(row: SiteSettingRow): number {
   const activeScore = row.is_active === false ? 0 : 2;
   const minScore = row.min_stock_qty == null ? 0 : 1;
@@ -455,7 +474,11 @@ async function updateProduct(formData: FormData) {
   });
   const manualCost = asNullableNumber(formData.get("cost"));
   const productTypeValue = asText(formData.get("product_type")) || null;
-  const inventoryKindValue = asText(formData.get("inventory_kind")) || null;
+  const inventoryKindInput = asText(formData.get("inventory_kind")) || null;
+  const inventoryKindValue = resolveLockedInventoryKind(
+    productTypeValue || existingProductType || "insumo",
+    inventoryKindInput || ""
+  );
 
   const categoryId = asText(formData.get("category_id"));
   const categoryKind = resolveCategoryKindForProduct({
@@ -1118,6 +1141,11 @@ export default async function ProductCatalogDetailPage({
   const profileRow = (profile ?? null) as InventoryProfileRow | null;
   const normalizedProductType = String(productRow.product_type ?? "").trim().toLowerCase();
   const normalizedInventoryKind = String(profileRow?.inventory_kind ?? "").trim().toLowerCase();
+  const lockedInventoryKind = resolveLockedInventoryKind(
+    productRow.product_type ?? "insumo",
+    profileRow?.inventory_kind ?? ""
+  );
+  const lockedInventoryKindText = inventoryKindLabel(lockedInventoryKind);
   const hasSuppliers =
     (normalizedProductType === "insumo" && normalizedInventoryKind !== "asset") ||
     (normalizedProductType === "venta" && normalizedInventoryKind === "resale");
@@ -1387,18 +1415,11 @@ export default async function ProductCatalogDetailPage({
                 <>
                   <label className="flex flex-col gap-1">
                     <span className="ui-label">Tipo de inventario</span>
-                    <select
-                      name="inventory_kind"
-                      defaultValue={profileRow?.inventory_kind ?? "unclassified"}
-                      className="ui-input"
-                    >
-                      <option value="unclassified">Sin clasificar</option>
-                      <option value="ingredient">Insumo</option>
-                      <option value="finished">Producto terminado</option>
-                      <option value="resale">Reventa</option>
-                      <option value="packaging">Empaque</option>
-                      <option value="asset">Activo</option>
-                    </select>
+                    <input type="hidden" name="inventory_kind" value={lockedInventoryKind} />
+                    <div className="ui-input flex items-center">{lockedInventoryKindText}</div>
+                    <span className="text-xs text-[var(--ui-muted)]">
+                      Se define por el flujo de creacion y se mantiene bloqueado en edicion.
+                    </span>
                   </label>
                   {String(productRow.product_type ?? "").trim().toLowerCase() === "venta" ? (
                     <label className="flex flex-col gap-1">
