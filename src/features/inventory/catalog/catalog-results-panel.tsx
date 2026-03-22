@@ -127,15 +127,13 @@ export function CatalogResultsPanel({
       ) : null}
 
       <div className="mt-4 max-h-[70vh] overflow-auto rounded-xl border border-[var(--ui-border)]">
-        <table className="ui-table min-w-[1280px] text-sm">
+        <table className="ui-table min-w-[1100px] text-sm">
           <thead className="text-left text-[var(--ui-muted)]">
             <tr>
               <th className="py-2 pr-4 whitespace-nowrap">Producto</th>
               {viewMode === "catalogo" ? (
                 <>
-                  <th className="py-2 pr-4 whitespace-nowrap">SKU</th>
                   <th className="py-2 pr-4 whitespace-nowrap">Categoria</th>
-                  <th className="py-2 pr-4 whitespace-nowrap">Inventario</th>
                   <th className="py-2 pr-4 whitespace-nowrap">Unidad</th>
                 </>
               ) : null}
@@ -163,13 +161,11 @@ export function CatalogResultsPanel({
                 </td>
                 {viewMode === "catalogo" ? (
                   <>
-                    <td className="py-2.5 pr-4 font-mono whitespace-nowrap">{row.sku}</td>
                     <td className="py-2.5 pr-4">
                       <div className="max-w-[320px] truncate" title={row.categoryPath}>
                         {row.categoryLabel}
                       </div>
                     </td>
-                    <td className="py-2.5 pr-4 whitespace-nowrap">{row.inventoryLabel}</td>
                     <td className="py-2.5 pr-4 whitespace-nowrap">{row.unitLabel}</td>
                   </>
                 ) : null}
@@ -247,7 +243,7 @@ export function CatalogResultsPanel({
             ))}
             {rows.length === 0 ? (
               <tr>
-                <td className="py-4 text-[var(--ui-muted)]" colSpan={viewMode === "catalogo" ? 11 : 8}>
+                <td className="py-4 text-[var(--ui-muted)]" colSpan={viewMode === "catalogo" ? 9 : 6}>
                   No hay productos para mostrar con estos filtros.
                 </td>
               </tr>

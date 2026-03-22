@@ -81,13 +81,10 @@ export function CatalogFiltersPanel({
           </Link>
         </div>
 
-        <details
-          className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-3"
-          open={hasAdvancedFilters}
-        >
-          <summary className="flex cursor-pointer items-center justify-between gap-2">
-            <span className="ui-label">Filtros avanzados</span>
-            <span className="ui-caption">{hasAdvancedFilters ? "Activos" : "Opcionales"}</span>
+        <details className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-3">
+          <summary className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-[var(--ui-border)] bg-white/80 px-3 py-2">
+            <span className="text-sm font-semibold text-[var(--ui-text)]">Filtros avanzados</span>
+            <span className="ui-caption">{hasAdvancedFilters ? "Activos" : "Mostrar"}</span>
           </summary>
 
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
