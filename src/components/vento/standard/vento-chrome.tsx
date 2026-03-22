@@ -63,7 +63,7 @@ const NAV_GROUPS: NavGroup[] = [
       {
         href: "/",
         label: "Panel",
-        description: "Cockpit operativo v1",
+        description: "Cockpit operativo",
         required: ["access"],
         icon: "dashboard",
       },
@@ -140,7 +140,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       {
         href: "/inventory/settings/checklist",
-        label: "Checklist v1",
+        label: "Checklist",
         description: "Puesta a punto de Centro y satelites",
         required: ["access"],
         icon: "clipboard",
@@ -167,6 +167,14 @@ const NAV_GROUPS: NavGroup[] = [
         description: "Abastecimiento entre sedes",
         required: ["access"],
         icon: "arrows",
+      },
+      {
+        href: "/inventory/settings/remissions",
+        label: "Áreas remisión",
+        description: "Áreas por propósito y reglas por sede",
+        required: ["inventory.remissions"],
+        allowedRoles: ["propietario", "gerente_general"],
+        icon: "package",
       },
       {
         href: "/inventory/settings/sites",

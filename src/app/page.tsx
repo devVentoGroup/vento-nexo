@@ -534,7 +534,7 @@ export default async function Home({
     ? isSatellite
       ? "Tu pantalla debe reducirse a pedir abastecimiento, seguir el estado y confirmar recepción."
       : "Tu pantalla debe arrancar en solicitudes por preparar, confirmar salida y seguir al siguiente pedido."
-    : "Cockpit operativo v1 para inventario base, entradas, stock y abastecimiento interno entre sedes.";
+    : "Cockpit operativo para inventario base, entradas, stock y abastecimiento interno entre sedes.";
   const heroHint = isOperatorFocusMode
     ? isSatellite
       ? "Hoy te toca actuar rápido: pedir, revisar y recibir. Nada más."
@@ -670,7 +670,7 @@ export default async function Home({
     {
       id: "checklist",
       section: "configure",
-      title: "Checklist v1",
+      title: "Checklist",
       description: "Checklist de salida para setup, salud de datos y rutas.",
       href: "/inventory/settings/checklist",
       cta: "Abrir",
@@ -885,7 +885,7 @@ export default async function Home({
                 className="ui-btn ui-btn--ghost"
               >
                 <Icon name="clipboard" className="h-4 w-4" />
-                Checklist v1
+                Checklist
               </Link>
             ) : null}
             {isSatellite && canViewRemissions ? (
