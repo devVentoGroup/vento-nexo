@@ -8,7 +8,7 @@ const COOKIE_DOMAIN =
 function buildLoginRedirect(request: NextRequest) {
   const target = new URL("/login", request.url);
   target.searchParams.set("returnTo", request.url);
-  return NextResponse.redirect(target);
+  return withNoStoreHeaders(NextResponse.redirect(target));
 }
 
 function withCookieDomain(options?: Record<string, unknown>) {
@@ -52,6 +52,16 @@ function withDebugHeaders(
   return response;
 }
 
+function withNoStoreHeaders(response: NextResponse) {
+  response.headers.set(
+    "Cache-Control",
+    "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0"
+  );
+  response.headers.set("Pragma", "no-cache");
+  response.headers.set("Expires", "0");
+  return response;
+}
+
 export const config = {
   matcher: ["/((?!_next|login|favicon.ico|logos|images|fonts|api).*)"],
 };
@@ -61,7 +71,7 @@ export async function middleware(request: NextRequest) {
     return withDebugHeaders(buildLoginRedirect(request), request, "no-cookies");
   }
 
-  const response = NextResponse.next();
+  const response = withNoStoreHeaders(NextResponse.next());
 
   const url =
     process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";

@@ -47,6 +47,7 @@ export function SearchableSingleSelect({
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [isMobile, setIsMobile] = useState(false);
+  const [isCoarsePointer, setIsCoarsePointer] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -77,6 +78,20 @@ export function SearchableSingleSelect({
       window.removeEventListener("resize", updateViewport);
     };
   }, [mobileBreakpointPx]);
+
+  useEffect(() => {
+    const media = window.matchMedia("(pointer: coarse), (hover: none)");
+    const updatePointerMode = () => {
+      setIsCoarsePointer(media.matches);
+    };
+    updatePointerMode();
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", updatePointerMode);
+      return () => media.removeEventListener("change", updatePointerMode);
+    }
+    media.addListener(updatePointerMode);
+    return () => media.removeListener(updatePointerMode);
+  }, []);
 
   useEffect(() => {
     if (!isOpen) return;
@@ -127,8 +142,8 @@ export function SearchableSingleSelect({
 
   const selectedOption = options.find((option) => option.value === value) ?? null;
   const selectedLabel = selectedOption?.label ?? placeholder;
-  const useNativeMobile = isMobile && mobilePresentation === "native";
-  const useSheetMobile = isMobile && mobilePresentation === "sheet";
+  const useNativeMobile = mobilePresentation === "native" && (isMobile || isCoarsePointer);
+  const useSheetMobile = mobilePresentation === "sheet" && (isMobile || isCoarsePointer);
   const shouldRenderDropdown = !useNativeMobile && !useSheetMobile;
 
   const isInlineDropdown = dropdownMode === "inline";

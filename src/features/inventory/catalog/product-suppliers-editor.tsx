@@ -720,7 +720,7 @@ export function ProductSuppliersEditor({
                       </p>
                       {costPerStockUnitGross != null && Number.isFinite(costPerStockUnitGross) ? (
                         <p>
-                          Costo completo por {stockUnit.code} (con IVA):{" "}
+                          Costo completo {stockUnit.code} :{" "}
                           {formatMoney(costPerStockUnitGross, currency)}
                         </p>
                       ) : (

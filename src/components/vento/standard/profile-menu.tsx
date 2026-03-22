@@ -30,6 +30,7 @@ function initialsFrom(value?: string) {
 export function ProfileMenu({ name, role, email, sites, activeSiteId: baseActiveSiteId }: ProfileMenuProps) {
   const [open, setOpen] = useState(false);
   const [isSigningOut, setIsSigningOut] = useState(false);
+  const [isRefreshingApp, setIsRefreshingApp] = useState(false);
   const [overrideRole, setOverrideRole] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement | null>(null);
   const router = useRouter();
@@ -110,6 +111,55 @@ export function ProfileMenu({ name, role, email, sites, activeSiteId: baseActive
     const qs = params.toString();
     router.push(qs ? `${pathname}?${qs}` : pathname);
     setOpen(false);
+  };
+
+  const handleRefreshApp = async () => {
+    if (typeof window === "undefined") return;
+    try {
+      setIsRefreshingApp(true);
+      try {
+        window.localStorage.clear();
+      } catch {
+        // ignore storage errors
+      }
+      try {
+        window.sessionStorage.clear();
+      } catch {
+        // ignore storage errors
+      }
+      try {
+        if ("caches" in window) {
+          const cacheKeys = await window.caches.keys();
+          await Promise.all(cacheKeys.map((key) => window.caches.delete(key)));
+        }
+      } catch {
+        // ignore cache API errors
+      }
+      try {
+        if ("indexedDB" in window && "databases" in indexedDB) {
+          const dbs = await (indexedDB as IDBFactory & { databases?: () => Promise<Array<{ name?: string }>> })
+            .databases?.();
+          await Promise.all(
+            (dbs ?? [])
+              .map((db) => db?.name)
+              .filter((name): name is string => Boolean(name))
+              .map(
+                (name) =>
+                  new Promise<void>((resolve) => {
+                    const req = indexedDB.deleteDatabase(name);
+                    req.onsuccess = () => resolve();
+                    req.onerror = () => resolve();
+                    req.onblocked = () => resolve();
+                  })
+              )
+          );
+        }
+      } catch {
+        // ignore indexedDB errors
+      }
+    } finally {
+      window.location.reload();
+    }
   };
 
   useEffect(() => {
@@ -218,6 +268,14 @@ export function ProfileMenu({ name, role, email, sites, activeSiteId: baseActive
               </select>
             </div>
           ) : null}
+          <button
+            type="button"
+            onClick={handleRefreshApp}
+            disabled={isRefreshingApp || isSigningOut}
+            className="mt-3 inline-flex h-12 w-full items-center justify-center rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-3 text-base font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface)] disabled:opacity-60"
+          >
+            {isRefreshingApp ? "Actualizando..." : "Actualizar app (sin cerrar sesión)"}
+          </button>
           <button
             type="button"
             onClick={handleSignOut}
