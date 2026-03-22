@@ -373,6 +373,12 @@ export function ProductSuppliersEditor({
                   ? price / (1 + taxRate / 100)
                   : price
                 : 0;
+            const grossPackPrice =
+              price > 0
+                ? includesTax
+                  ? price
+                  : price * (1 + taxRate / 100)
+                : 0;
             const packLabel = line.purchase_unit?.trim() || "empaque";
             const currency = line.currency?.trim() || "COP";
             const hasPurchaseData =
@@ -398,8 +404,8 @@ export function ProductSuppliersEditor({
                 ? (packQty * packUnit.factor_to_base) / stockUnit.factor_to_base
                 : null;
 
-            const costPerStockUnit =
-              stockQty && stockQty > 0 && Number.isFinite(netPackPrice) ? netPackPrice / stockQty : null;
+            const costPerStockUnitGross =
+              stockQty && stockQty > 0 && Number.isFinite(grossPackPrice) ? grossPackPrice / stockQty : null;
 
             const packUnitOptions = stockUnit
               ? units.filter(
@@ -712,9 +718,10 @@ export function ProductSuppliersEditor({
                       <p>
                         1 {packLabel} = {formatNumber(stockQty ?? 0)} {stockUnit.code}
                       </p>
-                      {costPerStockUnit != null && Number.isFinite(costPerStockUnit) ? (
+                      {costPerStockUnitGross != null && Number.isFinite(costPerStockUnitGross) ? (
                         <p>
-                          Costo por {stockUnit.code}: {formatMoney(costPerStockUnit, currency)}
+                          Costo completo por {stockUnit.code} (con IVA):{" "}
+                          {formatMoney(costPerStockUnitGross, currency)}
                         </p>
                       ) : (
                         <p className="text-[var(--ui-muted)]">
