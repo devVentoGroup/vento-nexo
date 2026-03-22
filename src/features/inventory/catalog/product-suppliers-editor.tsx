@@ -595,15 +595,16 @@ export function ProductSuppliersEditor({
                           step="0.01"
                           min={0}
                           max={100}
-                          value={line.purchase_tax_rate ?? 19}
+                          value={line.purchase_tax_rate ?? ""}
                           onChange={(event) =>
                             updateLine(realIndex, {
                               purchase_tax_rate: event.target.value
                                 ? Number(event.target.value)
-                                : undefined,
+                                : 0,
                             })
                           }
                           className="ui-input h-9 w-28"
+                          placeholder="0"
                         />
                       </label>
                     ) : null}

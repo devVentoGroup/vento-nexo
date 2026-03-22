@@ -448,6 +448,15 @@ export default async function ProductTechnicalSheetPage({
       ? "Proveedor (empaque en operación)"
       : "Unidad operativa"
     : "Unidad operativa";
+  const purchasePackText = purchaseProfileDisplay
+    ? `${purchaseProfileDisplay.label} (${formatQty(purchaseProfileDisplay.qtyInInputUnit)} ${purchaseProfileDisplay.inputUnitCode} = ${formatQty(purchaseProfileDisplay.qtyInStockUnit)} ${stockUnitCode})`
+    : "Sin presentación de compra";
+  const remissionPackText = remissionProfileDisplay
+    ? `${remissionProfileDisplay.label} (${formatQty(remissionProfileDisplay.qtyInInputUnit)} ${remissionProfileDisplay.inputUnitCode} = ${formatQty(remissionProfileDisplay.qtyInStockUnit)} ${stockUnitCode})`
+    : `Unidad operativa (${defaultUnitCode})`;
+  const operationRuleText = remissionProfileDisplay
+    ? "Usa presentación de remisión."
+    : "Sin remisión explícita: usa unidad operativa.";
 
   const stockBySite = new Map<string, number>();
   stockRows.forEach((row) => {
@@ -648,6 +657,21 @@ export default async function ProductTechnicalSheetPage({
         <article className="ui-panel">
           <div className="text-sm font-semibold text-[var(--ui-text)]">Unidades y control</div>
           <div className="mt-3 space-y-2 text-sm text-[var(--ui-muted)]">
+            <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
+              <p className="text-xs uppercase tracking-wide text-[var(--ui-muted)]">Resumen operativo</p>
+              <p className="mt-1">
+                <strong className="text-[var(--ui-text)]">Base (stock/costo):</strong> {stockUnitCode}
+              </p>
+              <p>
+                <strong className="text-[var(--ui-text)]">Compra:</strong> {purchasePackText}
+              </p>
+              <p>
+                <strong className="text-[var(--ui-text)]">Remisión:</strong> {remissionPackText}
+              </p>
+              <p>
+                <strong className="text-[var(--ui-text)]">Regla activa:</strong> {operationRuleText}
+              </p>
+            </div>
             <p>
               <strong className="text-[var(--ui-text)]">Unidad base:</strong> {stockUnitCode}
             </p>
@@ -668,17 +692,13 @@ export default async function ProductTechnicalSheetPage({
             {purchaseProfileDisplay ? (
               <p>
                 <strong className="text-[var(--ui-text)]">Presentación compra:</strong>{" "}
-                {purchaseProfileDisplay.label} ({formatQty(purchaseProfileDisplay.qtyInInputUnit)}{" "}
-                {purchaseProfileDisplay.inputUnitCode} ={` `}
-                {formatQty(purchaseProfileDisplay.qtyInStockUnit)} {stockUnitCode})
+                {purchasePackText}
               </p>
             ) : null}
             {remissionProfileDisplay ? (
               <p>
                 <strong className="text-[var(--ui-text)]">Presentación remisión:</strong>{" "}
-                {remissionProfileDisplay.label} ({formatQty(remissionProfileDisplay.qtyInInputUnit)}{" "}
-                {remissionProfileDisplay.inputUnitCode} ={` `}
-                {formatQty(remissionProfileDisplay.qtyInStockUnit)} {stockUnitCode})
+                {remissionPackText}
               </p>
             ) : (
               <p>
