@@ -168,6 +168,7 @@ type SiteSettingRow = {
   site_id: string;
   is_active: boolean | null;
   default_area_kind: string | null;
+  area_kinds?: string[] | null;
   min_stock_qty: number | null;
   min_stock_input_mode?: "base" | "purchase" | null;
   min_stock_purchase_qty?: number | null;
@@ -345,12 +346,14 @@ function buildProductSiteSettingPayloadVariants(
   const variantKeysToOmit: string[][] = [
     [],
     [
+      "area_kinds",
       "min_stock_input_mode",
       "min_stock_purchase_qty",
       "min_stock_purchase_unit_code",
       "min_stock_purchase_to_base_factor",
     ],
     [
+      "area_kinds",
       "min_stock_input_mode",
       "min_stock_purchase_qty",
       "min_stock_purchase_unit_code",
@@ -358,6 +361,7 @@ function buildProductSiteSettingPayloadVariants(
       "audience",
     ],
     [
+      "area_kinds",
       "min_stock_input_mode",
       "min_stock_purchase_qty",
       "min_stock_purchase_unit_code",
@@ -991,6 +995,7 @@ async function updateProduct(formData: FormData) {
       site_id?: string;
       is_active?: boolean;
       default_area_kind?: string;
+      area_kinds?: string[];
       min_stock_qty?: number | string;
       min_stock_input_mode?: "base" | "purchase" | string;
       min_stock_purchase_qty?: number | string;
@@ -1011,6 +1016,7 @@ async function updateProduct(formData: FormData) {
       const hasMeaningfulData =
         Boolean(String(line.site_id ?? "").trim()) ||
         Boolean(String(line.default_area_kind ?? "").trim()) ||
+        (Array.isArray(line.area_kinds) && line.area_kinds.some((kind) => String(kind ?? "").trim())) ||
         Boolean(String(line.audience ?? "").trim()) ||
         String(line.min_stock_qty ?? "").trim() !== "";
       if (!line.site_id && hasMeaningfulData) {
@@ -1048,11 +1054,21 @@ async function updateProduct(formData: FormData) {
         parsedMinPurchaseFactorRaw > 0
           ? parsedMinPurchaseFactorRaw
           : null;
+      const normalizedAreaKinds = Array.from(
+        new Set(
+          (Array.isArray(line.area_kinds) ? line.area_kinds : [])
+            .map((kind) => String(kind ?? "").trim())
+            .filter(Boolean)
+        )
+      );
+      const normalizedDefaultAreaKind =
+        normalizedAreaKinds[0] ?? String(line.default_area_kind ?? "").trim() ?? "";
       const row = {
         product_id: productId,
         site_id: line.site_id,
         is_active: Boolean(line.is_active),
-        default_area_kind: line.default_area_kind || null,
+        default_area_kind: normalizedDefaultAreaKind || null,
+        area_kinds: normalizedAreaKinds.length ? normalizedAreaKinds : null,
         min_stock_qty: parsedMinStockQty,
         min_stock_input_mode: minStockInputMode,
         min_stock_purchase_qty:
@@ -1134,7 +1150,7 @@ export default async function ProductCatalogDetailPage({
   const { data: siteSettingsWithAudience, error: siteSettingsAudienceError } = await supabase
     .from("product_site_settings")
     .select(
-      "id,site_id,is_active,default_area_kind,min_stock_qty,min_stock_input_mode,min_stock_purchase_qty,min_stock_purchase_unit_code,min_stock_purchase_to_base_factor,audience,updated_at,created_at,sites(id,name)"
+      "id,site_id,is_active,default_area_kind,area_kinds,min_stock_qty,min_stock_input_mode,min_stock_purchase_qty,min_stock_purchase_unit_code,min_stock_purchase_to_base_factor,audience,updated_at,created_at,sites(id,name)"
     )
     .eq("product_id", id);
   const siteSettings =
@@ -1143,7 +1159,7 @@ export default async function ProductCatalogDetailPage({
       : (
           await supabase
             .from("product_site_settings")
-            .select("id,site_id,is_active,default_area_kind,min_stock_qty,audience,updated_at,created_at,sites(id,name)")
+            .select("id,site_id,is_active,default_area_kind,area_kinds,min_stock_qty,audience,updated_at,created_at,sites(id,name)")
             .eq("product_id", id)
         ).data ??
         (
@@ -1399,7 +1415,12 @@ export default async function ProductCatalogDetailPage({
         <div className="ui-remission-hero-grid lg:grid-cols-[1.45fr_1fr] lg:items-start">
           <div className="space-y-4">
             <div className="space-y-2">
-              <Link href={from || "/inventory/catalog"} className="ui-caption underline">Volver al catalogo</Link>
+              <Link
+                href={from || "/inventory/catalog"}
+                className="ui-btn ui-btn--ghost inline-flex h-12 items-center px-5 text-base font-semibold"
+              >
+                ← Volver al catálogo
+              </Link>
               <h1 className="ui-h1">{productRow.name ?? "Ficha maestra"}</h1>
               <p className="ui-body-muted">
                 Ficha maestra del producto: identidad operativa, compra, almacenamiento y setup por sede.
@@ -1665,6 +1686,12 @@ export default async function ProductCatalogDetailPage({
               site_id: r.site_id,
               is_active: Boolean(r.is_active),
               default_area_kind: r.default_area_kind ?? "",
+              area_kinds:
+                Array.isArray(r.area_kinds) && r.area_kinds.length
+                  ? r.area_kinds
+                  : r.default_area_kind
+                    ? [r.default_area_kind]
+                    : [],
               min_stock_qty: r.min_stock_qty ?? undefined,
               min_stock_input_mode: r.min_stock_input_mode === "purchase" ? "purchase" : "base",
               min_stock_purchase_qty: r.min_stock_purchase_qty ?? undefined,

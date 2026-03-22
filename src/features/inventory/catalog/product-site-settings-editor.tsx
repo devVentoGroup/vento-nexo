@@ -7,6 +7,7 @@ export type SiteSettingLine = {
   site_id: string;
   is_active: boolean;
   default_area_kind?: string;
+  area_kinds?: string[];
   min_stock_qty?: number;
   min_stock_input_mode?: "base" | "purchase";
   min_stock_purchase_qty?: number;
@@ -46,7 +47,7 @@ type SiteKind = "production_center" | "satellite" | "other";
 type SatelliteState = {
   enabled: boolean;
   isActive: boolean;
-  defaultAreaKind: string;
+  areaKinds: string[];
   minStockQty?: number;
 };
 
@@ -85,6 +86,15 @@ export function ProductSiteSettingsEditor({
   operationUnitHint,
   purchaseUnitHint,
 }: Props) {
+  const normalizeAreaKinds = (input: Array<string | null | undefined>): string[] =>
+    Array.from(
+      new Set(
+        input
+          .map((value) => String(value ?? "").trim())
+          .filter(Boolean)
+      )
+    );
+
   const siteMap = useMemo(() => new Map(sites.map((site) => [site.id, site])), [sites]);
   const initialBySite = useMemo(() => {
     const map = new Map<string, SiteSettingLine>();
@@ -168,7 +178,10 @@ export function ProductSiteSettingsEditor({
       state.set(site.id, {
         enabled: isActive,
         isActive,
-        defaultAreaKind: existing?.default_area_kind ?? "",
+        areaKinds: normalizeAreaKinds([
+          ...(Array.isArray(existing?.area_kinds) ? existing.area_kinds : []),
+          existing?.default_area_kind,
+        ]),
         minStockQty: existing?.min_stock_qty,
       });
     }
@@ -252,16 +265,19 @@ export function ProductSiteSettingsEditor({
       const state = satelliteState.get(site.id) ?? {
         enabled: false,
         isActive: true,
-        defaultAreaKind: "",
+        areaKinds: [],
         minStockQty: undefined,
       };
       if (!state.enabled && !current?.id) continue;
 
+      const normalizedAreaKinds = normalizeAreaKinds(state.areaKinds);
+      const normalizedDefaultAreaKind = normalizedAreaKinds[0] ?? "";
       next.push({
         id: current?.id,
         site_id: site.id,
         is_active: state.enabled ? state.isActive : false,
-        default_area_kind: state.defaultAreaKind || undefined,
+        default_area_kind: normalizedDefaultAreaKind || undefined,
+        area_kinds: normalizedAreaKinds.length ? normalizedAreaKinds : undefined,
         min_stock_qty: state.minStockQty,
         min_stock_input_mode: "base",
         audience: inferSatelliteAudience(site),
@@ -290,7 +306,7 @@ export function ProductSiteSettingsEditor({
       const current = next.get(siteId) ?? {
         enabled: false,
         isActive: true,
-        defaultAreaKind: "",
+        areaKinds: [],
         minStockQty: undefined,
       };
       next.set(siteId, { ...current, ...patch });
@@ -472,7 +488,7 @@ export function ProductSiteSettingsEditor({
             const state = satelliteState.get(site.id) ?? {
               enabled: false,
               isActive: true,
-              defaultAreaKind: "",
+              areaKinds: [],
               minStockQty: undefined,
             };
             return (
@@ -508,26 +524,37 @@ export function ProductSiteSettingsEditor({
                       </label>
                     </div>
 
-                    <label className="flex flex-col gap-1 md:col-span-4">
-                      <span className="ui-label">Area por defecto</span>
-                      <select
-                        value={state.defaultAreaKind}
-                        onChange={(event) =>
-                          updateSatellite(site.id, { defaultAreaKind: event.target.value })
-                        }
-                        className="ui-input"
-                      >
-                        <option value="">Sin definir</option>
-                        {getAreaOptionsForSite(site.id, state.defaultAreaKind).map((area) => (
-                          <option key={area.code} value={area.code}>
-                            {area.name}
-                          </option>
-                        ))}
-                      </select>
+                    <div className="flex flex-col gap-1 md:col-span-4">
+                      <span className="ui-label">Areas que pueden solicitar</span>
+                      <div className="max-h-40 overflow-auto rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-2">
+                        <div className="grid gap-2">
+                          {getAreaOptionsForSite(site.id, state.areaKinds[0]).map((area) => {
+                            const checked = state.areaKinds.includes(area.code);
+                            return (
+                              <label
+                                key={`${site.id}-${area.code}`}
+                                className="flex items-center gap-2 rounded-lg px-2 py-1 text-sm hover:bg-[var(--ui-surface-2)]"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={checked}
+                                  onChange={(event) => {
+                                    const nextKinds = event.target.checked
+                                      ? [...state.areaKinds, area.code]
+                                      : state.areaKinds.filter((code) => code !== area.code);
+                                    updateSatellite(site.id, { areaKinds: normalizeAreaKinds(nextKinds) });
+                                  }}
+                                />
+                                <span>{area.code === "general" ? "Todos" : area.name}</span>
+                              </label>
+                            );
+                          })}
+                        </div>
+                      </div>
                       <p className="text-xs text-[var(--ui-muted)]">
-                        Area sugerida al solicitar desde esta sede.
+                        Puedes marcar varias areas. La primera queda como sugerida por defecto.
                       </p>
-                    </label>
+                    </div>
 
                     <label className="flex flex-col gap-1 md:col-span-5">
                       <span className="ui-label">Stock minimo (referencia)</span>
