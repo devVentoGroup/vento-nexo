@@ -13,6 +13,7 @@ import { ProductChecklistPanel } from "@/features/inventory/catalog/product-chec
 import { ProductFormFooter } from "@/features/inventory/catalog/product-form-footer";
 import { ProductIdentityFields } from "@/features/inventory/catalog/product-identity-fields";
 import { ProductPhotoSection } from "@/features/inventory/catalog/product-photo-section";
+import { ProductRemissionUomFields } from "@/features/inventory/catalog/product-remission-uom-fields";
 import { ProductSiteAvailabilitySection } from "@/features/inventory/catalog/product-site-availability-section";
 import { ProductStorageFields } from "@/features/inventory/catalog/product-storage-fields";
 import {
@@ -697,27 +698,33 @@ async function createProduct(formData: FormData) {
     }
   }
 
-  if (!remissionUomFromSupplier) {
-    const remissionInputUnitCode = normalizeUnitCode(
-      asText(formData.get("remission_uom_code"))
-    );
-    const remissionQtyInStockRaw = Number(formData.get("remission_uom_qty_in_stock") ?? 0);
-    const remissionQtyInStock =
-      Number.isFinite(remissionQtyInStockRaw) && remissionQtyInStockRaw > 0
-        ? remissionQtyInStockRaw
-        : 0;
-    const remissionLabel =
-      asText(formData.get("remission_uom_label")) || "Empaque remision";
-
-    if (remissionInputUnitCode && remissionQtyInStock > 0) {
-      remissionUomFromSupplier = {
-        label: remissionLabel,
-        inputUnitCode: remissionInputUnitCode,
-        qtyInInputUnit: 1,
-        qtyInStockUnit: remissionQtyInStock,
-        source: "manual",
-      };
+  const remissionInputUnitCodeRaw = asText(formData.get("remission_uom_code"));
+  const remissionQtyInStockText = asText(formData.get("remission_uom_qty_in_stock"));
+  const remissionLabelText = asText(formData.get("remission_uom_label"));
+  const remissionInputUnitCode = normalizeUnitCode(remissionInputUnitCodeRaw);
+  const remissionQtyInStockRaw = Number(remissionQtyInStockText || 0);
+  const remissionQtyInStock =
+    Number.isFinite(remissionQtyInStockRaw) && remissionQtyInStockRaw > 0
+      ? remissionQtyInStockRaw
+      : 0;
+  const explicitRemissionProvided = Boolean(
+    remissionInputUnitCodeRaw || remissionQtyInStockText || remissionLabelText
+  );
+  if (explicitRemissionProvided) {
+    if (!remissionInputUnitCode || remissionQtyInStock <= 0) {
+      redirect(
+        `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
+          "Completa la presentación de remisión: unidad y equivalencia a unidad base."
+        )}`
+      );
     }
+    remissionUomFromSupplier = {
+      label: remissionLabelText || "Presentación remisión",
+      inputUnitCode: remissionInputUnitCode,
+      qtyInInputUnit: 1,
+      qtyInStockUnit: remissionQtyInStock,
+      source: "manual",
+    };
   }
 
   if (!remissionUomFromSupplier) {
@@ -1223,6 +1230,21 @@ export default async function NewProductPage({
             />
           </CatalogSection>
         )}
+
+        {config.hasStorage ? (
+          <CatalogSection
+            title="Presentación remisión"
+            description="Define la presentación operativa usada en remisiones y formularios (independiente de compra)."
+          >
+            <ProductRemissionUomFields
+              units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
+              stockUnitCode={defaultStockUnitCode}
+              defaultLabel="Unidad operativa"
+              defaultInputUnitCode={defaultStockUnitCode}
+              defaultQtyInStockUnit={1}
+            />
+          </CatalogSection>
+        ) : null}
 
         {/* Receta se gestiona fuera del flujo actual */}
         {config.hasRecipe && (

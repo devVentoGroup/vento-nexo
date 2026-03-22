@@ -7,6 +7,7 @@ import { ProductFormFooter } from "@/features/inventory/catalog/product-form-foo
 import { ProductIdentityFields } from "@/features/inventory/catalog/product-identity-fields";
 import { ProductPhotoSection } from "@/features/inventory/catalog/product-photo-section";
 import { ProductPurchaseSection } from "@/features/inventory/catalog/product-purchase-section";
+import { ProductRemissionUomFields } from "@/features/inventory/catalog/product-remission-uom-fields";
 import { ProductSiteAvailabilitySection } from "@/features/inventory/catalog/product-site-availability-section";
 import { ProductStorageFields } from "@/features/inventory/catalog/product-storage-fields";
 import { ProductUomProfilePanel } from "@/features/inventory/catalog/product-uom-profile-panel";
@@ -841,6 +842,32 @@ async function updateProduct(formData: FormData) {
     }
   }
 
+  const remissionInputUnitCodeRaw = asText(formData.get("remission_uom_code"));
+  const remissionQtyInStockText = asText(formData.get("remission_uom_qty_in_stock"));
+  const remissionLabelText = asText(formData.get("remission_uom_label"));
+  const remissionInputUnitCode = normalizeUnitCode(remissionInputUnitCodeRaw);
+  const remissionQtyInStockRaw = Number(remissionQtyInStockText || 0);
+  const remissionQtyInStock =
+    Number.isFinite(remissionQtyInStockRaw) && remissionQtyInStockRaw > 0
+      ? remissionQtyInStockRaw
+      : 0;
+  const explicitRemissionProvided = Boolean(
+    remissionInputUnitCodeRaw || remissionQtyInStockText || remissionLabelText
+  );
+  if (explicitRemissionProvided) {
+    if (!remissionInputUnitCode || remissionQtyInStock <= 0) {
+      redirectWithError(
+        "Completa la presentación de remisión: unidad y equivalencia a unidad base."
+      );
+    }
+    remissionUomFromSupplier = {
+      label: remissionLabelText || "Presentación remisión",
+      inputUnitCode: remissionInputUnitCode,
+      qtyInInputUnit: 1,
+      qtyInStockUnit: remissionQtyInStock,
+    };
+  }
+
   if (!remissionUomFromSupplier) {
     remissionUomFromSupplier = buildRemissionFromDefaultUnit({
       defaultUnitCode: resolvedDefaultUnit,
@@ -1545,6 +1572,19 @@ export default async function ProductCatalogDetailPage({
             stockUnitCode={stockUnitCode}
             stockUnitFieldId={STOCK_UNIT_FIELD_ID}
           />
+
+          <CatalogSection
+            title="Presentación remisión"
+            description="Define la presentación operativa usada en remisiones y formularios (independiente de compra)."
+          >
+            <ProductRemissionUomFields
+              units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
+              stockUnitCode={stockUnitCode}
+              defaultLabel={remissionUomProfile?.label ?? "Unidad operativa"}
+              defaultInputUnitCode={remissionUomProfile?.input_unit_code ?? resolvedDefaultUnit}
+              defaultQtyInStockUnit={remissionUomProfile?.qty_in_stock_unit ?? 1}
+            />
+          </CatalogSection>
 
           <ProductPhotoSection
             description="Imagen principal para identificar rapidamente el item en catalogo y listados."
