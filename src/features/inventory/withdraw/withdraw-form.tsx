@@ -211,6 +211,8 @@ export function WithdrawForm({
                 placeholder="Selecciona LOC"
                 searchPlaceholder="Buscar LOC..."
                 sheetTitle="Selecciona LOC"
+                mobilePresentation="sheet"
+                mobileBreakpointPx={1024}
                 dropdownMode="inline"
               />
               <Link href="/inventory/stock" className="ui-btn ui-btn--ghost h-12 w-full text-sm font-semibold sm:w-auto">
@@ -296,6 +298,8 @@ export function WithdrawForm({
                         placeholder="Selecciona producto"
                         searchPlaceholder="Buscar producto..."
                         sheetTitle="Selecciona producto"
+                        mobilePresentation="sheet"
+                        mobileBreakpointPx={1024}
                         dropdownMode="inline"
                       />
                     </label>

@@ -266,6 +266,8 @@ export function RemissionsItems({
                     placeholder="Selecciona producto"
                     searchPlaceholder="Buscar producto..."
                     sheetTitle="Productos"
+                    mobilePresentation="sheet"
+                    mobileBreakpointPx={1024}
                     dropdownMode="inline"
                     className="min-w-0"
                   />

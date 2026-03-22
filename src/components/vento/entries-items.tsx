@@ -366,6 +366,8 @@ export function EntriesItems({
                 placeholder="Selecciona producto"
                 searchPlaceholder="Buscar producto..."
                 sheetTitle="Selecciona producto"
+                mobilePresentation="sheet"
+                mobileBreakpointPx={1024}
               />
 
               {row.productId ? (
@@ -443,6 +445,8 @@ export function EntriesItems({
                     placeholder="Selecciona LOC"
                     searchPlaceholder="Buscar LOC..."
                     sheetTitle="Selecciona LOC"
+                    mobilePresentation="sheet"
+                    mobileBreakpointPx={1024}
                   />
                 </>
               ) : (

@@ -149,6 +149,8 @@ export function TransfersItems({ products, defaultUomProfiles = [] }: Props) {
                 placeholder="Selecciona producto"
                 searchPlaceholder="Buscar producto..."
                 sheetTitle="Selecciona producto"
+                mobilePresentation="sheet"
+                mobileBreakpointPx={1024}
               />
 
               {row.productId ? (
