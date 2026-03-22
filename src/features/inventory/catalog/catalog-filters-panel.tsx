@@ -66,15 +66,7 @@ export function CatalogFiltersPanel({
         <input type="hidden" name="site_id" value={siteId} />
         <input type="hidden" name="category_kind" value={categoryKind} />
 
-        <label className="flex flex-col gap-1">
-          <span className="ui-label">Buscar SKU o nombre</span>
-          <input
-            name="q"
-            defaultValue={searchQuery}
-            placeholder="SKU o nombre de producto"
-            className="ui-input"
-          />
-        </label>
+        <input type="hidden" name="q" value={searchQuery} />
 
         <label className="inline-flex items-center gap-2 text-sm text-[var(--ui-text)]">
           <input

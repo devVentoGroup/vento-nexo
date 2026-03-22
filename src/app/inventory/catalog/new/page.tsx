@@ -3,6 +3,7 @@ import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { RequiredFieldsGuardForm } from "@/components/inventory/forms/RequiredFieldsGuardForm";
+import { CreateRequestKeyField } from "@/components/inventory/forms/create-request-key-field";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
@@ -50,6 +51,22 @@ const STOCK_UNIT_FIELD_ID = "stock_unit_code";
 
 function asText(v: FormDataEntryValue | null) {
   return typeof v === "string" ? v.trim() : "";
+}
+
+function isMissingColumnError(error: { code?: string | null; message?: string | null } | null | undefined, column: string) {
+  if (!error) return false;
+  if (error.code !== "42703") return false;
+  const message = `${error.message ?? ""}`.toLowerCase();
+  return message.includes(column.toLowerCase());
+}
+
+function isCreateRequestKeyConflict(error: { code?: string | null; message?: string | null; details?: string | null } | null | undefined) {
+  if (!error || error.code !== "23505") return false;
+  const message = `${error.message ?? ""} ${error.details ?? ""}`.toLowerCase();
+  return (
+    message.includes("create_request_key") ||
+    message.includes("ux_products_create_request_key")
+  );
 }
 
 function resolveNetPurchasePrice(params: {
@@ -326,6 +343,8 @@ async function createProduct(formData: FormData) {
   }
 
   const typeKey = asText(formData.get("_type_key")) as ProductTypeKey;
+  const createRequestKeyRaw = asText(formData.get("_create_request_key"));
+  const createRequestKey = createRequestKeyRaw || null;
   const modeQuery = "";
   const config = TYPE_CONFIG[typeKey] ?? TYPE_CONFIG.insumo;
 
@@ -455,8 +474,10 @@ async function createProduct(formData: FormData) {
   }
 
   let createdProductId = "";
+  let dedupedByRequestKey = false;
   let attempts = 0;
   let lastInsertErrorMessage = "";
+  let supportsCreateRequestKeyColumn = true;
   while (!createdProductId && attempts < 2) {
     attempts += 1;
     const autoSku = await generateNextSku({
@@ -466,15 +487,38 @@ async function createProduct(formData: FormData) {
       name,
     });
 
-    const { data: newProduct, error: insertErr } = await supabase
-      .from("products")
-      .insert({ ...productPayload, sku: autoSku })
-      .select("id")
-      .single();
+    const insertPayload: Record<string, unknown> = {
+      ...productPayload,
+      sku: autoSku,
+    };
+    if (createRequestKey && supportsCreateRequestKeyColumn) {
+      insertPayload.create_request_key = createRequestKey;
+    }
+
+    const { data: newProduct, error: insertErr } = await supabase.from("products").insert(insertPayload).select("id").single();
+
+    if (isMissingColumnError(insertErr, "create_request_key")) {
+      supportsCreateRequestKeyColumn = false;
+      attempts -= 1;
+      continue;
+    }
 
     if (!insertErr && newProduct?.id) {
       createdProductId = newProduct.id;
       break;
+    }
+
+    if (createRequestKey && supportsCreateRequestKeyColumn && isCreateRequestKeyConflict(insertErr)) {
+      const { data: existingByRequestKey } = await supabase
+        .from("products")
+        .select("id")
+        .eq("create_request_key", createRequestKey)
+        .maybeSingle();
+      if (existingByRequestKey?.id) {
+        createdProductId = existingByRequestKey.id;
+        dedupedByRequestKey = true;
+        break;
+      }
     }
 
     lastInsertErrorMessage = insertErr?.message ?? "Error al crear.";
@@ -493,6 +537,11 @@ async function createProduct(formData: FormData) {
   }
 
   const productId = createdProductId;
+
+  if (dedupedByRequestKey) {
+    revalidatePath("/inventory/catalog");
+    redirect(`/inventory/catalog/${productId}?ok=1`);
+  }
 
   // Inventory profile
   const invKind = config.inventoryKind as string;
@@ -969,6 +1018,7 @@ export default async function NewProductPage({
 }) {
   const sp = (await searchParams) ?? {};
   const typeKey = (sp.type ?? "insumo") as ProductTypeKey;
+  const createRequestKey = crypto.randomUUID();
   const config = TYPE_CONFIG[typeKey] ?? TYPE_CONFIG.insumo;
 
   const { supabase, user } = await requireAppAccess({
@@ -1176,6 +1226,7 @@ export default async function NewProductPage({
       >
         <input type="hidden" name="_type_key" value={typeKey} />
         <input type="hidden" name="_mode" value="" />
+        <CreateRequestKeyField initialValue={createRequestKey} />
 
         <CatalogSection
           title="Datos basicos"
