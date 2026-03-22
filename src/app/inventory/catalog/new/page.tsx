@@ -722,16 +722,20 @@ async function createProduct(formData: FormData) {
   const remissionInputUnitCodeRaw = asText(formData.get("remission_uom_code"));
   const remissionQtyInStockText = asText(formData.get("remission_uom_qty_in_stock"));
   const remissionLabelText = asText(formData.get("remission_uom_label"));
+  const remissionSourceModeRaw = asText(formData.get("remission_source_mode")).toLowerCase();
+  const remissionSourceMode =
+    remissionSourceModeRaw === "purchase_primary" ||
+    remissionSourceModeRaw === "remission_profile" ||
+    remissionSourceModeRaw === "operation_unit"
+      ? remissionSourceModeRaw
+      : "operation_unit";
   const remissionInputUnitCode = normalizeUnitCode(remissionInputUnitCodeRaw);
   const remissionQtyInStockRaw = Number(remissionQtyInStockText || 0);
   const remissionQtyInStock =
     Number.isFinite(remissionQtyInStockRaw) && remissionQtyInStockRaw > 0
       ? remissionQtyInStockRaw
       : 0;
-  const explicitRemissionProvided = Boolean(
-    remissionInputUnitCodeRaw || remissionQtyInStockText || remissionLabelText
-  );
-  if (explicitRemissionProvided) {
+  if (remissionSourceMode === "remission_profile") {
     if (!remissionInputUnitCode || remissionQtyInStock <= 0) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
@@ -747,8 +751,23 @@ async function createProduct(formData: FormData) {
       source: "manual",
     };
   }
-
-  if (!remissionUomFromSupplier) {
+  if (remissionSourceMode === "purchase_primary") {
+    if (!purchaseUomFromSupplier) {
+      redirect(
+        `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
+          "No se pudo usar la presentación de compra en operación. Completa el proveedor primario."
+        )}`
+      );
+    }
+    remissionUomFromSupplier = {
+      label: purchaseUomFromSupplier.label || "Presentación compra",
+      inputUnitCode: purchaseUomFromSupplier.inputUnitCode,
+      qtyInInputUnit: purchaseUomFromSupplier.qtyInInputUnit,
+      qtyInStockUnit: purchaseUomFromSupplier.qtyInStockUnit,
+      source: "supplier_primary",
+    };
+  }
+  if (remissionSourceMode === "operation_unit") {
     remissionUomFromSupplier = buildRemissionFromDefaultUnit({
       defaultUnitCode: resolvedDefaultUnit,
       stockUnitCode,
@@ -1013,6 +1032,24 @@ export default async function NewProductPage({
 
   const { data: areaKindsData } = await supabase.from("area_kinds").select("code,name").order("name");
   const areaKindsList = (areaKindsData ?? []) as { code: string; name: string | null }[];
+  const { data: siteAreasData } = await supabase
+    .from("areas")
+    .select("site_id,kind,is_active")
+    .eq("is_active", true);
+  const siteAreaKindsList = Array.from(
+    new Set(
+      ((siteAreasData ?? []) as Array<{ site_id: string | null; kind: string | null }>)
+        .map((row) => {
+          const siteId = String(row.site_id ?? "").trim();
+          const kind = String(row.kind ?? "").trim();
+          return siteId && kind ? `${siteId}::${kind}` : "";
+        })
+        .filter(Boolean)
+    )
+  ).map((token) => {
+    const [site_id, kind] = token.split("::");
+    return { site_id, kind };
+  });
 
   const { data: suppliersData } = config.hasSuppliers
     ? await supabase.from("suppliers").select("id,name").eq("is_active", true).order("name")
@@ -1263,6 +1300,8 @@ export default async function NewProductPage({
               defaultLabel="Unidad operativa"
               defaultInputUnitCode={defaultStockUnitCode}
               defaultQtyInStockUnit={1}
+              defaultSourceMode="operation_unit"
+              allowPurchasePrimaryOption={config.hasSuppliers}
             />
           </CatalogSection>
         ) : null}
@@ -1303,6 +1342,7 @@ export default async function NewProductPage({
           initialRows={[]}
           sites={sitesList.map((s) => ({ id: s.id, name: s.name, site_type: s.site_type }))}
           areaKinds={areaKindsList.map((a) => ({ code: a.code, name: a.name ?? a.code }))}
+          siteAreaKinds={siteAreaKindsList}
           stockUnitCode={defaultStockUnitCode}
           operationUnitHint={buildOperationUnitHintFromUnits({
             units: unitsList,

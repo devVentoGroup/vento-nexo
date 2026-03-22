@@ -180,6 +180,7 @@ type SiteSettingRow = {
 };
 
 type AreaKindRow = { code: string; name: string | null };
+type SiteAreaKindRow = { site_id: string | null; kind: string | null; is_active?: boolean | null };
 type SiteOptionRow = { id: string; name: string | null; site_type: string | null };
 type UnitRow = InventoryUnit;
 
@@ -650,6 +651,7 @@ async function updateProduct(formData: FormData) {
         inputUnitCode: string;
         qtyInInputUnit: number;
         qtyInStockUnit: number;
+        source: "manual" | "supplier_primary";
       }
     | null = null;
   const supplierLinesRaw = formData.get("supplier_lines");
@@ -766,6 +768,7 @@ async function updateProduct(formData: FormData) {
                 inputUnitCode: packUnitCode,
                 qtyInInputUnit: 1,
                 qtyInStockUnit,
+                source: "supplier_primary",
               };
             }
           }
@@ -845,16 +848,20 @@ async function updateProduct(formData: FormData) {
   const remissionInputUnitCodeRaw = asText(formData.get("remission_uom_code"));
   const remissionQtyInStockText = asText(formData.get("remission_uom_qty_in_stock"));
   const remissionLabelText = asText(formData.get("remission_uom_label"));
+  const remissionSourceModeRaw = asText(formData.get("remission_source_mode")).toLowerCase();
+  const remissionSourceMode =
+    remissionSourceModeRaw === "purchase_primary" ||
+    remissionSourceModeRaw === "remission_profile" ||
+    remissionSourceModeRaw === "operation_unit"
+      ? remissionSourceModeRaw
+      : "operation_unit";
   const remissionInputUnitCode = normalizeUnitCode(remissionInputUnitCodeRaw);
   const remissionQtyInStockRaw = Number(remissionQtyInStockText || 0);
   const remissionQtyInStock =
     Number.isFinite(remissionQtyInStockRaw) && remissionQtyInStockRaw > 0
       ? remissionQtyInStockRaw
       : 0;
-  const explicitRemissionProvided = Boolean(
-    remissionInputUnitCodeRaw || remissionQtyInStockText || remissionLabelText
-  );
-  if (explicitRemissionProvided) {
+  if (remissionSourceMode === "remission_profile") {
     if (!remissionInputUnitCode || remissionQtyInStock <= 0) {
       redirectWithError(
         "Completa la presentación de remisión: unidad y equivalencia a unidad base."
@@ -865,10 +872,28 @@ async function updateProduct(formData: FormData) {
       inputUnitCode: remissionInputUnitCode,
       qtyInInputUnit: 1,
       qtyInStockUnit: remissionQtyInStock,
+      source: "manual",
     };
   }
 
-  if (!remissionUomFromSupplier) {
+  if (remissionSourceMode === "purchase_primary") {
+    const purchaseProfile = purchaseUomFromSupplier;
+    if (!purchaseProfile) {
+      redirectWithError(
+        "No se pudo usar la presentación de compra en operación. Completa el proveedor primario."
+      );
+      return;
+    }
+    remissionUomFromSupplier = {
+      label: purchaseProfile.label || "Presentación compra",
+      inputUnitCode: purchaseProfile.inputUnitCode,
+      qtyInInputUnit: purchaseProfile.qtyInInputUnit,
+      qtyInStockUnit: purchaseProfile.qtyInStockUnit,
+      source: "supplier_primary",
+    };
+  }
+
+  if (remissionSourceMode === "operation_unit") {
     remissionUomFromSupplier = buildRemissionFromDefaultUnit({
       defaultUnitCode: resolvedDefaultUnit,
       stockUnitCode,
@@ -947,7 +972,7 @@ async function updateProduct(formData: FormData) {
       inputUnitCode: remissionUomFromSupplier.inputUnitCode,
       qtyInInputUnit: remissionUomFromSupplier.qtyInInputUnit,
       qtyInStockUnit: remissionUomFromSupplier.qtyInStockUnit,
-      source: "supplier_primary",
+      source: remissionUomFromSupplier.source,
     });
   }
 
@@ -1158,6 +1183,24 @@ export default async function ProductCatalogDetailPage({
 
   const { data: areaKindsData } = await supabase.from("area_kinds").select("code,name").order("name", { ascending: true });
   const areaKindsList = (areaKindsData ?? []) as AreaKindRow[];
+  const { data: siteAreasData } = await supabase
+    .from("areas")
+    .select("site_id,kind,is_active")
+    .eq("is_active", true);
+  const siteAreaKindsList = Array.from(
+    new Set(
+      ((siteAreasData ?? []) as SiteAreaKindRow[])
+        .map((row) => {
+          const siteId = String(row.site_id ?? "").trim();
+          const kind = String(row.kind ?? "").trim();
+          return siteId && kind ? `${siteId}::${kind}` : "";
+        })
+        .filter(Boolean)
+    )
+  ).map((token) => {
+    const [site_id, kind] = token.split("::");
+    return { site_id, kind };
+  });
 
   const { data: unitsData } = await supabase
     .from("inventory_units")
@@ -1306,6 +1349,26 @@ export default async function ProductCatalogDetailPage({
   const remissionInputUnitCode = remissionUomProfile
     ? normalizeUnitCode(remissionUomProfile.input_unit_code)
     : "";
+  const operationUnitFromDefault = buildOperationUnitHintFromUnits({
+    units: unitsList,
+    inputUnitCode: resolvedDefaultUnit || stockUnitCode,
+    stockUnitCode,
+  });
+  const remissionSourceModeDefault: "operation_unit" | "purchase_primary" | "remission_profile" =
+    remissionUomProfile?.source === "supplier_primary"
+      ? "purchase_primary"
+      : remissionUomProfile &&
+          operationUnitFromDefault &&
+          normalizeUnitCode(remissionUomProfile.input_unit_code) ===
+            normalizeUnitCode(operationUnitFromDefault.inputUnitCode) &&
+          Math.abs(
+            Number(remissionUomProfile.qty_in_stock_unit ?? 0) -
+              Number(operationUnitFromDefault.qtyInStockUnit ?? 0)
+          ) <= 0.0001
+        ? "operation_unit"
+        : remissionUomProfile
+          ? "remission_profile"
+          : "operation_unit";
 
   const supplierInitialRows = supplierRows.map((r) => ({
     id: r.id,
@@ -1583,6 +1646,8 @@ export default async function ProductCatalogDetailPage({
               defaultLabel={remissionUomProfile?.label ?? "Unidad operativa"}
               defaultInputUnitCode={remissionUomProfile?.input_unit_code ?? resolvedDefaultUnit}
               defaultQtyInStockUnit={remissionUomProfile?.qty_in_stock_unit ?? 1}
+              defaultSourceMode={remissionSourceModeDefault}
+              allowPurchasePrimaryOption={hasSuppliers}
             />
           </CatalogSection>
 
@@ -1609,6 +1674,7 @@ export default async function ProductCatalogDetailPage({
             }))}
             sites={sitesList.map((s) => ({ id: s.id, name: s.name, site_type: s.site_type }))}
             areaKinds={areaKindsList.map((a) => ({ code: a.code, name: a.name ?? a.code }))}
+            siteAreaKinds={siteAreaKindsList}
             stockUnitCode={stockUnitCode}
             purchaseUnitHint={
               purchaseUomProfile

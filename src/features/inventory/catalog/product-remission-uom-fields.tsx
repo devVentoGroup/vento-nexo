@@ -9,6 +9,8 @@ type ProductRemissionUomFieldsProps = {
   defaultLabel?: string;
   defaultInputUnitCode?: string;
   defaultQtyInStockUnit?: number | null;
+  defaultSourceMode?: "operation_unit" | "purchase_primary" | "remission_profile";
+  allowPurchasePrimaryOption?: boolean;
 };
 
 export function ProductRemissionUomFields({
@@ -17,6 +19,8 @@ export function ProductRemissionUomFields({
   defaultLabel,
   defaultInputUnitCode,
   defaultQtyInStockUnit,
+  defaultSourceMode = "operation_unit",
+  allowPurchasePrimaryOption = true,
 }: ProductRemissionUomFieldsProps) {
   return (
     <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
@@ -27,7 +31,25 @@ export function ProductRemissionUomFields({
         Define explícitamente cómo se mueve este producto en remisiones, traslados y formularios.
       </p>
 
-      <div className="mt-3 grid gap-3 sm:grid-cols-3">
+      <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <label className="flex flex-col gap-1 sm:col-span-2">
+          <span className="ui-label">Usar en operación</span>
+          <select
+            name="remission_source_mode"
+            defaultValue={defaultSourceMode}
+            className="ui-input"
+          >
+            <option value="operation_unit">Unidad operativa (arriba)</option>
+            {allowPurchasePrimaryOption ? (
+              <option value="purchase_primary">Presentación de compra (proveedor primario)</option>
+            ) : null}
+            <option value="remission_profile">Presentación de remisión (este bloque)</option>
+          </select>
+          <span className="ui-caption">
+            Esta selección define qué unidad se usa en remisiones. No se infiere automáticamente.
+          </span>
+        </label>
+
         <label className="flex flex-col gap-1">
           <span className="ui-label">Nombre presentación</span>
           <input
@@ -65,11 +87,10 @@ export function ProductRemissionUomFields({
             placeholder={`1 ${defaultInputUnitCode ?? stockUnitCode} = ? ${stockUnitCode}`}
           />
           <span className="ui-caption">
-            1 unidad de remisión equivale a X {stockUnitCode}.
+            Solo aplica cuando "Usar en operación" = "Presentación de remisión".
           </span>
         </label>
       </div>
     </div>
   );
 }
-

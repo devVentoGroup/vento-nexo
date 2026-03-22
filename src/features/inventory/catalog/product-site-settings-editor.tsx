@@ -18,12 +18,14 @@ export type SiteSettingLine = {
 
 type SiteOption = { id: string; name: string | null; site_type?: string | null };
 type AreaKindOption = { code: string; name: string };
+type SiteAreaKindOption = { site_id: string; kind: string };
 
 type Props = {
   name?: string;
   initialRows: SiteSettingLine[];
   sites: SiteOption[];
   areaKinds: AreaKindOption[];
+  siteAreaKinds: SiteAreaKindOption[];
   stockUnitCode?: string;
   operationUnitHint?: {
     label: string;
@@ -78,6 +80,7 @@ export function ProductSiteSettingsEditor({
   initialRows,
   sites,
   areaKinds,
+  siteAreaKinds,
   stockUnitCode,
   operationUnitHint,
   purchaseUnitHint,
@@ -105,6 +108,45 @@ export function ProductSiteSettingsEditor({
     () => new Set([...productionSites, ...satelliteSites].map((site) => site.id)),
     [productionSites, satelliteSites]
   );
+  const areaKindCodesBySite = useMemo(() => {
+    const map = new Map<string, Set<string>>();
+    for (const row of siteAreaKinds) {
+      const siteId = String(row.site_id ?? "").trim();
+      const kind = String(row.kind ?? "").trim();
+      if (!siteId || !kind) continue;
+      const set = map.get(siteId) ?? new Set<string>();
+      set.add(kind);
+      map.set(siteId, set);
+    }
+    return map;
+  }, [siteAreaKinds]);
+  const sharedAreaKindCodes = useMemo(() => {
+    const count = new Map<string, number>();
+    for (const kinds of areaKindCodesBySite.values()) {
+      for (const kind of kinds) {
+        count.set(kind, (count.get(kind) ?? 0) + 1);
+      }
+    }
+    return new Set(
+      Array.from(count.entries())
+        .filter(([, sitesCount]) => sitesCount >= 2)
+        .map(([kind]) => kind)
+    );
+  }, [areaKindCodesBySite]);
+  const getAreaOptionsForSite = (siteId: string, selectedCode?: string) => {
+    const siteCodes = areaKindCodesBySite.get(siteId) ?? new Set<string>();
+    const allowed = new Set<string>([...siteCodes, ...sharedAreaKindCodes]);
+    if (areaKinds.some((area) => area.code === "general")) {
+      allowed.add("general");
+    }
+    const baseOptions = areaKinds.filter((area) => allowed.has(area.code));
+    const selected = String(selectedCode ?? "").trim();
+    if (selected && !baseOptions.some((area) => area.code === selected)) {
+      const label = areaKinds.find((area) => area.code === selected)?.name ?? selected;
+      return [{ code: selected, name: `${label} (fuera de catálogo de la sede)` }, ...baseOptions];
+    }
+    return baseOptions;
+  };
 
   const fallbackCenter = productionSites[0]?.id ?? "";
   const existingCenter = initialRows.find((row) => managedSiteIds.has(row.site_id) && inferSiteKind(siteMap.get(row.site_id) ?? { id: "", name: null }) === "production_center");
@@ -316,7 +358,7 @@ export function ProductSiteSettingsEditor({
               className="ui-input"
             >
               <option value="">Sin definir</option>
-              {areaKinds.map((area) => (
+              {getAreaOptionsForSite(centerSiteId, centerDefaultAreaKind).map((area) => (
                 <option key={area.code} value={area.code}>
                   {area.name}
                 </option>
@@ -476,7 +518,7 @@ export function ProductSiteSettingsEditor({
                         className="ui-input"
                       >
                         <option value="">Sin definir</option>
-                        {areaKinds.map((area) => (
+                        {getAreaOptionsForSite(site.id, state.defaultAreaKind).map((area) => (
                           <option key={area.code} value={area.code}>
                             {area.name}
                           </option>

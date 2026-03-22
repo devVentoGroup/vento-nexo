@@ -403,6 +403,7 @@ export default async function ProductTechnicalSheetPage({
   const categoryPath = getCategoryPath(product.category_id, categoryMap) || "Sin categoría";
   const imageUrl = product.catalog_image_url || product.image_url || null;
   const primarySupplier = supplierRows.find((row) => Boolean(row.is_primary)) ?? null;
+  const secondarySuppliers = supplierRows.filter((row) => !Boolean(row.is_primary));
 
   const mappedProfiles: ProductUomProfile[] = uomProfiles.map((row) => ({
     id: row.id,
@@ -669,7 +670,13 @@ export default async function ProductTechnicalSheetPage({
                 <strong className="text-[var(--ui-text)]">Remisión:</strong> {remissionPackText}
               </p>
               <p>
+                <strong className="text-[var(--ui-text)]">Se usa en operación:</strong> {remissionPackText}
+              </p>
+              <p>
                 <strong className="text-[var(--ui-text)]">Regla activa:</strong> {operationRuleText}
+              </p>
+              <p>
+                <strong className="text-[var(--ui-text)]">Fuente elegida:</strong> {remissionSourceLabel}
               </p>
             </div>
             <p>
@@ -738,6 +745,36 @@ export default async function ProductTechnicalSheetPage({
                   <strong className="text-[var(--ui-text)]">Precio empaque:</strong>{" "}
                   {formatMoney(primarySupplier.purchase_price_net ?? primarySupplier.purchase_price)}
                 </p>
+                {secondarySuppliers.length > 0 ? (
+                  <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
+                    <p className="text-xs uppercase tracking-wide text-[var(--ui-muted)]">
+                      Proveedores secundarios
+                    </p>
+                    <div className="mt-2 space-y-2">
+                      {secondarySuppliers.map((supplier, index) => {
+                        const supplierName = Array.isArray(supplier.suppliers)
+                          ? supplier.suppliers[0]?.name ?? "Sin nombre"
+                          : supplier.suppliers?.name ?? "Sin nombre";
+                        return (
+                          <div
+                            key={`${supplier.supplier_id ?? "sec"}-${index}`}
+                            className="rounded-lg border border-[var(--ui-border)] bg-white px-2 py-1.5 text-xs"
+                          >
+                            <div className="font-semibold text-[var(--ui-text)]">{supplierName}</div>
+                            <div>
+                              {supplier.purchase_unit || "Empaque"} (
+                              {formatQty(supplier.purchase_pack_qty)}{" "}
+                              {normalizeUnitCode(supplier.purchase_pack_unit_code || "") || stockUnitCode})
+                            </div>
+                            <div>
+                              Precio: {formatMoney(supplier.purchase_price_net ?? supplier.purchase_price)}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                ) : null}
               </>
             ) : (
               <p>No hay proveedor primario configurado.</p>

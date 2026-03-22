@@ -64,13 +64,23 @@ function buildEmptyLine(stockUnitCode?: string): SupplierLine {
     purchase_price: undefined,
     purchase_price_net: undefined,
     purchase_price_includes_tax: false,
-    purchase_tax_rate: 19,
+    purchase_tax_rate: undefined,
     currency: "COP",
     lead_time_days: undefined,
     min_order_qty: undefined,
     is_primary: false,
     use_in_operations: false,
   };
+}
+
+function parseTaxRateInput(raw: string): number | undefined {
+  const normalized = raw.replace(",", ".").trim();
+  if (!normalized) return undefined;
+  const value = Number(normalized);
+  if (!Number.isFinite(value)) return undefined;
+  if (value < 0) return 0;
+  if (value > 100) return 100;
+  return value;
 }
 
 function formatNumber(value: number, maxFractionDigits = 6): string {
@@ -591,20 +601,16 @@ export function ProductSuppliersEditor({
                       <label className="flex items-center gap-2 text-xs text-[var(--ui-muted)]">
                         <span>% IVA</span>
                         <input
-                          type="number"
-                          step="0.01"
-                          min={0}
-                          max={100}
+                          type="text"
+                          inputMode="decimal"
                           value={line.purchase_tax_rate ?? ""}
                           onChange={(event) =>
                             updateLine(realIndex, {
-                              purchase_tax_rate: event.target.value
-                                ? Number(event.target.value)
-                                : 0,
+                              purchase_tax_rate: parseTaxRateInput(event.target.value),
                             })
                           }
                           className="ui-input h-9 w-28"
-                          placeholder="0"
+                          placeholder=""
                         />
                       </label>
                     ) : null}

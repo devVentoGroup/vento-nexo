@@ -6,6 +6,7 @@ import {
 
 type SiteOption = { id: string; name: string | null; site_type?: string | null };
 type AreaKindOption = { code: string; name: string };
+type SiteAreaKindOption = { site_id: string; kind: string };
 type UnitHint = {
   label: string;
   inputUnitCode: string;
@@ -17,6 +18,7 @@ type ProductSiteAvailabilitySectionProps = {
   initialRows: SiteSettingLine[];
   sites: SiteOption[];
   areaKinds: AreaKindOption[];
+  siteAreaKinds: SiteAreaKindOption[];
   stockUnitCode: string;
   purchaseUnitHint?: UnitHint;
   operationUnitHint?: UnitHint;
@@ -26,6 +28,7 @@ export function ProductSiteAvailabilitySection({
   initialRows,
   sites,
   areaKinds,
+  siteAreaKinds,
   stockUnitCode,
   purchaseUnitHint = null,
   operationUnitHint = null,
@@ -40,6 +43,7 @@ export function ProductSiteAvailabilitySection({
         initialRows={initialRows}
         sites={sites}
         areaKinds={areaKinds}
+        siteAreaKinds={siteAreaKinds}
         stockUnitCode={stockUnitCode}
         purchaseUnitHint={purchaseUnitHint}
         operationUnitHint={operationUnitHint}

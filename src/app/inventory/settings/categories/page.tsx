@@ -56,6 +56,7 @@ type SearchParams = {
   category_site_id?: string;
   category_id?: string;
   edit_id?: string;
+  manage_site_id?: string;
 };
 
 type ProductAuditRow = {
@@ -555,6 +556,67 @@ async function deleteCategoryAction(formData: FormData) {
   redirect(buildReturnUrl(returnQs, returnView, "ok", "category_deleted"));
 }
 
+async function linkCategoryToSiteAction(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireCategoryManager();
+  const returnQs = asText(formData.get("_return_qs"));
+  const returnView = asText(formData.get("_return_view")) || "explorar";
+  const categoryId = asText(formData.get("category_id"));
+  const siteId = asText(formData.get("site_id"));
+
+  if (!categoryId || !siteId) {
+    redirect(buildReturnUrl(returnQs, returnView, "error", "Categoria o sede invalida."));
+  }
+
+  const { error } = await supabase
+    .from("product_categories")
+    .update({
+      site_id: siteId,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", categoryId);
+
+  if (error) {
+    redirect(buildReturnUrl(returnQs, returnView, "error", error.message));
+  }
+
+  revalidatePath("/inventory/settings/categories");
+  revalidatePath("/inventory/catalog");
+  revalidatePath("/inventory/stock");
+  redirect(buildReturnUrl(returnQs, returnView, "ok", "category_linked_site"));
+}
+
+async function unlinkCategoryFromSiteAction(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireCategoryManager();
+  const returnQs = asText(formData.get("_return_qs"));
+  const returnView = asText(formData.get("_return_view")) || "explorar";
+  const categoryId = asText(formData.get("category_id"));
+
+  if (!categoryId) {
+    redirect(buildReturnUrl(returnQs, returnView, "error", "Categoria invalida."));
+  }
+
+  const { error } = await supabase
+    .from("product_categories")
+    .update({
+      site_id: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", categoryId);
+
+  if (error) {
+    redirect(buildReturnUrl(returnQs, returnView, "error", error.message));
+  }
+
+  revalidatePath("/inventory/settings/categories");
+  revalidatePath("/inventory/catalog");
+  revalidatePath("/inventory/stock");
+  redirect(buildReturnUrl(returnQs, returnView, "ok", "category_unlinked_site"));
+}
+
 export default async function InventoryCategorySettingsPage({
   searchParams,
 }: {
@@ -574,6 +636,10 @@ export default async function InventoryCategorySettingsPage({
             ? "Categoria eliminada."
           : sp.ok === "draft_saved"
             ? "Borrador guardado."
+          : sp.ok === "category_linked_site"
+            ? "Categoria vinculada a la sede."
+          : sp.ok === "category_unlinked_site"
+            ? "Categoria devuelta a alcance global."
           : sp.ok === "descriptions_autofilled"
             ? "Descripciones faltantes completadas."
           : sp.ok === "descriptions_up_to_date"
@@ -631,6 +697,7 @@ export default async function InventoryCategorySettingsPage({
     ? normalizeCategoryDomain(sp.category_domain ?? "")
     : "";
   const selectedCategoryId = asText(sp.category_id ?? "");
+  const requestedManageSiteId = asText(sp.manage_site_id ?? "");
 
   const baseFilteredRows = filterCategoryRows(allCategoryRows, {
     kind: categoryKind,
@@ -747,6 +814,27 @@ export default async function InventoryCategorySettingsPage({
   };
 
   const filterReturnQs = filterParams.toString();
+  const manageSiteId = requestedManageSiteId || categorySiteId || sites[0]?.id || "";
+  const manageSiteName = sites.find((site) => site.id === manageSiteId)?.name ?? manageSiteId;
+  const manageRowsBase = allCategoryRows.filter((row) => {
+    if (categoryKind && !categorySupportsKind(row, categoryKind)) return false;
+    if (categoryDomain && normalizeCategoryDomain(row.domain) !== categoryDomain) return false;
+    return true;
+  });
+  const siteLinkedRows = manageRowsBase
+    .filter((row) => asText(row.site_id) === manageSiteId)
+    .sort((a, b) =>
+      getCategoryPath(a.id, categoryMap).localeCompare(getCategoryPath(b.id, categoryMap), "es")
+    );
+  const globalAvailableRows = manageRowsBase
+    .filter((row) => !asText(row.site_id))
+    .sort((a, b) =>
+      getCategoryPath(a.id, categoryMap).localeCompare(getCategoryPath(b.id, categoryMap), "es")
+    );
+  const manageParams = new URLSearchParams(filterParams);
+  manageParams.set("view", "explorar");
+  if (manageSiteId) manageParams.set("manage_site_id", manageSiteId);
+  const manageReturnQs = manageParams.toString();
   const clearHref = buildPageUrl(new URLSearchParams([["view", "explorar"]]));
 
   const editId = asText(sp.edit_id ?? "");
@@ -964,6 +1052,102 @@ export default async function InventoryCategorySettingsPage({
                 ) : null}
               </div>
             </form>
+          </section>
+
+          <section className="ui-panel space-y-4">
+            <div className="ui-h3">Vincular Categorias Por Sede</div>
+            <p className="ui-body-muted">
+              Vincula categorias globales a una sede especifica o devuelvelas a global.
+            </p>
+            <form method="get" className="grid gap-3 sm:grid-cols-3">
+              <input type="hidden" name="view" value="explorar" />
+              <input type="hidden" name="category_kind" value={categoryKind ?? ""} />
+              <input type="hidden" name="category_scope" value={categoryScope} />
+              <input type="hidden" name="category_site_id" value={categorySiteId} />
+              <input type="hidden" name="category_domain" value={categoryDomain} />
+              <input type="hidden" name="category_id" value={effectiveSelectedCategoryId} />
+              <label className="flex flex-col gap-1 sm:col-span-2">
+                <span className="ui-label">Sede a gestionar</span>
+                <select name="manage_site_id" defaultValue={manageSiteId} className="ui-input">
+                  <option value="">Seleccionar sede</option>
+                  {sites.map((site) => (
+                    <option key={site.id} value={site.id}>
+                      {site.name ?? site.id}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <div className="flex items-end">
+                <button type="submit" className="ui-btn ui-btn--brand w-full">
+                  Ver Vinculos
+                </button>
+              </div>
+            </form>
+
+            {manageSiteId ? (
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="rounded-xl border border-[var(--ui-border)] p-3">
+                  <div className="font-semibold">Globales disponibles ({globalAvailableRows.length})</div>
+                  <div className="ui-caption mt-1">
+                    Categorias sin sede que puedes vincular a {manageSiteName}.
+                  </div>
+                  <div className="mt-3 space-y-2 max-h-[320px] overflow-auto">
+                    {globalAvailableRows.map((row) => (
+                      <div
+                        key={`global-${row.id}`}
+                        className="flex items-center justify-between gap-2 rounded-lg border border-[var(--ui-border)] px-2 py-1.5"
+                      >
+                        <div className="text-sm">{getCategoryPath(row.id, categoryMap)}</div>
+                        {canManage ? (
+                          <form action={linkCategoryToSiteAction}>
+                            <input type="hidden" name="_return_qs" value={manageReturnQs} />
+                            <input type="hidden" name="_return_view" value="explorar" />
+                            <input type="hidden" name="category_id" value={row.id} />
+                            <input type="hidden" name="site_id" value={manageSiteId} />
+                            <button type="submit" className="ui-btn ui-btn--ghost ui-btn--sm">
+                              Vincular
+                            </button>
+                          </form>
+                        ) : null}
+                      </div>
+                    ))}
+                    {globalAvailableRows.length === 0 ? (
+                      <div className="ui-caption">No hay categorias globales disponibles.</div>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="rounded-xl border border-[var(--ui-border)] p-3">
+                  <div className="font-semibold">Vinculadas a {manageSiteName} ({siteLinkedRows.length})</div>
+                  <div className="ui-caption mt-1">Categorias locales de esa sede.</div>
+                  <div className="mt-3 space-y-2 max-h-[320px] overflow-auto">
+                    {siteLinkedRows.map((row) => (
+                      <div
+                        key={`site-${row.id}`}
+                        className="flex items-center justify-between gap-2 rounded-lg border border-[var(--ui-border)] px-2 py-1.5"
+                      >
+                        <div className="text-sm">{getCategoryPath(row.id, categoryMap)}</div>
+                        {canManage ? (
+                          <form action={unlinkCategoryFromSiteAction}>
+                            <input type="hidden" name="_return_qs" value={manageReturnQs} />
+                            <input type="hidden" name="_return_view" value="explorar" />
+                            <input type="hidden" name="category_id" value={row.id} />
+                            <button type="submit" className="ui-btn ui-btn--ghost ui-btn--sm">
+                              Quitar
+                            </button>
+                          </form>
+                        ) : null}
+                      </div>
+                    ))}
+                    {siteLinkedRows.length === 0 ? (
+                      <div className="ui-caption">No hay categorias vinculadas a esta sede.</div>
+                    ) : null}
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="ui-caption">Selecciona una sede para gestionar vínculos.</div>
+            )}
           </section>
 
           <section className="ui-panel">
