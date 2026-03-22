@@ -34,6 +34,7 @@ export type CatalogResultRow = {
 };
 
 type CatalogResultsPanelProps = {
+  activeTab: string;
   activeTabLabel: string;
   siteLabel: string;
   lowStockCount: number;
@@ -44,6 +45,15 @@ type CatalogResultsPanelProps = {
   rows: CatalogResultRow[];
   canManageProducts: boolean;
   catalogReturnUrl: string;
+  searchQuery: string;
+  categoryKind: string;
+  stockAlert: string;
+  categoryScope: string;
+  categorySiteId: string;
+  categoryDomain: string;
+  effectiveCategoryId: string;
+  effectiveSupplierId: string;
+  showDisabled: boolean;
   onToggleProductActive: (formData: FormData) => void | Promise<void>;
   onDeleteProduct: (formData: FormData) => void | Promise<void>;
 };
@@ -54,6 +64,7 @@ const TABLE_DELETE_BUTTON_CLASS =
   "ui-btn ui-btn--ghost ui-btn--sm min-w-[104px] justify-center shrink-0 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700";
 
 export function CatalogResultsPanel({
+  activeTab,
   activeTabLabel,
   siteLabel,
   lowStockCount,
@@ -64,6 +75,15 @@ export function CatalogResultsPanel({
   rows,
   canManageProducts,
   catalogReturnUrl,
+  searchQuery,
+  categoryKind,
+  stockAlert,
+  categoryScope,
+  categorySiteId,
+  categoryDomain,
+  effectiveCategoryId,
+  effectiveSupplierId,
+  showDisabled,
   onToggleProductActive,
   onDeleteProduct,
 }: CatalogResultsPanelProps) {
@@ -127,6 +147,46 @@ export function CatalogResultsPanel({
           </details>
         </div>
       ) : null}
+
+      <form method="get" className="mt-4 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-3">
+        <input type="hidden" name="tab" value={activeTab} />
+        <input type="hidden" name="site_id" value={siteId} />
+        <input type="hidden" name="category_kind" value={categoryKind} />
+        <input type="hidden" name="stock_alert" value={stockAlert} />
+        <input type="hidden" name="view_mode" value={viewMode} />
+        <input type="hidden" name="supplier_id" value={effectiveSupplierId} />
+        <input type="hidden" name="category_scope" value={categoryScope} />
+        <input type="hidden" name="category_site_id" value={categorySiteId} />
+        <input type="hidden" name="category_domain" value={categoryDomain} />
+        <input type="hidden" name="category_id" value={effectiveCategoryId} />
+        {showDisabled ? <input type="hidden" name="show_disabled" value="1" /> : null}
+        <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
+          <label className="flex-1">
+            <span className="ui-label">Buscar producto</span>
+            <input
+              name="q"
+              defaultValue={searchQuery}
+              placeholder="SKU o nombre de producto"
+              className="ui-input mt-1"
+            />
+          </label>
+          <div className="flex gap-2">
+            <button className="ui-btn ui-btn--brand">Buscar</button>
+            <button
+              type="submit"
+              className="ui-btn ui-btn--ghost"
+              onClick={(event) => {
+                const form = event.currentTarget.form;
+                if (!form) return;
+                const queryInput = form.elements.namedItem("q") as HTMLInputElement | null;
+                if (queryInput) queryInput.value = "";
+              }}
+            >
+              Limpiar
+            </button>
+          </div>
+        </div>
+      </form>
 
       <div className="mt-4 max-h-[70vh] overflow-auto rounded-xl border border-[var(--ui-border)]">
         <table className="ui-table min-w-[1100px] text-sm">

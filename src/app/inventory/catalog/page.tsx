@@ -1014,6 +1014,7 @@ export default async function InventoryCatalogPage({
       </CatalogOptionalDetails>
 
       <CatalogResultsPanel
+        activeTab={activeTab}
         activeTabLabel={activeTabLabel}
         siteLabel={activeSiteLabel}
         lowStockCount={lowStockCount}
@@ -1024,6 +1025,15 @@ export default async function InventoryCatalogPage({
         rows={catalogResultRows}
         canManageProducts={canManageProducts}
         catalogReturnUrl={catalogReturnUrl}
+        searchQuery={searchQuery}
+        categoryKind={categoryKind}
+        stockAlert={stockAlert}
+        categoryScope={categoryScope}
+        categorySiteId={requestedCategorySiteId}
+        categoryDomain={categoryDomain}
+        effectiveCategoryId={effectiveCategoryId}
+        effectiveSupplierId={effectiveSupplierId}
+        showDisabled={showDisabled}
         onToggleProductActive={toggleProductActiveFromListAction}
         onDeleteProduct={deleteProductFromListAction}
       />

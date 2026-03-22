@@ -541,8 +541,11 @@ export default async function ProductTechnicalSheetPage({
         <div className="ui-remission-hero-grid lg:grid-cols-[1.35fr_1fr] lg:items-start">
           <div className="space-y-4">
             <div className="space-y-2">
-              <Link href={returnTo} className="ui-caption underline">
-                Volver al catálogo
+              <Link
+                href={returnTo}
+                className="ui-btn ui-btn--ghost inline-flex h-12 items-center px-5 text-base font-semibold"
+              >
+                ← Volver al catálogo
               </Link>
               <h1 className="ui-h1">Ficha técnica</h1>
               <p className="ui-body-muted">

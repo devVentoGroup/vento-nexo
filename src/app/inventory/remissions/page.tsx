@@ -925,19 +925,34 @@ export default async function RemissionsPage({
     : { data: [] as AreaRow[] };
 
   const areaRows = (areas ?? []) as AreaRow[];
-  const areaOptions = Array.from(
+  const areaOptionsMap = Array.from(
     areaRows.reduce((map, row) => {
       const key = String(row.kind ?? "").trim();
       if (!key) return map;
       if (!map.has(key)) {
         map.set(key, {
           value: key,
-          label: row.name ?? key,
+          label: key === "general" ? "Todos" : row.name ?? key,
         });
       }
       return map;
     }, new Map<string, { value: string; label: string }>())
   ).map(([, value]) => value);
+
+  const areaOptions = (() => {
+    const base = [...areaOptionsMap];
+    if (!base.some((option) => option.value === "general")) {
+      base.unshift({ value: "general", label: "Todos" });
+    } else {
+      const general = base.find((option) => option.value === "general");
+      if (general) general.label = "Todos";
+    }
+    return base.sort((a, b) => {
+      if (a.value === "general") return -1;
+      if (b.value === "general") return 1;
+      return a.label.localeCompare(b.label, "es", { sensitivity: "base" });
+    });
+  })();
 
   // Insumos por satélite: filtrar por sede DESTINO (Saudo), no por sede origen (Centro).
   // Cuando el satélite solicita, solo debe ver productos configurados para su sede.
