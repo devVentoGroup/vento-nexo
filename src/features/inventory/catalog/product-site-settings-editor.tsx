@@ -18,7 +18,7 @@ export type SiteSettingLine = {
 };
 
 type SiteOption = { id: string; name: string | null; site_type?: string | null };
-type AreaKindOption = { code: string; name: string };
+type AreaKindOption = { code: string; name: string; use_for_remission?: boolean | null };
 type SiteAreaKindOption = { site_id: string; kind: string };
 
 type Props = {
@@ -27,6 +27,7 @@ type Props = {
   sites: SiteOption[];
   areaKinds: AreaKindOption[];
   siteAreaKinds: SiteAreaKindOption[];
+  remissionAreaKindsBySite?: Record<string, string[]>;
   stockUnitCode?: string;
   operationUnitHint?: {
     label: string;
@@ -82,6 +83,7 @@ export function ProductSiteSettingsEditor({
   sites,
   areaKinds,
   siteAreaKinds,
+  remissionAreaKindsBySite = {},
   stockUnitCode,
   operationUnitHint,
   purchaseUnitHint,
@@ -156,6 +158,24 @@ export function ProductSiteSettingsEditor({
       return [{ code: selected, name: `${label} (fuera de catálogo de la sede)` }, ...baseOptions];
     }
     return baseOptions;
+  };
+  const getSatelliteRemissionAreaOptionsForSite = (siteId: string, selectedCodes?: string[]) => {
+    const selected = Array.isArray(selectedCodes) ? selectedCodes : [];
+    const base = getAreaOptionsForSite(siteId, selected[0]);
+    const configuredSiteKinds = Array.isArray(remissionAreaKindsBySite[siteId])
+      ? remissionAreaKindsBySite[siteId].map((code) => String(code).trim()).filter(Boolean)
+      : [];
+    if (configuredSiteKinds.length > 0) {
+      const sitePolicy = new Set(configuredSiteKinds);
+      const strict = base.filter((area) => sitePolicy.has(area.code));
+      if (strict.length > 0) return strict;
+      return areaKinds
+        .filter((area) => sitePolicy.has(area.code))
+        .map((area) => ({ code: area.code, name: area.name }));
+    }
+    const filtered = base.filter((area) => area.code === "general" || Boolean(area.use_for_remission));
+    if (filtered.length > 0) return filtered;
+    return base;
   };
 
   const fallbackCenter = productionSites[0]?.id ?? "";
@@ -528,7 +548,7 @@ export function ProductSiteSettingsEditor({
                       <span className="ui-label">Areas que pueden solicitar</span>
                       <div className="max-h-40 overflow-auto rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-2">
                         <div className="grid gap-2">
-                          {getAreaOptionsForSite(site.id, state.areaKinds[0]).map((area) => {
+                          {getSatelliteRemissionAreaOptionsForSite(site.id, state.areaKinds).map((area) => {
                             const checked = state.areaKinds.includes(area.code);
                             return (
                               <label
@@ -552,7 +572,7 @@ export function ProductSiteSettingsEditor({
                         </div>
                       </div>
                       <p className="text-xs text-[var(--ui-muted)]">
-                        Puedes marcar varias areas. La primera queda como sugerida por defecto.
+                        Puedes marcar varias areas de remision. La primera queda como sugerida por defecto.
                       </p>
                     </div>
 

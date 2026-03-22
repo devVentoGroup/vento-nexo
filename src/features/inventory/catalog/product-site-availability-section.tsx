@@ -5,7 +5,7 @@ import {
 } from "@/features/inventory/catalog/product-site-settings-editor";
 
 type SiteOption = { id: string; name: string | null; site_type?: string | null };
-type AreaKindOption = { code: string; name: string };
+type AreaKindOption = { code: string; name: string; use_for_remission?: boolean | null };
 type SiteAreaKindOption = { site_id: string; kind: string };
 type UnitHint = {
   label: string;
@@ -19,6 +19,7 @@ type ProductSiteAvailabilitySectionProps = {
   sites: SiteOption[];
   areaKinds: AreaKindOption[];
   siteAreaKinds: SiteAreaKindOption[];
+  remissionAreaKindsBySite?: Record<string, string[]>;
   stockUnitCode: string;
   purchaseUnitHint?: UnitHint;
   operationUnitHint?: UnitHint;
@@ -29,6 +30,7 @@ export function ProductSiteAvailabilitySection({
   sites,
   areaKinds,
   siteAreaKinds,
+  remissionAreaKindsBySite = {},
   stockUnitCode,
   purchaseUnitHint = null,
   operationUnitHint = null,
@@ -44,6 +46,7 @@ export function ProductSiteAvailabilitySection({
         sites={sites}
         areaKinds={areaKinds}
         siteAreaKinds={siteAreaKinds}
+        remissionAreaKindsBySite={remissionAreaKindsBySite}
         stockUnitCode={stockUnitCode}
         purchaseUnitHint={purchaseUnitHint}
         operationUnitHint={operationUnitHint}

@@ -180,9 +180,15 @@ type SiteSettingRow = {
   created_at?: string | null;
 };
 
-type AreaKindRow = { code: string; name: string | null };
+type AreaKindRow = { code: string; name: string | null; use_for_remission?: boolean | null };
 type SiteAreaKindRow = { site_id: string | null; kind: string | null; is_active?: boolean | null };
 type SiteOptionRow = { id: string; name: string | null; site_type: string | null };
+type SiteAreaPurposeRuleRow = {
+  site_id: string | null;
+  area_kind: string | null;
+  purpose: string | null;
+  is_enabled: boolean | null;
+};
 type UnitRow = InventoryUnit;
 
 type SupplierRow = {
@@ -1197,8 +1203,19 @@ export default async function ProductCatalogDetailPage({
     .order("name", { ascending: true });
   const sitesList = (sitesData ?? []) as SiteOptionRow[];
 
-  const { data: areaKindsData } = await supabase.from("area_kinds").select("code,name").order("name", { ascending: true });
-  const areaKindsList = (areaKindsData ?? []) as AreaKindRow[];
+  const { data: areaKindsWithPurpose, error: areaKindsWithPurposeError } = await supabase
+    .from("area_kinds")
+    .select("code,name,use_for_remission")
+    .order("name", { ascending: true });
+  const areaKindsList = !areaKindsWithPurposeError
+    ? ((areaKindsWithPurpose ?? []) as AreaKindRow[])
+    : (((await supabase.from("area_kinds").select("code,name").order("name", { ascending: true })).data ??
+        []) as AreaKindRow[]).map((row) => ({
+        ...row,
+        use_for_remission: ["mostrador", "bar", "cocina", "general"].includes(
+          String(row.code ?? "").trim().toLowerCase()
+        ),
+      }));
   const { data: siteAreasData } = await supabase
     .from("areas")
     .select("site_id,kind,is_active")
@@ -1217,6 +1234,30 @@ export default async function ProductCatalogDetailPage({
     const [site_id, kind] = token.split("::");
     return { site_id, kind };
   });
+  const satelliteSiteIds = sitesList
+    .filter((site) => String(site.site_type ?? "").trim().toLowerCase() === "satellite")
+    .map((site) => site.id);
+  const { data: remissionAreaRulesData } =
+    satelliteSiteIds.length > 0
+      ? await supabase
+          .from("site_area_purpose_rules")
+          .select("site_id,area_kind,purpose,is_enabled")
+          .eq("purpose", "remission")
+          .eq("is_enabled", true)
+          .in("site_id", satelliteSiteIds)
+      : { data: [] as SiteAreaPurposeRuleRow[] };
+  const remissionAreaKindsBySite = ((remissionAreaRulesData ?? []) as SiteAreaPurposeRuleRow[]).reduce(
+    (acc, row) => {
+      const siteId = String(row.site_id ?? "").trim();
+      const areaKind = String(row.area_kind ?? "").trim();
+      if (!siteId || !areaKind) return acc;
+      const current = acc[siteId] ?? [];
+      if (!current.includes(areaKind)) current.push(areaKind);
+      acc[siteId] = current;
+      return acc;
+    },
+    {} as Record<string, string[]>
+  );
 
   const { data: unitsData } = await supabase
     .from("inventory_units")
@@ -1700,8 +1741,13 @@ export default async function ProductCatalogDetailPage({
               audience: r.audience ?? "BOTH",
             }))}
             sites={sitesList.map((s) => ({ id: s.id, name: s.name, site_type: s.site_type }))}
-            areaKinds={areaKindsList.map((a) => ({ code: a.code, name: a.name ?? a.code }))}
+            areaKinds={areaKindsList.map((a) => ({
+              code: a.code,
+              name: a.name ?? a.code,
+              use_for_remission: Boolean(a.use_for_remission),
+            }))}
             siteAreaKinds={siteAreaKindsList}
+            remissionAreaKindsBySite={remissionAreaKindsBySite}
             stockUnitCode={stockUnitCode}
             purchaseUnitHint={
               purchaseUomProfile

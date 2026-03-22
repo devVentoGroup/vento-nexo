@@ -138,6 +138,9 @@ export default async function SupplyRoutesPage({
         <Link href="/inventory/remissions" className="ui-btn ui-btn--ghost">
           Ir a Remisiones
         </Link>
+        <Link href="/inventory/settings/remissions" className="ui-btn ui-btn--ghost">
+          Áreas remisión
+        </Link>
       </div>
 
       {errorMsg ? (

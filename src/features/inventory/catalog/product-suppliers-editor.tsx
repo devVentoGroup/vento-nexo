@@ -595,11 +595,16 @@ export function ProductSuppliersEditor({
                       <input
                         type="checkbox"
                         checked={Boolean(line.purchase_price_includes_tax)}
-                        onChange={(event) =>
+                        onChange={(event) => {
+                          const nextChecked = event.target.checked;
                           updateLine(realIndex, {
-                            purchase_price_includes_tax: event.target.checked,
-                          })
-                        }
+                            purchase_price_includes_tax: nextChecked,
+                            purchase_tax_rate:
+                              nextChecked && (line.purchase_tax_rate == null || line.purchase_tax_rate === undefined)
+                                ? 19
+                                : line.purchase_tax_rate,
+                          });
+                        }}
                       />
                       Incluye IVA
                     </label>

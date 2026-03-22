@@ -65,6 +65,16 @@ type AreaRow = {
   kind: string | null;
   site_id: string | null;
 };
+type AreaKindPurposeRow = {
+  code: string;
+  use_for_remission?: boolean | null;
+};
+type SiteAreaPurposeRuleRow = {
+  site_id: string | null;
+  area_kind: string | null;
+  purpose: string | null;
+  is_enabled: boolean | null;
+};
 
 type ProductRow = {
   id: string;
@@ -925,10 +935,38 @@ export default async function RemissionsPage({
     : { data: [] as AreaRow[] };
 
   const areaRows = (areas ?? []) as AreaRow[];
+  const { data: areaKindsPurposeData, error: areaKindsPurposeError } = await supabase
+    .from("area_kinds")
+    .select("code,use_for_remission");
+  const { data: siteAreaPurposeRulesData } = areaFilterSiteId
+    ? await supabase
+        .from("site_area_purpose_rules")
+        .select("site_id,area_kind,purpose,is_enabled")
+        .eq("site_id", areaFilterSiteId)
+        .eq("purpose", "remission")
+    : { data: [] as SiteAreaPurposeRuleRow[] };
+  const siteOverrideKinds = new Set(
+    ((siteAreaPurposeRulesData ?? []) as SiteAreaPurposeRuleRow[])
+      .filter((row) => Boolean(row.is_enabled))
+      .map((row) => String(row.area_kind ?? "").trim())
+      .filter(Boolean)
+  );
+  const hasSiteOverride = siteOverrideKinds.size > 0;
+  const remissionAreaKindCodes = !areaKindsPurposeError
+    ? new Set(
+        ((areaKindsPurposeData ?? []) as AreaKindPurposeRow[])
+          .filter((row) => Boolean(row.use_for_remission))
+          .map((row) => String(row.code ?? "").trim())
+          .filter(Boolean)
+      )
+    : new Set(["mostrador", "bar", "cocina", "general"]);
+  remissionAreaKindCodes.add("general");
   const areaOptionsMap = Array.from(
     areaRows.reduce((map, row) => {
       const key = String(row.kind ?? "").trim();
       if (!key) return map;
+      if (hasSiteOverride && !siteOverrideKinds.has(key)) return map;
+      if (!remissionAreaKindCodes.has(key)) return map;
       if (!map.has(key)) {
         map.set(key, {
           value: key,
