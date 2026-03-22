@@ -18,6 +18,7 @@ type CatalogFiltersPanelProps = {
   siteId: string;
   categoryKind: string;
   searchQuery: string;
+  showDisabled: boolean;
   clearHref: string;
   hasAdvancedFilters: boolean;
   categoryScope: string;
@@ -40,6 +41,7 @@ export function CatalogFiltersPanel({
   siteId,
   categoryKind,
   searchQuery,
+  showDisabled,
   clearHref,
   hasAdvancedFilters,
   categoryScope,
@@ -72,6 +74,16 @@ export function CatalogFiltersPanel({
             placeholder="SKU o nombre de producto"
             className="ui-input"
           />
+        </label>
+
+        <label className="inline-flex items-center gap-2 text-sm text-[var(--ui-text)]">
+          <input
+            type="checkbox"
+            name="show_disabled"
+            value="1"
+            defaultChecked={showDisabled}
+          />
+          Mostrar deshabilitados
         </label>
 
         <div className="flex flex-wrap gap-2">

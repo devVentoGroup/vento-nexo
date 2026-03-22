@@ -1,3 +1,5 @@
+"use client";
+
 import Link from "next/link";
 
 export type PurchaseSuggestionRow = {
@@ -221,7 +223,15 @@ export function CatalogResultsPanel({
                       </form>
                     ) : null}
                     {canManageProducts ? (
-                      <form action={onDeleteProduct}>
+                      <form
+                        action={onDeleteProduct}
+                        onSubmit={(event) => {
+                          const ok = window.confirm(
+                            "¿Eliminar este producto? Esta acción no se puede deshacer."
+                          );
+                          if (!ok) event.preventDefault();
+                        }}
+                      >
                         <input type="hidden" name="product_id" value={row.id} />
                         <input type="hidden" name="return_to" value={catalogReturnUrl} />
                         <button type="submit" className={TABLE_DELETE_BUTTON_CLASS}>

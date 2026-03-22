@@ -230,6 +230,10 @@ export function RequiredFieldsGuardForm({
       }}
       onSubmit={(event) => {
         const form = event.currentTarget;
+        if (form.dataset.submitting === "1") {
+          event.preventDefault();
+          return;
+        }
         clearInlineErrors(form);
         const missing: Array<{ node: HTMLElement; label: string }> = [];
 
@@ -263,6 +267,11 @@ export function RequiredFieldsGuardForm({
         }
 
         if (missing.length === 0) {
+          form.dataset.submitting = "1";
+          const submitButtons = form.querySelectorAll<HTMLButtonElement>('button[type="submit"]');
+          for (const button of submitButtons) {
+            button.disabled = true;
+          }
           persistDraft();
           return;
         }

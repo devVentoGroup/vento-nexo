@@ -387,8 +387,13 @@ body {
   font-weight: 550;
   transition: background-color 160ms ease, transform 140ms ease, box-shadow 160ms ease, border-color 160ms ease;
   gap: 8px;
+  cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
+}
+
+.ui-btn:disabled {
+  cursor: not-allowed;
 }
 
 .ui-btn--brand {

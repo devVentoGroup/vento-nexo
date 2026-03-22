@@ -7,7 +7,13 @@ import {
   getCategoryPath,
   type InventoryCategoryRow,
 } from "@/lib/inventory/categories";
-import { normalizeUnitCode } from "@/lib/inventory/uom";
+import {
+  convertQuantity,
+  createUnitMap,
+  normalizeUnitCode,
+  selectProductUomProfileForContext,
+  type ProductUomProfile,
+} from "@/lib/inventory/uom";
 
 export const dynamic = "force-dynamic";
 
@@ -74,12 +80,35 @@ type SupplierRow = {
 };
 
 type UomProfileRow = {
+  id: string;
+  product_id: string;
   label: string | null;
   input_unit_code: string | null;
   qty_in_input_unit: number | null;
   qty_in_stock_unit: number | null;
   usage_context: string | null;
+  is_default: boolean | null;
+  is_active: boolean | null;
+  updated_at: string | null;
   source?: "manual" | "supplier_primary" | null;
+};
+
+type UnitRow = {
+  code: string;
+  name: string;
+  family: string;
+  factor_to_base: number;
+  symbol: string | null;
+  display_decimals: number | null;
+  is_active: boolean;
+};
+
+type UomDisplay = {
+  label: string;
+  inputUnitCode: string;
+  qtyInInputUnit: number;
+  qtyInStockUnit: number;
+  adjustedFromCatalog: boolean;
 };
 
 type PurchaseOrderItemTraceRow = {
@@ -174,6 +203,65 @@ function buildFogoRecipeUrl(productId: string) {
   return url.toString();
 }
 
+function toPositiveNumber(value: number | null | undefined, fallback: number): number {
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function resolveProfileDisplay(params: {
+  profile: ProductUomProfile | null;
+  stockUnitCode: string;
+  unitRows: UnitRow[];
+}): UomDisplay | null {
+  const profile = params.profile;
+  if (!profile) return null;
+  const inputUnitCode = normalizeUnitCode(profile.input_unit_code || "");
+  if (!inputUnitCode) return null;
+
+  const qtyInInputUnit = toPositiveNumber(profile.qty_in_input_unit, 1);
+  const qtyInStockRaw = toPositiveNumber(profile.qty_in_stock_unit, 1);
+  const label = String(profile.label ?? "").trim() || "Unidad";
+  const stockUnitCode = normalizeUnitCode(params.stockUnitCode || "");
+
+  if (!stockUnitCode) {
+    return {
+      label,
+      inputUnitCode,
+      qtyInInputUnit,
+      qtyInStockUnit: qtyInStockRaw,
+      adjustedFromCatalog: false,
+    };
+  }
+
+  try {
+    const unitMap = createUnitMap(params.unitRows as Parameters<typeof createUnitMap>[0]);
+    const { quantity: convertedQty } = convertQuantity({
+      quantity: qtyInInputUnit,
+      fromUnitCode: inputUnitCode,
+      toUnitCode: stockUnitCode,
+      unitMap,
+    });
+    const delta = Math.abs(convertedQty - qtyInStockRaw);
+    const tolerance = Math.max(0.0001, Math.abs(convertedQty) * 0.0001);
+    const shouldAdjust = delta > tolerance;
+    return {
+      label,
+      inputUnitCode,
+      qtyInInputUnit,
+      qtyInStockUnit: shouldAdjust ? convertedQty : qtyInStockRaw,
+      adjustedFromCatalog: shouldAdjust,
+    };
+  } catch {
+    return {
+      label,
+      inputUnitCode,
+      qtyInInputUnit,
+      qtyInStockUnit: qtyInStockRaw,
+      adjustedFromCatalog: false,
+    };
+  }
+}
+
 async function loadCategoryRows(
   supabase: Awaited<ReturnType<typeof requireAppAccess>>["supabase"]
 ): Promise<InventoryCategoryRow[]> {
@@ -219,6 +307,7 @@ export default async function ProductTechnicalSheetPage({
     stockRes,
     suppliersRes,
     uomProfilesRes,
+    unitsRes,
     purchaseOrderItemsRes,
     receiptItemsRes,
     allCategories,
@@ -259,10 +348,15 @@ export default async function ProductTechnicalSheetPage({
       .order("is_primary", { ascending: false }),
     supabase
       .from("product_uom_profiles")
-      .select("label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,usage_context,source")
+      .select(
+        "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,usage_context,is_default,is_active,updated_at,source"
+      )
       .eq("product_id", id)
-      .eq("is_active", true)
-      .eq("is_default", true),
+      .eq("is_active", true),
+    supabase
+      .from("inventory_units")
+      .select("code,name,family,factor_to_base,symbol,display_decimals,is_active")
+      .eq("is_active", true),
     supabase
       .from("purchase_order_items")
       .select(
@@ -290,6 +384,7 @@ export default async function ProductTechnicalSheetPage({
   const stockRows = (stockRes.data ?? []) as StockRow[];
   const supplierRows = (suppliersRes.data ?? []) as SupplierRow[];
   const uomProfiles = (uomProfilesRes.data ?? []) as UomProfileRow[];
+  const unitRows = (unitsRes.data ?? []) as UnitRow[];
   const purchaseOrderRows = (purchaseOrderItemsRes.data ?? []) as PurchaseOrderItemTraceRow[];
   const receiptRows = (receiptItemsRes.data ?? []) as InventoryReceiptItemTraceRow[];
 
@@ -309,14 +404,45 @@ export default async function ProductTechnicalSheetPage({
   const imageUrl = product.catalog_image_url || product.image_url || null;
   const primarySupplier = supplierRows.find((row) => Boolean(row.is_primary)) ?? null;
 
-  const byContext = new Map(
-    uomProfiles.map((row) => [
-      String(row.usage_context ?? "general").trim().toLowerCase() || "general",
-      row,
-    ])
-  );
-  const purchaseProfile = byContext.get("purchase") ?? byContext.get("general") ?? null;
-  const remissionProfile = byContext.get("remission") ?? byContext.get("general") ?? null;
+  const mappedProfiles: ProductUomProfile[] = uomProfiles.map((row) => ({
+    id: row.id,
+    product_id: row.product_id,
+    label: row.label || "Unidad",
+    input_unit_code: normalizeUnitCode(row.input_unit_code || ""),
+    qty_in_input_unit: toPositiveNumber(row.qty_in_input_unit, 1),
+    qty_in_stock_unit: toPositiveNumber(row.qty_in_stock_unit, 1),
+    is_default: row.is_default !== false,
+    is_active: row.is_active !== false,
+    source: row.source === "supplier_primary" ? "supplier_primary" : ("manual" as const),
+    usage_context:
+      String(row.usage_context ?? "general").trim().toLowerCase() === "purchase"
+        ? "purchase"
+        : String(row.usage_context ?? "general").trim().toLowerCase() === "remission"
+          ? "remission"
+          : "general",
+  }));
+  const purchaseProfile =
+    (selectProductUomProfileForContext({
+      profiles: mappedProfiles,
+      productId: id,
+      context: "purchase",
+    }) as ProductUomProfile | null) ?? null;
+  const remissionProfile =
+    (selectProductUomProfileForContext({
+      profiles: mappedProfiles,
+      productId: id,
+      context: "remission",
+    }) as ProductUomProfile | null) ?? null;
+  const purchaseProfileDisplay = resolveProfileDisplay({
+    profile: purchaseProfile,
+    stockUnitCode,
+    unitRows,
+  });
+  const remissionProfileDisplay = resolveProfileDisplay({
+    profile: remissionProfile,
+    stockUnitCode,
+    unitRows,
+  });
   const remissionSourceLabel = remissionProfile
     ? remissionProfile.source === "supplier_primary"
       ? "Proveedor (empaque en operación)"
@@ -539,20 +665,20 @@ export default async function ProductTechnicalSheetPage({
               <strong className="text-[var(--ui-text)]">Vencimiento:</strong>{" "}
               {profile?.expiry_tracking ? "Sí" : "No"}
             </p>
-            {purchaseProfile ? (
+            {purchaseProfileDisplay ? (
               <p>
                 <strong className="text-[var(--ui-text)]">Presentación compra:</strong>{" "}
-                {purchaseProfile.label || "-"} ({formatQty(purchaseProfile.qty_in_input_unit)}{" "}
-                {normalizeUnitCode(purchaseProfile.input_unit_code || "")} ={" "}
-                {formatQty(purchaseProfile.qty_in_stock_unit)} {stockUnitCode})
+                {purchaseProfileDisplay.label} ({formatQty(purchaseProfileDisplay.qtyInInputUnit)}{" "}
+                {purchaseProfileDisplay.inputUnitCode} ={` `}
+                {formatQty(purchaseProfileDisplay.qtyInStockUnit)} {stockUnitCode})
               </p>
             ) : null}
-            {remissionProfile ? (
+            {remissionProfileDisplay ? (
               <p>
                 <strong className="text-[var(--ui-text)]">Presentación remisión:</strong>{" "}
-                {remissionProfile.label || "-"} ({formatQty(remissionProfile.qty_in_input_unit)}{" "}
-                {normalizeUnitCode(remissionProfile.input_unit_code || "")} ={" "}
-                {formatQty(remissionProfile.qty_in_stock_unit)} {stockUnitCode})
+                {remissionProfileDisplay.label} ({formatQty(remissionProfileDisplay.qtyInInputUnit)}{" "}
+                {remissionProfileDisplay.inputUnitCode} ={` `}
+                {formatQty(remissionProfileDisplay.qtyInStockUnit)} {stockUnitCode})
               </p>
             ) : (
               <p>
@@ -560,6 +686,11 @@ export default async function ProductTechnicalSheetPage({
                 Unidad operativa ({defaultUnitCode})
               </p>
             )}
+            {remissionProfileDisplay?.adjustedFromCatalog ? (
+              <p className="text-xs text-[var(--ui-muted)]">
+                Se muestra equivalencia normalizada por catálogo de unidades.
+              </p>
+            ) : null}
             <p>
               <strong className="text-[var(--ui-text)]">Fuente remisión:</strong> {remissionSourceLabel}
             </p>

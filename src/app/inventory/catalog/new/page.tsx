@@ -698,6 +698,27 @@ async function createProduct(formData: FormData) {
     }
   }
 
+  const { data: existingNameRows } = await supabase
+    .from("products")
+    .select("id,name,sku")
+    .eq("product_type", config.productType)
+    .ilike("name", name)
+    .limit(1);
+  const existingByName = (existingNameRows ?? [])[0] as
+    | { id?: string; name?: string | null; sku?: string | null }
+    | undefined;
+  if (existingByName?.id) {
+    const skuText = String(existingByName.sku ?? "").trim();
+    redirect(
+      `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
+        encodeURIComponent(
+          skuText
+            ? `Ya existe un producto con ese nombre (SKU ${skuText}). Revisa si debes editar el existente.`
+            : "Ya existe un producto con ese nombre. Revisa si debes editar el existente."
+        )
+    );
+  }
+
   const remissionInputUnitCodeRaw = asText(formData.get("remission_uom_code"));
   const remissionQtyInStockText = asText(formData.get("remission_uom_qty_in_stock"));
   const remissionLabelText = asText(formData.get("remission_uom_label"));

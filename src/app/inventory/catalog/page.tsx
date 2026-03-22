@@ -50,6 +50,7 @@ type TabValue = (typeof TAB_OPTIONS)[number]["value"];
 type SearchParams = {
   q?: string;
   tab?: string;
+  show_disabled?: string;
   site_id?: string;
   stock_alert?: string;
   view_mode?: string;
@@ -344,6 +345,7 @@ export default async function InventoryCatalogPage({
     : "";
   const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
   const searchQuery = String(sp.q ?? "").trim();
+  const showDisabled = String(sp.show_disabled ?? "").trim() === "1";
   const stockAlert = String(sp.stock_alert ?? "all").trim().toLowerCase() === "low" ? "low" : "all";
   const viewMode = String(sp.view_mode ?? "catalogo").trim().toLowerCase() === "compras" ? "compras" : "catalogo";
   const selectedSupplierId = String(sp.supplier_id ?? "").trim();
@@ -433,6 +435,7 @@ export default async function InventoryCatalogPage({
     getCategoryDomainCodes(allCategoryRows, categoryKind)
   );
   const hasAdvancedFilters =
+    showDisabled ||
     categoryScope !== "all" ||
     stockAlert !== "all" ||
     viewMode !== "catalogo" ||
@@ -494,6 +497,10 @@ export default async function InventoryCatalogPage({
 
     const { data: products } = await productsQuery;
     productRows = (products ?? []) as unknown as ProductRow[];
+
+    if (!showDisabled) {
+      productRows = productRows.filter((product) => product.is_active !== false);
+    }
 
     if (activeTab === "insumos") {
       productRows = productRows.filter(
@@ -741,6 +748,7 @@ export default async function InventoryCatalogPage({
     const params = new URLSearchParams();
     if (searchQuery) params.set("q", searchQuery);
     params.set("tab", tab);
+    if (showDisabled) params.set("show_disabled", "1");
     if (siteId) params.set("site_id", siteId);
     if (stockAlert === "low") params.set("stock_alert", "low");
     if (viewMode === "compras") params.set("view_mode", "compras");
@@ -986,6 +994,7 @@ export default async function InventoryCatalogPage({
           siteId={siteId}
           categoryKind={categoryKind}
           searchQuery={searchQuery}
+          showDisabled={showDisabled}
           clearHref={clearHref}
           hasAdvancedFilters={hasAdvancedFilters}
           categoryScope={categoryScope}
