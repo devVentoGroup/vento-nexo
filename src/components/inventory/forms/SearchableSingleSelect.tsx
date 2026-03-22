@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 
 type SelectOption = {
   value: string;
@@ -48,7 +49,12 @@ export function SearchableSingleSelect({
   const [query, setQuery] = useState("");
   const [isMobile, setIsMobile] = useState(false);
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
+  const [portalReady, setPortalReady] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    setPortalReady(true);
+  }, []);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -246,78 +252,89 @@ export function SearchableSingleSelect({
         </div>
       ) : null}
 
-      {isOpen && useSheetMobile ? (
-        <div className="ui-mobile-select-sheet" role="dialog" aria-modal="true" aria-label={sheetTitle}>
-          <div className="ui-mobile-select-sheet__backdrop" onClick={() => setIsOpen(false)} aria-hidden="true" />
-          <div className="ui-mobile-select-sheet__panel ui-mobile-safe">
-            <div className="ui-mobile-select-sheet__header">
-              <div className="ui-h3">{sheetTitle}</div>
-              <button type="button" className="ui-btn ui-btn--ghost ui-btn--sm" onClick={() => setIsOpen(false)}>
-                Cerrar
-              </button>
-            </div>
-            <div className="ui-mobile-select-sheet__search">
-              <input
-                type="search"
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                placeholder={searchPlaceholder}
-                className="ui-input h-12 w-full"
-                autoFocus
+      {isOpen && useSheetMobile && portalReady
+        ? createPortal(
+            <div className="ui-mobile-select-sheet" role="dialog" aria-modal="true" aria-label={sheetTitle}>
+              <div
+                className="ui-mobile-select-sheet__backdrop"
+                onClick={() => setIsOpen(false)}
+                aria-hidden="true"
               />
-            </div>
-            <div className="ui-mobile-select-sheet__list">
-              {allowEmptySelection ? (
-                <button
-                  type="button"
-                  className={`block w-full border-b border-[var(--ui-border)] px-3 py-3 text-left text-sm ${
-                    value === "" ? "bg-[var(--ui-surface)] font-semibold" : ""
-                  }`}
-                  onClick={() => {
-                    onValueChange("");
-                    setIsOpen(false);
-                  }}
-                >
-                  {placeholder}
-                </button>
-              ) : (
-                <div className="border-b border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
-                  {placeholder}
+              <div className="ui-mobile-select-sheet__panel ui-mobile-safe">
+                <div className="ui-mobile-select-sheet__header">
+                  <div className="ui-h3">{sheetTitle}</div>
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn--ghost ui-btn--sm"
+                    onClick={() => setIsOpen(false)}
+                  >
+                    Cerrar
+                  </button>
                 </div>
-              )}
-              {groupedOptions.length ? (
-                groupedOptions.map((group) => (
-                  <div key={group.label} className="border-b border-[var(--ui-border)] last:border-b-0">
-                    <div className="sticky top-0 flex items-center justify-between bg-slate-100 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-700">
-                      <span>{group.label}</span>
-                      <span className="rounded-full border border-slate-300 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                        {group.options.length}
-                      </span>
+                <div className="ui-mobile-select-sheet__search">
+                  <input
+                    type="search"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                    placeholder={searchPlaceholder}
+                    className="ui-input h-12 w-full"
+                    autoFocus
+                  />
+                </div>
+                <div className="ui-mobile-select-sheet__list">
+                  {allowEmptySelection ? (
+                    <button
+                      type="button"
+                      className={`block w-full border-b border-[var(--ui-border)] px-3 py-3 text-left text-sm ${
+                        value === "" ? "bg-[var(--ui-surface)] font-semibold" : ""
+                      }`}
+                      onClick={() => {
+                        onValueChange("");
+                        setIsOpen(false);
+                      }}
+                    >
+                      {placeholder}
+                    </button>
+                  ) : (
+                    <div className="border-b border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
+                      {placeholder}
                     </div>
-                    {group.options.map((option) => (
-                      <button
-                        key={option.value}
-                        type="button"
-                        className={`block w-full border-t border-[var(--ui-border)] px-3 py-3 text-left text-sm ${
-                          option.value === value ? "bg-[var(--ui-surface)] font-semibold" : ""
-                        }`}
-                        onClick={() => {
-                          onValueChange(option.value);
-                          setIsOpen(false);
-                        }}
-                      >
-                        {option.label}
-                      </button>
-                    ))}
-                  </div>
-                ))
-              ) : (
-                <div className="px-3 py-3 text-sm text-[var(--ui-muted)]">{emptyMessage}</div>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : null}
+                  )}
+                  {groupedOptions.length ? (
+                    groupedOptions.map((group) => (
+                      <div key={group.label} className="border-b border-[var(--ui-border)] last:border-b-0">
+                        <div className="sticky top-0 flex items-center justify-between bg-slate-100 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-700">
+                          <span>{group.label}</span>
+                          <span className="rounded-full border border-slate-300 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                            {group.options.length}
+                          </span>
+                        </div>
+                        {group.options.map((option) => (
+                          <button
+                            key={option.value}
+                            type="button"
+                            className={`block w-full border-t border-[var(--ui-border)] px-3 py-3 text-left text-sm ${
+                              option.value === value ? "bg-[var(--ui-surface)] font-semibold" : ""
+                            }`}
+                            onClick={() => {
+                              onValueChange(option.value);
+                              setIsOpen(false);
+                            }}
+                          >
+                            {option.label}
+                          </button>
+                        ))}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-3 py-3 text-sm text-[var(--ui-muted)]">{emptyMessage}</div>
+                  )}
+                </div>
+              </div>
+            </div>,
+            document.body
+          )
+        : null}
     </div>
   );
 }
