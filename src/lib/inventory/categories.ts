@@ -68,7 +68,9 @@ export function categoryKindFromCatalogTab(tab: string | null | undefined): Cate
 }
 
 export function shouldShowCategoryDomain(kind: CategoryKind | null): boolean {
-  return kind === "venta";
+  // NEXO v2 operativo: el catalogo maestro usa solo categorias operativas.
+  // El canal/comercial se separa a su propia capa y no se edita aqui.
+  return false;
 }
 
 export function parseCategoryKinds(value: string[] | null | undefined): CategoryKind[] {
