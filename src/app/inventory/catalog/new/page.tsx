@@ -710,15 +710,6 @@ async function createProduct(formData: FormData) {
                 qtyInInputUnit: 1,
                 qtyInStockUnit,
               };
-              if (Boolean(line.use_in_operations)) {
-                remissionUomFromSupplier = {
-                  label: String(line.purchase_unit || "Empaque operativo"),
-                  inputUnitCode: packUnitCode,
-                  qtyInInputUnit: 1,
-                  qtyInStockUnit,
-                  source: "supplier_primary",
-                };
-              }
             }
           } catch {
             // keep without operational profile when conversion is invalid
@@ -770,21 +761,21 @@ async function createProduct(formData: FormData) {
   const remissionInputUnitCodeRaw = asText(formData.get("remission_uom_code"));
   const remissionQtyInStockText = asText(formData.get("remission_uom_qty_in_stock"));
   const remissionLabelText = asText(formData.get("remission_uom_label"));
-  const remissionConfigEnabled = asText(formData.get("enable_remission_config")) === "1";
   const remissionSourceModeRaw = asText(formData.get("remission_source_mode")).toLowerCase();
   const remissionSourceMode =
+    remissionSourceModeRaw === "disabled" ||
     remissionSourceModeRaw === "purchase_primary" ||
     remissionSourceModeRaw === "remission_profile" ||
     remissionSourceModeRaw === "operation_unit"
       ? remissionSourceModeRaw
-      : "operation_unit";
+      : "disabled";
   const remissionInputUnitCode = normalizeUnitCode(remissionInputUnitCodeRaw);
   const remissionQtyInStockRaw = Number(remissionQtyInStockText || 0);
   const remissionQtyInStock =
     Number.isFinite(remissionQtyInStockRaw) && remissionQtyInStockRaw > 0
       ? remissionQtyInStockRaw
       : 0;
-  if (!remissionConfigEnabled) {
+  if (remissionSourceMode === "disabled") {
     remissionUomFromSupplier = null;
   } else if (remissionSourceMode === "remission_profile") {
     if (!remissionInputUnitCode || remissionQtyInStock <= 0) {
@@ -889,7 +880,7 @@ async function createProduct(formData: FormData) {
     });
   }
 
-  if (remissionConfigEnabled && remissionUomFromSupplier) {
+  if (remissionUomFromSupplier) {
     await upsertContextProfile({
       usageContext: "remission",
       label: remissionUomFromSupplier.label,
@@ -1317,8 +1308,7 @@ export default async function NewProductPage({
                       defaultLabel="Unidad operativa"
                       defaultInputUnitCode={defaultStockUnitCode}
                       defaultQtyInStockUnit={1}
-                      defaultSourceMode="operation_unit"
-                      defaultEnabled={false}
+                      defaultSourceMode="disabled"
                       allowPurchasePrimaryOption={config.hasSuppliers}
                     />
                   </div>
