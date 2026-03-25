@@ -212,6 +212,7 @@ function resolveProfileDisplay(params: {
   profile: ProductUomProfile | null;
   stockUnitCode: string;
   unitRows: UnitRow[];
+  normalizeByCatalog?: boolean;
 }): UomDisplay | null {
   const profile = params.profile;
   if (!profile) return null;
@@ -222,8 +223,19 @@ function resolveProfileDisplay(params: {
   const qtyInStockRaw = toPositiveNumber(profile.qty_in_stock_unit, 1);
   const label = String(profile.label ?? "").trim() || "Unidad";
   const stockUnitCode = normalizeUnitCode(params.stockUnitCode || "");
+  const normalizeByCatalog = params.normalizeByCatalog !== false;
 
   if (!stockUnitCode) {
+    return {
+      label,
+      inputUnitCode,
+      qtyInInputUnit,
+      qtyInStockUnit: qtyInStockRaw,
+      adjustedFromCatalog: false,
+    };
+  }
+
+  if (!normalizeByCatalog) {
     return {
       label,
       inputUnitCode,
@@ -438,11 +450,13 @@ export default async function ProductTechnicalSheetPage({
     profile: purchaseProfile,
     stockUnitCode,
     unitRows,
+    normalizeByCatalog: true,
   });
   const remissionProfileDisplay = resolveProfileDisplay({
     profile: remissionProfile,
     stockUnitCode,
     unitRows,
+    normalizeByCatalog: false,
   });
   const remissionSourceLabel = remissionProfile
     ? remissionProfile.source === "supplier_primary"
@@ -450,14 +464,17 @@ export default async function ProductTechnicalSheetPage({
       : "Unidad operativa"
     : "Unidad operativa";
   const purchasePackText = purchaseProfileDisplay
-    ? `${purchaseProfileDisplay.label} (${formatQty(purchaseProfileDisplay.qtyInInputUnit)} ${purchaseProfileDisplay.inputUnitCode} = ${formatQty(purchaseProfileDisplay.qtyInStockUnit)} ${stockUnitCode})`
+    ? `${purchaseProfileDisplay.label} (${formatQty(purchaseProfileDisplay.qtyInStockUnit)} ${stockUnitCode})`
     : "Sin presentación de compra";
   const remissionPackText = remissionProfileDisplay
-    ? `${remissionProfileDisplay.label} (${formatQty(remissionProfileDisplay.qtyInInputUnit)} ${remissionProfileDisplay.inputUnitCode} = ${formatQty(remissionProfileDisplay.qtyInStockUnit)} ${stockUnitCode})`
-    : `Unidad operativa (${defaultUnitCode})`;
+    ? `${remissionProfileDisplay.label} (1 ${remissionProfileDisplay.label.toLowerCase()} = ${formatQty(remissionProfileDisplay.qtyInStockUnit)} ${stockUnitCode})`
+    : "No marcado para remisión";
+  const remissionUnitText = remissionProfileDisplay
+    ? `${remissionProfileDisplay.inputUnitCode}`
+    : defaultUnitCode;
   const operationRuleText = remissionProfileDisplay
     ? "Usa presentación de remisión."
-    : "Sin remisión explícita: usa unidad operativa.";
+    : "No usa remisión: opera con unidad operativa.";
 
   const stockBySite = new Map<string, number>();
   stockRows.forEach((row) => {
@@ -661,32 +678,26 @@ export default async function ProductTechnicalSheetPage({
         <article className="ui-panel">
           <div className="text-sm font-semibold text-[var(--ui-text)]">Unidades y control</div>
           <div className="mt-3 space-y-2 text-sm text-[var(--ui-muted)]">
-            <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
-              <p className="text-xs uppercase tracking-wide text-[var(--ui-muted)]">Resumen operativo</p>
-              <p className="mt-1">
-                <strong className="text-[var(--ui-text)]">Base (stock/costo):</strong> {stockUnitCode}
-              </p>
-              <p>
-                <strong className="text-[var(--ui-text)]">Compra:</strong> {purchasePackText}
-              </p>
-              <p>
-                <strong className="text-[var(--ui-text)]">Remisión:</strong> {remissionPackText}
-              </p>
-              <p>
-                <strong className="text-[var(--ui-text)]">Se usa en operación:</strong> {remissionPackText}
-              </p>
-              <p>
-                <strong className="text-[var(--ui-text)]">Regla activa:</strong> {operationRuleText}
-              </p>
-              <p>
-                <strong className="text-[var(--ui-text)]">Fuente elegida:</strong> {remissionSourceLabel}
-              </p>
-            </div>
             <p>
               <strong className="text-[var(--ui-text)]">Unidad base:</strong> {stockUnitCode}
             </p>
             <p>
               <strong className="text-[var(--ui-text)]">Unidad operativa:</strong> {defaultUnitCode}
+            </p>
+            <p>
+              <strong className="text-[var(--ui-text)]">Presentación compra:</strong> {purchasePackText}
+            </p>
+            <p>
+              <strong className="text-[var(--ui-text)]">Presentación remisión:</strong> {remissionPackText}
+            </p>
+            <p>
+              <strong className="text-[var(--ui-text)]">Unidad remisión:</strong> {remissionUnitText}
+            </p>
+            <p>
+              <strong className="text-[var(--ui-text)]">Regla activa:</strong> {operationRuleText}
+            </p>
+            <p>
+              <strong className="text-[var(--ui-text)]">Fuente remisión:</strong> {remissionSourceLabel}
             </p>
             <p>
               <strong className="text-[var(--ui-text)]">Controlar stock:</strong>{" "}
@@ -698,31 +709,6 @@ export default async function ProductTechnicalSheetPage({
               {" · "}
               <strong className="text-[var(--ui-text)]">Vencimiento:</strong>{" "}
               {profile?.expiry_tracking ? "Sí" : "No"}
-            </p>
-            {purchaseProfileDisplay ? (
-              <p>
-                <strong className="text-[var(--ui-text)]">Presentación compra:</strong>{" "}
-                {purchasePackText}
-              </p>
-            ) : null}
-            {remissionProfileDisplay ? (
-              <p>
-                <strong className="text-[var(--ui-text)]">Presentación remisión:</strong>{" "}
-                {remissionPackText}
-              </p>
-            ) : (
-              <p>
-                <strong className="text-[var(--ui-text)]">Presentación remisión:</strong>{" "}
-                Unidad operativa ({defaultUnitCode})
-              </p>
-            )}
-            {remissionProfileDisplay?.adjustedFromCatalog ? (
-              <p className="text-xs text-[var(--ui-muted)]">
-                Se muestra equivalencia normalizada por catálogo de unidades.
-              </p>
-            ) : null}
-            <p>
-              <strong className="text-[var(--ui-text)]">Fuente remisión:</strong> {remissionSourceLabel}
             </p>
           </div>
         </article>
