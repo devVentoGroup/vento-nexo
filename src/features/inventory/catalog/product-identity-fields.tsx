@@ -112,7 +112,7 @@ export function ProductIdentityFields({
 
       {lockedTypeField ? (
         <label className="flex flex-col gap-1">
-          <span className="ui-label">{lockedTypeField.label ?? "Tipo (bloqueado)"}</span>
+          <span className="ui-label">{lockedTypeField.label ?? "Tipo"}</span>
           <input className="ui-input" value={lockedTypeField.value} readOnly />
           {lockedTypeField.hiddenName ? (
             <input

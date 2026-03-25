@@ -314,31 +314,6 @@ export function ProductSuppliersEditor({
         data-required-target={validationIssue?.targetId ?? `${name}-add-line`}
       />
 
-      <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
-        <p className="font-medium text-[var(--ui-text)]">Fase 1 - Compra principal (proveedor)</p>
-        <p className="mt-1">1) Define empaque, cantidad y unidad de compra.</p>
-        <p>2) El sistema convierte a la unidad base del producto.</p>
-        <p>3) Calcula el costo por unidad base automaticamente.</p>
-        {isSimpleMode ? (
-          <p className="mt-2">
-            En este paso solo necesitas completar la <strong className="text-[var(--ui-text)]">compra principal</strong>.
-            Los proveedores extra son opcionales.
-          </p>
-        ) : null}
-        {stockUnit ? (
-          <p className="mt-2">
-            Unidad base activa:{" "}
-            <span className="font-semibold text-[var(--ui-text)]">
-              {stockUnit.code} ({stockUnit.name ?? stockUnit.code})
-            </span>
-          </p>
-        ) : (
-          <p className="mt-2 text-[var(--ui-danger)]">
-            Selecciona primero la unidad base del producto para habilitar conversiones.
-          </p>
-        )}
-      </div>
-
       <div className="flex items-center justify-between gap-3">
         <span className="ui-label">{isSimpleMode ? "Compra principal" : "Proveedores"}</span>
         <button id={`${name}-add-line`} type="button" onClick={addLine} className="ui-btn ui-btn--ghost text-sm">

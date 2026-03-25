@@ -144,11 +144,7 @@ export function SkuField(props: SkuFieldProps) {
         <span className="text-xs text-[var(--ui-muted)]">
           Formato valido: letras y numeros con guiones (ej. {preview.replace("######", "000123")}).
         </span>
-      ) : (
-        <span className="text-xs text-[var(--ui-muted)]">
-          El SKU se mantiene fijo para trazabilidad. Solo cambia con override explicito.
-        </span>
-      )}
+      ) : null}
     </div>
   );
 }

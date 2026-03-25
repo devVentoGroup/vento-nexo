@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
-import { ProductChecklistPanel } from "@/features/inventory/catalog/product-checklist-panel";
 import { ProductCostStatusPanel } from "@/features/inventory/catalog/product-cost-status-panel";
 import { ProductFormFooter } from "@/features/inventory/catalog/product-form-footer";
 import { ProductIdentityFields } from "@/features/inventory/catalog/product-identity-fields";
@@ -10,7 +9,6 @@ import { ProductPurchaseSection } from "@/features/inventory/catalog/product-pur
 import { ProductRemissionUomFields } from "@/features/inventory/catalog/product-remission-uom-fields";
 import { ProductSiteAvailabilitySection } from "@/features/inventory/catalog/product-site-availability-section";
 import { ProductStorageFields } from "@/features/inventory/catalog/product-storage-fields";
-import { ProductUomProfilePanel } from "@/features/inventory/catalog/product-uom-profile-panel";
 import { RequiredFieldsGuardForm } from "@/components/inventory/forms/RequiredFieldsGuardForm";
 import {
   CatalogCategoryContextForm,
@@ -1585,6 +1583,7 @@ export default async function ProductCatalogDetailPage({
                 initialInventoryKind: profileRow?.inventory_kind ?? "",
               }}
               lockedTypeField={{
+                label: "Tipo",
                 value:
                   String(productRow.product_type ?? "").trim().toLowerCase() === "venta"
                     ? "Venta"
@@ -1593,8 +1592,21 @@ export default async function ProductCatalogDetailPage({
                       : "Insumo",
                 hiddenName: "product_type",
                 hiddenValue: productRow.product_type ?? "insumo",
-                hint: "El tipo se define al crear y no se cambia en edicion.",
               }}
+              trailingContent={
+                <div className="sm:col-span-2">
+                  <ProductRemissionUomFields
+                    units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
+                    stockUnitCode={stockUnitCode}
+                    defaultLabel={remissionUomProfile?.label ?? "Unidad operativa"}
+                    defaultInputUnitCode={remissionUomProfile?.input_unit_code ?? resolvedDefaultUnit}
+                    defaultQtyInStockUnit={remissionUomProfile?.qty_in_stock_unit ?? 1}
+                    defaultSourceMode={remissionSourceModeDefault}
+                    defaultEnabled={remissionEnabledDefault}
+                    allowPurchasePrimaryOption={hasSuppliers}
+                  />
+                </div>
+              }
             />
           </CatalogSection>
 
@@ -1630,14 +1642,6 @@ export default async function ProductCatalogDetailPage({
               stockUnitCode={stockUnitCode}
               defaultUnitCode={resolvedDefaultUnit}
               defaultUnitHint="Si no coincide con la familia de la unidad base, se guardara automaticamente la unidad base."
-              profilePanel={
-                <ProductUomProfilePanel
-                  stockUnitCode={stockUnitCode}
-                  defaultUnitCode={resolvedDefaultUnit}
-                  purchaseUomProfile={purchaseUomProfile}
-                  remissionUomProfile={remissionUomProfile}
-                />
-              }
               preCostingFields={
                 <>
                   <label className="flex flex-col gap-1">
@@ -1704,22 +1708,6 @@ export default async function ProductCatalogDetailPage({
             stockUnitFieldId={STOCK_UNIT_FIELD_ID}
           />
 
-          <CatalogSection
-            title="Presentación remisión"
-            description="Define la presentación operativa usada en remisiones y formularios (independiente de compra)."
-          >
-            <ProductRemissionUomFields
-              units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
-              stockUnitCode={stockUnitCode}
-              defaultLabel={remissionUomProfile?.label ?? "Unidad operativa"}
-              defaultInputUnitCode={remissionUomProfile?.input_unit_code ?? resolvedDefaultUnit}
-              defaultQtyInStockUnit={remissionUomProfile?.qty_in_stock_unit ?? 1}
-              defaultSourceMode={remissionSourceModeDefault}
-              defaultEnabled={remissionEnabledDefault}
-              allowPurchasePrimaryOption={hasSuppliers}
-            />
-          </CatalogSection>
-
           <ProductPhotoSection
             description="Imagen principal para identificar rapidamente el item en catalogo y listados."
             currentUrl={productRow.image_url}
@@ -1782,17 +1770,6 @@ export default async function ProductCatalogDetailPage({
             }
           />
 
-          <ProductChecklistPanel
-            items={[
-              "Unidad base definida (donde viven stock, costo y recetas).",
-              hasSuppliers
-                ? "Proveedor principal completo (empaque, cantidad, unidad y precio)."
-                : "Clasificacion y categoria revisadas para este tipo de item.",
-              "Sedes configuradas (disponible, area por defecto y setup por sede).",
-              "Si aplica, receta completa con ingredientes y pasos.",
-            ]}
-          />
-
           <ProductFormFooter
             submitLabel="Guardar cambios"
             showActiveToggle
@@ -1805,19 +1782,6 @@ export default async function ProductCatalogDetailPage({
           Solo propietarios y gerentes generales pueden editar la ficha maestra.
         </div>
       )}
-
-      <CatalogOptionalDetails
-        title="Ubicaciones (LOCs)"
-        summary="Abre este recordatorio solo si necesitas revisar donde se crean y como se asignan."
-      >
-        <div className="text-sm text-[var(--ui-muted)]">
-          Crea los LOCs en{" "}
-          <Link href="/inventory/locations" className="font-medium underline decoration-[var(--ui-border)] underline-offset-2">
-            Inventario / Ubicaciones
-          </Link>
-          . En Entradas asignas cada item a un LOC al recibir.
-        </div>
-      </CatalogOptionalDetails>
     </div>
   );
 }

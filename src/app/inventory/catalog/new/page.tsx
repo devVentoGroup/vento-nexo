@@ -10,7 +10,6 @@ import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { getCategoryDomainOptions } from "@/lib/constants";
 
 import { ProductSuppliersEditor } from "@/features/inventory/catalog/product-suppliers-editor";
-import { ProductChecklistPanel } from "@/features/inventory/catalog/product-checklist-panel";
 import { ProductFormFooter } from "@/features/inventory/catalog/product-form-footer";
 import { ProductIdentityFields } from "@/features/inventory/catalog/product-identity-fields";
 import { ProductPhotoSection } from "@/features/inventory/catalog/product-photo-section";
@@ -1294,21 +1293,37 @@ export default async function NewProductPage({
                 : undefined
             }
             trailingContent={
-              typeKey !== "asset" ? (
-                <>
-                  <input type="hidden" name="cost" value="" />
-                  <div className="ui-panel-soft p-3 text-sm text-[var(--ui-muted)] sm:col-span-2">
-                    <p className="font-medium text-[var(--ui-text)]">Costo automatico</p>
-                    <p className="mt-1">
-                      El costo unitario se calcula automaticamente desde proveedor primario y entradas.
-                    </p>
-                    <p>
-                      Si faltan datos de proveedor, el producto se guarda y quedara marcado como
-                      incompleto para terminar configuracion.
-                    </p>
+              <>
+                {typeKey !== "asset" ? (
+                  <>
+                    <input type="hidden" name="cost" value="" />
+                    <div className="ui-panel-soft p-3 text-sm text-[var(--ui-muted)] sm:col-span-2">
+                      <p className="font-medium text-[var(--ui-text)]">Costo automatico</p>
+                      <p className="mt-1">
+                        El costo unitario se calcula automaticamente desde proveedor primario y entradas.
+                      </p>
+                      <p>
+                        Si faltan datos de proveedor, el producto se guarda y quedara marcado como
+                        incompleto para terminar configuracion.
+                      </p>
+                    </div>
+                  </>
+                ) : null}
+                {config.hasStorage ? (
+                  <div className="sm:col-span-2">
+                    <ProductRemissionUomFields
+                      units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
+                      stockUnitCode={defaultStockUnitCode}
+                      defaultLabel="Unidad operativa"
+                      defaultInputUnitCode={defaultStockUnitCode}
+                      defaultQtyInStockUnit={1}
+                      defaultSourceMode="operation_unit"
+                      defaultEnabled={false}
+                      allowPurchasePrimaryOption={config.hasSuppliers}
+                    />
                   </div>
-                </>
-              ) : null
+                ) : null}
+              </>
             }
           />
         </CatalogSection>
@@ -1384,24 +1399,6 @@ export default async function NewProductPage({
           </CatalogSection>
         )}
 
-        {config.hasStorage ? (
-          <CatalogSection
-            title="Presentación remisión"
-            description="Define la presentación operativa usada en remisiones y formularios (independiente de compra)."
-          >
-            <ProductRemissionUomFields
-              units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
-              stockUnitCode={defaultStockUnitCode}
-              defaultLabel="Unidad operativa"
-              defaultInputUnitCode={defaultStockUnitCode}
-              defaultQtyInStockUnit={1}
-              defaultSourceMode="operation_unit"
-              defaultEnabled={false}
-              allowPurchasePrimaryOption={config.hasSuppliers}
-            />
-          </CatalogSection>
-        ) : null}
-
         {/* Receta se gestiona fuera del flujo actual */}
         {config.hasRecipe && (
           <CatalogOptionalDetails
@@ -1450,17 +1447,6 @@ export default async function NewProductPage({
             inputUnitCode: defaultStockUnitCode,
             stockUnitCode: defaultStockUnitCode,
           })}
-        />
-
-        <ProductChecklistPanel
-          items={[
-            "Unidad base definida (donde vive stock y conteo).",
-            config.hasSuppliers
-              ? "Proveedor principal completo (empaque, cantidad, unidad y precio)."
-              : "Clasificacion y categoria revisadas para este tipo de item.",
-            "Sedes configuradas (disponible, area por defecto y setup por sede).",
-            "Si aplica, completa recetas, fotos o costos avanzados despues del arranque.",
-          ]}
         />
 
         <ProductFormFooter
