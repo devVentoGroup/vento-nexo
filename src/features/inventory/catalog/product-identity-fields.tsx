@@ -31,6 +31,7 @@ type PriceField = {
   defaultValue?: string | number | null;
   placeholder?: string;
   label?: string;
+  hint?: string;
 };
 
 type ProductIdentityFieldsProps = {
@@ -160,6 +161,9 @@ export function ProductIdentityFields({
             className="ui-input"
             placeholder={priceField.placeholder ?? "0.00"}
           />
+          {priceField.hint ? (
+            <span className="text-xs text-[var(--ui-muted)]">{priceField.hint}</span>
+          ) : null}
         </label>
       ) : null}
 

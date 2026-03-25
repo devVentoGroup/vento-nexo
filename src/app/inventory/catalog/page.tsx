@@ -799,9 +799,6 @@ export default async function InventoryCatalogPage({
         ...(activeTab === "insumos"
           ? [{ href: "/api/inventory/catalog/export-suppliers", label: "Descargar Excel de insumos", tone: "ghost" as const }]
           : []),
-        ...(activeTab === "insumos"
-          ? [{ href: "/inventory/ai-ingestions?flow=catalog_create", label: "Alta asistida IA", tone: "ghost" as const }]
-          : []),
       ];
 
   const catalogResultRows: CatalogResultRow[] = visibleProducts.map((product) => {

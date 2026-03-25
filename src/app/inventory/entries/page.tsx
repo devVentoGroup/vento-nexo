@@ -897,11 +897,6 @@ export default async function EntriesPage({
                 {productRows.length} productos
               </span>
             </div>
-            <div className="flex flex-wrap gap-2">
-              <Link href="/inventory/ai-ingestions?flow=supplier_entries" className="ui-btn ui-btn--brand">
-                Importar factura con IA
-              </Link>
-            </div>
           </div>
           <div className="ui-remission-kpis sm:grid-cols-3 lg:grid-cols-1">
             <article className="ui-remission-kpi" data-tone="warm">

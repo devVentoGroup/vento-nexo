@@ -771,6 +771,7 @@ async function createProduct(formData: FormData) {
   const remissionInputUnitCodeRaw = asText(formData.get("remission_uom_code"));
   const remissionQtyInStockText = asText(formData.get("remission_uom_qty_in_stock"));
   const remissionLabelText = asText(formData.get("remission_uom_label"));
+  const remissionConfigEnabled = asText(formData.get("enable_remission_config")) === "1";
   const remissionSourceModeRaw = asText(formData.get("remission_source_mode")).toLowerCase();
   const remissionSourceMode =
     remissionSourceModeRaw === "purchase_primary" ||
@@ -784,7 +785,9 @@ async function createProduct(formData: FormData) {
     Number.isFinite(remissionQtyInStockRaw) && remissionQtyInStockRaw > 0
       ? remissionQtyInStockRaw
       : 0;
-  if (remissionSourceMode === "remission_profile") {
+  if (!remissionConfigEnabled) {
+    remissionUomFromSupplier = null;
+  } else if (remissionSourceMode === "remission_profile") {
     if (!remissionInputUnitCode || remissionQtyInStock <= 0) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
@@ -799,8 +802,7 @@ async function createProduct(formData: FormData) {
       qtyInStockUnit: remissionQtyInStock,
       source: "manual",
     };
-  }
-  if (remissionSourceMode === "purchase_primary") {
+  } else if (remissionSourceMode === "purchase_primary") {
     if (!purchaseUomFromSupplier) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
@@ -815,21 +817,19 @@ async function createProduct(formData: FormData) {
       qtyInStockUnit: purchaseUomFromSupplier.qtyInStockUnit,
       source: "supplier_primary",
     };
-  }
-  if (remissionSourceMode === "operation_unit") {
+  } else if (remissionSourceMode === "operation_unit") {
     remissionUomFromSupplier = buildRemissionFromDefaultUnit({
       defaultUnitCode: resolvedDefaultUnit,
       stockUnitCode,
       unitMap,
     });
-  }
-
-  if (!remissionUomFromSupplier) {
-    redirect(
-      `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
-        "No se pudo definir la presentacion de remision desde unidad operativa. Revisa unidad base y unidad operativa."
-      )}`
-    );
+    if (!remissionUomFromSupplier) {
+      redirect(
+        `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
+          "No se pudo definir la presentacion de remision desde unidad operativa. Revisa unidad base y unidad operativa."
+        )}`
+      );
+    }
   }
 
   async function upsertContextProfile(params: {
@@ -890,7 +890,7 @@ async function createProduct(formData: FormData) {
     });
   }
 
-  if (remissionUomFromSupplier) {
+  if (remissionConfigEnabled && remissionUomFromSupplier) {
     await upsertContextProfile({
       usageContext: "remission",
       label: remissionUomFromSupplier.label,
@@ -1207,11 +1207,6 @@ export default async function NewProductPage({
                 {typeKey}
               </span>
             </div>
-            <div className="flex items-center gap-2">
-              <Link href={`/inventory/ai-ingestions?flow=catalog_create`} className="ui-btn ui-btn--brand">
-                Cargar con IA
-              </Link>
-            </div>
           </div>
           <div className="ui-remission-kpis ui-remission-kpis--stack sm:grid-cols-3 lg:grid-cols-1">
             <article className="ui-remission-kpi" data-tone="warm">
@@ -1289,7 +1284,15 @@ export default async function NewProductPage({
                 Configura unidad base y unidad operativa en la seccion de almacenamiento.
               </div>
             }
-            priceField={config.hasPrice ? {} : undefined}
+            priceField={
+              config.hasPrice
+                ? {
+                    label: "Precio base referencial",
+                    placeholder: "Opcional",
+                    hint: "El precio final se define por sede/canal en la capa comercial.",
+                  }
+                : undefined
+            }
             trailingContent={
               typeKey !== "asset" ? (
                 <>
@@ -1393,6 +1396,7 @@ export default async function NewProductPage({
               defaultInputUnitCode={defaultStockUnitCode}
               defaultQtyInStockUnit={1}
               defaultSourceMode="operation_unit"
+              defaultEnabled={false}
               allowPurchasePrimaryOption={config.hasSuppliers}
             />
           </CatalogSection>

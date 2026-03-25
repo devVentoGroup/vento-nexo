@@ -627,7 +627,7 @@ export default async function ProductTechnicalSheetPage({
               <div className="mt-1 text-sm">{normalizedType}</div>
             </div>
             <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
-              <div className="ui-caption">Precio venta</div>
+              <div className="ui-caption">Precio base referencial</div>
               <div className="mt-1 text-sm">{formatMoney(product.price)}</div>
             </div>
           </div>

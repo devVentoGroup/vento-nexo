@@ -858,6 +858,7 @@ async function updateProduct(formData: FormData) {
   const remissionInputUnitCodeRaw = asText(formData.get("remission_uom_code"));
   const remissionQtyInStockText = asText(formData.get("remission_uom_qty_in_stock"));
   const remissionLabelText = asText(formData.get("remission_uom_label"));
+  const remissionConfigEnabled = asText(formData.get("enable_remission_config")) === "1";
   const remissionSourceModeRaw = asText(formData.get("remission_source_mode")).toLowerCase();
   const remissionSourceMode =
     remissionSourceModeRaw === "purchase_primary" ||
@@ -871,7 +872,9 @@ async function updateProduct(formData: FormData) {
     Number.isFinite(remissionQtyInStockRaw) && remissionQtyInStockRaw > 0
       ? remissionQtyInStockRaw
       : 0;
-  if (remissionSourceMode === "remission_profile") {
+  if (!remissionConfigEnabled) {
+    remissionUomFromSupplier = null;
+  } else if (remissionSourceMode === "remission_profile") {
     if (!remissionInputUnitCode || remissionQtyInStock <= 0) {
       redirectWithError(
         "Completa la presentación de remisión: unidad y equivalencia a unidad base."
@@ -884,9 +887,7 @@ async function updateProduct(formData: FormData) {
       qtyInStockUnit: remissionQtyInStock,
       source: "manual",
     };
-  }
-
-  if (remissionSourceMode === "purchase_primary") {
+  } else if (remissionSourceMode === "purchase_primary") {
     const purchaseProfile = purchaseUomFromSupplier;
     if (!purchaseProfile) {
       redirectWithError(
@@ -901,20 +902,17 @@ async function updateProduct(formData: FormData) {
       qtyInStockUnit: purchaseProfile.qtyInStockUnit,
       source: "supplier_primary",
     };
-  }
-
-  if (remissionSourceMode === "operation_unit") {
+  } else if (remissionSourceMode === "operation_unit") {
     remissionUomFromSupplier = buildRemissionFromDefaultUnit({
       defaultUnitCode: resolvedDefaultUnit,
       stockUnitCode,
       unitMap,
     });
-  }
-
-  if (!remissionUomFromSupplier) {
-    redirectWithError(
-      "No se pudo definir la presentacion de remision desde unidad operativa. Revisa unidad base y unidad operativa."
-    );
+    if (!remissionUomFromSupplier) {
+      redirectWithError(
+        "No se pudo definir la presentacion de remision desde unidad operativa. Revisa unidad base y unidad operativa."
+      );
+    }
   }
 
   async function upsertContextProfile(params: {
@@ -975,7 +973,7 @@ async function updateProduct(formData: FormData) {
     });
   }
 
-  if (remissionUomFromSupplier) {
+  if (remissionConfigEnabled && remissionUomFromSupplier) {
     await upsertContextProfile({
       usageContext: "remission",
       label: remissionUomFromSupplier.label,
@@ -1426,6 +1424,14 @@ export default async function ProductCatalogDetailPage({
         : remissionUomProfile
           ? "remission_profile"
           : "operation_unit";
+  const siteTypeById = new Map(
+    sitesList.map((site) => [String(site.id), String(site.site_type ?? "").trim().toLowerCase()])
+  );
+  const remissionEnabledDefault = siteRows.some((row) => {
+    if (!row || !row.is_active) return false;
+    const siteType = siteTypeById.get(String(row.site_id ?? "")) ?? "";
+    return siteType === "satellite";
+  });
 
   const supplierInitialRows = supplierRows.map((r) => ({
     id: r.id,
@@ -1488,9 +1494,6 @@ export default async function ProductCatalogDetailPage({
                 className="ui-btn ui-btn--ghost"
               >
                 Ver ficha técnica
-              </Link>
-              <Link href="/inventory/ai-ingestions?flow=catalog_create" className="ui-btn ui-btn--brand">
-                IA productos
               </Link>
             </div>
           </div>
@@ -1647,15 +1650,18 @@ export default async function ProductCatalogDetailPage({
                   </label>
                   {String(productRow.product_type ?? "").trim().toLowerCase() === "venta" ? (
                     <label className="flex flex-col gap-1">
-                      <span className="ui-label">Precio de venta</span>
+                      <span className="ui-label">Precio base referencial</span>
                       <input
                         name="price"
                         type="number"
                         step="0.01"
                         defaultValue={productRow.price ?? ""}
                         className="ui-input"
-                        placeholder="0.00"
+                        placeholder="Opcional"
                       />
+                      <span className="text-xs text-[var(--ui-muted)]">
+                        El precio final se configura por sede/canal en la capa comercial.
+                      </span>
                     </label>
                   ) : (
                     <input type="hidden" name="price" value={productRow.price ?? ""} />
@@ -1709,6 +1715,7 @@ export default async function ProductCatalogDetailPage({
               defaultInputUnitCode={remissionUomProfile?.input_unit_code ?? resolvedDefaultUnit}
               defaultQtyInStockUnit={remissionUomProfile?.qty_in_stock_unit ?? 1}
               defaultSourceMode={remissionSourceModeDefault}
+              defaultEnabled={remissionEnabledDefault}
               allowPurchasePrimaryOption={hasSuppliers}
             />
           </CatalogSection>
