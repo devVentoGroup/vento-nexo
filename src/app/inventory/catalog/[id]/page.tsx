@@ -1622,6 +1622,7 @@ export default async function ProductCatalogDetailPage({
               units={defaultUnitOptions}
               stockUnitCode={stockUnitCode}
               defaultUnitCode={resolvedDefaultUnit}
+              defaultRemissionMode={remissionEnabledDefault ? remissionSourceModeDefault : "disabled"}
               defaultUnitHint="Si no coincide con la familia de la unidad base, se guardara automaticamente la unidad base."
               preCostingFields={
                 <>

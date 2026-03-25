@@ -1329,6 +1329,7 @@ export default async function NewProductPage({
               units={defaultUnitOptions}
               stockUnitCode={defaultStockUnitCode}
               defaultUnitCode={defaultStockUnitCode}
+              defaultRemissionMode="disabled"
               stockUnitLabel="Unidad base de stock *"
               stockUnitHint="Ejemplo jugo: base = ml. Ejemplo queso: base = un/lonja."
               defaultUnitHint="Se usa para captura rapida en formularios cuando no hay empaque operativo."
