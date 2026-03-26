@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { requireAppAccess } from "@/lib/auth/guard";
+import { CatalogOptionalDetails } from "@/features/inventory/catalog/catalog-ui";
 
 import { CountInitialForm } from "@/features/inventory/count-initial/count-initial-form";
 
@@ -309,12 +310,13 @@ export default async function InventoryCountInitialPage({
       ) : (
         <>
           {locRows.length > 0 ? (
-            <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
-              <div className="ui-h3">Ámbito del conteo</div>
-              <p className="mt-1 ui-body-muted">
-                Filtra el conteo por zona o por LOC si no vas a contar toda la sede.
-              </p>
-              <form method="get" action="/inventory/count-initial" className="mt-4 flex flex-wrap items-end gap-3">
+            <CatalogOptionalDetails
+              title="Filtros avanzados"
+              summary="Ajusta por zona o LOC solo cuando no vayas a contar toda la sede."
+              badge={zoneParam || locationIdParam ? "Activos" : "Opcional"}
+              defaultOpen={Boolean(zoneParam || locationIdParam)}
+            >
+              <form method="get" action="/inventory/count-initial" className="mt-2 flex flex-wrap items-end gap-3">
                 <input type="hidden" name="site_id" value={siteId} />
                 <label className="flex flex-col gap-1">
                   <span className="ui-caption">Zona</span>
@@ -347,7 +349,7 @@ export default async function InventoryCountInitialPage({
                   </select>
                 </label>
                 <button type="submit" className="ui-btn ui-btn--ghost">
-                  Aplicar
+                  Aplicar filtros
                 </button>
               </form>
               {(zoneParam || locationIdParam) ? (
@@ -355,7 +357,7 @@ export default async function InventoryCountInitialPage({
                   Actual: <strong>{countScopeLabel}</strong>
                 </p>
               ) : null}
-            </div>
+            </CatalogOptionalDetails>
           ) : null}
 
           <CountInitialForm

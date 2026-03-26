@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import { Table, TableCell, TableHeaderCell } from "@/components/vento/standard/table";
 
 type Product = {
@@ -29,6 +29,7 @@ export function CountInitialForm({
 }: Props) {
   const router = useRouter();
   const [qty, setQty] = useState<Record<string, string>>({});
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -42,6 +43,16 @@ export function CountInitialForm({
   const lines = products
     .map((p) => ({ product_id: p.id, quantity: getVal(p.id) }))
     .filter((line) => line.quantity > 0);
+
+  const filteredProducts = useMemo(() => {
+    const query = search.trim().toLowerCase();
+    if (!query) return products;
+    return products.filter((product) => {
+      const name = String(product.name ?? "").toLowerCase();
+      const sku = String(product.sku ?? "").toLowerCase();
+      return name.includes(query) || sku.includes(query);
+    });
+  }, [products, search]);
 
   const handleConfirm = async () => {
     if (lines.length === 0) {
@@ -96,6 +107,21 @@ export function CountInitialForm({
           </div>
 
           <div className="overflow-x-auto ui-scrollbar-subtle">
+            <div className="mb-3 space-y-2">
+              <label className="flex flex-col gap-1">
+                <span className="ui-label">Buscar SKU o nombre</span>
+                <input
+                  type="text"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="SKU o nombre de producto"
+                  className="ui-input"
+                />
+              </label>
+              <p className="ui-caption">
+                {filteredProducts.length} de {products.length} producto(s) visibles.
+              </p>
+            </div>
             <Table>
               <thead>
                 <tr>
@@ -106,7 +132,7 @@ export function CountInitialForm({
                 </tr>
               </thead>
               <tbody>
-                {products.map((product) => (
+                {filteredProducts.map((product) => (
                   <tr key={product.id} className="ui-body">
                     <TableCell>{product.name}</TableCell>
                     <TableCell className="font-mono">{product.sku ?? "-"}</TableCell>
@@ -126,6 +152,11 @@ export function CountInitialForm({
                     </TableCell>
                   </tr>
                 ))}
+                {filteredProducts.length === 0 ? (
+                  <tr>
+                    <TableCell colSpan={4}>No hay productos para esa búsqueda.</TableCell>
+                  </tr>
+                ) : null}
               </tbody>
             </Table>
           </div>

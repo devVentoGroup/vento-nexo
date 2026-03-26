@@ -15,6 +15,8 @@ export type SupplierLine = {
   purchase_price_net?: number;
   purchase_price_includes_tax?: boolean;
   purchase_tax_rate?: number;
+  purchase_price_includes_icui?: boolean;
+  purchase_icui_rate?: number;
   currency?: string;
   lead_time_days?: number;
   min_order_qty?: number;
@@ -64,6 +66,8 @@ function buildEmptyLine(stockUnitCode?: string): SupplierLine {
     purchase_price_net: undefined,
     purchase_price_includes_tax: false,
     purchase_tax_rate: undefined,
+    purchase_price_includes_icui: false,
+    purchase_icui_rate: undefined,
     currency: "COP",
     lead_time_days: undefined,
     min_order_qty: undefined,
@@ -340,17 +344,22 @@ export function ProductSuppliersEditor({
             const includesTax = Boolean(line.purchase_price_includes_tax);
             const taxRateRaw = Number(line.purchase_tax_rate ?? 0);
             const taxRate = Number.isFinite(taxRateRaw) && taxRateRaw >= 0 ? taxRateRaw : 0;
+            const includesIcui = Boolean(line.purchase_price_includes_icui);
+            const icuiRateRaw = Number(line.purchase_icui_rate ?? 0);
+            const icuiRate = Number.isFinite(icuiRateRaw) && icuiRateRaw >= 0 ? icuiRateRaw : 0;
+            const totalIncludedTaxRate =
+              (includesTax ? taxRate : 0) + (includesIcui ? icuiRate : 0);
             const netPackPrice =
               price > 0
-                ? includesTax
-                  ? price / (1 + taxRate / 100)
+                ? totalIncludedTaxRate > 0
+                  ? price / (1 + totalIncludedTaxRate / 100)
                   : price
                 : 0;
             const grossPackPrice =
               price > 0
-                ? includesTax
+                ? totalIncludedTaxRate > 0
                   ? price
-                  : price * (1 + taxRate / 100)
+                  : price * (1 + (taxRate + icuiRate) / 100)
                 : 0;
             const packLabel = line.purchase_unit?.trim() || "empaque";
             const currency = line.currency?.trim() || "COP";
@@ -583,9 +592,43 @@ export function ProductSuppliersEditor({
                         />
                       </label>
                     ) : null}
+                    <label className="mt-1 flex items-center gap-2 text-xs text-[var(--ui-muted)]">
+                      <input
+                        type="checkbox"
+                        checked={Boolean(line.purchase_price_includes_icui)}
+                        onChange={(event) => {
+                          const nextChecked = event.target.checked;
+                          updateLine(realIndex, {
+                            purchase_price_includes_icui: nextChecked,
+                            purchase_icui_rate:
+                              nextChecked && (line.purchase_icui_rate == null || line.purchase_icui_rate === undefined)
+                                ? 0
+                                : line.purchase_icui_rate,
+                          });
+                        }}
+                      />
+                      Incluye ICUI
+                    </label>
+                    {Boolean(line.purchase_price_includes_icui) ? (
+                      <label className="flex items-center gap-2 text-xs text-[var(--ui-muted)]">
+                        <span>% ICUI</span>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          value={line.purchase_icui_rate ?? ""}
+                          onChange={(event) =>
+                            updateLine(realIndex, {
+                              purchase_icui_rate: parseTaxRateInput(event.target.value),
+                            })
+                          }
+                          className="ui-input h-9 w-28"
+                          placeholder=""
+                        />
+                      </label>
+                    ) : null}
                     {price > 0 ? (
                       <span className="text-xs text-[var(--ui-muted)]">
-                        Neto sin IVA: {formatMoney(netPackPrice, currency)}
+                        Neto sin impuestos: {formatMoney(netPackPrice, currency)}
                       </span>
                     ) : null}
                   </label>

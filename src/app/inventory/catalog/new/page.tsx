@@ -72,14 +72,23 @@ function resolveNetPurchasePrice(params: {
   purchasePrice: number | null;
   purchasePriceIncludesTax: boolean;
   purchaseTaxRate: number;
+  purchasePriceIncludesIcui?: boolean;
+  purchaseIcuiRate?: number;
 }): number | null {
   const gross = Number(params.purchasePrice ?? 0);
   if (!Number.isFinite(gross) || gross <= 0) return null;
-  if (!params.purchasePriceIncludesTax) return gross;
+  const includesTax = Boolean(params.purchasePriceIncludesTax);
+  const includesIcui = Boolean(params.purchasePriceIncludesIcui);
+  if (!includesTax && !includesIcui) return gross;
   const safeTaxRate = Number.isFinite(params.purchaseTaxRate) && params.purchaseTaxRate >= 0
     ? params.purchaseTaxRate
     : 0;
-  const divisor = 1 + safeTaxRate / 100;
+  const safeIcuiRate =
+    Number.isFinite(Number(params.purchaseIcuiRate ?? 0)) && Number(params.purchaseIcuiRate ?? 0) >= 0
+      ? Number(params.purchaseIcuiRate ?? 0)
+      : 0;
+  const totalRate = (includesTax ? safeTaxRate : 0) + (includesIcui ? safeIcuiRate : 0);
+  const divisor = 1 + totalRate / 100;
   if (!Number.isFinite(divisor) || divisor <= 0) return gross;
   return gross / divisor;
 }
@@ -654,10 +663,18 @@ async function createProduct(formData: FormData) {
           Number.isFinite(purchaseTaxRateRaw) && purchaseTaxRateRaw >= 0
             ? purchaseTaxRateRaw
             : 0;
+        const purchasePriceIncludesIcui = Boolean(line.purchase_price_includes_icui);
+        const purchaseIcuiRateRaw = Number(line.purchase_icui_rate ?? 0);
+        const purchaseIcuiRate =
+          Number.isFinite(purchaseIcuiRateRaw) && purchaseIcuiRateRaw >= 0
+            ? purchaseIcuiRateRaw
+            : 0;
         const purchasePriceNet = resolveNetPurchasePrice({
           purchasePrice,
           purchasePriceIncludesTax,
           purchaseTaxRate,
+          purchasePriceIncludesIcui,
+          purchaseIcuiRate,
         });
         const purchaseUnitLabel = String(line.purchase_unit ?? "").trim();
         if (
@@ -728,6 +745,8 @@ async function createProduct(formData: FormData) {
           purchase_price_net: purchasePriceNet,
           purchase_price_includes_tax: purchasePriceIncludesTax,
           purchase_tax_rate: purchaseTaxRate,
+          purchase_price_includes_icui: purchasePriceIncludesIcui,
+          purchase_icui_rate: purchaseIcuiRate,
           currency: (line.currency as string) || "COP",
           lead_time_days: (line.lead_time_days as number) ?? null,
           min_order_qty: (line.min_order_qty as number) ?? null,

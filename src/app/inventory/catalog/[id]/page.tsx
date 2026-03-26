@@ -240,6 +240,8 @@ type SupplierRow = {
   purchase_price_net: number | null;
   purchase_price_includes_tax: boolean | null;
   purchase_tax_rate: number | null;
+  purchase_price_includes_icui: boolean | null;
+  purchase_icui_rate: number | null;
   currency: string | null;
   lead_time_days: number | null;
   min_order_qty: number | null;
@@ -284,14 +286,23 @@ function resolveNetPurchasePrice(params: {
   purchasePrice: number | null;
   purchasePriceIncludesTax: boolean;
   purchaseTaxRate: number;
+  purchasePriceIncludesIcui?: boolean;
+  purchaseIcuiRate?: number;
 }): number | null {
   const gross = Number(params.purchasePrice ?? 0);
   if (!Number.isFinite(gross) || gross <= 0) return null;
-  if (!params.purchasePriceIncludesTax) return gross;
+  const includesTax = Boolean(params.purchasePriceIncludesTax);
+  const includesIcui = Boolean(params.purchasePriceIncludesIcui);
+  if (!includesTax && !includesIcui) return gross;
   const safeTaxRate = Number.isFinite(params.purchaseTaxRate) && params.purchaseTaxRate >= 0
     ? params.purchaseTaxRate
     : 0;
-  const divisor = 1 + safeTaxRate / 100;
+  const safeIcuiRate =
+    Number.isFinite(Number(params.purchaseIcuiRate ?? 0)) && Number(params.purchaseIcuiRate ?? 0) >= 0
+      ? Number(params.purchaseIcuiRate ?? 0)
+      : 0;
+  const totalRate = (includesTax ? safeTaxRate : 0) + (includesIcui ? safeIcuiRate : 0);
+  const divisor = 1 + totalRate / 100;
   if (!Number.isFinite(divisor) || divisor <= 0) return gross;
   return gross / divisor;
 }
@@ -717,6 +728,8 @@ async function updateProduct(formData: FormData) {
       purchase_price_net?: number;
       purchase_price_includes_tax?: boolean;
       purchase_tax_rate?: number;
+      purchase_price_includes_icui?: boolean;
+      purchase_icui_rate?: number;
       currency?: string;
       lead_time_days?: number;
       min_order_qty?: number;
@@ -757,10 +770,18 @@ async function updateProduct(formData: FormData) {
         Number.isFinite(purchaseTaxRateRaw) && purchaseTaxRateRaw >= 0
           ? purchaseTaxRateRaw
           : 0;
+      const purchasePriceIncludesIcui = Boolean(line.purchase_price_includes_icui);
+      const purchaseIcuiRateRaw = Number(line.purchase_icui_rate ?? 0);
+      const purchaseIcuiRate =
+        Number.isFinite(purchaseIcuiRateRaw) && purchaseIcuiRateRaw >= 0
+          ? purchaseIcuiRateRaw
+          : 0;
       const purchasePriceNet = resolveNetPurchasePrice({
         purchasePrice,
         purchasePriceIncludesTax,
         purchaseTaxRate,
+        purchasePriceIncludesIcui,
+        purchaseIcuiRate,
       });
       const purchaseUnitLabel = String(line.purchase_unit ?? "").trim();
       if (
@@ -856,10 +877,18 @@ async function updateProduct(formData: FormData) {
         Number.isFinite(purchaseTaxRateRaw) && purchaseTaxRateRaw >= 0
           ? purchaseTaxRateRaw
           : 0;
+      const purchasePriceIncludesIcui = Boolean(line.purchase_price_includes_icui);
+      const purchaseIcuiRateRaw = Number(line.purchase_icui_rate ?? 0);
+      const purchaseIcuiRate =
+        Number.isFinite(purchaseIcuiRateRaw) && purchaseIcuiRateRaw >= 0
+          ? purchaseIcuiRateRaw
+          : 0;
       const purchasePriceNet = resolveNetPurchasePrice({
         purchasePrice,
         purchasePriceIncludesTax,
         purchaseTaxRate,
+        purchasePriceIncludesIcui,
+        purchaseIcuiRate,
       });
       const { error: supplierErr } = await supabase.from("product_suppliers").insert({
         product_id: productId,
@@ -873,6 +902,8 @@ async function updateProduct(formData: FormData) {
         purchase_price_net: purchasePriceNet,
         purchase_price_includes_tax: purchasePriceIncludesTax,
         purchase_tax_rate: purchaseTaxRate,
+        purchase_price_includes_icui: purchasePriceIncludesIcui,
+        purchase_icui_rate: purchaseIcuiRate,
         currency: line.currency || "COP",
         lead_time_days: line.lead_time_days ?? null,
         min_order_qty: line.min_order_qty ?? null,
@@ -1334,7 +1365,7 @@ export default async function ProductCatalogDetailPage({
 
   const { data: supplierLinks } = await supabase
     .from("product_suppliers")
-    .select("id,supplier_id,supplier_sku,purchase_unit,purchase_unit_size,purchase_pack_qty,purchase_pack_unit_code,purchase_price,purchase_price_net,purchase_price_includes_tax,purchase_tax_rate,currency,lead_time_days,min_order_qty,is_primary")
+    .select("id,supplier_id,supplier_sku,purchase_unit,purchase_unit_size,purchase_pack_qty,purchase_pack_unit_code,purchase_price,purchase_price_net,purchase_price_includes_tax,purchase_tax_rate,purchase_price_includes_icui,purchase_icui_rate,currency,lead_time_days,min_order_qty,is_primary")
     .eq("product_id", id)
     .order("is_primary", { ascending: false });
   const supplierRows = (supplierLinks ?? []) as SupplierRow[];
@@ -1523,6 +1554,8 @@ export default async function ProductCatalogDetailPage({
     purchase_price_net: r.purchase_price_net ?? undefined,
     purchase_price_includes_tax: Boolean(r.purchase_price_includes_tax),
     purchase_tax_rate: r.purchase_tax_rate ?? undefined,
+    purchase_price_includes_icui: Boolean(r.purchase_price_includes_icui),
+    purchase_icui_rate: r.purchase_icui_rate ?? undefined,
     currency: r.currency ?? "COP",
     lead_time_days: r.lead_time_days ?? undefined,
     min_order_qty: r.min_order_qty ?? undefined,
