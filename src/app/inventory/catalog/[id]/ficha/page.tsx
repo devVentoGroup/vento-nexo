@@ -90,7 +90,7 @@ type UomProfileRow = {
   is_default: boolean | null;
   is_active: boolean | null;
   updated_at: string | null;
-  source?: "manual" | "supplier_primary" | null;
+  source?: "manual" | "supplier_primary" | "recipe_portion" | null;
 };
 
 type UnitRow = {
@@ -426,7 +426,12 @@ export default async function ProductTechnicalSheetPage({
     qty_in_stock_unit: toPositiveNumber(row.qty_in_stock_unit, 1),
     is_default: row.is_default !== false,
     is_active: row.is_active !== false,
-    source: row.source === "supplier_primary" ? "supplier_primary" : ("manual" as const),
+    source:
+      row.source === "supplier_primary"
+        ? "supplier_primary"
+        : row.source === "recipe_portion"
+          ? "recipe_portion"
+          : ("manual" as const),
     usage_context:
       String(row.usage_context ?? "general").trim().toLowerCase() === "purchase"
         ? "purchase"
@@ -461,7 +466,9 @@ export default async function ProductTechnicalSheetPage({
   const remissionSourceLabel = remissionProfile
     ? remissionProfile.source === "supplier_primary"
       ? "Proveedor (empaque en operación)"
-      : "Unidad operativa"
+      : remissionProfile.source === "recipe_portion"
+        ? "Receta publicada (porción)"
+        : "Unidad operativa"
     : "Unidad operativa";
   const purchasePackText = purchaseProfileDisplay
     ? `${purchaseProfileDisplay.label} (${formatQty(purchaseProfileDisplay.qtyInStockUnit)} ${stockUnitCode})`
@@ -473,7 +480,9 @@ export default async function ProductTechnicalSheetPage({
     ? `${remissionProfileDisplay.inputUnitCode}`
     : defaultUnitCode;
   const operationRuleText = remissionProfileDisplay
-    ? "Usa presentación de remisión."
+    ? remissionProfile?.source === "recipe_portion"
+      ? "Usa porción de receta publicada."
+      : "Usa presentación de remisión."
     : "No usa remisión: opera con unidad operativa.";
 
   const stockBySite = new Map<string, number>();

@@ -26,7 +26,12 @@ type ProductStorageFieldsProps = {
   units: InventoryUnit[];
   stockUnitCode: string;
   defaultUnitCode: string;
-  defaultRemissionMode?: "disabled" | "operation_unit" | "purchase_primary" | "remission_profile";
+  defaultRemissionMode?:
+    | "disabled"
+    | "operation_unit"
+    | "purchase_primary"
+    | "remission_profile"
+    | "recipe_portion";
   stockUnitLabel?: string;
   stockUnitHint?: string;
   defaultUnitLabel?: string;
@@ -105,7 +110,11 @@ export function ProductStorageFields({
 }: ProductStorageFieldsProps) {
   const [selectedDefaultUnit, setSelectedDefaultUnit] = useState(defaultUnitCode);
   const [remissionMode, setRemissionMode] = useState<
-    "disabled" | "operation_unit" | "purchase_primary" | "remission_profile"
+    | "disabled"
+    | "operation_unit"
+    | "purchase_primary"
+    | "remission_profile"
+    | "recipe_portion"
   >(defaultRemissionMode);
   const showOperationUnitSelector = remissionMode === "operation_unit";
 
@@ -117,7 +126,8 @@ export function ProductStorageFields({
         nextMode === "disabled" ||
         nextMode === "operation_unit" ||
         nextMode === "purchase_primary" ||
-        nextMode === "remission_profile"
+        nextMode === "remission_profile" ||
+        nextMode === "recipe_portion"
       ) {
         setRemissionMode(nextMode);
       }
@@ -196,6 +206,8 @@ export function ProductStorageFields({
                 ? "sin remisión"
                 : remissionMode === "purchase_primary"
                   ? "presentación de compra"
+                  : remissionMode === "recipe_portion"
+                    ? "porción de receta"
                   : "presentación de remisión manual"}
               .
             </span>

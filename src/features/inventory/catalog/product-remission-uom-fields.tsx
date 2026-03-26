@@ -13,8 +13,14 @@ type ProductRemissionUomFieldsProps = {
   defaultLabel?: string;
   defaultInputUnitCode?: string;
   defaultQtyInStockUnit?: number | null;
-  defaultSourceMode?: "disabled" | "operation_unit" | "purchase_primary" | "remission_profile";
+  defaultSourceMode?:
+    | "disabled"
+    | "operation_unit"
+    | "purchase_primary"
+    | "remission_profile"
+    | "recipe_portion";
   allowPurchasePrimaryOption?: boolean;
+  allowRecipePortionOption?: boolean;
 };
 
 export function ProductRemissionUomFields({
@@ -25,9 +31,14 @@ export function ProductRemissionUomFields({
   defaultQtyInStockUnit,
   defaultSourceMode = "disabled",
   allowPurchasePrimaryOption = true,
+  allowRecipePortionOption = false,
 }: ProductRemissionUomFieldsProps) {
   const [mode, setMode] = useState<
-    "disabled" | "operation_unit" | "purchase_primary" | "remission_profile"
+    | "disabled"
+    | "operation_unit"
+    | "purchase_primary"
+    | "remission_profile"
+    | "recipe_portion"
   >(defaultSourceMode);
   const showManualFields = mode === "remission_profile";
   const normalizedUnits = useMemo(
@@ -81,6 +92,7 @@ export function ProductRemissionUomFields({
                     | "operation_unit"
                     | "purchase_primary"
                     | "remission_profile"
+                    | "recipe_portion"
                 )
               }
               className="ui-input"
@@ -89,6 +101,9 @@ export function ProductRemissionUomFields({
               <option value="operation_unit">Unidad operativa (arriba)</option>
               {allowPurchasePrimaryOption ? (
                 <option value="purchase_primary">Presentación de compra (proveedor primario)</option>
+              ) : null}
+              {allowRecipePortionOption ? (
+                <option value="recipe_portion">Porción de receta publicada</option>
               ) : null}
               <option value="remission_profile">Presentación de remisión (este bloque)</option>
             </select>

@@ -21,7 +21,7 @@ export type ProductUomProfile = {
   qty_in_stock_unit: number;
   is_default: boolean;
   is_active: boolean;
-  source: "manual" | "supplier_primary";
+  source: "manual" | "supplier_primary" | "recipe_portion";
   usage_context?: "general" | "purchase" | "remission" | null;
 };
 

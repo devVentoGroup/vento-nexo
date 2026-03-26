@@ -132,6 +132,45 @@ function buildRemissionFromDefaultUnit(params: {
   }
 }
 
+function buildRemissionFromRecipePortion(params: {
+  portionSize: number;
+  portionUnitCode: string;
+  stockUnitCode: string;
+  unitMap: ReturnType<typeof createUnitMap>;
+}):
+  | {
+      label: string;
+      inputUnitCode: string;
+      qtyInInputUnit: number;
+      qtyInStockUnit: number;
+      source: "recipe_portion";
+    }
+  | null {
+  const portionSize = Number(params.portionSize ?? 0);
+  const portionUnitCode = normalizeUnitCode(params.portionUnitCode || "");
+  const stockUnitCode = normalizeUnitCode(params.stockUnitCode || "");
+  if (!Number.isFinite(portionSize) || portionSize <= 0) return null;
+  if (!portionUnitCode || !stockUnitCode) return null;
+  try {
+    const { quantity } = convertQuantity({
+      quantity: portionSize,
+      fromUnitCode: portionUnitCode,
+      toUnitCode: stockUnitCode,
+      unitMap: params.unitMap,
+    });
+    if (!Number.isFinite(quantity) || quantity <= 0) return null;
+    return {
+      label: "Porción receta",
+      inputUnitCode: "un",
+      qtyInInputUnit: 1,
+      qtyInStockUnit: quantity,
+      source: "recipe_portion",
+    };
+  } catch {
+    return null;
+  }
+}
+
 type ProductRow = {
   id: string;
   name: string | null;
@@ -216,7 +255,7 @@ type ProductUomProfileRow = {
   qty_in_stock_unit: number;
   is_default: boolean;
   is_active: boolean;
-  source: "manual" | "supplier_primary";
+  source: "manual" | "supplier_primary" | "recipe_portion";
   usage_context: "general" | "purchase" | "remission" | null;
 };
 
@@ -659,7 +698,7 @@ async function updateProduct(formData: FormData) {
         inputUnitCode: string;
         qtyInInputUnit: number;
         qtyInStockUnit: number;
-        source: "manual" | "supplier_primary";
+        source: "manual" | "supplier_primary" | "recipe_portion";
       }
     | null = null;
   const supplierLinesRaw = formData.get("supplier_lines");
@@ -851,6 +890,7 @@ async function updateProduct(formData: FormData) {
     remissionSourceModeRaw === "disabled" ||
     remissionSourceModeRaw === "purchase_primary" ||
     remissionSourceModeRaw === "remission_profile" ||
+    remissionSourceModeRaw === "recipe_portion" ||
     remissionSourceModeRaw === "operation_unit"
       ? remissionSourceModeRaw
       : "disabled";
@@ -901,6 +941,44 @@ async function updateProduct(formData: FormData) {
         "No se pudo definir la presentacion de remision desde unidad operativa. Revisa unidad base y unidad operativa."
       );
     }
+  } else if (remissionSourceMode === "recipe_portion") {
+    const normalizedProductType = String(existingProductType ?? "").trim().toLowerCase();
+    if (!["preparacion", "venta"].includes(normalizedProductType)) {
+      redirectWithError("La opción de receta solo aplica a preparaciones o productos con receta.");
+    }
+    const { data: publishedRecipes, error: recipeError } = await supabase
+      .from("recipe_cards")
+      .select("portion_size,portion_unit,status,is_active,updated_at")
+      .eq("product_id", productId)
+      .eq("is_active", true)
+      .eq("status", "published")
+      .order("updated_at", { ascending: false })
+      .limit(1);
+    if (recipeError) {
+      redirectWithError(recipeError.message);
+    }
+    const recipePortion = (publishedRecipes ?? [])[0] as
+      | {
+          portion_size?: number | null;
+          portion_unit?: string | null;
+        }
+      | undefined;
+    if (!recipePortion) {
+      redirectWithError(
+        "No hay receta publicada activa para este producto. Publica la receta para usar esta opción."
+      );
+    }
+    remissionUomFromSupplier = buildRemissionFromRecipePortion({
+      portionSize: Number(recipePortion?.portion_size ?? 0),
+      portionUnitCode: String(recipePortion?.portion_unit ?? ""),
+      stockUnitCode,
+      unitMap,
+    });
+    if (!remissionUomFromSupplier) {
+      redirectWithError(
+        "La porción de la receta no es válida para remisión. Revisa porción, unidad y conversión contra unidad base."
+      );
+    }
   }
 
   async function upsertContextProfile(params: {
@@ -909,7 +987,7 @@ async function updateProduct(formData: FormData) {
     inputUnitCode: string;
     qtyInInputUnit: number;
     qtyInStockUnit: number;
-    source: "manual" | "supplier_primary";
+    source: "manual" | "supplier_primary" | "recipe_portion";
   }) {
     const now = new Date().toISOString();
     const { data: existing } = await supabase
@@ -1394,8 +1472,23 @@ export default async function ProductCatalogDetailPage({
     inputUnitCode: resolvedDefaultUnit || stockUnitCode,
     stockUnitCode,
   });
-  const remissionSourceModeDefault: "operation_unit" | "purchase_primary" | "remission_profile" =
-    remissionUomProfile?.source === "supplier_primary"
+  const { data: publishedRecipeRows } = await supabase
+    .from("recipe_cards")
+    .select("id")
+    .eq("product_id", id)
+    .eq("is_active", true)
+    .eq("status", "published")
+    .limit(1);
+  const hasPublishedRecipePortion = (publishedRecipeRows ?? []).length > 0;
+
+  const remissionSourceModeDefault:
+    | "operation_unit"
+    | "purchase_primary"
+    | "remission_profile"
+    | "recipe_portion" =
+    remissionUomProfile?.source === "recipe_portion"
+      ? "recipe_portion"
+      : remissionUomProfile?.source === "supplier_primary"
       ? "purchase_primary"
       : remissionUomProfile &&
           operationUnitFromDefault &&
@@ -1585,6 +1678,7 @@ export default async function ProductCatalogDetailPage({
                     defaultQtyInStockUnit={remissionUomProfile?.qty_in_stock_unit ?? 1}
                     defaultSourceMode={remissionEnabledDefault ? remissionSourceModeDefault : "disabled"}
                     allowPurchasePrimaryOption={hasSuppliers}
+                    allowRecipePortionOption={hasPublishedRecipePortion}
                   />
                 </div>
               }

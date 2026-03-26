@@ -607,7 +607,7 @@ async function createProduct(formData: FormData) {
         inputUnitCode: string;
         qtyInInputUnit: number;
         qtyInStockUnit: number;
-        source: "manual" | "supplier_primary";
+        source: "manual" | "supplier_primary" | "recipe_portion";
       }
     | null = null;
   if (config.hasSuppliers) {
@@ -766,6 +766,7 @@ async function createProduct(formData: FormData) {
     remissionSourceModeRaw === "disabled" ||
     remissionSourceModeRaw === "purchase_primary" ||
     remissionSourceModeRaw === "remission_profile" ||
+    remissionSourceModeRaw === "recipe_portion" ||
     remissionSourceModeRaw === "operation_unit"
       ? remissionSourceModeRaw
       : "disabled";
@@ -820,6 +821,12 @@ async function createProduct(formData: FormData) {
         )}`
       );
     }
+  } else if (remissionSourceMode === "recipe_portion") {
+    redirect(
+      `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
+        "Primero crea y publica la receta. Luego en edición podrás usar remisión desde porción de receta."
+      )}`
+    );
   }
 
   async function upsertContextProfile(params: {
@@ -828,7 +835,7 @@ async function createProduct(formData: FormData) {
     inputUnitCode: string;
     qtyInInputUnit: number;
     qtyInStockUnit: number;
-    source: "manual" | "supplier_primary";
+    source: "manual" | "supplier_primary" | "recipe_portion";
   }) {
     const now = new Date().toISOString();
     const { data: existing } = await supabase
