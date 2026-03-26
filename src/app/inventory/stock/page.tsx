@@ -205,6 +205,7 @@ export default async function InventoryStockPage({
   const isProductionCenter = selectedSiteType === "production_center";
   const isSatellite = selectedSiteType === "satellite";
   const isOperatorFocusMode = !isManagementRole && (isProductionCenter || isSatellite);
+  const useCompactFilters = true;
 
   const allCategoryRows = await loadCategoryRows(supabase);
   const categoryMap = new Map(allCategoryRows.map((row) => [row.id, row]));
@@ -600,9 +601,9 @@ export default async function InventoryStockPage({
       <div className="ui-panel ui-panel--halo ui-remission-section ui-fade-up ui-delay-1">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <div className="ui-h3">{isOperatorFocusMode ? "Buscar rapido" : "Filtros"}</div>
+            <div className="ui-h3">{useCompactFilters ? "Buscar rapido" : "Filtros"}</div>
             <div className="mt-1 ui-caption">
-              {isOperatorFocusMode
+              {useCompactFilters
                 ? "Primero busca el producto o el LOC. Los filtros avanzados quedan abajo si de verdad los necesitas."
                 : "Afina vista, categoria y ubicaciones sin salir de stock."}
             </div>
@@ -674,7 +675,7 @@ export default async function InventoryStockPage({
             </>
           ) : null}
 
-          {isOperatorFocusMode ? (
+          {useCompactFilters ? (
             <details className="sm:col-span-2 lg:col-span-4 rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3">
               <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
                 Filtros avanzados
