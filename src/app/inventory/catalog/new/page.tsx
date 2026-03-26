@@ -1192,7 +1192,12 @@ export default async function NewProductPage({
         <div className="ui-remission-hero-grid lg:grid-cols-[1.45fr_1fr] lg:items-start">
           <div className="space-y-4">
             <div className="space-y-2">
-              <Link href="/inventory/catalog" className="ui-caption underline">Volver al catalogo</Link>
+              <Link
+                href="/inventory/catalog"
+                className="ui-btn ui-btn--ghost inline-flex h-12 items-center px-5 text-base font-semibold"
+              >
+                ← Volver al catálogo
+              </Link>
               <h1 className="ui-h1">{config.title}</h1>
               <p className="ui-body-muted">{config.subtitle}</p>
             </div>

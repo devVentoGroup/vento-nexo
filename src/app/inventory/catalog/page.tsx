@@ -916,7 +916,12 @@ export default async function InventoryCatalogPage({
         <div className="ui-remission-hero-grid lg:grid-cols-[1.45fr_1fr] lg:items-start">
           <div className="space-y-4">
             <div className="space-y-2">
-              <Link href="/inventory/stock" className="ui-caption underline">Volver a stock</Link>
+              <Link
+                href="/inventory/stock"
+                className="ui-btn ui-btn--ghost inline-flex h-12 items-center px-5 text-base font-semibold"
+              >
+                ← Volver a stock
+              </Link>
               <h1 className="ui-h1">Catalogo maestro</h1>
               <p className="ui-body-muted">
                 Productos maestros, salud operativa por sede y continuidad de compra sin mezclar logica comercial.
