@@ -627,6 +627,35 @@ export default async function ProductTechnicalSheetPage({
     },
     {} as Record<string, AssetMaintenanceRow[]>
   );
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const in7Days = new Date(today);
+  in7Days.setDate(in7Days.getDate() + 7);
+  const in30Days = new Date(today);
+  in30Days.setDate(in30Days.getDate() + 30);
+
+  const scheduledPendingRows = assetMaintenanceRows
+    .filter((row) => row.scheduled_date && !row.performed_date)
+    .map((row) => {
+      const scheduledAt = new Date(String(row.scheduled_date));
+      return { row, scheduledAt };
+    })
+    .filter((entry) => Number.isFinite(entry.scheduledAt.getTime()))
+    .sort((a, b) => a.scheduledAt.getTime() - b.scheduledAt.getTime());
+
+  const overdueMaintenance = scheduledPendingRows.filter(
+    (entry) => entry.scheduledAt.getTime() < today.getTime()
+  );
+  const next7DaysMaintenance = scheduledPendingRows.filter(
+    (entry) =>
+      entry.scheduledAt.getTime() >= today.getTime() &&
+      entry.scheduledAt.getTime() <= in7Days.getTime()
+  );
+  const next30DaysMaintenance = scheduledPendingRows.filter(
+    (entry) =>
+      entry.scheduledAt.getTime() > in7Days.getTime() &&
+      entry.scheduledAt.getTime() <= in30Days.getTime()
+  );
 
   const purchaseTraceRows = purchaseOrderRows
     .map((row, idx) => {
@@ -793,6 +822,61 @@ export default async function ProductTechnicalSheetPage({
 
       {isAsset ? (
         <section className="space-y-4">
+          {overdueMaintenance.length > 0 || next7DaysMaintenance.length > 0 || next30DaysMaintenance.length > 0 ? (
+            <article className="ui-panel">
+              <div className="text-sm font-semibold text-[var(--ui-text)]">
+                Recordatorio de mantenimiento programado
+              </div>
+              <div className="mt-3 grid gap-3 md:grid-cols-3">
+                <div className="rounded-xl border border-red-200 bg-red-50 p-3">
+                  <div className="ui-caption text-red-700">Vencidos</div>
+                  <div className="mt-1 text-xl font-semibold text-red-800">
+                    {overdueMaintenance.length}
+                  </div>
+                  <div className="mt-1 text-xs text-red-700">
+                    Programados antes de hoy y sin cierre.
+                  </div>
+                </div>
+                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+                  <div className="ui-caption text-amber-700">Próximos 7 días</div>
+                  <div className="mt-1 text-xl font-semibold text-amber-800">
+                    {next7DaysMaintenance.length}
+                  </div>
+                  <div className="mt-1 text-xs text-amber-700">
+                    Prioridad alta para programación.
+                  </div>
+                </div>
+                <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-3">
+                  <div className="ui-caption text-cyan-700">Próximos 30 días</div>
+                  <div className="mt-1 text-xl font-semibold text-cyan-800">
+                    {next30DaysMaintenance.length}
+                  </div>
+                  <div className="mt-1 text-xs text-cyan-700">
+                    Planeación preventiva mensual.
+                  </div>
+                </div>
+              </div>
+              <div className="mt-3 space-y-2">
+                {scheduledPendingRows.slice(0, 5).map(({ row }) => (
+                  <div
+                    key={`reminder-${row.id}`}
+                    className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm"
+                  >
+                    <span className="font-semibold text-[var(--ui-text)]">
+                      {formatDate(row.scheduled_date)}
+                    </span>
+                    <span className="text-[var(--ui-muted)]">
+                      {" · "}
+                      {row.work_done || "Mantenimiento programado"}
+                      {" · Responsable: "}
+                      {row.responsible || "Sin asignar"}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </article>
+          ) : null}
+
           <article className="ui-panel">
             <div className="text-sm font-semibold text-[var(--ui-text)]">
               Ficha técnica industrial (solo lectura)
