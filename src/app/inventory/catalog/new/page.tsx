@@ -12,6 +12,7 @@ import { getCategoryDomainOptions } from "@/lib/constants";
 import { ProductSuppliersEditor } from "@/features/inventory/catalog/product-suppliers-editor";
 import { ProductFormFooter } from "@/features/inventory/catalog/product-form-footer";
 import { ProductIdentityFields } from "@/features/inventory/catalog/product-identity-fields";
+import { ProductAssetTechnicalSection } from "@/features/inventory/catalog/product-asset-technical-section";
 import { ProductPhotoSection } from "@/features/inventory/catalog/product-photo-section";
 import { ProductRemissionUomFields } from "@/features/inventory/catalog/product-remission-uom-fields";
 import { ProductSiteAvailabilitySection } from "@/features/inventory/catalog/product-site-availability-section";
@@ -51,6 +52,52 @@ const STOCK_UNIT_FIELD_ID = "stock_unit_code";
 function asText(v: FormDataEntryValue | null) {
   return typeof v === "string" ? v.trim() : "";
 }
+
+function asNullableNumber(v: FormDataEntryValue | null): number | null {
+  const raw = asText(v);
+  if (!raw) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function asNullableDateText(value: string | undefined): string | null {
+  const raw = String(value ?? "").trim();
+  return raw || null;
+}
+
+function parseJsonArray<T>(rawValue: FormDataEntryValue | null): T[] {
+  const raw = asText(rawValue);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+type AssetMaintenanceLine = {
+  id?: string;
+  scheduled_date?: string;
+  performed_date?: string;
+  responsible?: string;
+  maintenance_provider?: string;
+  work_done?: string;
+  parts_replaced?: boolean;
+  replaced_parts?: string;
+  planner_bucket?: string;
+  _delete?: boolean;
+};
+
+type AssetTransferLine = {
+  id?: string;
+  moved_at?: string;
+  from_location?: string;
+  to_location?: string;
+  responsible?: string;
+  notes?: string;
+  _delete?: boolean;
+};
 
 function isMissingColumnError(error: { code?: string | null; message?: string | null } | null | undefined, column: string) {
   if (!error) return false;
@@ -598,6 +645,120 @@ async function createProduct(formData: FormData) {
       },
       { onConflict: "product_id" }
     );
+  }
+
+  if (invKind === "asset") {
+    const rawStatus = String(asText(formData.get("asset_equipment_status")) || "operativo").toLowerCase();
+    const equipmentStatus =
+      rawStatus === "en_mantenimiento" ||
+      rawStatus === "fuera_servicio" ||
+      rawStatus === "baja"
+        ? rawStatus
+        : "operativo";
+
+    const assetProfilePayload = {
+      product_id: productId,
+      brand: asText(formData.get("asset_brand")) || null,
+      model: asText(formData.get("asset_model")) || null,
+      serial_number: asText(formData.get("asset_serial_number")) || null,
+      physical_location: asText(formData.get("asset_physical_location")) || null,
+      purchase_invoice_url: asText(formData.get("asset_purchase_invoice_url")) || null,
+      commercial_value: asNullableNumber(formData.get("asset_commercial_value")),
+      purchase_date: asNullableDateText(asText(formData.get("asset_purchase_date"))),
+      started_use_date: asNullableDateText(asText(formData.get("asset_started_use_date"))),
+      equipment_status: equipmentStatus,
+      maintenance_service_provider:
+        asText(formData.get("asset_maintenance_service_provider")) || null,
+      technical_description: asText(formData.get("asset_technical_description")) || null,
+    };
+    const { error: assetProfileErr } = await supabase
+      .from("product_asset_profiles")
+      .upsert(assetProfilePayload, { onConflict: "product_id" });
+    if (assetProfileErr) {
+      redirect(
+        `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
+          encodeURIComponent(assetProfileErr.message)
+      );
+    }
+
+    const maintenanceLines = parseJsonArray<AssetMaintenanceLine>(
+      formData.get("asset_maintenance_lines")
+    );
+    const maintenanceRows = maintenanceLines
+      .filter((line) => !line?._delete)
+      .map((line) => ({
+        product_id: productId,
+        scheduled_date: asNullableDateText(line?.scheduled_date),
+        performed_date: asNullableDateText(line?.performed_date),
+        responsible: String(line?.responsible ?? "").trim() || null,
+        maintenance_provider: String(line?.maintenance_provider ?? "").trim() || null,
+        work_done: String(line?.work_done ?? "").trim() || null,
+        parts_replaced: Boolean(line?.parts_replaced),
+        replaced_parts: String(line?.replaced_parts ?? "").trim() || null,
+        planner_bucket: (() => {
+          const value = String(line?.planner_bucket ?? "mensual").trim().toLowerCase();
+          if (
+            value === "correctivo" ||
+            value === "semanal" ||
+            value === "mensual" ||
+            value === "trimestral" ||
+            value === "semestral" ||
+            value === "anual"
+          ) {
+            return value;
+          }
+          return "mensual";
+        })(),
+      }))
+      .filter(
+        (line) =>
+          line.scheduled_date ||
+          line.performed_date ||
+          line.responsible ||
+          line.maintenance_provider ||
+          line.work_done ||
+          line.replaced_parts
+      );
+    if (maintenanceRows.length) {
+      const { error: maintenanceErr } = await supabase
+        .from("product_asset_maintenance_events")
+        .insert(maintenanceRows);
+      if (maintenanceErr) {
+        redirect(
+          `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
+            encodeURIComponent(maintenanceErr.message)
+        );
+      }
+    }
+
+    const transferLines = parseJsonArray<AssetTransferLine>(
+      formData.get("asset_transfer_lines")
+    );
+    const transferRows = transferLines
+      .filter((line) => !line?._delete)
+      .map((line) => ({
+        product_id: productId,
+        moved_at: asNullableDateText(line?.moved_at),
+        from_location: String(line?.from_location ?? "").trim() || null,
+        to_location: String(line?.to_location ?? "").trim() || null,
+        responsible: String(line?.responsible ?? "").trim() || null,
+        notes: String(line?.notes ?? "").trim() || null,
+      }))
+      .filter(
+        (line) =>
+          line.moved_at || line.from_location || line.to_location || line.responsible || line.notes
+      );
+    if (transferRows.length) {
+      const { error: transferErr } = await supabase
+        .from("product_asset_transfer_events")
+        .insert(transferRows);
+      if (transferErr) {
+        redirect(
+          `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
+            encodeURIComponent(transferErr.message)
+        );
+      }
+    }
   }
 
   // Suppliers
@@ -1453,23 +1614,33 @@ export default async function NewProductPage({
           collapsible
         />
 
-        <ProductSiteAvailabilitySection
-          initialRows={[]}
-          sites={sitesList.map((s) => ({ id: s.id, name: s.name, site_type: s.site_type }))}
-          areaKinds={areaKindsList.map((a) => ({
-            code: a.code,
-            name: a.name ?? a.code,
-            use_for_remission: a.use_for_remission ?? null,
-          }))}
-          siteAreaKinds={siteAreaKindsList}
-          remissionAreaKindsBySite={remissionAreaKindsBySite}
-          stockUnitCode={defaultStockUnitCode}
-          operationUnitHint={buildOperationUnitHintFromUnits({
-            units: unitsList,
-            inputUnitCode: defaultStockUnitCode,
-            stockUnitCode: defaultStockUnitCode,
-          })}
-        />
+        {typeKey === "asset" ? (
+          <ProductAssetTechnicalSection
+            initialProfile={null}
+            initialMaintenance={[]}
+            initialTransfers={[]}
+          />
+        ) : null}
+
+        {typeKey !== "asset" ? (
+          <ProductSiteAvailabilitySection
+            initialRows={[]}
+            sites={sitesList.map((s) => ({ id: s.id, name: s.name, site_type: s.site_type }))}
+            areaKinds={areaKindsList.map((a) => ({
+              code: a.code,
+              name: a.name ?? a.code,
+              use_for_remission: a.use_for_remission ?? null,
+            }))}
+            siteAreaKinds={siteAreaKindsList}
+            remissionAreaKindsBySite={remissionAreaKindsBySite}
+            stockUnitCode={defaultStockUnitCode}
+            operationUnitHint={buildOperationUnitHintFromUnits({
+              units: unitsList,
+              inputUnitCode: defaultStockUnitCode,
+              stockUnitCode: defaultStockUnitCode,
+            })}
+          />
+        ) : null}
 
         <ProductFormFooter
           submitLabel={`Crear ${

@@ -2124,59 +2124,61 @@ export default async function ProductCatalogDetailPage({
             />
           ) : null}
 
-          <ProductSiteAvailabilitySection
-            initialRows={siteRows.map((r) => ({
-              id: r.id,
-              site_id: r.site_id,
-              is_active: Boolean(r.is_active),
-              default_area_kind: r.default_area_kind ?? "",
-              area_kinds:
-                Array.isArray(r.area_kinds) && r.area_kinds.length
-                  ? r.area_kinds
-                  : r.default_area_kind
-                    ? [r.default_area_kind]
-                    : [],
-              min_stock_qty: r.min_stock_qty ?? undefined,
-              min_stock_input_mode: r.min_stock_input_mode === "purchase" ? "purchase" : "base",
-              min_stock_purchase_qty: r.min_stock_purchase_qty ?? undefined,
-              min_stock_purchase_unit_code: r.min_stock_purchase_unit_code ?? undefined,
-              min_stock_purchase_to_base_factor: r.min_stock_purchase_to_base_factor ?? undefined,
-              audience: r.audience ?? "BOTH",
-            }))}
-            sites={sitesList.map((s) => ({ id: s.id, name: s.name, site_type: s.site_type }))}
-            areaKinds={areaKindsList.map((a) => ({
-              code: a.code,
-              name: a.name ?? a.code,
-              use_for_remission: Boolean(a.use_for_remission),
-            }))}
-            siteAreaKinds={siteAreaKindsList}
-            remissionAreaKindsBySite={remissionAreaKindsBySite}
-            stockUnitCode={stockUnitCode}
-            purchaseUnitHint={
-              purchaseUomProfile
-                ? {
-                    label: purchaseUomProfile.label,
-                    inputUnitCode: purchaseUomProfile.input_unit_code,
-                    qtyInInputUnit: purchaseUomProfile.qty_in_input_unit,
-                    qtyInStockUnit: purchaseUomProfile.qty_in_stock_unit,
-                  }
-                : null
-            }
-            operationUnitHint={
-              remissionUomProfile
-                ? {
-                    label: remissionUomProfile.label,
-                    inputUnitCode: remissionUomProfile.input_unit_code,
-                    qtyInInputUnit: remissionUomProfile.qty_in_input_unit,
-                    qtyInStockUnit: remissionUomProfile.qty_in_stock_unit,
-                  }
-                : buildOperationUnitHintFromUnits({
-                    units: unitsList,
-                    inputUnitCode: resolvedDefaultUnit || stockUnitCode,
-                    stockUnitCode,
-                  })
-            }
-          />
+          {!isAssetItem ? (
+            <ProductSiteAvailabilitySection
+              initialRows={siteRows.map((r) => ({
+                id: r.id,
+                site_id: r.site_id,
+                is_active: Boolean(r.is_active),
+                default_area_kind: r.default_area_kind ?? "",
+                area_kinds:
+                  Array.isArray(r.area_kinds) && r.area_kinds.length
+                    ? r.area_kinds
+                    : r.default_area_kind
+                      ? [r.default_area_kind]
+                      : [],
+                min_stock_qty: r.min_stock_qty ?? undefined,
+                min_stock_input_mode: r.min_stock_input_mode === "purchase" ? "purchase" : "base",
+                min_stock_purchase_qty: r.min_stock_purchase_qty ?? undefined,
+                min_stock_purchase_unit_code: r.min_stock_purchase_unit_code ?? undefined,
+                min_stock_purchase_to_base_factor: r.min_stock_purchase_to_base_factor ?? undefined,
+                audience: r.audience ?? "BOTH",
+              }))}
+              sites={sitesList.map((s) => ({ id: s.id, name: s.name, site_type: s.site_type }))}
+              areaKinds={areaKindsList.map((a) => ({
+                code: a.code,
+                name: a.name ?? a.code,
+                use_for_remission: Boolean(a.use_for_remission),
+              }))}
+              siteAreaKinds={siteAreaKindsList}
+              remissionAreaKindsBySite={remissionAreaKindsBySite}
+              stockUnitCode={stockUnitCode}
+              purchaseUnitHint={
+                purchaseUomProfile
+                  ? {
+                      label: purchaseUomProfile.label,
+                      inputUnitCode: purchaseUomProfile.input_unit_code,
+                      qtyInInputUnit: purchaseUomProfile.qty_in_input_unit,
+                      qtyInStockUnit: purchaseUomProfile.qty_in_stock_unit,
+                    }
+                  : null
+              }
+              operationUnitHint={
+                remissionUomProfile
+                  ? {
+                      label: remissionUomProfile.label,
+                      inputUnitCode: remissionUomProfile.input_unit_code,
+                      qtyInInputUnit: remissionUomProfile.qty_in_input_unit,
+                      qtyInStockUnit: remissionUomProfile.qty_in_stock_unit,
+                    }
+                  : buildOperationUnitHintFromUnits({
+                      units: unitsList,
+                      inputUnitCode: resolvedDefaultUnit || stockUnitCode,
+                      stockUnitCode,
+                    })
+              }
+            />
+          ) : null}
 
           <ProductFormFooter
             submitLabel="Guardar cambios"
