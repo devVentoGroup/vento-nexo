@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { ProductCostStatusPanel } from "@/features/inventory/catalog/product-cost-status-panel";
 import { ProductFormFooter } from "@/features/inventory/catalog/product-form-footer";
 import { ProductIdentityFields } from "@/features/inventory/catalog/product-identity-fields";
+import { ProductAssetTechnicalSection } from "@/features/inventory/catalog/product-asset-technical-section";
 import { ProductPhotoSection } from "@/features/inventory/catalog/product-photo-section";
 import { ProductPurchaseSection } from "@/features/inventory/catalog/product-purchase-section";
 import { ProductRemissionUomFields } from "@/features/inventory/catalog/product-remission-uom-fields";
@@ -261,6 +262,44 @@ type ProductUomProfileRow = {
   usage_context: "general" | "purchase" | "remission" | null;
 };
 
+type AssetProfileRow = {
+  product_id: string;
+  brand: string | null;
+  model: string | null;
+  serial_number: string | null;
+  physical_location: string | null;
+  purchase_invoice_url: string | null;
+  commercial_value: number | null;
+  purchase_date: string | null;
+  started_use_date: string | null;
+  equipment_status: string | null;
+  maintenance_service_provider: string | null;
+  technical_description: string | null;
+};
+
+type AssetMaintenanceLine = {
+  id?: string;
+  scheduled_date?: string;
+  performed_date?: string;
+  responsible?: string;
+  maintenance_provider?: string;
+  work_done?: string;
+  parts_replaced?: boolean;
+  replaced_parts?: string;
+  planner_bucket?: string;
+  _delete?: boolean;
+};
+
+type AssetTransferLine = {
+  id?: string;
+  moved_at?: string;
+  from_location?: string;
+  to_location?: string;
+  responsible?: string;
+  notes?: string;
+  _delete?: boolean;
+};
+
 type SearchParams = {
   ok?: string;
   error?: string;
@@ -280,6 +319,22 @@ function asNullableNumber(value: FormDataEntryValue | null): number | null {
   if (!raw) return null;
   const parsed = Number(raw);
   return Number.isFinite(parsed) ? parsed : null;
+}
+
+function asNullableDateText(value: string | undefined): string | null {
+  const raw = String(value ?? "").trim();
+  return raw || null;
+}
+
+function parseJsonArray<T>(rawValue: FormDataEntryValue | null): T[] {
+  const raw = asText(rawValue);
+  if (!raw) return [];
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  } catch {
+    return [];
+  }
 }
 
 function resolveNetPurchasePrice(params: {
@@ -1204,6 +1259,200 @@ async function updateProduct(formData: FormData) {
     }
   }
 
+  const normalizedKind = String(inventoryKindValue ?? "").trim().toLowerCase();
+  const shouldPersistAssetProfile =
+    normalizedKind === "asset" && asText(formData.get("asset_profile_enabled")) === "1";
+
+  if (shouldPersistAssetProfile) {
+    const rawStatus = String(asText(formData.get("asset_equipment_status")) || "operativo").toLowerCase();
+    const equipmentStatus =
+      rawStatus === "en_mantenimiento" ||
+      rawStatus === "fuera_servicio" ||
+      rawStatus === "baja"
+        ? rawStatus
+        : "operativo";
+
+    const assetProfilePayload = {
+      product_id: productId,
+      brand: asText(formData.get("asset_brand")) || null,
+      model: asText(formData.get("asset_model")) || null,
+      serial_number: asText(formData.get("asset_serial_number")) || null,
+      physical_location: asText(formData.get("asset_physical_location")) || null,
+      purchase_invoice_url: asText(formData.get("asset_purchase_invoice_url")) || null,
+      commercial_value: asNullableNumber(formData.get("asset_commercial_value")),
+      purchase_date: asNullableDateText(asText(formData.get("asset_purchase_date"))),
+      started_use_date: asNullableDateText(asText(formData.get("asset_started_use_date"))),
+      equipment_status: equipmentStatus,
+      maintenance_service_provider:
+        asText(formData.get("asset_maintenance_service_provider")) || null,
+      technical_description: asText(formData.get("asset_technical_description")) || null,
+    };
+
+    const { error: assetProfileErr } = await supabase
+      .from("product_asset_profiles")
+      .upsert(assetProfilePayload, { onConflict: "product_id" });
+    if (assetProfileErr) redirectWithError(assetProfileErr.message);
+
+    const maintenanceLines = parseJsonArray<AssetMaintenanceLine>(
+      formData.get("asset_maintenance_lines")
+    );
+    const normalizedMaintenance = maintenanceLines
+      .filter((line) => !line?._delete)
+      .map((line) => ({
+        id: asText((line?.id as string | undefined) ?? null) || null,
+        product_id: productId,
+        scheduled_date: asNullableDateText(line?.scheduled_date),
+        performed_date: asNullableDateText(line?.performed_date),
+        responsible: String(line?.responsible ?? "").trim() || null,
+        maintenance_provider: String(line?.maintenance_provider ?? "").trim() || null,
+        work_done: String(line?.work_done ?? "").trim() || null,
+        parts_replaced: Boolean(line?.parts_replaced),
+        replaced_parts: String(line?.replaced_parts ?? "").trim() || null,
+        planner_bucket: (() => {
+          const value = String(line?.planner_bucket ?? "mensual").trim().toLowerCase();
+          if (
+            value === "correctivo" ||
+            value === "semanal" ||
+            value === "mensual" ||
+            value === "trimestral" ||
+            value === "semestral" ||
+            value === "anual"
+          ) {
+            return value;
+          }
+          return "mensual";
+        })(),
+      }))
+      .filter(
+        (line) =>
+          line.scheduled_date ||
+          line.performed_date ||
+          line.responsible ||
+          line.maintenance_provider ||
+          line.work_done ||
+          line.replaced_parts
+      );
+
+    const transferLines = parseJsonArray<AssetTransferLine>(
+      formData.get("asset_transfer_lines")
+    );
+    const normalizedTransfers = transferLines
+      .filter((line) => !line?._delete)
+      .map((line) => ({
+        id: asText((line?.id as string | undefined) ?? null) || null,
+        product_id: productId,
+        moved_at: asNullableDateText(line?.moved_at),
+        from_location: String(line?.from_location ?? "").trim() || null,
+        to_location: String(line?.to_location ?? "").trim() || null,
+        responsible: String(line?.responsible ?? "").trim() || null,
+        notes: String(line?.notes ?? "").trim() || null,
+      }))
+      .filter(
+        (line) =>
+          line.moved_at || line.from_location || line.to_location || line.responsible || line.notes
+      );
+
+    const [{ data: currentMaintenance }, { data: currentTransfers }] = await Promise.all([
+      supabase
+        .from("product_asset_maintenance_events")
+        .select("id")
+        .eq("product_id", productId),
+      supabase.from("product_asset_transfer_events").select("id").eq("product_id", productId),
+    ]);
+
+    const existingMaintenanceIds = new Set(
+      ((currentMaintenance ?? []) as Array<{ id: string }>).map((row) => String(row.id))
+    );
+    const incomingMaintenanceIds = new Set(
+      normalizedMaintenance
+        .map((row) => row.id)
+        .filter((idValue): idValue is string => Boolean(idValue))
+    );
+    const maintenanceDeleteIds = Array.from(existingMaintenanceIds).filter(
+      (idValue) => !incomingMaintenanceIds.has(idValue)
+    );
+    if (maintenanceDeleteIds.length) {
+      const { error: maintenanceDeleteErr } = await supabase
+        .from("product_asset_maintenance_events")
+        .delete()
+        .eq("product_id", productId)
+        .in("id", maintenanceDeleteIds);
+      if (maintenanceDeleteErr) redirectWithError(maintenanceDeleteErr.message);
+    }
+
+    const maintenanceInsertRows = normalizedMaintenance
+      .filter((row) => !row.id)
+      .map((row) => {
+        const { id, ...rest } = row;
+        void id;
+        return rest;
+      });
+    const maintenanceUpsertRows = normalizedMaintenance
+      .filter((row) => Boolean(row.id))
+      .map((row) => ({ ...row, id: row.id as string }));
+    if (maintenanceInsertRows.length) {
+      const { error: maintenanceInsertErr } = await supabase
+        .from("product_asset_maintenance_events")
+        .insert(maintenanceInsertRows);
+      if (maintenanceInsertErr) redirectWithError(maintenanceInsertErr.message);
+    }
+    if (maintenanceUpsertRows.length) {
+      const { error: maintenanceUpsertErr } = await supabase
+        .from("product_asset_maintenance_events")
+        .upsert(maintenanceUpsertRows, { onConflict: "id" });
+      if (maintenanceUpsertErr) redirectWithError(maintenanceUpsertErr.message);
+    }
+
+    const existingTransferIds = new Set(
+      ((currentTransfers ?? []) as Array<{ id: string }>).map((row) => String(row.id))
+    );
+    const incomingTransferIds = new Set(
+      normalizedTransfers
+        .map((row) => row.id)
+        .filter((idValue): idValue is string => Boolean(idValue))
+    );
+    const transferDeleteIds = Array.from(existingTransferIds).filter(
+      (idValue) => !incomingTransferIds.has(idValue)
+    );
+    if (transferDeleteIds.length) {
+      const { error: transferDeleteErr } = await supabase
+        .from("product_asset_transfer_events")
+        .delete()
+        .eq("product_id", productId)
+        .in("id", transferDeleteIds);
+      if (transferDeleteErr) redirectWithError(transferDeleteErr.message);
+    }
+
+    const transferInsertRows = normalizedTransfers
+      .filter((row) => !row.id)
+      .map((row) => {
+        const { id, ...rest } = row;
+        void id;
+        return rest;
+      });
+    const transferUpsertRows = normalizedTransfers
+      .filter((row) => Boolean(row.id))
+      .map((row) => ({ ...row, id: row.id as string }));
+    if (transferInsertRows.length) {
+      const { error: transferInsertErr } = await supabase
+        .from("product_asset_transfer_events")
+        .insert(transferInsertRows);
+      if (transferInsertErr) redirectWithError(transferInsertErr.message);
+    }
+    if (transferUpsertRows.length) {
+      const { error: transferUpsertErr } = await supabase
+        .from("product_asset_transfer_events")
+        .upsert(transferUpsertRows, { onConflict: "id" });
+      if (transferUpsertErr) redirectWithError(transferUpsertErr.message);
+    }
+  } else {
+    await Promise.all([
+      supabase.from("product_asset_profiles").delete().eq("product_id", productId),
+      supabase.from("product_asset_maintenance_events").delete().eq("product_id", productId),
+      supabase.from("product_asset_transfer_events").delete().eq("product_id", productId),
+    ]);
+  }
+
   if (returnTo) {
     redirect(appendQueryParam(returnTo, "ok", "1"));
   }
@@ -1245,6 +1494,31 @@ export default async function ProductCatalogDetailPage({
     .select("product_id,track_inventory,inventory_kind,default_unit,unit_family,costing_mode,lot_tracking,expiry_tracking")
     .eq("product_id", id)
     .maybeSingle();
+
+  const [{ data: assetProfileData }, { data: assetMaintenanceData }, { data: assetTransfersData }] =
+    await Promise.all([
+      supabase
+        .from("product_asset_profiles")
+        .select(
+          "product_id,brand,model,serial_number,physical_location,purchase_invoice_url,commercial_value,purchase_date,started_use_date,equipment_status,maintenance_service_provider,technical_description"
+        )
+        .eq("product_id", id)
+        .maybeSingle(),
+      supabase
+        .from("product_asset_maintenance_events")
+        .select(
+          "id,scheduled_date,performed_date,responsible,maintenance_provider,work_done,parts_replaced,replaced_parts,planner_bucket"
+        )
+        .eq("product_id", id)
+        .order("scheduled_date", { ascending: false })
+        .order("created_at", { ascending: false }),
+      supabase
+        .from("product_asset_transfer_events")
+        .select("id,moved_at,from_location,to_location,responsible,notes")
+        .eq("product_id", id)
+        .order("moved_at", { ascending: false })
+        .order("created_at", { ascending: false }),
+    ]);
 
   const allCategoryRows = await loadCategoryRows(supabase);
 
@@ -1427,8 +1701,12 @@ export default async function ProductCatalogDetailPage({
 
   const productRow = product as ProductRow;
   const profileRow = (profile ?? null) as InventoryProfileRow | null;
+  const assetProfileRow = (assetProfileData ?? null) as AssetProfileRow | null;
+  const assetMaintenanceRows = (assetMaintenanceData ?? []) as AssetMaintenanceLine[];
+  const assetTransferRows = (assetTransfersData ?? []) as AssetTransferLine[];
   const normalizedProductType = String(productRow.product_type ?? "").trim().toLowerCase();
   const normalizedInventoryKind = String(profileRow?.inventory_kind ?? "").trim().toLowerCase();
+  const isAssetItem = normalizedInventoryKind === "asset";
   const lockedInventoryKind = resolveLockedInventoryKind(
     productRow.product_type ?? "insumo",
     profileRow?.inventory_kind ?? ""
@@ -1824,6 +2102,27 @@ export default async function ProductCatalogDetailPage({
             productId={productRow.id}
             collapsible
           />
+
+          {isAssetItem ? (
+            <ProductAssetTechnicalSection
+              initialProfile={{
+                brand: assetProfileRow?.brand ?? "",
+                model: assetProfileRow?.model ?? "",
+                serial_number: assetProfileRow?.serial_number ?? "",
+                physical_location: assetProfileRow?.physical_location ?? "",
+                purchase_invoice_url: assetProfileRow?.purchase_invoice_url ?? "",
+                commercial_value: assetProfileRow?.commercial_value ?? null,
+                purchase_date: assetProfileRow?.purchase_date ?? "",
+                started_use_date: assetProfileRow?.started_use_date ?? "",
+                equipment_status: assetProfileRow?.equipment_status ?? "operativo",
+                maintenance_service_provider:
+                  assetProfileRow?.maintenance_service_provider ?? "",
+                technical_description: assetProfileRow?.technical_description ?? "",
+              }}
+              initialMaintenance={assetMaintenanceRows}
+              initialTransfers={assetTransferRows}
+            />
+          ) : null}
 
           <ProductSiteAvailabilitySection
             initialRows={siteRows.map((r) => ({

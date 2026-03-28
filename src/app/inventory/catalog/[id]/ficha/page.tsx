@@ -22,6 +22,9 @@ const PERMISSION = "inventory.stock";
 const FOGO_BASE_URL =
   process.env.NEXT_PUBLIC_FOGO_URL?.replace(/\/$/, "") ||
   "https://fogo.ventogroup.co";
+const NEXO_BASE_URL =
+  process.env.NEXT_PUBLIC_APP_URL?.replace(/\/$/, "") ||
+  "https://nexo.ventogroup.co";
 
 type SearchParams = {
   from?: string;
@@ -103,6 +106,42 @@ type UnitRow = {
   is_active: boolean;
 };
 
+type AssetProfileRow = {
+  product_id: string;
+  brand: string | null;
+  model: string | null;
+  serial_number: string | null;
+  physical_location: string | null;
+  purchase_invoice_url: string | null;
+  commercial_value: number | null;
+  purchase_date: string | null;
+  started_use_date: string | null;
+  equipment_status: string | null;
+  maintenance_service_provider: string | null;
+  technical_description: string | null;
+};
+
+type AssetMaintenanceRow = {
+  id: string;
+  scheduled_date: string | null;
+  performed_date: string | null;
+  responsible: string | null;
+  maintenance_provider: string | null;
+  work_done: string | null;
+  parts_replaced: boolean | null;
+  replaced_parts: string | null;
+  planner_bucket: string | null;
+};
+
+type AssetTransferRow = {
+  id: string;
+  moved_at: string | null;
+  from_location: string | null;
+  to_location: string | null;
+  responsible: string | null;
+  notes: string | null;
+};
+
 type UomDisplay = {
   label: string;
   inputUnitCode: string;
@@ -181,6 +220,14 @@ function formatDate(value: string | null | undefined): string {
   return new Intl.DateTimeFormat("es-CO", {
     dateStyle: "medium",
   }).format(parsed);
+}
+
+function equipmentStatusLabel(value: string | null | undefined): string {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (raw === "en_mantenimiento") return "En mantenimiento";
+  if (raw === "fuera_servicio") return "Fuera de servicio";
+  if (raw === "baja") return "De baja";
+  return "Operativo";
 }
 
 function normalizeTypeLabel(
@@ -324,6 +371,9 @@ export default async function ProductTechnicalSheetPage({
     receiptItemsRes,
     allCategories,
     employeeRes,
+    assetProfileRes,
+    assetMaintenanceRes,
+    assetTransfersRes,
   ] = await Promise.all([
     supabase
       .from("products")
@@ -385,6 +435,28 @@ export default async function ProductTechnicalSheetPage({
       .limit(8),
     loadCategoryRows(supabase),
     supabase.from("employees").select("role").eq("id", user.id).maybeSingle(),
+    supabase
+      .from("product_asset_profiles")
+      .select(
+        "product_id,brand,model,serial_number,physical_location,purchase_invoice_url,commercial_value,purchase_date,started_use_date,equipment_status,maintenance_service_provider,technical_description"
+      )
+      .eq("product_id", id)
+      .maybeSingle(),
+    supabase
+      .from("product_asset_maintenance_events")
+      .select(
+        "id,scheduled_date,performed_date,responsible,maintenance_provider,work_done,parts_replaced,replaced_parts,planner_bucket"
+      )
+      .eq("product_id", id)
+      .order("scheduled_date", { ascending: false })
+      .order("performed_date", { ascending: false })
+      .order("created_at", { ascending: false }),
+    supabase
+      .from("product_asset_transfer_events")
+      .select("id,moved_at,from_location,to_location,responsible,notes")
+      .eq("product_id", id)
+      .order("moved_at", { ascending: false })
+      .order("created_at", { ascending: false }),
   ]);
 
   const product = (productRes.data ?? null) as ProductRow | null;
@@ -399,6 +471,9 @@ export default async function ProductTechnicalSheetPage({
   const unitRows = (unitsRes.data ?? []) as UnitRow[];
   const purchaseOrderRows = (purchaseOrderItemsRes.data ?? []) as PurchaseOrderItemTraceRow[];
   const receiptRows = (receiptItemsRes.data ?? []) as InventoryReceiptItemTraceRow[];
+  const assetProfile = (assetProfileRes.data ?? null) as AssetProfileRow | null;
+  const assetMaintenanceRows = (assetMaintenanceRes.data ?? []) as AssetMaintenanceRow[];
+  const assetTransferRows = (assetTransfersRes.data ?? []) as AssetTransferRow[];
 
   const role = String(employeeRes.data?.role ?? "").toLowerCase();
   const canEdit = ["propietario", "gerente_general"].includes(role);
@@ -519,6 +594,39 @@ export default async function ProductTechnicalSheetPage({
   const isPreparation = String(product.product_type ?? "").trim().toLowerCase() === "preparacion";
   const isSale = String(product.product_type ?? "").trim().toLowerCase() === "venta";
   const isResale = String(profile?.inventory_kind ?? "").trim().toLowerCase() === "resale";
+  const technicalPath = `/inventory/catalog/${product.id}/ficha`;
+  const technicalAbsoluteUrl = `${NEXO_BASE_URL}${technicalPath}`;
+  const assetQrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
+    technicalAbsoluteUrl
+  )}`;
+
+  const maintenanceCalendarMap = assetMaintenanceRows.reduce(
+    (acc, row) => {
+      const keySource = row.scheduled_date || row.performed_date || "";
+      const keyDate = keySource ? new Date(keySource) : null;
+      const monthKey =
+        keyDate && Number.isFinite(keyDate.getTime())
+          ? `${keyDate.getUTCFullYear()}-${String(keyDate.getUTCMonth() + 1).padStart(2, "0")}`
+          : "Sin fecha";
+      if (!acc[monthKey]) acc[monthKey] = [];
+      acc[monthKey].push(row);
+      return acc;
+    },
+    {} as Record<string, AssetMaintenanceRow[]>
+  );
+  const maintenanceCalendarBuckets = Object.entries(maintenanceCalendarMap).sort((a, b) =>
+    a[0] === "Sin fecha" ? 1 : b[0] === "Sin fecha" ? -1 : b[0].localeCompare(a[0])
+  );
+
+  const maintenancePlannerMap = assetMaintenanceRows.reduce(
+    (acc, row) => {
+      const bucket = String(row.planner_bucket ?? "mensual").trim().toLowerCase() || "mensual";
+      if (!acc[bucket]) acc[bucket] = [];
+      acc[bucket].push(row);
+      return acc;
+    },
+    {} as Record<string, AssetMaintenanceRow[]>
+  );
 
   const purchaseTraceRows = purchaseOrderRows
     .map((row, idx) => {
@@ -682,6 +790,209 @@ export default async function ProductTechnicalSheetPage({
           </div>
         </article>
       </section>
+
+      {isAsset ? (
+        <section className="space-y-4">
+          <article className="ui-panel">
+            <div className="text-sm font-semibold text-[var(--ui-text)]">
+              Ficha técnica industrial (solo lectura)
+            </div>
+            <div className="mt-3 grid gap-3 md:grid-cols-3">
+              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+                <div className="ui-caption">Marca</div>
+                <div className="mt-1 text-sm font-semibold">{assetProfile?.brand || "Sin dato"}</div>
+              </div>
+              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+                <div className="ui-caption">Modelo</div>
+                <div className="mt-1 text-sm font-semibold">{assetProfile?.model || "Sin dato"}</div>
+              </div>
+              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+                <div className="ui-caption">Serial</div>
+                <div className="mt-1 text-sm font-semibold">{assetProfile?.serial_number || "Sin dato"}</div>
+              </div>
+              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+                <div className="ui-caption">Ubicación física</div>
+                <div className="mt-1 text-sm font-semibold">
+                  {assetProfile?.physical_location || "Sin ubicación"}
+                </div>
+              </div>
+              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+                <div className="ui-caption">Estado del equipo</div>
+                <div className="mt-1 text-sm font-semibold">
+                  {equipmentStatusLabel(assetProfile?.equipment_status)}
+                </div>
+              </div>
+              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+                <div className="ui-caption">Valor comercial</div>
+                <div className="mt-1 text-sm font-semibold">
+                  {formatMoney(assetProfile?.commercial_value)}
+                </div>
+              </div>
+              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+                <div className="ui-caption">Factura de compra</div>
+                {assetProfile?.purchase_invoice_url ? (
+                  <a
+                    href={assetProfile.purchase_invoice_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 inline-flex text-sm font-semibold text-cyan-700 underline underline-offset-2"
+                  >
+                    Abrir factura
+                  </a>
+                ) : (
+                  <div className="mt-1 text-sm">Sin factura adjunta</div>
+                )}
+              </div>
+              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+                <div className="ui-caption">Fecha compra</div>
+                <div className="mt-1 text-sm font-semibold">{formatDate(assetProfile?.purchase_date)}</div>
+              </div>
+              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+                <div className="ui-caption">Inicio de uso</div>
+                <div className="mt-1 text-sm font-semibold">{formatDate(assetProfile?.started_use_date)}</div>
+              </div>
+            </div>
+            <div className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+              <div className="ui-caption">Descripción técnica</div>
+              <p className="mt-1 text-sm text-[var(--ui-muted)]">
+                {assetProfile?.technical_description || "Sin descripción técnica."}
+              </p>
+            </div>
+            <div className="mt-3 grid gap-3 md:grid-cols-[1fr_220px]">
+              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 text-sm">
+                <div className="ui-caption">Proveedor de mantenimiento (referencia)</div>
+                <div className="mt-1 font-semibold text-[var(--ui-text)]">
+                  {assetProfile?.maintenance_service_provider || "Sin proveedor definido"}
+                </div>
+                <div className="mt-2 text-[var(--ui-muted)]">
+                  URL directa de la ficha técnica:
+                  <a href={technicalPath} className="ml-1 font-semibold text-cyan-700 underline underline-offset-2">
+                    {technicalPath}
+                  </a>
+                </div>
+              </div>
+              <div className="rounded-xl border border-[var(--ui-border)] bg-white p-3">
+                <div className="ui-caption">QR ficha técnica</div>
+                <img src={assetQrImageUrl} alt="QR ficha técnica" className="mt-2 h-[180px] w-[180px] rounded-md border border-[var(--ui-border)]" />
+              </div>
+            </div>
+          </article>
+
+          <section className="grid gap-4 xl:grid-cols-3">
+            <article className="ui-panel xl:col-span-1">
+              <div className="flex items-center justify-between gap-2">
+                <div className="text-sm font-semibold text-[var(--ui-text)]">Mantenimiento · Lista</div>
+                <div className="ui-caption">{assetMaintenanceRows.length} evento(s)</div>
+              </div>
+              {assetMaintenanceRows.length === 0 ? (
+                <p className="mt-3 text-sm text-[var(--ui-muted)]">Sin eventos registrados.</p>
+              ) : (
+                <div className="mt-3 space-y-2">
+                  {assetMaintenanceRows.map((row) => (
+                    <div key={row.id} className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 text-sm">
+                      <div className="font-semibold text-[var(--ui-text)]">
+                        {formatDate(row.performed_date || row.scheduled_date)}
+                      </div>
+                      <div className="mt-1 text-[var(--ui-muted)]">
+                        {row.work_done || "Mantenimiento sin detalle"}
+                      </div>
+                      <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                        Responsable: {row.responsible || "Sin responsable"} · Proveedor:{" "}
+                        {row.maintenance_provider || "Sin proveedor"}
+                      </div>
+                      {row.parts_replaced ? (
+                        <div className="mt-1 text-xs font-semibold text-amber-700">
+                          Reemplazo de piezas: {row.replaced_parts || "Sí (sin detalle)"}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </article>
+
+            <article className="ui-panel xl:col-span-1">
+              <div className="text-sm font-semibold text-[var(--ui-text)]">Mantenimiento · Calendario</div>
+              {maintenanceCalendarBuckets.length === 0 ? (
+                <p className="mt-3 text-sm text-[var(--ui-muted)]">Sin eventos para calendario.</p>
+              ) : (
+                <div className="mt-3 space-y-2">
+                  {maintenanceCalendarBuckets.map(([bucketKey, rows]) => (
+                    <div key={bucketKey} className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
+                        {bucketKey === "Sin fecha" ? "Sin fecha" : bucketKey}
+                      </div>
+                      <ul className="mt-2 space-y-1 text-sm">
+                        {rows.map((row) => (
+                          <li key={`${bucketKey}-${row.id}`} className="text-[var(--ui-text)]">
+                            {formatDate(row.performed_date || row.scheduled_date)} ·{" "}
+                            {row.work_done || "Mantenimiento"}
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </article>
+
+            <article className="ui-panel xl:col-span-1">
+              <div className="text-sm font-semibold text-[var(--ui-text)]">Mantenimiento · Planeador</div>
+              {Object.keys(maintenancePlannerMap).length === 0 ? (
+                <p className="mt-3 text-sm text-[var(--ui-muted)]">Sin tareas planificadas.</p>
+              ) : (
+                <div className="mt-3 space-y-2">
+                  {Object.entries(maintenancePlannerMap).map(([bucket, rows]) => (
+                    <div key={bucket} className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+                      <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
+                        {bucket}
+                      </div>
+                      <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">
+                        {rows.length} tarea(s)
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </article>
+          </section>
+
+          <article className="ui-panel">
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-sm font-semibold text-[var(--ui-text)]">Historial de traslados</div>
+              <div className="ui-caption">{assetTransferRows.length} traslado(s)</div>
+            </div>
+            {assetTransferRows.length === 0 ? (
+              <p className="mt-3 text-sm text-[var(--ui-muted)]">Sin traslados registrados.</p>
+            ) : (
+              <div className="mt-3 overflow-auto rounded-xl border border-[var(--ui-border)]">
+                <table className="ui-table min-w-[720px] text-sm">
+                  <thead>
+                    <tr>
+                      <th className="py-2 pr-4">Fecha</th>
+                      <th className="py-2 pr-4">Desde</th>
+                      <th className="py-2 pr-4">Hacia</th>
+                      <th className="py-2 pr-4">Responsable</th>
+                      <th className="py-2 pr-4">Nota</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {assetTransferRows.map((row) => (
+                      <tr key={row.id} className="border-t border-zinc-200/60">
+                        <td className="py-2.5 pr-4">{formatDate(row.moved_at)}</td>
+                        <td className="py-2.5 pr-4">{row.from_location || "-"}</td>
+                        <td className="py-2.5 pr-4">{row.to_location || "-"}</td>
+                        <td className="py-2.5 pr-4">{row.responsible || "-"}</td>
+                        <td className="py-2.5 pr-4">{row.notes || "-"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </article>
+        </section>
+      ) : null}
 
       <section className="grid gap-4 lg:grid-cols-2">
         <article className="ui-panel">
