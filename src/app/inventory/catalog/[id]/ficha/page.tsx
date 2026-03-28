@@ -488,6 +488,11 @@ export default async function ProductTechnicalSheetPage({
   );
   const categoryMap = new Map(allCategories.map((row) => [row.id, row]));
   const categoryPath = getCategoryPath(product.category_id, categoryMap) || "Sin categoría";
+  const normalizedCategoryPath = categoryPath.trim().toLowerCase();
+  const isMachineryAndEquipmentCategory =
+    normalizedCategoryPath.includes("maquinaria y equipos") ||
+    (normalizedCategoryPath.includes("maquinaria") &&
+      (normalizedCategoryPath.includes("equipo") || normalizedCategoryPath.includes("equipos")));
   const imageUrl = product.catalog_image_url || product.image_url || null;
   const primarySupplier = supplierRows.find((row) => Boolean(row.is_primary)) ?? null;
   const secondarySuppliers = supplierRows.filter((row) => !Boolean(row.is_primary));
@@ -822,7 +827,10 @@ export default async function ProductTechnicalSheetPage({
 
       {isAsset ? (
         <section className="space-y-4">
-          {overdueMaintenance.length > 0 || next7DaysMaintenance.length > 0 || next30DaysMaintenance.length > 0 ? (
+          {isMachineryAndEquipmentCategory &&
+          (overdueMaintenance.length > 0 ||
+            next7DaysMaintenance.length > 0 ||
+            next30DaysMaintenance.length > 0) ? (
             <article className="ui-panel">
               <div className="text-sm font-semibold text-[var(--ui-text)]">
                 Recordatorio de mantenimiento programado

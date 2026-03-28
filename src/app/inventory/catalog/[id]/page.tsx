@@ -1264,6 +1264,10 @@ async function updateProduct(formData: FormData) {
     normalizedKind === "asset" && asText(formData.get("asset_profile_enabled")) === "1";
 
   if (shouldPersistAssetProfile) {
+    const assetProfileTemplate =
+      asText(formData.get("asset_profile_template")) === "industrial"
+        ? "industrial"
+        : "general";
     const rawStatus = String(asText(formData.get("asset_equipment_status")) || "operativo").toLowerCase();
     const equipmentStatus =
       rawStatus === "en_mantenimiento" ||
@@ -1274,9 +1278,10 @@ async function updateProduct(formData: FormData) {
 
     const assetProfilePayload = {
       product_id: productId,
-      brand: asText(formData.get("asset_brand")) || null,
-      model: asText(formData.get("asset_model")) || null,
-      serial_number: asText(formData.get("asset_serial_number")) || null,
+      brand: assetProfileTemplate === "industrial" ? asText(formData.get("asset_brand")) || null : null,
+      model: assetProfileTemplate === "industrial" ? asText(formData.get("asset_model")) || null : null,
+      serial_number:
+        assetProfileTemplate === "industrial" ? asText(formData.get("asset_serial_number")) || null : null,
       physical_location: asText(formData.get("asset_physical_location")) || null,
       purchase_invoice_url: asText(formData.get("asset_purchase_invoice_url")) || null,
       commercial_value: asNullableNumber(formData.get("asset_commercial_value")),
@@ -1284,7 +1289,9 @@ async function updateProduct(formData: FormData) {
       started_use_date: asNullableDateText(asText(formData.get("asset_started_use_date"))),
       equipment_status: equipmentStatus,
       maintenance_service_provider:
-        asText(formData.get("asset_maintenance_service_provider")) || null,
+        assetProfileTemplate === "industrial"
+          ? asText(formData.get("asset_maintenance_service_provider")) || null
+          : null,
       technical_description: asText(formData.get("asset_technical_description")) || null,
     };
 
@@ -1293,9 +1300,10 @@ async function updateProduct(formData: FormData) {
       .upsert(assetProfilePayload, { onConflict: "product_id" });
     if (assetProfileErr) redirectWithError(assetProfileErr.message);
 
-    const maintenanceLines = parseJsonArray<AssetMaintenanceLine>(
-      formData.get("asset_maintenance_lines")
-    );
+    const maintenanceLines =
+      assetProfileTemplate === "industrial"
+        ? parseJsonArray<AssetMaintenanceLine>(formData.get("asset_maintenance_lines"))
+        : [];
     const normalizedMaintenance = maintenanceLines
       .filter((line) => !line?._delete)
       .map((line) => ({
@@ -1748,6 +1756,11 @@ export default async function ProductCatalogDetailPage({
   );
   const resolvedCategoryPath =
     allCategoryRows.find((row) => row.id === productRow.category_id)?.name?.trim() || "";
+  const normalizedCategoryPath = resolvedCategoryPath.toLowerCase();
+  const isMachineryAssetCategory =
+    normalizedCategoryPath.includes("maquinaria y equipos") ||
+    (normalizedCategoryPath.includes("maquinaria") &&
+      (normalizedCategoryPath.includes("equipo") || normalizedCategoryPath.includes("equipos")));
 
   const stockUnitCode = normalizeUnitCode(productRow.stock_unit_code || productRow.unit || "un");
   const inventoryUnitMap = createUnitMap(unitsList);
@@ -2105,6 +2118,7 @@ export default async function ProductCatalogDetailPage({
 
           {isAssetItem ? (
             <ProductAssetTechnicalSection
+              defaultTemplate={isMachineryAssetCategory ? "industrial" : "general"}
               initialProfile={{
                 brand: assetProfileRow?.brand ?? "",
                 model: assetProfileRow?.model ?? "",

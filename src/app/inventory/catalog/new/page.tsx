@@ -648,6 +648,10 @@ async function createProduct(formData: FormData) {
   }
 
   if (invKind === "asset") {
+    const assetProfileTemplate =
+      asText(formData.get("asset_profile_template")) === "industrial"
+        ? "industrial"
+        : "general";
     const rawStatus = String(asText(formData.get("asset_equipment_status")) || "operativo").toLowerCase();
     const equipmentStatus =
       rawStatus === "en_mantenimiento" ||
@@ -658,9 +662,10 @@ async function createProduct(formData: FormData) {
 
     const assetProfilePayload = {
       product_id: productId,
-      brand: asText(formData.get("asset_brand")) || null,
-      model: asText(formData.get("asset_model")) || null,
-      serial_number: asText(formData.get("asset_serial_number")) || null,
+      brand: assetProfileTemplate === "industrial" ? asText(formData.get("asset_brand")) || null : null,
+      model: assetProfileTemplate === "industrial" ? asText(formData.get("asset_model")) || null : null,
+      serial_number:
+        assetProfileTemplate === "industrial" ? asText(formData.get("asset_serial_number")) || null : null,
       physical_location: asText(formData.get("asset_physical_location")) || null,
       purchase_invoice_url: asText(formData.get("asset_purchase_invoice_url")) || null,
       commercial_value: asNullableNumber(formData.get("asset_commercial_value")),
@@ -668,7 +673,9 @@ async function createProduct(formData: FormData) {
       started_use_date: asNullableDateText(asText(formData.get("asset_started_use_date"))),
       equipment_status: equipmentStatus,
       maintenance_service_provider:
-        asText(formData.get("asset_maintenance_service_provider")) || null,
+        assetProfileTemplate === "industrial"
+          ? asText(formData.get("asset_maintenance_service_provider")) || null
+          : null,
       technical_description: asText(formData.get("asset_technical_description")) || null,
     };
     const { error: assetProfileErr } = await supabase
@@ -681,9 +688,10 @@ async function createProduct(formData: FormData) {
       );
     }
 
-    const maintenanceLines = parseJsonArray<AssetMaintenanceLine>(
-      formData.get("asset_maintenance_lines")
-    );
+    const maintenanceLines =
+      assetProfileTemplate === "industrial"
+        ? parseJsonArray<AssetMaintenanceLine>(formData.get("asset_maintenance_lines"))
+        : [];
     const maintenanceRows = maintenanceLines
       .filter((line) => !line?._delete)
       .map((line) => ({
@@ -1616,6 +1624,7 @@ export default async function NewProductPage({
 
         {typeKey === "asset" ? (
           <ProductAssetTechnicalSection
+            defaultTemplate="general"
             initialProfile={null}
             initialMaintenance={[]}
             initialTransfers={[]}

@@ -41,6 +41,7 @@ type Props = {
   } | null;
   initialMaintenance: MaintenanceLine[];
   initialTransfers: TransferLine[];
+  defaultTemplate?: "industrial" | "general";
 };
 
 const EMPTY_MAINTENANCE: MaintenanceLine = {
@@ -66,7 +67,9 @@ export function ProductAssetTechnicalSection({
   initialProfile,
   initialMaintenance,
   initialTransfers,
+  defaultTemplate = "general",
 }: Props) {
+  const [profileTemplate, setProfileTemplate] = useState<"industrial" | "general">(defaultTemplate);
   const [maintenanceLines, setMaintenanceLines] = useState<MaintenanceLine[]>(
     initialMaintenance.length ? initialMaintenance : []
   );
@@ -81,35 +84,57 @@ export function ProductAssetTechnicalSection({
     <section className="ui-panel space-y-5">
       <h2 className="ui-h2">Ficha técnica de equipo / activo</h2>
       <p className="ui-body-muted">
-        Control industrial del activo: identidad técnica, mantenimiento y traslados.
+        Define una plantilla según el tipo de activo para evitar campos que no aplican.
       </p>
 
       <input type="hidden" name="asset_profile_enabled" value="1" />
       <input type="hidden" name="asset_maintenance_lines" value={JSON.stringify(maintenanceLines)} />
       <input type="hidden" name="asset_transfer_lines" value={JSON.stringify(transferLines)} />
+      <input type="hidden" name="asset_profile_template" value={profileTemplate} />
+
+      <label className="flex flex-col gap-1">
+        <span className="ui-label">Plantilla técnica</span>
+        <select
+          value={profileTemplate}
+          onChange={(event) =>
+            setProfileTemplate(event.target.value === "industrial" ? "industrial" : "general")
+          }
+          className="ui-input"
+        >
+          <option value="general">Activo general (vajilla, menaje, mobiliario)</option>
+          <option value="industrial">Equipo industrial (con serial y mantenimiento)</option>
+        </select>
+        <span className="text-xs text-[var(--ui-muted)]">
+          Usa industrial solo para equipos que sí requieren trazabilidad técnica y plan de mantenimiento.
+        </span>
+      </label>
 
       <div className="grid gap-4 md:grid-cols-2">
-        <label className="flex flex-col gap-1">
-          <span className="ui-label">Marca</span>
-          <input
-            name="asset_brand"
-            defaultValue={initialProfile?.brand ?? ""}
-            className="ui-input"
-            placeholder="Ej. Rational, Hobart, Torrey"
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="ui-label">Modelo</span>
-          <input name="asset_model" defaultValue={initialProfile?.model ?? ""} className="ui-input" />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="ui-label">Serial</span>
-          <input
-            name="asset_serial_number"
-            defaultValue={initialProfile?.serial_number ?? ""}
-            className="ui-input"
-          />
-        </label>
+        {profileTemplate === "industrial" ? (
+          <>
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Marca</span>
+              <input
+                name="asset_brand"
+                defaultValue={initialProfile?.brand ?? ""}
+                className="ui-input"
+                placeholder="Ej. Rational, Hobart, Torrey"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Modelo</span>
+              <input name="asset_model" defaultValue={initialProfile?.model ?? ""} className="ui-input" />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Serial</span>
+              <input
+                name="asset_serial_number"
+                defaultValue={initialProfile?.serial_number ?? ""}
+                className="ui-input"
+              />
+            </label>
+          </>
+        ) : null}
         <label className="flex flex-col gap-1">
           <span className="ui-label">Ubicación física</span>
           <input
@@ -167,14 +192,16 @@ export function ProductAssetTechnicalSection({
             <option value="baja">De baja</option>
           </select>
         </label>
-        <label className="flex flex-col gap-1">
-          <span className="ui-label">Proveedor de mantenimiento</span>
-          <input
-            name="asset_maintenance_service_provider"
-            defaultValue={initialProfile?.maintenance_service_provider ?? ""}
-            className="ui-input"
-          />
-        </label>
+        {profileTemplate === "industrial" ? (
+          <label className="flex flex-col gap-1">
+            <span className="ui-label">Proveedor de mantenimiento</span>
+            <input
+              name="asset_maintenance_service_provider"
+              defaultValue={initialProfile?.maintenance_service_provider ?? ""}
+              className="ui-input"
+            />
+          </label>
+        ) : null}
       </div>
 
       <label className="flex flex-col gap-1">
@@ -188,6 +215,7 @@ export function ProductAssetTechnicalSection({
         />
       </label>
 
+      {profileTemplate === "industrial" ? (
       <div className="space-y-3 rounded-xl border border-[var(--ui-border)] p-4">
         <div className="flex items-center justify-between gap-2">
           <h3 className="text-sm font-semibold text-[var(--ui-text)]">Historial de mantenimiento</h3>
@@ -354,6 +382,7 @@ export function ProductAssetTechnicalSection({
           )}
         </div>
       </div>
+      ) : null}
 
       <div className="space-y-3 rounded-xl border border-[var(--ui-border)] p-4">
         <div className="flex items-center justify-between gap-2">
@@ -471,4 +500,3 @@ export function ProductAssetTechnicalSection({
     </section>
   );
 }
-
