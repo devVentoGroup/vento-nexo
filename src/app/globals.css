@@ -1101,3 +1101,15 @@ body {
     padding-bottom: calc(env(safe-area-inset-bottom, 0px));
   }
 }
+
+/* Vento numeric input normalization */
+input[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
+}
+
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
