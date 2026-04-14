@@ -102,12 +102,33 @@ type ProductInventoryProfile = {
   inventory_kind: string;
 };
 
+type InventoryKindChip = {
+  value: string;
+  label: string;
+  count: number;
+};
+
 function getInventoryProfile(
   profile: ProductRow["product_inventory_profiles"]
 ): ProductInventoryProfile | null {
   if (!profile) return null;
   if (Array.isArray(profile)) return profile[0] ?? null;
   return profile;
+}
+
+function normalizeInventoryKind(value?: string | null): string {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized || "unclassified";
+}
+
+function inventoryKindLabel(kindRaw: string): string {
+  const kind = normalizeInventoryKind(kindRaw);
+  if (kind === "ingredient") return "Insumos";
+  if (kind === "finished") return "Producto terminado";
+  if (kind === "resale") return "Reventa";
+  if (kind === "packaging") return "Empaques";
+  if (kind === "asset") return "Activos";
+  return "Sin clasificar";
 }
 
 type ProductSiteRow = {
@@ -279,15 +300,6 @@ export default async function InventoryStockPage({
     { value: "asset", label: "Activo (maquinaria/utensilios)" },
   ];
 
-  const quickInventoryKinds = [
-    { value: "", label: "Todos" },
-    { value: "ingredient", label: "Insumos" },
-    { value: "finished", label: "Terminado" },
-    { value: "resale", label: "Reventa" },
-    { value: "packaging", label: "Empaques" },
-    { value: "asset", label: "Activos" },
-  ];
-
   const categoryKindOptions = [
     { value: "", label: "Todas" },
     { value: "insumo", label: "Insumo" },
@@ -360,10 +372,6 @@ export default async function InventoryStockPage({
     } else {
       productsQuery = productsQuery.in("category_id", filteredCategoryIds);
     }
-  }
-
-  if (inventoryKind) {
-    productsQuery = productsQuery.eq("product_inventory_profiles.inventory_kind", inventoryKind);
   }
 
   if (hasProductSiteFilter) {
@@ -474,6 +482,32 @@ export default async function InventoryStockPage({
       ? (p: ProductRow) => productIdsInSelectedZone!.has(p.id)
       : () => true;
     productRows = productRows.filter((p) => byLoc(p) && byZone(p));
+  }
+
+  const inventoryKindCounts = new Map<string, number>();
+  for (const product of productRows) {
+    const kind = normalizeInventoryKind(getInventoryProfile(product.product_inventory_profiles)?.inventory_kind);
+    inventoryKindCounts.set(kind, (inventoryKindCounts.get(kind) ?? 0) + 1);
+  }
+
+  const preferredInventoryKindOrder = ["ingredient", "finished", "resale", "packaging", "asset", "unclassified"];
+  const quickInventoryKinds: InventoryKindChip[] = [{ value: "", label: "Todos", count: productRows.length }];
+  for (const kind of preferredInventoryKindOrder) {
+    const count = inventoryKindCounts.get(kind) ?? 0;
+    if (!count) continue;
+    quickInventoryKinds.push({ value: kind, label: inventoryKindLabel(kind), count });
+  }
+  for (const [kind, count] of inventoryKindCounts.entries()) {
+    if (preferredInventoryKindOrder.includes(kind)) continue;
+    quickInventoryKinds.push({ value: kind, label: inventoryKindLabel(kind), count });
+  }
+
+  const normalizedInventoryKindFilter = normalizeInventoryKind(inventoryKind);
+  if (inventoryKind) {
+    productRows = productRows.filter((product) => {
+      const kind = normalizeInventoryKind(getInventoryProfile(product.product_inventory_profiles)?.inventory_kind);
+      return kind === normalizedInventoryKindFilter;
+    });
   }
 
   const totalQty = productRows.reduce((sum, product) => {
@@ -960,17 +994,20 @@ export default async function InventoryStockPage({
         </div>
 
         <div className="mt-3 flex flex-wrap gap-2">
-          {quickInventoryKinds.map((kind) => (
-            <Link
-              key={kind.value || "all"}
-              href={buildKindHref(kind.value)}
-              className={
-                inventoryKind === kind.value ? "ui-chip ui-chip--brand" : "ui-chip"
-              }
-            >
-              {kind.label}
-            </Link>
-          ))}
+          {quickInventoryKinds.map((kind) => {
+            const isActiveKind = kind.value
+              ? normalizedInventoryKindFilter === kind.value
+              : !inventoryKind;
+            return (
+              <Link
+                key={kind.value || "all"}
+                href={buildKindHref(kind.value)}
+                className={isActiveKind ? "ui-chip ui-chip--brand" : "ui-chip"}
+              >
+                {kind.label} ({kind.count})
+              </Link>
+            );
+          })}
         </div>
 
         <div className="ui-scrollbar-subtle mt-4 max-h-[70vh] overflow-x-auto overflow-y-auto">
@@ -1005,7 +1042,9 @@ export default async function InventoryStockPage({
                 const unit = product.stock_unit_code ?? product.unit ?? "-";
                 const siteLabel = siteId ? siteNameMap.get(siteId) ?? siteId : "Todas";
                 const categoryLabel = getCategoryPath(product.category_id, categoryMap);
-                const inventoryLabel = inventoryProfile?.inventory_kind ?? "unclassified";
+                const inventoryLabel = inventoryKindLabel(
+                  inventoryProfile?.inventory_kind ?? "unclassified"
+                );
                 const trackLabel = inventoryProfile?.track_inventory ? "si" : "no";
                 const locSummary = locSummaryByProduct.get(product.id);
                 const ubicacionesLabel =
