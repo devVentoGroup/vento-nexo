@@ -275,6 +275,9 @@ type AssetProfileRow = {
   equipment_status: string | null;
   maintenance_service_provider: string | null;
   technical_description: string | null;
+  maintenance_cycle_enabled: boolean | null;
+  maintenance_cycle_months: number | null;
+  maintenance_cycle_anchor_date: string | null;
 };
 
 type AssetMaintenanceLine = {
@@ -1293,6 +1296,23 @@ async function updateProduct(formData: FormData) {
           ? asText(formData.get("asset_maintenance_service_provider")) || null
           : null,
       technical_description: asText(formData.get("asset_technical_description")) || null,
+      maintenance_cycle_enabled:
+        assetProfileTemplate === "industrial"
+          ? Boolean(formData.get("asset_maintenance_cycle_enabled"))
+          : false,
+      maintenance_cycle_months:
+        assetProfileTemplate === "industrial"
+          ? (() => {
+              const value = asNullableNumber(formData.get("asset_maintenance_cycle_months"));
+              return value != null && Number.isFinite(value) && value >= 1 && value <= 60
+                ? Math.trunc(value)
+                : null;
+            })()
+          : null,
+      maintenance_cycle_anchor_date:
+        assetProfileTemplate === "industrial"
+          ? asNullableDateText(asText(formData.get("asset_maintenance_cycle_anchor_date")))
+          : null,
     };
 
     const { error: assetProfileErr } = await supabase
@@ -1508,7 +1528,7 @@ export default async function ProductCatalogDetailPage({
       supabase
         .from("product_asset_profiles")
         .select(
-          "product_id,brand,model,serial_number,physical_location,purchase_invoice_url,commercial_value,purchase_date,started_use_date,equipment_status,maintenance_service_provider,technical_description"
+          "product_id,brand,model,serial_number,physical_location,purchase_invoice_url,commercial_value,purchase_date,started_use_date,equipment_status,maintenance_service_provider,technical_description,maintenance_cycle_enabled,maintenance_cycle_months,maintenance_cycle_anchor_date"
         )
         .eq("product_id", id)
         .maybeSingle(),
@@ -2132,6 +2152,10 @@ export default async function ProductCatalogDetailPage({
                 maintenance_service_provider:
                   assetProfileRow?.maintenance_service_provider ?? "",
                 technical_description: assetProfileRow?.technical_description ?? "",
+                maintenance_cycle_enabled: assetProfileRow?.maintenance_cycle_enabled ?? false,
+                maintenance_cycle_months: assetProfileRow?.maintenance_cycle_months ?? null,
+                maintenance_cycle_anchor_date:
+                  assetProfileRow?.maintenance_cycle_anchor_date ?? "",
               }}
               initialMaintenance={assetMaintenanceRows}
               initialTransfers={assetTransferRows}

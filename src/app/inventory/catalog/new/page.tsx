@@ -677,6 +677,23 @@ async function createProduct(formData: FormData) {
           ? asText(formData.get("asset_maintenance_service_provider")) || null
           : null,
       technical_description: asText(formData.get("asset_technical_description")) || null,
+      maintenance_cycle_enabled:
+        assetProfileTemplate === "industrial"
+          ? Boolean(formData.get("asset_maintenance_cycle_enabled"))
+          : false,
+      maintenance_cycle_months:
+        assetProfileTemplate === "industrial"
+          ? (() => {
+              const value = asNullableNumber(formData.get("asset_maintenance_cycle_months"));
+              return value != null && Number.isFinite(value) && value >= 1 && value <= 60
+                ? Math.trunc(value)
+                : null;
+            })()
+          : null,
+      maintenance_cycle_anchor_date:
+        assetProfileTemplate === "industrial"
+          ? asNullableDateText(asText(formData.get("asset_maintenance_cycle_anchor_date")))
+          : null,
     };
     const { error: assetProfileErr } = await supabase
       .from("product_asset_profiles")

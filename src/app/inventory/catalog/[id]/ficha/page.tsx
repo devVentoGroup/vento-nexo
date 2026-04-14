@@ -119,6 +119,9 @@ type AssetProfileRow = {
   equipment_status: string | null;
   maintenance_service_provider: string | null;
   technical_description: string | null;
+  maintenance_cycle_enabled: boolean | null;
+  maintenance_cycle_months: number | null;
+  maintenance_cycle_anchor_date: string | null;
 };
 
 type AssetMaintenanceRow = {
@@ -228,6 +231,16 @@ function equipmentStatusLabel(value: string | null | undefined): string {
   if (raw === "fuera_servicio") return "Fuera de servicio";
   if (raw === "baja") return "De baja";
   return "Operativo";
+}
+
+function addMonthsUTC(date: Date, months: number): Date {
+  const year = date.getUTCFullYear();
+  const month = date.getUTCMonth();
+  const day = date.getUTCDate();
+  const tentative = new Date(Date.UTC(year, month + months, 1));
+  const endOfMonth = new Date(Date.UTC(tentative.getUTCFullYear(), tentative.getUTCMonth() + 1, 0)).getUTCDate();
+  tentative.setUTCDate(Math.min(day, endOfMonth));
+  return tentative;
 }
 
 function normalizeTypeLabel(
@@ -438,7 +451,7 @@ export default async function ProductTechnicalSheetPage({
     supabase
       .from("product_asset_profiles")
       .select(
-        "product_id,brand,model,serial_number,physical_location,purchase_invoice_url,commercial_value,purchase_date,started_use_date,equipment_status,maintenance_service_provider,technical_description"
+        "product_id,brand,model,serial_number,physical_location,purchase_invoice_url,commercial_value,purchase_date,started_use_date,equipment_status,maintenance_service_provider,technical_description,maintenance_cycle_enabled,maintenance_cycle_months,maintenance_cycle_anchor_date"
       )
       .eq("product_id", id)
       .maybeSingle(),
@@ -662,6 +675,37 @@ export default async function ProductTechnicalSheetPage({
       entry.scheduledAt.getTime() <= in30Days.getTime()
   );
 
+  const recurrenceMonthsRaw = Number(assetProfile?.maintenance_cycle_months ?? 0);
+  const recurrenceMonths =
+    Number.isFinite(recurrenceMonthsRaw) && recurrenceMonthsRaw >= 1 ? Math.trunc(recurrenceMonthsRaw) : 0;
+  const recurrenceAnchorDate = assetProfile?.maintenance_cycle_anchor_date
+    ? new Date(assetProfile.maintenance_cycle_anchor_date)
+    : null;
+  const recurrenceEnabled =
+    Boolean(assetProfile?.maintenance_cycle_enabled) &&
+    recurrenceMonths > 0 &&
+    recurrenceAnchorDate &&
+    Number.isFinite(recurrenceAnchorDate.getTime());
+  let recurrenceNextDueDate: Date | null = null;
+  if (recurrenceEnabled && recurrenceAnchorDate) {
+    let cursor = new Date(recurrenceAnchorDate);
+    cursor.setHours(0, 0, 0, 0);
+    let safety = 0;
+    while (cursor.getTime() < today.getTime() && safety < 240) {
+      cursor = addMonthsUTC(cursor, recurrenceMonths);
+      safety += 1;
+    }
+    recurrenceNextDueDate = cursor;
+  }
+  const recurrenceIn7Days =
+    recurrenceNextDueDate != null &&
+    recurrenceNextDueDate.getTime() >= today.getTime() &&
+    recurrenceNextDueDate.getTime() <= in7Days.getTime();
+  const recurrenceIn30Days =
+    recurrenceNextDueDate != null &&
+    recurrenceNextDueDate.getTime() > in7Days.getTime() &&
+    recurrenceNextDueDate.getTime() <= in30Days.getTime();
+
   const purchaseTraceRows = purchaseOrderRows
     .map((row, idx) => {
       const order = Array.isArray(row.purchase_orders)
@@ -830,7 +874,9 @@ export default async function ProductTechnicalSheetPage({
           {isMachineryAndEquipmentCategory &&
           (overdueMaintenance.length > 0 ||
             next7DaysMaintenance.length > 0 ||
-            next30DaysMaintenance.length > 0) ? (
+            next30DaysMaintenance.length > 0 ||
+            recurrenceIn7Days ||
+            recurrenceIn30Days) ? (
             <article className="ui-panel">
               <div className="text-sm font-semibold text-[var(--ui-text)]">
                 Recordatorio de mantenimiento programado
@@ -848,7 +894,7 @@ export default async function ProductTechnicalSheetPage({
                 <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
                   <div className="ui-caption text-amber-700">Próximos 7 días</div>
                   <div className="mt-1 text-xl font-semibold text-amber-800">
-                    {next7DaysMaintenance.length}
+                    {next7DaysMaintenance.length + (recurrenceIn7Days ? 1 : 0)}
                   </div>
                   <div className="mt-1 text-xs text-amber-700">
                     Prioridad alta para programación.
@@ -857,7 +903,7 @@ export default async function ProductTechnicalSheetPage({
                 <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-3">
                   <div className="ui-caption text-cyan-700">Próximos 30 días</div>
                   <div className="mt-1 text-xl font-semibold text-cyan-800">
-                    {next30DaysMaintenance.length}
+                    {next30DaysMaintenance.length + (recurrenceIn30Days ? 1 : 0)}
                   </div>
                   <div className="mt-1 text-xs text-cyan-700">
                     Planeación preventiva mensual.
@@ -881,6 +927,12 @@ export default async function ProductTechnicalSheetPage({
                     </span>
                   </div>
                 ))}
+                {recurrenceNextDueDate ? (
+                  <div className="rounded-xl border border-dashed border-cyan-300 bg-cyan-50 px-3 py-2 text-sm text-cyan-900">
+                    Próximo mantenimiento recurrente: {formatDate(recurrenceNextDueDate.toISOString())}
+                    {" · "}cada {recurrenceMonths} mes(es)
+                  </div>
+                ) : null}
               </div>
             </article>
           ) : null}
@@ -956,6 +1008,19 @@ export default async function ProductTechnicalSheetPage({
                 <div className="mt-1 font-semibold text-[var(--ui-text)]">
                   {assetProfile?.maintenance_service_provider || "Sin proveedor definido"}
                 </div>
+                <div className="mt-2 ui-caption">Ciclo programado</div>
+                <div className="mt-1 font-semibold text-[var(--ui-text)]">
+                  {recurrenceEnabled
+                    ? `Cada ${recurrenceMonths} mes(es), base ${formatDate(
+                        assetProfile?.maintenance_cycle_anchor_date
+                      )}`
+                    : "Sin ciclo recurrente"}
+                </div>
+                {recurrenceNextDueDate ? (
+                  <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                    Próxima fecha sugerida: {formatDate(recurrenceNextDueDate.toISOString())}
+                  </div>
+                ) : null}
                 <div className="mt-2 text-[var(--ui-muted)]">
                   URL directa de la ficha técnica:
                   <a href={technicalPath} className="ml-1 font-semibold text-cyan-700 underline underline-offset-2">

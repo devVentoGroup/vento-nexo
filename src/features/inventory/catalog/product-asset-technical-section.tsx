@@ -38,6 +38,9 @@ type Props = {
     equipment_status?: string | null;
     maintenance_service_provider?: string | null;
     technical_description?: string | null;
+    maintenance_cycle_enabled?: boolean | null;
+    maintenance_cycle_months?: number | null;
+    maintenance_cycle_anchor_date?: string | null;
   } | null;
   initialMaintenance: MaintenanceLine[];
   initialTransfers: TransferLine[];
@@ -198,6 +201,43 @@ export function ProductAssetTechnicalSection({
             <input
               name="asset_maintenance_service_provider"
               defaultValue={initialProfile?.maintenance_service_provider ?? ""}
+              className="ui-input"
+            />
+          </label>
+        ) : null}
+        {profileTemplate === "industrial" ? (
+          <label className="flex items-center gap-2 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-2">
+            <input
+              type="checkbox"
+              name="asset_maintenance_cycle_enabled"
+              defaultChecked={Boolean(initialProfile?.maintenance_cycle_enabled)}
+            />
+            <span className="text-sm text-[var(--ui-text)]">
+              Programar mantenimiento recurrente
+            </span>
+          </label>
+        ) : null}
+        {profileTemplate === "industrial" ? (
+          <label className="flex flex-col gap-1">
+            <span className="ui-label">Cada cuántos meses</span>
+            <input
+              name="asset_maintenance_cycle_months"
+              type="number"
+              min={1}
+              max={60}
+              defaultValue={initialProfile?.maintenance_cycle_months ?? ""}
+              className="ui-input"
+              placeholder="Ej. 3"
+            />
+          </label>
+        ) : null}
+        {profileTemplate === "industrial" ? (
+          <label className="flex flex-col gap-1">
+            <span className="ui-label">Fecha base del ciclo</span>
+            <input
+              name="asset_maintenance_cycle_anchor_date"
+              type="date"
+              defaultValue={initialProfile?.maintenance_cycle_anchor_date ?? ""}
               className="ui-input"
             />
           </label>

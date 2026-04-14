@@ -85,11 +85,30 @@ type ProductRow = {
   stock_unit_code: string | null;
   product_type: string;
   category_id: string | null;
-  product_inventory_profiles?: {
-    track_inventory: boolean;
-    inventory_kind: string;
-  } | null;
+  product_inventory_profiles?:
+    | {
+        track_inventory: boolean;
+        inventory_kind: string;
+      }
+    | Array<{
+        track_inventory: boolean;
+        inventory_kind: string;
+      }>
+    | null;
 };
+
+type ProductInventoryProfile = {
+  track_inventory: boolean;
+  inventory_kind: string;
+};
+
+function getInventoryProfile(
+  profile: ProductRow["product_inventory_profiles"]
+): ProductInventoryProfile | null {
+  if (!profile) return null;
+  if (Array.isArray(profile)) return profile[0] ?? null;
+  return profile;
+}
 
 type ProductSiteRow = {
   product_id: string;
@@ -316,11 +335,13 @@ export default async function InventoryStockPage({
   const productSiteIds = productSiteRows.map((row) => row.product_id);
   const hasProductSiteFilter = productSiteIds.length > 0;
 
+  const productsSelect = inventoryKind
+    ? "id,name,sku,unit,stock_unit_code,product_type,category_id,product_inventory_profiles!inner(track_inventory,inventory_kind)"
+    : "id,name,sku,unit,stock_unit_code,product_type,category_id,product_inventory_profiles(track_inventory,inventory_kind)";
+
   let productsQuery = supabase
     .from("products")
-    .select(
-      "id,name,sku,unit,stock_unit_code,product_type,category_id,product_inventory_profiles(track_inventory,inventory_kind)"
-    )
+    .select(productsSelect)
     .order("name", { ascending: true })
     .limit(1000);
 
@@ -975,15 +996,15 @@ export default async function InventoryStockPage({
               {productRows.map((product) => {
                 const stockRow = stockMap.get(product.id);
                 const qtyValue = Number(stockRow?.current_qty ?? 0);
+                const inventoryProfile = getInventoryProfile(product.product_inventory_profiles);
                 const qtyClass =
-                  product.product_inventory_profiles?.track_inventory && qtyValue < 0
+                  inventoryProfile?.track_inventory && qtyValue < 0
                     ? "text-red-600 font-semibold"
                     : "text-zinc-800";
                 const sku = product.sku ?? "-";
                 const unit = product.stock_unit_code ?? product.unit ?? "-";
                 const siteLabel = siteId ? siteNameMap.get(siteId) ?? siteId : "Todas";
                 const categoryLabel = getCategoryPath(product.category_id, categoryMap);
-                const inventoryProfile = product.product_inventory_profiles;
                 const inventoryLabel = inventoryProfile?.inventory_kind ?? "unclassified";
                 const trackLabel = inventoryProfile?.track_inventory ? "si" : "no";
                 const locSummary = locSummaryByProduct.get(product.id);

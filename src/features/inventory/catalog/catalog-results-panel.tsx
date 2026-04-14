@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useMemo, useState } from "react";
 
 export type PurchaseSuggestionRow = {
   supplierId: string;
@@ -64,7 +65,7 @@ const TABLE_DELETE_BUTTON_CLASS =
   "ui-btn ui-btn--ghost ui-btn--sm min-w-[104px] justify-center shrink-0 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700";
 
 export function CatalogResultsPanel({
-  activeTab,
+  activeTab: _activeTab,
   activeTabLabel,
   siteLabel,
   lowStockCount,
@@ -76,17 +77,46 @@ export function CatalogResultsPanel({
   canManageProducts,
   catalogReturnUrl,
   searchQuery,
-  categoryKind,
-  stockAlert,
-  categoryScope,
-  categorySiteId,
-  categoryDomain,
-  effectiveCategoryId,
-  effectiveSupplierId,
-  showDisabled,
+  categoryKind: _categoryKind,
+  stockAlert: _stockAlert,
+  categoryScope: _categoryScope,
+  categorySiteId: _categorySiteId,
+  categoryDomain: _categoryDomain,
+  effectiveCategoryId: _effectiveCategoryId,
+  effectiveSupplierId: _effectiveSupplierId,
+  showDisabled: _showDisabled,
   onToggleProductActive,
   onDeleteProduct,
 }: CatalogResultsPanelProps) {
+  void _activeTab;
+  void _categoryKind;
+  void _stockAlert;
+  void _categoryScope;
+  void _categorySiteId;
+  void _categoryDomain;
+  void _effectiveCategoryId;
+  void _effectiveSupplierId;
+  void _showDisabled;
+
+  const [liveQuery, setLiveQuery] = useState(searchQuery ?? "");
+
+  const normalizedQuery = liveQuery.trim().toLowerCase();
+  const filteredRows = useMemo(() => {
+    if (!normalizedQuery) return rows;
+    return rows.filter((row) => {
+      const haystack = [
+        row.name,
+        row.sku,
+        row.categoryLabel,
+        row.categoryPath,
+        row.unitLabel,
+      ]
+        .join(" ")
+        .toLowerCase();
+      return haystack.includes(normalizedQuery);
+    });
+  }, [normalizedQuery, rows]);
+
   return (
     <div className="mt-6 ui-panel">
       <div className="flex items-center justify-between gap-3">
@@ -99,7 +129,10 @@ export function CatalogResultsPanel({
             </div>
           ) : null}
         </div>
-        <div className="ui-caption">Items: {itemCount}</div>
+        <div className="ui-caption">
+          Items: {filteredRows.length}
+          {normalizedQuery ? <span className="text-[var(--ui-muted)]"> / {itemCount}</span> : null}
+        </div>
       </div>
 
       {siteId ? (
@@ -148,45 +181,31 @@ export function CatalogResultsPanel({
         </div>
       ) : null}
 
-      <form method="get" className="mt-4 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-3">
-        <input type="hidden" name="tab" value={activeTab} />
-        <input type="hidden" name="site_id" value={siteId} />
-        <input type="hidden" name="category_kind" value={categoryKind} />
-        <input type="hidden" name="stock_alert" value={stockAlert} />
-        <input type="hidden" name="view_mode" value={viewMode} />
-        <input type="hidden" name="supplier_id" value={effectiveSupplierId} />
-        <input type="hidden" name="category_scope" value={categoryScope} />
-        <input type="hidden" name="category_site_id" value={categorySiteId} />
-        <input type="hidden" name="category_domain" value={categoryDomain} />
-        <input type="hidden" name="category_id" value={effectiveCategoryId} />
-        {showDisabled ? <input type="hidden" name="show_disabled" value="1" /> : null}
+      <div className="mt-4 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
           <label className="flex-1">
             <span className="ui-label">Buscar producto</span>
             <input
               name="q"
-              defaultValue={searchQuery}
+              value={liveQuery}
+              onChange={(event) => setLiveQuery(event.target.value)}
               placeholder="SKU o nombre de producto"
               className="ui-input mt-1"
             />
           </label>
           <div className="flex gap-2">
-            <button className="ui-btn ui-btn--brand">Buscar</button>
             <button
-              type="submit"
+              type="button"
               className="ui-btn ui-btn--ghost"
-              onClick={(event) => {
-                const form = event.currentTarget.form;
-                if (!form) return;
-                const queryInput = form.elements.namedItem("q") as HTMLInputElement | null;
-                if (queryInput) queryInput.value = "";
+              onClick={() => {
+                setLiveQuery("");
               }}
             >
               Limpiar
             </button>
           </div>
         </div>
-      </form>
+      </div>
 
       <div className="mt-4 max-h-[70vh] overflow-auto rounded-xl border border-[var(--ui-border)]">
         <table className="ui-table min-w-[1100px] text-sm">
@@ -214,7 +233,7 @@ export function CatalogResultsPanel({
             </tr>
           </thead>
           <tbody>
-            {rows.map((row) => (
+            {filteredRows.map((row) => (
               <tr key={row.id} className="border-t border-zinc-200/60">
                 <td className="py-2.5 pr-4">
                   <div className="max-w-[220px] truncate" title={row.name}>
@@ -311,10 +330,12 @@ export function CatalogResultsPanel({
                 </td>
               </tr>
             ))}
-            {rows.length === 0 ? (
+            {filteredRows.length === 0 ? (
               <tr>
                 <td className="py-4 text-[var(--ui-muted)]" colSpan={viewMode === "catalogo" ? 9 : 6}>
-                  No hay productos para mostrar con estos filtros.
+                  {normalizedQuery
+                    ? "No hay productos que coincidan con la búsqueda."
+                    : "No hay productos para mostrar con estos filtros."}
                 </td>
               </tr>
             ) : null}
