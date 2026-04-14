@@ -27,6 +27,7 @@ const PERMISSION = "inventory.stock";
 type SearchParams = {
   site_id?: string;
   q?: string;
+  stock_class?: string;
   product_type?: string;
   inventory_kind?: string;
   category_kind?: string;
@@ -102,7 +103,7 @@ type ProductInventoryProfile = {
   inventory_kind: string;
 };
 
-type InventoryKindChip = {
+type StockClassChip = {
   value: string;
   label: string;
   count: number;
@@ -121,6 +122,10 @@ function normalizeInventoryKind(value?: string | null): string {
   return normalized || "unclassified";
 }
 
+function normalizeProductType(value?: string | null): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
 function inventoryKindLabel(kindRaw: string): string {
   const kind = normalizeInventoryKind(kindRaw);
   if (kind === "ingredient") return "Insumos";
@@ -129,6 +134,25 @@ function inventoryKindLabel(kindRaw: string): string {
   if (kind === "packaging") return "Empaques";
   if (kind === "asset") return "Activos";
   return "Sin clasificar";
+}
+
+function matchesStockClass(product: ProductRow, stockClass: string): boolean {
+  const productType = normalizeProductType(product.product_type);
+  const inventoryKind = normalizeInventoryKind(
+    getInventoryProfile(product.product_inventory_profiles)?.inventory_kind
+  );
+  const normalizedClass = String(stockClass ?? "").trim().toLowerCase();
+
+  if (!normalizedClass) return true;
+  if (normalizedClass === "insumos") {
+    return productType === "insumo" && ["ingredient", "packaging", "unclassified"].includes(inventoryKind);
+  }
+  if (normalizedClass === "preparaciones") return productType === "preparacion";
+  if (normalizedClass === "venta") return productType === "venta";
+  if (normalizedClass === "venta_reventa") return productType === "venta" && inventoryKind === "resale";
+  if (normalizedClass === "venta_terminado") return productType === "venta" && inventoryKind === "finished";
+  if (normalizedClass === "activos") return inventoryKind === "asset";
+  return true;
 }
 
 type ProductSiteRow = {
@@ -203,6 +227,7 @@ export default async function InventoryStockPage({
   const defaultSiteId = employeeSiteRows[0]?.site_id ?? "";
   const siteId = String(sp.site_id ?? defaultSiteId).trim();
   const searchQuery = String(sp.q ?? "").trim();
+  const stockClass = String(sp.stock_class ?? "").trim().toLowerCase();
   const productType = String(sp.product_type ?? "").trim();
   const inventoryKind = String(sp.inventory_kind ?? "").trim();
   const categoryKindFromQuery = normalizeCategoryKind(sp.category_kind ?? "");
@@ -318,11 +343,10 @@ export default async function InventoryStockPage({
     getCategoryDomainCodes(allCategoryRows, categoryKind)
   );
 
-  const buildKindHref = (kind: string) => {
+  const buildStockClassHref = (nextStockClass: string) => {
     const params = new URLSearchParams();
     if (siteId) params.set("site_id", siteId);
     if (searchQuery) params.set("q", searchQuery);
-    if (productType) params.set("product_type", productType);
     if (categoryKind) params.set("category_kind", categoryKind);
     if (categoryScope) params.set("category_scope", categoryScope);
     if (categoryScope === "site" && categorySiteId) params.set("category_site_id", categorySiteId);
@@ -330,7 +354,7 @@ export default async function InventoryStockPage({
     if (categoryDomain) params.set("category_domain", categoryDomain);
     if (locationIdFilter) params.set("location_id", locationIdFilter);
     if (zoneFilter) params.set("zone", zoneFilter);
-    if (kind) params.set("inventory_kind", kind);
+    if (nextStockClass) params.set("stock_class", nextStockClass);
     const qs = params.toString();
     return `/inventory/stock${qs ? `?${qs}` : ""}`;
   };
@@ -347,23 +371,17 @@ export default async function InventoryStockPage({
   const productSiteIds = productSiteRows.map((row) => row.product_id);
   const hasProductSiteFilter = productSiteIds.length > 0;
 
-  const productsSelect = inventoryKind
-    ? "id,name,sku,unit,stock_unit_code,product_type,category_id,product_inventory_profiles!inner(track_inventory,inventory_kind)"
-    : "id,name,sku,unit,stock_unit_code,product_type,category_id,product_inventory_profiles(track_inventory,inventory_kind)";
-
   let productsQuery = supabase
     .from("products")
-    .select(productsSelect)
+    .select(
+      "id,name,sku,unit,stock_unit_code,product_type,category_id,product_inventory_profiles(track_inventory,inventory_kind)"
+    )
     .order("name", { ascending: true })
     .limit(1000);
 
   if (searchQuery) {
     const pattern = `%${searchQuery}%`;
     productsQuery = productsQuery.or(`name.ilike.${pattern},sku.ilike.${pattern}`);
-  }
-
-  if (productType) {
-    productsQuery = productsQuery.eq("product_type", productType);
   }
 
   if (filteredCategoryIds !== null) {
@@ -484,25 +502,33 @@ export default async function InventoryStockPage({
     productRows = productRows.filter((p) => byLoc(p) && byZone(p));
   }
 
-  const inventoryKindCounts = new Map<string, number>();
-  for (const product of productRows) {
-    const kind = normalizeInventoryKind(getInventoryProfile(product.product_inventory_profiles)?.inventory_kind);
-    inventoryKindCounts.set(kind, (inventoryKindCounts.get(kind) ?? 0) + 1);
-  }
+  const quickStockClassesBase: Array<{ value: string; label: string }> = [
+    { value: "", label: "Todos" },
+    { value: "insumos", label: "Insumos" },
+    { value: "preparaciones", label: "Preparaciones" },
+    { value: "venta", label: "Venta" },
+    { value: "venta_reventa", label: "Reventa" },
+    { value: "venta_terminado", label: "Venta terminados" },
+    { value: "activos", label: "Activos" },
+  ];
 
-  const preferredInventoryKindOrder = ["ingredient", "finished", "resale", "packaging", "asset", "unclassified"];
-  const quickInventoryKinds: InventoryKindChip[] = [{ value: "", label: "Todos", count: productRows.length }];
-  for (const kind of preferredInventoryKindOrder) {
-    const count = inventoryKindCounts.get(kind) ?? 0;
-    if (!count) continue;
-    quickInventoryKinds.push({ value: kind, label: inventoryKindLabel(kind), count });
-  }
-  for (const [kind, count] of inventoryKindCounts.entries()) {
-    if (preferredInventoryKindOrder.includes(kind)) continue;
-    quickInventoryKinds.push({ value: kind, label: inventoryKindLabel(kind), count });
-  }
+  const quickStockClasses: StockClassChip[] = quickStockClassesBase
+    .map((chip) => ({
+      ...chip,
+      count: chip.value ? productRows.filter((product) => matchesStockClass(product, chip.value)).length : productRows.length,
+    }))
+    .filter((chip) => chip.value === "" || chip.count > 0);
 
   const normalizedInventoryKindFilter = normalizeInventoryKind(inventoryKind);
+  if (stockClass) {
+    productRows = productRows.filter((product) => matchesStockClass(product, stockClass));
+  }
+  if (productType) {
+    const normalizedProductTypeFilter = normalizeProductType(productType);
+    productRows = productRows.filter(
+      (product) => normalizeProductType(product.product_type) === normalizedProductTypeFilter
+    );
+  }
   if (inventoryKind) {
     productRows = productRows.filter((product) => {
       const kind = normalizeInventoryKind(getInventoryProfile(product.product_inventory_profiles)?.inventory_kind);
@@ -533,6 +559,7 @@ export default async function InventoryStockPage({
       : "Modo verificacion";
   const activeFilterCount = [
     searchQuery,
+    stockClass,
     productType,
     inventoryKind,
     categoryKind ?? "",
@@ -605,14 +632,14 @@ export default async function InventoryStockPage({
           {siteId && locList.length > 0 ? (
             viewByLoc ? (
               <Link
-                href={`/inventory/stock?site_id=${encodeURIComponent(siteId)}${searchQuery ? `&q=${encodeURIComponent(searchQuery)}` : ""}${inventoryKind ? `&inventory_kind=${encodeURIComponent(inventoryKind)}` : ""}`}
+                href={`/inventory/stock?site_id=${encodeURIComponent(siteId)}${searchQuery ? `&q=${encodeURIComponent(searchQuery)}` : ""}${stockClass ? `&stock_class=${encodeURIComponent(stockClass)}` : ""}${productType ? `&product_type=${encodeURIComponent(productType)}` : ""}${inventoryKind ? `&inventory_kind=${encodeURIComponent(inventoryKind)}` : ""}`}
                 className="ui-btn ui-btn--ghost"
               >
                 Ver stock por sede
               </Link>
             ) : (
               <Link
-                href={`/inventory/stock?site_id=${encodeURIComponent(siteId)}&view=by_loc${searchQuery ? `&q=${encodeURIComponent(searchQuery)}` : ""}${inventoryKind ? `&inventory_kind=${encodeURIComponent(inventoryKind)}` : ""}`}
+                href={`/inventory/stock?site_id=${encodeURIComponent(siteId)}&view=by_loc${searchQuery ? `&q=${encodeURIComponent(searchQuery)}` : ""}${stockClass ? `&stock_class=${encodeURIComponent(stockClass)}` : ""}${productType ? `&product_type=${encodeURIComponent(productType)}` : ""}${inventoryKind ? `&inventory_kind=${encodeURIComponent(inventoryKind)}` : ""}`}
                 className="ui-btn ui-btn--brand"
               >
                 Stock por LOC (tabla)
@@ -994,14 +1021,12 @@ export default async function InventoryStockPage({
         </div>
 
         <div className="mt-3 flex flex-wrap gap-2">
-          {quickInventoryKinds.map((kind) => {
-            const isActiveKind = kind.value
-              ? normalizedInventoryKindFilter === kind.value
-              : !inventoryKind;
+          {quickStockClasses.map((kind) => {
+            const isActiveKind = kind.value ? stockClass === kind.value : !stockClass;
             return (
               <Link
                 key={kind.value || "all"}
-                href={buildKindHref(kind.value)}
+                href={buildStockClassHref(kind.value)}
                 className={isActiveKind ? "ui-chip ui-chip--brand" : "ui-chip"}
               >
                 {kind.label} ({kind.count})
