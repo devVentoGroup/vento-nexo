@@ -73,6 +73,13 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Operar",
     items: [
       {
+        href: "/inventory/warehouse",
+        label: "Warehouse QR",
+        description: "Scanner para operarios en piso",
+        required: ["access"],
+        icon: "scan",
+      },
+      {
         href: "/inventory/entries",
         label: "Entradas",
         description: "Recepcion manual y contingencias",

@@ -512,12 +512,10 @@ export default async function InventoryStockPage({
     { value: "activos", label: "Activos" },
   ];
 
-  const quickStockClasses: StockClassChip[] = quickStockClassesBase
-    .map((chip) => ({
-      ...chip,
-      count: chip.value ? productRows.filter((product) => matchesStockClass(product, chip.value)).length : productRows.length,
-    }))
-    .filter((chip) => chip.value === "" || chip.count > 0);
+  const quickStockClasses: StockClassChip[] = quickStockClassesBase.map((chip) => ({
+    ...chip,
+    count: chip.value ? productRows.filter((product) => matchesStockClass(product, chip.value)).length : productRows.length,
+  }));
 
   const normalizedInventoryKindFilter = normalizeInventoryKind(inventoryKind);
   if (stockClass) {

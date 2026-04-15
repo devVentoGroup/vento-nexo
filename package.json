@@ -13,7 +13,7 @@
     "@supabase/supabase-js": "^2.90.1",
     "barcode-detector-api-polyfill": "^1.0.23",
     "bwip-js": "^4.8.0",
-    "next": "16.1.1",
+    "next": "^16.2.3",
     "react": "19.2.3",
     "react-dom": "19.2.3"
   },
