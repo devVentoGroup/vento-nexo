@@ -169,6 +169,14 @@ const NAV_GROUPS: NavGroup[] = [
         icon: "map",
       },
       {
+        href: "/inventory/validation/locs",
+        label: "Validación de LOCs",
+        description: "Auditoría física de ubicaciones",
+        required: ["inventory.validation"],
+        allowedRoles: ["propietario", "gerente_general", "gerente", "bodeguero"],
+        icon: "clipboard",
+      },
+      {
         href: "/inventory/settings/supply-routes",
         label: "Rutas",
         description: "Abastecimiento entre sedes",
