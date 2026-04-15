@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { createClient } from "@supabase/supabase-js";
 
 type ValidationStatus = "pending" | "validated" | "failed" | "requires_action";
 type AccessibilityLevel = "easy" | "restricted" | "hazard";
@@ -30,6 +31,13 @@ interface ValidationFormData {
   requiredActions: string;
   auditorNotes: string;
   photoUrls: string[];
+}
+
+interface Location {
+  id: string;
+  code: string;
+  description: string;
+  site_id: string;
 }
 
 export function LocationsValidationClient({
@@ -68,6 +76,44 @@ export function LocationsValidationClient({
   const [currentIssue, setCurrentIssue] = useState("");
   const [currentEquipment, setCurrentEquipment] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [locations, setLocations] = useState<Location[]>([]);
+  const [isLoadingLocations, setIsLoadingLocations] = useState(true);
+  const [submitMessage, setSubmitMessage] = useState("");
+  const [submitError, setSubmitError] = useState("");
+
+  // Load locations from inventory_locations table
+  useEffect(() => {
+    const loadLocations = async () => {
+      try {
+        const supabase = createClient(
+          supabaseUrl,
+          process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+        );
+
+        // Get auth token
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session) return;
+
+        const { data: locs, error } = await supabase
+          .from("inventory_locations")
+          .select("id, code, description, site_id")
+          .eq("site_id", employee?.site_id)
+          .order("code");
+
+        if (error) throw error;
+
+        setLocations(locs || []);
+      } catch (error) {
+        console.error("Error loading locations:", error);
+      } finally {
+        setIsLoadingLocations(false);
+      }
+    };
+
+    if (employee?.site_id) {
+      loadLocations();
+    }
+  }, [employee?.site_id, supabaseUrl]);
 
   const handleAddIssue = () => {
     if (currentIssue.trim()) {
@@ -106,14 +152,97 @@ export function LocationsValidationClient({
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSubmitting(true);
+    setSubmitMessage("");
+    setSubmitError("");
 
     try {
-      // TODO: POST to /api/inventory/validation/create
-      console.log("Validation data:", formData);
-      // await fetch("/api/inventory/validation/create", {
-      //   method: "POST",
-      //   body: JSON.stringify(formData),
-      // });
+      if (!formData.locationId) {
+        throw new Error("Debes seleccionar una ubicación");
+      }
+
+      const supabase = createClient(
+        supabaseUrl,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || ""
+      );
+
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session) throw new Error("No autenticado");
+
+      // Get the location_id (UUID) from the code
+      const selectedLocation = locations.find(
+        (loc) => loc.code === formData.locationId
+      );
+      if (!selectedLocation) {
+        throw new Error("Ubicación no encontrada");
+      }
+
+      // Insert validation record
+      const { error } = await supabase
+        .from("locations_validation")
+        .insert({
+          location_id: selectedLocation.id,
+          site_id: employee?.site_id,
+          status: formData.status,
+          code_verified: formData.codeVerified,
+          code_location_description: formData.codeLocationDescription,
+          capacity_verified: formData.capacityVerified,
+          capacity_units_actual: formData.capacityUnitsActual,
+          capacity_weight_kg_actual: formData.capacityWeightKgActual,
+          dimensions_verified: formData.dimensionsVerified,
+          dimension_length_cm: formData.dimensionLengthCm,
+          dimension_width_cm: formData.dimensionWidthCm,
+          dimension_height_cm: formData.dimensionHeightCm,
+          environment_verified: formData.environmentVerified,
+          environment_type_verified: formData.environmentTypeVerified,
+          temperature_celsius: formData.temperatureCelsius,
+          humidity_percent: formData.humidityPercent,
+          accessibility_level: formData.accessibilityLevel,
+          equipment_available: formData.equipmentAvailable,
+          shelving_type: formData.shelvingType,
+          surface_condition: formData.surfaceCondition,
+          issues: formData.issues,
+          required_actions: formData.requiredActions,
+          auditor_id: session.user.id,
+          auditor_notes: formData.auditorNotes,
+          photo_urls: formData.photoUrls,
+        });
+
+      if (error) throw error;
+
+      // Reset form
+      setFormData({
+        locationId: "",
+        status: "pending",
+        codeVerified: false,
+        codeLocationDescription: "",
+        capacityVerified: false,
+        capacityUnitsActual: 0,
+        capacityWeightKgActual: 0,
+        dimensionsVerified: false,
+        dimensionLengthCm: 0,
+        dimensionWidthCm: 0,
+        dimensionHeightCm: 0,
+        environmentVerified: false,
+        environmentTypeVerified: "",
+        temperatureCelsius: 0,
+        humidityPercent: 0,
+        accessibilityLevel: "easy",
+        equipmentAvailable: [],
+        shelvingType: "",
+        surfaceCondition: "",
+        issues: [],
+        requiredActions: "",
+        auditorNotes: "",
+        photoUrls: [],
+      });
+
+      setSubmitMessage(`✓ Validación guardada para ${selectedLocation.code}`);
+      setTimeout(() => setSubmitMessage(""), 3000);
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Error al guardar";
+      setSubmitError(message);
+      console.error("Submit error:", error);
     } finally {
       setIsSubmitting(false);
     }
@@ -163,18 +292,32 @@ export function LocationsValidationClient({
               <div className="space-y-4">
                 <div>
                   <label className="ui-label">Código del LOC *</label>
-                  <input
-                    type="text"
-                    placeholder="ej: REC-01, PROD-01"
-                    value={formData.locationId}
-                    onChange={(e) =>
-                      setFormData((prev) => ({
-                        ...prev,
-                        locationId: e.target.value,
-                      }))
-                    }
-                    className="ui-input"
-                  />
+                  {isLoadingLocations ? (
+                    <div className="ui-input bg-gray-100">Cargando ubicaciones...</div>
+                  ) : (
+                    <select
+                      value={formData.locationId}
+                      onChange={(e) =>
+                        setFormData((prev) => ({
+                          ...prev,
+                          locationId: e.target.value,
+                        }))
+                      }
+                      className="ui-select"
+                    >
+                      <option value="">Seleccionar ubicación...</option>
+                      {locations.map((loc) => (
+                        <option key={loc.id} value={loc.code}>
+                          {loc.code} - {loc.description}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {locations.length === 0 && !isLoadingLocations && (
+                    <p className="text-sm text-orange-600 mt-1">
+                      No hay ubicaciones disponibles para tu sitio
+                    </p>
+                  )}
                 </div>
 
                 <div>
@@ -600,6 +743,17 @@ export function LocationsValidationClient({
 
           {/* Status & Submit */}
           <div className="ui-panel space-y-4">
+            {submitMessage && (
+              <div className="bg-green-50 border border-green-200 text-green-700 px-4 py-3 rounded">
+                {submitMessage}
+              </div>
+            )}
+            {submitError && (
+              <div className="bg-red-50 border border-red-200 text-red-700 px-4 py-3 rounded">
+                ✗ {submitError}
+              </div>
+            )}
+
             <div>
               <label className="ui-label">Estado de validación *</label>
               <select
@@ -625,8 +779,8 @@ export function LocationsValidationClient({
               </Link>
               <button
                 type="submit"
-                disabled={isSubmitting}
-                className="ui-btn ui-btn--brand"
+                disabled={isSubmitting || !formData.locationId}
+                className="ui-btn ui-btn--brand disabled:opacity-50"
               >
                 {isSubmitting ? "Guardando..." : "Guardar validación"}
               </button>
