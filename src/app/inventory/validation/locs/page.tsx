@@ -33,11 +33,35 @@ export default async function ValidationPage() {
   }
 
   // Get employee info for site filtering
-  const { data: employee } = await supabase
+  const { data: employee, error: employeeError } = await supabase
     .from("employees")
     .select("id, role, site_id, sites(id, name, site_type)")
-    .eq("id", user.id)
+    .eq("user_id", user.id)
     .maybeSingle();
+
+  if (employeeError) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-red-600">Error de acceso</h1>
+          <p className="mt-2 text-gray-600">No se pudo cargar tu información de empleado.</p>
+          <p className="mt-2 text-sm text-gray-500">{employeeError.message}</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!employee) {
+    return (
+      <div className="flex min-h-screen items-center justify-center">
+        <div className="text-center">
+          <h1 className="text-2xl font-bold text-red-600">Error de acceso</h1>
+          <p className="mt-2 text-gray-600">No se encontró tu registro como empleado.</p>
+          <p className="mt-2 text-sm text-gray-500">Contacta a tu administrador.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <Suspense fallback={<ValidationLoadingFallback />}>
