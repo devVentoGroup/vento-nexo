@@ -422,6 +422,7 @@ export function VentoChrome({
       "inventory.counts",
       "inventory.adjustments",
       "inventory.locations",
+      "inventory.validation",
     ],
     []
   );
