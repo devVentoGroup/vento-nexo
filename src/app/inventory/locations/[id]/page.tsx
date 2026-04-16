@@ -172,8 +172,9 @@ export default async function LocationLandingPage({
               </div>
               <h1 className="ui-h1">{title}</h1>
               <p className="ui-body-muted">
-                Elige una sola acción para este LOC. Retiro y remisión son flujos distintos: retirar sirve para consumo
-                interno; la remisión se prepara y descuenta desde el flujo de despacho.
+                Este landing sirve para bodega y producción. Retiro y remisión son flujos distintos: retirar sirve para
+                sacar producto de este LOC hacia producción, consumo interno u otro uso controlado; la remisión se
+                prepara y descuenta desde el flujo de despacho.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -221,7 +222,7 @@ export default async function LocationLandingPage({
             <article className="ui-remission-kpi" data-tone="success">
               <div className="ui-remission-kpi-label">Accion</div>
               <div className="ui-remission-kpi-value">LOC</div>
-              <div className="ui-remission-kpi-note">Una acción principal y una vista rápida</div>
+              <div className="ui-remission-kpi-note">Bodega y producción entran desde aquí</div>
             </article>
           </div>
         </div>

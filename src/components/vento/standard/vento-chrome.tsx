@@ -207,6 +207,13 @@ const NAV_GROUPS: NavGroup[] = [
         allowedRoles: ["propietario", "gerente_general"],
         icon: "layers",
       },
+      {
+        href: "/printing/jobs",
+        label: "Impresion",
+        description: "QR de LOC y etiquetas operativas",
+        required: ["access"],
+        icon: "printer",
+      },
     ],
   },
 ];
