@@ -2,35 +2,8 @@
 /* eslint-disable @next/next/no-img-element */
 
 import { useEffect, useState } from "react";
+import bwipjs from "bwip-js";
 import type { BarcodeVisualKind } from "../_lib/types";
-
-type BwipJsModule = {
-  toCanvas: (canvas: HTMLCanvasElement, opts: Record<string, unknown>) => void;
-};
-
-let bwipjsPromise: Promise<BwipJsModule> | null = null;
-
-async function importOptionalModule<T>(specifier: string): Promise<T | null> {
-  try {
-    const importer = new Function("s", "return import(s);") as (s: string) => Promise<unknown>;
-    const mod = await importer(specifier);
-    return ((mod as { default?: T }).default ?? mod) as T;
-  } catch {
-    return null;
-  }
-}
-
-async function loadBwipJs(): Promise<BwipJsModule> {
-  if (!bwipjsPromise) {
-    bwipjsPromise = importOptionalModule<BwipJsModule>("bwip-js").then((mod) => {
-      if (!mod) {
-        throw new Error("bwip-js no esta disponible en este entorno.");
-      }
-      return mod;
-    });
-  }
-  return bwipjsPromise;
-}
 
 export function BarcodeImage({
   kind,
@@ -59,8 +32,8 @@ export function BarcodeImage({
     setDataUrl(null);
     setError(null);
 
-    loadBwipJs()
-      .then((bwipjs) => {
+    Promise.resolve()
+      .then(() => {
         if (!active) return;
         const canvas = document.createElement("canvas");
         const opts: Record<string, unknown> = {
