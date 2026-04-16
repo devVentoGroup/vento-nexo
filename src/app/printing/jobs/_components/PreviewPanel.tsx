@@ -8,13 +8,10 @@ export type PreviewPanelProps = {
   preset: Preset;
   dpi: number;
   dpmm: number;
-  previewMode: PreviewMode;
-  setPreviewMode: (m: PreviewMode) => void;
   previewScale: number;
   setPreviewScale: (n: number) => void;
   previewZpl: string;
   previewZplHasError: boolean;
-  previewShowImage: boolean;
   previewShowMock: boolean;
   showZplCode: boolean;
   setShowZplCode: (fn: (v: boolean) => boolean) => void;
@@ -33,13 +30,10 @@ export function PreviewPanel({
   preset,
   dpi,
   dpmm,
-  previewMode,
-  setPreviewMode,
   previewScale,
   setPreviewScale,
   previewZpl,
   previewZplHasError,
-  previewShowImage,
   previewShowMock,
   showZplCode,
   setShowZplCode,
@@ -72,15 +66,6 @@ export function PreviewPanel({
         <span className="ui-chip ui-chip--success">Preview local</span>
 
         <div className="ml-auto flex flex-wrap items-center gap-2">
-          <span className="ui-caption">Vista</span>
-          <select
-            className="ui-input min-w-0 px-3 py-2 text-xs"
-            value={previewMode}
-            onChange={(e) => setPreviewMode(e.target.value as PreviewMode)}
-          >
-            <option value="mock">Preview local</option>
-          </select>
-
           <span className="ui-caption">Zoom</span>
           <input
             type="range"
@@ -99,9 +84,6 @@ export function PreviewPanel({
           >
             1:1
           </button>
-          <span className="ui-btn ui-btn--ghost text-xs opacity-50 pointer-events-none">
-            Descargar PNG
-          </span>
         </div>
       </div>
 
@@ -160,10 +142,6 @@ export function PreviewPanel({
             </p>
           )}
         </div>
-      </div>
-
-      <div className="mt-2 ui-caption text-[var(--ui-muted)]">
-        Esta vista previa se renderiza localmente para validar contenido y layout antes de imprimir.
       </div>
 
       {previewLocVariant === "qr" && previewQrUrl ? (

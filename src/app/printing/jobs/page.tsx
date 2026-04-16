@@ -647,13 +647,10 @@ function PrintingJobsContent() {
             preset={preset}
             dpi={dpi}
             dpmm={dpmm}
-            previewMode={previewMode}
-            setPreviewMode={setPreviewMode}
             previewScale={previewScale}
             setPreviewScale={setPreviewScale}
             previewZpl={previewZpl}
             previewZplHasError={previewZplHasError}
-            previewShowImage={previewShowImage}
             previewShowMock={previewShowMock}
             showZplCode={showZplCode}
             setShowZplCode={setShowZplCode}
