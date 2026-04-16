@@ -7,6 +7,7 @@ const DEBOUNCE_MS = 400;
 export function usePreviewImage(
   previewZpl: string,
   previewMode: "auto" | "real" | "mock",
+  enableRemotePreview: boolean,
   presetWidthMm: number,
   presetHeightMm: number,
   dpmm: number,
@@ -17,7 +18,7 @@ export function usePreviewImage(
   const previewObjectUrlRef = useRef<string | null>(null);
 
   useEffect(() => {
-    if (previewMode === "mock") {
+    if (previewMode === "mock" || !enableRemotePreview) {
       setPreviewImageUrl(null);
       setPreviewImageError(null);
       return;
@@ -87,6 +88,7 @@ export function usePreviewImage(
     dpmm,
     previewRefreshKey,
     previewMode,
+    enableRemotePreview,
     setPreviewImageUrl,
     setPreviewImageError,
   ]);

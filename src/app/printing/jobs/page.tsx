@@ -174,6 +174,7 @@ function PrintingJobsContent() {
   usePreviewImage(
     previewZpl,
     previewMode,
+    !(preset.id === "LOC_50x70_QR" && preset.defaultType === "LOC"),
     preset.widthMm,
     preset.heightMm,
     dpmm,
