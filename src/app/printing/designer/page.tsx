@@ -43,6 +43,15 @@ export default function DesignerPage() {
   const [savedTemplates, setSavedTemplates] = useState<LabelTemplate[]>([]);
   const [statusMsg, setStatusMsg] = useState("");
 
+  const refreshSavedTemplates = useCallback(async () => {
+    try {
+      const templates = await loadTemplates();
+      setSavedTemplates(templates);
+    } catch {
+      setSavedTemplates([]);
+    }
+  }, []);
+
   // --- Load LOCs ---
   const loadLocs = useCallback(async () => {
     try {
@@ -60,6 +69,10 @@ export default function DesignerPage() {
     }, 0);
     return () => window.clearTimeout(timer);
   }, [loadLocs]);
+
+  useEffect(() => {
+    void refreshSavedTemplates();
+  }, [refreshSavedTemplates]);
 
   const filteredLocs = useMemo(() => {
     if (!locSearch.trim()) return locs;
@@ -159,16 +172,22 @@ export default function DesignerPage() {
   }, [selectedLocCode]);
 
   // --- Actions ---
-  const handleSave = useCallback(() => {
-    saveTemplate(template);
-    setStatusMsg("Layout guardado.");
-    setTimeout(() => setStatusMsg(""), 2000);
-  }, [template]);
+  const handleSave = useCallback(async () => {
+    try {
+      await saveTemplate(template);
+      await refreshSavedTemplates();
+      setStatusMsg("Layout guardado.");
+      setTimeout(() => setStatusMsg(""), 2000);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudo guardar el layout.";
+      setStatusMsg(message);
+    }
+  }, [template, refreshSavedTemplates]);
 
-  const handleLoad = useCallback(() => {
-    setSavedTemplates(loadTemplates());
+  const handleLoad = useCallback(async () => {
+    await refreshSavedTemplates();
     setShowLoadModal(true);
-  }, []);
+  }, [refreshSavedTemplates]);
 
   const handleLoadTemplate = useCallback((t: LabelTemplate) => {
     setTemplate(t);
@@ -189,9 +208,7 @@ export default function DesignerPage() {
     ? Math.min(template.widthMm, template.heightMm)
     : template.heightMm;
 
-  const savedCount = useMemo(() => {
-    try { return loadTemplates().length; } catch { return 0; }
-  }, []);
+  const savedCount = savedTemplates.length;
 
   const selectedLoc = useMemo(
     () => locs.find((loc) => loc.code === selectedLocCode) ?? null,
@@ -419,9 +436,15 @@ export default function DesignerPage() {
             {template.elements.length > 0 && (
               <button
                 type="button"
-                onClick={() => {
-                  saveTemplate(template);
-                  window.location.href = `/printing/jobs?layout=${encodeURIComponent(template.id)}`;
+                onClick={async () => {
+                  try {
+                    await saveTemplate(template);
+                    await refreshSavedTemplates();
+                    window.location.href = `/printing/jobs?layout=${encodeURIComponent(template.id)}`;
+                  } catch (error) {
+                    const message = error instanceof Error ? error.message : "No se pudo abrir impresión con este layout.";
+                    setStatusMsg(message);
+                  }
                 }}
                 className="ui-btn ui-btn--brand w-full"
               >

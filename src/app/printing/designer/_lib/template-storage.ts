@@ -1,32 +1,36 @@
 import type { LabelTemplate } from "./types";
 
-const KEY = "vento-nexo:label-templates:v1";
+const API = "/api/printing/layouts";
 
-export function loadTemplates(): LabelTemplate[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(KEY);
-    if (!raw) return [];
-    return JSON.parse(raw) as LabelTemplate[];
-  } catch {
-    return [];
-  }
+export async function loadTemplates(): Promise<LabelTemplate[]> {
+  const res = await fetch(API, { cache: "no-store" });
+  if (!res.ok) throw new Error("No se pudieron cargar los layouts.");
+  const data = await res.json();
+  return Array.isArray(data) ? (data as LabelTemplate[]) : [];
 }
 
-export function saveTemplate(template: LabelTemplate): void {
-  const all = loadTemplates();
-  const idx = all.findIndex((t) => t.id === template.id);
-  if (idx >= 0) {
-    all[idx] = template;
-  } else {
-    all.push(template);
-  }
-  localStorage.setItem(KEY, JSON.stringify(all));
+export async function loadTemplate(id: string): Promise<LabelTemplate | null> {
+  const res = await fetch(`${API}?id=${encodeURIComponent(id)}`, { cache: "no-store" });
+  if (!res.ok) throw new Error("No se pudo cargar el layout.");
+  const data = await res.json();
+  return data && typeof data === "object" ? (data as LabelTemplate) : null;
 }
 
-export function deleteTemplate(id: string): void {
-  const all = loadTemplates().filter((t) => t.id !== id);
-  localStorage.setItem(KEY, JSON.stringify(all));
+export async function saveTemplate(template: LabelTemplate): Promise<LabelTemplate> {
+  const res = await fetch(API, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(template),
+  });
+  if (!res.ok) throw new Error("No se pudo guardar el layout.");
+  return (await res.json()) as LabelTemplate;
+}
+
+export async function deleteTemplate(id: string): Promise<void> {
+  const res = await fetch(`${API}?id=${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
+  if (!res.ok) throw new Error("No se pudo eliminar el layout.");
 }
 
 export function generateId(): string {

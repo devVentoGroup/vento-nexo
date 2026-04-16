@@ -15,6 +15,7 @@ import {
   buildTextField,
   mmToDots,
   safeText,
+  encodeVento,
 } from "./_lib/zpl";
 import { readStoredSettings } from "./_hooks/useStoredSettings";
 import { usePrinterDevices } from "./_hooks/usePrinterDevices";
@@ -23,6 +24,9 @@ import { usePreviewZpl } from "./_hooks/usePreviewZpl";
 import { ConfigPanel } from "./_components/ConfigPanel";
 import { QueuePanel } from "./_components/QueuePanel";
 import { PreviewPanel } from "./_components/PreviewPanel";
+import type { LabelTemplate } from "../designer/_lib/types";
+import { loadTemplate } from "../designer/_lib/template-storage";
+import { templateToZplBatch } from "../designer/_lib/template-to-zpl";
 
 function PrintingJobsContent() {
   const searchParams = useSearchParams();
@@ -58,6 +62,7 @@ function PrintingJobsContent() {
   const [locs, setLocs] = useState<LocRow[]>([]);
   const [locSearch, setLocSearch] = useState("");
   const [selectedLocCode, setSelectedLocCode] = useState("");
+  const [activeLayout, setActiveLayout] = useState<LabelTemplate | null>(null);
   const locsLoadedRef = useRef(false);
 
   const {
@@ -96,6 +101,32 @@ function PrintingJobsContent() {
     if (presetParam) setPresetId(presetParam);
     if (queueParam) setQueueText(queueParam.replace(/\r/g, ""));
     if (titleParam) setTitle(titleParam);
+  }, [searchParams]);
+
+  useEffect(() => {
+    const layoutId = String(searchParams.get("layout") ?? "").trim();
+    if (!layoutId) {
+      setActiveLayout(null);
+      return;
+    }
+    let cancelled = false;
+    loadTemplate(layoutId)
+      .then((found) => {
+        if (cancelled) return;
+        setActiveLayout(found);
+        if (!found) {
+          setStatus("El layout seleccionado no existe o no está disponible para tu usuario.");
+        }
+      })
+      .catch((error) => {
+        if (cancelled) return;
+        const message = error instanceof Error ? error.message : "No se pudo cargar el layout.";
+        setStatus(message);
+        setActiveLayout(null);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [searchParams]);
 
   useEffect(() => {
@@ -165,6 +196,21 @@ function PrintingJobsContent() {
     },
     setPreviewZpl
   );
+
+  useEffect(() => {
+    if (!activeLayout) return;
+    const first = previewItems[0] ?? { code: "EJEMPLO-001", note: "Demo" };
+    const origin = baseUrl.replace(/\/$/, "");
+    const zpl = templateToZplBatch(activeLayout, [
+      {
+        code: first.code,
+        ventoCode: encodeVento("LOC", first.code),
+        qrUrl: `${origin}/inventory/locations/open?loc=${encodeURIComponent(first.code)}`,
+        description: first.note ?? "",
+      },
+    ]);
+    setPreviewZpl(zpl);
+  }, [activeLayout, baseUrl, previewItems]);
 
   useEffect(() => {
     if (preset.defaultType !== "LOC" || locsLoadedRef.current) return;
@@ -250,6 +296,23 @@ function PrintingJobsContent() {
     if (!preset) return;
     if (!parsedQueue.length) {
       setStatus("Cola vacía.");
+      return;
+    }
+
+    if (activeLayout) {
+      const origin = baseUrl.replace(/\/$/, "");
+      const zpl = templateToZplBatch(
+        activeLayout,
+        parsedQueue.map((it) => ({
+          code: it.code,
+          ventoCode: encodeVento("LOC", it.code),
+          qrUrl: `${origin}/inventory/locations/open?loc=${encodeURIComponent(it.code)}`,
+          description: it.note,
+        }))
+      );
+      sendZpl(zpl);
+      setStatus(`Impresión enviada con layout: ${activeLayout.name}`);
+      setQueueText("");
       return;
     }
 
@@ -484,7 +547,15 @@ function PrintingJobsContent() {
 
       <div className="flex flex-wrap items-start justify-between gap-4 ui-fade-up ui-delay-1">
         <div className="ui-caption">
-          Preset activo: <strong>{preset.label}</strong>
+          {activeLayout ? (
+            <>
+              Layout activo: <strong>{activeLayout.name}</strong>
+            </>
+          ) : (
+            <>
+              Preset activo: <strong>{preset.label}</strong>
+            </>
+          )}
         </div>
         <div className="flex gap-2">
           <Link href="/printing/designer" className="ui-btn ui-btn--ghost ui-btn--sm">
