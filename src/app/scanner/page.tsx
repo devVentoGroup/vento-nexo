@@ -100,7 +100,7 @@ export default async function ScannerPage({
             </div>
             <div className="flex flex-wrap gap-2">
               <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
-                QR + DataMatrix
+                QR
               </span>
               {activeSite?.name ? (
                 <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-900">

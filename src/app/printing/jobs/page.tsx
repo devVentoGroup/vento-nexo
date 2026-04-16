@@ -31,7 +31,7 @@ function PrintingJobsContent() {
 
   const [enablePrinting, setEnablePrinting] = useState(true);
   const [dpi, setDpi] = useState(203);
-  const [presetId, setPresetId] = useState(presets[0]?.id ?? "LOC_50x70_DM");
+  const [presetId, setPresetId] = useState(presets[0]?.id ?? "LOC_50x70_QR");
   const preset = useMemo(
     () => presets.find((p) => p.id === presetId) ?? presets[0],
     [presetId, presets]
@@ -418,8 +418,8 @@ function PrintingJobsContent() {
       setStatus("Selecciona un LOC válido.");
       return;
     }
-    if (presetId !== "LOC_50x70_DM" && presetId !== "LOC_50x70_QR") setPresetId("LOC_50x70_DM");
-    setBarcodeKind("datamatrix");
+    if (presetId !== "LOC_50x70_QR") setPresetId("LOC_50x70_QR");
+    setBarcodeKind("code128");
     setTitle("VENTO · LOC");
 
     const line = `${loc.code}|${safeText(loc.description ?? "LOC")}`;
@@ -441,9 +441,7 @@ function PrintingJobsContent() {
     !previewZplHasError &&
     (previewMode === "mock" || (previewMode === "auto" && !previewShowImage));
   const previewLocVariant =
-    preset.defaultType === "LOC" && (preset.id === "LOC_50x70_DM" || preset.id === "LOC_50x70_QR")
-      ? (preset.id === "LOC_50x70_QR" ? "qr" : "dm")
-      : null;
+    preset.defaultType === "LOC" && preset.id === "LOC_50x70_QR" ? "qr" : null;
   const previewColGapMm = 2;
   const previewColWidthMm =
     preset.columns > 1

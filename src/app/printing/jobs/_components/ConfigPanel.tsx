@@ -77,18 +77,6 @@ export function ConfigPanel({
           <div className="mt-1 inline-flex flex-wrap overflow-hidden rounded-[var(--ui-radius-control)] border border-[var(--ui-border)] bg-[var(--ui-surface)]">
             <button
               type="button"
-              onClick={() => setPresetId("LOC_50x70_DM")}
-              className={`px-3 py-2 text-sm font-semibold ${
-                preset.id === "LOC_50x70_DM"
-                  ? "bg-[var(--ui-brand)] text-[var(--ui-on-primary)]"
-                  : "bg-[var(--ui-surface)] text-[var(--ui-text)]"
-              }`}
-              title="DataMatrix grande, centrado"
-            >
-              LOC DM
-            </button>
-            <button
-              type="button"
               onClick={() => setPresetId("LOC_50x70_QR")}
               className={`px-3 py-2 text-sm font-semibold ${
                 preset.id === "LOC_50x70_QR"
@@ -122,7 +110,7 @@ export function ConfigPanel({
               PROD
             </button>
           </div>
-          <div className="mt-2 ui-caption">El preset cambia tamaño y formato recomendados.</div>
+          <div className="mt-2 ui-caption">El preset cambia tamaño y formato recomendados. Para LOC, el estándar operativo es QR.</div>
         </div>
 
         <div className="col-span-2">
@@ -204,30 +192,18 @@ export function ConfigPanel({
                 disabled
                 title="Estándar bloqueado por preset"
               >
-                <option value="datamatrix">DataMatrix (2D)</option>
                 <option value="code128">Code128 (1D)</option>
               </select>
             </div>
 
-            {barcodeKind === "datamatrix" ? (
-              <div>
-                <div className="ui-caption font-medium">Módulo DM (dots)</div>
-                <input
-                  className="ui-input mt-1 w-full"
-                  value={dmModuleDots}
-                  onChange={(e) => setDmModuleDots(Number(e.target.value || "0"))}
-                />
-              </div>
-            ) : (
-              <div>
-                <div className="ui-caption font-medium">Alto Code128 (dots)</div>
-                <input
-                  className="ui-input mt-1 w-full"
-                  value={code128HeightDots}
-                  onChange={(e) => setCode128HeightDots(Number(e.target.value || "0"))}
-                />
-              </div>
-            )}
+            <div>
+              <div className="ui-caption font-medium">Alto Code128 (dots)</div>
+              <input
+                className="ui-input mt-1 w-full"
+                value={code128HeightDots}
+                onChange={(e) => setCode128HeightDots(Number(e.target.value || "0"))}
+              />
+            </div>
 
             <div className="col-span-2 ui-caption text-[var(--ui-muted)]">
               Si algo sale corrido, usa márgenes o el botón `Probar posición`.
@@ -296,7 +272,7 @@ export function ConfigPanel({
             </div>
 
             <div className="mt-2 ui-caption text-[var(--ui-muted)]">
-              Al elegir una ubicación se usa la etiqueta estándar de LOC.
+              Al elegir una ubicación se usa la etiqueta estándar LOC con QR.
             </div>
             {preset.id === "LOC_50x70_QR" ? (
               <div className="mt-2 ui-caption text-[var(--ui-brand-700)]">

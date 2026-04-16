@@ -4,23 +4,12 @@ export const SETTINGS_KEY = "vento-nexo:printing:settings:v1";
 
 export const PRESETS: Preset[] = [
   {
-    id: "LOC_50x70_DM",
-    label: "LOC 50×70 DataMatrix grande",
-    widthMm: 50,
-    heightMm: 70,
-    columns: 1,
-    defaultBarcodeKind: "datamatrix",
-    defaultCode128HeightDots: 120,
-    defaultDmModuleDots: 8,
-    defaultType: "LOC",
-  },
-  {
     id: "LOC_50x70_QR",
     label: "LOC 50×70 QR grande",
     widthMm: 50,
     heightMm: 70,
     columns: 1,
-    defaultBarcodeKind: "datamatrix",
+    defaultBarcodeKind: "code128",
     defaultCode128HeightDots: 120,
     defaultDmModuleDots: 4,
     defaultType: "LOC",

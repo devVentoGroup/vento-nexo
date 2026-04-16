@@ -135,7 +135,6 @@ export function buildSingleLabelZpl(opts: {
   const note = safeText(opts.note ?? "");
   const code = safeText(opts.code);
 
-  const isLoc70Dm = preset.id === "LOC_50x70_DM" && type === "LOC" && barcodeKind === "datamatrix";
   const isLoc70Qr =
     preset.id === "LOC_50x70_QR" &&
     type === "LOC" &&
@@ -152,29 +151,7 @@ export function buildSingleLabelZpl(opts: {
   const parts: string[] = [];
   parts.push(header);
 
-  if (isLoc70Dm) {
-    // --- LOC 50×70 DataMatrix grande: vertical, centrado ---
-    const ventoCode = encodeVento("LOC", code);
-
-    // Title at top
-    parts.push(buildTextBlock({ x: marginX, y: 12, h: 28, w: 28, maxWidthDots: maxTextWidth, lines: 1, align: "L", text: titleStr }));
-
-    // Note below title
-    if (note) {
-      parts.push(buildTextBlock({ x: marginX, y: 48, h: 22, w: 22, maxWidthDots: maxTextWidth, lines: 2, align: "L", text: note }));
-    }
-
-    // DataMatrix: codificamos solo el código (LOC-xxx) para menos módulos = impresión más nítida
-    // Módulo 8-10 evita sangrado en térmicas; el escáner reconoce LOC-xxx directamente
-    const dmMod = Math.max(6, Math.min(10, dmModuleDots));
-    const dmSize = dmMod * 26;
-    const dmX = Math.max(0, Math.floor((widthDots - dmSize) / 2));
-    const yBarcode = Math.round(heightDots * 0.28);
-    parts.push(buildDataMatrixField({ x: dmX, y: yBarcode, moduleDots: dmMod, data: ventoCode, shortForLoc: true }));
-
-    // Code at bottom, big and centered
-    parts.push(buildTextBlock({ x: marginX, y: heightDots - 50, h: 32, w: 28, maxWidthDots: maxTextWidth, lines: 1, align: "C", text: code }));
-  } else if (isLoc70Qr) {
+  if (isLoc70Qr) {
     // --- LOC 50×70 QR grande: vertical, centrado ---
     const baseUrl = (opts.baseUrlForQr ?? "").replace(/\/$/, "");
     const withdrawUrl = `${baseUrl}/inventory/locations/open?loc=${encodeURIComponent(code)}`;

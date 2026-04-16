@@ -106,7 +106,7 @@ export function ScanInput(props: {
 
       try {
         const detector = new BarcodeDetectorImpl({
-          formats: ["qr_code", "datamatrix", "code_128", "code_39", "ean_13", "ean_8", "upc_a", "upc_e"],
+          formats: ["qr_code", "code_128", "code_39", "ean_13", "ean_8", "upc_a", "upc_e"],
         });
         detectorRef.current = detector;
 
@@ -274,7 +274,7 @@ export function ScanInput(props: {
               <div>
                 <div className="ui-h3">Escaneo por camara</div>
                 <div className="mt-1 ui-caption">
-                  Apunta al QR o DataMatrix de la etiqueta. En cel/tablet usa la camara trasera si pide elegir.
+                  Apunta al QR de la etiqueta. En cel/tablet usa la camara trasera si pide elegir.
                 </div>
               </div>
               <button

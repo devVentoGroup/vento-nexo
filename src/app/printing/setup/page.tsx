@@ -189,7 +189,7 @@ export default function PrintingSetupPage() {
               </Link>
             </div>
             <div className="ui-caption">
-              Si el DataMatrix sale mal, usa el preset `LOC QR` en impresión rápida.
+              El estándar operativo de LOC en impresión rápida es `LOC QR`.
             </div>
           </div>
         </section>
