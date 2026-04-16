@@ -20,7 +20,6 @@ import { readStoredSettings } from "./_hooks/useStoredSettings";
 import { usePrinterDevices } from "./_hooks/usePrinterDevices";
 import { useStoredSettings } from "./_hooks/useStoredSettings";
 import { usePreviewZpl } from "./_hooks/usePreviewZpl";
-import { usePreviewImage } from "./_hooks/usePreviewImage";
 import { ConfigPanel } from "./_components/ConfigPanel";
 import { QueuePanel } from "./_components/QueuePanel";
 import { PreviewPanel } from "./_components/PreviewPanel";
@@ -51,11 +50,8 @@ function PrintingJobsContent() {
   const [status, setStatus] = useState("");
   const [queueText, setQueueText] = useState("");
   const [previewZpl, setPreviewZpl] = useState("");
-  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
-  const [previewImageError, setPreviewImageError] = useState<string | null>(null);
-  const [previewMode, setPreviewMode] = useState<PreviewMode>("auto");
+  const [previewMode, setPreviewMode] = useState<PreviewMode>("mock");
   const [previewScale, setPreviewScale] = useState(1);
-  const [previewRefreshKey, setPreviewRefreshKey] = useState(0);
   const [showZplCode, setShowZplCode] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
 
@@ -151,7 +147,6 @@ function PrintingJobsContent() {
       parsedQueue[2] ?? { code: "EJ-003", note: "Demo" },
     ];
   }, [preset.columns, parsedQueue]);
-
   const baseUrl =
     typeof window !== "undefined" ? (window.location?.origin ?? "") : "";
 
@@ -169,18 +164,6 @@ function PrintingJobsContent() {
       baseUrl,
     },
     setPreviewZpl
-  );
-
-  usePreviewImage(
-    previewZpl,
-    previewMode,
-    !(preset.id === "LOC_50x70_QR" && preset.defaultType === "LOC"),
-    preset.widthMm,
-    preset.heightMm,
-    dpmm,
-    previewRefreshKey,
-    setPreviewImageUrl,
-    setPreviewImageError
   );
 
   useEffect(() => {
@@ -437,10 +420,8 @@ function PrintingJobsContent() {
 
   const hasQueue = parsedQueue.length > 0;
   const previewZplHasError = previewZpl.startsWith("// Error");
-  const previewShowImage = previewMode !== "mock" && Boolean(previewImageUrl);
-  const previewShowMock =
-    !previewZplHasError &&
-    (previewMode === "mock" || (previewMode === "auto" && !previewShowImage));
+  const previewShowImage = false;
+  const previewShowMock = !previewZplHasError;
   const previewLocVariant =
     preset.defaultType === "LOC" && preset.id === "LOC_50x70_QR" ? "qr" : null;
   const previewColGapMm = 2;
@@ -670,14 +651,10 @@ function PrintingJobsContent() {
             setPreviewMode={setPreviewMode}
             previewScale={previewScale}
             setPreviewScale={setPreviewScale}
-            previewRefreshKey={previewRefreshKey}
-            setPreviewRefreshKey={setPreviewRefreshKey}
             previewZpl={previewZpl}
             previewZplHasError={previewZplHasError}
             previewShowImage={previewShowImage}
             previewShowMock={previewShowMock}
-            previewImageUrl={previewImageUrl}
-            previewImageError={previewImageError}
             showZplCode={showZplCode}
             setShowZplCode={setShowZplCode}
             title={title}

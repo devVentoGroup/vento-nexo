@@ -12,14 +12,10 @@ export type PreviewPanelProps = {
   setPreviewMode: (m: PreviewMode) => void;
   previewScale: number;
   setPreviewScale: (n: number) => void;
-  previewRefreshKey: number;
-  setPreviewRefreshKey: (fn: (v: number) => number) => void;
   previewZpl: string;
   previewZplHasError: boolean;
   previewShowImage: boolean;
   previewShowMock: boolean;
-  previewImageUrl: string | null;
-  previewImageError: string | null;
   showZplCode: boolean;
   setShowZplCode: (fn: (v: boolean) => boolean) => void;
   title: string;
@@ -41,13 +37,10 @@ export function PreviewPanel({
   setPreviewMode,
   previewScale,
   setPreviewScale,
-  setPreviewRefreshKey,
   previewZpl,
   previewZplHasError,
   previewShowImage,
   previewShowMock,
-  previewImageUrl,
-  previewImageError,
   showZplCode,
   setShowZplCode,
   title,
@@ -76,11 +69,7 @@ export function PreviewPanel({
         <span className="ui-chip">
           DPI {dpi} · {dpmm} dpmm
         </span>
-        {previewImageUrl ? (
-          <span className="ui-chip ui-chip--success">Render OK</span>
-        ) : previewImageError ? (
-          <span className="ui-chip ui-chip--warn">Render falló</span>
-        ) : null}
+        <span className="ui-chip ui-chip--success">Preview local</span>
 
         <div className="ml-auto flex flex-wrap items-center gap-2">
           <span className="ui-caption">Vista</span>
@@ -89,9 +78,7 @@ export function PreviewPanel({
             value={previewMode}
             onChange={(e) => setPreviewMode(e.target.value as PreviewMode)}
           >
-            <option value="auto">Auto (real + mock)</option>
-            <option value="real">Solo real</option>
-            <option value="mock">Solo mock</option>
+            <option value="mock">Preview local</option>
           </select>
 
           <span className="ui-caption">Zoom</span>
@@ -112,42 +99,15 @@ export function PreviewPanel({
           >
             1:1
           </button>
-          <button
-            type="button"
-            onClick={() => setPreviewRefreshKey((v) => v + 1)}
-            className="ui-btn ui-btn--ghost text-xs"
-          >
-            Reintentar
-          </button>
-
-          {previewImageUrl ? (
-            <a
-              href={previewImageUrl}
-              download={`etiqueta-${preset.id}.png`}
-              className="ui-btn ui-btn--ghost text-xs"
-            >
-              Descargar PNG
-            </a>
-          ) : (
-            <span className="ui-btn ui-btn--ghost text-xs opacity-50 pointer-events-none">
-              Descargar PNG
-            </span>
-          )}
+          <span className="ui-btn ui-btn--ghost text-xs opacity-50 pointer-events-none">
+            Descargar PNG
+          </span>
         </div>
       </div>
 
       <div className="mt-3 flex min-h-[180px] items-center justify-center ui-panel-soft p-4">
         <div style={{ transform: `scale(${previewScale})`, transformOrigin: "center" }}>
-          {previewShowImage ? (
-            <div className="rounded-md border border-zinc-200 bg-white p-2 shadow-sm">
-              <img
-                src={previewImageUrl ?? ""}
-                alt="Vista previa de la etiqueta"
-                className="max-h-80 w-auto object-contain"
-                style={{ imageRendering: "pixelated" }}
-              />
-            </div>
-          ) : previewShowMock ? (
+          {previewShowMock ? (
             <div
               style={{
                 width: `${preset.widthMm}mm`,
@@ -192,8 +152,6 @@ export function PreviewPanel({
             <p className="ui-body-muted text-center">
               Error generando ZPL. Revisa la cola o los parámetros.
             </p>
-          ) : previewImageError ? (
-            <p className="ui-body-muted text-center">No se pudo generar la vista previa real.</p>
           ) : (
             <p className="ui-body-muted text-center">
               {hasQueue
@@ -204,14 +162,9 @@ export function PreviewPanel({
         </div>
       </div>
 
-      {previewImageError ? (
-        <div className="mt-2 ui-caption text-[var(--ui-brand-700)]">
-          Vista real falló: {previewImageError}.{" "}
-          {previewMode === "auto"
-            ? "Mostrando simulación."
-            : "Cambia a modo mock si quieres seguir revisando."}
-        </div>
-      ) : null}
+      <div className="mt-2 ui-caption text-[var(--ui-muted)]">
+        Esta vista previa se renderiza localmente para validar contenido y layout antes de imprimir.
+      </div>
 
       {previewLocVariant === "qr" && previewQrUrl ? (
         <div className="mt-3 rounded-2xl border border-cyan-200 bg-cyan-50 px-4 py-3">

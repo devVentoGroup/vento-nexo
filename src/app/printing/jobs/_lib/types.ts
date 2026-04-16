@@ -49,7 +49,7 @@ export type LocRow = {
   created_at?: string | null;
 };
 
-export type PreviewMode = "auto" | "real" | "mock";
+export type PreviewMode = "mock";
 
 export type PrinterSettings = {
   presetId?: string;
