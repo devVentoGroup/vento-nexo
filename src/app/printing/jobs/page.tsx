@@ -25,7 +25,7 @@ import { ConfigPanel } from "./_components/ConfigPanel";
 import { QueuePanel } from "./_components/QueuePanel";
 import { PreviewPanel } from "./_components/PreviewPanel";
 import type { LabelTemplate } from "../designer/_lib/types";
-import { loadTemplate } from "../designer/_lib/template-storage";
+import { loadTemplate, loadTemplates } from "../designer/_lib/template-storage";
 import { templateToZplBatch } from "../designer/_lib/template-to-zpl";
 
 function PrintingJobsContent() {
@@ -63,6 +63,9 @@ function PrintingJobsContent() {
   const [locSearch, setLocSearch] = useState("");
   const [selectedLocCode, setSelectedLocCode] = useState("");
   const [activeLayout, setActiveLayout] = useState<LabelTemplate | null>(null);
+  const [savedLayouts, setSavedLayouts] = useState<LabelTemplate[]>([]);
+  const [showLoadLayoutModal, setShowLoadLayoutModal] = useState(false);
+  const [isLoadingLayouts, setIsLoadingLayouts] = useState(false);
   const locsLoadedRef = useRef(false);
 
   const {
@@ -481,6 +484,40 @@ function PrintingJobsContent() {
     }
   }
 
+  async function openLoadLayoutModal() {
+    setStatus("");
+    setIsLoadingLayouts(true);
+    try {
+      const templates = await loadTemplates();
+      setSavedLayouts(templates);
+      setShowLoadLayoutModal(true);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "No se pudieron cargar los layouts.";
+      setStatus(message);
+    } finally {
+      setIsLoadingLayouts(false);
+    }
+  }
+
+  function activateLayout(layout: LabelTemplate) {
+    setActiveLayout(layout);
+    setShowLoadLayoutModal(false);
+    setStatus(`Layout activo: ${layout.name}`);
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.set("layout", layout.id);
+    window.history.replaceState({}, "", url.toString());
+  }
+
+  function clearActiveLayout() {
+    setActiveLayout(null);
+    setStatus("Layout personalizado desactivado. Volviste al preset estándar.");
+    if (typeof window === "undefined") return;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("layout");
+    window.history.replaceState({}, "", url.toString());
+  }
+
   const hasQueue = parsedQueue.length > 0;
   const previewZplHasError = previewZpl.startsWith("// Error");
   const previewShowImage = false;
@@ -558,6 +595,23 @@ function PrintingJobsContent() {
           )}
         </div>
         <div className="flex gap-2">
+          <button
+            type="button"
+            className="ui-btn ui-btn--ghost ui-btn--sm"
+            onClick={openLoadLayoutModal}
+            disabled={isLoadingLayouts}
+          >
+            {isLoadingLayouts ? "Cargando layouts..." : "Cargar layout"}
+          </button>
+          {activeLayout ? (
+            <button
+              type="button"
+              className="ui-btn ui-btn--ghost ui-btn--sm"
+              onClick={clearActiveLayout}
+            >
+              Quitar layout
+            </button>
+          ) : null}
           <Link href="/printing/designer" className="ui-btn ui-btn--ghost ui-btn--sm">
             Diseñador
           </Link>
@@ -737,6 +791,49 @@ function PrintingJobsContent() {
           />
         </div>
       </div>
+
+      {showLoadLayoutModal ? (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4"
+          onClick={() => setShowLoadLayoutModal(false)}
+        >
+          <div
+            className="ui-panel w-full max-w-md space-y-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between gap-3">
+              <div className="ui-h3">Cargar layout guardado</div>
+              <button
+                type="button"
+                onClick={() => setShowLoadLayoutModal(false)}
+                className="ui-btn ui-btn--ghost ui-btn--sm"
+              >
+                Cerrar
+              </button>
+            </div>
+
+            {savedLayouts.length === 0 ? (
+              <p className="ui-body-muted">No tienes layouts guardados todavía.</p>
+            ) : (
+              <div className="max-h-80 space-y-2 overflow-y-auto">
+                {savedLayouts.map((layout) => (
+                  <button
+                    key={layout.id}
+                    type="button"
+                    onClick={() => activateLayout(layout)}
+                    className="w-full text-left ui-panel-soft p-3 transition-colors hover:bg-[var(--ui-surface-2)]"
+                  >
+                    <div className="font-medium text-[var(--ui-text)]">{layout.name}</div>
+                    <div className="ui-caption text-[var(--ui-muted)]">
+                      {layout.widthMm}x{layout.heightMm}mm · {layout.orientation} · {layout.elements.length} elementos
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }
