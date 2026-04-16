@@ -183,6 +183,26 @@ function PrintingJobsContent() {
   }, [preset.columns, parsedQueue]);
   const baseUrl =
     typeof window !== "undefined" ? (window.location?.origin ?? "") : "";
+  const activeLayoutPreview = useMemo(() => {
+    if (!activeLayout) return null;
+    const first = previewItems[0] ?? { code: "EJEMPLO-001", note: "Demo" };
+    const origin = baseUrl.replace(/\/$/, "");
+    return {
+      ...activeLayout,
+      elements: activeLayout.elements.map((el) => {
+        if (el.id === "el_code") return { ...el, content: first.code };
+        if (el.id === "el_dm") return { ...el, content: encodeVento("LOC", first.code) };
+        if (el.id === "el_qr") {
+          return {
+            ...el,
+            content: `${origin}/inventory/locations/open?loc=${encodeURIComponent(first.code)}`,
+          };
+        }
+        if (el.id === "el_desc") return { ...el, content: first.note ?? "" };
+        return el;
+      }),
+    };
+  }, [activeLayout, baseUrl, previewItems]);
 
   usePreviewZpl(
     preset,
@@ -788,6 +808,7 @@ function PrintingJobsContent() {
             previewQrUrl={previewLocVariant === "qr" ? previewQrUrl : ""}
             previewItems={previewItems}
             hasQueue={hasQueue}
+            activeLayoutPreview={activeLayoutPreview}
           />
         </div>
       </div>

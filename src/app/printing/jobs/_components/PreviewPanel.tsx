@@ -2,6 +2,8 @@
 /* eslint-disable @next/next/no-img-element */
 
 import type { BarcodeKind, Preset, PreviewMode } from "../_lib/types";
+import type { LabelElement, LabelTemplate } from "../../designer/_lib/types";
+import { BarcodeImage } from "./BarcodeImage";
 import { MockMiniLabel } from "./MockMiniLabel";
 
 export type PreviewPanelProps = {
@@ -24,7 +26,120 @@ export type PreviewPanelProps = {
   previewQrUrl: string;
   previewItems: Array<{ code: string; note?: string }>;
   hasQueue: boolean;
+  activeLayoutPreview?: LabelTemplate | null;
 };
+
+function LayoutPreview({
+  layout,
+  previewScale,
+  barcodeScale,
+}: {
+  layout: LabelTemplate;
+  previewScale: number;
+  barcodeScale: number;
+}) {
+  const widthMm =
+    layout.orientation === "horizontal"
+      ? Math.max(layout.widthMm, layout.heightMm)
+      : layout.widthMm;
+  const heightMm =
+    layout.orientation === "horizontal"
+      ? Math.min(layout.widthMm, layout.heightMm)
+      : layout.heightMm;
+
+  function renderElement(el: LabelElement) {
+    if (el.type === "barcode_qr") {
+      return (
+        <BarcodeImage
+          kind="qrcode"
+          text={el.content}
+          widthMm={el.width}
+          heightMm={el.height}
+          scale={barcodeScale}
+        />
+      );
+    }
+    if (el.type === "barcode_dm") {
+      return (
+        <BarcodeImage
+          kind="datamatrix"
+          text={el.content}
+          widthMm={el.width}
+          heightMm={el.height}
+          scale={barcodeScale}
+        />
+      );
+    }
+    if (el.type === "barcode_c128") {
+      return (
+        <BarcodeImage
+          kind="code128"
+          text={el.content}
+          widthMm={el.width}
+          heightMm={el.height}
+          scale={barcodeScale}
+        />
+      );
+    }
+
+    const fontPx = Math.max(11, Math.round(((el.fontSize ?? (el.type === "title" ? 28 : 20)) / 203) * 96));
+    return (
+      <div
+        style={{
+          width: "100%",
+          height: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: el.type === "title" ? "center" : "center",
+          textAlign: "center",
+          fontSize: `${fontPx}px`,
+          fontWeight: el.fontWeight === "bold" ? 700 : 400,
+          color: "#111827",
+          lineHeight: 1.1,
+          overflow: "hidden",
+          wordBreak: "break-word",
+        }}
+      >
+        {el.content}
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ transform: `scale(${previewScale})`, transformOrigin: "center" }}>
+      <div
+        style={{
+          position: "relative",
+          width: `${widthMm}mm`,
+          height: `${heightMm}mm`,
+          background: "#fff",
+          border: "1px solid #d1d5db",
+          borderRadius: "2mm",
+          boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
+          overflow: "hidden",
+        }}
+      >
+        {layout.elements.map((el) => (
+          <div
+            key={el.id}
+            style={{
+              position: "absolute",
+              left: `${el.x}mm`,
+              top: `${el.y}mm`,
+              width: `${el.width}mm`,
+              height: `${el.height}mm`,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            {renderElement(el)}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 export function PreviewPanel({
   preset,
@@ -46,6 +161,7 @@ export function PreviewPanel({
   previewQrUrl,
   previewItems,
   hasQueue,
+  activeLayoutPreview,
 }: PreviewPanelProps) {
   return (
     <div className="mt-6 ui-panel ui-remission-section">
@@ -88,8 +204,15 @@ export function PreviewPanel({
       </div>
 
       <div className="mt-3 flex min-h-[180px] items-center justify-center ui-panel-soft p-4">
-        <div style={{ transform: `scale(${previewScale})`, transformOrigin: "center" }}>
-          {previewShowMock ? (
+        {activeLayoutPreview ? (
+          <LayoutPreview
+            layout={activeLayoutPreview}
+            previewScale={previewScale}
+            barcodeScale={previewBarcodeScale}
+          />
+        ) : (
+          <div style={{ transform: `scale(${previewScale})`, transformOrigin: "center" }}>
+            {previewShowMock ? (
             <div
               style={{
                 width: `${preset.widthMm}mm`,
@@ -140,8 +263,9 @@ export function PreviewPanel({
                 ? "Generando vista previa…"
                 : "Agrega una etiqueta para ver la vista previa."}
             </p>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
 
       {previewLocVariant === "qr" && previewQrUrl ? (
