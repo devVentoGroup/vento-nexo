@@ -73,13 +73,6 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Operar",
     items: [
       {
-        href: "/inventory/warehouse",
-        label: "Warehouse QR",
-        description: "Scanner para operarios en piso",
-        required: ["access"],
-        icon: "scan",
-      },
-      {
         href: "/inventory/entries",
         label: "Entradas",
         description: "Recepcion manual y contingencias",
@@ -213,18 +206,6 @@ const NAV_GROUPS: NavGroup[] = [
         required: ["inventory.stock"],
         allowedRoles: ["propietario", "gerente_general"],
         icon: "layers",
-      },
-    ],
-  },
-  {
-    label: "Utilidades",
-    items: [
-      {
-        href: "/scanner",
-        label: "Scanner",
-        description: "Escaneo rapido de codigos",
-        required: ["access"],
-        icon: "scan",
       },
     ],
   },
@@ -492,9 +473,9 @@ export function VentoChrome({
   const isSatelliteFocusMode = currentSiteType === "satellite" && !isManagementRole;
   const isProductionFocusMode = currentSiteType === "production_center" && !isManagementRole;
   const focusAllowedHrefs = isSatelliteFocusMode
-    ? new Set(["/", "/inventory/remissions", "/scanner"])
+    ? new Set(["/", "/inventory/remissions"])
     : isProductionFocusMode
-      ? new Set(["/", "/inventory/remissions", "/inventory/entries", "/scanner"])
+      ? new Set(["/", "/inventory/remissions", "/inventory/entries"])
       : null;
 
   const adaptNavItem = (item: NavItem): NavItem => {

@@ -622,11 +622,6 @@ export default async function InventoryStockPage({
               Preparar remisiones
             </Link>
           ) : null}
-          {isOperatorFocusMode ? (
-            <Link href="/scanner" className="ui-btn ui-btn--ghost">
-              Scanner
-            </Link>
-          ) : null}
           {siteId && locList.length > 0 ? (
             viewByLoc ? (
               <Link

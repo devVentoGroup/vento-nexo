@@ -538,8 +538,8 @@ export default async function InventoryLocationsPage({
                   Volver a alta
                 </Link>
               ) : null}
-              <Link href="/scanner" className="ui-btn ui-btn--ghost">
-                Ir a Scanner
+              <Link href="/inventory/stock" className="ui-btn ui-btn--ghost">
+                Ver stock
               </Link>
             </div>
           </div>

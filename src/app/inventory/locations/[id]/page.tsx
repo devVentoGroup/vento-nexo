@@ -164,8 +164,8 @@ export default async function LocationLandingPage({
         <div className="ui-remission-hero-grid lg:grid-cols-[1.45fr_1fr] lg:items-start">
           <div className="space-y-4">
             <div className="space-y-2">
-              <Link href="/scanner" className="ui-caption underline">
-                Volver al scanner
+              <Link href="/inventory/locations" className="ui-caption underline">
+                Volver a ubicaciones
               </Link>
               <div className="ui-caption">
                 {mode === "center" ? "Modo Centro" : mode === "satellite" ? "Modo satelite" : "Modo LOC"}

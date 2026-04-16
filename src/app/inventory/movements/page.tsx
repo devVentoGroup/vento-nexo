@@ -213,9 +213,6 @@ export default async function InventoryMovementsPage({
               Exportar CSV
             </a>
           ) : null}
-          <Link href="/scanner" className="ui-btn ui-btn--ghost">
-            Ir a Scanner
-          </Link>
         </div>
       </div>
 

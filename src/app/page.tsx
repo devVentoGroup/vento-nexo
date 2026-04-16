@@ -516,9 +516,9 @@ export default async function Home({
   const canManageLocations = isProductionCenter && canLocationsPermission;
   const isOperatorFocusMode = !isManagementRole && (isProductionCenter || isSatellite);
   const focusActionIds = isSatellite
-    ? new Set(["request-remission", "receive-remissions", "scanner"])
+    ? new Set(["request-remission", "receive-remissions"])
     : isProductionCenter
-      ? new Set(["prepare-remissions", "entries", "scanner"])
+      ? new Set(["prepare-remissions", "entries"])
       : null;
   const heroModeLabel = isSatellite
     ? "Modo satelite"
@@ -710,17 +710,6 @@ export default async function Home({
       tone: "secondary",
       visible: canMovementsPermission,
       icon: "arrows",
-    },
-    {
-      id: "scanner",
-      section: "utilities",
-      title: "Scanner",
-      description: "Escaneo rápido de LOC/AST.",
-      href: "/scanner",
-      cta: "Abrir",
-      tone: "secondary",
-      visible: true,
-      icon: "scan",
     },
     {
       id: "locations",
