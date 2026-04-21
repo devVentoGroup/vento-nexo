@@ -66,6 +66,12 @@ type ProductRow = {
   stock_unit_code?: string | null;
 };
 
+type EmployeeNameRow = {
+  id: string;
+  full_name: string | null;
+  alias: string | null;
+};
+
 type StockBySiteRow = {
   site_id: string;
   product_id: string;
@@ -104,6 +110,11 @@ function movementTone(value: string) {
     return "warn";
   }
   return "neutral";
+}
+
+function displayEmployeeName(employee?: EmployeeNameRow | null) {
+  if (!employee) return "-";
+  return String(employee.alias ?? employee.full_name ?? employee.id).trim() || employee.id;
 }
 
 export default async function InventoryMovementsPage({
@@ -174,6 +185,7 @@ export default async function InventoryMovementsPage({
     site_id: string;
     product_id: string;
     movement_type: string;
+    created_by?: string | null;
     quantity: number;
     input_qty?: number | null;
     input_unit_code?: string | null;
@@ -191,7 +203,7 @@ export default async function InventoryMovementsPage({
   let q = supabase
     .from("inventory_movements")
     .select(
-      "id,site_id,product_id,movement_type,quantity,input_qty,input_unit_code,conversion_factor_to_stock,stock_unit_code,note,created_at, product:products(id,name,sku,unit,stock_unit_code)"
+      "id,site_id,product_id,movement_type,created_by,quantity,input_qty,input_unit_code,conversion_factor_to_stock,stock_unit_code,note,created_at, product:products(id,name,sku,unit,stock_unit_code)"
     )
     .order("created_at", { ascending: false })
     .limit(200);
@@ -212,6 +224,9 @@ export default async function InventoryMovementsPage({
 
   const movementSiteIds = Array.from(new Set(movements.map((row) => String(row.site_id ?? "")).filter(Boolean)));
   const movementProductIds = Array.from(new Set(movements.map((row) => String(row.product_id ?? "")).filter(Boolean)));
+  const movementEmployeeIds = Array.from(
+    new Set(movements.map((row) => String(row.created_by ?? "")).filter(Boolean))
+  );
 
   const { data: stockRowsData } =
     movementSiteIds.length && movementProductIds.length
@@ -223,6 +238,18 @@ export default async function InventoryMovementsPage({
       : { data: [] as StockBySiteRow[] };
 
   const stockRows = (stockRowsData ?? []) as StockBySiteRow[];
+  const { data: movementEmployeesData } = movementEmployeeIds.length
+    ? await supabase
+        .from("employees")
+        .select("id,full_name,alias")
+        .in("id", movementEmployeeIds)
+    : { data: [] as EmployeeNameRow[] };
+  const employeeNameMap = new Map(
+    ((movementEmployeesData ?? []) as EmployeeNameRow[]).map((employee) => [
+      employee.id,
+      displayEmployeeName(employee),
+    ])
+  );
   const currentBalanceMap = new Map<string, number>();
   for (const row of stockRows) {
     currentBalanceMap.set(`${row.site_id}::${row.product_id}`, Number(row.current_qty ?? 0));
@@ -436,6 +463,7 @@ export default async function InventoryMovementsPage({
             const inputUnit = row.input_unit_code ?? "";
             const factor = row.conversion_factor_to_stock;
             const ref = String((row as { note?: string | null }).note ?? "");
+            const responsible = employeeNameMap.get(String(row.created_by ?? "")) ?? "-";
             const captureLabel =
               inputQty != null && inputUnit
                 ? `${inputQty} ${inputUnit}${factor && factor !== 1 ? ` (x${factor})` : ""}`
@@ -480,6 +508,10 @@ export default async function InventoryMovementsPage({
                     <div className="text-xs text-[var(--ui-muted)]">Captura</div>
                     <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">{captureLabel}</div>
                   </div>
+                  <div className="rounded-xl bg-[var(--ui-bg-soft)] p-3">
+                    <div className="text-xs text-[var(--ui-muted)]">Hecho por</div>
+                    <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">{responsible}</div>
+                  </div>
                 </div>
 
                 {ref ? (
@@ -512,6 +544,7 @@ export default async function InventoryMovementsPage({
                 <TableHeaderCell>Saldo final</TableHeaderCell>
                 <TableHeaderCell>Unidad</TableHeaderCell>
                 <TableHeaderCell>Como se registro</TableHeaderCell>
+                <TableHeaderCell>Hecho por</TableHeaderCell>
                 <TableHeaderCell>Detalle</TableHeaderCell>
               </tr>
             </thead>
@@ -533,6 +566,7 @@ export default async function InventoryMovementsPage({
                 const inputUnit = row.input_unit_code ?? "";
                 const factor = row.conversion_factor_to_stock;
                 const ref = String((row as { note?: string | null }).note ?? "");
+                const responsible = employeeNameMap.get(String(row.created_by ?? "")) ?? "-";
                 const captureLabel =
                   inputQty != null && inputUnit
                     ? `${inputQty} ${inputUnit}${factor && factor !== 1 ? ` (x${factor})` : ""}`
@@ -574,6 +608,7 @@ export default async function InventoryMovementsPage({
                     <TableCell>{balances.closing}</TableCell>
                     <TableCell>{unit}</TableCell>
                     <TableCell>{captureLabel}</TableCell>
+                    <TableCell>{responsible}</TableCell>
                     <TableCell>{ref || "-"}</TableCell>
                   </tr>
                 );
@@ -581,7 +616,7 @@ export default async function InventoryMovementsPage({
 
               {!error && movements.length === 0 ? (
                 <tr>
-                  <TableCell colSpan={9} className="ui-empty">
+                  <TableCell colSpan={11} className="ui-empty">
                     No hay movimientos para mostrar (o RLS no te permite verlos).
                   </TableCell>
                 </tr>

@@ -42,6 +42,17 @@ import { buildPrepareFingerprintHash } from "./prepare-fingerprint";
 export const dynamic = "force-dynamic";
 const APP_ID = "nexo";
 
+type TraceEmployeeRow = {
+  id: string;
+  full_name: string | null;
+  alias: string | null;
+};
+
+function displayTraceEmployee(employee?: TraceEmployeeRow | null): string {
+  if (!employee) return "-";
+  return String(employee.alias ?? employee.full_name ?? employee.id).trim() || employee.id;
+}
+
 export default async function RemissionDetailPage({
   params,
   searchParams,
@@ -175,6 +186,29 @@ export default async function RemissionDetailPage({
       </div>
     );
   }
+
+  const traceEmployeeIds = Array.from(
+    new Set(
+      [
+        String(request.created_by ?? ""),
+        String(request.prepared_by ?? ""),
+        String(request.in_transit_by ?? ""),
+        String(request.received_by ?? ""),
+      ].filter(Boolean)
+    )
+  );
+  const { data: traceEmployeesData } = traceEmployeeIds.length
+    ? await supabase
+        .from("employees")
+        .select("id,full_name,alias")
+        .in("id", traceEmployeeIds)
+    : { data: [] as TraceEmployeeRow[] };
+  const traceEmployeeMap = new Map(
+    ((traceEmployeesData ?? []) as TraceEmployeeRow[]).map((employee) => [
+      employee.id,
+      displayTraceEmployee(employee),
+    ])
+  );
 
   const currentStatus = String(request.status ?? "");
   const pendingReceiptLines = summary.pending_receipt_lines;
@@ -356,6 +390,33 @@ export default async function RemissionDetailPage({
     : "Sin fecha esperada";
   const createdAtLabel = formatDateTime(request.created_at);
   const notesLabel = request.notes ?? "-";
+  const traceability = [
+    request.created_by
+      ? {
+          label: "Solicito",
+          value: traceEmployeeMap.get(String(request.created_by)) ?? String(request.created_by),
+        }
+      : null,
+    request.prepared_by
+      ? {
+          label: "Preparo",
+          value: traceEmployeeMap.get(String(request.prepared_by)) ?? String(request.prepared_by),
+        }
+      : null,
+    request.in_transit_by
+      ? {
+          label: "Despacho",
+          value:
+            traceEmployeeMap.get(String(request.in_transit_by)) ?? String(request.in_transit_by),
+        }
+      : null,
+    request.received_by
+      ? {
+          label: "Recibio",
+          value: traceEmployeeMap.get(String(request.received_by)) ?? String(request.received_by),
+        }
+      : null,
+  ].filter(Boolean) as Array<{ label: string; value: string }>;
   const draftPrepareLines = canEditPrepareItems
     ? itemRows.map((item) => {
       const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
@@ -458,6 +519,7 @@ export default async function RemissionDetailPage({
           request.expected_date ? `Entrega esperada ${expectedDateLabel}` : expectedDateLabel
         }
         responsibleActor={responsibleActor}
+        traceability={traceability}
       />
 
       {!compactSatelliteView ? (
@@ -523,6 +585,7 @@ export default async function RemissionDetailPage({
         currentStatusLabel={currentStatusMetaEffective.label}
         stateSupportText={stateSupportTextEffective}
         responsibleActor={responsibleActor}
+        traceability={traceability}
       />
 
       {partialResolutionBanner ? (

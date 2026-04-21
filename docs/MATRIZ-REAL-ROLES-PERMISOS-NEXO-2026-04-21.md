@@ -213,14 +213,31 @@ No debe ver:
 - Configuracion
 - Impresion
 
-### cocinero
+### cocinero en satelite
 Debe ver:
 - Panel
 - Pedir y recibir
 - Retiros
+
+No debe ver:
+- Lotes de produccion
+- Entradas
+- Conteos
+- Traslados
+- Ajustes
+- Stock global
+- Movimientos
+- Configuracion
+- Impresion
+
+### cocinero en Centro de Produccion
+Debe ver:
+- Panel
+- Retiros
 - Lotes de produccion
 
 No debe ver:
+- Pedir y recibir
 - Entradas
 - Conteos
 - Traslados

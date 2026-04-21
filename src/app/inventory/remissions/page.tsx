@@ -114,6 +114,18 @@ type RemissionRow = {
   to_site_id: string | null;
   notes: string | null;
   created_by?: string | null;
+  prepared_by?: string | null;
+  prepared_at?: string | null;
+  in_transit_by?: string | null;
+  in_transit_at?: string | null;
+  received_by?: string | null;
+  received_at?: string | null;
+};
+
+type EmployeeNameRow = {
+  id: string;
+  full_name: string | null;
+  alias: string | null;
 };
 
 type ProductAudience = "SAUDO" | "VCF" | "BOTH" | "INTERNAL";
@@ -244,6 +256,27 @@ function formatDateTime(value: string | null | undefined): string {
     hour: "2-digit",
     minute: "2-digit",
   }).format(date);
+}
+
+function displayEmployeeName(employee?: EmployeeNameRow | null): string {
+  if (!employee) return "-";
+  return String(employee.alias ?? employee.full_name ?? employee.id).trim() || employee.id;
+}
+
+function buildRemissionTraceSummary(
+  row: RemissionRow,
+  employeeNameMap: Map<string, string>
+): string {
+  const steps: string[] = [];
+  const requestedBy = employeeNameMap.get(String(row.created_by ?? ""));
+  if (requestedBy) steps.push(`Solicito: ${requestedBy}`);
+  const preparedBy = employeeNameMap.get(String(row.prepared_by ?? ""));
+  if (preparedBy) steps.push(`Preparo: ${preparedBy}`);
+  const dispatchedBy = employeeNameMap.get(String(row.in_transit_by ?? ""));
+  if (dispatchedBy) steps.push(`Despacho: ${dispatchedBy}`);
+  const receivedBy = employeeNameMap.get(String(row.received_by ?? ""));
+  if (receivedBy) steps.push(`Recibio: ${receivedBy}`);
+  return steps.length ? steps.join(" · ") : "Sin trazabilidad visible todavia";
 }
 
 type RemissionListAction = "view" | "edit" | "cancel" | "delete" | "reverse_cancel";
@@ -912,7 +945,9 @@ export default async function RemissionsPage({
       : fulfillmentSiteRows[0]?.id ?? "";
   let remissionsQuery = supabase
     .from("restock_requests")
-    .select("id, created_at, status, from_site_id, to_site_id, notes, created_by")
+    .select(
+      "id, created_at, status, from_site_id, to_site_id, notes, created_by, prepared_by, prepared_at, in_transit_by, in_transit_at, received_by, received_at"
+    )
     .order("created_at", { ascending: false })
     .limit(50);
 
@@ -924,6 +959,30 @@ export default async function RemissionsPage({
   }
   const { data: remissions } = await remissionsQuery;
   const remissionRows = (remissions ?? []) as RemissionRow[];
+  const remissionActorIds = Array.from(
+    new Set(
+      remissionRows
+        .flatMap((row) => [
+          String(row.created_by ?? ""),
+          String(row.prepared_by ?? ""),
+          String(row.in_transit_by ?? ""),
+          String(row.received_by ?? ""),
+        ])
+        .filter(Boolean)
+    )
+  );
+  const { data: remissionEmployeesData } = remissionActorIds.length
+    ? await supabase
+        .from("employees")
+        .select("id,full_name,alias")
+        .in("id", remissionActorIds)
+    : { data: [] as EmployeeNameRow[] };
+  const remissionEmployeeMap = new Map(
+    ((remissionEmployeesData ?? []) as EmployeeNameRow[]).map((employee) => [
+      employee.id,
+      displayEmployeeName(employee),
+    ])
+  );
 
   const areaFilterSiteId = canCreate ? activeSiteId : selectedFromSiteId;
   const { data: areas } = areaFilterSiteId
@@ -1373,7 +1432,7 @@ export default async function RemissionsPage({
                 <TableHeaderCell>Estado</TableHeaderCell>
                 {viewMode !== "bodega" ? <TableHeaderCell>Origen</TableHeaderCell> : null}
                 {viewMode !== "satélite" ? <TableHeaderCell>Destino</TableHeaderCell> : null}
-                {!compactOperatorView ? <TableHeaderCell>Notas</TableHeaderCell> : null}
+                {!compactOperatorView ? <TableHeaderCell>Trazabilidad</TableHeaderCell> : null}
                 <TableHeaderCell>Acciones</TableHeaderCell>
               </tr>
             </thead>
@@ -1416,7 +1475,14 @@ export default async function RemissionsPage({
                         {siteMap.get(toSiteId)?.name ?? toSiteId}
                       </TableCell>
                     ) : null}
-                    {!compactOperatorView ? <TableCell>{row.notes ?? ""}</TableCell> : null}
+                    {!compactOperatorView ? (
+                      <TableCell>
+                        <div className="font-medium text-[var(--ui-text)]">
+                          {buildRemissionTraceSummary(row, remissionEmployeeMap)}
+                        </div>
+                        {row.notes ? <div className="ui-caption mt-1">Nota: {row.notes}</div> : null}
+                      </TableCell>
+                    ) : null}
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-2">
                         <Link
@@ -1539,7 +1605,7 @@ export default async function RemissionsPage({
                 <TableHeaderCell>Estado</TableHeaderCell>
                 {viewMode !== "bodega" ? <TableHeaderCell>Origen</TableHeaderCell> : null}
                 {viewMode !== "satélite" ? <TableHeaderCell>Destino</TableHeaderCell> : null}
-                {!compactOperatorView ? <TableHeaderCell>Notas</TableHeaderCell> : null}
+                {!compactOperatorView ? <TableHeaderCell>Trazabilidad</TableHeaderCell> : null}
                 <TableHeaderCell>Acciones</TableHeaderCell>
               </tr>
             </thead>
@@ -1578,7 +1644,14 @@ export default async function RemissionsPage({
                     {viewMode !== "satélite" ? (
                       <TableCell>{siteMap.get(toSiteId)?.name ?? toSiteId}</TableCell>
                     ) : null}
-                    {!compactOperatorView ? <TableCell>{row.notes ?? ""}</TableCell> : null}
+                    {!compactOperatorView ? (
+                      <TableCell>
+                        <div className="font-medium text-[var(--ui-text)]">
+                          {buildRemissionTraceSummary(row, remissionEmployeeMap)}
+                        </div>
+                        {row.notes ? <div className="ui-caption mt-1">Nota: {row.notes}</div> : null}
+                      </TableCell>
+                    ) : null}
                     <TableCell>
                       <div className="flex flex-wrap items-center gap-2">
                         <Link

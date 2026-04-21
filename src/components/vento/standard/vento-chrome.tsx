@@ -535,7 +535,9 @@ export function VentoChrome({
       return new Set(["/", "/inventory/remissions", "/inventory/withdraw"]);
     }
     if (normalizedRole === "cocinero") {
-      return new Set(["/", "/inventory/remissions", "/inventory/withdraw", "/inventory/production-batches"]);
+      return currentSiteType === "satellite"
+        ? new Set(["/", "/inventory/remissions", "/inventory/withdraw"])
+        : new Set(["/", "/inventory/withdraw", "/inventory/production-batches"]);
     }
     if (["panadero", "repostero", "pastelero"].includes(normalizedRole)) {
       return new Set(["/", "/inventory/withdraw", "/inventory/production-batches"]);

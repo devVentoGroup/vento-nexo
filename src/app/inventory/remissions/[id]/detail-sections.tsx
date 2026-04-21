@@ -14,6 +14,7 @@ type HeroProps = {
   activeSignals: number;
   expectedDateLabel: string;
   responsibleActor: string;
+  traceability?: Array<{ label: string; value: string }>;
 };
 
 export function RemissionHeroSection(props: HeroProps) {
@@ -31,6 +32,7 @@ export function RemissionHeroSection(props: HeroProps) {
     activeSignals,
     expectedDateLabel,
     responsibleActor,
+    traceability = [],
   } = props;
 
   return (
@@ -71,6 +73,21 @@ export function RemissionHeroSection(props: HeroProps) {
               <div className="mt-2 text-base font-semibold text-[var(--ui-text)]">{responsibleActor}</div>
               <div className="ui-remission-kpi-note">Responsable operativo visible</div>
             </div>
+            <div className="ui-remission-kpi">
+              <div className="ui-remission-kpi-label">Trazabilidad</div>
+              <div className="mt-2 space-y-1 text-sm text-[var(--ui-text)]">
+                {traceability.length ? (
+                  traceability.map((item) => (
+                    <div key={item.label}>
+                      <span className="font-semibold">{item.label}:</span> {item.value}
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-[var(--ui-muted)]">Sin trazabilidad visible todavia</div>
+                )}
+              </div>
+              <div className="ui-remission-kpi-note">Quien solicito, preparo, despacho y recibio</div>
+            </div>
             <div className="ui-remission-kpi" data-tone="cool">
               <div className="ui-remission-kpi-label">Lineas</div>
               <div className="ui-remission-kpi-value">{itemCount}</div>
@@ -99,6 +116,7 @@ type SummaryProps = {
   currentStatusLabel: string;
   stateSupportText: string;
   responsibleActor: string;
+  traceability?: Array<{ label: string; value: string }>;
 };
 
 export function RemissionSummarySection(props: SummaryProps) {
@@ -113,6 +131,7 @@ export function RemissionSummarySection(props: SummaryProps) {
     currentStatusLabel,
     stateSupportText,
     responsibleActor,
+    traceability = [],
   } = props;
 
   if (compactSatelliteView) {
@@ -171,6 +190,17 @@ export function RemissionSummarySection(props: SummaryProps) {
         </div>
         <div className="mt-3 ui-caption">
           Actor actual: <strong>{responsibleActor}</strong>
+        </div>
+        <div className="mt-3 space-y-1 ui-caption">
+          {traceability.length ? (
+            traceability.map((item) => (
+              <div key={item.label}>
+                <strong>{item.label}:</strong> {item.value}
+              </div>
+            ))
+          ) : (
+            <div>Sin trazabilidad visible todavia.</div>
+          )}
         </div>
         <div className="mt-3 ui-caption">{stateSupportText}</div>
       </div>

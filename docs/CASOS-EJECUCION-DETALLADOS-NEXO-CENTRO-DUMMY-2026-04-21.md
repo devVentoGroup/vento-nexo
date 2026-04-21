@@ -481,7 +481,7 @@ Resultado esperado:
 ---
 
 ### Caso NEXO-PRM-005 | Rol cocinero en Centro de Produccion
-Objetivo: confirmar que cocinero solo ve lo necesario para pedir, retirar y consultar lotes.
+Objetivo: confirmar que cocinero de Centro solo ve retiros y lotes.
 
 Contexto exacto:
 - Rol: `cocinero`
@@ -494,10 +494,10 @@ Pasos:
 4. Recarga la app.
 5. Abre el menu lateral.
 6. Entra a:
-   - `/inventory/remissions`
    - `/inventory/withdraw`
    - `/inventory/production-batches`
 7. Intenta abrir manualmente:
+   - `/inventory/remissions`
    - `/inventory/entries`
    - `/inventory/count-initial`
    - `/inventory/transfers`
@@ -508,11 +508,11 @@ Pasos:
 
 Debe aparecer en menu:
 - `Panel`
-- `Pedir y recibir`
 - `Retiros`
 - `Lotes de produccion`
 
 No debe aparecer en menu:
+- `Pedir y recibir`
 - `Entradas`
 - `Conteos`
 - `Traslados`
@@ -525,8 +525,56 @@ No debe aparecer en menu:
 - cualquier configuracion
 
 Resultado esperado:
-- `cocinero` puede retirar y operar su flujo de produccion.
+- `cocinero` de Centro puede retirar y operar su flujo de produccion.
 - `cocinero` no ve vistas administrativas de inventario.
+
+---
+
+### Caso NEXO-PRM-005B | Rol cocinero en sede satelite
+Objetivo: confirmar que cocinero de satelite pide, recibe y retira, pero no opera lotes.
+
+Contexto exacto:
+- Rol: `cocinero`
+- Sede: una sede tipo `Satelite`
+
+Pasos:
+1. Cambia tu rol a `cocinero`.
+2. Cambia tu sede a una sede tipo `Satelite`.
+3. Vuelve al home.
+4. Recarga la app.
+5. Abre el menu lateral.
+6. Entra a:
+   - `/inventory/remissions`
+   - `/inventory/withdraw`
+7. Intenta abrir manualmente:
+   - `/inventory/production-batches`
+   - `/inventory/entries`
+   - `/inventory/count-initial`
+   - `/inventory/transfers`
+   - `/inventory/adjust`
+   - `/inventory/stock`
+   - `/inventory/movements`
+   - `/printing/jobs`
+
+Debe aparecer en menu:
+- `Panel`
+- `Pedir y recibir`
+- `Retiros`
+
+No debe aparecer en menu:
+- `Lotes de produccion`
+- `Entradas`
+- `Conteos`
+- `Traslados`
+- `Ajustes`
+- `Stock`
+- `Movimientos`
+- `Impresion`
+- cualquier configuracion
+
+Resultado esperado:
+- `cocinero` de satelite puede pedir, recibir y retirar.
+- `cocinero` de satelite no debe ver lotes de produccion ni vistas administrativas.
 
 ---
 
