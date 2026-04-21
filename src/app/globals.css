@@ -1113,3 +1113,59 @@ input[type="number"]::-webkit-inner-spin-button {
   -webkit-appearance: none;
   margin: 0;
 }
+
+.print-only {
+  display: none;
+}
+
+@media print {
+  @page {
+    size: auto;
+    margin: 10mm;
+  }
+
+  html,
+  body {
+    background: #fff !important;
+  }
+
+  body * {
+    visibility: hidden;
+  }
+
+  .print-hidden {
+    display: none !important;
+  }
+
+  .print-only,
+  .print-only * {
+    visibility: visible !important;
+  }
+
+  .print-only {
+    display: block !important;
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    background: #fff;
+  }
+
+  .print-sheet {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10mm;
+    align-items: start;
+    justify-items: center;
+    padding: 0;
+  }
+
+  .print-label-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 85mm;
+  }
+}

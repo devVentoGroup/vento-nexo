@@ -24,6 +24,7 @@ import { usePreviewZpl } from "./_hooks/usePreviewZpl";
 import { ConfigPanel } from "./_components/ConfigPanel";
 import { QueuePanel } from "./_components/QueuePanel";
 import { PreviewPanel } from "./_components/PreviewPanel";
+import { PrintSheet } from "./_components/PrintSheet";
 import type { LabelTemplate } from "../designer/_lib/types";
 import { loadTemplate, loadTemplates } from "../designer/_lib/template-storage";
 import { templateToZplBatch } from "../designer/_lib/template-to-zpl";
@@ -203,6 +204,25 @@ function PrintingJobsContent() {
       }),
     };
   }, [activeLayout, baseUrl, previewItems]);
+  const printLayoutSheets = useMemo(() => {
+    if (!activeLayout) return null;
+    const origin = baseUrl.replace(/\/$/, "");
+    return parsedQueue.map((item) => ({
+      ...activeLayout,
+      elements: activeLayout.elements.map((el) => {
+        if (el.id === "el_code") return { ...el, content: item.code };
+        if (el.id === "el_dm") return { ...el, content: encodeVento("LOC", item.code) };
+        if (el.id === "el_qr") {
+          return {
+            ...el,
+            content: `${origin}/inventory/locations/open?loc=${encodeURIComponent(item.code)}`,
+          };
+        }
+        if (el.id === "el_desc") return { ...el, content: item.note ?? "" };
+        return el;
+      }),
+    }));
+  }, [activeLayout, baseUrl, parsedQueue]);
 
   usePreviewZpl(
     preset,
@@ -538,6 +558,14 @@ function PrintingJobsContent() {
     window.history.replaceState({}, "", url.toString());
   }
 
+  function printInBrowser() {
+    if (!parsedQueue.length) {
+      setStatus("Cola vacía.");
+      return;
+    }
+    window.print();
+  }
+
   const hasQueue = parsedQueue.length > 0;
   const previewZplHasError = previewZpl.startsWith("// Error");
   const previewShowImage = false;
@@ -569,6 +597,7 @@ function PrintingJobsContent() {
       <Script src={BROWSERPRINT_CORE} strategy="afterInteractive" />
       <Script src={BROWSERPRINT_ZEBRA} strategy="afterInteractive" />
 
+      <div className="print-hidden">
       <section className="ui-remission-hero ui-fade-up">
         <div className="ui-remission-hero-grid">
           <div>
@@ -615,6 +644,14 @@ function PrintingJobsContent() {
           )}
         </div>
         <div className="flex gap-2">
+          <button
+            type="button"
+            className="ui-btn ui-btn--ghost ui-btn--sm"
+            onClick={printInBrowser}
+            disabled={!hasQueue}
+          >
+            Imprimir en hoja
+          </button>
           <button
             type="button"
             className="ui-btn ui-btn--ghost ui-btn--sm"
@@ -855,6 +892,18 @@ function PrintingJobsContent() {
           </div>
         </div>
       ) : null}
+      </div>
+
+      <PrintSheet
+        preset={preset}
+        title={title}
+        barcodeKind={barcodeKind}
+        previewLocVariant={previewLocVariant}
+        previewBarcodeScale={previewBarcodeScale}
+        previewItems={parsedQueue.length ? parsedQueue : previewItems}
+        previewQrBase={baseUrl}
+        activeLayoutSheets={printLayoutSheets}
+      />
     </div>
   );
 }
