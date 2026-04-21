@@ -8,6 +8,7 @@ import { AppSwitcher } from "./app-switcher";
 import { ProfileMenu } from "./profile-menu";
 import { VentoLogo } from "./vento-logo";
 import { createClient } from "@/lib/supabase/client";
+import { ROLE_OVERRIDE_COOKIE, PRIVILEGED_ROLE_OVERRIDES } from "@/lib/auth/role-override-config";
 
 type SiteOption = {
   id: string;
@@ -392,6 +393,7 @@ export function VentoChrome({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [overrideRole, setOverrideRole] = useState<string | null>(null);
   const [permMap, setPermMap] = useState<Record<string, boolean>>({});
   const [permissionsReady, setPermissionsReady] = useState(false);
   const authRecoveryRef = useRef(false);
@@ -486,7 +488,10 @@ export function VentoChrome({
   }, [currentSiteId, activeSiteId, permissionCodes]);
 
   const can = (code?: string) => (code ? Boolean(permMap[code]) : false);
-  const normalizedRole = String(role ?? "").toLowerCase();
+  const actualRole = String(role ?? "").toLowerCase();
+  const canUseRoleOverride = Boolean(actualRole) && PRIVILEGED_ROLE_OVERRIDES.has(actualRole) && Boolean(overrideRole);
+  const effectiveRole = canUseRoleOverride ? String(overrideRole ?? "").toLowerCase() : actualRole;
+  const normalizedRole = effectiveRole;
   const isManagementRole = ["propietario", "gerente_general", "admin", "manager", "gerente"].includes(
     normalizedRole
   );
@@ -710,3 +715,5 @@ export function VentoChrome({
     </div>
   );
 }
+
+
