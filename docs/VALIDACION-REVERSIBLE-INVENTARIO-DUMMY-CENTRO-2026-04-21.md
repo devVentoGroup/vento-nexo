@@ -12,7 +12,7 @@ Sede objetivo: `CENTRO_PROD`
 
 LOCs usados:
 - `LOC-CP-BOD-MAIN` | Bodega principal
-- `LOC-CP-SECOS-MAIN` | Secos
+- `LOC-CP-SECOS1-MAIN` | Secos
 - `LOC-CP-FRIO-MAIN` | Cuarto frio
 - `LOC-CP-CONG-MAIN` | Congelados
 - `LOC-CP-N2P-MAIN` | Nevera produccion
@@ -67,3 +67,4 @@ Productos dummy:
 
 ## Criterio de limpieza
 Al terminar, no dejes estos productos en el sistema. Ejecuta siempre el cleanup el mismo dia de la prueba o antes de comenzar una nueva ronda.
+

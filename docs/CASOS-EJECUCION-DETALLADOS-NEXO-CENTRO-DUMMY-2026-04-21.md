@@ -16,7 +16,7 @@ Antes de empezar, confirma todo esto:
 
 ## LOCs validos para esta ronda
 - `LOC-CP-BOD-MAIN` | Bodega principal
-- `LOC-CP-SECOS-MAIN` | Secos
+- `LOC-CP-SECOS1-MAIN` | Secos
 - `LOC-CP-FRIO-MAIN` | Cuarto frio
 - `LOC-CP-CONG-MAIN` | Congelados
 - `LOC-CP-N2P-MAIN` | Nevera produccion
@@ -362,3 +362,4 @@ La ronda dummy se considera aprobada si:
 - El regreso despues del retiro vuelve al landing del LOC.
 - Los movimientos reflejan lo ejecutado.
 - El cleanup deja el sistema limpio.
+

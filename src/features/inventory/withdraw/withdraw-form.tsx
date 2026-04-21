@@ -313,7 +313,7 @@ export function WithdrawForm({
                         placeholder="Selecciona producto"
                         searchPlaceholder="Buscar producto..."
                         sheetTitle="Selecciona producto"
-                        mobilePresentation="sheet"
+                        mobilePresentation="native"
                         mobileBreakpointPx={1024}
                         dropdownMode="inline"
                       />

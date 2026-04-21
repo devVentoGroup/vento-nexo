@@ -172,13 +172,13 @@ with seed_rows as (
   from (
     values
       ('TEST-NEXO-CP-001', 'LOC-CP-BOD-MAIN', 10::numeric, 'TEST NEXO CP seed stock - Bodega principal'),
-      ('TEST-NEXO-CP-002', 'LOC-CP-SECOS-MAIN', 10::numeric, 'TEST NEXO CP seed stock - Secos'),
+      ('TEST-NEXO-CP-002', 'LOC-CP-SECOS1-MAIN', 10::numeric, 'TEST NEXO CP seed stock - Secos'),
       ('TEST-NEXO-CP-003', 'LOC-CP-FRIO-MAIN', 8::numeric, 'TEST NEXO CP seed stock - Cuarto frio'),
       ('TEST-NEXO-CP-004', 'LOC-CP-CONG-MAIN', 6::numeric, 'TEST NEXO CP seed stock - Congelados'),
       ('TEST-NEXO-CP-005', 'LOC-CP-N2P-MAIN', 4::numeric, 'TEST NEXO CP seed stock - Nevera produccion'),
       ('TEST-NEXO-CP-006', 'LOC-CP-N3P-MAIN', 3::numeric, 'TEST NEXO CP seed stock - Nevera despacho'),
       ('TEST-NEXO-CP-007', 'LOC-CP-BOD-MAIN', 5::numeric, 'TEST NEXO CP seed stock - Multi LOC tramo Bodega principal'),
-      ('TEST-NEXO-CP-007', 'LOC-CP-SECOS-MAIN', 7::numeric, 'TEST NEXO CP seed stock - Multi LOC tramo Secos')
+      ('TEST-NEXO-CP-007', 'LOC-CP-SECOS1-MAIN', 7::numeric, 'TEST NEXO CP seed stock - Multi LOC tramo Secos')
   ) as seed(sku, location_code, qty, note)
   join public.products prod
     on prod.sku = seed.sku
@@ -260,13 +260,13 @@ with location_rows as (
   from (
     values
       ('TEST-NEXO-CP-001', 'LOC-CP-BOD-MAIN', 10::numeric),
-      ('TEST-NEXO-CP-002', 'LOC-CP-SECOS-MAIN', 10::numeric),
+      ('TEST-NEXO-CP-002', 'LOC-CP-SECOS1-MAIN', 10::numeric),
       ('TEST-NEXO-CP-003', 'LOC-CP-FRIO-MAIN', 8::numeric),
       ('TEST-NEXO-CP-004', 'LOC-CP-CONG-MAIN', 6::numeric),
       ('TEST-NEXO-CP-005', 'LOC-CP-N2P-MAIN', 4::numeric),
       ('TEST-NEXO-CP-006', 'LOC-CP-N3P-MAIN', 3::numeric),
       ('TEST-NEXO-CP-007', 'LOC-CP-BOD-MAIN', 5::numeric),
-      ('TEST-NEXO-CP-007', 'LOC-CP-SECOS-MAIN', 7::numeric)
+      ('TEST-NEXO-CP-007', 'LOC-CP-SECOS1-MAIN', 7::numeric)
   ) as seed(sku, location_code, qty)
   join public.products prod
     on prod.sku = seed.sku
@@ -281,3 +281,4 @@ set current_qty = public.inventory_stock_by_location.current_qty + excluded.curr
     updated_at = now();
 
 commit;
+
