@@ -27,6 +27,27 @@ const MOVEMENT_TYPES_BY_GROUP: { label: string; types: string[] }[] = [
   },
   { label: "Traslado", types: ["transfer_internal", "transfer_in", "transfer_out"] },
 ];
+
+const MOVEMENT_TYPE_LABELS: Record<string, string> = {
+  adjustment: "Ajuste",
+  initial_count: "Conteo inicial",
+  count: "Conteo",
+  receipt_in: "Entrada",
+  receipt: "Entrada",
+  purchase_in: "Compra recibida",
+  restock_in: "Entrada por remision",
+  production_in: "Ingreso de produccion",
+  consumption: "Retiro",
+  sale_out: "Salida por venta",
+  restock_out: "Salida por remision",
+  production_out: "Salida a produccion",
+  issue_internal: "Consumo interno",
+  waste: "Merma",
+  shrink: "Perdida",
+  transfer_internal: "Traslado interno",
+  transfer_in: "Traslado recibido",
+  transfer_out: "Traslado enviado",
+};
 type SiteRow = {
   site_id: string;
   is_primary: boolean | null;
@@ -51,6 +72,32 @@ function startOfDayIso(dateStr: string) {
 
 function endOfDayIso(dateStr: string) {
   return `${dateStr}T23:59:59`;
+}
+
+function formatMovementType(value: string) {
+  return MOVEMENT_TYPE_LABELS[value] ?? value.replaceAll("_", " ");
+}
+
+function formatMovementDate(value: string) {
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  return parsed.toLocaleString("es-CO", {
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function movementTone(value: string) {
+  if (["receipt_in", "receipt", "purchase_in", "restock_in", "production_in", "transfer_in"].includes(value)) {
+    return "success";
+  }
+  if (["consumption", "sale_out", "restock_out", "production_out", "issue_internal", "waste", "shrink", "transfer_out"].includes(value)) {
+    return "warn";
+  }
+  return "neutral";
 }
 
 export default async function InventoryMovementsPage({
@@ -164,27 +211,27 @@ export default async function InventoryMovementsPage({
           <div>
             <span className="ui-chip ui-chip--brand">{siteLabel}</span>
             <h1 className="mt-4 text-3xl font-semibold tracking-[-0.03em] text-[var(--ui-text)]">
-              Movimientos
+              Historial de inventario
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--ui-muted)] sm:text-base">
-              Ledger vivo del inventario para seguir entradas, salidas, ajustes y remisiones desde un solo lugar.
+              Aqui ves lo que entro, salio, se traslado o se ajusto. La idea es poder responder rapido: que paso, cuando paso y en que producto.
             </p>
           </div>
           <div className="ui-remission-kpis">
             <div className="ui-remission-kpi">
               <div className="ui-remission-kpi-label">Registros</div>
               <div className="ui-remission-kpi-value">{movements.length}</div>
-              <div className="ui-remission-kpi-note">Hasta 200 movimientos recientes</div>
+              <div className="ui-remission-kpi-note">Ultimos 200 movimientos visibles</div>
             </div>
             <div className="ui-remission-kpi" data-tone="success">
               <div className="ui-remission-kpi-label">Entradas</div>
               <div className="ui-remission-kpi-value">{positiveCount}</div>
-              <div className="ui-remission-kpi-note">Cantidades positivas</div>
+              <div className="ui-remission-kpi-note">Lo que aumento inventario</div>
             </div>
             <div className="ui-remission-kpi" data-tone="cool">
               <div className="ui-remission-kpi-label">Salidas</div>
               <div className="ui-remission-kpi-value">{negativeCount}</div>
-              <div className="ui-remission-kpi-note">Cantidades negativas</div>
+              <div className="ui-remission-kpi-note">Lo que desconto inventario</div>
             </div>
           </div>
         </div>
@@ -226,7 +273,7 @@ export default async function InventoryMovementsPage({
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <div className="ui-h3">Filtros</div>
-            <div className="mt-1 ui-caption">Recorta por sede, tipo, producto o rango sin salir del ledger.</div>
+            <div className="mt-1 ui-caption">Usa estos filtros si quieres encontrar algo puntual sin leer toda la lista.</div>
           </div>
           <div className="flex flex-wrap gap-2">
             <span className="ui-chip">{siteLabel}</span>
@@ -264,7 +311,7 @@ export default async function InventoryMovementsPage({
                 <optgroup key={group.label} label={group.label}>
                   {group.types.map((t) => (
                     <option key={t} value={t}>
-                      {t}
+                      {formatMovementType(t)}
                     </option>
                   ))}
                 </optgroup>
@@ -330,7 +377,7 @@ export default async function InventoryMovementsPage({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <div className="ui-h3">Movimientos</div>
-            <div className="mt-1 ui-caption">Mostrando hasta 200 registros.</div>
+            <div className="mt-1 ui-caption">Lectura rapida de lo que se movio en inventario.</div>
           </div>
           <div className="flex flex-wrap gap-2">
             <span className="ui-chip">{movements.length} visibles</span>
@@ -339,7 +386,85 @@ export default async function InventoryMovementsPage({
           </div>
         </div>
 
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-4 space-y-3 lg:hidden">
+          {movements.map((row) => {
+            const createdAt = String(row.created_at ?? "");
+            const type = String(row.movement_type ?? "");
+            const site = String(row.site_id ?? "");
+            const product = row.product ?? null;
+            const productLabel = product?.name ?? row.product_id ?? "";
+            const productSku = product?.sku ?? "";
+            const qtyValue = Number(row.quantity ?? 0);
+            const qty = String(row.quantity ?? "");
+            const unit = String(row.stock_unit_code ?? product?.stock_unit_code ?? product?.unit ?? "");
+            const inputQty = row.input_qty;
+            const inputUnit = row.input_unit_code ?? "";
+            const factor = row.conversion_factor_to_stock;
+            const ref = String((row as { note?: string | null }).note ?? "");
+            const captureLabel =
+              inputQty != null && inputUnit
+                ? `${inputQty} ${inputUnit}${factor && factor !== 1 ? ` (x${factor})` : ""}`
+                : "Sin detalle";
+
+            return (
+              <div key={String(row.id ?? `${createdAt}-${productLabel}-${qty}`)} className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
+                <div className="flex items-start justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-semibold text-[var(--ui-text)]">{productLabel}</div>
+                    {productSku ? <div className="mt-1 text-xs text-[var(--ui-muted)]">{productSku}</div> : null}
+                  </div>
+                  <span
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                      movementTone(type) === "success"
+                        ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : movementTone(type) === "warn"
+                          ? "border border-amber-200 bg-amber-50 text-amber-800"
+                          : "border border-slate-200 bg-slate-100 text-slate-700"
+                    }`}
+                  >
+                    {formatMovementType(type)}
+                  </span>
+                </div>
+
+                <div className="mt-4 grid grid-cols-2 gap-3">
+                  <div className="rounded-xl bg-[var(--ui-bg-soft)] p-3">
+                    <div className="text-xs text-[var(--ui-muted)]">Fecha</div>
+                    <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">{formatMovementDate(createdAt)}</div>
+                  </div>
+                  <div className="rounded-xl bg-[var(--ui-bg-soft)] p-3">
+                    <div className="text-xs text-[var(--ui-muted)]">Cantidad</div>
+                    <div className={`mt-1 text-base font-semibold ${qtyValue < 0 ? "text-amber-700" : qtyValue > 0 ? "text-emerald-700" : "text-[var(--ui-text)]"}`}>
+                      {qty} {unit}
+                    </div>
+                  </div>
+                  <div className="rounded-xl bg-[var(--ui-bg-soft)] p-3">
+                    <div className="text-xs text-[var(--ui-muted)]">Sede</div>
+                    <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">{siteNameMap.get(site) ?? site}</div>
+                  </div>
+                  <div className="rounded-xl bg-[var(--ui-bg-soft)] p-3">
+                    <div className="text-xs text-[var(--ui-muted)]">Captura</div>
+                    <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">{captureLabel}</div>
+                  </div>
+                </div>
+
+                {ref ? (
+                  <div className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-2">
+                    <div className="text-xs text-[var(--ui-muted)]">Detalle</div>
+                    <div className="mt-1 text-sm text-[var(--ui-text)]">{ref}</div>
+                  </div>
+                ) : null}
+              </div>
+            );
+          })}
+
+          {!error && movements.length === 0 ? (
+            <div className="ui-empty rounded-2xl border border-[var(--ui-border)] bg-white p-6 text-center">
+              No hay movimientos para mostrar.
+            </div>
+          ) : null}
+        </div>
+
+        <div className="mt-4 hidden overflow-x-auto lg:block">
           <Table>
             <thead>
               <tr>
@@ -347,10 +472,10 @@ export default async function InventoryMovementsPage({
                 <TableHeaderCell>Tipo</TableHeaderCell>
                 <TableHeaderCell>Sede</TableHeaderCell>
                 <TableHeaderCell>Producto</TableHeaderCell>
-                <TableHeaderCell>Qty</TableHeaderCell>
+                <TableHeaderCell>Cantidad</TableHeaderCell>
                 <TableHeaderCell>Unidad</TableHeaderCell>
-                <TableHeaderCell>Captura</TableHeaderCell>
-                <TableHeaderCell>Ref</TableHeaderCell>
+                <TableHeaderCell>Como se registro</TableHeaderCell>
+                <TableHeaderCell>Detalle</TableHeaderCell>
               </tr>
             </thead>
             <tbody>
@@ -361,6 +486,7 @@ export default async function InventoryMovementsPage({
                 const product = row.product ?? null;
                 const productLabel = product?.name ?? row.product_id ?? "";
                 const productSku = product?.sku ?? "";
+                const qtyValue = Number(row.quantity ?? 0);
                 const qty = String(row.quantity ?? "");
                 const unit = String(row.stock_unit_code ?? product?.stock_unit_code ?? product?.unit ?? "");
                 const inputQty = row.input_qty;
@@ -374,17 +500,31 @@ export default async function InventoryMovementsPage({
 
                 return (
                   <tr key={String(row.id ?? `${createdAt}-${product}-${qty}`)} className="ui-body">
-                    <TableCell className="font-mono">{createdAt}</TableCell>
-                    <TableCell>{type}</TableCell>
-                    <TableCell className="font-mono">{siteNameMap.get(site) ?? site}</TableCell>
+                    <TableCell>{formatMovementDate(createdAt)}</TableCell>
                     <TableCell>
-                      <div className="font-mono">{productLabel}</div>
+                      <span
+                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
+                          movementTone(type) === "success"
+                            ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
+                            : movementTone(type) === "warn"
+                              ? "border border-amber-200 bg-amber-50 text-amber-800"
+                              : "border border-slate-200 bg-slate-100 text-slate-700"
+                        }`}
+                      >
+                        {formatMovementType(type)}
+                      </span>
+                    </TableCell>
+                    <TableCell>{siteNameMap.get(site) ?? site}</TableCell>
+                    <TableCell>
+                      <div className="font-semibold text-[var(--ui-text)]">{productLabel}</div>
                       {productSku ? <div className="ui-caption">{productSku}</div> : null}
                     </TableCell>
-                    <TableCell className="font-mono">{qty}</TableCell>
+                    <TableCell className={qtyValue < 0 ? "font-semibold text-amber-700" : qtyValue > 0 ? "font-semibold text-emerald-700" : ""}>
+                      {qty}
+                    </TableCell>
                     <TableCell>{unit}</TableCell>
-                    <TableCell className="font-mono">{captureLabel}</TableCell>
-                    <TableCell className="font-mono">{ref}</TableCell>
+                    <TableCell>{captureLabel}</TableCell>
+                    <TableCell>{ref || "-"}</TableCell>
                   </tr>
                 );
               })}
