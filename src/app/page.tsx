@@ -668,17 +668,6 @@ export default async function Home({
       icon: "arrows",
     },
     {
-      id: "checklist",
-      section: "configure",
-      title: "Checklist",
-      description: "Checklist de salida para setup, salud de datos y rutas.",
-      href: "/inventory/settings/checklist",
-      cta: "Abrir",
-      tone: "secondary",
-      visible: true,
-      icon: "clipboard",
-    },
-    {
       id: "catalog",
       section: "configure",
       title: "Productos maestros",
@@ -868,15 +857,6 @@ export default async function Home({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {!isOperatorFocusMode ? (
-              <Link
-                href="/inventory/settings/checklist"
-                className="ui-btn ui-btn--ghost"
-              >
-                <Icon name="clipboard" className="h-4 w-4" />
-                Checklist
-              </Link>
-            ) : null}
             {isSatellite && canViewRemissions ? (
               <Link
                 href={receiveNowRow ? `/inventory/remissions/${receiveNowRow.id}` : "/inventory/remissions"}

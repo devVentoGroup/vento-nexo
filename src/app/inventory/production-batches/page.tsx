@@ -56,9 +56,6 @@ export default async function ProductionBatchesInfoPage() {
               <Link href="/printing/jobs" className="ui-btn ui-btn--ghost">
                 Ver impresión rápida
               </Link>
-              <Link href="/inventory/settings/checklist" className="ui-btn ui-btn--ghost">
-                Checklist operativo
-              </Link>
             </div>
           </div>
           <div className="ui-remission-kpis sm:grid-cols-3 lg:grid-cols-1">

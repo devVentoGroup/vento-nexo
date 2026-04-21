@@ -149,14 +149,6 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Configurar",
     items: [
       {
-        href: "/inventory/settings/checklist",
-        label: "Checklist",
-        description: "Puesta a punto de Centro y satelites",
-        required: ["access"],
-        allowedRoles: ["propietario", "gerente_general", "gerente", "bodeguero"],
-        icon: "clipboard",
-      },
-      {
         href: "/inventory/catalog",
         label: "Productos",
         description: "Catalogo maestro y activacion por sede",
@@ -171,14 +163,6 @@ const NAV_GROUPS: NavGroup[] = [
         required: ["inventory.locations"],
         allowedRoles: ["propietario", "gerente_general"],
         icon: "map",
-      },
-      {
-        href: "/inventory/validation/locs",
-        label: "Validación de LOCs",
-        description: "Auditoría física de ubicaciones",
-        required: ["inventory.validation"],
-        allowedRoles: ["propietario", "gerente_general", "gerente", "bodeguero"],
-        icon: "clipboard",
       },
       {
         href: "/inventory/settings/supply-routes",
@@ -511,7 +495,6 @@ export function VentoChrome({
         "/inventory/adjust",
         "/inventory/stock",
         "/inventory/movements",
-        "/inventory/validation/locs",
         "/printing/jobs",
       ]);
     }
