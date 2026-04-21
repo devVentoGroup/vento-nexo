@@ -82,6 +82,13 @@ export function ProfileMenu({ name, role, email, sites, activeSiteId: baseActive
   const handleRoleOverride = (value: string | null) => {
     setOverrideRole(value);
     setCookieValue(value);
+    if (typeof window !== "undefined") {
+      window.dispatchEvent(
+        new CustomEvent("nexo-role-override-changed", {
+          detail: { role: value },
+        })
+      );
+    }
     router.refresh();
   };
 

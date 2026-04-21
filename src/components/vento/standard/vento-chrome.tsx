@@ -416,6 +416,36 @@ export function VentoChrome({
   );
 
   useEffect(() => {
+    if (typeof document === "undefined") return;
+
+    const syncOverrideRole = () => {
+      const entry = document.cookie
+        .split("; ")
+        .find((cookie) => cookie.startsWith(`${ROLE_OVERRIDE_COOKIE}=`));
+      if (!entry) {
+        setOverrideRole(null);
+        return;
+      }
+      const value = entry.split("=")[1] ?? "";
+      setOverrideRole(value || null);
+    };
+
+    const onOverrideChanged = (event: Event) => {
+      const detail = (event as CustomEvent<{ role?: string | null }>).detail;
+      setOverrideRole(detail?.role ? String(detail.role) : null);
+    };
+
+    syncOverrideRole();
+    window.addEventListener("nexo-role-override-changed", onOverrideChanged);
+    window.addEventListener("focus", syncOverrideRole);
+
+    return () => {
+      window.removeEventListener("nexo-role-override-changed", onOverrideChanged);
+      window.removeEventListener("focus", syncOverrideRole);
+    };
+  }, [pathname, searchParams]);
+
+  useEffect(() => {
     let isActiveRequest = true;
     const supabase = createClient();
     const siteId = currentSiteId || activeSiteId || null;
