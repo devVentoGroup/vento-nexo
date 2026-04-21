@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { SearchableSingleSelect } from "@/components/inventory/forms/SearchableSingleSelect";
 import {
@@ -67,6 +67,8 @@ export function WithdrawForm({
 }: Props) {
   const [locationId, setLocationId] = useState((defaultLocationId || locations[0]?.id) ?? "");
   const [rows, setRows] = useState<Row[]>([createRow(0)]);
+  const [clientError, setClientError] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const selectedLocation = useMemo(
     () => locations.find((loc) => loc.id === locationId) ?? null,
@@ -141,6 +143,12 @@ export function WithdrawForm({
     setRows((prev) => [...prev, createRow((prev.at(-1)?.id ?? -1) + 1)]);
   };
 
+  useEffect(() => {
+    if (clientError && canSubmit) {
+      setClientError("");
+    }
+  }, [clientError, canSubmit]);
+
   const removeRow = (id: number) => {
     setRows((prev) => (prev.length === 1 ? prev : prev.filter((row) => row.id !== id)));
   };
@@ -170,6 +178,10 @@ export function WithdrawForm({
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
       <form id="withdraw-quick-form" action={action} className="space-y-5 pb-28 lg:pb-0">
         <input type="hidden" name="return_to" value={returnTo} />
+        <div aria-live="polite" className="sr-only">
+          {isSubmitting ? "Registrando retiro" : clientError}
+        </div>
+        
         <section className="ui-panel ui-remission-section ui-fade-up ui-delay-1 space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -411,6 +423,11 @@ export function WithdrawForm({
               );
             })}
           </div>
+          {clientError ? (
+            <div className="rounded-xl border border-red-200 bg-red-50 px-4 py-3 text-sm font-medium text-red-800">
+              {clientError}
+            </div>
+          ) : null}
         </section>
       </form>
 
@@ -459,8 +476,26 @@ export function WithdrawForm({
             )}
           </div>
 
-          <button type="submit" form="withdraw-quick-form" className="ui-btn ui-btn--brand w-full" disabled={!canSubmit}>
-            Registrar retiro
+          <button
+            type="submit"
+            form="withdraw-quick-form"
+            className={`ui-btn ui-btn--brand w-full ${!canSubmit || isSubmitting ? "opacity-70" : ""}`}
+            aria-disabled={!canSubmit || isSubmitting}
+            onClick={(event) => {
+              if (isSubmitting) {
+                event.preventDefault();
+                return;
+              }
+              if (!canSubmit) {
+                event.preventDefault();
+                setClientError("Selecciona un producto y captura una cantidad mayor a 0 antes de registrar el retiro.");
+                return;
+              }
+              setClientError("");
+              setIsSubmitting(true);
+            }}
+          >
+            {isSubmitting ? "Registrando..." : "Registrar retiro"}
           </button>
         </div>
       </aside>
@@ -471,8 +506,26 @@ export function WithdrawForm({
             <div className="text-xs text-[var(--ui-muted)]">{selectedLocLabel}</div>
             <div className="text-sm font-semibold text-[var(--ui-text)]">{linesReady.length} items listos</div>
           </div>
-          <button type="submit" form="withdraw-quick-form" className="ui-btn ui-btn--brand h-12 min-w-[160px]" disabled={!canSubmit}>
-            Registrar retiro
+          <button
+            type="submit"
+            form="withdraw-quick-form"
+            className={`ui-btn ui-btn--brand h-12 min-w-[160px] ${!canSubmit || isSubmitting ? "opacity-70" : ""}`}
+            aria-disabled={!canSubmit || isSubmitting}
+            onClick={(event) => {
+              if (isSubmitting) {
+                event.preventDefault();
+                return;
+              }
+              if (!canSubmit) {
+                event.preventDefault();
+                setClientError("Selecciona un producto y captura una cantidad mayor a 0 antes de registrar el retiro.");
+                return;
+              }
+              setClientError("");
+              setIsSubmitting(true);
+            }}
+          >
+            {isSubmitting ? "Registrando..." : "Registrar retiro"}
           </button>
         </div>
       </div>

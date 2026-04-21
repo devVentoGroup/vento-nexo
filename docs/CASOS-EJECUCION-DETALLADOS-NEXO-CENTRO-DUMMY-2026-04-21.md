@@ -23,13 +23,13 @@ Antes de empezar, confirma todo esto:
 - `LOC-CP-N3P-MAIN` | Nevera despacho
 
 ## Productos dummy esperados
-- `TEST-NEXO-CP-001` | 10 un | Bodega principal
-- `TEST-NEXO-CP-002` | 10 un | Secos
-- `TEST-NEXO-CP-003` | 8 un | Cuarto frio
-- `TEST-NEXO-CP-004` | 6 un | Congelados
-- `TEST-NEXO-CP-005` | 4 un | Nevera produccion
-- `TEST-NEXO-CP-006` | 3 un | Nevera despacho
-- `TEST-NEXO-CP-007` | 5 un en Bodega principal y 7 un en Secos
+- `TEST NEXO CP Bodega principal` (`TEST-NEXO-CP-001`) | 10 un | Bodega principal
+- `TEST NEXO CP Secos` (`TEST-NEXO-CP-002`) | 10 un | Secos
+- `TEST NEXO CP Cuarto frio` (`TEST-NEXO-CP-003`) | 8 un | Cuarto frio
+- `TEST NEXO CP Congelados` (`TEST-NEXO-CP-004`) | 6 un | Congelados
+- `TEST NEXO CP Nevera produccion` (`TEST-NEXO-CP-005`) | 4 un | Nevera produccion
+- `TEST NEXO CP Nevera despacho` (`TEST-NEXO-CP-006`) | 3 un | Nevera despacho
+- `TEST NEXO CP Multi LOC` (`TEST-NEXO-CP-007`) | 5 un en Bodega principal y 7 un en Secos
 
 ## Regla de ejecucion
 No ejecutes casos en desorden.
@@ -102,41 +102,41 @@ Pasos:
 1. Escanea `Bodega principal`.
 2. Toca `Ver contenido`.
 3. Revisa la lista completa.
-4. Busca `TEST-NEXO-CP-001`.
-5. Busca `TEST-NEXO-CP-007`.
+4. Busca `TEST NEXO CP Bodega principal` (`TEST-NEXO-CP-001`).
+5. Busca `TEST NEXO CP Multi LOC` (`TEST-NEXO-CP-007`).
 6. Confirma las cantidades visibles.
 
 Resultado esperado:
-- Debe aparecer `TEST-NEXO-CP-001` con 10 unidades.
-- Debe aparecer `TEST-NEXO-CP-007` con 5 unidades.
+- Debe aparecer `TEST NEXO CP Bodega principal` (`TEST-NEXO-CP-001`) con 10 unidades.
+- Debe aparecer `TEST NEXO CP Multi LOC` (`TEST-NEXO-CP-007`) con 5 unidades.
 - No deben aparecer productos de `Secos`, `Cuarto frio`, `Congelados`, `N2P` o `N3P`.
 
 ### Caso NEXO-STK-002 | Ver contenido en Secos
 Pasos:
 1. Escanea `Secos`.
 2. Toca `Ver contenido`.
-3. Busca `TEST-NEXO-CP-002`.
-4. Busca `TEST-NEXO-CP-007`.
+3. Busca `TEST NEXO CP Secos` (`TEST-NEXO-CP-002`).
+4. Busca `TEST NEXO CP Multi LOC` (`TEST-NEXO-CP-007`).
 
 Resultado esperado:
-- Debe aparecer `TEST-NEXO-CP-002` con 10.
-- Debe aparecer `TEST-NEXO-CP-007` con 7.
+- Debe aparecer `TEST NEXO CP Secos` (`TEST-NEXO-CP-002`) con 10.
+- Debe aparecer `TEST NEXO CP Multi LOC` (`TEST-NEXO-CP-007`) con 7.
 
 ### Caso NEXO-STK-003 | Ver contenido en Cuarto frio
 Resultado esperado:
-- Solo debe aparecer `TEST-NEXO-CP-003` con 8.
+- Solo debe aparecer `TEST NEXO CP Cuarto frio` (`TEST-NEXO-CP-003`) con 8.
 
 ### Caso NEXO-STK-004 | Ver contenido en Congelados
 Resultado esperado:
-- Solo debe aparecer `TEST-NEXO-CP-004` con 6.
+- Solo debe aparecer `TEST NEXO CP Congelados` (`TEST-NEXO-CP-004`) con 6.
 
 ### Caso NEXO-STK-005 | Ver contenido en Nevera produccion
 Resultado esperado:
-- Solo debe aparecer `TEST-NEXO-CP-005` con 4.
+- Solo debe aparecer `TEST NEXO CP Nevera produccion` (`TEST-NEXO-CP-005`) con 4.
 
 ### Caso NEXO-STK-006 | Ver contenido en Nevera despacho
 Resultado esperado:
-- Solo debe aparecer `TEST-NEXO-CP-006` con 3.
+- Solo debe aparecer `TEST NEXO CP Nevera despacho` (`TEST-NEXO-CP-006`) con 3.
 
 Criterio de cierre del bloque:
 - Cada LOC debe mostrar solo su contenido.
@@ -152,7 +152,7 @@ Objetivo: confirmar retiro normal desde un LOC.
 Pasos:
 1. Escanea `Bodega principal`.
 2. Toca `Retirar de aqui`.
-3. Busca `TEST-NEXO-CP-001`.
+3. Busca `TEST NEXO CP Bodega principal` (`TEST-NEXO-CP-001`).
 4. Selecciona ese producto.
 5. Ingresa cantidad `2`.
 6. Completa el motivo o detalle si la pantalla lo pide.
@@ -166,16 +166,16 @@ Resultado esperado:
 
 Validacion posterior:
 1. Toca `Ver contenido`.
-2. Revisa `TEST-NEXO-CP-001`.
+2. Revisa `TEST NEXO CP Bodega principal` (`TEST-NEXO-CP-001`).
 
 Resultado esperado posterior:
-- `TEST-NEXO-CP-001` debe quedar en 8 unidades.
+- `TEST NEXO CP Bodega principal` (`TEST-NEXO-CP-001`) debe quedar en 8 unidades.
 
 ### Caso NEXO-WDR-002 | Retiro valido desde Secos
 Pasos:
 1. Escanea `Secos`.
 2. Toca `Retirar de aqui`.
-3. Selecciona `TEST-NEXO-CP-002`.
+3. Selecciona `TEST NEXO CP Secos` (`TEST-NEXO-CP-002`).
 4. Retira `3` unidades.
 5. Confirma.
 6. Vuelve a `Ver contenido`.
@@ -188,19 +188,19 @@ Resultado esperado:
 Pasos:
 1. Escanea `Bodega principal`.
 2. Toca `Retirar de aqui`.
-3. Selecciona `TEST-NEXO-CP-007`.
+3. Selecciona `TEST NEXO CP Multi LOC` (`TEST-NEXO-CP-007`).
 4. Retira `1` unidad.
 5. Confirma.
 6. Revisa `Ver contenido`.
 
 Resultado esperado:
-- En `Bodega principal`, `TEST-NEXO-CP-007` queda en 4.
-- En `Secos`, `TEST-NEXO-CP-007` debe seguir en 7.
+- En `Bodega principal`, `TEST NEXO CP Multi LOC` (`TEST-NEXO-CP-007`) queda en 4.
+- En `Secos`, `TEST NEXO CP Multi LOC` (`TEST-NEXO-CP-007`) debe seguir en 7.
 
 ### Caso NEXO-WDR-004 | Retiro valido desde Nevera produccion
 Pasos:
 1. Escanea `Nevera produccion`.
-2. Retira `1` unidad de `TEST-NEXO-CP-005`.
+2. Retira `1` unidad de `TEST NEXO CP Nevera produccion` (`TEST-NEXO-CP-005`).
 3. Confirma.
 
 Resultado esperado:
@@ -221,7 +221,7 @@ Objetivo: confirmar bloqueo por sobre-retiro.
 Pasos:
 1. Escanea `Congelados`.
 2. Toca `Retirar de aqui`.
-3. Selecciona `TEST-NEXO-CP-004`.
+3. Selecciona `TEST NEXO CP Congelados` (`TEST-NEXO-CP-004`).
 4. Intenta retirar `99` unidades.
 5. Confirma.
 
@@ -231,7 +231,7 @@ Resultado esperado:
 
 Validacion posterior:
 1. Vuelve a `Ver contenido`.
-2. Revisa `TEST-NEXO-CP-004`.
+2. Revisa `TEST NEXO CP Congelados` (`TEST-NEXO-CP-004`).
 
 Resultado esperado posterior:
 - Debe seguir en 6.
@@ -240,7 +240,7 @@ Resultado esperado posterior:
 Pasos:
 1. Escanea `Cuarto frio`.
 2. Toca `Retirar de aqui`.
-3. Selecciona `TEST-NEXO-CP-003`.
+3. Selecciona `TEST NEXO CP Cuarto frio` (`TEST-NEXO-CP-003`).
 4. Deja cantidad vacia o en `0`.
 5. Intenta confirmar.
 
@@ -255,8 +255,8 @@ Pasos:
 3. Recorre la lista.
 
 Resultado esperado:
-- Solo debe aparecer `TEST-NEXO-CP-006`.
-- No deben aparecer `TEST-NEXO-CP-001` a `TEST-NEXO-CP-005`.
+- Solo debe aparecer `TEST NEXO CP Nevera despacho` (`TEST-NEXO-CP-006`).
+- No deben aparecer `TEST NEXO CP Bodega principal`, `TEST NEXO CP Secos`, `TEST NEXO CP Cuarto frio`, `TEST NEXO CP Congelados` ni `TEST NEXO CP Nevera produccion`.
 
 ---
 
@@ -268,7 +268,7 @@ Objetivo: confirmar trazabilidad de un retiro ya ejecutado.
 Pasos:
 1. Entra a `Movimientos` en NEXO.
 2. Filtra por sede `Centro de Produccion` si la pantalla lo permite.
-3. Busca `TEST-NEXO-CP-001`.
+3. Busca `TEST NEXO CP Bodega principal` (`TEST-NEXO-CP-001`).
 4. Revisa los registros mas recientes.
 
 Resultado esperado:
@@ -278,7 +278,7 @@ Resultado esperado:
 
 ### Caso NEXO-MOV-002 | Ver movimiento del producto multi-LOC
 Pasos:
-1. Busca `TEST-NEXO-CP-007`.
+1. Busca `TEST NEXO CP Multi LOC` (`TEST-NEXO-CP-007`).
 2. Revisa entradas y retiro.
 
 Resultado esperado:
