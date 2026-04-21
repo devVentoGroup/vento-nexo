@@ -66,6 +66,12 @@ type ProductRow = {
   stock_unit_code?: string | null;
 };
 
+type StockBySiteRow = {
+  site_id: string;
+  product_id: string;
+  current_qty: number | null;
+};
+
 function startOfDayIso(dateStr: string) {
   return `${dateStr}T00:00:00`;
 }
@@ -203,6 +209,35 @@ export default async function InventoryMovementsPage({
   const positiveCount = movements.filter((row) => Number(row.quantity ?? 0) > 0).length;
   const negativeCount = movements.filter((row) => Number(row.quantity ?? 0) < 0).length;
   const activeFilterCount = [siteId, movementType, productId, fromDate, toDate].filter(Boolean).length;
+
+  const movementSiteIds = Array.from(new Set(movements.map((row) => String(row.site_id ?? "")).filter(Boolean)));
+  const movementProductIds = Array.from(new Set(movements.map((row) => String(row.product_id ?? "")).filter(Boolean)));
+
+  const { data: stockRowsData } =
+    movementSiteIds.length && movementProductIds.length
+      ? await supabase
+          .from("inventory_stock_by_site")
+          .select("site_id,product_id,current_qty")
+          .in("site_id", movementSiteIds)
+          .in("product_id", movementProductIds)
+      : { data: [] as StockBySiteRow[] };
+
+  const stockRows = (stockRowsData ?? []) as StockBySiteRow[];
+  const currentBalanceMap = new Map<string, number>();
+  for (const row of stockRows) {
+    currentBalanceMap.set(`${row.site_id}::${row.product_id}`, Number(row.current_qty ?? 0));
+  }
+
+  const runningBalanceMap = new Map(currentBalanceMap);
+  const movementBalances = new Map<string, { opening: number; closing: number; movement: number }>();
+  for (const row of movements) {
+    const key = `${String(row.site_id ?? "")}::${String(row.product_id ?? "")}`;
+    const closing = Number(runningBalanceMap.get(key) ?? 0);
+    const movement = Number(row.quantity ?? 0);
+    const opening = closing - movement;
+    movementBalances.set(String(row.id), { opening, closing, movement });
+    runningBalanceMap.set(key, opening);
+  }
 
   return (
     <div className="ui-scene w-full space-y-6">
@@ -472,7 +507,9 @@ export default async function InventoryMovementsPage({
                 <TableHeaderCell>Tipo</TableHeaderCell>
                 <TableHeaderCell>Sede</TableHeaderCell>
                 <TableHeaderCell>Producto</TableHeaderCell>
-                <TableHeaderCell>Cantidad</TableHeaderCell>
+                <TableHeaderCell>Saldo inicial</TableHeaderCell>
+                <TableHeaderCell>Movimiento</TableHeaderCell>
+                <TableHeaderCell>Saldo final</TableHeaderCell>
                 <TableHeaderCell>Unidad</TableHeaderCell>
                 <TableHeaderCell>Como se registro</TableHeaderCell>
                 <TableHeaderCell>Detalle</TableHeaderCell>
@@ -486,8 +523,11 @@ export default async function InventoryMovementsPage({
                 const product = row.product ?? null;
                 const productLabel = product?.name ?? row.product_id ?? "";
                 const productSku = product?.sku ?? "";
-                const qtyValue = Number(row.quantity ?? 0);
-                const qty = String(row.quantity ?? "");
+                const balances = movementBalances.get(String(row.id)) ?? {
+                  opening: 0,
+                  closing: 0,
+                  movement: Number(row.quantity ?? 0),
+                };
                 const unit = String(row.stock_unit_code ?? product?.stock_unit_code ?? product?.unit ?? "");
                 const inputQty = row.input_qty;
                 const inputUnit = row.input_unit_code ?? "";
@@ -499,7 +539,7 @@ export default async function InventoryMovementsPage({
                     : "-";
 
                 return (
-                  <tr key={String(row.id ?? `${createdAt}-${product}-${qty}`)} className="ui-body">
+                  <tr key={String(row.id ?? `${createdAt}-${productLabel}-${balances.movement}`)} className="ui-body">
                     <TableCell>{formatMovementDate(createdAt)}</TableCell>
                     <TableCell>
                       <span
@@ -519,9 +559,19 @@ export default async function InventoryMovementsPage({
                       <div className="font-semibold text-[var(--ui-text)]">{productLabel}</div>
                       {productSku ? <div className="ui-caption">{productSku}</div> : null}
                     </TableCell>
-                    <TableCell className={qtyValue < 0 ? "font-semibold text-amber-700" : qtyValue > 0 ? "font-semibold text-emerald-700" : ""}>
-                      {qty}
+                    <TableCell>{balances.opening}</TableCell>
+                    <TableCell
+                      className={
+                        balances.movement < 0
+                          ? "font-semibold text-amber-700"
+                          : balances.movement > 0
+                            ? "font-semibold text-emerald-700"
+                            : ""
+                      }
+                    >
+                      {balances.movement > 0 ? `+${balances.movement}` : balances.movement}
                     </TableCell>
+                    <TableCell>{balances.closing}</TableCell>
                     <TableCell>{unit}</TableCell>
                     <TableCell>{captureLabel}</TableCell>
                     <TableCell>{ref || "-"}</TableCell>
@@ -531,7 +581,7 @@ export default async function InventoryMovementsPage({
 
               {!error && movements.length === 0 ? (
                 <tr>
-                  <TableCell colSpan={8} className="ui-empty">
+                  <TableCell colSpan={9} className="ui-empty">
                     No hay movimientos para mostrar (o RLS no te permite verlos).
                   </TableCell>
                 </tr>

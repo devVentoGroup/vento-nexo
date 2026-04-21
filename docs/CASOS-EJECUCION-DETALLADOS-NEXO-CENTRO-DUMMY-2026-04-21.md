@@ -289,37 +289,474 @@ Resultado esperado:
 
 ## BLOQUE 6. Permisos y sede con tu misma cuenta
 
-### Caso NEXO-PRM-001 | Cambiar sede y volver a Centro
-Objetivo: validar que el contexto de sede se refresca correctamente.
+En este bloque no vas a probar “roles al azar”.
+Vas a probar roles exactos contra la matriz real de la base de datos.
+
+Regla fija para todos los casos de este bloque:
+1. Cambia el rol indicado.
+2. Cambia la sede indicada.
+3. Vuelve al home.
+4. Recarga la app.
+5. Revisa primero el menu lateral.
+6. Luego abre las rutas indicadas.
+7. Registra exactamente lo que si aparece y lo que no.
+
+---
+
+### Caso NEXO-PRM-001 | Rol bodeguero en Centro de Produccion
+Objetivo: confirmar la vista operativa completa de bodega en Centro.
+
+Contexto exacto:
+- Rol: `bodeguero`
+- Sede: `Centro de Produccion`
 
 Pasos:
-1. Cambia la sede activa a otra sede cualquiera.
-2. Vuelve al home.
-3. Regresa a `Centro de Produccion`.
-4. Recarga el modulo o reabre el flujo por QR.
-5. Escanea `Bodega principal` otra vez.
+1. Cambia tu rol a `bodeguero`.
+2. Cambia tu sede a `Centro de Produccion`.
+3. Vuelve al home.
+4. Recarga la app.
+5. Abre el menu lateral.
+6. Revisa las opciones visibles.
+7. Entra una por una a estas rutas:
+   - `/inventory/entries`
+   - `/inventory/remissions`
+   - `/inventory/count-initial`
+   - `/inventory/transfers`
+   - `/inventory/withdraw`
+   - `/inventory/adjust`
+   - `/inventory/stock`
+   - `/inventory/movements`
+   - `/inventory/validation/locs`
+   - `/printing/jobs`
+
+Debe aparecer en menu:
+- `Panel`
+- `Entradas`
+- `Abastecimiento interno`
+- `Conteos`
+- `Traslados`
+- `Retiros`
+- `Ajustes`
+- `Stock`
+- `Movimientos`
+- `Checklist`
+- `Validacion de LOCs`
+- `Impresion`
+
+No debe aparecer en menu:
+- `Productos`
+- `Ubicaciones`
+- `Rutas`
+- `Areas remision`
+- `Sedes`
+- `Unidades`
+- `Categorias`
+- `Lotes de produccion`
 
 Resultado esperado:
-- El landing vuelve a mostrar datos del Centro.
-- No quedan residuos de la sede anterior.
+- `bodeguero` puede operar inventario del Centro.
+- `bodeguero` no puede ver maestros administrativos.
 
-### Caso NEXO-PRM-002 | Cambiar rol y volver al rol operativo
+---
+
+### Caso NEXO-PRM-002 | Rol conductor en Centro de Produccion
+Objetivo: confirmar que conductor solo ve remisiones en transito.
+
+Contexto exacto:
+- Rol: `conductor`
+- Sede: `Centro de Produccion`
+
 Pasos:
-1. Cambia a un rol mas restringido.
-2. Vuelve al home.
-3. Reabre el flujo por QR.
-4. Revisa si `Retirar de aqui` sigue visible o se bloquea.
-5. Cambia de nuevo al rol operativo.
-6. Recarga.
-7. Repite el ingreso por QR.
+1. Cambia tu rol a `conductor`.
+2. Cambia tu sede a `Centro de Produccion`.
+3. Vuelve al home.
+4. Recarga la app.
+5. Abre el menu lateral.
+6. Entra a `/inventory/remissions`.
+7. Intenta abrir manualmente estas rutas:
+   - `/inventory/entries`
+   - `/inventory/count-initial`
+   - `/inventory/transfers`
+   - `/inventory/withdraw`
+   - `/inventory/stock`
+   - `/inventory/movements`
+   - `/printing/jobs`
+
+Debe aparecer en menu:
+- `Panel`
+- `Remisiones en transito`
+
+No debe aparecer en menu:
+- `Entradas`
+- `Conteos`
+- `Traslados`
+- `Retiros`
+- `Ajustes`
+- `Stock`
+- `Movimientos`
+- `Checklist`
+- `Validacion de LOCs`
+- `Impresion`
+- cualquier vista de configuracion
 
 Resultado esperado:
-- El comportamiento debe ser coherente con el permiso del rol.
-- Al volver al rol operativo, el flujo debe quedar normal.
+- `conductor` solo opera traslado, entrega y recepcion en ruta.
+- Si alguna de las rutas prohibidas abre normal, registrar `FAIL`.
 
-Nota:
-Si un rol restringido aun deja retirar, registrar hallazgo de permisos.
+---
 
+### Caso NEXO-PRM-003 | Rol cajero en sede satelite
+Objetivo: confirmar que cajero solo pide, recibe y retira.
+
+Contexto exacto:
+- Rol: `cajero`
+- Sede: una sede tipo `Satelite`
+
+Pasos:
+1. Cambia tu rol a `cajero`.
+2. Cambia tu sede a una sede tipo `Satelite`.
+3. Vuelve al home.
+4. Recarga la app.
+5. Abre el menu lateral.
+6. Entra a `/inventory/remissions`.
+7. Entra a `/inventory/withdraw`.
+8. Intenta abrir manualmente:
+   - `/inventory/entries`
+   - `/inventory/count-initial`
+   - `/inventory/transfers`
+   - `/inventory/adjust`
+   - `/inventory/stock`
+   - `/inventory/movements`
+   - `/printing/jobs`
+
+Debe aparecer en menu:
+- `Panel`
+- `Pedir y recibir`
+- `Retiros`
+
+No debe aparecer en menu:
+- `Entradas`
+- `Conteos`
+- `Traslados`
+- `Ajustes`
+- `Stock`
+- `Movimientos`
+- `Checklist`
+- `Validacion de LOCs`
+- `Impresion`
+- cualquier configuracion
+
+Resultado esperado:
+- `cajero` puede solicitar remision, editar la propia pendiente, recibir y retirar.
+- `cajero` no ve inventario administrativo ni configuraciones.
+
+---
+
+### Caso NEXO-PRM-004 | Rol barista en sede satelite
+Objetivo: confirmar que barista tiene el mismo recorte operativo que cajero.
+
+Contexto exacto:
+- Rol: `barista`
+- Sede: una sede tipo `Satelite`
+
+Pasos:
+1. Cambia tu rol a `barista`.
+2. Cambia tu sede a una sede tipo `Satelite`.
+3. Vuelve al home.
+4. Recarga la app.
+5. Abre el menu lateral.
+6. Repite la misma validacion del caso `NEXO-PRM-003`.
+
+Debe aparecer en menu:
+- `Panel`
+- `Pedir y recibir`
+- `Retiros`
+
+No debe aparecer en menu:
+- el mismo listado prohibido de `cajero`
+
+Resultado esperado:
+- `barista` queda con la misma experiencia operativa de satelite que `cajero`.
+
+---
+
+### Caso NEXO-PRM-005 | Rol cocinero en Centro de Produccion
+Objetivo: confirmar que cocinero solo ve lo necesario para pedir, retirar y consultar lotes.
+
+Contexto exacto:
+- Rol: `cocinero`
+- Sede: `Centro de Produccion`
+
+Pasos:
+1. Cambia tu rol a `cocinero`.
+2. Cambia tu sede a `Centro de Produccion`.
+3. Vuelve al home.
+4. Recarga la app.
+5. Abre el menu lateral.
+6. Entra a:
+   - `/inventory/remissions`
+   - `/inventory/withdraw`
+   - `/inventory/production-batches`
+7. Intenta abrir manualmente:
+   - `/inventory/entries`
+   - `/inventory/count-initial`
+   - `/inventory/transfers`
+   - `/inventory/adjust`
+   - `/inventory/stock`
+   - `/inventory/movements`
+   - `/printing/jobs`
+
+Debe aparecer en menu:
+- `Panel`
+- `Pedir y recibir`
+- `Retiros`
+- `Lotes de produccion`
+
+No debe aparecer en menu:
+- `Entradas`
+- `Conteos`
+- `Traslados`
+- `Ajustes`
+- `Stock`
+- `Movimientos`
+- `Checklist`
+- `Validacion de LOCs`
+- `Impresion`
+- cualquier configuracion
+
+Resultado esperado:
+- `cocinero` puede retirar y operar su flujo de produccion.
+- `cocinero` no ve vistas administrativas de inventario.
+
+---
+
+### Caso NEXO-PRM-006 | Rol panadero en Centro de Produccion
+Objetivo: confirmar recorte operativo minimo para panaderia.
+
+Contexto exacto:
+- Rol: `panadero`
+- Sede: `Centro de Produccion`
+
+Pasos:
+1. Cambia tu rol a `panadero`.
+2. Cambia tu sede a `Centro de Produccion`.
+3. Vuelve al home.
+4. Recarga la app.
+5. Abre el menu lateral.
+6. Entra a:
+   - `/inventory/withdraw`
+   - `/inventory/production-batches`
+7. Intenta abrir manualmente:
+   - `/inventory/remissions`
+   - `/inventory/entries`
+   - `/inventory/count-initial`
+   - `/inventory/transfers`
+   - `/inventory/adjust`
+   - `/inventory/stock`
+   - `/inventory/movements`
+   - `/printing/jobs`
+
+Debe aparecer en menu:
+- `Panel`
+- `Retiros`
+- `Lotes de produccion`
+
+No debe aparecer en menu:
+- `Pedir y recibir`
+- `Entradas`
+- `Conteos`
+- `Traslados`
+- `Ajustes`
+- `Stock`
+- `Movimientos`
+- `Checklist`
+- `Validacion de LOCs`
+- `Impresion`
+- cualquier configuracion
+
+Resultado esperado:
+- `panadero` solo puede retirar y consultar lotes.
+
+---
+
+### Caso NEXO-PRM-007 | Rol repostero en Centro de Produccion
+Objetivo: confirmar que repostero tiene el mismo recorte que panadero.
+
+Contexto exacto:
+- Rol: `repostero`
+- Sede: `Centro de Produccion`
+
+Pasos:
+1. Cambia tu rol a `repostero`.
+2. Cambia tu sede a `Centro de Produccion`.
+3. Vuelve al home.
+4. Recarga la app.
+5. Repite la validacion del caso `NEXO-PRM-006`.
+
+Debe aparecer en menu:
+- `Panel`
+- `Retiros`
+- `Lotes de produccion`
+
+No debe aparecer en menu:
+- el mismo listado prohibido de `panadero`
+
+Resultado esperado:
+- `repostero` queda con el mismo alcance operativo minimo de produccion.
+
+---
+
+### Caso NEXO-PRM-008 | Rol pastelero en Centro de Produccion
+Objetivo: confirmar que pastelero tiene el mismo recorte que panadero y repostero.
+
+Contexto exacto:
+- Rol: `pastelero`
+- Sede: `Centro de Produccion`
+
+Pasos:
+1. Cambia tu rol a `pastelero`.
+2. Cambia tu sede a `Centro de Produccion`.
+3. Vuelve al home.
+4. Recarga la app.
+5. Repite la validacion del caso `NEXO-PRM-006`.
+
+Debe aparecer en menu:
+- `Panel`
+- `Retiros`
+- `Lotes de produccion`
+
+No debe aparecer en menu:
+- el mismo listado prohibido de `panadero`
+
+Resultado esperado:
+- `pastelero` queda con el mismo alcance operativo minimo de produccion.
+
+---
+
+### Caso NEXO-PRM-009 | Rol gerente en Centro de Produccion
+Objetivo: confirmar que gerente ve operacion amplia, pero no maestros completos.
+
+Contexto exacto:
+- Rol: `gerente`
+- Sede: `Centro de Produccion`
+
+Pasos:
+1. Cambia tu rol a `gerente`.
+2. Cambia tu sede a `Centro de Produccion`.
+3. Vuelve al home.
+4. Recarga la app.
+5. Abre el menu lateral.
+6. Entra a:
+   - `/inventory/entries`
+   - `/inventory/remissions`
+   - `/inventory/count-initial`
+   - `/inventory/transfers`
+   - `/inventory/withdraw`
+   - `/inventory/production-batches`
+   - `/inventory/adjust`
+   - `/inventory/stock`
+   - `/inventory/movements`
+   - `/inventory/settings/checklist`
+   - `/inventory/validation/locs`
+   - `/printing/jobs`
+7. Intenta abrir manualmente:
+   - `/inventory/catalog`
+   - `/inventory/locations`
+   - `/inventory/settings/supply-routes`
+   - `/inventory/settings/sites`
+   - `/inventory/settings/units`
+   - `/inventory/settings/categories`
+
+Debe aparecer en menu:
+- `Panel`
+- `Entradas`
+- `Abastecimiento interno`
+- `Conteos`
+- `Traslados`
+- `Retiros`
+- `Lotes de produccion`
+- `Ajustes`
+- `Stock`
+- `Movimientos`
+- `Checklist`
+- `Validacion de LOCs`
+- `Impresion`
+
+No debe aparecer en menu:
+- `Productos`
+- `Ubicaciones`
+- `Rutas`
+- `Areas remision`
+- `Sedes`
+- `Unidades`
+- `Categorias`
+
+Resultado esperado:
+- `gerente` opera y audita.
+- `gerente` no administra catalogos maestros completos desde NEXO.
+
+---
+
+### Caso NEXO-PRM-010 | Rol gerente_general en Centro de Produccion
+Objetivo: confirmar acceso amplio de direccion general.
+
+Contexto exacto:
+- Rol: `gerente_general`
+- Sede: `Centro de Produccion`
+
+Pasos:
+1. Cambia tu rol a `gerente_general`.
+2. Cambia tu sede a `Centro de Produccion`.
+3. Vuelve al home.
+4. Recarga la app.
+5. Abre el menu lateral.
+6. Entra a todas las vistas visibles.
+
+Debe aparecer en menu:
+- todo el menu operativo
+- todo el menu de configuracion
+- `Productos`
+- `Ubicaciones`
+- `Rutas`
+- `Areas remision`
+- `Sedes`
+- `Unidades`
+- `Categorias`
+- `Impresion`
+
+Resultado esperado:
+- `gerente_general` debe ver y poder revisar todo el modulo.
+
+---
+
+### Caso NEXO-PRM-011 | Rol propietario en Centro de Produccion
+Objetivo: confirmar el maximo nivel de acceso.
+
+Contexto exacto:
+- Rol: `propietario`
+- Sede: `Centro de Produccion`
+
+Pasos:
+1. Cambia tu rol a `propietario`.
+2. Cambia tu sede a `Centro de Produccion`.
+3. Vuelve al home.
+4. Recarga la app.
+5. Repite la validacion del caso `NEXO-PRM-010`.
+
+Resultado esperado:
+- `propietario` debe ver y poder entrar a todo NEXO.
+
+---
+
+### Criterio de cierre del bloque 6
+El bloque 6 se considera aprobado si:
+- cada rol muestra exactamente las vistas esperadas;
+- las vistas prohibidas no aparecen en menu;
+- los accesos manuales a rutas prohibidas se bloquean, redirigen o al menos no operan normal;
+- al cambiar rol y sede, la app refleja el nuevo contexto despues de volver al home y recargar.
+
+Si un rol ve mas de lo que debe, registralo como `FAIL por sobreexposicion`.
+Si un rol no ve algo que la base de datos si le otorga, registralo como `FAIL por bloqueo indebido`.
 ---
 
 ## BLOQUE 7. Limpieza

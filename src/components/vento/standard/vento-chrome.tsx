@@ -76,7 +76,8 @@ const NAV_GROUPS: NavGroup[] = [
         href: "/inventory/entries",
         label: "Entradas",
         description: "Recepcion manual y contingencias",
-        required: ["inventory.entries_emergency"],
+        anyOf: ["inventory.entries", "inventory.entries_emergency"],
+        allowedRoles: ["propietario", "gerente_general", "gerente", "bodeguero"],
         icon: "layers",
       },
       {
@@ -106,6 +107,14 @@ const NAV_GROUPS: NavGroup[] = [
         description: "Consumos y salidas controladas",
         required: ["inventory.withdraw"],
         icon: "boxes",
+      },
+      {
+        href: "/inventory/production-batches",
+        label: "Lotes de produccion",
+        description: "Consulta lotes y empaque desde FOGO",
+        required: ["inventory.production_batches"],
+        allowedRoles: ["propietario", "gerente_general", "gerente", "cocinero", "panadero", "repostero", "pastelero"],
+        icon: "package",
       },
       {
         href: "/inventory/adjust",
@@ -143,6 +152,7 @@ const NAV_GROUPS: NavGroup[] = [
         label: "Checklist",
         description: "Puesta a punto de Centro y satelites",
         required: ["access"],
+        allowedRoles: ["propietario", "gerente_general", "gerente", "bodeguero"],
         icon: "clipboard",
       },
       {
@@ -174,6 +184,7 @@ const NAV_GROUPS: NavGroup[] = [
         label: "Rutas",
         description: "Abastecimiento entre sedes",
         required: ["access"],
+        allowedRoles: ["propietario", "gerente_general"],
         icon: "arrows",
       },
       {
@@ -189,6 +200,7 @@ const NAV_GROUPS: NavGroup[] = [
         label: "Sedes",
         description: "Sedes operativas del sistema",
         required: ["access"],
+        allowedRoles: ["propietario", "gerente_general"],
         icon: "map",
       },
       {
@@ -212,6 +224,7 @@ const NAV_GROUPS: NavGroup[] = [
         label: "Impresion",
         description: "QR de LOC y etiquetas operativas",
         required: ["access"],
+        allowedRoles: ["propietario", "gerente_general", "gerente", "bodeguero"],
         icon: "printer",
       },
     ],
@@ -402,6 +415,7 @@ export function VentoChrome({
       "inventory.remissions.request",
       "inventory.remissions.prepare",
       "inventory.remissions.receive",
+      "inventory.entries",
       "inventory.entries_emergency",
       "inventory.transfers",
       "inventory.withdraw",
@@ -479,13 +493,50 @@ export function VentoChrome({
   const currentSiteType = String(currentSite?.site_type ?? "").toLowerCase();
   const isSatelliteFocusMode = currentSiteType === "satellite" && !isManagementRole;
   const isProductionFocusMode = currentSiteType === "production_center" && !isManagementRole;
-  const focusAllowedHrefs = isSatelliteFocusMode
-    ? new Set(["/", "/inventory/remissions"])
-    : isProductionFocusMode
-      ? new Set(["/", "/inventory/remissions", "/inventory/entries"])
-      : null;
+  const focusAllowedHrefs = (() => {
+    if (isManagementRole) return null;
+    if (normalizedRole === "bodeguero") {
+      return new Set([
+        "/",
+        "/inventory/entries",
+        "/inventory/remissions",
+        "/inventory/count-initial",
+        "/inventory/transfers",
+        "/inventory/withdraw",
+        "/inventory/adjust",
+        "/inventory/stock",
+        "/inventory/movements",
+        "/inventory/validation/locs",
+        "/printing/jobs",
+      ]);
+    }
+    if (normalizedRole === "conductor") {
+      return new Set(["/", "/inventory/remissions"]);
+    }
+    if (["cajero", "barista"].includes(normalizedRole)) {
+      return new Set(["/", "/inventory/remissions", "/inventory/withdraw"]);
+    }
+    if (normalizedRole === "cocinero") {
+      return new Set(["/", "/inventory/remissions", "/inventory/withdraw", "/inventory/production-batches"]);
+    }
+    if (["panadero", "repostero", "pastelero"].includes(normalizedRole)) {
+      return new Set(["/", "/inventory/withdraw", "/inventory/production-batches"]);
+    }
+    return isSatelliteFocusMode
+      ? new Set(["/", "/inventory/remissions", "/inventory/withdraw"])
+      : isProductionFocusMode
+        ? new Set(["/", "/inventory/remissions", "/inventory/withdraw"])
+        : null;
+  })();
 
   const adaptNavItem = (item: NavItem): NavItem => {
+    if (item.href === "/inventory/remissions" && normalizedRole === "conductor") {
+      return {
+        ...item,
+        label: "Remisiones en transito",
+        description: "Entrega, traslado y recepcion en ruta.",
+      };
+    }
     if (item.href === "/inventory/remissions" && isSatelliteFocusMode) {
       return {
         ...item,

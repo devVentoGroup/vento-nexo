@@ -20,10 +20,25 @@ function normalizeText(value: string | null | undefined) {
 }
 
 export default async function ConfigChecklistPage() {
-  const { supabase } = await requireAppAccess({
+  const { supabase, user } = await requireAppAccess({
     appId: "nexo",
     returnTo: "/inventory/settings/checklist",
   });
+
+  const { data: emp } = await supabase.from("employees").select("role").eq("id", user.id).maybeSingle();
+  const role = String((emp as { role?: string } | null)?.role ?? "").toLowerCase();
+  const canUseChecklist = ["propietario", "gerente_general", "gerente", "bodeguero"].includes(role);
+
+  if (!canUseChecklist) {
+    return (
+      <div className="w-full">
+        <h1 className="ui-h1">Checklist operativo</h1>
+        <div className="mt-6 ui-alert ui-alert--warn">
+          Esta vista esta reservada para gestion operativa y bodega.
+        </div>
+      </div>
+    );
+  }
 
   const checks: CheckResult[] = [];
 
