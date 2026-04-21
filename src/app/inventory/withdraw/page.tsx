@@ -54,6 +54,7 @@ async function submitWithdraw(formData: FormData) {
   }
 
   const locationId = asText(formData.get("location_id"));
+  const returnTo = asText(formData.get("return_to"));
   if (!locationId) {
     redirect("/inventory/withdraw?error=" + encodeURIComponent("Falta ubicación (LOC)."));
   }
@@ -232,6 +233,11 @@ async function submitWithdraw(formData: FormData) {
     }
   }
 
+  if (returnTo) {
+    const joiner = returnTo.includes("?") ? "&" : "?";
+    redirect(`${returnTo}${joiner}ok=withdraw`);
+  }
+
   redirect("/inventory/withdraw?ok=1");
 }
 
@@ -323,12 +329,19 @@ export default async function WithdrawPage({
   }
 
   const { data: productsWithStock } = siteId
-    ? await supabase
-        .from("inventory_stock_by_site")
-        .select("product_id, products(id,name,unit,stock_unit_code)")
-        .eq("site_id", siteId)
-        .gt("current_qty", 0)
-        .limit(400)
+    ? defaultLocationId
+      ? await supabase
+          .from("inventory_stock_by_location")
+          .select("product_id, products(id,name,unit,stock_unit_code)")
+          .eq("location_id", defaultLocationId)
+          .gt("current_qty", 0)
+          .limit(400)
+      : await supabase
+          .from("inventory_stock_by_site")
+          .select("product_id, products(id,name,unit,stock_unit_code)")
+          .eq("site_id", siteId)
+          .gt("current_qty", 0)
+          .limit(400)
     : { data: [] as { product_id: string; products: ProductRow | null }[] };
 
   let productRows: ProductRow[] = [];
@@ -374,6 +387,7 @@ export default async function WithdrawPage({
     : { data: [] as ProductUomProfile[] };
   const defaultUomProfiles = (uomProfilesDataForPage ?? []) as ProductUomProfile[];
   const selectedLocation = locations.find((location) => location.id === defaultLocationId) ?? null;
+  const returnTo = selectedLocation ? `/inventory/locations/${encodeURIComponent(selectedLocation.id)}` : "/inventory/stock";
   const normalizedRole = String(employee?.role ?? "").toLowerCase();
   const isManagementRole = ["propietario", "gerente_general", "admin", "manager", "gerente"].includes(
     normalizedRole
@@ -411,8 +425,10 @@ export default async function WithdrawPage({
       <section className="ui-remission-hero ui-fade-up">
         <div className="ui-remission-hero-grid lg:grid-cols-[1.45fr_1fr] lg:items-start">
           <div className="space-y-4">
-            <div className="space-y-2">
-              <Link href="/inventory/stock" className="ui-caption underline">Volver a stock</Link>
+          <div className="space-y-2">
+              <Link href={returnTo} className="ui-caption underline">
+                {openedFromQr ? "Volver al LOC" : "Volver a stock"}
+              </Link>
               <div className="ui-caption">{heroModeLabel}</div>
               <h1 className="ui-h1">{heroTitle}</h1>
               <p className="ui-body-muted">{heroSubtitle}</p>
@@ -474,6 +490,7 @@ export default async function WithdrawPage({
         openedFromQr={openedFromQr}
         mode={mode}
         siteLabel={activeSite?.name ?? ""}
+        returnTo={returnTo}
         action={submitWithdraw}
       />
     </div>

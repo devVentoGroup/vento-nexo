@@ -52,10 +52,13 @@ function normalizeProductRelation(
 
 export default async function LocationLandingPage({
   params,
+  searchParams,
 }: {
   params: Promise<Params>;
+  searchParams?: Promise<{ ok?: string }>;
 }) {
   const { id } = await params;
+  const sp = (await searchParams) ?? {};
 
   const { supabase, user } = await requireAppAccess({
     appId: "nexo",
@@ -157,6 +160,7 @@ export default async function LocationLandingPage({
     location.site_id && location.zone
       ? `/inventory/locations/zone?site_id=${encodeURIComponent(location.site_id)}&zone=${encodeURIComponent(location.zone)}`
       : "";
+  const okMsg = sp.ok === "withdraw" ? "Retiro registrado." : "";
 
   return (
     <div className="ui-scene w-full space-y-6">
@@ -227,6 +231,8 @@ export default async function LocationLandingPage({
           </div>
         </div>
       </section>
+
+      {okMsg ? <div className="ui-alert ui-alert--success">{okMsg}</div> : null}
 
       {siteMismatch ? (
         <div className="ui-alert ui-alert--warn">

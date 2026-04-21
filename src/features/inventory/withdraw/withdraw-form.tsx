@@ -36,6 +36,7 @@ type Props = {
   openedFromQr?: boolean;
   mode?: "satellite" | "center" | "general";
   siteLabel?: string;
+  returnTo?: string;
   action: (formData: FormData) => void | Promise<void>;
 };
 
@@ -61,6 +62,7 @@ export function WithdrawForm({
   openedFromQr = false,
   mode = "general",
   siteLabel = "",
+  returnTo = "/inventory/stock",
   action,
 }: Props) {
   const [locationId, setLocationId] = useState((defaultLocationId || locations[0]?.id) ?? "");
@@ -167,6 +169,7 @@ export function WithdrawForm({
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
       <form id="withdraw-quick-form" action={action} className="space-y-5 pb-28 lg:pb-0">
+        <input type="hidden" name="return_to" value={returnTo} />
         <section className="ui-panel ui-remission-section ui-fade-up ui-delay-1 space-y-4">
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
@@ -198,28 +201,40 @@ export function WithdrawForm({
             </div>
           </div>
 
-          <details className="rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3">
-            <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
-              {openedFromQr ? "Cambiar LOC manualmente" : "Mas acciones para este LOC"}
-            </summary>
-            <div className="mt-3 space-y-3">
-              <SearchableSingleSelect
-                name="location_id"
-                value={locationId}
-                onValueChange={setLocationId}
-                options={locationOptions}
-                placeholder="Selecciona LOC"
-                searchPlaceholder="Buscar LOC..."
-                sheetTitle="Selecciona LOC"
-                mobilePresentation="sheet"
-                mobileBreakpointPx={1024}
-                dropdownMode="inline"
-              />
-              <Link href="/inventory/stock" className="ui-btn ui-btn--ghost h-12 w-full text-sm font-semibold sm:w-auto">
-                Ver stock
+          {openedFromQr ? (
+            <div className="flex flex-wrap gap-3">
+              <input type="hidden" name="location_id" value={locationId} />
+              <Link href={returnTo} className="ui-btn ui-btn--ghost h-12 w-full text-sm font-semibold sm:w-auto">
+                Volver al LOC
+              </Link>
+              <Link href={`${returnTo}/board`} className="ui-btn ui-btn--ghost h-12 w-full text-sm font-semibold sm:w-auto">
+                Ver contenido del LOC
               </Link>
             </div>
-          </details>
+          ) : (
+            <details className="rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3">
+              <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+                Mas acciones para este LOC
+              </summary>
+              <div className="mt-3 space-y-3">
+                <SearchableSingleSelect
+                  name="location_id"
+                  value={locationId}
+                  onValueChange={setLocationId}
+                  options={locationOptions}
+                  placeholder="Selecciona LOC"
+                  searchPlaceholder="Buscar LOC..."
+                  sheetTitle="Selecciona LOC"
+                  mobilePresentation="sheet"
+                  mobileBreakpointPx={1024}
+                  dropdownMode="inline"
+                />
+                <Link href="/inventory/stock" className="ui-btn ui-btn--ghost h-12 w-full text-sm font-semibold sm:w-auto">
+                  Ver stock
+                </Link>
+              </div>
+            </details>
+          )}
         </section>
 
         <section className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-4">
