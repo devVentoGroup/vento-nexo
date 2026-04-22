@@ -153,7 +153,7 @@ const NAV_GROUPS: NavGroup[] = [
         label: "Productos",
         description: "Catalogo maestro y activacion por sede",
         required: ["inventory.stock"],
-        allowedRoles: ["propietario", "gerente_general"],
+        allowedRoles: ["propietario", "gerente_general", "bodeguero"],
         icon: "layers",
       },
       {
@@ -523,6 +523,7 @@ export function VentoChrome({
         "/inventory/transfers",
         "/inventory/withdraw",
         "/inventory/adjust",
+        "/inventory/catalog",
         "/inventory/stock",
         "/inventory/movements",
         "/printing/jobs",
