@@ -39,6 +39,7 @@ type SearchParams = {
   warning?: string;
   site_id?: string;
   from_site_id?: string;
+  new?: string;
 };
 
 function asText(value: FormDataEntryValue | null) {
@@ -958,6 +959,22 @@ export default async function RemissionsPage({
     requestedFromSiteId && fulfillmentSiteRows.some((site) => site.id === requestedFromSiteId)
       ? requestedFromSiteId
       : fulfillmentSiteRows[0]?.id ?? "";
+  const requestedCreateParam = String(sp.new ?? "")
+    .trim()
+    .toLowerCase();
+  const showCreatePanel =
+    requestedCreateParam === "1" ||
+    requestedCreateParam === "true" ||
+    requestedCreateParam === "new";
+  const buildHubHref = (opts?: { showCreate?: boolean; hash?: string }) => {
+    const params = new URLSearchParams();
+    if (activeSiteId) params.set("site_id", activeSiteId);
+    if (selectedFromSiteId) params.set("from_site_id", selectedFromSiteId);
+    if (opts?.showCreate) params.set("new", "1");
+    const qs = params.toString();
+    const hash = opts?.hash ? `#${opts.hash}` : "";
+    return `/inventory/remissions${qs ? `?${qs}` : ""}${hash}`;
+  };
   let remissionsQuery = supabase
     .from("restock_requests")
     .select(
@@ -1181,7 +1198,7 @@ export default async function RemissionsPage({
       : nextReceiveRow
         ? `/inventory/remissions/${nextReceiveRow.id}`
         : canCreate
-          ? "#nueva-remision"
+          ? buildHubHref({ showCreate: true, hash: "nueva-remision" })
           : "/inventory/remissions";
   const heroPrimaryLabel =
     viewMode === "bodega"
@@ -1426,7 +1443,7 @@ export default async function RemissionsPage({
 
       </div>
 
-      <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
+      <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2" id="solicitudes-abiertas">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <div className="ui-h3">
@@ -1579,15 +1596,40 @@ export default async function RemissionsPage({
         </div>
       </div>
 
-      {canCreateWithConfiguredCatalog ? (
+      {canCreateWithConfiguredCatalog && !showCreatePanel ? (
         <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2" id="nueva-remision">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
-              <div className="ui-h3">Nueva remision</div>
+              <div className="ui-h3">Nueva remisión</div>
+              <div className="mt-1 ui-caption">
+                Formulario oculto para mantener esta pantalla limpia.
+              </div>
+            </div>
+            <Link
+              href={buildHubHref({ showCreate: true, hash: "nueva-remision" })}
+              className="ui-btn ui-btn--brand h-11 px-4 text-sm font-semibold"
+            >
+              Abrir formulario
+            </Link>
+          </div>
+        </div>
+      ) : null}
+
+      {canCreateWithConfiguredCatalog && showCreatePanel ? (
+        <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2" id="nueva-remision">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <div className="ui-h3">Nueva remisión</div>
               <div className="mt-1 ui-caption">
                 Esta vista solo sirve para crear una solicitud nueva.
               </div>
             </div>
+            <Link
+              href={buildHubHref({ hash: "solicitudes-abiertas" })}
+              className="ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
+            >
+              Ocultar formulario
+            </Link>
           </div>
           <div className="mt-4">
             <RemissionsCreateForm
