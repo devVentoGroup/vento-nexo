@@ -2129,10 +2129,16 @@ export default async function ProductCatalogDetailPage({
           />
 
           <ProductPhotoSection
-            description="Imagen principal para identificar rapidamente el item en catalogo y listados."
+            description={
+              isAssetItem
+                ? "Imagen principal para identificar rapidamente el equipo o activo en catálogo y ficha técnica."
+                : "Imagen principal para identificar rapidamente el item en catalogo y listados."
+            }
             currentUrl={productRow.image_url}
             existingImageUrls={existingImageUrls}
             productId={productRow.id}
+            sectionTitle={isAssetItem ? "Foto del equipo / activo" : "Foto del producto"}
+            uploadLabel={isAssetItem ? "Foto del equipo" : "Foto del producto"}
             collapsible
           />
 
@@ -2159,6 +2165,10 @@ export default async function ProductCatalogDetailPage({
               }}
               initialMaintenance={assetMaintenanceRows}
               initialTransfers={assetTransferRows}
+              siteOptions={siteRows.map((site) => ({
+                id: site.site_id,
+                name: siteNamesById[site.site_id] || "Sede",
+              }))}
             />
           ) : null}
 

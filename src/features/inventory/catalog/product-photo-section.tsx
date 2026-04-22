@@ -11,6 +11,8 @@ type ProductPhotoSectionProps = {
   existingImageUrls?: string[];
   footerText?: string;
   collapsible?: boolean;
+  sectionTitle?: string;
+  uploadLabel?: string;
 };
 
 export function ProductPhotoSection({
@@ -20,13 +22,15 @@ export function ProductPhotoSection({
   existingImageUrls = [],
   footerText,
   collapsible = false,
+  sectionTitle = "Foto del producto",
+  uploadLabel = "Foto del producto",
 }: ProductPhotoSectionProps) {
   const content = (
     <>
       <div className="grid gap-4">
         <ProductImageUpload
           name="image_url"
-          label="Foto del producto"
+          label={uploadLabel}
           currentUrl={currentUrl}
           existingImageUrls={existingImageUrls}
           productId={productId}
@@ -40,7 +44,7 @@ export function ProductPhotoSection({
   if (collapsible) {
     return (
       <CatalogOptionalDetails
-        title="Foto del producto"
+        title={sectionTitle}
         summary={description}
       >
         {content}
@@ -50,7 +54,7 @@ export function ProductPhotoSection({
 
   return (
     <CatalogSection
-      title="Foto del producto"
+      title={sectionTitle}
       description={description}
     >
       {content}

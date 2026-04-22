@@ -1631,10 +1631,16 @@ export default async function NewProductPage({
         )}
 
         <ProductPhotoSection
-          description="Imagen visual para identificar rapido el producto o insumo en listados y ficha."
+          description={
+            typeKey === "asset"
+              ? "Imagen visual para identificar rapido el equipo o activo en listados y ficha técnica."
+              : "Imagen visual para identificar rapido el producto o insumo en listados y ficha."
+          }
           currentUrl={null}
           existingImageUrls={existingImageUrls}
           productId={`draft-${typeKey}`}
+          sectionTitle={typeKey === "asset" ? "Foto del equipo / activo" : "Foto del producto"}
+          uploadLabel={typeKey === "asset" ? "Foto del equipo" : "Foto del producto"}
           footerText="Si no subes fotos ahora, puedes cargarlas despues desde la ficha de edicion."
           collapsible
         />
@@ -1645,6 +1651,7 @@ export default async function NewProductPage({
             initialProfile={null}
             initialMaintenance={[]}
             initialTransfers={[]}
+            siteOptions={sitesList.map((site) => ({ id: site.id, name: site.name ?? "Sede" }))}
           />
         ) : null}
 

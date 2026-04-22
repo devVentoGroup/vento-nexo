@@ -45,6 +45,7 @@ type Props = {
   initialMaintenance: MaintenanceLine[];
   initialTransfers: TransferLine[];
   defaultTemplate?: "industrial" | "general";
+  siteOptions?: Array<{ id: string; name: string }>;
 };
 
 const EMPTY_MAINTENANCE: MaintenanceLine = {
@@ -71,8 +72,14 @@ export function ProductAssetTechnicalSection({
   initialMaintenance,
   initialTransfers,
   defaultTemplate = "general",
+  siteOptions = [],
 }: Props) {
   const [profileTemplate, setProfileTemplate] = useState<"industrial" | "general">(defaultTemplate);
+  const [physicalLocation, setPhysicalLocation] = useState(initialProfile?.physical_location ?? "");
+  const [quickSiteId, setQuickSiteId] = useState("");
+  const [quickArea, setQuickArea] = useState("");
+  const [quickLoc, setQuickLoc] = useState("");
+  const [quickContainer, setQuickContainer] = useState("");
   const [maintenanceLines, setMaintenanceLines] = useState<MaintenanceLine[]>(
     initialMaintenance.length ? initialMaintenance : []
   );
@@ -83,12 +90,28 @@ export function ProductAssetTechnicalSection({
   const visibleMaintenance = maintenanceLines.filter((line) => !line._delete);
   const visibleTransfers = transferLines.filter((line) => !line._delete);
 
+  const applyQuickLocation = () => {
+    const siteName = siteOptions.find((site) => site.id === quickSiteId)?.name?.trim() || "";
+    const composed = [siteName, quickArea.trim(), quickLoc.trim(), quickContainer.trim()]
+      .filter(Boolean)
+      .join(" · ");
+    if (composed) setPhysicalLocation(composed);
+  };
+
   return (
     <section className="ui-panel space-y-5">
-      <h2 className="ui-h2">Ficha técnica de equipo / activo</h2>
+      <h2 className="ui-h2">Ficha del equipo / activo</h2>
       <p className="ui-body-muted">
         Define una plantilla según el tipo de activo para evitar campos que no aplican.
       </p>
+      <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3 text-sm text-[var(--ui-muted)]">
+        <p>
+          Puedes guardar con datos parciales: marca, modelo, serial, factura y fechas son opcionales.
+        </p>
+        <p className="mt-1">
+          El QR de la ficha técnica se genera automáticamente cuando guardas y abres la vista de ficha.
+        </p>
+      </div>
 
       <input type="hidden" name="asset_profile_enabled" value="1" />
       <input type="hidden" name="asset_maintenance_lines" value={JSON.stringify(maintenanceLines)} />
@@ -96,7 +119,7 @@ export function ProductAssetTechnicalSection({
       <input type="hidden" name="asset_profile_template" value={profileTemplate} />
 
       <label className="flex flex-col gap-1">
-        <span className="ui-label">Plantilla técnica</span>
+        <span className="ui-label">Tipo de ficha</span>
         <select
           value={profileTemplate}
           onChange={(event) =>
@@ -116,7 +139,7 @@ export function ProductAssetTechnicalSection({
         {profileTemplate === "industrial" ? (
           <>
             <label className="flex flex-col gap-1">
-              <span className="ui-label">Marca</span>
+              <span className="ui-label">Marca (opcional)</span>
               <input
                 name="asset_brand"
                 defaultValue={initialProfile?.brand ?? ""}
@@ -125,11 +148,11 @@ export function ProductAssetTechnicalSection({
               />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="ui-label">Modelo</span>
+              <span className="ui-label">Modelo (opcional)</span>
               <input name="asset_model" defaultValue={initialProfile?.model ?? ""} className="ui-input" />
             </label>
             <label className="flex flex-col gap-1">
-              <span className="ui-label">Serial</span>
+              <span className="ui-label">Serial (opcional)</span>
               <input
                 name="asset_serial_number"
                 defaultValue={initialProfile?.serial_number ?? ""}
@@ -138,17 +161,90 @@ export function ProductAssetTechnicalSection({
             </label>
           </>
         ) : null}
+        <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 md:col-span-2">
+          <div className="text-sm font-semibold text-[var(--ui-text)]">
+            Ubicación guiada (opcional)
+          </div>
+          <p className="mt-1 text-xs text-[var(--ui-muted)]">
+            Sugerencia de formato: Sede · Área/Zona · LOC/Contenedor.
+          </p>
+          <div className="mt-2 grid gap-2 md:grid-cols-4">
+            <label className="flex flex-col gap-1">
+              <span className="ui-caption">Sede</span>
+              <select
+                value={quickSiteId}
+                onChange={(event) => setQuickSiteId(event.target.value)}
+                className="ui-input"
+              >
+                <option value="">Seleccionar</option>
+                {siteOptions.map((site) => (
+                  <option key={site.id} value={site.id}>
+                    {site.name}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="ui-caption">Área / Zona</span>
+              <input
+                value={quickArea}
+                onChange={(event) => setQuickArea(event.target.value)}
+                className="ui-input"
+                placeholder="Ej. Cocina caliente"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="ui-caption">LOC / Contenedor</span>
+              <input
+                value={quickLoc}
+                onChange={(event) => setQuickLoc(event.target.value)}
+                className="ui-input"
+                placeholder="Ej. LOC-CP-FRIO-MAIN"
+              />
+            </label>
+            <label className="flex flex-col gap-1">
+              <span className="ui-caption">Referencia</span>
+              <input
+                value={quickContainer}
+                onChange={(event) => setQuickContainer(event.target.value)}
+                className="ui-input"
+                placeholder="Ej. Contenedor azul #3"
+              />
+            </label>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <button type="button" className="ui-btn ui-btn--ghost ui-btn--sm" onClick={applyQuickLocation}>
+              Aplicar ubicación sugerida
+            </button>
+            <button
+              type="button"
+              className="ui-btn ui-btn--ghost ui-btn--sm"
+              onClick={() => {
+                setQuickSiteId("");
+                setQuickArea("");
+                setQuickLoc("");
+                setQuickContainer("");
+              }}
+            >
+              Limpiar guía
+            </button>
+          </div>
+        </div>
         <label className="flex flex-col gap-1">
-          <span className="ui-label">Ubicación física</span>
+          <span className="ui-label">Ubicación física (opcional)</span>
           <input
             name="asset_physical_location"
-            defaultValue={initialProfile?.physical_location ?? ""}
+            value={physicalLocation}
+            onChange={(event) => setPhysicalLocation(event.target.value)}
             className="ui-input"
-            placeholder="Ej. Cocina caliente · Línea 2"
+            placeholder="Ej. Centro de Producción · Cocina caliente · LOC-CP-PROD-01"
           />
+          <span className="text-xs text-[var(--ui-muted)]">
+            Si no la tienes clara hoy, puedes guardar y completarla luego.
+          </span>
         </label>
         <label className="flex flex-col gap-1">
-          <span className="ui-label">Factura de compra (URL)</span>
+          <span className="ui-label">Factura de compra (URL opcional)</span>
           <input
             name="asset_purchase_invoice_url"
             type="url"
@@ -158,7 +254,7 @@ export function ProductAssetTechnicalSection({
           />
         </label>
         <label className="flex flex-col gap-1">
-          <span className="ui-label">Valor comercial</span>
+          <span className="ui-label">Valor comercial (opcional)</span>
           <input
             name="asset_commercial_value"
             type="number"
@@ -169,7 +265,7 @@ export function ProductAssetTechnicalSection({
           />
         </label>
         <label className="flex flex-col gap-1">
-          <span className="ui-label">Fecha de compra</span>
+          <span className="ui-label">Fecha de compra (opcional)</span>
           <input
             name="asset_purchase_date"
             type="date"
@@ -178,7 +274,7 @@ export function ProductAssetTechnicalSection({
           />
         </label>
         <label className="flex flex-col gap-1">
-          <span className="ui-label">Fecha inicio de uso</span>
+          <span className="ui-label">Fecha inicio de uso (opcional)</span>
           <input
             name="asset_started_use_date"
             type="date"
@@ -197,7 +293,7 @@ export function ProductAssetTechnicalSection({
         </label>
         {profileTemplate === "industrial" ? (
           <label className="flex flex-col gap-1">
-            <span className="ui-label">Proveedor de mantenimiento</span>
+            <span className="ui-label">Proveedor de mantenimiento (opcional)</span>
             <input
               name="asset_maintenance_service_provider"
               defaultValue={initialProfile?.maintenance_service_provider ?? ""}
@@ -245,7 +341,7 @@ export function ProductAssetTechnicalSection({
       </div>
 
       <label className="flex flex-col gap-1">
-        <span className="ui-label">Descripción técnica</span>
+        <span className="ui-label">Notas del equipo (opcional)</span>
         <textarea
           name="asset_technical_description"
           defaultValue={initialProfile?.technical_description ?? ""}

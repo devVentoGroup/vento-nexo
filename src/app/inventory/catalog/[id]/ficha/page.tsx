@@ -852,7 +852,9 @@ export default async function ProductTechnicalSheetPage({
         </article>
 
         <article className="ui-panel">
-          <div className="text-sm font-semibold text-[var(--ui-text)]">Foto</div>
+          <div className="text-sm font-semibold text-[var(--ui-text)]">
+            {isAsset ? "Foto del equipo / activo" : "Foto"}
+          </div>
           <div className="mt-3 overflow-hidden rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)]">
             {imageUrl ? (
               <img
@@ -939,7 +941,7 @@ export default async function ProductTechnicalSheetPage({
 
           <article className="ui-panel">
             <div className="text-sm font-semibold text-[var(--ui-text)]">
-              Ficha técnica industrial (solo lectura)
+              Ficha del equipo (solo lectura)
             </div>
             <div className="mt-3 grid gap-3 md:grid-cols-3">
               <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
@@ -997,9 +999,9 @@ export default async function ProductTechnicalSheetPage({
               </div>
             </div>
             <div className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
-              <div className="ui-caption">Descripción técnica</div>
+              <div className="ui-caption">Notas del equipo</div>
               <p className="mt-1 text-sm text-[var(--ui-muted)]">
-                {assetProfile?.technical_description || "Sin descripción técnica."}
+                {assetProfile?.technical_description || "Sin notas registradas."}
               </p>
             </div>
             <div className="mt-3 grid gap-3 md:grid-cols-[1fr_220px]">
@@ -1029,7 +1031,10 @@ export default async function ProductTechnicalSheetPage({
                 </div>
               </div>
               <div className="rounded-xl border border-[var(--ui-border)] bg-white p-3">
-                <div className="ui-caption">QR ficha técnica</div>
+                <div className="ui-caption">QR ficha técnica (auto)</div>
+                <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                  Este QR abre esta ficha del equipo en NEXO.
+                </div>
                 <img src={assetQrImageUrl} alt="QR ficha técnica" className="mt-2 h-[180px] w-[180px] rounded-md border border-[var(--ui-border)]" />
               </div>
             </div>
