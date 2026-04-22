@@ -22,6 +22,39 @@ import {
 } from "./detail-utils";
 import { buildPrepareFingerprintHash } from "./prepare-fingerprint";
 
+async function ensureReceiveSignature(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  requestId: string;
+  employeeId: string;
+}) {
+  const { supabase, requestId, employeeId } = params;
+  const { data: requestRow, error: requestErr } = await supabase
+    .from("restock_requests")
+    .select("status,received_by,received_at")
+    .eq("id", requestId)
+    .maybeSingle();
+
+  if (requestErr || !requestRow) return requestErr?.message ?? null;
+
+  const status = String(requestRow.status ?? "");
+  if (!["partial", "received"].includes(status)) return null;
+  if (requestRow.received_by) return null;
+
+  const updates: { received_by: string; received_at?: string } = {
+    received_by: employeeId,
+  };
+  if (!requestRow.received_at) {
+    updates.received_at = new Date().toISOString();
+  }
+
+  const { error: updateErr } = await supabase
+    .from("restock_requests")
+    .update(updates)
+    .eq("id", requestId)
+    .is("received_by", null);
+  return updateErr?.message ?? null;
+}
+
 export async function updateItems(formData: FormData) {
   const supabase = await createClient();
   const { data: userRes } = await supabase.auth.getUser();
@@ -2147,6 +2180,14 @@ export async function applyReceiveShortcut(formData: FormData) {
   if (syncError) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: syncError }));
   }
+  const signatureError = await ensureReceiveSignature({
+    supabase,
+    requestId,
+    employeeId: user.id,
+  });
+  if (signatureError) {
+    redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: signatureError }));
+  }
 
   redirect(
     buildRemissionDetailHref({
@@ -2381,6 +2422,14 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
   });
   if (syncError) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: syncError }));
+  }
+  const signatureError = await ensureReceiveSignature({
+    supabase,
+    requestId,
+    employeeId: user.id,
+  });
+  if (signatureError) {
+    redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: signatureError }));
   }
 
   redirect(

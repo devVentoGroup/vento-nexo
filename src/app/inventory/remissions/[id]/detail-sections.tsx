@@ -128,7 +128,9 @@ export function RemissionHeroSection(props: HeroProps) {
             >
               <div className="ui-remission-kpi-label">Lineas</div>
               <div className="ui-remission-kpi-value">{itemCount}</div>
-              <div className="ui-remission-kpi-note">Productos por revisar</div>
+              <div className="ui-remission-kpi-note">
+                {statusLabel === "Recibida" ? "Productos conciliados" : "Productos por revisar"}
+              </div>
             </div>
             <div className="ui-remission-kpi" data-tone={activeSignals > 0 ? "warm" : "success"}>
               <div className="ui-remission-kpi-label">Entrega</div>
@@ -218,7 +220,10 @@ export function RemissionSummarySection(props: SummaryProps) {
             <div className="mt-3 ui-body">
               Llega desde <strong>{fromSiteName || "-"}</strong> hacia <strong>{toSiteName || "-"}</strong>.
             </div>
-            <div className="mt-2 ui-caption">Entrega esperada: {expectedDateLabel}</div>
+            <div className="mt-2 ui-caption">
+              {currentStatusLabel === "Recibida" ? "Entrega registrada: " : "Entrega esperada: "}
+              {expectedDateLabel}
+            </div>
             {notes && notes !== "-" ? <div className="mt-2 ui-caption">Nota: {notes}</div> : null}
           </div>
           <div className="flex flex-wrap gap-2">

@@ -390,6 +390,9 @@ export default async function RemissionDetailPage({
     : "Sin fecha esperada";
   const createdAtLabel = formatDateTime(request.created_at);
   const notesLabel = request.notes ?? "-";
+  const receivedSignaturePresent =
+    Boolean(request.received_by) ||
+    (currentStatus === "received" && Boolean(request.received_at));
   const traceability = [
     {
       label: "Solicitud",
@@ -419,9 +422,11 @@ export default async function RemissionDetailPage({
       label: "Recepcion",
       value: request.received_by
         ? traceEmployeeMap.get(String(request.received_by)) ?? String(request.received_by)
-        : "Pendiente",
+        : receivedSignaturePresent
+          ? "Recepcion registrada (firma historica no disponible)"
+          : "Pendiente",
       at: request.received_at ? formatDateTime(request.received_at) : "",
-      done: Boolean(request.received_by),
+      done: receivedSignaturePresent,
     },
   ];
   const draftPrepareLines = canEditPrepareItems
@@ -508,6 +513,15 @@ export default async function RemissionDetailPage({
     };
   });
 
+  const deliveryStatusLabel =
+    currentStatus === "received"
+      ? request.received_at
+        ? `Entrega registrada ${formatDate(request.received_at)}`
+        : "Entrega registrada"
+      : request.expected_date
+        ? `Entrega esperada ${expectedDateLabel}`
+        : expectedDateLabel;
+
   return (
     <div className="ui-scene w-full space-y-6 pb-28 lg:pb-6">
       <RemissionHeroSection
@@ -522,9 +536,7 @@ export default async function RemissionDetailPage({
         compactSatelliteView={compactSatelliteView}
         itemCount={itemRows.length}
         activeSignals={activeSignals}
-        expectedDateLabel={
-          request.expected_date ? `Entrega esperada ${expectedDateLabel}` : expectedDateLabel
-        }
+        expectedDateLabel={deliveryStatusLabel}
         responsibleActor={responsibleActor}
         traceability={traceability}
       />
