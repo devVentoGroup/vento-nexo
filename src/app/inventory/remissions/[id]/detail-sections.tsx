@@ -1,5 +1,12 @@
 import Link from "next/link";
 
+type TraceabilityItem = {
+  label: string;
+  value: string;
+  at?: string;
+  done?: boolean;
+};
+
 type HeroProps = {
   backHref: string;
   backLabel: string;
@@ -14,8 +21,60 @@ type HeroProps = {
   activeSignals: number;
   expectedDateLabel: string;
   responsibleActor: string;
-  traceability?: Array<{ label: string; value: string }>;
+  traceability?: TraceabilityItem[];
 };
+
+function TraceabilityRows({
+  traceability,
+  compact = false,
+}: {
+  traceability: TraceabilityItem[];
+  compact?: boolean;
+}) {
+  if (!traceability.length) {
+    return <div className="ui-caption">Sin trazabilidad visible todavia.</div>;
+  }
+
+  return (
+    <div className={compact ? "space-y-2" : "space-y-1 ui-caption"}>
+      {traceability.map((item) => (
+        <div
+          key={item.label}
+          className={
+            compact
+              ? "rounded-xl border border-[var(--ui-border)] bg-white/85 px-3 py-2"
+              : undefined
+          }
+        >
+          <div className={compact ? "flex flex-wrap items-center justify-between gap-2" : undefined}>
+            <div className={compact ? "text-xs font-semibold text-[var(--ui-muted)]" : undefined}>
+              <strong>{item.label}:</strong> {!compact ? item.value : null}
+            </div>
+            {compact ? (
+              <span
+                className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+                  item.done
+                    ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    : "border-amber-200 bg-amber-50 text-amber-800"
+                }`}
+              >
+                {item.done ? "Firmado" : "Pendiente"}
+              </span>
+            ) : null}
+          </div>
+          {compact ? (
+            <div className="mt-1 text-sm text-[var(--ui-text)]">
+              <strong>{item.value || "-"}</strong>
+            </div>
+          ) : null}
+          <div className={compact ? "mt-1 text-xs text-[var(--ui-muted)]" : "text-[var(--ui-muted)]"}>
+            {item.at ? item.at : compact ? "Sin fecha/hora registrada" : null}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
 
 export function RemissionHeroSection(props: HeroProps) {
   const {
@@ -36,7 +95,10 @@ export function RemissionHeroSection(props: HeroProps) {
   } = props;
 
   return (
-    <section className="ui-remission-hero ui-fade-up" data-context={compactSatelliteView ? "satellite" : "center"}>
+    <section
+      className="ui-remission-hero ui-fade-up"
+      data-context={compactSatelliteView ? "satellite" : "center"}
+    >
       <div className="ui-remission-hero-grid">
         <div>
           <Link href={backHref} className="ui-caption underline">
@@ -44,7 +106,9 @@ export function RemissionHeroSection(props: HeroProps) {
           </Link>
           <div className="mt-4 flex flex-wrap items-center gap-2">
             {phaseLabel ? <span className="ui-chip ui-chip--brand">{phaseLabel}</span> : null}
-            <span className={`ui-chip ${compactSatelliteView ? "ui-chip--ops-satellite" : "ui-chip--ops-center"}`}>
+            <span
+              className={`ui-chip ${compactSatelliteView ? "ui-chip--ops-satellite" : "ui-chip--ops-center"}`}
+            >
               {compactSatelliteView ? "Satelite" : "Centro"}
             </span>
             <span className={statusClassName}>{statusLabel}</span>
@@ -58,7 +122,10 @@ export function RemissionHeroSection(props: HeroProps) {
         </div>
         {compactSatelliteView ? (
           <div className="ui-remission-kpis">
-            <div className="ui-remission-kpi" data-tone={statusLabel === "Recibida" ? "success" : "cool"}>
+            <div
+              className="ui-remission-kpi"
+              data-tone={statusLabel === "Recibida" ? "success" : "cool"}
+            >
               <div className="ui-remission-kpi-label">Lineas</div>
               <div className="ui-remission-kpi-value">{itemCount}</div>
               <div className="ui-remission-kpi-note">Productos por revisar</div>
@@ -83,13 +150,18 @@ export function RemissionHeroSection(props: HeroProps) {
                   traceability.map((item) => (
                     <div key={item.label}>
                       <span className="font-semibold">{item.label}:</span> {item.value}
+                      {item.at ? (
+                        <span className="ml-1 text-[var(--ui-muted)]">({item.at})</span>
+                      ) : null}
                     </div>
                   ))
                 ) : (
                   <div className="text-[var(--ui-muted)]">Sin trazabilidad visible todavia</div>
                 )}
               </div>
-              <div className="ui-remission-kpi-note">Quien solicito, preparo, despacho y recibio</div>
+              <div className="ui-remission-kpi-note">
+                Quien solicito, preparo, despacho y recibio
+              </div>
             </div>
             <div className="ui-remission-kpi" data-tone="cool">
               <div className="ui-remission-kpi-label">Lineas</div>
@@ -97,7 +169,7 @@ export function RemissionHeroSection(props: HeroProps) {
               <div className="ui-remission-kpi-note">Items dentro de la remision</div>
             </div>
             <div className="ui-remission-kpi" data-tone={activeSignals > 0 ? "warm" : "success"}>
-              <div className="ui-remission-kpi-label">Señales activas</div>
+              <div className="ui-remission-kpi-label">Senales activas</div>
               <div className="ui-remission-kpi-value">{activeSignals}</div>
               <div className="ui-remission-kpi-note">{expectedDateLabel}</div>
             </div>
@@ -119,7 +191,7 @@ type SummaryProps = {
   currentStatusLabel: string;
   stateSupportText: string;
   responsibleActor: string;
-  traceability?: Array<{ label: string; value: string }>;
+  traceability?: TraceabilityItem[];
 };
 
 export function RemissionSummarySection(props: SummaryProps) {
@@ -151,6 +223,14 @@ export function RemissionSummarySection(props: SummaryProps) {
           </div>
           <div className="flex flex-wrap gap-2">
             <span className={currentStatusClassName}>{currentStatusLabel}</span>
+          </div>
+        </div>
+        <div className="mt-4 rounded-2xl border border-[rgba(200,210,220,0.8)] bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(243,247,251,0.96)_100%)] px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
+          <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
+            Firmas del flujo
+          </div>
+          <div className="mt-3">
+            <TraceabilityRows traceability={traceability} compact />
           </div>
         </div>
         <div className="mt-3 ui-caption">{stateSupportText}</div>
@@ -198,17 +278,9 @@ export function RemissionSummarySection(props: SummaryProps) {
           <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
             Trazabilidad
           </div>
-          <div className="mt-2 space-y-1 ui-caption">
-          {traceability.length ? (
-            traceability.map((item) => (
-              <div key={item.label}>
-                <strong>{item.label}:</strong> {item.value}
-              </div>
-            ))
-          ) : (
-            <div>Sin trazabilidad visible todavia.</div>
-          )}
-        </div>
+          <div className="mt-2">
+            <TraceabilityRows traceability={traceability} />
+          </div>
         </div>
         <div className="mt-3 ui-caption">{stateSupportText}</div>
       </div>

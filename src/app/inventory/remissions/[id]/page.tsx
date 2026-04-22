@@ -391,32 +391,39 @@ export default async function RemissionDetailPage({
   const createdAtLabel = formatDateTime(request.created_at);
   const notesLabel = request.notes ?? "-";
   const traceability = [
-    request.created_by
-      ? {
-          label: "Solicito",
-          value: traceEmployeeMap.get(String(request.created_by)) ?? String(request.created_by),
-        }
-      : null,
-    request.prepared_by
-      ? {
-          label: "Preparo",
-          value: traceEmployeeMap.get(String(request.prepared_by)) ?? String(request.prepared_by),
-        }
-      : null,
-    request.in_transit_by
-      ? {
-          label: "Despacho",
-          value:
-            traceEmployeeMap.get(String(request.in_transit_by)) ?? String(request.in_transit_by),
-        }
-      : null,
-    request.received_by
-      ? {
-          label: "Recibio",
-          value: traceEmployeeMap.get(String(request.received_by)) ?? String(request.received_by),
-        }
-      : null,
-  ].filter(Boolean) as Array<{ label: string; value: string }>;
+    {
+      label: "Solicitud",
+      value: request.created_by
+        ? traceEmployeeMap.get(String(request.created_by)) ?? String(request.created_by)
+        : "Pendiente",
+      at: request.created_at ? formatDateTime(request.created_at) : "",
+      done: Boolean(request.created_by),
+    },
+    {
+      label: "Preparacion",
+      value: request.prepared_by
+        ? traceEmployeeMap.get(String(request.prepared_by)) ?? String(request.prepared_by)
+        : "Pendiente",
+      at: request.prepared_at ? formatDateTime(request.prepared_at) : "",
+      done: Boolean(request.prepared_by),
+    },
+    {
+      label: "Transito",
+      value: request.in_transit_by
+        ? traceEmployeeMap.get(String(request.in_transit_by)) ?? String(request.in_transit_by)
+        : "Pendiente",
+      at: request.in_transit_at ? formatDateTime(request.in_transit_at) : "",
+      done: Boolean(request.in_transit_by),
+    },
+    {
+      label: "Recepcion",
+      value: request.received_by
+        ? traceEmployeeMap.get(String(request.received_by)) ?? String(request.received_by)
+        : "Pendiente",
+      at: request.received_at ? formatDateTime(request.received_at) : "",
+      done: Boolean(request.received_by),
+    },
+  ];
   const draftPrepareLines = canEditPrepareItems
     ? itemRows.map((item) => {
       const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
