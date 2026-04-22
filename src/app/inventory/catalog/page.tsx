@@ -384,6 +384,9 @@ export default async function InventoryCatalogPage({
   const canManageProducts = ["propietario", "gerente_general"].includes(
     String((employee as { role?: string | null } | null)?.role ?? "").toLowerCase()
   );
+  const canCreateProducts = ["propietario", "gerente_general", "bodeguero"].includes(
+    String((employee as { role?: string | null } | null)?.role ?? "").toLowerCase()
+  );
 
   const siteId = String(
     sp.site_id ??
@@ -773,33 +776,35 @@ export default async function InventoryCatalogPage({
     href: buildUrl(tab.value),
     active: activeTab === tab.value,
   }));
-  const toolbarActions = activeTab === "productos"
-    ? [
-        { href: "/inventory/catalog/new?type=venta", label: "+ Producto de venta", tone: "brand" as const },
-        { href: "/inventory/catalog/new?type=reventa", label: "+ Producto de reventa", tone: "ghost" as const },
-      ]
-    : [
-        {
-          href: `/inventory/catalog/new?type=${
-            activeTab === "insumos"
-              ? "insumo"
-              : activeTab === "preparaciones"
-                ? "preparacion"
-                : "asset"
-          }`,
-          label: `+ Crear ${
-            activeTab === "insumos"
-              ? "insumo"
-              : activeTab === "preparaciones"
-                ? "preparacion"
-                : "equipo"
-          }`,
-          tone: "brand" as const,
-        },
-        ...(activeTab === "insumos"
-          ? [{ href: "/api/inventory/catalog/export-suppliers", label: "Descargar Excel de insumos", tone: "ghost" as const }]
-          : []),
-      ];
+  const toolbarActions = canCreateProducts
+    ? activeTab === "productos"
+      ? [
+          { href: "/inventory/catalog/new?type=venta", label: "+ Producto de venta", tone: "brand" as const },
+          { href: "/inventory/catalog/new?type=reventa", label: "+ Producto de reventa", tone: "ghost" as const },
+        ]
+      : [
+          {
+            href: `/inventory/catalog/new?type=${
+              activeTab === "insumos"
+                ? "insumo"
+                : activeTab === "preparaciones"
+                  ? "preparacion"
+                  : "asset"
+            }`,
+            label: `+ Crear ${
+              activeTab === "insumos"
+                ? "insumo"
+                : activeTab === "preparaciones"
+                  ? "preparacion"
+                  : "equipo"
+            }`,
+            tone: "brand" as const,
+          },
+          ...(activeTab === "insumos"
+            ? [{ href: "/api/inventory/catalog/export-suppliers", label: "Descargar Excel de insumos", tone: "ghost" as const }]
+            : []),
+        ]
+    : [];
 
   const catalogResultRows: CatalogResultRow[] = visibleProducts.map((product) => {
     const inventoryProfile = product.product_inventory_profiles;

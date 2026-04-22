@@ -393,7 +393,7 @@ async function createProduct(formData: FormData) {
 
   const { data: employee } = await supabase.from("employees").select("role").eq("id", user.id).maybeSingle();
   const role = String((employee as { role?: string } | null)?.role ?? "").toLowerCase();
-  if (!["propietario", "gerente_general"].includes(role)) {
+  if (!["propietario", "gerente_general", "bodeguero"].includes(role)) {
     redirect("/inventory/catalog?error=" + encodeURIComponent("No tienes permisos para crear productos."));
   }
 
@@ -1243,7 +1243,7 @@ export default async function NewProductPage({
       .order("name"),
   ]);
   const role = String((emp as { role?: string } | null)?.role ?? "").toLowerCase();
-  const canCreate = ["propietario", "gerente_general"].includes(role);
+  const canCreate = ["propietario", "gerente_general", "bodeguero"].includes(role);
 
   const sitesList = (sitesData ?? []) as {
     id: string;
@@ -1385,7 +1385,7 @@ export default async function NewProductPage({
           </div>
         </section>
         <div className="ui-alert ui-alert--warn">
-          Solo propietarios y gerentes generales pueden crear productos.
+          Solo propietarios, gerentes generales y bodegueros pueden crear productos.
         </div>
       </div>
     );
