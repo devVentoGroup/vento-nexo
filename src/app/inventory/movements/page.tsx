@@ -48,6 +48,28 @@ const MOVEMENT_TYPE_LABELS: Record<string, string> = {
   transfer_in: "Traslado recibido",
   transfer_out: "Traslado enviado",
 };
+
+const INCREASE_TYPES = new Set([
+  "receipt_in",
+  "receipt",
+  "purchase_in",
+  "restock_in",
+  "production_in",
+  "transfer_in",
+]);
+
+const DECREASE_TYPES = new Set([
+  "consumption",
+  "sale_out",
+  "restock_out",
+  "production_out",
+  "issue_internal",
+  "waste",
+  "shrink",
+  "transfer_out",
+]);
+
+const NEUTRAL_STOCK_TYPES = new Set(["transfer_internal"]);
 type SiteRow = {
   site_id: string;
   is_primary: boolean | null;
@@ -103,13 +125,22 @@ function formatMovementDate(value: string) {
 }
 
 function movementTone(value: string) {
-  if (["receipt_in", "receipt", "purchase_in", "restock_in", "production_in", "transfer_in"].includes(value)) {
+  if (INCREASE_TYPES.has(value)) {
     return "success";
   }
-  if (["consumption", "sale_out", "restock_out", "production_out", "issue_internal", "waste", "shrink", "transfer_out"].includes(value)) {
+  if (DECREASE_TYPES.has(value)) {
     return "warn";
   }
   return "neutral";
+}
+
+function normalizeSignedMovementQty(type: string, rawQty: number | null | undefined) {
+  const qty = Math.abs(Number(rawQty ?? 0));
+  if (!Number.isFinite(qty)) return 0;
+  if (NEUTRAL_STOCK_TYPES.has(type)) return 0;
+  if (INCREASE_TYPES.has(type)) return qty;
+  if (DECREASE_TYPES.has(type)) return -qty;
+  return Number(rawQty ?? 0);
 }
 
 function displayEmployeeName(employee?: EmployeeNameRow | null) {
@@ -218,8 +249,12 @@ export default async function InventoryMovementsPage({
 
   const movements = (rows ?? []) as unknown as MovementRow[];
   const siteLabel = siteId ? siteNameMap.get(siteId) ?? siteId : "Todas las sedes";
-  const positiveCount = movements.filter((row) => Number(row.quantity ?? 0) > 0).length;
-  const negativeCount = movements.filter((row) => Number(row.quantity ?? 0) < 0).length;
+  const positiveCount = movements.filter(
+    (row) => normalizeSignedMovementQty(String(row.movement_type ?? ""), row.quantity) > 0
+  ).length;
+  const negativeCount = movements.filter(
+    (row) => normalizeSignedMovementQty(String(row.movement_type ?? ""), row.quantity) < 0
+  ).length;
   const activeFilterCount = [siteId, movementType, productId, fromDate, toDate].filter(Boolean).length;
 
   const movementSiteIds = Array.from(new Set(movements.map((row) => String(row.site_id ?? "")).filter(Boolean)));
@@ -260,7 +295,7 @@ export default async function InventoryMovementsPage({
   for (const row of movements) {
     const key = `${String(row.site_id ?? "")}::${String(row.product_id ?? "")}`;
     const closing = Number(runningBalanceMap.get(key) ?? 0);
-    const movement = Number(row.quantity ?? 0);
+    const movement = normalizeSignedMovementQty(String(row.movement_type ?? ""), row.quantity);
     const opening = closing - movement;
     movementBalances.set(String(row.id), { opening, closing, movement });
     runningBalanceMap.set(key, opening);
@@ -456,8 +491,7 @@ export default async function InventoryMovementsPage({
             const product = row.product ?? null;
             const productLabel = product?.name ?? row.product_id ?? "";
             const productSku = product?.sku ?? "";
-            const qtyValue = Number(row.quantity ?? 0);
-            const qty = String(row.quantity ?? "");
+            const signedQty = normalizeSignedMovementQty(type, Number(row.quantity ?? 0));
             const unit = String(row.stock_unit_code ?? product?.stock_unit_code ?? product?.unit ?? "");
             const inputQty = row.input_qty;
             const inputUnit = row.input_unit_code ?? "";
@@ -470,7 +504,7 @@ export default async function InventoryMovementsPage({
                 : "Sin detalle";
 
             return (
-              <div key={String(row.id ?? `${createdAt}-${productLabel}-${qty}`)} className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
+              <div key={String(row.id ?? `${createdAt}-${productLabel}-${signedQty}`)} className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
                 <div className="flex items-start justify-between gap-3">
                   <div>
                     <div className="text-sm font-semibold text-[var(--ui-text)]">{productLabel}</div>
@@ -496,8 +530,8 @@ export default async function InventoryMovementsPage({
                   </div>
                   <div className="rounded-xl bg-[var(--ui-bg-soft)] p-3">
                     <div className="text-xs text-[var(--ui-muted)]">Cantidad</div>
-                    <div className={`mt-1 text-base font-semibold ${qtyValue < 0 ? "text-amber-700" : qtyValue > 0 ? "text-emerald-700" : "text-[var(--ui-text)]"}`}>
-                      {qty} {unit}
+                    <div className={`mt-1 text-base font-semibold ${signedQty < 0 ? "text-amber-700" : signedQty > 0 ? "text-emerald-700" : "text-[var(--ui-text)]"}`}>
+                      {signedQty > 0 ? `+${signedQty}` : signedQty} {unit}
                     </div>
                   </div>
                   <div className="rounded-xl bg-[var(--ui-bg-soft)] p-3">
@@ -559,7 +593,7 @@ export default async function InventoryMovementsPage({
                 const balances = movementBalances.get(String(row.id)) ?? {
                   opening: 0,
                   closing: 0,
-                  movement: Number(row.quantity ?? 0),
+                  movement: normalizeSignedMovementQty(type, row.quantity),
                 };
                 const unit = String(row.stock_unit_code ?? product?.stock_unit_code ?? product?.unit ?? "");
                 const inputQty = row.input_qty;

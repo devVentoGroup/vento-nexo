@@ -55,6 +55,38 @@ async function ensureReceiveSignature(params: {
   return updateErr?.message ?? null;
 }
 
+async function ensureDestinationReceiptMovements(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  requestId: string;
+  toSiteId?: string | null;
+}) {
+  const { supabase, requestId, toSiteId } = params;
+  const siteId = String(toSiteId ?? "").trim();
+  if (!siteId) return null;
+
+  const { data: reqRow, error: reqErr } = await supabase
+    .from("restock_requests")
+    .select("status")
+    .eq("id", requestId)
+    .maybeSingle();
+  if (reqErr || !reqRow) return reqErr?.message ?? null;
+  if (String(reqRow.status ?? "") !== "received") return null;
+
+  const { count, error: countErr } = await supabase
+    .from("inventory_movements")
+    .select("id", { head: true, count: "exact" })
+    .eq("related_restock_request_id", requestId)
+    .eq("movement_type", "transfer_in")
+    .eq("site_id", siteId);
+  if (countErr) return countErr.message;
+  if (Number(count ?? 0) > 0) return null;
+
+  const { error: receiptErr } = await supabase.rpc("apply_restock_receipt", {
+    p_request_id: requestId,
+  });
+  return receiptErr?.message ?? null;
+}
+
 export async function updateItems(formData: FormData) {
   const supabase = await createClient();
   const { data: userRes } = await supabase.auth.getUser();
@@ -1729,6 +1761,14 @@ export async function updateStatus(formData: FormData) {
     if (syncError) {
       redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: syncError }));
     }
+    const receiptMoveError = await ensureDestinationReceiptMovements({
+      supabase,
+      requestId,
+      toSiteId: request?.to_site_id,
+    });
+    if (receiptMoveError) {
+      redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: receiptMoveError }));
+    }
   }
 
   const okCodeByAction: Record<string, string> = {
@@ -2180,6 +2220,14 @@ export async function applyReceiveShortcut(formData: FormData) {
   if (syncError) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: syncError }));
   }
+  const receiptMoveError = await ensureDestinationReceiptMovements({
+    supabase,
+    requestId,
+    toSiteId: request?.to_site_id,
+  });
+  if (receiptMoveError) {
+    redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: receiptMoveError }));
+  }
   const signatureError = await ensureReceiveSignature({
     supabase,
     requestId,
@@ -2422,6 +2470,14 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
   });
   if (syncError) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: syncError }));
+  }
+  const receiptMoveError = await ensureDestinationReceiptMovements({
+    supabase,
+    requestId,
+    toSiteId: request?.to_site_id,
+  });
+  if (receiptMoveError) {
+    redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: receiptMoveError }));
   }
   const signatureError = await ensureReceiveSignature({
     supabase,
