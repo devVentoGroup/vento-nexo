@@ -48,6 +48,8 @@ type Props = {
   products: Option[];
   categoryNameById?: Record<string, string>;
   areaOptions: AreaOption[];
+  siteMode?: "simple" | "zonified";
+  defaultAreaKind?: string;
   defaultUomProfiles?: ProductUomProfile[];
   onRowsChange?: (rows: RemissionDraftRow[]) => void;
   referenceStockByProduct?: Record<
@@ -87,23 +89,28 @@ export function RemissionsItems({
   products,
   categoryNameById = {},
   areaOptions,
+  siteMode = "zonified",
+  defaultAreaKind = "",
   defaultUomProfiles = [],
   onRowsChange,
   referenceStockByProduct = {},
   referenceSiteName = "",
-  initialRows = [],
+  initialRows,
 }: Props) {
+  const initialRowsSource = initialRows ?? [];
+  const initialRowsKey = useMemo(() => JSON.stringify(initialRowsSource), [initialRowsSource]);
   const normalizedInitialRows = useMemo<RemissionDraftRow[]>(() => {
-    if (!initialRows.length) return [EMPTY_ROW];
-    return initialRows.map((row, index) => ({
+    if (!initialRowsSource.length) return [EMPTY_ROW];
+    return initialRowsSource.map((row, index) => ({
       id: Number.isFinite(row.id) ? row.id : index,
       productId: String(row.productId ?? "").trim(),
       quantity: String(row.quantity ?? "").trim(),
       inputUnitCode: normalizeUnitCode(String(row.inputUnitCode ?? "").trim()),
       inputUomProfileId: String(row.inputUomProfileId ?? "").trim(),
-      areaKind: String(row.areaKind ?? "").trim(),
+      areaKind:
+        String(row.areaKind ?? "").trim() || (siteMode === "simple" ? defaultAreaKind : ""),
     }));
-  }, [initialRows]);
+  }, [defaultAreaKind, initialRowsKey, siteMode]);
 
   const [rows, setRows] = useState<Row[]>(normalizedInitialRows);
 
@@ -130,7 +137,17 @@ export function RemissionsItems({
 
   useEffect(() => {
     setRows(normalizedInitialRows);
-  }, [normalizedInitialRows]);
+  }, [initialRowsKey, normalizedInitialRows]);
+
+  useEffect(() => {
+    if (siteMode !== "simple" || !defaultAreaKind) return;
+    setRows((prev) =>
+      prev.map((row) => ({
+        ...row,
+        areaKind: row.areaKind || defaultAreaKind,
+      }))
+    );
+  }, [defaultAreaKind, siteMode]);
 
   useEffect(() => {
     onRowsChange?.(rows);
@@ -228,12 +245,33 @@ export function RemissionsItems({
             : null;
         return (
           <div key={row.id} className="space-y-3">
-            <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3 sm:p-4">
-              <div className="text-sm font-semibold text-[var(--ui-text)]">
-                {product?.name ?? `Item ${idx + 1}`}
+            <div className="overflow-hidden rounded-[24px] border border-[rgba(200,210,220,0.95)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(243,247,251,0.98)_100%)] shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
+              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[rgba(200,210,220,0.75)] bg-[linear-gradient(90deg,rgba(212,164,58,0.12)_0%,rgba(14,116,144,0.08)_100%)] px-4 py-3">
+                <div>
+                  <div className="text-sm font-semibold text-[var(--ui-text)]">
+                    {product?.name ?? `Item ${idx + 1}`}
+                  </div>
+                  <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                    {rowReady ? "Linea lista para solicitud" : "Completa producto, cantidad y unidad"}
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
+                    rowReady
+                      ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
+                      : "border border-slate-200 bg-white text-slate-600"
+                  }`}>
+                    {rowReady ? "Completo" : "Pendiente"}
+                  </span>
+                  {referenceComparison?.shortage ? (
+                    <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-800">
+                      Falta referencia
+                    </span>
+                  ) : null}
+                </div>
               </div>
 
-              <div className="mt-3 grid gap-3 md:grid-cols-12 md:items-start">
+              <div className="grid gap-3 p-4 md:grid-cols-12 md:items-start">
                 <label className="flex min-w-0 flex-col gap-1 md:col-span-5">
                   <span className="ui-label">Producto</span>
                   <SearchableSingleSelect
@@ -334,44 +372,56 @@ export function RemissionsItems({
                 </label>
 
                 <label className="flex flex-col gap-1 md:col-span-3">
-                  <span className="ui-label">Area operativa</span>
-                  <select
-                    name="item_area_kind"
-                    className="ui-input h-10"
-                    value={row.areaKind}
-                    onChange={(event) =>
-                      setRows((prev) =>
-                        prev.map((current) =>
-                          current.id === row.id ? { ...current, areaKind: event.target.value } : current
+                  <span className="ui-label">
+                    {siteMode === "simple" ? "Destino de la remision" : "Area operativa"}
+                  </span>
+                  {siteMode === "simple" ? (
+                    <>
+                      <div className="ui-input flex h-10 items-center bg-[linear-gradient(180deg,rgba(255,251,235,0.9)_0%,rgba(255,255,255,0.92)_100%)] font-semibold text-[var(--ui-text)]">
+                        Solicitud global
+                      </div>
+                      <input type="hidden" name="item_area_kind" value={row.areaKind || defaultAreaKind} />
+                    </>
+                  ) : (
+                    <select
+                      name="item_area_kind"
+                      className="ui-input h-10"
+                      value={row.areaKind}
+                      onChange={(event) =>
+                        setRows((prev) =>
+                          prev.map((current) =>
+                            current.id === row.id ? { ...current, areaKind: event.target.value } : current
+                          )
                         )
-                      )
-                    }
-                  >
-                    <option value="">Area (opcional)</option>
-                    {areaOptions.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
+                      }
+                    >
+                      <option value="">Area (opcional)</option>
+                      {areaOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
                 </label>
 
                 <input type="hidden" name="item_input_uom_profile_id" value={row.inputUomProfileId} />
                 <input type="hidden" name="item_quantity_in_input" value={row.quantity} />
 
                 {conversionLabel ? (
-                  <div className="text-xs text-[var(--ui-muted)] md:col-span-12">
+                  <div className="rounded-2xl border border-[rgba(14,116,144,0.14)] bg-[linear-gradient(180deg,rgba(240,249,255,0.88)_0%,rgba(255,255,255,0.92)_100%)] px-3 py-2 text-xs text-sky-900 md:col-span-12">
                     Conversion aplicada: {conversionLabel}
                   </div>
                 ) : null}
 
                 {referenceComparison ? (
                   <div
-                    className={`text-xs md:col-span-12 ${referenceComparison.requestedInStock !== null &&
+                    className={`rounded-2xl border px-3 py-2 text-xs md:col-span-12 ${
+                      referenceComparison.requestedInStock !== null &&
                       referenceComparison.requestedInStock > availableReference
-                      ? "text-amber-700"
-                      : "text-[var(--ui-muted)]"
-                      }`}
+                        ? "border-amber-200 bg-amber-50 text-amber-800"
+                        : "border-emerald-200 bg-emerald-50 text-emerald-800"
+                    }`}
                   >
                     Stock referencial en {referenceSiteName}: {availableReference} {stockUnitCode || "un"}
                     {referenceComparison.requestedInStock !== null
@@ -384,7 +434,7 @@ export function RemissionsItems({
               </div>
 
               {rows.length > 1 ? (
-                <div className="mt-3 flex justify-end">
+                <div className="flex justify-end border-t border-[rgba(200,210,220,0.75)] bg-white/70 px-4 py-3">
                   <button
                     type="button"
                     className="ui-btn ui-btn--ghost ui-btn--sm"
@@ -397,7 +447,7 @@ export function RemissionsItems({
             </div>
 
             {isLast ? (
-              <button type="button" className="ui-btn ui-btn--ghost w-fit" onClick={addRow}>
+              <button type="button" className="ui-btn ui-btn--ghost w-fit shadow-sm" onClick={addRow}>
                 + Agregar otro item
               </button>
             ) : null}

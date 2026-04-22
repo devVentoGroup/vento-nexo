@@ -36,7 +36,7 @@ export function RemissionHeroSection(props: HeroProps) {
   } = props;
 
   return (
-    <section className="ui-remission-hero ui-fade-up">
+    <section className="ui-remission-hero ui-fade-up" data-context={compactSatelliteView ? "satellite" : "center"}>
       <div className="ui-remission-hero-grid">
         <div>
           <Link href={backHref} className="ui-caption underline">
@@ -44,6 +44,9 @@ export function RemissionHeroSection(props: HeroProps) {
           </Link>
           <div className="mt-4 flex flex-wrap items-center gap-2">
             {phaseLabel ? <span className="ui-chip ui-chip--brand">{phaseLabel}</span> : null}
+            <span className={`ui-chip ${compactSatelliteView ? "ui-chip--ops-satellite" : "ui-chip--ops-center"}`}>
+              {compactSatelliteView ? "Satelite" : "Centro"}
+            </span>
             <span className={statusClassName}>{statusLabel}</span>
           </div>
           <h1 className="mt-4 text-3xl font-semibold tracking-[-0.03em] text-[var(--ui-text)]">
@@ -191,7 +194,11 @@ export function RemissionSummarySection(props: SummaryProps) {
         <div className="mt-3 ui-caption">
           Actor actual: <strong>{responsibleActor}</strong>
         </div>
-        <div className="mt-3 space-y-1 ui-caption">
+        <div className="mt-4 rounded-2xl border border-[rgba(200,210,220,0.8)] bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(243,247,251,0.96)_100%)] px-4 py-3 shadow-[0_10px_24px_rgba(15,23,42,0.06)]">
+          <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
+            Trazabilidad
+          </div>
+          <div className="mt-2 space-y-1 ui-caption">
           {traceability.length ? (
             traceability.map((item) => (
               <div key={item.label}>
@@ -201,6 +208,7 @@ export function RemissionSummarySection(props: SummaryProps) {
           ) : (
             <div>Sin trazabilidad visible todavia.</div>
           )}
+        </div>
         </div>
         <div className="mt-3 ui-caption">{stateSupportText}</div>
       </div>

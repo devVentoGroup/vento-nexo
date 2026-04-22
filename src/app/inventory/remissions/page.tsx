@@ -1157,6 +1157,8 @@ export default async function RemissionsPage({
       : viewMode === "bodega"
         ? "Centro operando"
         : activeSiteName;
+  const heroContextTone =
+    viewMode === "bodega" ? "center" : viewMode === "satélite" ? "satellite" : "all";
   const heroTitle =
     viewMode === "bodega"
       ? "Preparar solicitudes"
@@ -1222,11 +1224,19 @@ export default async function RemissionsPage({
 
   return (
     <div className="ui-scene w-full space-y-6">
-      <section className="ui-remission-hero ui-fade-up">
+      <section className="ui-remission-hero ui-fade-up" data-context={heroContextTone}>
         <div className="ui-remission-hero-grid">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
-              <span className="ui-chip ui-chip--brand">{heroViewLabel}</span>
+              <div className="flex flex-wrap gap-2">
+                <span className="ui-chip ui-chip--brand">{heroViewLabel}</span>
+                {viewMode === "bodega" ? (
+                  <span className="ui-chip ui-chip--ops-center">Centro</span>
+                ) : null}
+                {viewMode === "satélite" ? (
+                  <span className="ui-chip ui-chip--ops-satellite">Satelite</span>
+                ) : null}
+              </div>
               <h2 className="mt-4 text-3xl font-semibold tracking-[-0.03em] text-[var(--ui-text)]">
                 {heroTitle}
               </h2>
@@ -1476,7 +1486,7 @@ export default async function RemissionsPage({
                   <tr key={row.id} className="ui-body">
                     <TableCell>{formatDateTime(row.created_at)}</TableCell>
                     <TableCell>
-                      <span className={formatStatus(row.status).className}>
+                      <span className={`${formatStatus(row.status).className} ui-chip--status-${String(row.status ?? "unknown")}`}>
                         {formatStatus(row.status).label}
                       </span>
                     </TableCell>
@@ -1649,7 +1659,7 @@ export default async function RemissionsPage({
                   <tr key={row.id} className="ui-body">
                     <TableCell>{formatDateTime(row.created_at)}</TableCell>
                     <TableCell>
-                      <span className={formatStatus(row.status).className}>
+                      <span className={`${formatStatus(row.status).className} ui-chip--status-${String(row.status ?? "unknown")}`}>
                         {formatStatus(row.status).label}
                       </span>
                     </TableCell>
