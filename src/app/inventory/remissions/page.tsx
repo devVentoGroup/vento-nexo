@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 import { redirect } from "next/navigation";
+import { cookies } from "next/headers";
 
 import { requireAppAccess } from "@/lib/auth/guard";
 import { checkPermissionWithRoleOverride } from "@/lib/auth/role-override";
@@ -22,6 +23,7 @@ import {
 export const dynamic = "force-dynamic";
 
 const APP_ID = "nexo";
+const SITE_OVERRIDE_COOKIE = "nexo_site_override_id";
 
 const PERMISSIONS = {
   remissionsRequest: "inventory.remissions.request",
@@ -821,6 +823,11 @@ export default async function RemissionsPage({
     .select("site_id,role")
     .eq("id", user.id)
     .single();
+  const { data: settings } = await supabase
+    .from("employee_settings")
+    .select("selected_site_id")
+    .eq("employee_id", user.id)
+    .maybeSingle();
 
   const actualRole = String(employee?.role ?? "");
   const canViewAll = await checkPermissionWithRoleOverride({
@@ -840,8 +847,13 @@ export default async function RemissionsPage({
 
   const employeeSiteRows = (sitesRows ?? []) as EmployeeSiteRow[];
   const defaultSiteId = employeeSiteRows[0]?.site_id ?? employee?.site_id ?? "";
+  const cookieStore = await cookies();
+  const siteOverrideId = String(cookieStore.get(SITE_OVERRIDE_COOKIE)?.value ?? "").trim();
+  const selectedSiteId = String(settings?.selected_site_id ?? "").trim();
   let activeSiteId =
-    sp.site_id !== undefined ? String(sp.site_id).trim() : canViewAll ? "" : defaultSiteId;
+    sp.site_id !== undefined
+      ? String(sp.site_id).trim()
+      : siteOverrideId || selectedSiteId || (canViewAll ? "" : defaultSiteId);
   if (!activeSiteId && !canViewAll) {
     activeSiteId = defaultSiteId;
   }
@@ -860,6 +872,9 @@ export default async function RemissionsPage({
 
   const siteRows = (sites ?? []) as SiteRow[];
   const siteMap = new Map(siteRows.map((site) => [site.id, site]));
+  if (activeSiteId && !siteMap.has(activeSiteId)) {
+    activeSiteId = defaultSiteId;
+  }
   const activeSite = activeSiteId ? siteMap.get(activeSiteId) : undefined;
   const isAllSites = !activeSiteId && canViewAll;
   const activeSiteName = isAllSites ? "Todas las sedes" : activeSite?.name ?? activeSiteId;

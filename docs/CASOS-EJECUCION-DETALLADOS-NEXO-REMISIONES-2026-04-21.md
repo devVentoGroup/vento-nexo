@@ -1,5 +1,8 @@
 # Casos De Ejecucion Detallados NEXO Remisiones 2026-04-21
 
+> Estado actual: `prioridad 1`.
+> Este es el bloque operativo mas urgente para salir a operar entre Centro y satelites.
+
 Usa estos archivos antes de empezar:
 - Seed: [seed_test_nexo_entries_remissions.sql](C:/Users/User/devVentoGroup/vento-nexo/supabase/seed_test_nexo_entries_remissions.sql:1)
 - Cleanup: [cleanup_test_nexo_entries_remissions.sql](C:/Users/User/devVentoGroup/vento-nexo/supabase/cleanup_test_nexo_entries_remissions.sql:1)

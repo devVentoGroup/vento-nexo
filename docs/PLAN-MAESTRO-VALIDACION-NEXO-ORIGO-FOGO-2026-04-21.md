@@ -437,3 +437,49 @@ Despues de este documento, conviene crear 3 anexos:
 1. `MATRIZ-PERMISOS-NEXO-ORIGO-FOGO.md`
 2. `CASOS-DE-PRUEBA-NEXO-ORIGO-FOGO.csv`
 3. `ACTA-HALLAZGOS-NEXO-ORIGO-FOGO.md`
+## Prioridad Operativa Actual
+
+El foco inmediato ya no es `Entradas de emergencia` en NEXO.
+
+Orden de validacion y salida a operacion:
+1. `NEXO - Remisiones`
+2. `ORIGO - Compras y recepciones`
+3. `Cruce ORIGO -> NEXO`
+4. `FOGO - Consumo y lotes`
+5. `NEXO - Entradas de emergencia` solo como contingencia
+
+### Criterio
+- `Entradas` en NEXO existe para casos excepcionales.
+- El flujo normal de abastecimiento debe vivir en `ORIGO`.
+- Lo urgente para operar hoy es que `Remisiones` funcione bien entre Centro y satelites.
+
+## Alcance Inmediato
+
+### 1. NEXO - Remisiones
+- solicitud desde satelite
+- preparacion en Centro
+- despacho / transito
+- recepcion en satelite
+- trazabilidad completa por actor
+- impacto en stock y movimientos
+
+### 2. ORIGO - Recepciones
+- compra / orden
+- recepcion
+- proveedor real
+- documento real
+- reflejo correcto en inventario
+
+### 3. Cruce ORIGO -> NEXO
+- lo recibido en ORIGO debe quedar visible y utilizable en NEXO
+- luego ese stock debe poder salir por remision o retiro
+
+### 4. FOGO
+- consumo desde inventario
+- lotes
+- trazabilidad de produccion
+
+### 5. NEXO - Entradas de emergencia
+- mantenerlo disponible
+- probarlo despues
+- no bloquear la salida operativa por este flujo

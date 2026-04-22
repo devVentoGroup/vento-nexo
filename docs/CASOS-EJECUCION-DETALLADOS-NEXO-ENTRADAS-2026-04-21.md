@@ -1,5 +1,9 @@
 # Casos De Ejecucion Detallados NEXO Entradas 2026-04-21
 
+> Estado actual: `secundario / contingencia`.
+> No es el bloque prioritario de validacion operativa hoy.
+> Primero ejecutar `Remisiones NEXO` y despues `ORIGO`.
+
 Usa estos archivos antes de empezar:
 - Seed: [seed_test_nexo_entries_remissions.sql](C:/Users/User/devVentoGroup/vento-nexo/supabase/seed_test_nexo_entries_remissions.sql:1)
 - Cleanup: [cleanup_test_nexo_entries_remissions.sql](C:/Users/User/devVentoGroup/vento-nexo/supabase/cleanup_test_nexo_entries_remissions.sql:1)
