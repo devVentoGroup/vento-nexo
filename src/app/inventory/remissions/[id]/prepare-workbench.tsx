@@ -197,13 +197,29 @@ function needsMultilocSplitHint(line: DraftLine): boolean {
 }
 
 /** Cantidad sugerida para la nueva línea: lo que cubre el LOC más lleno (típico 6+4 cuando el máximo en un LOC es 6). */
-function suggestedSplitQtyForMultiloc(line: DraftLine): number {
+function suggestedSplitPrimaryQtyForMultiloc(line: DraftLine): number {
   const rq = roundQty(line.requestedQty);
   const maxQ = maxLocQtyForLine(line);
   const minRemainder = 0.01;
   if (maxQ > 0 && maxQ < rq && roundQty(rq - maxQ) >= minRemainder) {
     return maxQ;
   }
+  const half = roundQty(rq / 2);
+  if (half > 0 && half < rq) return half;
+  return Math.max(1, Math.floor(rq / 2));
+}
+
+/** Cantidad sugerida para la línea nueva (lo que falta tras mantener la parte principal en la línea actual). */
+function suggestedNewLineQtyForMultiloc(line: DraftLine): number {
+  const rq = roundQty(line.requestedQty);
+  const minRemainder = 0.01;
+  const currentDispatch = roundQty(clampQty(Number(line.dispatchQty ?? 0), 0, rq));
+  const primaryDefault = suggestedSplitPrimaryQtyForMultiloc(line);
+  const keepQty =
+    currentDispatch > 0 && currentDispatch < rq ? currentDispatch : primaryDefault;
+  const newLineQty = roundQty(rq - keepQty);
+  if (newLineQty >= minRemainder && newLineQty < rq) return newLineQty;
+
   const half = roundQty(rq / 2);
   if (half > 0 && half < rq) return half;
   return Math.max(1, Math.floor(rq / 2));
@@ -449,10 +465,10 @@ function RemissionPrepareWorkbenchInteractive({
           const hasShortage = line.dispatchQty < line.requestedQty;
           const tone = getLineTone(line);
           const multilocHint = needsMultilocSplitHint(line);
-          const multilocSuggested = multilocHint ? suggestedSplitQtyForMultiloc(line) : 0;
-          const multilocRemainder = multilocHint
-            ? roundQty(line.requestedQty - multilocSuggested)
+          const multilocPrimarySuggested = multilocHint
+            ? suggestedSplitPrimaryQtyForMultiloc(line)
             : 0;
+          const multilocSuggested = multilocHint ? suggestedNewLineQtyForMultiloc(line) : 0;
           return (
             <div key={line.id} className="border-t border-[var(--ui-border)] first:border-t-0">
               <div className="grid gap-3 px-4 py-3 lg:grid-cols-[minmax(220px,1.2fr)_minmax(260px,1.3fr)_120px_minmax(220px,1fr)_120px] lg:items-start">
@@ -498,7 +514,7 @@ function RemissionPrepareWorkbenchInteractive({
                         onClick={() => openSplit(line.id, multilocSuggested)}
                         className="mt-2 text-left text-sm font-semibold text-sky-900 underline-offset-4 transition hover:underline"
                       >
-                        Partición sugerida: {multilocSuggested} + {multilocRemainder}{" "}
+                        Partición sugerida: {multilocPrimarySuggested} + {multilocSuggested}{" "}
                         {line.unitLabel}
                       </button>
                     </div>
