@@ -183,29 +183,18 @@ export function buildSingleLabelZpl(opts: {
   parts.push(header);
 
   if (isLoc70Qr) {
-    // --- LOC 50×70 QR para Zebra 203 dpi: ajustar QR al espacio real ---
+    // --- LOC 50×70 QR fijo: layout determinista para Zebra 203 dpi ---
     const baseUrl = (opts.baseUrlForQr ?? "").replace(/\/$/, "");
     const withdrawUrl = buildLocQrUrl(baseUrl, code);
-    const titleY = 16;
-    const noteY = 50;
-    const qrY = 94;
-    const codeY = heightDots - 88;
-    const qrMaxWidth = widthDots - marginX * 2 - 12;
-    const qrMaxHeight = codeY - qrY - 18;
-    const qrMaxSize = Math.max(96, Math.min(qrMaxWidth, qrMaxHeight));
-    const qrMag = fitQrMagnification(withdrawUrl, qrMaxSize, 4);
-    const qrSize = qrSizeDots(withdrawUrl, qrMag);
-    const qrX = Math.max(marginX, Math.floor((widthDots - qrSize) / 2));
 
-    parts.push(buildTextBlock({ x: marginX, y: titleY, h: 28, w: 20, maxWidthDots: maxTextWidth, lines: 1, align: "C", text: titleStr }));
+    parts.push(buildTextBlock({ x: 18, y: 16, h: 28, w: 20, maxWidthDots: widthDots - 36, lines: 1, align: "C", text: titleStr }));
 
     if (note) {
-      parts.push(buildTextBlock({ x: marginX, y: noteY, h: 22, w: 16, maxWidthDots: maxTextWidth, lines: 2, align: "C", text: note }));
+      parts.push(buildTextBlock({ x: 18, y: 50, h: 22, w: 16, maxWidthDots: widthDots - 36, lines: 2, align: "C", text: note }));
     }
 
-    parts.push(buildQRField({ x: qrX, y: qrY, magnification: qrMag, data: withdrawUrl }));
-
-    parts.push(buildTextBlock({ x: marginX, y: codeY, h: 24, w: 16, maxWidthDots: maxTextWidth, lines: 1, align: "C", text: code }));
+    parts.push(buildQRField({ x: 75, y: 92, magnification: 5, data: withdrawUrl }));
+    parts.push(buildTextBlock({ x: 18, y: 500, h: 24, w: 16, maxWidthDots: widthDots - 36, lines: 1, align: "C", text: code }));
   } else {
     // --- SKU / PROD / otros presets ---
     parts.push(buildTextBlock({ x: marginX, y: yTitle, h: 26, w: 26, maxWidthDots: maxTextWidth, lines: 1, align: "L", text: titleStr }));
@@ -299,3 +288,4 @@ export function normalizeDevices(devsRaw: BrowserPrintDevices | unknown): Browse
   }
   return [];
 }
+
