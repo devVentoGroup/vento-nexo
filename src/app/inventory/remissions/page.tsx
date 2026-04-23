@@ -130,6 +130,12 @@ type RemissionOperationalSummaryRow = {
   can_transit: boolean | null;
 };
 
+type RemissionItemMetricsRow = {
+  request_id: string | null;
+  quantity: number | null;
+  prepared_quantity: number | null;
+};
+
 type EmployeeNameRow = {
   id: string;
   full_name: string | null;
@@ -1021,6 +1027,41 @@ export default async function RemissionsPage({
     const requestId = String(row.request_id ?? "").trim();
     if (!requestId) continue;
     canTransitByRequestId.set(requestId, Boolean(row.can_transit));
+  }
+  // Fallback: calcular "lista para despacho" desde ítems cuando la vista
+  // operacional no devuelve filas (RLS/contexto), para mantener consistencia
+  // con el detalle de la remisión.
+  const missingOperationalIds = remissionIds.filter((id) => !canTransitByRequestId.has(id));
+  if (missingOperationalIds.length) {
+    const { data: itemMetricsData } = await supabase
+      .from("restock_request_items")
+      .select("request_id,quantity,prepared_quantity")
+      .in("request_id", missingOperationalIds);
+    const itemsByRequestId = new Map<string, RemissionItemMetricsRow[]>();
+    for (const row of (itemMetricsData ?? []) as RemissionItemMetricsRow[]) {
+      const requestId = String(row.request_id ?? "").trim();
+      if (!requestId) continue;
+      const list = itemsByRequestId.get(requestId) ?? [];
+      list.push(row);
+      itemsByRequestId.set(requestId, list);
+    }
+    for (const requestId of missingOperationalIds) {
+      const rows = itemsByRequestId.get(requestId) ?? [];
+      if (!rows.length) {
+        canTransitByRequestId.set(requestId, false);
+        continue;
+      }
+      let hasDispatchReady = false;
+      let hasDispatchBlocked = false;
+      for (const row of rows) {
+        const requestedQty = Number(row.quantity ?? 0);
+        if (requestedQty <= 0) continue;
+        const preparedQty = Number(row.prepared_quantity ?? 0);
+        if (preparedQty > 0) hasDispatchReady = true;
+        else hasDispatchBlocked = true;
+      }
+      canTransitByRequestId.set(requestId, hasDispatchReady && !hasDispatchBlocked);
+    }
   }
   const remissionActorIds = Array.from(
     new Set(
