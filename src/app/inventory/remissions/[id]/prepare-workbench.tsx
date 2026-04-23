@@ -386,7 +386,7 @@ function RemissionPrepareWorkbenchInteractive({
     }
     if (!Number.isFinite(suggested)) {
       if (needsMultilocSplitHint(line)) {
-        suggested = suggestedSplitQtyForMultiloc(line);
+        suggested = suggestedNewLineQtyForMultiloc(line);
       } else {
         const half = roundQty(rq / 2);
         suggested = half > 0 && half < rq ? half : Math.max(1, Math.floor(rq / 2));
