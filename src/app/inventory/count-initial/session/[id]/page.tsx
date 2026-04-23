@@ -24,62 +24,20 @@ async function closeCountAction(formData: FormData) {
 
   const { data: session } = await supabase
     .from("inventory_count_sessions")
-    .select("id,site_id,status,scope_type,scope_location_id")
+    .select("id,status")
     .eq("id", sessionId)
     .single();
   if (!session || (session as { status?: string }).status !== "open") {
     redirect(`/inventory/count-initial/session/${sessionId}?error=` + encodeURIComponent("Sesión no encontrada o ya cerrada"));
   }
 
-  const sess = session as { site_id: string; scope_type: string | null; scope_location_id: string | null };
-  const { data: lines } = await supabase
-    .from("inventory_count_lines")
-    .select("id,product_id,quantity_counted,current_qty_at_open")
-    .eq("session_id", sessionId);
-  const lineRows = (lines ?? []) as {
-    id: string;
-    product_id: string;
-    quantity_counted: number | null;
-    current_qty_at_open: number | null;
-  }[];
-
-  const productIds = lineRows.map((l) => l.product_id);
-  let currentByProduct: Map<string, number> = new Map();
-  if (sess.scope_type === "loc" && sess.scope_location_id) {
-    const { data: stockLoc } = await supabase
-      .from("inventory_stock_by_location")
-      .select("product_id,current_qty")
-      .eq("location_id", sess.scope_location_id)
-      .in("product_id", productIds);
-    currentByProduct = new Map(
-      (stockLoc ?? []).map((r: { product_id: string; current_qty: number | null }) => [r.product_id, Number(r.current_qty ?? 0)])
-    );
-  } else {
-    const { data: stockSite } = await supabase
-      .from("inventory_stock_by_site")
-      .select("product_id,current_qty")
-      .eq("site_id", sess.site_id)
-      .in("product_id", productIds);
-    currentByProduct = new Map(
-      (stockSite ?? []).map((r: { product_id: string; current_qty: number | null }) => [r.product_id, Number(r.current_qty ?? 0)])
-    );
+  const { error: closeErr } = await supabase.rpc("close_inventory_count_session", {
+    p_session_id: sessionId,
+    p_closed_by: user.id,
+  });
+  if (closeErr) {
+    redirect(`/inventory/count-initial/session/${sessionId}?error=` + encodeURIComponent(closeErr.message));
   }
-
-  for (const line of lineRows) {
-    const currentAtOpen = Number(line.current_qty_at_open ?? 0);
-    const current = currentByProduct.get(line.product_id) ?? currentAtOpen;
-    const counted = Number(line.quantity_counted ?? 0);
-    const delta = counted - currentAtOpen;
-    await supabase
-      .from("inventory_count_lines")
-      .update({ current_qty_at_close: current, quantity_delta: delta })
-      .eq("id", line.id);
-  }
-
-  await supabase
-    .from("inventory_count_sessions")
-    .update({ status: "closed", closed_at: new Date().toISOString(), closed_by: user.id })
-    .eq("id", sessionId);
 
   redirect(`/inventory/count-initial/session/${sessionId}?ok=closed`);
 }
@@ -95,77 +53,19 @@ async function approveAdjustmentsAction(formData: FormData) {
 
   const { data: session } = await supabase
     .from("inventory_count_sessions")
-    .select("id,site_id,status,scope_type,scope_location_id")
+    .select("id,status")
     .eq("id", sessionId)
     .single();
   if (!session || (session as { status?: string }).status !== "closed") {
     redirect(`/inventory/count-initial/session/${sessionId}?error=` + encodeURIComponent("Sesión debe estar cerrada"));
   }
 
-  const sess = session as { site_id: string; scope_type: string | null; scope_location_id: string | null };
-  const { data: lines } = await supabase
-    .from("inventory_count_lines")
-    .select("id,product_id,quantity_delta,adjustment_applied_at")
-    .eq("session_id", sessionId);
-  const lineRows = (lines ?? []) as { id: string; product_id: string; quantity_delta: number | null; adjustment_applied_at: string | null }[];
-  const toApply = lineRows.filter((l) => Number(l.quantity_delta ?? 0) !== 0 && !l.adjustment_applied_at);
-  const productIds = Array.from(new Set(toApply.map((line) => line.product_id)));
-  const { data: productsData } = productIds.length
-    ? await supabase.from("products").select("id,unit,stock_unit_code").in("id", productIds)
-    : { data: [] as Array<{ id: string; unit: string | null; stock_unit_code: string | null }> };
-  const productUnitMap = new Map(
-    (productsData ?? []).map((product) => [product.id, product.stock_unit_code ?? product.unit ?? "un"])
-  );
-
-  for (const line of toApply) {
-    const delta = Number(line.quantity_delta ?? 0);
-    const stockUnitCode = productUnitMap.get(line.product_id) ?? "un";
-    const note = `Ajuste por conteo sesión ${sessionId}`;
-    await supabase.from("inventory_movements").insert({
-      site_id: sess.site_id,
-      product_id: line.product_id,
-      movement_type: "adjustment",
-      quantity: delta,
-      input_qty: Math.abs(delta),
-      input_unit_code: stockUnitCode,
-      conversion_factor_to_stock: 1,
-      stock_unit_code: stockUnitCode,
-      note,
-      created_by: user.id,
-    });
-
-    if (sess.scope_type === "loc" && sess.scope_location_id) {
-      await supabase.rpc("upsert_inventory_stock_by_location", {
-        p_location_id: sess.scope_location_id,
-        p_product_id: line.product_id,
-        p_delta: delta,
-      });
-    }
-
-    const { data: siteStock } = await supabase
-      .from("inventory_stock_by_site")
-      .select("current_qty")
-      .eq("site_id", sess.site_id)
-      .eq("product_id", line.product_id)
-      .maybeSingle();
-    const currentQty = Number((siteStock as { current_qty?: number } | null)?.current_qty ?? 0);
-    const newQty = Math.max(0, currentQty + delta);
-    await supabase
-      .from("inventory_stock_by_site")
-      .upsert(
-        {
-          site_id: sess.site_id,
-          product_id: line.product_id,
-          current_qty: newQty,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "site_id,product_id" }
-      );
-
-    await supabase
-      .from("inventory_count_lines")
-      .update({ adjustment_applied_at: new Date().toISOString() })
-      .eq("id", line.id);
+  const { error: applyErr } = await supabase.rpc("apply_inventory_count_adjustments", {
+    p_session_id: sessionId,
+    p_user_id: user.id,
+  });
+  if (applyErr) {
+    redirect(`/inventory/count-initial/session/${sessionId}?error=` + encodeURIComponent(applyErr.message));
   }
 
   redirect(`/inventory/count-initial/session/${sessionId}?ok=adjusted`);

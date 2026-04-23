@@ -65,18 +65,7 @@ export async function POST(req: Request) {
     ? `${SESSION_PREFIX}${sessionId} ${scopeNote}`
     : `${SESSION_PREFIX}${sessionId}`;
 
-  const MOVEMENT_TYPE = "count";
   const isScopedCount = /loc_id:|zone:/.test(scopeNote);
-  const productIds = lines.map((line) => line.product_id);
-  const { data: productUnitsData } = productIds.length
-    ? await supabase
-        .from("products")
-        .select("id,unit,stock_unit_code")
-        .in("id", productIds)
-    : { data: [] as Array<{ id: string; unit: string | null; stock_unit_code: string | null }> };
-  const productUnitMap = new Map(
-    (productUnitsData ?? []).map((row) => [row.id, row.stock_unit_code ?? row.unit ?? "un"])
-  );
 
   let countSessionId: string | null = null;
 
@@ -87,73 +76,26 @@ export async function POST(req: Request) {
       : null;
     const scopeZone = scopeType === "zone" ? scopeNote.replace(/^zone:/, "").trim() || null : null;
 
-    const { data: sessionRow, error: sessionErr } = await supabase
-      .from("inventory_count_sessions")
-      .insert({
-        site_id: siteId,
-        status: "open",
-        scope_type: scopeType,
-        scope_zone: scopeZone || null,
-        scope_location_id: scopeLocationId || null,
-        name: scopeZone ? `Conteo zona ${scopeZone}` : scopeLocationId ? "Conteo por LOC" : "Conteo",
-        created_by: user.id,
-      })
-      .select("id")
-      .single();
-
-    if (!sessionErr && sessionRow?.id) {
-      countSessionId = sessionRow.id;
-      const currentQtyAtOpen = new Map<string, number>();
-      if (scopeType === "loc" && scopeLocationId) {
-        const { data: stockLocData } = await supabase
-          .from("inventory_stock_by_location")
-          .select("product_id,current_qty")
-          .eq("location_id", scopeLocationId)
-          .in("product_id", productIds);
-        for (const row of stockLocData ?? []) {
-          currentQtyAtOpen.set(row.product_id, Number(row.current_qty ?? 0));
-        }
-      } else if (scopeType === "zone" && scopeZone) {
-        const { data: locRows } = await supabase
-          .from("inventory_locations")
-          .select("id")
-          .eq("site_id", siteId)
-          .eq("zone", scopeZone)
-          .limit(1000);
-        const locIds = (locRows ?? []).map((row) => row.id);
-        if (locIds.length > 0) {
-          const { data: stockLocData } = await supabase
-            .from("inventory_stock_by_location")
-            .select("product_id,current_qty")
-            .in("location_id", locIds)
-            .in("product_id", productIds);
-          for (const row of stockLocData ?? []) {
-            const prev = currentQtyAtOpen.get(row.product_id) ?? 0;
-            currentQtyAtOpen.set(row.product_id, prev + Number(row.current_qty ?? 0));
-          }
-        }
-      } else {
-        const { data: stockSiteData } = await supabase
-          .from("inventory_stock_by_site")
-          .select("product_id,current_qty")
-          .eq("site_id", siteId)
-          .in("product_id", productIds);
-        for (const row of stockSiteData ?? []) {
-          currentQtyAtOpen.set(row.product_id, Number(row.current_qty ?? 0));
-        }
+    const { data: scopedResult, error: scopedErr } = await supabase.rpc(
+      "create_inventory_count_session_with_lines",
+      {
+        p_site_id: siteId,
+        p_scope_type: scopeType,
+        p_scope_zone: scopeZone || null,
+        p_scope_location_id: scopeLocationId || null,
+        p_name: scopeZone ? `Conteo zona ${scopeZone}` : scopeLocationId ? "Conteo por LOC" : "Conteo",
+        p_created_by: user.id,
+        p_lines: lines,
       }
-
-      for (const { product_id, quantity } of lines) {
-        const { error: lineErr } = await supabase.from("inventory_count_lines").insert({
-          session_id: countSessionId,
-          product_id,
-          quantity_counted: quantity,
-          current_qty_at_open: currentQtyAtOpen.get(product_id) ?? 0,
-        });
-        if (lineErr) break;
-      }
+    );
+    if (scopedErr) {
+      return NextResponse.json(
+        { error: "inventory_count_session: " + scopedErr.message },
+        { status: 500 }
+      );
     }
-    // Si las tablas no existen (migración no ejecutada), sessionErr; seguimos con movimientos igual
+    const payload = (scopedResult ?? {}) as { countSessionId?: string };
+    countSessionId = payload.countSessionId ?? null;
   }
 
   if (isScopedCount) {
@@ -165,44 +107,17 @@ export async function POST(req: Request) {
     });
   }
 
-  for (const { product_id, quantity } of lines) {
-    const { error: movErr } = await supabase.from("inventory_movements").insert({
-      site_id: siteId,
-      product_id,
-      movement_type: MOVEMENT_TYPE,
-      quantity,
-      input_qty: quantity,
-      input_unit_code: productUnitMap.get(product_id) ?? "un",
-      conversion_factor_to_stock: 1,
-      stock_unit_code: productUnitMap.get(product_id) ?? "un",
-      note,
-    });
-
-    if (movErr) {
-      return NextResponse.json(
-        { error: "inventory_movements: " + movErr.message },
-        { status: 500 }
-      );
-    }
-
-    const { error: stockErr } = await supabase
-      .from("inventory_stock_by_site")
-      .upsert(
-        {
-          site_id: siteId,
-          product_id,
-          current_qty: quantity,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "site_id,product_id" }
-      );
-
-    if (stockErr) {
-      return NextResponse.json(
-        { error: "inventory_stock_by_site: " + stockErr.message },
-        { status: 500 }
-      );
-    }
+  const { error: countErr } = await supabase.rpc("apply_inventory_site_count", {
+    p_site_id: siteId,
+    p_user_id: user.id,
+    p_note: note,
+    p_lines: lines,
+  });
+  if (countErr) {
+    return NextResponse.json(
+      { error: "apply_inventory_site_count: " + countErr.message },
+      { status: 500 }
+    );
   }
 
   return NextResponse.json({
