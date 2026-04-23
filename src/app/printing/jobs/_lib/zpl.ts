@@ -12,6 +12,11 @@ export function encodeVento(type: "LOC" | "SKU" | "PROD", code: string): string 
   return `VENTO|${type}|${safeText(code)}`;
 }
 
+export function buildLocQrUrl(baseUrl: string, code: string): string {
+  const origin = String(baseUrl ?? "").trim().replace(/\/$/, "");
+  return `${origin}/l/${encodeURIComponent(safeText(code))}`;
+}
+
 export function buildZplHeader(opts: {
   widthDots: number;
   heightDots: number;
@@ -180,7 +185,7 @@ export function buildSingleLabelZpl(opts: {
   if (isLoc70Qr) {
     // --- LOC 50×70 QR para Zebra 203 dpi: ajustar QR al espacio real ---
     const baseUrl = (opts.baseUrlForQr ?? "").replace(/\/$/, "");
-    const withdrawUrl = `${baseUrl}/inventory/locations/open?loc=${encodeURIComponent(code)}`;
+    const withdrawUrl = buildLocQrUrl(baseUrl, code);
     const titleY = 16;
     const noteY = 50;
     const qrY = 94;

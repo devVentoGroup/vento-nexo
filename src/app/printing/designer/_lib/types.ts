@@ -53,7 +53,7 @@ export function buildLocLayout(
   baseUrl: string
 ): LabelElement[] {
   const isHorizontal = widthMm > heightMm;
-  const qrUrl = `${baseUrl}/inventory/locations/open?loc=${encodeURIComponent(loc.code)}`;
+  const qrUrl = `${baseUrl.replace(/\/$/, "")}/l/${encodeURIComponent(loc.code)}`;
 
   if (isHorizontal) {
     // Horizontal: text top-right, QR left, code bottom-right

@@ -8,6 +8,7 @@ import { useSearchParams } from "next/navigation";
 import { BROWSERPRINT_CORE, BROWSERPRINT_ZEBRA, LOCS_API, PRESETS } from "./_lib/constants";
 import type { BarcodeKind, LocRow, PreviewMode } from "./_lib/types";
 import {
+  buildLocQrUrl,
   buildSingleLabelZpl,
   buildThreeUpRowZpl,
   buildZplFooter,
@@ -196,7 +197,7 @@ function PrintingJobsContent() {
         if (el.id === "el_qr") {
           return {
             ...el,
-            content: `${origin}/inventory/locations/open?loc=${encodeURIComponent(first.code)}`,
+            content: `${buildLocQrUrl(origin, first.code)}`,
           };
         }
         if (el.id === "el_desc") return { ...el, content: first.note ?? "" };
@@ -215,7 +216,7 @@ function PrintingJobsContent() {
         if (el.id === "el_qr") {
           return {
             ...el,
-            content: `${origin}/inventory/locations/open?loc=${encodeURIComponent(item.code)}`,
+            content: `${buildLocQrUrl(origin, item.code)}`,
           };
         }
         if (el.id === "el_desc") return { ...el, content: item.note ?? "" };
@@ -248,7 +249,7 @@ function PrintingJobsContent() {
       {
         code: first.code,
         ventoCode: encodeVento("LOC", first.code),
-        qrUrl: `${origin}/inventory/locations/open?loc=${encodeURIComponent(first.code)}`,
+        qrUrl: `${buildLocQrUrl(origin, first.code)}`,
         description: first.note ?? "",
       },
     ]);
@@ -349,7 +350,7 @@ function PrintingJobsContent() {
         parsedQueue.map((it) => ({
           code: it.code,
           ventoCode: encodeVento("LOC", it.code),
-          qrUrl: `${origin}/inventory/locations/open?loc=${encodeURIComponent(it.code)}`,
+          qrUrl: `${buildLocQrUrl(origin, it.code)}`,
           description: it.note,
         }))
       );
@@ -585,7 +586,7 @@ function PrintingJobsContent() {
     if (!code) return "";
     const base = window.location?.origin ?? "";
     if (!base) return "";
-    return `${base.replace(/\/$/, "")}/inventory/locations/open?loc=${encodeURIComponent(code)}`;
+    return buildLocQrUrl(base, code);
   }, [previewLocVariant, previewItems]);
   const activePrinterLabel =
     devices.find((d) => String(d?.uid) === String(selectedUid))?.name ??
@@ -919,3 +920,4 @@ export default function PrintingJobsPage() {
     </Suspense>
   );
 }
+
