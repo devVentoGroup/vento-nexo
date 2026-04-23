@@ -64,6 +64,28 @@ export function buildDataMatrixField(opts: {
   return [`^FO${x},${y}`, `^BXN,${moduleDots},200,0,0,6`, `^FD${payload}^FS`].join("\n");
 }
 
+function estimateQrModuleCount(data: string): number {
+  const len = String(data ?? "").trim().length;
+  if (len <= 20) return 21;
+  if (len <= 38) return 25;
+  if (len <= 61) return 29;
+  if (len <= 90) return 33;
+  if (len <= 122) return 37;
+  if (len <= 154) return 41;
+  return 45;
+}
+
+function fitQrMagnification(data: string, maxSizeDots: number, preferredMagnification: number): number {
+  const modules = estimateQrModuleCount(data) + 8;
+  const preferred = Math.min(10, Math.max(1, preferredMagnification));
+  const fitted = Math.floor(Math.max(1, maxSizeDots) / modules);
+  return Math.max(1, Math.min(preferred, fitted));
+}
+
+function qrSizeDots(data: string, magnification: number): number {
+  return (estimateQrModuleCount(data) + 8) * Math.max(1, magnification);
+}
+
 export function buildQRField(opts: {
   x: number;
   y: number;
@@ -74,7 +96,11 @@ export function buildQRField(opts: {
   const payload = String(data ?? "").trim();
   if (!payload) return "";
   const mag = Math.min(10, Math.max(1, magnification));
-  return [`^FO${x},${y}`, `^BQN,2,${mag}`, `^FDQA,${payload}^FS`].join("\n");
+  return [
+    `^FO${x},${y}`,
+    `^BQN,2,${mag}`,
+    `^FDQA,${payload}^FS`,
+  ].join("\n");
 }
 
 export function buildTextField(opts: {
@@ -152,27 +178,29 @@ export function buildSingleLabelZpl(opts: {
   parts.push(header);
 
   if (isLoc70Qr) {
-    // --- LOC 50×70 QR grande: vertical, centrado ---
+    // --- LOC 50×70 QR para Zebra 203 dpi: ajustar QR al espacio real ---
     const baseUrl = (opts.baseUrlForQr ?? "").replace(/\/$/, "");
     const withdrawUrl = `${baseUrl}/inventory/locations/open?loc=${encodeURIComponent(code)}`;
+    const titleY = 16;
+    const noteY = 50;
+    const qrY = 94;
+    const codeY = heightDots - 88;
+    const qrMaxWidth = widthDots - marginX * 2 - 12;
+    const qrMaxHeight = codeY - qrY - 18;
+    const qrMaxSize = Math.max(96, Math.min(qrMaxWidth, qrMaxHeight));
+    const qrMag = fitQrMagnification(withdrawUrl, qrMaxSize, 4);
+    const qrSize = qrSizeDots(withdrawUrl, qrMag);
+    const qrX = Math.max(marginX, Math.floor((widthDots - qrSize) / 2));
 
-    // Title at top
-    parts.push(buildTextBlock({ x: marginX, y: 12, h: 28, w: 28, maxWidthDots: maxTextWidth, lines: 1, align: "L", text: titleStr }));
+    parts.push(buildTextBlock({ x: marginX, y: titleY, h: 28, w: 20, maxWidthDots: maxTextWidth, lines: 1, align: "C", text: titleStr }));
 
-    // Note below title
     if (note) {
-      parts.push(buildTextBlock({ x: marginX, y: 48, h: 22, w: 22, maxWidthDots: maxTextWidth, lines: 2, align: "L", text: note }));
+      parts.push(buildTextBlock({ x: marginX, y: noteY, h: 22, w: 16, maxWidthDots: maxTextWidth, lines: 2, align: "C", text: note }));
     }
 
-    // QR grande centrado verticalmente (mag 6–8 según espacio)
-    const qrMag = 6;
-    const qrSize = 25 * qrMag; // aprox. tamaño en dots
-    const qrX = Math.max(0, Math.floor((widthDots - qrSize) / 2));
-    const yBarcode = Math.round(heightDots * 0.28);
-    parts.push(buildQRField({ x: qrX, y: yBarcode, magnification: qrMag, data: withdrawUrl }));
+    parts.push(buildQRField({ x: qrX, y: qrY, magnification: qrMag, data: withdrawUrl }));
 
-    // Code at bottom, big and centered
-    parts.push(buildTextBlock({ x: marginX, y: heightDots - 50, h: 32, w: 28, maxWidthDots: maxTextWidth, lines: 1, align: "C", text: code }));
+    parts.push(buildTextBlock({ x: marginX, y: codeY, h: 24, w: 16, maxWidthDots: maxTextWidth, lines: 1, align: "C", text: code }));
   } else {
     // --- SKU / PROD / otros presets ---
     parts.push(buildTextBlock({ x: marginX, y: yTitle, h: 26, w: 26, maxWidthDots: maxTextWidth, lines: 1, align: "L", text: titleStr }));

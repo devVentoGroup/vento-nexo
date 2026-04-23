@@ -65,14 +65,14 @@ export function buildLocLayout(
       { id: "el_code", type: "text", x: bcSize + 6, y: heightMm - 10, width: widthMm - bcSize - 8, height: 6, content: loc.code, fontSize: 26, fontWeight: "bold" },
     ];
   } else {
-    // Vertical: title top, description, QR in middle, code bottom
-    const bcSize = Math.min(widthMm * 0.38, 18); // cap at 18mm
+    // Vertical: reducir QR para URLs largas y reservar margen real al codigo
+    const bcSize = Math.min(widthMm * 0.32, 16);
     const barcodeY = 16;
     return [
       { id: "el_title", type: "title", x: 2, y: 2, width: widthMm - 4, height: 5, content: "VENTO · LOC", fontSize: 28, fontWeight: "bold" },
       { id: "el_desc", type: "text", x: 2, y: 8, width: widthMm - 4, height: 4, content: loc.description || loc.zone || "", fontSize: 20, fontWeight: "normal" },
       { id: "el_qr", type: "barcode_qr", x: Math.max(2, (widthMm - bcSize) / 2), y: barcodeY, width: bcSize, height: bcSize, content: qrUrl },
-      { id: "el_code", type: "text", x: 2, y: barcodeY + bcSize + 3, width: widthMm - 4, height: 6, content: loc.code, fontSize: 26, fontWeight: "bold" },
+      { id: "el_code", type: "text", x: 2, y: barcodeY + bcSize + 5, width: widthMm - 4, height: 6, content: loc.code, fontSize: 24, fontWeight: "bold" },
     ];
   }
 }

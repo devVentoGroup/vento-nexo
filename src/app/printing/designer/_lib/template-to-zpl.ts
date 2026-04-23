@@ -8,6 +8,17 @@ function safeText(s: string): string {
   return String(s ?? "").replace(/[\r\n]+/g, " ").trim();
 }
 
+function estimateQrModuleCount(data: string): number {
+  const len = String(data ?? "").trim().length;
+  if (len <= 20) return 21;
+  if (len <= 38) return 25;
+  if (len <= 61) return 29;
+  if (len <= 90) return 33;
+  if (len <= 122) return 37;
+  if (len <= 154) return 41;
+  return 45;
+}
+
 function elementToZpl(el: LabelElement, dpi: number): string {
   const x = mmToDots(el.x, dpi);
   const y = mmToDots(el.y, dpi);
@@ -51,8 +62,10 @@ function elementToZpl(el: LabelElement, dpi: number): string {
       ].join("\n");
     }
     case "barcode_qr": {
-      // Magnification: ~3 for 15mm at 203dpi
-      const mag = Math.max(1, Math.min(6, Math.round(h / 40)));
+      const modules = estimateQrModuleCount(text) + 8;
+      const maxBox = Math.max(1, Math.min(w, h));
+      const preferred = Math.max(1, Math.min(6, Math.round(maxBox / 44)));
+      const mag = Math.max(1, Math.min(preferred, Math.floor(maxBox / modules)));
       return [
         `^FO${x},${y}`,
         `^BQN,2,${mag}`,
