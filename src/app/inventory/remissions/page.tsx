@@ -948,6 +948,12 @@ export default async function RemissionsPage({
       actualRole,
     })
     : false;
+  if (effectiveRole === "conductor" && canTransitPermission) {
+    const params = new URLSearchParams();
+    if (activeSiteId) params.set("site_id", activeSiteId);
+    const qs = params.toString();
+    redirect(`/inventory/remissions/transit${qs ? `?${qs}` : ""}`);
+  }
   const employeeAccessibleSiteIds = new Set(
     employeeSiteRows
       .map((row) => String(row.site_id ?? "").trim())
