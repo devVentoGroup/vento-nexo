@@ -125,6 +125,11 @@ type RemissionRow = {
   received_at?: string | null;
 };
 
+type RemissionOperationalSummaryRow = {
+  request_id: string | null;
+  can_transit: boolean | null;
+};
+
 type EmployeeNameRow = {
   id: string;
   full_name: string | null;
@@ -228,6 +233,8 @@ async function loadProductSiteRows(
 function formatStatus(status?: string | null) {
   const value = String(status ?? "").trim();
   switch (value) {
+    case "dispatch_ready":
+      return { label: "Lista para despacho", className: "ui-chip ui-chip--success" };
     case "pending":
       return { label: "Pendiente", className: "ui-chip ui-chip--warn" };
     case "preparing":
@@ -245,6 +252,17 @@ function formatStatus(status?: string | null) {
     default:
       return { label: value || "Sin estado", className: "ui-chip" };
   }
+}
+
+function getEffectiveRemissionStatus(
+  row: RemissionRow,
+  canTransitByRequestId: Map<string, boolean>
+): string {
+  const baseStatus = String(row.status ?? "").trim();
+  if (baseStatus === "preparing" && canTransitByRequestId.get(row.id)) {
+    return "dispatch_ready";
+  }
+  return baseStatus;
 }
 
 function formatDateTime(value: string | null | undefined): string {
@@ -991,6 +1009,19 @@ export default async function RemissionsPage({
   }
   const { data: remissions } = await remissionsQuery;
   const remissionRows = (remissions ?? []) as RemissionRow[];
+  const remissionIds = remissionRows.map((row) => row.id).filter(Boolean);
+  const { data: operationalSummaryData } = remissionIds.length
+    ? await supabase
+        .from("restock_operational_summary")
+        .select("request_id,can_transit")
+        .in("request_id", remissionIds)
+    : { data: [] as RemissionOperationalSummaryRow[] };
+  const canTransitByRequestId = new Map<string, boolean>();
+  for (const row of (operationalSummaryData ?? []) as RemissionOperationalSummaryRow[]) {
+    const requestId = String(row.request_id ?? "").trim();
+    if (!requestId) continue;
+    canTransitByRequestId.set(requestId, Boolean(row.can_transit));
+  }
   const remissionActorIds = Array.from(
     new Set(
       remissionRows
@@ -1480,6 +1511,7 @@ export default async function RemissionsPage({
             </thead>
             <tbody>
               {actionRows.map((row) => {
+                const effectiveStatus = getEffectiveRemissionStatus(row, canTransitByRequestId);
                 const fromSiteId = row.from_site_id ?? "";
                 const toSiteId = row.to_site_id ?? "";
                 const rowCanFrom = canCancelPermission && employeeAccessibleSiteIds.has(fromSiteId);
@@ -1503,8 +1535,10 @@ export default async function RemissionsPage({
                   <tr key={row.id} className="ui-body">
                     <TableCell>{formatDateTime(row.created_at)}</TableCell>
                     <TableCell>
-                      <span className={`${formatStatus(row.status).className} ui-chip--status-${String(row.status ?? "unknown")}`}>
-                        {formatStatus(row.status).label}
+                      <span
+                        className={`${formatStatus(effectiveStatus).className} ui-chip--status-${String(effectiveStatus ?? "unknown")}`}
+                      >
+                        {formatStatus(effectiveStatus).label}
                       </span>
                     </TableCell>
                     {viewMode !== "bodega" ? (
@@ -1678,6 +1712,7 @@ export default async function RemissionsPage({
             </thead>
             <tbody>
               {historyRows.slice(0, 20).map((row) => {
+                const effectiveStatus = getEffectiveRemissionStatus(row, canTransitByRequestId);
                 const fromSiteId = row.from_site_id ?? "";
                 const toSiteId = row.to_site_id ?? "";
                 const rowCanFrom = canCancelPermission && employeeAccessibleSiteIds.has(fromSiteId);
@@ -1701,8 +1736,10 @@ export default async function RemissionsPage({
                   <tr key={row.id} className="ui-body">
                     <TableCell>{formatDateTime(row.created_at)}</TableCell>
                     <TableCell>
-                      <span className={`${formatStatus(row.status).className} ui-chip--status-${String(row.status ?? "unknown")}`}>
-                        {formatStatus(row.status).label}
+                      <span
+                        className={`${formatStatus(effectiveStatus).className} ui-chip--status-${String(effectiveStatus ?? "unknown")}`}
+                      >
+                        {formatStatus(effectiveStatus).label}
                       </span>
                     </TableCell>
                     {viewMode !== "bodega" ? (
