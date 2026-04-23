@@ -369,8 +369,12 @@ function RemissionPrepareWorkbenchInteractive({
       suggested = Number.NaN;
     }
     if (!Number.isFinite(suggested)) {
-      const half = roundQty(rq / 2);
-      suggested = half > 0 && half < rq ? half : Math.max(1, Math.floor(rq / 2));
+      if (needsMultilocSplitHint(line)) {
+        suggested = suggestedSplitQtyForMultiloc(line);
+      } else {
+        const half = roundQty(rq / 2);
+        suggested = half > 0 && half < rq ? half : Math.max(1, Math.floor(rq / 2));
+      }
     }
     setSplitTargetId(lineId);
     setSplitQtyInput(String(suggested));
@@ -501,7 +505,7 @@ function RemissionPrepareWorkbenchInteractive({
                   ) : null}
                   <button
                     type="button"
-                    onClick={() => openSplit(line.id)}
+                    onClick={() => openSplit(line.id, multilocHint ? multilocSuggested : undefined)}
                     className="ui-btn ui-btn--ghost h-9 text-xs font-semibold"
                     disabled={!canSplitDraftLine(line)}
                     title={

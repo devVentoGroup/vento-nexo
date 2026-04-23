@@ -122,7 +122,7 @@ Resultado esperado:
 - aparece la salida por remisión o movimiento equivalente
 - debe verse `Hecho por`
 - el saldo final debe reflejar el descuento
-
+   
 ## NEXO-REM-009 Validar caso multi LOC
 1. Crea una nueva remisión desde el satélite
 2. Usa solo `TEST NEXO OPS Remision multi LOC (TEST-NEXO-OPS-REM-003)` cantidad `9`
