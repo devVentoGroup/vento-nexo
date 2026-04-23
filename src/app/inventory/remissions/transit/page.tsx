@@ -1,7 +1,11 @@
 import Link from "next/link";
 
 import { requireAppAccess } from "@/lib/auth/guard";
-import { checkPermissionWithRoleOverride } from "@/lib/auth/role-override";
+import {
+  canUseRoleOverride,
+  checkPermissionWithRoleOverride,
+  getRoleOverrideFromCookies,
+} from "@/lib/auth/role-override";
 
 export const dynamic = "force-dynamic";
 
@@ -35,6 +39,11 @@ export default async function RemissionsTransitQueuePage() {
     .eq("id", user.id)
     .single();
   const actualRole = String(employee?.role ?? "");
+  const overrideRole = await getRoleOverrideFromCookies();
+  const effectiveRole = canUseRoleOverride(actualRole, overrideRole)
+    ? String(overrideRole ?? "")
+    : actualRole;
+  const normalizedEffectiveRole = effectiveRole.trim().toLowerCase();
 
   const { data: employeeSiteRows } = await supabase
     .from("employee_sites")
@@ -50,16 +59,27 @@ export default async function RemissionsTransitQueuePage() {
     )
   );
 
-  const { data: candidateSites } = candidateSiteIds.length
-    ? await supabase
-        .from("sites")
-        .select("id,name,site_type")
-        .in("id", candidateSiteIds)
-    : { data: [] as Array<{ id: string; name: string | null; site_type: string | null }> };
-
-  const productionCenterSites = (
-    (candidateSites ?? []) as Array<{ id: string; name: string | null; site_type: string | null }>
-  ).filter((site) => String(site.site_type ?? "") === "production_center");
+  const productionCenterSites =
+    normalizedEffectiveRole === "conductor"
+      ? (
+          (
+            await supabase
+              .from("sites")
+              .select("id,name,site_type")
+              .eq("site_type", "production_center")
+              .order("name", { ascending: true })
+          ).data ?? []
+        ) as Array<{ id: string; name: string | null; site_type: string | null }>
+      : (
+          (
+            candidateSiteIds.length
+              ? await supabase
+                  .from("sites")
+                  .select("id,name,site_type")
+                  .in("id", candidateSiteIds)
+              : { data: [] as Array<{ id: string; name: string | null; site_type: string | null }> }
+          ).data ?? []
+        ).filter((site) => String(site.site_type ?? "") === "production_center");
 
   const transitSiteIds = (
     await Promise.all(

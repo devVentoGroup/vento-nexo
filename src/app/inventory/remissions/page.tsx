@@ -5,6 +5,7 @@ import { cookies } from "next/headers";
 
 import { requireAppAccess } from "@/lib/auth/guard";
 import { checkPermissionWithRoleOverride } from "@/lib/auth/role-override";
+import { PRIVILEGED_ROLE_OVERRIDES, ROLE_OVERRIDE_COOKIE } from "@/lib/auth/role-override-config";
 import {
   buildOperationalBlockMessage,
   getOperationalContext,
@@ -853,8 +854,13 @@ export default async function RemissionsPage({
     .select("selected_site_id")
     .eq("employee_id", user.id)
     .maybeSingle();
+  const cookieStore = await cookies();
 
   const actualRole = String(employee?.role ?? "");
+  const roleOverride = String(cookieStore.get(ROLE_OVERRIDE_COOKIE)?.value ?? "").trim().toLowerCase();
+  const canUseRoleOverride =
+    Boolean(roleOverride) && PRIVILEGED_ROLE_OVERRIDES.has(actualRole.toLowerCase());
+  const effectiveRole = (canUseRoleOverride ? roleOverride : actualRole).toLowerCase();
   const canViewAll = await checkPermissionWithRoleOverride({
     supabase,
     appId: APP_ID,
@@ -872,7 +878,6 @@ export default async function RemissionsPage({
 
   const employeeSiteRows = (sitesRows ?? []) as EmployeeSiteRow[];
   const defaultSiteId = employeeSiteRows[0]?.site_id ?? employee?.site_id ?? "";
-  const cookieStore = await cookies();
   const siteOverrideId = String(cookieStore.get(SITE_OVERRIDE_COOKIE)?.value ?? "").trim();
   const selectedSiteId = String(settings?.selected_site_id ?? "").trim();
   let activeSiteId =
@@ -1459,7 +1464,14 @@ export default async function RemissionsPage({
 
         {!canCreate && viewMode === "satélite" ? (
           <div className="mt-4 ui-alert ui-alert--neutral">
-            {activeSiteId && !canRequestPermission ? (
+            {activeSiteId && !canRequestPermission && effectiveRole === "conductor" ? (
+              <>
+                El rol <strong>conductor</strong> no puede solicitar remisiones en sede satélite.
+                Este rol opera remisiones en tránsito/recepción.
+                Cambia a <code>cajero</code>, <code>barista</code>, <code>cocinero</code> o{" "}
+                <code>propietario</code> para crear solicitudes.
+              </>
+            ) : activeSiteId && !canRequestPermission ? (
               <>
                 No puedes crear remisiones en esta sede porque falta el permiso{" "}
                 <code>nexo.inventory.remissions.request</code> para tu rol actual.

@@ -190,6 +190,20 @@ export async function checkPermissionWithRoleOverride({
   actualRole: string;
 }) {
   const overrideRole = await getRoleOverrideFromCookies();
+  const normalizedCode = normalizePermissionCode(appId, code);
+  const actualRoleNormalized = String(actualRole ?? "").trim().toLowerCase();
+  const effectiveRoleNormalized = canUseRoleOverride(actualRole, overrideRole)
+    ? String(overrideRole ?? "").trim().toLowerCase()
+    : actualRoleNormalized;
+
+  // Regla operativa NEXO: conductor solo ejecuta checklist/transito y no debe
+  // depender de sede activa para este permiso puntual.
+  if (
+    effectiveRoleNormalized === "conductor" &&
+    normalizedCode === "nexo.inventory.remissions.transit"
+  ) {
+    return true;
+  }
 
   // In sandbox/test mode, a valid role override must behave as a strict simulation.
   // Do not merge real user permissions with the simulated role.
