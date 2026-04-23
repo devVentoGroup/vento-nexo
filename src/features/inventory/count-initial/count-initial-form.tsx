@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useRef, useState } from "react";
+import { memo, useCallback, useMemo, useRef, useState } from "react";
 import { Table, TableCell, TableHeaderCell } from "@/components/vento/standard/table";
 
 type Product = {
@@ -19,6 +19,81 @@ type Props = {
   countScopeLabel?: string;
   zoneOrLocNote?: string;
 };
+
+type CountRowProps = {
+  product: Product;
+  compactMode: boolean;
+  value: string;
+  qtyPositive: boolean;
+  onQtyChange: (productId: string, rawValue: string) => void;
+  onSetZero: (productId: string) => void;
+  onClear: (productId: string) => void;
+  onQtyKeyDown: (
+    event: React.KeyboardEvent<HTMLInputElement>,
+    productId: string
+  ) => void;
+  registerInputRef: (productId: string, element: HTMLInputElement | null) => void;
+};
+
+const CountRow = memo(function CountRow({
+  product,
+  compactMode,
+  value,
+  qtyPositive,
+  onQtyChange,
+  onSetZero,
+  onClear,
+  onQtyKeyDown,
+  registerInputRef,
+}: CountRowProps) {
+  return (
+    <tr className={`ui-body ${qtyPositive ? "bg-emerald-50/40" : ""}`}>
+      <TableCell>
+        <div className="space-y-0.5">
+          <div>{product.name}</div>
+          {compactMode ? (
+            <div className="ui-caption">
+              <span className="font-mono">{product.sku ?? "-"}</span> · {product.unit ?? "-"}
+            </div>
+          ) : null}
+        </div>
+      </TableCell>
+      {!compactMode ? <TableCell className="font-mono">{product.sku ?? "-"}</TableCell> : null}
+      {!compactMode ? <TableCell>{product.unit ?? "-"}</TableCell> : null}
+      <TableCell>
+        <div className="flex items-center gap-2">
+          <input
+            type="number"
+            min={0}
+            step="any"
+            value={value}
+            onChange={(event) => onQtyChange(product.id, event.target.value)}
+            onKeyDown={(event) => onQtyKeyDown(event, product.id)}
+            ref={(element) => {
+              registerInputRef(product.id, element);
+            }}
+            placeholder="0"
+            className="ui-input min-w-[110px]"
+          />
+          <button
+            type="button"
+            onClick={() => onSetZero(product.id)}
+            className="ui-btn ui-btn--ghost h-9 px-3 text-xs"
+          >
+            0
+          </button>
+          <button
+            type="button"
+            onClick={() => onClear(product.id)}
+            className="ui-btn ui-btn--ghost h-9 px-3 text-xs"
+          >
+            Limpiar
+          </button>
+        </div>
+      </TableCell>
+    </tr>
+  );
+});
 
 function parseQty(value: string | undefined) {
   const v = String(value ?? "").trim();
@@ -91,27 +166,23 @@ export function CountInitialForm({
     return `${filteredProducts.length} de ${products.length} producto(s) visibles.`;
   }, [filteredProducts.length, onlyWithQty, products.length]);
 
-  const handleQtyChange = (productId: string, rawValue: string) => {
+  const handleQtyChange = useCallback((productId: string, rawValue: string) => {
     setQty((state) => ({ ...state, [productId]: rawValue }));
-  };
+  }, []);
 
-  const clearProductQty = (productId: string) => {
+  const clearProductQty = useCallback((productId: string) => {
     setQty((state) => ({ ...state, [productId]: "" }));
-  };
+  }, []);
 
-  const setProductQtyToZero = (productId: string) => {
+  const setProductQtyToZero = useCallback((productId: string) => {
     setQty((state) => ({ ...state, [productId]: "0" }));
-  };
+  }, []);
 
   const sortedProducts = useMemo(() => {
-    return [...filteredProducts].sort((a, b) => {
-      const aq = qtyByProductId[a.id] ?? 0;
-      const bq = qtyByProductId[b.id] ?? 0;
-      if (aq > 0 && bq <= 0) return -1;
-      if (bq > 0 && aq <= 0) return 1;
-      return String(a.name ?? "").localeCompare(String(b.name ?? ""), "es");
-    });
-  }, [filteredProducts, qtyByProductId]);
+    return [...filteredProducts].sort((a, b) =>
+      String(a.name ?? "").localeCompare(String(b.name ?? ""), "es")
+    );
+  }, [filteredProducts]);
 
   const productIndexMap = useMemo(() => {
     const map: Record<string, number> = {};
@@ -121,7 +192,7 @@ export function CountInitialForm({
     return map;
   }, [sortedProducts]);
 
-  const focusQtyByOffset = (productId: string, offset: number) => {
+  const focusQtyByOffset = useCallback((productId: string, offset: number) => {
     const currentIndex = productIndexMap[productId];
     if (typeof currentIndex !== "number") return;
     const nextIndex = currentIndex + offset;
@@ -132,9 +203,9 @@ export function CountInitialForm({
     if (!input) return;
     input.focus();
     input.select();
-  };
+  }, [productIndexMap, sortedProducts]);
 
-  const handleQtyKeyDown = (
+  const handleQtyKeyDown = useCallback((
     event: React.KeyboardEvent<HTMLInputElement>,
     productId: string
   ) => {
@@ -152,7 +223,11 @@ export function CountInitialForm({
       event.preventDefault();
       focusQtyByOffset(productId, -1);
     }
-  };
+  }, [focusQtyByOffset]);
+
+  const registerInputRef = useCallback((productId: string, element: HTMLInputElement | null) => {
+    qtyInputRefs.current[productId] = element;
+  }, []);
 
   const handleConfirm = async () => {
     if (lines.length === 0) {
@@ -275,54 +350,18 @@ export function CountInitialForm({
               </thead>
               <tbody>
                 {sortedProducts.map((product) => (
-                  <tr
+                  <CountRow
                     key={product.id}
-                    className={`ui-body ${qtyByProductId[product.id] > 0 ? "bg-emerald-50/40" : ""}`}
-                  >
-                    <TableCell>
-                      <div className="space-y-0.5">
-                        <div>{product.name}</div>
-                        {compactMode ? (
-                          <div className="ui-caption">
-                            <span className="font-mono">{product.sku ?? "-"}</span> · {product.unit ?? "-"}
-                          </div>
-                        ) : null}
-                      </div>
-                    </TableCell>
-                    {!compactMode ? <TableCell className="font-mono">{product.sku ?? "-"}</TableCell> : null}
-                    {!compactMode ? <TableCell>{product.unit ?? "-"}</TableCell> : null}
-                    <TableCell>
-                      <div className="flex items-center gap-2">
-                        <input
-                          type="number"
-                          min={0}
-                          step="any"
-                          value={qty[product.id] ?? ""}
-                          onChange={(event) => handleQtyChange(product.id, event.target.value)}
-                          onKeyDown={(event) => handleQtyKeyDown(event, product.id)}
-                          ref={(element) => {
-                            qtyInputRefs.current[product.id] = element;
-                          }}
-                          placeholder="0"
-                          className="ui-input min-w-[110px]"
-                        />
-                        <button
-                          type="button"
-                          onClick={() => setProductQtyToZero(product.id)}
-                          className="ui-btn ui-btn--ghost h-9 px-3 text-xs"
-                        >
-                          0
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => clearProductQty(product.id)}
-                          className="ui-btn ui-btn--ghost h-9 px-3 text-xs"
-                        >
-                          Limpiar
-                        </button>
-                      </div>
-                    </TableCell>
-                  </tr>
+                    product={product}
+                    compactMode={compactMode}
+                    value={qty[product.id] ?? ""}
+                    qtyPositive={(qtyByProductId[product.id] ?? 0) > 0}
+                    onQtyChange={handleQtyChange}
+                    onSetZero={setProductQtyToZero}
+                    onClear={clearProductQty}
+                    onQtyKeyDown={handleQtyKeyDown}
+                    registerInputRef={registerInputRef}
+                  />
                 ))}
                 {sortedProducts.length === 0 ? (
                   <tr>
