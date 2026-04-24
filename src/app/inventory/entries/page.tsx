@@ -410,7 +410,7 @@ async function createEntry(formData: FormData) {
 
   const missingLoc = items.some((item) => !item.location_id);
   if (missingLoc) {
-    redirect("/inventory/entries?error=" + encodeURIComponent("Selecciona una LOC para cada item."));
+    redirect("/inventory/entries?error=" + encodeURIComponent("Selecciona un área para cada item."));
   }
 
   const anyReceived = items.some((item) => item.quantity_received > 0);

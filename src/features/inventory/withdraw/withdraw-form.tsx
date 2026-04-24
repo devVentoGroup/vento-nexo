@@ -41,7 +41,7 @@ type Props = {
 };
 
 function buildLocLabel(loc: LocOption | null | undefined) {
-  if (!loc) return "Sin LOC";
+  if (!loc) return "Sin área";
   const description = String(loc.description ?? "").trim();
   const zone = String(loc.zone ?? "").trim();
   const code = String(loc.code ?? "").trim();
@@ -134,10 +134,10 @@ export function WithdrawForm({
   const selectedLocLabel = buildLocLabel(selectedLocation);
   const modeHint =
     mode === "satellite"
-      ? "Escanea el LOC, confirma qué sale y registra."
+      ? "Confirma el área, revisa qué sale y registra."
       : mode === "center"
-        ? "Confirma la salida real desde este LOC y sigue."
-        : "Registra solo lo que realmente sale de este LOC.";
+        ? "Confirma la salida real desde esta ubicación y sigue."
+        : "Registra solo lo que realmente sale de esta ubicación.";
 
   const addRow = () => {
     setRows((prev) => [...prev, createRow((prev.at(-1)?.id ?? -1) + 1)]);
@@ -159,10 +159,10 @@ export function WithdrawForm({
     return (
       <div className="ui-panel ui-remission-section space-y-3">
         <p className="ui-body-muted">
-          No hay LOCs en esta sede. Puede que la sede activa no tenga ubicaciones o que el QR abra un LOC de otra sede.
+          No hay áreas configuradas en esta sede. Puede que la sede activa no tenga ubicaciones o que el QR abra un área de otra sede.
         </p>
         <Link href="/inventory/locations" className="ui-btn ui-btn--ghost ui-btn--sm">
-          Ir a Ubicaciones (LOC)
+          Ir a áreas
         </Link>
       </div>
     );
@@ -180,13 +180,13 @@ export function WithdrawForm({
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <div className="ui-h3">Origen</div>
-              <div className="ui-caption mt-1">Confirma el LOC desde donde sale el inventario.</div>
+              <div className="ui-caption mt-1">Confirma el área desde donde sale el inventario.</div>
             </div>
           </div>
 
           <div className="rounded-2xl border border-[var(--ui-brand)]/20 bg-[linear-gradient(135deg,rgba(245,158,11,0.18)_0%,rgba(255,255,255,0.92)_100%)] p-4 shadow-sm sm:p-5">
             <div className="ui-caption font-semibold text-[var(--ui-brand)]">
-              {openedFromQr ? "LOC abierto desde QR" : "LOC activo"}
+              {openedFromQr ? "Área abierta desde QR" : "Área activa"}
             </div>
             <div className="mt-2 text-lg font-semibold text-[var(--ui-text)] sm:text-xl">
               {selectedLocLabel}
@@ -211,16 +211,16 @@ export function WithdrawForm({
             <div className="flex flex-wrap gap-3">
               <input type="hidden" name="location_id" value={locationId} />
               <Link href={returnTo} className="ui-btn ui-btn--ghost h-12 w-full text-sm font-semibold sm:w-auto">
-                Volver al LOC
+                Volver al área
               </Link>
               <Link href={`${returnTo}/board`} className="ui-btn ui-btn--ghost h-12 w-full text-sm font-semibold sm:w-auto">
-                Ver contenido del LOC
+                Ver contenido del área
               </Link>
             </div>
           ) : (
             <details className="rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3">
               <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
-                Mas acciones para este LOC
+                Más acciones para esta área
               </summary>
               <div className="mt-3 space-y-3">
                 <SearchableSingleSelect
@@ -228,9 +228,9 @@ export function WithdrawForm({
                   value={locationId}
                   onValueChange={setLocationId}
                   options={locationOptions}
-                  placeholder="Selecciona LOC"
-                  searchPlaceholder="Buscar LOC..."
-                  sheetTitle="Selecciona LOC"
+                  placeholder="Selecciona área"
+                  searchPlaceholder="Buscar área..."
+                  sheetTitle="Selecciona área"
                   mobilePresentation="sheet"
                   mobileBreakpointPx={1024}
                   dropdownMode="inline"
@@ -247,7 +247,7 @@ export function WithdrawForm({
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="ui-h3">Items</div>
-              <div className="ui-caption mt-1">Captura solo lo que realmente sale de este LOC.</div>
+              <div className="ui-caption mt-1">Captura solo lo que realmente sale de esta área.</div>
             </div>
             <button type="button" onClick={addRow} className="ui-btn ui-btn--ghost ui-btn--sm w-full sm:w-auto">
               + Agregar item
@@ -433,7 +433,7 @@ export function WithdrawForm({
           </div>
 
           <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
-            <div className="ui-caption">LOC</div>
+            <div className="ui-caption">Área</div>
             <div className="mt-1 font-semibold text-[var(--ui-text)]">
               {selectedLocLabel}
             </div>

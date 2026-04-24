@@ -387,7 +387,7 @@ export default async function TransfersPage({
               <a href="/inventory/stock" className="ui-caption underline">Volver a stock</a>
               <h1 className="ui-h1">Traslados internos</h1>
               <p className="ui-body-muted">
-                Mueve inventario entre LOCs dentro de la misma sede con un flujo corto y directo.
+                Mueve inventario entre áreas dentro de la misma sede con un flujo corto y directo.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -395,7 +395,7 @@ export default async function TransfersPage({
                 Misma sede
               </span>
               <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
-                {(locations ?? []).length} LOCs
+                {(locations ?? []).length} áreas
               </span>
               <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
                 {productRows.length} productos
@@ -404,7 +404,7 @@ export default async function TransfersPage({
           </div>
           <div className="ui-remission-kpis sm:grid-cols-3 lg:grid-cols-1">
             <article className="ui-remission-kpi" data-tone="warm">
-              <div className="ui-remission-kpi-label">LOCs activos</div>
+              <div className="ui-remission-kpi-label">Áreas activas</div>
               <div className="ui-remission-kpi-value">{(locations ?? []).length}</div>
               <div className="ui-remission-kpi-note">Origen y destino disponibles para mover inventario</div>
             </article>

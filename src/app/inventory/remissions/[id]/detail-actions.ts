@@ -256,7 +256,7 @@ export async function updateItems(formData: FormData) {
             buildRemissionDetailHref({
               requestId,
               from: returnOrigin,
-              error: "Selecciona LOC origen para todos los items preparados/enviados.",
+              error: "Selecciona área de origen para todos los items preparados/enviados.",
             })
           );
         }
@@ -266,7 +266,7 @@ export async function updateItems(formData: FormData) {
             buildRemissionDetailHref({
               requestId,
               from: returnOrigin,
-              error: `Cantidad preparada/enviada (${maxQty}) mayor que disponible en LOC origen (${availableAtLoc}).`,
+              error: `Cantidad preparada/enviada (${maxQty}) mayor que disponible en el área de origen (${availableAtLoc}).`,
             })
           );
         }
@@ -492,7 +492,7 @@ export async function commitPreparationDraft(formData: FormData) {
           requestId,
           from: returnOrigin,
           siteId: activeSiteId,
-          error: "Todas las líneas deben tener LOC seleccionado.",
+          error: "Todas las líneas deben tener un área seleccionada.",
         })
       );
     }
@@ -801,7 +801,7 @@ export async function submitTransitChecklist(formData: FormData) {
             requestId,
             from: returnOrigin,
             siteId: activeSiteId,
-            error: "Falta LOC origen en uno o mas items para enviar.",
+            error: "Falta área de origen en uno o más items para enviar.",
           })
         );
       }
@@ -813,7 +813,7 @@ export async function submitTransitChecklist(formData: FormData) {
             requestId,
             from: returnOrigin,
             siteId: activeSiteId,
-            error: `Cantidad enviada (${qty}) supera stock disponible en LOC origen (${availableAtLoc}).`,
+            error: `Cantidad enviada (${qty}) supera el disponible en el área de origen (${availableAtLoc}).`,
           })
         );
       }
@@ -885,7 +885,7 @@ export async function submitTransitChecklist(formData: FormData) {
           requestId,
           from: returnOrigin,
           siteId: activeSiteId,
-          error: `No se pudo actualizar stock del LOC origen: ${locErr.message}`,
+          error: `No se pudo actualizar stock del área de origen: ${locErr.message}`,
         })
       );
     }
@@ -1023,7 +1023,7 @@ export async function chooseSourceLoc(formData: FormData) {
       buildRemissionDetailHref({
         requestId,
         from: returnOrigin,
-        error: "Selecciona un LOC para continuar.",
+        error: "Selecciona un área para continuar.",
       })
     );
   }
@@ -1041,7 +1041,7 @@ export async function chooseSourceLoc(formData: FormData) {
       buildRemissionDetailHref({
         requestId,
         from: returnOrigin,
-        error: "Solo puedes elegir LOC mientras la remision esta pendiente o preparando.",
+        error: "Solo puedes elegir área mientras la remisión está pendiente o preparando.",
       })
     );
   }
@@ -1093,7 +1093,7 @@ export async function chooseSourceLoc(formData: FormData) {
       buildRemissionDetailHref({
         requestId,
         from: returnOrigin,
-        error: "Ese LOC no pertenece a la sede origen.",
+        error: "Esa área no pertenece a la sede origen.",
       })
     );
   }
@@ -1259,7 +1259,7 @@ export async function updateStatus(formData: FormData) {
         buildRemissionDetailHref({
           requestId,
           from: returnOrigin,
-          error: `Selecciona un LOC en las ${summary.pending_loc_selection_lines} línea(s) faltantes antes de empezar preparación.`,
+          error: `Selecciona un área en las ${summary.pending_loc_selection_lines} línea(s) faltantes antes de empezar preparación.`,
         })
       );
     }
@@ -1497,14 +1497,14 @@ export async function updateStatus(formData: FormData) {
         anyTransitQty = true;
         const sourceLocId = row.source_location_id ?? "";
         if (!sourceLocId) {
-          redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "Falta LOC origen en uno o mas items para enviar." }));
+          redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "Falta área de origen en uno o más items para enviar." }));
         }
         const availableAtLoc = locStockMap.get(`${sourceLocId}|${row.product_id}`) ?? 0;
         if (qty > availableAtLoc) {
           redirect(buildRemissionDetailHref({
             requestId,
             from: returnOrigin,
-            error: `Cantidad enviada (${qty}) supera stock disponible en LOC origen (${availableAtLoc}).`,
+            error: `Cantidad enviada (${qty}) supera el disponible en el área de origen (${availableAtLoc}).`,
           }));
         }
         if (effectivePreparedQty !== preparedQty || effectiveShippedQty !== shippedQty) {
@@ -1740,7 +1740,7 @@ export async function updateStatus(formData: FormData) {
         p_delta: -deduction.qty,
       });
       if (locErr) {
-        redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: `No se pudo actualizar stock del LOC origen: ${locErr.message}` }));
+        redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: `No se pudo actualizar stock del área de origen: ${locErr.message}` }));
       }
     }
   }
@@ -1860,7 +1860,7 @@ export async function applyPrepareShortcut(formData: FormData) {
         buildRemissionDetailHref({
           requestId,
           from: returnOrigin,
-          error: "Selecciona primero el LOC de origen.",
+          error: "Selecciona primero el área de origen.",
         })
       );
     }
@@ -1891,7 +1891,7 @@ export async function applyPrepareShortcut(formData: FormData) {
           buildRemissionDetailHref({
             requestId,
             from: returnOrigin,
-            error: "Ese LOC no cubre completa la línea. Cambia LOC o divide la remisión.",
+            error: "Esa área no cubre completa la línea. Cambia el área o divide la remisión.",
           })
         );
       }
@@ -1906,7 +1906,7 @@ export async function applyPrepareShortcut(formData: FormData) {
           buildRemissionDetailHref({
             requestId,
             from: returnOrigin,
-            error: "Ese LOC no tiene stock disponible para preparar esta línea.",
+            error: "Esa área no tiene stock disponible para preparar esta línea.",
           })
         );
       }
@@ -1952,7 +1952,7 @@ export async function applyPrepareShortcut(formData: FormData) {
           buildRemissionDetailHref({
             requestId,
             from: returnOrigin,
-            error: `La cantidad parcial (${partialQty}) supera el stock del LOC (${availableAtLoc}).`,
+            error: `La cantidad parcial (${partialQty}) supera el disponible del área (${availableAtLoc}).`,
           })
         );
       }
@@ -2018,7 +2018,7 @@ export async function applyPrepareShortcut(formData: FormData) {
       buildRemissionDetailHref({
         requestId,
         from: returnOrigin,
-        error: `La cantidad elegida supera el stock disponible en el LOC (${availableAtLoc}).`,
+        error: `La cantidad elegida supera el disponible en el área (${availableAtLoc}).`,
       })
     );
   }

@@ -167,7 +167,7 @@ export function ProductionBatchForm({
             </span>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="ui-label">LOC destino del terminado</span>
+            <span className="ui-label">Área destino del terminado</span>
             <select
               name="destination_location_id"
               value={destinationLocationId}
@@ -177,7 +177,7 @@ export function ProductionBatchForm({
               className="ui-input"
               required
             >
-              <option value="">Selecciona LOC</option>
+              <option value="">Selecciona área</option>
               {locations.map((location) => (
                 <option key={location.id} value={location.id}>
                   {location.code}
@@ -228,7 +228,7 @@ export function ProductionBatchForm({
             </div>
           </div>
           <div className="ui-panel-soft p-3">
-            <div className="ui-caption">LOC destino</div>
+            <div className="ui-caption">Área destino</div>
             <div className="mt-1 font-semibold">{selectedLocation?.code ?? "Sin definir"}</div>
           </div>
           <div className="ui-panel-soft p-3">
@@ -276,7 +276,7 @@ export function ProductionBatchForm({
         </label>
         {!canSubmit ? (
           <div className="ui-alert ui-alert--warn">
-            Completa producto, cantidad valida, LOC destino y receta activa.
+            Completa producto, cantidad válida, área destino y receta activa.
           </div>
         ) : null}
       </section>

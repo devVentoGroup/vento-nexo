@@ -230,7 +230,7 @@ export function EntriesForm({
           </div>
           {canCaptureProducts ? (
             <div className="rounded-full border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-1 text-xs font-semibold text-[var(--ui-muted)]">
-              {locations.length} LOCs disponibles
+              {locations.length} áreas disponibles
             </div>
           ) : null}
         </div>

@@ -276,7 +276,7 @@ export default async function InventoryLocationsPage({
     const role = String((emp as { role?: string } | null)?.role ?? "");
     if (!["propietario", "gerente_general"].includes(role)) {
       redirect(
-        `/inventory/locations?error=${encodeURIComponent("Solo propietarios pueden eliminar LOCs.")}`,
+        `/inventory/locations?error=${encodeURIComponent("Solo propietarios pueden eliminar áreas.")}`,
       );
     }
 
@@ -322,7 +322,7 @@ export default async function InventoryLocationsPage({
     const role = String((emp as { role?: string } | null)?.role ?? "");
     if (!["propietario", "gerente_general"].includes(role)) {
       redirect(
-        `/inventory/locations?error=${encodeURIComponent("Solo propietarios pueden editar LOCs.")}`,
+        `/inventory/locations?error=${encodeURIComponent("Solo propietarios pueden editar áreas.")}`,
       );
     }
 
@@ -388,7 +388,7 @@ export default async function InventoryLocationsPage({
     const role = String((emp as { role?: string } | null)?.role ?? "");
     if (!["propietario", "gerente_general"].includes(role)) {
       redirect(
-        `/inventory/locations?error=${encodeURIComponent("Solo propietarios pueden renombrar LOCs.")}`,
+        `/inventory/locations?error=${encodeURIComponent("Solo propietarios pueden renombrar áreas.")}`,
       );
     }
 
@@ -396,7 +396,7 @@ export default async function InventoryLocationsPage({
     const suggestedName = String(formData.get("suggested_name") ?? "").trim();
     if (!locId || !suggestedName) {
       redirect(
-        `/inventory/locations?error=${encodeURIComponent("Falta LOC o nombre sugerido.")}`,
+        `/inventory/locations?error=${encodeURIComponent("Falta área o nombre sugerido.")}`,
       );
     }
 
@@ -435,7 +435,7 @@ export default async function InventoryLocationsPage({
     const role = String((emp as { role?: string } | null)?.role ?? "");
     if (!["propietario", "gerente_general"].includes(role)) {
       redirect(
-        `/inventory/locations?error=${encodeURIComponent("Solo propietarios pueden renombrar LOCs.")}`,
+        `/inventory/locations?error=${encodeURIComponent("Solo propietarios pueden renombrar áreas.")}`,
       );
     }
 
@@ -514,22 +514,22 @@ export default async function InventoryLocationsPage({
           <div className="space-y-4">
             <div className="space-y-2">
               <Link href="/inventory/stock" className="ui-caption underline">Volver a stock</Link>
-              <h1 className="ui-h1">Ubicaciones</h1>
+              <h1 className="ui-h1">Áreas</h1>
               <p className="ui-body-muted">
                 {isEditingLoc
                   ? "Corrige solo la ubicacion seleccionada y vuelve al listado."
-                  : "Crea LOCs con nombre humano primero y deja el codigo tecnico en segundo plano."}
+                  : "Crea áreas con nombre humano primero y deja el código técnico en segundo plano."}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
-                {isEditingLoc ? "Editar ubicacion" : "Nueva ubicacion"}
+                {isEditingLoc ? "Editar área" : "Nueva área"}
               </span>
               <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
                 {siteOptions.length} sedes
               </span>
               <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
-                {locationRows.length} LOCs visibles
+                {locationRows.length} áreas visibles
               </span>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -545,7 +545,7 @@ export default async function InventoryLocationsPage({
           </div>
           <div className="ui-remission-kpis sm:grid-cols-3 lg:grid-cols-1">
             <article className="ui-remission-kpi" data-tone="warm">
-              <div className="ui-remission-kpi-label">LOCs visibles</div>
+              <div className="ui-remission-kpi-label">Áreas visibles</div>
               <div className="ui-remission-kpi-value">{locationRows.length}</div>
               <div className="ui-remission-kpi-note">Aplicando los filtros actuales del listado</div>
             </article>
@@ -568,11 +568,11 @@ export default async function InventoryLocationsPage({
       ) : null}
 
       {deleted === "1" ? (
-        <div className="ui-alert ui-alert--success">LOC eliminado correctamente.</div>
+        <div className="ui-alert ui-alert--success">Área eliminada correctamente.</div>
       ) : null}
 
       {updated === "1" ? (
-        <div className="ui-alert ui-alert--success">LOC actualizado correctamente.</div>
+        <div className="ui-alert ui-alert--success">Área actualizada correctamente.</div>
       ) : null}
 
       {errorMsg ? (
@@ -583,7 +583,7 @@ export default async function InventoryLocationsPage({
 
       {requestedEditButNotFound ? (
         <div className="ui-alert ui-alert--warn">
-          El LOC solicitado para edición no aparece en el listado actual. Revisa filtros o vuelve al modo de alta.
+          El área solicitada para edición no aparece en el listado actual. Revisa filtros o vuelve al modo de alta.
         </div>
       ) : null}
 
@@ -615,7 +615,7 @@ export default async function InventoryLocationsPage({
 
       {error ? (
         <div className="ui-alert ui-alert--error">
-          Falló el SELECT de LOCs: {error.message}
+          Falló el SELECT de áreas: {error.message}
         </div>
       ) : null}
 
@@ -623,7 +623,7 @@ export default async function InventoryLocationsPage({
         <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
-              <div className="ui-h3">LOCs sin nombre visible</div>
+              <div className="ui-h3">Áreas sin nombre visible</div>
               <div className="mt-1 ui-body-muted">
                 El código técnico se conserva. Aquí solo estás agregando el nombre humano que verá la operación.
               </div>
@@ -641,7 +641,7 @@ export default async function InventoryLocationsPage({
               return (
                 <div key={loc.id} className="ui-panel-soft flex flex-wrap items-center justify-between gap-3 p-4">
                   <div className="space-y-1">
-                    <div className="text-sm font-semibold text-[var(--ui-text)]">{loc.code ?? "LOC sin codigo"}</div>
+                    <div className="text-sm font-semibold text-[var(--ui-text)]">{loc.code ?? "Área sin código"}</div>
                     <div className="text-sm text-[var(--ui-muted)]">
                       Sugerencia: <strong className="text-[var(--ui-text)]">{suggestedName}</strong>
                     </div>
@@ -807,7 +807,7 @@ export default async function InventoryLocationsPage({
               {!error && (!locations || locations.length === 0) ? (
                 <tr>
                   <TableCell className="ui-empty" colSpan={canEditLoc || canDeleteLoc ? 6 : 5}>
-                    No hay LOCs para mostrar (o RLS no te permite verlos).
+                    No hay áreas para mostrar (o RLS no te permite verlas).
                   </TableCell>
                 </tr>
               ) : null}

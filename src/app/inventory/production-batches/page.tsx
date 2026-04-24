@@ -121,7 +121,7 @@ export default async function ProductionBatchesInfoPage() {
               <li>Batch code</li>
               <li>Fecha y hora</li>
               <li>Fecha de vencimiento</li>
-              <li>LOC destino</li>
+              <li>Área destino</li>
               <li>Responsable</li>
             </ul>
           </article>

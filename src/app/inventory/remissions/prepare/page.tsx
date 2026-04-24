@@ -239,7 +239,7 @@ export default async function RemissionsPreparePage() {
               Cola de preparacion
             </h1>
             <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--ui-muted)] sm:text-base">
-              Abre la solicitud, elige LOC y confirma cuánto sale.
+              Abre la solicitud, elige el área de origen y confirma cuánto sale.
             </p>
           </div>
           <div className="ui-remission-kpis">
@@ -256,7 +256,7 @@ export default async function RemissionsPreparePage() {
             <div className="ui-remission-kpi" data-tone="success">
               <div className="ui-remission-kpi-label">Señales</div>
               <div className="ui-remission-kpi-value">{shortageSignalCount + locSignalCount}</div>
-              <div className="ui-remission-kpi-note">Faltantes o LOCs ajustados</div>
+              <div className="ui-remission-kpi-note">Faltantes o áreas ajustadas</div>
             </div>
           </div>
         </div>
@@ -317,7 +317,7 @@ export default async function RemissionsPreparePage() {
                   <div className="mt-3 flex flex-wrap gap-2 text-sm">
                     {(requestMetrics.get(row.id)?.linesMissingSourceLoc ?? 0) > 0 ? (
                       <span className="ui-chip ui-chip--warn">
-                        {requestMetrics.get(row.id)?.linesMissingSourceLoc ?? 0} LOC pendiente
+                        {requestMetrics.get(row.id)?.linesMissingSourceLoc ?? 0} área pendiente
                       </span>
                     ) : null}
                     {(requestMetrics.get(row.id)?.linesPartialPrep ?? 0) > 0 ? (
@@ -346,7 +346,7 @@ export default async function RemissionsPreparePage() {
                   {(requestMetrics.get(row.id)?.linesLikelyShortage ?? 0) > 0 ||
                   (requestMetrics.get(row.id)?.linesWithoutCoveringLoc ?? 0) > 0 ? (
                     <div className="mt-3 ui-alert ui-alert--warn">
-                      Esta solicitud ya muestra señales para bodega: revisa faltante probable y si algun item no cabe completo en un solo LOC.
+                      Esta solicitud ya muestra señales para bodega: revisa faltante probable y si algun item no cabe completo en una sola área.
                     </div>
                   ) : null}
 

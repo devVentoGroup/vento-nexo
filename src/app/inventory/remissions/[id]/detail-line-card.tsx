@@ -246,24 +246,24 @@ export function RemissionLineCard({
                 </div>
               ) : !item.source_location_id ? (
                 <div className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] px-3 py-2 text-sm text-[var(--ui-muted)]">
-                  No hay LOC con stock para este producto.
+                  No hay áreas con stock para este producto.
                 </div>
               ) : null}
 
               <details className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] px-3 py-2">
                 <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
-                  {item.source_location_id ? "Cambiar LOC" : "Ver más LOCs"}
+                  {item.source_location_id ? "Cambiar área" : "Ver más áreas"}
                 </summary>
                 <div className="mt-3 flex flex-col gap-3 md:max-w-xl">
                   <label className="flex flex-col gap-1">
-                    <span className="ui-caption">Otro LOC</span>
+                    <span className="ui-caption">Otra área</span>
                     <select
                       name={`manual_loc_id_${item.id}`}
                       form={manualLocFormId}
                       defaultValue={item.source_location_id ?? ""}
                       className="ui-input h-12 min-w-0"
                     >
-                      <option value="">Selecciona LOC</option>
+                      <option value="">Selecciona área</option>
                       {originLocRows.map((loc) => (
                         <option key={loc.id} value={loc.id}>
                           {buildLocDisplayLabel(loc)}
@@ -276,7 +276,7 @@ export function RemissionLineCard({
                     form={manualLocFormId}
                     className="ui-btn ui-btn--ghost h-11 w-full text-sm font-semibold md:w-auto"
                   >
-                    Usar este LOC
+                    Usar esta área
                   </button>
                 </div>
               </details>
@@ -366,7 +366,7 @@ export function RemissionLineCard({
             ) : (
               <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3">
                 <div className="text-sm text-[var(--ui-muted)]">
-                  LOC: <strong className="text-[var(--ui-text)]">{vm.selectedOriginLabel}</strong>
+                  Área: <strong className="text-[var(--ui-text)]">{vm.selectedOriginLabel}</strong>
                 </div>
                 <div className="mt-3">
                   <button
@@ -430,10 +430,10 @@ export function RemissionLineCard({
           {canEditPrepareItems && item.source_location_id && currentStatus === "pending" ? (
             <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3">
               <div className="text-sm text-[var(--ui-muted)]">
-                LOC: <strong className="text-[var(--ui-text)]">{vm.selectedOriginLabel}</strong>
+                Área: <strong className="text-[var(--ui-text)]">{vm.selectedOriginLabel}</strong>
               </div>
               <div className="mt-2 text-sm text-[var(--ui-muted)]">
-                Sigue asignando los LOC faltantes. Cuando todas las líneas tengan uno, se habilitará <strong>Empezar preparación</strong>.
+                Sigue asignando las áreas faltantes. Cuando todas las líneas tengan una, se habilitará <strong>Empezar preparación</strong>.
               </div>
             </div>
           ) : null}

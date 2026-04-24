@@ -14,8 +14,8 @@ export function LocDeleteButton({ locId, locCode, action }: Props) {
   function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const msg = locCode
-      ? `¿Eliminar el LOC "${locCode}"? Si tiene stock, la operación puede fallar.`
-      : "¿Eliminar este LOC? Si tiene stock, la operación puede fallar.";
+      ? `¿Eliminar el área "${locCode}"? Si tiene stock, la operación puede fallar.`
+      : "¿Eliminar esta área? Si tiene stock, la operación puede fallar.";
     if (!confirm(msg)) return;
     const formData = new FormData(formRef.current ?? undefined);
     action(formData);

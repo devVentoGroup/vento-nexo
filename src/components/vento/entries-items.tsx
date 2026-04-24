@@ -442,9 +442,9 @@ export function EntriesItems({
                       )
                     }
                     options={locationOptions}
-                    placeholder="Selecciona LOC"
-                    searchPlaceholder="Buscar LOC..."
-                    sheetTitle="Selecciona LOC"
+                    placeholder="Selecciona área"
+                    searchPlaceholder="Buscar área..."
+                    sheetTitle="Selecciona área"
                     mobilePresentation="sheet"
                     mobileBreakpointPx={1024}
                   />

@@ -67,7 +67,7 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
 
         <div className="grid gap-4 ui-mobile-stack sm:grid-cols-2">
           <label className="flex flex-col gap-1 sm:col-span-2">
-            <span className="ui-label">Nombre visible del LOC</span>
+            <span className="ui-label">Nombre visible del área</span>
             <input
               type="text"
               value={description}
@@ -116,7 +116,7 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
         <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
           {description.trim()
             ? `Se mostrara como "${description.trim()}" en sugerencias y remisiones.`
-            : "Si le pones un nombre corto, el LOC será más fácil de reconocer en tablet."}
+            : "Si le pones un nombre corto, el área será más fácil de reconocer en tablet."}
         </div>
       </section>
 
@@ -166,7 +166,7 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
 
       <div className="ui-mobile-sticky-footer ui-fade-up ui-delay-4 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ui-border)] bg-white/92 px-4 py-3 backdrop-blur">
         <div className="text-sm text-[var(--ui-muted)]">
-          {description.trim() || "LOC sin nombre"} · {selectedSite?.label ?? "Sin sede"}
+          {description.trim() || "Área sin nombre"} · {selectedSite?.label ?? "Sin sede"}
         </div>
         <button
           type="submit"

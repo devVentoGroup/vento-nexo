@@ -56,7 +56,7 @@ async function submitWithdraw(formData: FormData) {
   const locationId = asText(formData.get("location_id"));
   const returnTo = asText(formData.get("return_to"));
   if (!locationId) {
-    redirect("/inventory/withdraw?error=" + encodeURIComponent("Falta ubicación (LOC)."));
+    redirect("/inventory/withdraw?error=" + encodeURIComponent("Falta área de salida."));
   }
 
   const productIds = formData.getAll("item_product_id").map((v) => String(v).trim());
@@ -153,7 +153,7 @@ async function submitWithdraw(formData: FormData) {
     .single();
 
   if (!locRow || (locRow as { site_id?: string }).site_id !== siteId) {
-    redirect("/inventory/withdraw?error=" + encodeURIComponent("LOC no válido para tu sede."));
+    redirect("/inventory/withdraw?error=" + encodeURIComponent("Área no válida para tu sede."));
   }
 
   const locCode = (locRow as { code?: string }).code ?? locationId;
@@ -409,16 +409,16 @@ export default async function WithdrawPage({
   const heroModeLabel = mode === "satellite" ? "Modo satelite" : mode === "center" ? "Modo Centro" : "Modo retiro";
   const heroTitle =
     mode === "satellite"
-      ? "Retira desde el LOC activo"
+      ? "Registra salida desde el área activa"
       : mode === "center"
         ? "Registra salida desde Centro"
-        : "Retirar insumos";
+        : "Registrar salida de insumos";
   const heroSubtitle =
     mode === "satellite"
-      ? "Escanea el LOC, confirma qué sale y registra el retiro sin mezclarte con otras pantallas."
+      ? "Confirma el área, revisa qué sale y registra la salida sin mezclarte con otras pantallas."
       : mode === "center"
-        ? "Usa este flujo para descontar consumos reales desde un LOC y seguir rápido con la operación."
-        : "Registra la salida real desde un LOC. Si abriste el formulario desde el QR, el origen ya queda listo para capturar.";
+        ? "Usa este flujo para descontar consumos reales desde un área y seguir rápido con la operación."
+        : "Registra la salida real desde un área. Si abriste el formulario desde el QR, el origen ya queda listo para capturar.";
 
   return (
     <div className="ui-scene w-full space-y-6">
@@ -427,7 +427,7 @@ export default async function WithdrawPage({
           <div className="space-y-4">
           <div className="space-y-2">
               <Link href={returnTo} className="ui-caption underline">
-                {openedFromQr ? "Volver al LOC" : "Volver a stock"}
+                {openedFromQr ? "Volver al área" : "Volver a stock"}
               </Link>
               <div className="ui-caption">{heroModeLabel}</div>
               <h1 className="ui-h1">{heroTitle}</h1>
@@ -439,7 +439,7 @@ export default async function WithdrawPage({
               </span>
               {selectedLocation ? (
                 <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-900">
-                  LOC {selectedLocation.description ?? selectedLocation.zone ?? selectedLocation.code ?? selectedLocation.id}
+                  Área {selectedLocation.description ?? selectedLocation.zone ?? selectedLocation.code ?? selectedLocation.id}
                 </span>
               ) : null}
               <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
@@ -449,12 +449,12 @@ export default async function WithdrawPage({
           </div>
           <div className="ui-remission-kpis sm:grid-cols-3 lg:grid-cols-1">
             <article className="ui-remission-kpi" data-tone="warm">
-              <div className="ui-remission-kpi-label">LOC activo</div>
+              <div className="ui-remission-kpi-label">Área activa</div>
               <div className="ui-remission-kpi-value">
-                {selectedLocation?.description ?? selectedLocation?.zone ?? selectedLocation?.code ?? "Sin LOC"}
+                {selectedLocation?.description ?? selectedLocation?.zone ?? selectedLocation?.code ?? "Sin área"}
               </div>
               <div className="ui-remission-kpi-note">
-                {selectedLocation?.code || "El retiro se descuenta del LOC seleccionado"}
+                {selectedLocation?.code || "La salida se descuenta del área seleccionada"}
               </div>
             </article>
             <article className="ui-remission-kpi" data-tone="cool">

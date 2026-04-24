@@ -165,7 +165,7 @@ function getLineToneLabel(tone: "pending" | "warn" | "error" | "ok") {
   return "Pendiente";
 }
 
-/** Una línea se puede partir en dos ítems (otro LOC) si hay más de 1 unidad solicitada y no es la fila hija recién creada en el borrador. */
+/** Una línea se puede partir en dos ítems si hay más de 1 unidad solicitada y no es la fila hija recién creada en el borrador. */
 function canSplitDraftLine(line: DraftLine): boolean {
   if (line.isVirtualSplit) return false;
   return roundQty(line.requestedQty) > 1;
@@ -184,8 +184,8 @@ function sumLocQtyForLine(line: DraftLine): number {
 }
 
 /**
- * Ningún LOC tiene stock suficiente para el pedido solo, pero la suma entre LOCs sí alcanza.
- * Indica que conviene partir la línea en lugar de forzar faltante en un solo LOC.
+ * Ninguna área tiene stock suficiente para el pedido sola, pero la suma entre áreas sí alcanza.
+ * Indica que conviene partir la línea en lugar de forzar faltante en una sola área.
  */
 function needsMultilocSplitHint(line: DraftLine): boolean {
   if (!canSplitDraftLine(line)) return false;
@@ -196,7 +196,7 @@ function needsMultilocSplitHint(line: DraftLine): boolean {
   return maxQ < rq && sumQ >= rq;
 }
 
-/** Cantidad sugerida para la nueva línea: lo que cubre el LOC más lleno (típico 6+4 cuando el máximo en un LOC es 6). */
+/** Cantidad sugerida para la nueva línea: lo que cubre el área más llena. */
 function suggestedSplitPrimaryQtyForMultiloc(line: DraftLine): number {
   const rq = roundQty(line.requestedQty);
   const maxQ = maxLocQtyForLine(line);
@@ -250,7 +250,7 @@ function RemissionPrepareReadonlySummary({
       <div className="overflow-hidden rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)]">
         <div className="hidden grid-cols-[minmax(220px,1.2fr)_minmax(260px,1.3fr)_120px_minmax(220px,1fr)_120px] gap-3 border-b border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ui-muted)] lg:grid">
           <div>Insumo</div>
-          <div>LOC</div>
+          <div>Área</div>
           <div>Cantidad</div>
           <div>Faltante</div>
           <div>Estado</div>
@@ -261,7 +261,7 @@ function RemissionPrepareReadonlySummary({
           const locEntry = line.locOptions.find((loc) => loc.id === line.selectedLocId);
           const locText = locEntry
             ? `${locEntry.label} · ${locEntry.qty} ${line.unitLabel}`
-            : (line.selectedLocId || "Sin LOC").trim() || "Sin LOC";
+            : (line.selectedLocId || "Sin área").trim() || "Sin área";
           return (
             <div key={line.id} className="border-t border-[var(--ui-border)] first:border-t-0">
               <div className="grid gap-3 px-4 py-3 lg:grid-cols-[minmax(220px,1.2fr)_minmax(260px,1.3fr)_120px_minmax(220px,1fr)_120px] lg:items-start">
@@ -456,7 +456,7 @@ function RemissionPrepareWorkbenchInteractive({
       <div className="overflow-hidden rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)]">
         <div className="hidden grid-cols-[minmax(220px,1.2fr)_minmax(260px,1.3fr)_120px_minmax(220px,1fr)_120px] gap-3 border-b border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ui-muted)] lg:grid">
           <div>Insumo</div>
-          <div>LOC</div>
+          <div>Área</div>
           <div>Cantidad</div>
           <div>Faltante</div>
           <div>Estado</div>
@@ -482,7 +482,7 @@ function RemissionPrepareWorkbenchInteractive({
                       Asignación inteligente:{" "}
                       <strong>
                         {(line.locOptions.find((loc) => loc.id === line.selectedLocId)?.label ??
-                          line.selectedLocId) || "Sin LOC"}
+                          line.selectedLocId) || "Sin área"}
                       </strong>
                     </div>
                   ) : null}
@@ -494,7 +494,7 @@ function RemissionPrepareWorkbenchInteractive({
                     onChange={(e) => updateLine(line.id, { selectedLocId: e.target.value })}
                     className="ui-input h-10"
                   >
-                    <option value="">Selecciona LOC</option>
+                    <option value="">Selecciona área</option>
                     {line.locOptions.map((loc) => (
                       <option key={loc.id} value={loc.id}>
                         {loc.label} · {loc.qty} {line.unitLabel}
@@ -504,10 +504,10 @@ function RemissionPrepareWorkbenchInteractive({
                   {multilocHint ? (
                     <div className="rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs text-sky-950">
                       <p className="font-semibold leading-snug">
-                        Ningún LOC cubre todo el pedido; entre LOCs sí alcanza.
+                        Ninguna área cubre todo el pedido; entre áreas sí alcanza.
                       </p>
                       <p className="mt-1 leading-snug text-sky-900/80">
-                        Partí la línea para asignar un LOC distinto a cada parte.
+                        Partí la línea para asignar un área distinta a cada parte.
                       </p>
                       <button
                         type="button"
@@ -526,7 +526,7 @@ function RemissionPrepareWorkbenchInteractive({
                     disabled={!canSplitDraftLine(line)}
                     title={
                       canSplitDraftLine(line)
-                        ? "Divide en dos líneas para asignar otro LOC a parte de la cantidad."
+                        ? "Divide en dos líneas para asignar otra área a parte de la cantidad."
                         : "Solo aplica con más de 1 unidad solicitada (no en líneas hijas de un split)."
                     }
                   >

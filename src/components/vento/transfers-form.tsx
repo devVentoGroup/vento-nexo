@@ -53,7 +53,7 @@ export function TransfersForm({ locations, products, defaultUomProfiles = [], ac
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <div className="ui-h3">Ruta</div>
-            <div className="ui-caption mt-1">Selecciona el LOC de salida y el LOC de llegada.</div>
+            <div className="ui-caption mt-1">Selecciona el área de salida y el área de llegada.</div>
           </div>
           <div className="flex flex-wrap gap-2 text-xs font-semibold">
             {selectedFrom ? (
@@ -71,7 +71,7 @@ export function TransfersForm({ locations, products, defaultUomProfiles = [], ac
 
         <div className="grid gap-3 ui-mobile-stack md:grid-cols-2">
           <label className="flex flex-col gap-1">
-            <span className="ui-label">LOC origen</span>
+            <span className="ui-label">Área origen</span>
             <select
               name="from_loc_id"
               className="ui-input"
@@ -79,7 +79,7 @@ export function TransfersForm({ locations, products, defaultUomProfiles = [], ac
               onChange={(event) => setFromLocId(event.target.value)}
               required
             >
-              <option value="">Selecciona LOC origen</option>
+              <option value="">Selecciona área origen</option>
               {locations.map((loc) => (
                 <option key={loc.id} value={loc.id}>
                   {loc.code ?? loc.name ?? loc.id}
@@ -90,7 +90,7 @@ export function TransfersForm({ locations, products, defaultUomProfiles = [], ac
 
           {hasOrigin ? (
             <label className="flex flex-col gap-1">
-              <span className="ui-label">LOC destino</span>
+              <span className="ui-label">Área destino</span>
               <select
                 name="to_loc_id"
                 className="ui-input"
@@ -98,7 +98,7 @@ export function TransfersForm({ locations, products, defaultUomProfiles = [], ac
                 onChange={(event) => setToLocId(event.target.value)}
                 required
               >
-                <option value="">Selecciona LOC destino</option>
+                <option value="">Selecciona área destino</option>
                 {destinationOptions.map((loc) => (
                   <option key={loc.id} value={loc.id}>
                     {loc.code ?? loc.name ?? loc.id}
@@ -145,10 +145,10 @@ export function TransfersForm({ locations, products, defaultUomProfiles = [], ac
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="ui-h3">Productos</div>
-              <div className="ui-caption mt-1">Captura lo que realmente se mueve entre ambos LOCs.</div>
+              <div className="ui-caption mt-1">Captura lo que realmente se mueve entre ambas áreas.</div>
             </div>
             <div className="rounded-full border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-1 text-xs font-semibold text-[var(--ui-muted)]">
-              {locations.length} LOCs disponibles
+              {locations.length} áreas disponibles
             </div>
           </div>
 

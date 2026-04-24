@@ -59,7 +59,7 @@ export function LocEditForm({ loc, action, cancelHref }: Props) {
 
         <div className="grid gap-3 ui-mobile-stack md:grid-cols-2">
           <label className="flex flex-col gap-1 md:col-span-2">
-            <span className="ui-label">Nombre visible del LOC</span>
+            <span className="ui-label">Nombre visible del área</span>
             <input
               type="text"
               value={description}
@@ -90,7 +90,7 @@ export function LocEditForm({ loc, action, cancelHref }: Props) {
 
         <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
           {description.trim()
-            ? `Este LOC se mostrara como "${description.trim()}" en la operacion.`
+            ? `Esta área se mostrara como "${description.trim()}" en la operacion.`
             : "Si le das un nombre corto, será más fácil encontrarlo al preparar o retirar stock."}
         </div>
       </section>

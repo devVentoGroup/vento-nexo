@@ -136,12 +136,12 @@ export function buildRemissionLineVm(params: BuildRemissionLineVmParams) {
   const lineStatusLabel = canEditPrepareItems
     ? currentStatus === "pending"
       ? item.source_location_id
-        ? "LOC elegido"
+        ? "Área elegida"
         : lineWithoutCoveringLoc
-          ? "LOC insuficiente"
-          : "Elegir LOC"
+          ? "Área insuficiente"
+          : "Elegir área"
       : missingSourceLoc
-        ? "LOC pendiente"
+        ? "Área pendiente"
         : shippedQty > 0
           ? "Lista para despachar"
           : preparedQty > 0
@@ -149,7 +149,7 @@ export function buildRemissionLineVm(params: BuildRemissionLineVmParams) {
             : linePreparationPartial
               ? "Preparación parcial"
               : lineWithoutCoveringLoc
-                ? "LOC insuficiente"
+                ? "Área insuficiente"
                 : "Pendiente de preparación"
     : canEditReceiveItems
       ? linePartialReceipt
@@ -174,10 +174,10 @@ export function buildRemissionLineVm(params: BuildRemissionLineVmParams) {
   const prepareStepLabel =
     currentStatus === "pending"
       ? !item.source_location_id
-        ? "Paso 1: elige el LOC"
-        : "LOC listo"
+        ? "Paso 1: elige el área"
+        : "Área lista"
       : !item.source_location_id
-        ? "Paso 1: elige el LOC"
+        ? "Paso 1: elige el área"
         : preparedQty <= 0
           ? "Paso 2: indica cuánto preparas"
           : shippedQty <= 0
@@ -198,9 +198,9 @@ export function buildRemissionLineVm(params: BuildRemissionLineVmParams) {
     ? overSiteStock
       ? "La cantidad supera el stock total de la sede."
       : overLocStock
-        ? "La cantidad supera el stock del LOC elegido."
+        ? "La cantidad supera el disponible del área elegida."
         : lineWithoutCoveringLoc
-          ? "Ningún LOC alcanza solo."
+          ? "Ninguna área alcanza sola."
           : linePreparationPartial
             ? "La preparación va corta frente a lo solicitado."
             : ""
@@ -214,12 +214,12 @@ export function buildRemissionLineVm(params: BuildRemissionLineVmParams) {
       ? canSplitLine
         ? "Divide esta línea"
         : !item.source_location_id
-          ? "Elegir LOC"
-          : "LOC listo"
+          ? "Elegir área"
+          : "Área lista"
       : canSplitLine
         ? "Divide esta línea"
         : !item.source_location_id
-          ? "Elegir LOC"
+          ? "Elegir área"
           : shippedQty > 0
             ? "Lista"
             : preparedQty > 0
@@ -240,7 +240,7 @@ export function buildRemissionLineVm(params: BuildRemissionLineVmParams) {
   const activeLineMessage = !isActiveLine
     ? ""
     : activeLineEvent === "loc"
-      ? "LOC guardado."
+      ? "Área guardada."
       : activeLineEvent === "complete_line"
         ? "Línea lista para despacho."
         : activeLineEvent === "prepare_auto"

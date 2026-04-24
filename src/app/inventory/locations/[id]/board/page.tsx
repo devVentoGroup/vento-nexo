@@ -168,14 +168,14 @@ export default async function LocationBoardPage({
           <div className="space-y-4">
             {!isKiosk ? (
               <Link href={`/inventory/locations/${encodeURIComponent(location.id)}`} className="ui-caption underline">
-                Volver al LOC
+                Volver al área
               </Link>
             ) : null}
             <div className="space-y-2">
-              <div className="ui-caption">{isKiosk ? "Modo kiosco" : "Board del LOC"}</div>
+              <div className="ui-caption">{isKiosk ? "Modo kiosco" : "Vista del área"}</div>
               <h1 className="ui-h1">{title}</h1>
               <p className="ui-body-muted">
-                Vista rápida y visual de lo que hoy contiene este LOC. Ideal para tablet o pantalla fija de consulta.
+                Vista rápida y visual de lo que hoy contiene esta área. Ideal para tablet o pantalla fija de consulta.
               </p>
             </div>
             {isKiosk ? (
@@ -206,13 +206,13 @@ export default async function LocationBoardPage({
             {!isKiosk ? (
               <div className="flex flex-wrap gap-3">
                 <Link href={withdrawHref} className="ui-btn ui-btn--brand">
-                  Retirar de aqui
+                  Registrar salida
                 </Link>
                 <Link
                   href={`/inventory/stock?site_id=${encodeURIComponent(location.site_id ?? "")}&view=by_loc&location_id=${encodeURIComponent(location.id)}`}
                   className="ui-btn ui-btn--ghost"
                 >
-                  Ver stock tecnico
+                  Ver stock técnico
                 </Link>
                 <Link
                   href={`/inventory/locations/${encodeURIComponent(location.id)}/board?kiosk=1`}
@@ -232,7 +232,7 @@ export default async function LocationBoardPage({
             <article className="ui-remission-kpi" data-tone="warm">
               <div className="ui-remission-kpi-label">Productos</div>
               <div className="ui-remission-kpi-value">{stockRows.length}</div>
-              <div className="ui-remission-kpi-note">Activos en este LOC</div>
+              <div className="ui-remission-kpi-note">Activos en esta área</div>
             </article>
             <article className="ui-remission-kpi" data-tone="cool">
               <div className="ui-remission-kpi-label">Qty total</div>
@@ -295,7 +295,7 @@ export default async function LocationBoardPage({
         </section>
       ) : (
         <div className={`ui-panel ui-remission-section text-center ${isKiosk ? "min-h-[45vh] flex flex-col items-center justify-center" : ""}`}>
-          <div className="ui-h3">LOC sin contenido visible</div>
+          <div className="ui-h3">Área sin contenido visible</div>
           <p className="mt-2 ui-body-muted">
             Todavía no hay stock positivo cargado en esta ubicación.
           </p>

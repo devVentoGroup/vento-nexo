@@ -167,14 +167,14 @@ export default async function LocationZoneBoardPage({
           <div className="space-y-4">
             {!isKiosk ? (
               <Link href="/inventory/locations" className="ui-caption underline">
-                Volver a ubicaciones
+                Volver a áreas
               </Link>
             ) : null}
             <div className="space-y-2">
-              <div className="ui-caption">{isKiosk ? "Zona kiosco" : "Board de zona"}</div>
+              <div className="ui-caption">{isKiosk ? "Zona kiosco" : "Vista de zona"}</div>
               <h1 className="ui-h1">Zona {zone}</h1>
               <p className="ui-body-muted">
-                Vista fija por zona para revisar rápidamente qué LOCs tienen contenido y qué productos destacan en cada uno.
+                Vista fija por zona para revisar rápidamente qué áreas tienen contenido y qué productos destacan en cada una.
               </p>
             </div>
             {isKiosk ? (
@@ -190,7 +190,7 @@ export default async function LocationZoneBoardPage({
                 {site.name ?? site.id}
               </span>
               <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
-                {locations.length} LOCs
+                {locations.length} áreas
               </span>
             </div>
             {!isKiosk ? (
@@ -199,7 +199,7 @@ export default async function LocationZoneBoardPage({
                   href={`/inventory/stock?site_id=${encodeURIComponent(siteId)}&view=by_loc&zone=${encodeURIComponent(zone)}`}
                   className="ui-btn ui-btn--brand"
                 >
-                  Ver stock tecnico por zona
+                  Ver stock técnico por zona
                 </Link>
                 <Link
                   href={`/inventory/locations/zone?site_id=${encodeURIComponent(siteId)}&zone=${encodeURIComponent(zone)}&kiosk=1`}
@@ -212,14 +212,14 @@ export default async function LocationZoneBoardPage({
           </div>
           <div className="ui-remission-kpis sm:grid-cols-3 lg:grid-cols-1">
             <article className="ui-remission-kpi" data-tone="warm">
-              <div className="ui-remission-kpi-label">LOCs</div>
+              <div className="ui-remission-kpi-label">Áreas</div>
               <div className="ui-remission-kpi-value">{locations.length}</div>
               <div className="ui-remission-kpi-note">Activos en esta zona</div>
             </article>
             <article className="ui-remission-kpi" data-tone="cool">
               <div className="ui-remission-kpi-label">Productos</div>
               <div className="ui-remission-kpi-value">{zoneProductCount}</div>
-              <div className="ui-remission-kpi-note">Visibles entre todos los LOCs</div>
+              <div className="ui-remission-kpi-note">Visibles entre todas las áreas</div>
             </article>
             <article className="ui-remission-kpi" data-tone="success">
               <div className="ui-remission-kpi-label">Qty total</div>
@@ -285,14 +285,14 @@ export default async function LocationZoneBoardPage({
                     );
                   })
                 ) : (
-                  <div className="text-sm text-[var(--ui-muted)]">Sin contenido visible en este LOC.</div>
+                  <div className="text-sm text-[var(--ui-muted)]">Sin contenido visible en esta área.</div>
                 )}
                 <div className="pt-2">
                   <Link
                     href={`/inventory/locations/${encodeURIComponent(location.id)}/board${isKiosk ? "?kiosk=1" : ""}`}
                     className="ui-btn ui-btn--ghost w-full"
                   >
-                    Ver LOC
+                    Ver área
                   </Link>
                 </div>
               </div>

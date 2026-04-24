@@ -169,15 +169,15 @@ export default async function LocationLandingPage({
           <div className="space-y-4">
             <div className="space-y-2">
               <Link href="/inventory/locations" className="ui-caption underline">
-                Volver a ubicaciones
+                Volver a áreas
               </Link>
               <div className="ui-caption">
-                {mode === "center" ? "Modo Centro" : mode === "satellite" ? "Modo satelite" : "Modo LOC"}
+                {mode === "center" ? "Modo Centro" : mode === "satellite" ? "Modo satelite" : "Ubicación operativa"}
               </div>
               <h1 className="ui-h1">{title}</h1>
               <p className="ui-body-muted">
                 Este landing sirve para bodega y producción. Retiro y remisión son flujos distintos: retirar sirve para
-                sacar producto de este LOC hacia producción, consumo interno u otro uso controlado; la remisión se
+                sacar producto de esta área hacia producción, consumo interno u otro uso controlado; la remisión se
                 prepara y descuenta desde el flujo de despacho.
               </p>
             </div>
@@ -200,7 +200,7 @@ export default async function LocationLandingPage({
             </div>
             <div className={`grid gap-3 ${zoneHref ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
               <Link href={withdrawHref} className="ui-btn ui-btn--brand h-16 w-full text-base font-semibold">
-                Retirar de aqui
+                Registrar salida
               </Link>
               <Link href={boardHref} className="ui-btn ui-btn--ghost h-16 w-full text-base font-semibold">
                 Ver contenido
@@ -216,7 +216,7 @@ export default async function LocationLandingPage({
             <article className="ui-remission-kpi" data-tone="warm">
               <div className="ui-remission-kpi-label">Productos</div>
               <div className="ui-remission-kpi-value">{stockRows.length}</div>
-              <div className="ui-remission-kpi-note">Con stock visible en este LOC</div>
+              <div className="ui-remission-kpi-note">Disponible en esta área</div>
             </article>
             <article className="ui-remission-kpi" data-tone="cool">
               <div className="ui-remission-kpi-label">Qty visible</div>
@@ -225,7 +225,7 @@ export default async function LocationLandingPage({
             </article>
             <article className="ui-remission-kpi" data-tone="success">
               <div className="ui-remission-kpi-label">Accion</div>
-              <div className="ui-remission-kpi-value">LOC</div>
+              <div className="ui-remission-kpi-value">Área</div>
               <div className="ui-remission-kpi-note">Bodega y producción entran desde aquí</div>
             </article>
           </div>
@@ -236,21 +236,21 @@ export default async function LocationLandingPage({
 
       {siteMismatch ? (
         <div className="ui-alert ui-alert--warn">
-          Este LOC pertenece a otra sede distinta a tu sede activa. El botón de retiro ya abrirá la sede correcta.
+          Esta área pertenece a otra sede distinta a tu sede activa. El botón de salida ya abrirá la sede correcta.
         </div>
       ) : null}
 
       <section className="ui-panel ui-remission-section ui-fade-up ui-delay-1 space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
-            <div className="ui-h3">Vista rápida del LOC</div>
+            <div className="ui-h3">Vista rápida del área</div>
             <div className="mt-1 ui-body-muted">
               Un vistazo corto a lo que hoy tiene este espacio. Para ver todo el contenido, entra al board.
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <Link href={`${boardHref}?kiosk=1`} className="ui-btn ui-btn--ghost">
-              Abrir board
+              Abrir vista fija
             </Link>
             {zoneHref ? (
               <Link href={`${zoneHref}&kiosk=1`} className="ui-btn ui-btn--ghost">
@@ -298,7 +298,7 @@ export default async function LocationLandingPage({
           </div>
         ) : (
           <div className="ui-panel-soft p-5 text-sm text-[var(--ui-muted)]">
-            Este LOC no tiene stock visible en este momento.
+            Esta área no tiene stock visible en este momento.
           </div>
         )}
       </section>

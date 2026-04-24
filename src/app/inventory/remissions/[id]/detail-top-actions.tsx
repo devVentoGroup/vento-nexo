@@ -54,7 +54,7 @@ export function RemissionTopActions(props: RemissionTopActionsProps) {
             </form>
             {!canStartPreparationNow ? (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-                Selecciona un LOC en las <strong>{pendingLocSelectionLines}</strong> línea(s) faltantes para habilitar la preparación.
+                Selecciona un área en las <strong>{pendingLocSelectionLines}</strong> línea(s) faltantes para habilitar la preparación.
               </div>
             ) : null}
           </>

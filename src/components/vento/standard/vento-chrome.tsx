@@ -158,8 +158,8 @@ const NAV_GROUPS: NavGroup[] = [
       },
       {
         href: "/inventory/locations",
-        label: "Ubicaciones",
-        description: "LOC, zonas y capacidad operativa",
+        label: "Áreas",
+        description: "Ubicaciones y capacidad operativa",
         required: ["inventory.locations"],
         allowedRoles: ["propietario", "gerente_general"],
         icon: "map",
@@ -207,7 +207,7 @@ const NAV_GROUPS: NavGroup[] = [
       {
         href: "/printing/jobs",
         label: "Impresion",
-        description: "QR de LOC y etiquetas operativas",
+        description: "QR de áreas y etiquetas operativas",
         required: ["access"],
         allowedRoles: ["propietario", "gerente_general", "gerente", "bodeguero"],
         icon: "printer",

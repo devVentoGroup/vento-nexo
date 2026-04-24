@@ -34,7 +34,7 @@ export default async function OpenLocationPage({
   }
 
   if (!locCode) {
-    redirect("/inventory/locations?error=" + encodeURIComponent("Falta el codigo del LOC."));
+    redirect("/inventory/locations?error=" + encodeURIComponent("Falta el código del área."));
   }
 
   const { data: employee } = await supabase
@@ -69,7 +69,7 @@ export default async function OpenLocationPage({
   if (!resolved) {
     redirect(
       `/inventory/locations?code=${encodeURIComponent(locCode)}&error=${encodeURIComponent(
-        "No se pudo abrir ese LOC directamente. Revisa la sede activa o el codigo."
+        "No se pudo abrir esa área directamente. Revisa la sede activa o el código."
       )}`
     );
   }
