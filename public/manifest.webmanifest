@@ -2,7 +2,7 @@
   "name": "Vento NEXO",
   "short_name": "NEXO",
   "description": "Inventario y logistica operativa de Vento.",
-  "start_url": "/inventory/locations?kiosk=1",
+  "start_url": "/kiosk/bodega-principal",
   "scope": "/",
   "display": "standalone",
   "orientation": "landscape",
