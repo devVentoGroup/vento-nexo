@@ -40,11 +40,15 @@ interface Location {
   site_id: string;
 }
 
+type EmployeeContext = {
+  site_id?: string | null;
+};
+
 export function LocationsValidationClient({
   employee,
   supabaseUrl,
 }: {
-  employee?: any;
+  employee?: EmployeeContext | null;
   supabaseUrl: string;
 }) {
   const [formData, setFormData] = useState<ValidationFormData>({

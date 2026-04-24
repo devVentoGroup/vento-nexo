@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useState } from "react";
 
 export type CategoryRow = {
   id: string;
@@ -25,12 +25,6 @@ export function CategoryCascadeFilter({
   const [selectedL1, setSelectedL1] = useState(categoryL1);
   const [selectedL2, setSelectedL2] = useState(categoryL2);
   const [selectedL3, setSelectedL3] = useState(categoryL3);
-
-  useEffect(() => {
-    setSelectedL1(categoryL1);
-    setSelectedL2(categoryL2);
-    setSelectedL3(categoryL3);
-  }, [categoryL1, categoryL2, categoryL3]);
 
   const handleL1Change = useCallback((e: React.ChangeEvent<HTMLSelectElement>) => {
     const v = e.target.value;

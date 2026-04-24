@@ -896,7 +896,7 @@ export default async function RemissionDetailPage({
                   }, 0);
 
                   return (
-                    <div className="space-y-2">
+                    <div key={productId} className="space-y-2">
                       <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3">
                         <div className="flex flex-wrap items-start justify-between gap-3">
                           <div>

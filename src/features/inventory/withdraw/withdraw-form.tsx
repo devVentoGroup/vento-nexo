@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import Link from "next/link";
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { SearchableSingleSelect } from "@/components/inventory/forms/SearchableSingleSelect";
 import {
@@ -142,12 +142,6 @@ export function WithdrawForm({
   const addRow = () => {
     setRows((prev) => [...prev, createRow((prev.at(-1)?.id ?? -1) + 1)]);
   };
-
-  useEffect(() => {
-    if (clientError && canSubmit) {
-      setClientError("");
-    }
-  }, [clientError, canSubmit]);
 
   const removeRow = (id: number) => {
     setRows((prev) => (prev.length === 1 ? prev : prev.filter((row) => row.id !== id)));

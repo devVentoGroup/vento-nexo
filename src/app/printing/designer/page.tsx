@@ -71,7 +71,10 @@ export default function DesignerPage() {
   }, [loadLocs]);
 
   useEffect(() => {
-    void refreshSavedTemplates();
+    const timer = window.setTimeout(() => {
+      void refreshSavedTemplates();
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [refreshSavedTemplates]);
 
   const filteredLocs = useMemo(() => {

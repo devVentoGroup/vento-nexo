@@ -97,8 +97,7 @@ export function RemissionsItems({
   referenceSiteName = "",
   initialRows,
 }: Props) {
-  const initialRowsSource = initialRows ?? [];
-  const initialRowsKey = useMemo(() => JSON.stringify(initialRowsSource), [initialRowsSource]);
+  const initialRowsSource = useMemo(() => initialRows ?? [], [initialRows]);
   const normalizedInitialRows = useMemo<RemissionDraftRow[]>(() => {
     if (!initialRowsSource.length) return [EMPTY_ROW];
     return initialRowsSource.map((row, index) => ({
@@ -110,7 +109,7 @@ export function RemissionsItems({
       areaKind:
         String(row.areaKind ?? "").trim() || (siteMode === "simple" ? defaultAreaKind : ""),
     }));
-  }, [defaultAreaKind, initialRowsKey, siteMode]);
+  }, [defaultAreaKind, initialRowsSource, siteMode]);
 
   const [rows, setRows] = useState<Row[]>(normalizedInitialRows);
 
@@ -134,20 +133,6 @@ export function RemissionsItems({
     }
     return selected;
   }, [defaultUomProfiles]);
-
-  useEffect(() => {
-    setRows(normalizedInitialRows);
-  }, [initialRowsKey, normalizedInitialRows]);
-
-  useEffect(() => {
-    if (siteMode !== "simple" || !defaultAreaKind) return;
-    setRows((prev) =>
-      prev.map((row) => ({
-        ...row,
-        areaKind: row.areaKind || defaultAreaKind,
-      }))
-    );
-  }, [defaultAreaKind, siteMode]);
 
   useEffect(() => {
     onRowsChange?.(rows);

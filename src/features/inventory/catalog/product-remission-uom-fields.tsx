@@ -151,7 +151,7 @@ export function ProductRemissionUomFields({
                   placeholder={`1 ${defaultInputUnitCode ?? stockUnitCode} = ? ${stockUnitCode}`}
                 />
                 <span className="ui-caption">
-                  Solo aplica cuando "Usar en operación" = "Presentación de remisión".
+                  Solo aplica cuando &quot;Usar en operación&quot; = &quot;Presentación de remisión&quot;.
                 </span>
               </label>
             </>

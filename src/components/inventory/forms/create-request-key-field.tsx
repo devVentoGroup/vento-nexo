@@ -18,11 +18,9 @@ export function CreateRequestKeyField({
   name = "_create_request_key",
   initialValue,
 }: CreateRequestKeyFieldProps) {
-  const [requestKey, setRequestKey] = useState(initialValue);
+  const [requestKey, setRequestKey] = useState(() => initialValue || generateRequestKey());
 
   useEffect(() => {
-    setRequestKey((current) => current || generateRequestKey());
-
     const onPageShow = (event: PageTransitionEvent) => {
       if (event.persisted) {
         setRequestKey(generateRequestKey());

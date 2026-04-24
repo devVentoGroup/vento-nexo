@@ -49,12 +49,7 @@ export function SearchableSingleSelect({
   const [query, setQuery] = useState("");
   const [isMobile, setIsMobile] = useState(false);
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
-  const [portalReady, setPortalReady] = useState(false);
   const rootRef = useRef<HTMLDivElement | null>(null);
-
-  useEffect(() => {
-    setPortalReady(true);
-  }, []);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
@@ -252,7 +247,7 @@ export function SearchableSingleSelect({
         </div>
       ) : null}
 
-      {isOpen && useSheetMobile && portalReady
+      {isOpen && useSheetMobile
         ? createPortal(
             <div className="ui-mobile-select-sheet" role="dialog" aria-modal="true" aria-label={sheetTitle}>
               <div

@@ -18,19 +18,20 @@ export function BarcodeImage({
   heightMm: number;
   scale?: number;
 }) {
-  const [dataUrl, setDataUrl] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const renderKey = `${kind}:${text}:${scale}`;
+  const [renderState, setRenderState] = useState<{
+    key: string;
+    dataUrl: string | null;
+    error: string | null;
+  }>({ key: renderKey, dataUrl: null, error: null });
 
   useEffect(() => {
     let active = true;
     if (!text) {
-      setDataUrl(null);
       return () => {
         active = false;
       };
     }
-    setDataUrl(null);
-    setError(null);
 
     Promise.resolve()
       .then(() => {
@@ -47,18 +48,18 @@ export function BarcodeImage({
         }
         bwipjs.toCanvas(canvas, opts);
         const url = canvas.toDataURL("image/png");
-        if (active) setDataUrl(url);
+        if (active) setRenderState({ key: renderKey, dataUrl: url, error: null });
       })
       .catch((err: unknown) => {
         if (!active) return;
         const msg = err instanceof Error ? err.message : String(err);
-        setError(msg);
+        setRenderState({ key: renderKey, dataUrl: null, error: msg });
       });
 
     return () => {
       active = false;
     };
-  }, [kind, text, scale]);
+  }, [kind, text, scale, renderKey]);
 
   const sizeStyle = {
     width: `${widthMm}mm`,
@@ -83,6 +84,9 @@ export function BarcodeImage({
       </div>
     );
   }
+
+  const dataUrl = renderState.key === renderKey ? renderState.dataUrl : null;
+  const error = renderState.key === renderKey ? renderState.error : null;
 
   if (!dataUrl) {
     return (

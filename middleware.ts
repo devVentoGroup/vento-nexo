@@ -63,7 +63,7 @@ function withNoStoreHeaders(response: NextResponse) {
 }
 
 export const config = {
-  matcher: ["/((?!_next|login|favicon.ico|logos|images|fonts|api).*)"],
+  matcher: ["/((?!_next|login|favicon.ico|manifest.webmanifest|logos|apps|images|fonts|api).*)"],
 };
 
 export async function middleware(request: NextRequest) {

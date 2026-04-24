@@ -381,6 +381,7 @@ export function VentoChrome({
   const [permMap, setPermMap] = useState<Record<string, boolean>>({});
   const [permissionsReady, setPermissionsReady] = useState(false);
   const authRecoveryRef = useRef(false);
+  const isKioskMode = searchParams.get("kiosk") === "1";
 
   const currentSiteId = searchParams.get("site_id") ?? activeSiteId ?? "";
   const currentSite = useMemo(
@@ -604,6 +605,14 @@ export function VentoChrome({
           .filter((item) => isItemVisible(item))
           .filter((item) => (focusAllowedHrefs ? focusAllowedHrefs.has(item.href) : true)),
       })).filter((group) => group.items.length > 0);
+
+  if (isKioskMode) {
+    return (
+      <div className="min-h-screen bg-[var(--ui-bg)] text-[var(--ui-text)]">
+        <main className="min-h-screen w-full">{children}</main>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-[var(--ui-bg)] text-[var(--ui-text)]">

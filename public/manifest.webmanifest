@@ -1,0 +1,25 @@
+{
+  "name": "Vento NEXO",
+  "short_name": "NEXO",
+  "description": "Inventario y logistica operativa de Vento.",
+  "start_url": "/inventory/locations?kiosk=1",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "landscape",
+  "background_color": "#f6f3ee",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "/logos/nexo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/apps/nexo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
