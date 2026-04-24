@@ -36,7 +36,7 @@ export async function POST(req: Request) {
     .eq("id", userData.user.id)
     .maybeSingle();
   const role = String(employee?.role ?? "").toLowerCase();
-  if (!["propietario", "gerente_general"].includes(role)) {
+  if (!["propietario", "gerente_general", "bodeguero"].includes(role)) {
     return NextResponse.json({ error: "Sin permisos para subir imágenes" }, { status: 403 });
   }
 
