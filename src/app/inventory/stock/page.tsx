@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { CategoryTreeFilter } from "@/components/inventory/CategoryTreeFilter";
-import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
+import { StockTableClient, type StockTableRow } from "@/features/inventory/stock/stock-table-client";
 
 import { requireAppAccess } from "@/lib/auth/guard";
 import { getCategoryDomainOptions } from "@/lib/constants";
@@ -11,7 +11,6 @@ import {
   filterCategoryRows,
   filterCategoryRowsDirect,
   getCategoryDomainCodes,
-  getCategoryPath,
   normalizeCategoryDomain,
   normalizeCategoryKind,
   normalizeCategoryScope,
@@ -40,7 +39,7 @@ type SearchParams = {
   error?: string;
   count_initial?: string;
   adjust?: string;
-  /** 1.4 Vista Stock por LOC: tabla producto × LOC */
+  /** 1.4 Vista Stock por LOC: tabla producto Ã— LOC */
   view?: string;
 };
 
@@ -124,16 +123,6 @@ function normalizeInventoryKind(value?: string | null): string {
 
 function normalizeProductType(value?: string | null): string {
   return String(value ?? "").trim().toLowerCase();
-}
-
-function inventoryKindLabel(kindRaw: string): string {
-  const kind = normalizeInventoryKind(kindRaw);
-  if (kind === "ingredient") return "Insumos";
-  if (kind === "finished") return "Producto terminado";
-  if (kind === "resale") return "Reventa";
-  if (kind === "packaging") return "Empaques";
-  if (kind === "asset") return "Activos";
-  return "Sin clasificar";
 }
 
 function matchesStockClass(product: ProductRow, stockClass: string): boolean {
@@ -270,7 +259,6 @@ export default async function InventoryStockPage({
   const isProductionCenter = selectedSiteType === "production_center";
   const isSatellite = selectedSiteType === "satellite";
   const isOperatorFocusMode = !isManagementRole && (isProductionCenter || isSatellite);
-  const useCompactFilters = true;
 
   const allCategoryRows = await loadCategoryRows(supabase);
   const categoryMap = new Map(allCategoryRows.map((row) => [row.id, row]));
@@ -314,15 +302,6 @@ export default async function InventoryStockPage({
     { value: "insumo", label: "Insumo" },
     { value: "preparacion", label: "Preparacion" },
     { value: "venta", label: "Venta" },
-  ];
-
-  const inventoryKindOptions = [
-    { value: "", label: "Todos los tipos de inventario" },
-    { value: "ingredient", label: "Insumo" },
-    { value: "finished", label: "Producto terminado" },
-    { value: "resale", label: "Reventa" },
-    { value: "packaging", label: "Empaque" },
-    { value: "asset", label: "Activo (maquinaria/utensilios)" },
   ];
 
   const categoryKindOptions = [
@@ -547,16 +526,15 @@ export default async function InventoryStockPage({
     : "Stock por sede";
   const heroSubtitle = isOperatorFocusMode
     ? isSatellite
-      ? "Consulta rápido si tu sede tiene saldo, qué áreas están activas y desde aquí vuelve a pedir o recibir."
-      : "Usa esta vista para confirmar saldo, ubicar producto por área y seguir con preparación o conteo."
-    : "Lee el inventario actual y entra a conteos, movimientos o vista por área sin cambiar de flujo.";
+      ? "Consulta rÃ¡pido si tu sede tiene saldo, quÃ© Ã¡reas estÃ¡n activas y desde aquÃ­ vuelve a pedir o recibir."
+      : "Usa esta vista para confirmar saldo, ubicar producto por Ã¡rea y seguir con preparaciÃ³n o conteo."
+    : "Lee el inventario actual y entra a conteos, movimientos o vista por Ã¡rea sin cambiar de flujo.";
   const heroModeLabel = isSatellite
     ? "Modo satelite"
     : isProductionCenter
       ? "Modo Centro"
       : "Modo verificacion";
   const activeFilterCount = [
-    searchQuery,
     stockClass,
     productType,
     inventoryKind,
@@ -569,12 +547,54 @@ export default async function InventoryStockPage({
     zoneFilter,
   ].filter(Boolean).length;
 
+  const stockTableRows: StockTableRow[] = productRows
+    .map((product) => {
+      const stockRow = stockMap.get(product.id);
+      const qtyValue = Number(stockRow?.current_qty ?? 0);
+      const unit = product.stock_unit_code ?? product.unit ?? "-";
+      const locSummary = locSummaryByProduct.get(product.id);
+      const areaSummary =
+        siteId && locList.length > 0
+          ? locSummary?.lines?.length
+            ? locSummary.lines.join(" Â· ")
+            : qtyValue > 0
+              ? "Sin Ã¡rea"
+              : ""
+          : "";
+      const byLocation = Object.fromEntries(
+        locList.map((loc) => [loc.id, matrixByProductLoc.get(`${product.id}|${loc.id}`) ?? 0])
+      );
+      return {
+        id: product.id,
+        product: product.name,
+        unit,
+        totalQty: Number.isFinite(qtyValue) ? qtyValue : 0,
+        updatedAt: formatDate(stockRow?.updated_at),
+        areaSummary,
+        hasStockWithoutArea: Boolean(siteId && qtyValue > 0 && !locSummary?.hasAny),
+        byLocation,
+        searchText: [
+          product.name,
+          product.sku ?? "",
+          unit,
+          areaSummary,
+          ...locList.map((loc) => `${loc.code ?? ""} ${loc.zone ?? ""} ${loc.description ?? ""}`),
+        ].join(" "),
+      };
+    })
+    .filter((row) => (viewByLoc ? row.totalQty > 0 || Object.values(row.byLocation ?? {}).some((qty) => qty > 0) : true));
+
+  const stockTableLocations = locList.map((loc) => ({
+    id: loc.id,
+    label: loc.description || loc.code || loc.zone || loc.id.slice(0, 8),
+  }));
+
   return (
     <div className="ui-scene w-full space-y-6">
       <section className="ui-remission-hero ui-fade-up">
         <div className="ui-remission-hero-grid">
           <div>
-            <span className="ui-chip ui-chip--brand">{heroModeLabel} · {siteLabel}</span>
+            <span className="ui-chip ui-chip--brand">{heroModeLabel} Â· {siteLabel}</span>
             <h1 className="mt-4 text-3xl font-semibold tracking-[-0.03em] text-[var(--ui-text)]">
               {heroTitle}
             </h1>
@@ -595,9 +615,9 @@ export default async function InventoryStockPage({
               <div className="ui-remission-kpi-note">Suma de stock visible</div>
             </div>
             <div className="ui-remission-kpi" data-tone="success">
-              <div className="ui-remission-kpi-label">Señales</div>
+              <div className="ui-remission-kpi-label">SeÃ±ales</div>
               <div className="ui-remission-kpi-value">{negativeCount + productIdsWithStockNoLoc.length}</div>
-              <div className="ui-remission-kpi-note">Negativos o sin área</div>
+              <div className="ui-remission-kpi-note">Negativos o sin Ã¡rea</div>
             </div>
           </div>
         </div>
@@ -607,7 +627,7 @@ export default async function InventoryStockPage({
         <div>
           <div className="ui-caption">
             {activeFilterCount > 0 ? `${activeFilterCount} filtro(s) activos` : "Sin filtros adicionales"}
-            {locCount > 0 ? ` · ${locCount} áreas visibles` : ""}
+            {locCount > 0 ? ` Â· ${locCount} Ã¡reas visibles` : ""}
           </div>
         </div>
 
@@ -635,7 +655,7 @@ export default async function InventoryStockPage({
                 href={`/inventory/stock?site_id=${encodeURIComponent(siteId)}&view=by_loc${searchQuery ? `&q=${encodeURIComponent(searchQuery)}` : ""}${stockClass ? `&stock_class=${encodeURIComponent(stockClass)}` : ""}${productType ? `&product_type=${encodeURIComponent(productType)}` : ""}${inventoryKind ? `&inventory_kind=${encodeURIComponent(inventoryKind)}` : ""}`}
                 className="ui-btn ui-btn--brand"
               >
-                Stock por área (tabla)
+                Stock por Ã¡rea (tabla)
               </Link>
             )
           ) : null}
@@ -662,8 +682,8 @@ export default async function InventoryStockPage({
 
       {productIdsWithStockNoLoc.length > 0 ? (
         <div className="ui-alert ui-alert--warn ui-fade-up ui-delay-1">
-          <strong>Sin ubicación:</strong> {productIdsWithStockNoLoc.length} producto(s) tienen stock en esta sede pero
-          no tienen área asignada. Asigna ubicación en Entradas al recibir o en Traslados.
+          <strong>Sin ubicaciÃ³n:</strong> {productIdsWithStockNoLoc.length} producto(s) tienen stock en esta sede pero
+          no tienen Ã¡rea asignada. Asigna ubicaciÃ³n en Entradas al recibir o en Traslados.
         </div>
       ) : null}
 
@@ -676,41 +696,18 @@ export default async function InventoryStockPage({
       <div className="ui-panel ui-panel--halo ui-remission-section ui-fade-up ui-delay-1">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <div className="ui-h3">{useCompactFilters ? "Buscar rapido" : "Filtros"}</div>
+            <div className="ui-h3">Vista</div>
             <div className="mt-1 ui-caption">
-              {useCompactFilters
-                ? "Primero busca el producto o el área. Los filtros avanzados quedan abajo si de verdad los necesitas."
-                : "Afina vista, categoria y ubicaciones sin salir de stock."}
+              Elige sede y área cuando necesites acotar el stock.
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <span className="ui-chip">{siteLabel}</span>
             <span className="ui-chip ui-chip--warn">{negativeCount} negativos</span>
-            <span className="ui-chip ui-chip--brand">{productIdsWithStockNoLoc.length} sin área</span>
+            <span className="ui-chip ui-chip--brand">{productIdsWithStockNoLoc.length} sin Ã¡rea</span>
           </div>
         </div>
         <form method="get" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <label className="flex flex-col gap-1 sm:col-span-2 lg:col-span-4">
-            <span className="ui-label">Buscar SKU o nombre</span>
-            <input
-              name="q"
-              defaultValue={searchQuery}
-              placeholder="SKU o nombre de producto"
-              className="ui-input"
-            />
-          </label>
-
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Tipo inventario</span>
-            <select name="inventory_kind" defaultValue={inventoryKind} className="ui-input">
-              {inventoryKindOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
           <label className="flex flex-col gap-1 sm:col-span-2 lg:col-span-4">
             <span className="ui-label">Sede</span>
             <select name="site_id" defaultValue={siteId} className="ui-input">
@@ -726,7 +723,7 @@ export default async function InventoryStockPage({
           {siteId && locList.length > 0 ? (
             <>
               <label className="flex flex-col gap-1">
-                <span className="ui-label">Área</span>
+                <span className="ui-label">Ãrea</span>
                 <select name="location_id" defaultValue={locationIdFilter} className="ui-input">
                   <option value="">Todas</option>
                   {locList.map((loc) => (
@@ -750,7 +747,6 @@ export default async function InventoryStockPage({
             </>
           ) : null}
 
-          {useCompactFilters ? (
             <details className="sm:col-span-2 lg:col-span-4 rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3">
               <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
                 Filtros avanzados
@@ -833,85 +829,6 @@ export default async function InventoryStockPage({
                 />
               </div>
             </details>
-          ) : (
-            <>
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Tipo de producto</span>
-                <select name="product_type" defaultValue={productType} className="ui-input">
-                  {productTypeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Categoria aplica a</span>
-                <select name="category_kind" defaultValue={categoryKind ?? ""} className="ui-input">
-                  {categoryKindOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Alcance de categoria</span>
-                <select name="category_scope" defaultValue={categoryScope} className="ui-input">
-                  {categoryScopeOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
-              </label>
-
-              {categoryScope === "site" ? (
-                <label className="flex flex-col gap-1 sm:col-span-2">
-                  <span className="ui-label">Sede para categorias</span>
-                  <select name="category_site_id" defaultValue={categorySiteId} className="ui-input">
-                    <option value="">Seleccionar sede</option>
-                    {siteIds.map((id) => (
-                      <option key={id} value={id}>
-                        {siteNameMap.get(id) ?? id}
-                      </option>
-                    ))}
-                  </select>
-                  <span className="ui-caption">Solo aplica cuando el alcance es Sede activa.</span>
-                </label>
-              ) : (
-                <input type="hidden" name="category_site_id" value="" />
-              )}
-
-              {shouldShowCategoryDomain(categoryKind) ? (
-                <label className="flex flex-col gap-1">
-                  <span className="ui-label">Dominio de venta</span>
-                  <select name="category_domain" defaultValue={categoryDomain} className="ui-input">
-                    <option value="">Todos</option>
-                    {categoryDomainOptions.map((opt) => (
-                      <option key={opt.value} value={opt.value}>
-                        {opt.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              ) : (
-                <input type="hidden" name="category_domain" value="" />
-              )}
-
-              <CategoryTreeFilter
-                categories={categoryRows}
-                selectedCategoryId={effectiveCategoryId}
-                siteNamesById={siteNamesById}
-                className="sm:col-span-2 lg:col-span-4"
-                label="Categoria"
-                emptyOptionLabel="Todas"
-                maxVisibleOptions={10}
-              />
-            </>
-          )}
 
           <div className="sm:col-span-2 lg:col-span-4 flex gap-2">
             <button className="ui-btn ui-btn--brand">Aplicar filtros</button>
@@ -926,9 +843,9 @@ export default async function InventoryStockPage({
         <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <div className="ui-h3">Stock por área (producto × ubicación)</div>
+              <div className="ui-h3">Stock por Ã¡rea (producto Ã— ubicaciÃ³n)</div>
               <div className="mt-1 ui-body-muted">
-                Cantidades por producto y por área. Sede: {siteNameMap.get(siteId) ?? siteId}.
+                Cantidades por producto y por Ã¡rea. Sede: {siteNameMap.get(siteId) ?? siteId}.
               </div>
             </div>
             {canExportByLoc ? (
@@ -941,55 +858,13 @@ export default async function InventoryStockPage({
               </a>
             ) : null}
           </div>
-          <div className="ui-scrollbar-subtle mt-4 max-h-[70vh] overflow-x-auto overflow-y-auto">
-            <Table className="min-w-[1200px] table-auto [&_th]:pr-4 [&_td]:pr-4 [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10 [&_thead_th]:bg-[var(--ui-surface)] [&_thead_th]:backdrop-blur [&_th:first-child]:sticky [&_th:first-child]:left-0 [&_th:first-child]:z-20 [&_th:first-child]:bg-[var(--ui-surface)] [&_td:first-child]:sticky [&_td:first-child]:left-0 [&_td:first-child]:z-10 [&_td:first-child]:bg-[var(--ui-surface)]">
-              <thead>
-                <tr>
-                  <TableHeaderCell className="min-w-[220px]">Producto</TableHeaderCell>
-                  <TableHeaderCell className="min-w-[180px]">SKU</TableHeaderCell>
-                  <TableHeaderCell className="min-w-[100px]">Unidad</TableHeaderCell>
-                  {locList.map((loc) => (
-                    <TableHeaderCell key={loc.id} className="min-w-[120px] font-mono text-right whitespace-nowrap">
-                      {loc.code ?? loc.id}
-                    </TableHeaderCell>
-                  ))}
-                  <TableHeaderCell className="min-w-[120px] text-right whitespace-nowrap">Total sede</TableHeaderCell>
-                </tr>
-              </thead>
-              <tbody>
-                {productRows.map((product) => {
-                  const stockRow = stockMap.get(product.id);
-                  const totalSede = Number(stockRow?.current_qty ?? 0);
-                  const hasAnyInLocs = locSummaryByProduct.get(product.id)?.hasAny ?? false;
-                  if (!hasAnyInLocs && totalSede <= 0) return null;
-                  return (
-                    <tr key={product.id} className="ui-body">
-                      <TableCell className="align-top">{product.name}</TableCell>
-                      <TableCell className="font-mono align-top break-all">{product.sku ?? "-"}</TableCell>
-                      <TableCell className="align-top whitespace-nowrap">{product.stock_unit_code ?? product.unit ?? "-"}</TableCell>
-                      {locList.map((loc) => {
-                        const qty = matrixByProductLoc.get(`${product.id}|${loc.id}`) ?? 0;
-                        return (
-                          <TableCell key={loc.id} className="font-mono text-right align-top whitespace-nowrap">
-                            {qty > 0 ? qty : "-"}
-                          </TableCell>
-                        );
-                      })}
-                      <TableCell className="font-mono text-right font-medium align-top whitespace-nowrap">
-                        {totalSede}
-                      </TableCell>
-                    </tr>
-                  );
-                })}
-                {productRows.filter((p) => (locSummaryByProduct.get(p.id)?.hasAny ?? false) || Number(stockMap.get(p.id)?.current_qty ?? 0) > 0).length === 0 ? (
-                  <tr>
-                    <TableCell colSpan={4 + locList.length} className="ui-empty">
-                      No hay stock por área para mostrar en esta sede con los filtros actuales.
-                    </TableCell>
-                  </tr>
-                ) : null}
-              </tbody>
-            </Table>
+          <div className="mt-4">
+            <StockTableClient
+              rows={stockTableRows}
+              locations={stockTableLocations}
+              mode="by-location"
+              emptyMessage="No hay stock por área para mostrar con estos filtros."
+            />
           </div>
         </div>
       ) : null}
@@ -1028,95 +903,12 @@ export default async function InventoryStockPage({
           })}
         </div>
 
-        <div className="ui-scrollbar-subtle mt-4 max-h-[70vh] overflow-x-auto overflow-y-auto">
-          <Table className="min-w-[1460px] table-auto [&_th]:pr-4 [&_td]:pr-4 [&_thead_th]:sticky [&_thead_th]:top-0 [&_thead_th]:z-10 [&_thead_th]:bg-[var(--ui-surface)] [&_thead_th]:backdrop-blur [&_th:first-child]:sticky [&_th:first-child]:left-0 [&_th:first-child]:z-20 [&_th:first-child]:bg-[var(--ui-surface)] [&_td:first-child]:sticky [&_td:first-child]:left-0 [&_td:first-child]:z-10 [&_td:first-child]:bg-[var(--ui-surface)]">
-            <thead>
-              <tr>
-                <TableHeaderCell className="min-w-[220px]">Producto</TableHeaderCell>
-                <TableHeaderCell className="min-w-[180px]">SKU</TableHeaderCell>
-                <TableHeaderCell className="min-w-[420px]">Categoria</TableHeaderCell>
-                <TableHeaderCell className="min-w-[120px]">Tipo</TableHeaderCell>
-                <TableHeaderCell className="min-w-[140px]">Inventario</TableHeaderCell>
-                <TableHeaderCell className="min-w-[90px]">Track</TableHeaderCell>
-                <TableHeaderCell className="min-w-[220px]">Sede</TableHeaderCell>
-                <TableHeaderCell className="min-w-[90px] text-right">Qty</TableHeaderCell>
-                <TableHeaderCell className="min-w-[90px]">Unidad</TableHeaderCell>
-                {siteId && locList.length > 0 ? (
-                  <TableHeaderCell className="min-w-[320px]">Áreas</TableHeaderCell>
-                ) : null}
-                <TableHeaderCell className="min-w-[130px] whitespace-nowrap">Actualizado</TableHeaderCell>
-              </tr>
-            </thead>
-            <tbody>
-              {productRows.map((product) => {
-                const stockRow = stockMap.get(product.id);
-                const qtyValue = Number(stockRow?.current_qty ?? 0);
-                const inventoryProfile = getInventoryProfile(product.product_inventory_profiles);
-                const qtyClass =
-                  inventoryProfile?.track_inventory && qtyValue < 0
-                    ? "text-red-600 font-semibold"
-                    : "text-zinc-800";
-                const sku = product.sku ?? "-";
-                const unit = product.stock_unit_code ?? product.unit ?? "-";
-                const siteLabel = siteId ? siteNameMap.get(siteId) ?? siteId : "Todas";
-                const categoryLabel = getCategoryPath(product.category_id, categoryMap);
-                const inventoryLabel = inventoryKindLabel(
-                  inventoryProfile?.inventory_kind ?? "unclassified"
-                );
-                const trackLabel = inventoryProfile?.track_inventory ? "si" : "no";
-                const locSummary = locSummaryByProduct.get(product.id);
-                const ubicacionesLabel =
-                  siteId && locList.length > 0
-                    ? locSummary?.lines?.length
-                      ? locSummary.lines.join(" · ")
-                      : qtyValue > 0
-                        ? "Sin ubicación"
-                        : "-"
-                    : null;
-                const sinUbicacion = Boolean(
-                  siteId && qtyValue > 0 && !locSummary?.hasAny
-                );
-
-                return (
-                  <tr key={product.id} className="ui-body">
-                    <TableCell className="align-top">{product.name}</TableCell>
-                    <TableCell className="font-mono align-top break-all">{sku}</TableCell>
-                    <TableCell className="align-top">{categoryLabel}</TableCell>
-                    <TableCell className="align-top whitespace-nowrap">{product.product_type}</TableCell>
-                    <TableCell className="align-top whitespace-nowrap">{inventoryLabel}</TableCell>
-                    <TableCell className="align-top whitespace-nowrap">{trackLabel}</TableCell>
-                    <TableCell className="font-mono align-top">{siteLabel}</TableCell>
-                    <TableCell className={`font-mono text-right align-top whitespace-nowrap ${qtyClass}`}>
-                      {Number.isFinite(qtyValue) ? qtyValue : "-"}
-                    </TableCell>
-                    <TableCell className="align-top whitespace-nowrap">{unit}</TableCell>
-                    {siteId && locList.length > 0 ? (
-                      <TableCell
-                        className={`align-top ${sinUbicacion ? "text-amber-600 font-medium" : ""}`}
-                        title={sinUbicacion ? "Producto con stock sin área asignada" : undefined}
-                      >
-                        {ubicacionesLabel ?? "-"}
-                      </TableCell>
-                    ) : null}
-                    <TableCell className="font-mono align-top whitespace-nowrap">
-                      {formatDate(stockRow?.updated_at)}
-                    </TableCell>
-                  </tr>
-                );
-              })}
-
-              {!hasError && productRows.length === 0 ? (
-                <tr>
-                  <TableCell
-                    colSpan={siteId && locList.length > 0 ? 11 : 10}
-                    className="ui-empty"
-                  >
-                    No hay productos para mostrar (o RLS no te permite verlo).
-                  </TableCell>
-                </tr>
-              ) : null}
-            </tbody>
-          </Table>
+        <div className="mt-4">
+          <StockTableClient
+            rows={stockTableRows}
+            mode="site"
+            emptyMessage="No hay productos para mostrar con estos filtros."
+          />
         </div>
       </div>
       ) : null}
