@@ -29,7 +29,7 @@ type ProductProfileWithProduct = {
 type LocRow = {
   id: string;
   code: string | null;
-  name: string | null;
+  description: string | null;
 };
 
 type TransferRow = {
@@ -336,8 +336,9 @@ export default async function TransfersPage({
   const { data: locations } = siteId
     ? await supabase
         .from("inventory_locations")
-        .select("id,code,name")
+        .select("id,code,description")
         .eq("site_id", siteId)
+        .eq("is_active", true)
         .order("code", { ascending: true })
         .limit(200)
     : { data: [] as LocRow[] };
@@ -374,7 +375,7 @@ export default async function TransfersPage({
 
   const transferRows = (transfers ?? []) as TransferRow[];
   const locMap = new Map(
-    ((locations ?? []) as LocRow[]).map((loc) => [loc.id, loc.code ?? loc.name ?? loc.id])
+    ((locations ?? []) as LocRow[]).map((loc) => [loc.id, loc.code ?? loc.description ?? loc.id])
   );
   const completedTransfers = transferRows.filter((row) => row.status === "completed").length;
 

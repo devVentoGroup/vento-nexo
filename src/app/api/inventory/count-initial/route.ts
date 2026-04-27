@@ -96,13 +96,36 @@ export async function POST(req: Request) {
     }
     const payload = (scopedResult ?? {}) as { countSessionId?: string };
     countSessionId = payload.countSessionId ?? null;
-  }
 
-  if (isScopedCount) {
+    if (scopeType === "loc" && countSessionId) {
+      const { error: closeErr } = await supabase.rpc("close_inventory_count_session", {
+        p_session_id: countSessionId,
+        p_closed_by: user.id,
+      });
+      if (closeErr) {
+        return NextResponse.json(
+          { error: "close_inventory_count_session: " + closeErr.message },
+          { status: 500 }
+        );
+      }
+
+      const { error: applyErr } = await supabase.rpc("apply_inventory_count_adjustments", {
+        p_session_id: countSessionId,
+        p_user_id: user.id,
+      });
+      if (applyErr) {
+        return NextResponse.json(
+          { error: "apply_inventory_count_adjustments: " + applyErr.message },
+          { status: 500 }
+        );
+      }
+    }
+
     return NextResponse.json({
       ok: true,
       sessionId,
       countSessionId: countSessionId ?? undefined,
+      applied: scopeType === "loc",
       count: lines.length,
     });
   }

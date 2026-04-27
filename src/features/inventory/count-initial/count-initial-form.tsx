@@ -252,6 +252,10 @@ export function CountInitialForm({
         setLoading(false);
         return;
       }
+      if (data?.countSessionId && !data?.applied) {
+        router.push(`/inventory/count-initial/session/${encodeURIComponent(data.countSessionId)}`);
+        return;
+      }
       router.push(`/inventory/stock?site_id=${encodeURIComponent(siteId)}&count_initial=1`);
       return;
     } catch {

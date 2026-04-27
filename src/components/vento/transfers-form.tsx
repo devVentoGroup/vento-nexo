@@ -16,7 +16,7 @@ type ProductOption = {
 type LocOption = {
   id: string;
   code: string | null;
-  name: string | null;
+  description: string | null;
 };
 
 type Props = {
@@ -58,12 +58,12 @@ export function TransfersForm({ locations, products, defaultUomProfiles = [], ac
           <div className="flex flex-wrap gap-2 text-xs font-semibold">
             {selectedFrom ? (
               <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-900">
-                Origen {selectedFrom.code ?? selectedFrom.name}
+                Origen {selectedFrom.code ?? selectedFrom.description}
               </span>
             ) : null}
             {selectedTo ? (
               <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-cyan-900">
-                Destino {selectedTo.code ?? selectedTo.name}
+                Destino {selectedTo.code ?? selectedTo.description}
               </span>
             ) : null}
           </div>
@@ -82,7 +82,7 @@ export function TransfersForm({ locations, products, defaultUomProfiles = [], ac
               <option value="">Selecciona área origen</option>
               {locations.map((loc) => (
                 <option key={loc.id} value={loc.id}>
-                  {loc.code ?? loc.name ?? loc.id}
+                  {loc.code ?? loc.description ?? loc.id}
                 </option>
               ))}
             </select>
@@ -101,7 +101,7 @@ export function TransfersForm({ locations, products, defaultUomProfiles = [], ac
                 <option value="">Selecciona área destino</option>
                 {destinationOptions.map((loc) => (
                   <option key={loc.id} value={loc.id}>
-                    {loc.code ?? loc.name ?? loc.id}
+                    {loc.code ?? loc.description ?? loc.id}
                   </option>
                 ))}
               </select>
@@ -164,7 +164,8 @@ export function TransfersForm({ locations, products, defaultUomProfiles = [], ac
 
       <div className="ui-mobile-sticky-footer ui-fade-up ui-delay-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ui-border)] bg-white/92 px-4 py-3 backdrop-blur">
         <div className="text-sm text-[var(--ui-muted)]">
-          {(selectedFrom?.code ?? selectedFrom?.name ?? "Sin origen")} → {(selectedTo?.code ?? selectedTo?.name ?? "Sin destino")}
+          {(selectedFrom?.code ?? selectedFrom?.description ?? "Sin origen")} -&gt;{" "}
+          {selectedTo?.code ?? selectedTo?.description ?? "Sin destino"}
         </div>
         <button type="submit" className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold" disabled={!canSubmit}>
           Registrar traslado
