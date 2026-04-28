@@ -78,12 +78,6 @@ type StockByLocRow = {
   location?: { code: string | null; zone: string | null; site_id: string } | null;
 };
 
-type StockAssignLocRow = {
-  location_id: string;
-  product_id: string;
-  current_qty: number | null;
-};
-
 type LocRow = {
   id: string;
   code: string | null;
@@ -199,93 +193,16 @@ async function assignStockWithoutLocation(formData: FormData) {
     redirect(`${returnTo}&error=${encodeURIComponent("Completa producto, destino y cantidad mayor a cero.")}`);
   }
 
-  const { data: locRow } = await supabase
-    .from("inventory_locations")
-    .select("id,code,site_id")
-    .eq("id", locationId)
-    .eq("site_id", siteId)
-    .eq("is_active", true)
-    .maybeSingle();
-  if (!locRow) {
-    redirect(`${returnTo}&error=${encodeURIComponent("El LOC destino no esta activo en esta sede.")}`);
-  }
-
-  const { data: productRow } = await supabase
-    .from("products")
-    .select("id,name,unit,stock_unit_code")
-    .eq("id", productId)
-    .maybeSingle();
-  if (!productRow) {
-    redirect(`${returnTo}&error=${encodeURIComponent("Producto no encontrado.")}`);
-  }
-
-  const { data: siteStock } = await supabase
-    .from("inventory_stock_by_site")
-    .select("current_qty")
-    .eq("site_id", siteId)
-    .eq("product_id", productId)
-    .maybeSingle();
-  const siteQty = Number((siteStock as { current_qty?: number } | null)?.current_qty ?? 0);
-
-  const { data: activeLocRows } = await supabase
-    .from("inventory_locations")
-    .select("id")
-    .eq("site_id", siteId)
-    .eq("is_active", true)
-    .limit(500);
-  const activeLocIds = ((activeLocRows ?? []) as Array<{ id: string }>).map((row) => row.id);
-  const { data: locStockRows } =
-    activeLocIds.length > 0
-      ? await supabase
-          .from("inventory_stock_by_location")
-          .select("location_id,product_id,current_qty")
-          .in("location_id", activeLocIds)
-          .eq("product_id", productId)
-      : { data: [] as StockAssignLocRow[] };
-  const assignedQty = ((locStockRows ?? []) as StockAssignLocRow[]).reduce(
-    (sum, row) => sum + Number(row.current_qty ?? 0),
-    0
-  );
-  const availableWithoutLoc = Math.max(0, siteQty - assignedQty);
-  if (quantity > availableWithoutLoc + 0.000001) {
-    redirect(
-      `${returnTo}&error=${encodeURIComponent(
-        `Solo hay ${availableWithoutLoc} sin area para asignar.`
-      )}`
-    );
-  }
-
-  const stockUnitCode = String(
-    (productRow as { stock_unit_code?: string | null; unit?: string | null }).stock_unit_code ||
-      (productRow as { unit?: string | null }).unit ||
-      "un"
-  ).trim();
-  const locCode = String((locRow as { code?: string | null }).code ?? locationId);
-  const productName = String((productRow as { name?: string | null }).name ?? "Producto");
-
-  const { error: moveErr } = await supabase.from("inventory_movements").insert({
-    site_id: siteId,
-    product_id: productId,
-    movement_type: "stock_assign_location",
-    quantity,
-    input_qty: quantity,
-    input_unit_code: stockUnitCode,
-    conversion_factor_to_stock: 1,
-    stock_unit_code: stockUnitCode,
-    note: `Asignacion de stock sin area a ${locCode}: ${productName}`,
-    created_by: user.id,
-  });
-  if (moveErr) {
-    redirect(`${returnTo}&error=${encodeURIComponent(moveErr.message)}`);
-  }
-
-  const { error: locErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
-    p_location_id: locationId,
+  const { error } = await supabase.rpc("assign_inventory_stock_to_location", {
+    p_site_id: siteId,
     p_product_id: productId,
-    p_delta: quantity,
+    p_location_id: locationId,
+    p_quantity: quantity,
+    p_created_by: user.id,
+    p_note: null,
   });
-  if (locErr) {
-    redirect(`${returnTo}&error=${encodeURIComponent(locErr.message)}`);
+  if (error) {
+    redirect(`${returnTo}&error=${encodeURIComponent(error.message)}`);
   }
 
   revalidatePath("/inventory/stock");
@@ -556,7 +473,7 @@ export default async function InventoryStockPage({
           .from("inventory_stock_by_location")
           .select("location_id,product_id,current_qty,location:inventory_locations(code,zone,site_id)")
           .in("location_id", Array.from(locIdsForSite))
-          .gt("current_qty", 0)
+          .neq("current_qty", 0)
       : { data: [] as StockByLocRow[] };
 
   const stockByLocRows = (stockByLocData ?? []) as StockByLocRow[];
@@ -583,7 +500,7 @@ export default async function InventoryStockPage({
     locationIdFilter && locIdsForSite.has(locationIdFilter)
       ? new Set(
           stockByLocRows
-            .filter((r) => r.location_id === locationIdFilter && Number(r.current_qty ?? 0) > 0)
+            .filter((r) => r.location_id === locationIdFilter && Math.abs(Number(r.current_qty ?? 0)) > 0.000001)
             .map((r) => r.product_id)
         )
       : null;
@@ -602,7 +519,7 @@ export default async function InventoryStockPage({
     locIdsInZone && locIdsInZone.size > 0
       ? new Set(
           stockByLocRows
-            .filter((r) => locIdsInZone.has(r.location_id) && Number(r.current_qty ?? 0) > 0)
+            .filter((r) => locIdsInZone.has(r.location_id) && Math.abs(Number(r.current_qty ?? 0)) > 0.000001)
             .map((r) => r.product_id)
         )
       : null;
@@ -754,7 +671,12 @@ export default async function InventoryStockPage({
         ].join(" "),
       };
     })
-    .filter((row) => (viewByLoc ? row.totalQty > 0 || Object.values(row.byLocation ?? {}).some((qty) => qty > 0) : true));
+    .filter((row) =>
+      viewByLoc
+        ? Math.abs(row.totalQty) > 0.000001 ||
+          Object.values(row.byLocation ?? {}).some((qty) => Math.abs(qty) > 0.000001)
+        : true
+    );
 
   const stockTableLocations = locList.map((loc) => ({
     id: loc.id,
@@ -847,6 +769,12 @@ export default async function InventoryStockPage({
           ) : null}
           <Link href="/inventory/count-initial" className="ui-btn ui-btn--brand">
             Conteo inicial
+          </Link>
+          <Link
+            href={`/inventory/stock/assign-location${siteId ? `?site_id=${encodeURIComponent(siteId)}` : ""}`}
+            className="ui-btn ui-btn--ghost"
+          >
+            Asignar sin area
           </Link>
           <Link href="/inventory/movements" className="ui-btn ui-btn--ghost">
             Ver movimientos

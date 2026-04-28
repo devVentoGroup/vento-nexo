@@ -11,23 +11,35 @@ type LocRow = {
   zone: string | null;
   aisle: string | null;
   level: string | null;
+  area_id: string | null;
   description?: string | null;
+};
+
+type AreaOption = {
+  id: string;
+  siteId: string;
+  label: string;
+  code: string;
 };
 
 type Props = {
   loc: LocRow;
+  areas: AreaOption[];
   action: (formData: FormData) => Promise<void>;
   cancelHref: string;
 };
 
-export function LocEditForm({ loc, action, cancelHref }: Props) {
+export function LocEditForm({ loc, areas, action, cancelHref }: Props) {
   const [code, setCode] = useState(loc.code ?? "");
+  const [areaId, setAreaId] = useState(loc.area_id ?? areas[0]?.id ?? "");
   const [zone, setZone] = useState(loc.zone ?? "");
   const [aisle, setAisle] = useState(loc.aisle ?? "");
   const [level, setLevel] = useState(loc.level ?? "");
   const [description, setDescription] = useState(loc.description ?? "");
 
-  const canSubmit = useMemo(() => Boolean(code.trim()) && Boolean(zone.trim()), [code, zone]);
+  const selectedArea = useMemo(() => areas.find((area) => area.id === areaId) ?? areas[0] ?? null, [areaId, areas]);
+  const areaIdToSend = selectedArea?.id ?? "";
+  const canSubmit = useMemo(() => Boolean(code.trim()) && Boolean(zone.trim()) && Boolean(areaIdToSend), [areaIdToSend, code, zone]);
   const zoneOptions = useMemo(() => {
     const normalizedZone = zone.trim().toUpperCase();
     if (!normalizedZone) return STANDARD_LOCATION_ZONES;
@@ -40,6 +52,7 @@ export function LocEditForm({ loc, action, cancelHref }: Props) {
   return (
     <form action={action} className="mt-6 space-y-6 pb-24 lg:pb-0">
       <input type="hidden" name="loc_id" value={loc.id} />
+      <input type="hidden" name="area_id" value={areaIdToSend} />
       <input type="hidden" name="code" value={code} />
       <input type="hidden" name="zone" value={zone} />
       <input type="hidden" name="aisle" value={aisle} />
@@ -69,6 +82,22 @@ export function LocEditForm({ loc, action, cancelHref }: Props) {
               className="ui-input"
               placeholder="Descripcion corta para reconocerlo rapido"
             />
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="ui-label">Area operativa</span>
+            <select
+              value={areaIdToSend}
+              onChange={(event) => {
+                setAreaId(event.target.value);
+              }}
+              className="ui-input"
+            >
+              {areas.map((area) => (
+                <option key={area.id} value={area.id}>
+                  {area.label} ({area.code})
+                </option>
+              ))}
+            </select>
           </label>
           <label className="flex flex-col gap-1">
             <span className="ui-label">Zona</span>

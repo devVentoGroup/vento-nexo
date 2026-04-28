@@ -156,6 +156,7 @@ export default async function LocationLandingPage({
     location.site_id ? `&site_id=${encodeURIComponent(location.site_id)}` : ""
   }`;
   const boardHref = `/inventory/locations/${encodeURIComponent(location.id)}/board`;
+  const positionsHref = `/inventory/locations/${encodeURIComponent(location.id)}/positions`;
   const zoneHref =
     location.site_id && location.zone
       ? `/inventory/locations/zone?site_id=${encodeURIComponent(location.site_id)}&zone=${encodeURIComponent(location.zone)}`
@@ -198,12 +199,15 @@ export default async function LocationLandingPage({
                 </span>
               ) : null}
             </div>
-            <div className={`grid gap-3 ${zoneHref ? "sm:grid-cols-3" : "sm:grid-cols-2"}`}>
+            <div className={`grid gap-3 ${zoneHref ? "sm:grid-cols-2 xl:grid-cols-4" : "sm:grid-cols-3"}`}>
               <Link href={withdrawHref} className="ui-btn ui-btn--brand h-16 w-full text-base font-semibold">
                 Registrar salida
               </Link>
               <Link href={boardHref} className="ui-btn ui-btn--ghost h-16 w-full text-base font-semibold">
                 Ver contenido
+              </Link>
+              <Link href={positionsHref} className="ui-btn ui-btn--ghost h-16 w-full text-base font-semibold">
+                Detalle interno
               </Link>
               {zoneHref ? (
                 <Link href={zoneHref} className="ui-btn ui-btn--ghost h-16 w-full text-base font-semibold">

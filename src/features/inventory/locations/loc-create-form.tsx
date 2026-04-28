@@ -12,16 +12,26 @@ type SiteOption = {
   label: string;
 };
 
+type AreaOption = {
+  id: string;
+  siteId: string;
+  label: string;
+  code: string;
+};
+
 type Props = {
   sites: SiteOption[];
+  areas: AreaOption[];
   defaultSiteId: string;
   action: (formData: FormData) => void | Promise<void>;
 };
 
-export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
+export function LocCreateForm({ sites, areas, defaultSiteId, action }: Props) {
   const initialSiteId = defaultSiteId || sites[0]?.id || "";
 
   const [siteId, setSiteId] = useState(initialSiteId);
+  const initialAreaId = areas.find((area) => area.siteId === initialSiteId)?.id ?? "";
+  const [areaId, setAreaId] = useState(initialAreaId);
   const [zone, setZone] = useState("BOD");
   const [aisle, setAisle] = useState("MAIN");
   const [level, setLevel] = useState("");
@@ -30,6 +40,11 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
   const selectedSite = useMemo(
     () => sites.find((site) => site.id === siteId) ?? null,
     [siteId, sites]
+  );
+  const areaOptions = useMemo(() => areas.filter((area) => area.siteId === siteId), [areas, siteId]);
+  const selectedArea = useMemo(
+    () => areaOptions.find((area) => area.id === areaId) ?? areaOptions[0] ?? null,
+    [areaId, areaOptions]
   );
   const siteCode = (selectedSite?.code ?? "CP").toUpperCase();
   const zoneUpper = (zone || "BOD").trim().toUpperCase();
@@ -43,11 +58,13 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
   }, [siteCode, zoneUpper, aisleUpper, levelUpper]);
 
   const siteIdToSend = siteId || defaultSiteId || "";
-  const canSubmit = Boolean(siteIdToSend) && Boolean(codigoGenerado);
+  const areaIdToSend = selectedArea?.id ?? "";
+  const canSubmit = Boolean(siteIdToSend) && Boolean(areaIdToSend) && Boolean(codigoGenerado);
 
   return (
     <form action={action} className="space-y-6 pb-24 lg:pb-0">
       <input type="hidden" name="site_id" value={siteIdToSend} />
+      <input type="hidden" name="area_id" value={areaIdToSend} />
       <input type="hidden" name="code" value={codigoGenerado} />
       <input type="hidden" name="zone" value={zoneUpper} />
       <input type="hidden" name="aisle" value={aisleUpper} />
@@ -83,7 +100,9 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
             <select
               value={siteId}
               onChange={(event) => {
-                setSiteId(event.target.value);
+                const nextSiteId = event.target.value;
+                setSiteId(nextSiteId);
+                setAreaId(areas.find((area) => area.siteId === nextSiteId)?.id ?? "");
               }}
               className="ui-input"
               required
@@ -91,6 +110,23 @@ export function LocCreateForm({ sites, defaultSiteId, action }: Props) {
               {sites.map((site) => (
                 <option key={site.id} value={site.id}>
                   {site.label} ({site.code})
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex flex-col gap-1">
+            <span className="ui-label">Area operativa</span>
+            <select
+              value={areaIdToSend}
+              onChange={(event) => {
+                setAreaId(event.target.value);
+              }}
+              className="ui-input"
+              required
+            >
+              {areaOptions.map((area) => (
+                <option key={area.id} value={area.id}>
+                  {area.label} ({area.code})
                 </option>
               ))}
             </select>

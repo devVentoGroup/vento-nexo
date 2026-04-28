@@ -11,7 +11,16 @@ import {
 export const dynamic = "force-dynamic";
 
 type Params = { id: string };
-type SearchParams = { kiosk?: string };
+type SearchParams = { kiosk?: string; position_id?: string };
+
+type PositionRow = {
+  id: string;
+  parent_position_id: string | null;
+  code: string;
+  name: string;
+  kind: string;
+  sort_order: number | null;
+};
 
 function formatQty(value: number | null | undefined) {
   const n = Number(value ?? 0);
@@ -90,6 +99,23 @@ function formatDateTime(value: string | null | undefined) {
   }).format(date);
 }
 
+function buildPositionLabels(positions: PositionRow[]) {
+  const byId = new Map(positions.map((position) => [position.id, position]));
+  const labelById = new Map<string, string>();
+
+  function labelFor(position: PositionRow): string {
+    if (labelById.has(position.id)) return labelById.get(position.id)!;
+    const self = String(position.name || position.code).trim();
+    const parent = position.parent_position_id ? byId.get(position.parent_position_id) : null;
+    const label = parent ? `${labelFor(parent)} / ${self}` : self;
+    labelById.set(position.id, label);
+    return label;
+  }
+
+  for (const position of positions) labelFor(position);
+  return labelById;
+}
+
 export default async function LocationBoardPage({
   params,
   searchParams,
@@ -100,6 +126,7 @@ export default async function LocationBoardPage({
   const { id } = await params;
   const sp = (await searchParams) ?? {};
   const isKiosk = String(sp.kiosk ?? "").trim() === "1";
+  const positionId = String(sp.position_id ?? "").trim();
 
   const { supabase } = await requireAppAccess({
     appId: "nexo",
@@ -133,20 +160,38 @@ export default async function LocationBoardPage({
 
   const site = (siteData ?? null) as { id: string; name: string | null } | null;
 
-  const { data: stockRowsData } = await supabase
-    .from("inventory_stock_by_location")
-    .select(
-      "product_id,current_qty,updated_at,products(id,name,stock_unit_code,unit,image_url,catalog_image_url)"
-    )
+  const { data: positionsData } = await supabase
+    .from("inventory_location_positions")
+    .select("id,parent_position_id,code,name,kind,sort_order")
     .eq("location_id", id)
-    .gt("current_qty", 0)
-    .order("current_qty", { ascending: false });
+    .eq("is_active", true)
+    .order("sort_order", { ascending: true })
+    .order("code", { ascending: true });
+  const positions = (positionsData ?? []) as PositionRow[];
+  const positionLabels = buildPositionLabels(positions);
+  const selectedPosition = positionId ? positions.find((position) => position.id === positionId) ?? null : null;
+
+  const { data: stockRowsData } = selectedPosition
+    ? await supabase
+        .from("inventory_stock_by_position")
+        .select("product_id,current_qty,updated_at")
+        .eq("position_id", selectedPosition.id)
+        .gt("current_qty", 0)
+        .order("current_qty", { ascending: false })
+    : await supabase
+        .from("inventory_stock_by_location")
+        .select(
+          "product_id,current_qty,updated_at,products(id,name,stock_unit_code,unit,image_url,catalog_image_url)"
+        )
+        .eq("location_id", id)
+        .gt("current_qty", 0)
+        .order("current_qty", { ascending: false });
 
   const stockRowsRaw = (stockRowsData ?? []) as unknown as Array<{
     product_id: string;
     current_qty: number | null;
     updated_at: string | null;
-    products: {
+    products?: {
       id: string;
       name: string | null;
       stock_unit_code: string | null;
@@ -162,9 +207,21 @@ export default async function LocationBoardPage({
       catalog_image_url?: string | null;
     }> | null;
   }>;
+  const selectedPositionProductIds = selectedPosition ? stockRowsRaw.map((row) => row.product_id) : [];
+  const { data: selectedPositionProducts } =
+    selectedPosition && selectedPositionProductIds.length > 0
+      ? await supabase
+          .from("products")
+          .select("id,name,stock_unit_code,unit,image_url,catalog_image_url")
+          .in("id", selectedPositionProductIds)
+      : { data: [] as Array<{ id: string; name: string | null; stock_unit_code: string | null; unit: string | null; image_url?: string | null; catalog_image_url?: string | null }> };
+  const selectedPositionProductById = new Map((selectedPositionProducts ?? []).map((product) => [product.id, product]));
+
   const stockRows = stockRowsRaw.map((row) => ({
     ...row,
-    products: normalizeProductRelation(row.products),
+    products: selectedPosition
+      ? selectedPositionProductById.get(row.product_id) ?? null
+      : normalizeProductRelation(row.products),
   }));
   const productIds = stockRows.map((row) => row.product_id);
   const { data: uomProfilesData } = productIds.length
@@ -280,6 +337,42 @@ export default async function LocationBoardPage({
           </div>
         </div>
       </section>
+
+      {positions.length > 0 ? (
+        <section className="ui-panel ui-remission-section ui-fade-up ui-delay-1">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="ui-h3">Filtro interno</div>
+              <div className="mt-1 ui-body-muted">
+                La operacion sigue siendo por LOC. Estos filtros solo cambian la vista del board/quiosco.
+              </div>
+            </div>
+            <Link
+              href={`/inventory/locations/${encodeURIComponent(location.id)}/positions`}
+              className="ui-btn ui-btn--ghost"
+            >
+              Administrar detalle
+            </Link>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            <Link
+              href={`/inventory/locations/${encodeURIComponent(location.id)}/board${isKiosk ? "?kiosk=1" : ""}`}
+              className={!selectedPosition ? "ui-chip ui-chip--brand" : "ui-chip"}
+            >
+              Todo el LOC
+            </Link>
+            {positions.map((position) => (
+              <Link
+                key={position.id}
+                href={`/inventory/locations/${encodeURIComponent(location.id)}/board?position_id=${encodeURIComponent(position.id)}${isKiosk ? "&kiosk=1" : ""}`}
+                className={selectedPosition?.id === position.id ? "ui-chip ui-chip--brand" : "ui-chip"}
+              >
+                {positionLabels.get(position.id) ?? position.name}
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {stockRows.length > 0 ? (
         <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">

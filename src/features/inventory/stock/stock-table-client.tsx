@@ -59,7 +59,7 @@ export function StockTableClient({ rows, locations = [], mode, emptyMessage }: P
     <div className="space-y-3">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <label className="flex min-w-[260px] flex-1 flex-col gap-1">
-          <span className="ui-label">Buscar producto o área</span>
+          <span className="ui-label">Buscar producto o area</span>
           <input
             type="search"
             value={query}
@@ -119,7 +119,7 @@ export function StockTableClient({ rows, locations = [], mode, emptyMessage }: P
                   </TableHeaderCell>
                 ))
               ) : (
-                <TableHeaderCell className="min-w-[260px]">Áreas</TableHeaderCell>
+                <TableHeaderCell className="min-w-[260px]">Areas</TableHeaderCell>
               )}
               {!isByLocation ? (
                 <TableHeaderCell className="min-w-[120px] whitespace-nowrap">Actualizado</TableHeaderCell>
@@ -141,7 +141,11 @@ export function StockTableClient({ rows, locations = [], mode, emptyMessage }: P
                       const qty = row.byLocation?.[location.id] ?? 0;
                       return (
                         <TableCell key={location.id} className="font-mono text-right align-top whitespace-nowrap">
-                          {qty > 0 ? displayMode === "purchase" ? formatPurchaseQty(row, qty) : formatQty(qty) : "-"}
+                          {Math.abs(qty) > 0.000001
+                            ? displayMode === "purchase"
+                              ? formatPurchaseQty(row, qty)
+                              : formatQty(qty)
+                            : "-"}
                         </TableCell>
                       );
                     })

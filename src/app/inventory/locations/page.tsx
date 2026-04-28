@@ -29,7 +29,15 @@ type LocationRow = {
   aisle: string | null;
   level: string | null;
   site_id: string | null;
+  area_id: string | null;
   description?: string | null;
+};
+
+type AreaOption = {
+  id: string;
+  siteId: string;
+  label: string;
+  code: string;
 };
 
 function siteCodeFromName(name: string): SiteCode | null {
@@ -143,6 +151,7 @@ export default async function InventoryLocationsPage({
   );
 
   let siteOptions: SiteOption[] = [];
+  let areaOptions: AreaOption[] = [];
 
   if (siteIds.length > 0) {
     type SiteRow = {
@@ -175,6 +184,28 @@ export default async function InventoryLocationsPage({
         Number(b.isPrimary) - Number(a.isPrimary) ||
         a.label.localeCompare(b.label),
     );
+
+    const { data: areasRaw } = await supabase
+      .from("areas")
+      .select("id,site_id,code,name,kind,is_active")
+      .in("site_id", siteIds)
+      .eq("is_active", true)
+      .order("name", { ascending: true });
+
+    areaOptions = ((areasRaw ?? []) as Array<{
+      id: string;
+      site_id: string | null;
+      code: string | null;
+      name: string | null;
+      kind: string | null;
+    }>)
+      .filter((area) => Boolean(area.site_id))
+      .map((area) => ({
+        id: area.id,
+        siteId: area.site_id!,
+        label: area.name ?? area.kind ?? area.code ?? "Area",
+        code: area.code ?? area.kind ?? "AREA",
+      }));
   }
 
   async function createLocAction(formData: FormData) {
@@ -191,6 +222,7 @@ export default async function InventoryLocationsPage({
     }
 
     const site_id = String(formData.get("site_id") ?? "").trim();
+    const area_id = String(formData.get("area_id") ?? "").trim();
     const code = String(formData.get("code") ?? "")
       .trim()
       .toUpperCase();
@@ -199,12 +231,16 @@ export default async function InventoryLocationsPage({
       redirect(
         `/inventory/locations?error=${encodeURIComponent("Falta site_id.")}`,
       );
+    if (!area_id)
+      redirect(
+        `/inventory/locations?error=${encodeURIComponent("Falta area_id.")}`,
+      );
     if (!code)
       redirect(
         `/inventory/locations?error=${encodeURIComponent("Falta code.")}`,
       );
 
-    const payload: Record<string, string> = { site_id, code };
+    const payload: Record<string, string> = { site_id, area_id, code };
 
     // ZONA (requerida)
     let zone = String(formData.get("zone") ?? "")
@@ -334,8 +370,9 @@ export default async function InventoryLocationsPage({
     }
 
     const code = String(formData.get("code") ?? "").trim().toUpperCase();
+    const areaId = String(formData.get("area_id") ?? "").trim();
     const zone = String(formData.get("zone") ?? "").trim().toUpperCase();
-    if (!code || !zone) {
+    if (!code || !areaId || !zone) {
       redirect(
         `/inventory/locations?error=${encodeURIComponent("Código y zona son obligatorios.")}`,
       );
@@ -347,6 +384,7 @@ export default async function InventoryLocationsPage({
 
     const updates: Record<string, string | null> = {
       code,
+      area_id: areaId,
       zone,
       aisle: aisle || null,
       level: level || null,
@@ -441,7 +479,7 @@ export default async function InventoryLocationsPage({
 
     let batchQuery = supabase
       .from("inventory_locations")
-      .select("id,code,zone,aisle,level,description,site_id")
+      .select("id,code,zone,aisle,level,description,site_id,area_id")
       .eq("is_active", true)
       .order("code", { ascending: true })
       .limit(500);
@@ -481,7 +519,7 @@ export default async function InventoryLocationsPage({
 
   let locationsQuery = supabase
     .from("inventory_locations")
-    .select("id,code,zone,aisle,level,site_id,description")
+    .select("id,code,zone,aisle,level,site_id,area_id,description")
     .eq("is_active", true)
     .order("code", { ascending: true })
     .limit(500);
@@ -498,6 +536,7 @@ export default async function InventoryLocationsPage({
 
   const { data: locations, error } = await locationsQuery;
   const locationRows = (locations ?? []) as LocationRow[];
+  const areaLabelById = new Map(areaOptions.map((area) => [area.id, area.label]));
 
   const editingLoc = editId ? locationRows.find((l) => l.id === editId) ?? null : null;
   const isEditingLoc = Boolean(canEditLoc && editingLoc);
@@ -601,6 +640,7 @@ export default async function InventoryLocationsPage({
 
           <LocEditForm
             loc={editingLoc}
+            areas={areaOptions.filter((area) => area.siteId === editingLoc.site_id)}
             action={updateLocAction}
             cancelHref={cancelHref}
           />
@@ -609,6 +649,7 @@ export default async function InventoryLocationsPage({
         <div className="space-y-4">
           <LocCreateForm
             sites={siteOptions}
+            areas={areaOptions}
             defaultSiteId={defaultSiteId}
             action={createLocAction}
           />
@@ -749,6 +790,7 @@ export default async function InventoryLocationsPage({
             <thead>
               <tr>
                 <TableHeaderCell>Nombre</TableHeaderCell>
+                <TableHeaderCell>Area madre</TableHeaderCell>
                 <TableHeaderCell>Código</TableHeaderCell>
                 <TableHeaderCell>Zona</TableHeaderCell>
                 <TableHeaderCell>Pasillo</TableHeaderCell>
@@ -768,6 +810,9 @@ export default async function InventoryLocationsPage({
                         </div>
                       ) : null}
                     </div>
+                  </TableCell>
+                  <TableCell>
+                    {loc.area_id ? areaLabelById.get(loc.area_id) ?? "Area" : "Sin area"}
                   </TableCell>
                   <TableCell className="font-mono">
                     {loc.code}
@@ -808,7 +853,7 @@ export default async function InventoryLocationsPage({
 
               {!error && (!locations || locations.length === 0) ? (
                 <tr>
-                  <TableCell className="ui-empty" colSpan={canEditLoc || canDeleteLoc ? 6 : 5}>
+                  <TableCell className="ui-empty" colSpan={canEditLoc || canDeleteLoc ? 7 : 6}>
                     No hay áreas para mostrar (o RLS no te permite verlas).
                   </TableCell>
                 </tr>
