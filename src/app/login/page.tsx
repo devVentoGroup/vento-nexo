@@ -1,40 +1,25 @@
-import { Suspense } from "react";
-import Link from "next/link";
-import { LoginContent } from "./login-client";
+import { redirect } from "next/navigation";
 
 const SHELL_LOGIN_URL =
   process.env.NEXT_PUBLIC_SHELL_LOGIN_URL || "https://os.ventogroup.co/login";
 
-function LoginFallback() {
-  return (
-    <div className="flex min-h-screen items-center justify-center px-6">
-      <div className="ui-panel w-full max-w-md text-center">
-        <h1 className="ui-h1">Redirigiendo al inicio de sesion</h1>
-        <p className="mt-2 ui-body-muted">
-          Si no pasa nada en unos segundos, abre el login manualmente.
-        </p>
-        <div className="mt-4">
-          <a href={SHELL_LOGIN_URL} className="ui-btn ui-btn--brand">
-            Ir a Vento OS
-          </a>
-        </div>
-        <p className="mt-4 ui-caption">
-          Si ya iniciaste sesion,{" "}
-          <Link href="/" className="text-[var(--ui-brand-600)] hover:underline">
-            vuelve al panel
-          </Link>
-          .
-        </p>
-      </div>
-    </div>
-  );
+type SearchParams = { returnTo?: string };
+
+function buildShellLoginUrl(returnTo?: string) {
+  const url = new URL(SHELL_LOGIN_URL);
+  const target = (returnTo ?? "").trim();
+  if (target) {
+    url.searchParams.set("returnTo", target);
+  }
+  return url.toString();
 }
 
-export default function LoginPage() {
-  return (
-    <Suspense fallback={<LoginFallback />}>
-      <LoginContent />
-    </Suspense>
-  );
+export default async function LoginPage({
+  searchParams,
+}: {
+  searchParams?: Promise<SearchParams>;
+}) {
+  const sp = (await searchParams) ?? {};
+  redirect(buildShellLoginUrl(sp.returnTo));
 }
 
