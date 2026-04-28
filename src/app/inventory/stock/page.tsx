@@ -1,5 +1,8 @@
 import Link from "next/link";
+import { revalidatePath } from "next/cache";
+import { redirect } from "next/navigation";
 import { CategoryTreeFilter } from "@/components/inventory/CategoryTreeFilter";
+import { Table, TableCell, TableHeaderCell } from "@/components/vento/standard/table";
 import { StockTableClient, type StockTableRow } from "@/features/inventory/stock/stock-table-client";
 
 import { requireAppAccess } from "@/lib/auth/guard";
@@ -43,6 +46,7 @@ type SearchParams = {
   error?: string;
   count_initial?: string;
   adjust?: string;
+  assigned?: string;
   /** 1.4 Vista Stock por LOC: tabla producto ? LOC */
   view?: string;
 };
@@ -72,6 +76,12 @@ type StockByLocRow = {
   product_id: string;
   current_qty: number | null;
   location?: { code: string | null; zone: string | null; site_id: string } | null;
+};
+
+type StockAssignLocRow = {
+  location_id: string;
+  product_id: string;
+  current_qty: number | null;
 };
 
 type LocRow = {
@@ -157,6 +167,129 @@ function formatDate(value?: string | null) {
   if (!value) return "-";
   if (value.length >= 10) return value.slice(0, 10);
   return value;
+}
+
+function parseQuantity(value: FormDataEntryValue | null): number {
+  const normalized = String(value ?? "")
+    .trim()
+    .replace(/\s/g, "")
+    .replace(",", ".");
+  const parsed = Number(normalized);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+async function assignStockWithoutLocation(formData: FormData) {
+  "use server";
+
+  const siteId = String(formData.get("site_id") ?? "").trim();
+  const productId = String(formData.get("product_id") ?? "").trim();
+  const locationId = String(formData.get("location_id") ?? "").trim();
+  const quantity = parseQuantity(formData.get("quantity"));
+  const returnTo = siteId
+    ? `/inventory/stock?site_id=${encodeURIComponent(siteId)}`
+    : "/inventory/stock?";
+
+  const { supabase, user } = await requireAppAccess({
+    appId: APP_ID,
+    returnTo,
+    permissionCode: PERMISSION,
+  });
+
+  if (!siteId || !productId || !locationId || quantity <= 0) {
+    redirect(`${returnTo}&error=${encodeURIComponent("Completa producto, destino y cantidad mayor a cero.")}`);
+  }
+
+  const { data: locRow } = await supabase
+    .from("inventory_locations")
+    .select("id,code,site_id")
+    .eq("id", locationId)
+    .eq("site_id", siteId)
+    .eq("is_active", true)
+    .maybeSingle();
+  if (!locRow) {
+    redirect(`${returnTo}&error=${encodeURIComponent("El LOC destino no esta activo en esta sede.")}`);
+  }
+
+  const { data: productRow } = await supabase
+    .from("products")
+    .select("id,name,unit,stock_unit_code")
+    .eq("id", productId)
+    .maybeSingle();
+  if (!productRow) {
+    redirect(`${returnTo}&error=${encodeURIComponent("Producto no encontrado.")}`);
+  }
+
+  const { data: siteStock } = await supabase
+    .from("inventory_stock_by_site")
+    .select("current_qty")
+    .eq("site_id", siteId)
+    .eq("product_id", productId)
+    .maybeSingle();
+  const siteQty = Number((siteStock as { current_qty?: number } | null)?.current_qty ?? 0);
+
+  const { data: activeLocRows } = await supabase
+    .from("inventory_locations")
+    .select("id")
+    .eq("site_id", siteId)
+    .eq("is_active", true)
+    .limit(500);
+  const activeLocIds = ((activeLocRows ?? []) as Array<{ id: string }>).map((row) => row.id);
+  const { data: locStockRows } =
+    activeLocIds.length > 0
+      ? await supabase
+          .from("inventory_stock_by_location")
+          .select("location_id,product_id,current_qty")
+          .in("location_id", activeLocIds)
+          .eq("product_id", productId)
+      : { data: [] as StockAssignLocRow[] };
+  const assignedQty = ((locStockRows ?? []) as StockAssignLocRow[]).reduce(
+    (sum, row) => sum + Number(row.current_qty ?? 0),
+    0
+  );
+  const availableWithoutLoc = Math.max(0, siteQty - assignedQty);
+  if (quantity > availableWithoutLoc + 0.000001) {
+    redirect(
+      `${returnTo}&error=${encodeURIComponent(
+        `Solo hay ${availableWithoutLoc} sin area para asignar.`
+      )}`
+    );
+  }
+
+  const stockUnitCode = String(
+    (productRow as { stock_unit_code?: string | null; unit?: string | null }).stock_unit_code ||
+      (productRow as { unit?: string | null }).unit ||
+      "un"
+  ).trim();
+  const locCode = String((locRow as { code?: string | null }).code ?? locationId);
+  const productName = String((productRow as { name?: string | null }).name ?? "Producto");
+
+  const { error: moveErr } = await supabase.from("inventory_movements").insert({
+    site_id: siteId,
+    product_id: productId,
+    movement_type: "stock_assign_location",
+    quantity,
+    input_qty: quantity,
+    input_unit_code: stockUnitCode,
+    conversion_factor_to_stock: 1,
+    stock_unit_code: stockUnitCode,
+    note: `Asignacion de stock sin area a ${locCode}: ${productName}`,
+    created_by: user.id,
+  });
+  if (moveErr) {
+    redirect(`${returnTo}&error=${encodeURIComponent(moveErr.message)}`);
+  }
+
+  const { error: locErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
+    p_location_id: locationId,
+    p_product_id: productId,
+    p_delta: quantity,
+  });
+  if (locErr) {
+    redirect(`${returnTo}&error=${encodeURIComponent(locErr.message)}`);
+  }
+
+  revalidatePath("/inventory/stock");
+  redirect(`${returnTo}&assigned=1`);
 }
 
 async function loadCategoryRows(
@@ -430,7 +563,7 @@ export default async function InventoryStockPage({
 
   const locSummaryByProduct = new Map<
     string,
-    { lines: string[]; locationIds: Set<string>; hasAny: boolean }
+    { lines: string[]; locationIds: Set<string>; hasAny: boolean; totalQty: number }
   >();
   for (const row of stockByLocRows) {
     const code = row.location?.code ?? row.location_id.slice(0, 8);
@@ -438,11 +571,12 @@ export default async function InventoryStockPage({
     if (!qty) continue;
     const key = row.product_id;
     if (!locSummaryByProduct.has(key)) {
-      locSummaryByProduct.set(key, { lines: [], locationIds: new Set(), hasAny: true });
+      locSummaryByProduct.set(key, { lines: [], locationIds: new Set(), hasAny: true, totalQty: 0 });
     }
     const rec = locSummaryByProduct.get(key)!;
     rec.lines.push(`${code}: ${qty}`);
     rec.locationIds.add(row.location_id);
+    rec.totalQty += qty;
   }
 
   const productIdsInSelectedLoc =
@@ -481,8 +615,8 @@ export default async function InventoryStockPage({
       ? stockRows
           .filter((row) => {
             const qty = Number(row.current_qty ?? 0);
-            const hasLoc = locSummaryByProduct.get(row.product_id)?.hasAny ?? false;
-            return qty > 0 && !hasLoc;
+            const assignedQty = locSummaryByProduct.get(row.product_id)?.totalQty ?? 0;
+            return qty - assignedQty > 0.000001;
           })
           .map((row) => row.product_id)
       : [];
@@ -583,10 +717,15 @@ export default async function InventoryStockPage({
           ? String(purchaseProfile.label || purchaseProfile.input_unit_code || "").trim()
           : null;
       const locSummary = locSummaryByProduct.get(product.id);
+      const unassignedQty = Math.max(0, qtyValue - Number(locSummary?.totalQty ?? 0));
+      const areaLines = [...(locSummary?.lines ?? [])];
+      if (unassignedQty > 0.000001) {
+        areaLines.push(`Sin area: ${unassignedQty}`);
+      }
       const areaSummary =
         siteId && locList.length > 0
-          ? locSummary?.lines?.length
-            ? locSummary.lines.join(" / ")
+          ? areaLines.length
+            ? areaLines.join(" / ")
             : qtyValue > 0
               ? "Sin area"
               : ""
@@ -603,7 +742,7 @@ export default async function InventoryStockPage({
         stockQtyPerPurchaseUnit,
         updatedAt: formatDate(stockRow?.updated_at),
         areaSummary,
-        hasStockWithoutArea: Boolean(siteId && qtyValue > 0 && !locSummary?.hasAny),
+        hasStockWithoutArea: Boolean(siteId && unassignedQty > 0.000001),
         byLocation,
         searchText: [
           product.name,
@@ -621,6 +760,20 @@ export default async function InventoryStockPage({
     id: loc.id,
     label: loc.description || loc.code || loc.zone || loc.id.slice(0, 8),
   }));
+
+  const unassignedStockRows = productRows
+    .map((product) => {
+      const total = Number(stockMap.get(product.id)?.current_qty ?? 0);
+      const assigned = Number(locSummaryByProduct.get(product.id)?.totalQty ?? 0);
+      const unassigned = Math.max(0, total - assigned);
+      return {
+        product,
+        unassigned,
+        unit: product.stock_unit_code ?? product.unit ?? "un",
+      };
+    })
+    .filter((row) => row.unassigned > 0.000001)
+    .slice(0, 100);
 
   return (
     <div className="ui-scene w-full space-y-6">
@@ -713,10 +866,16 @@ export default async function InventoryStockPage({
         </div>
       ) : null}
 
+      {sp.assigned === "1" ? (
+        <div className="ui-alert ui-alert--success ui-fade-up ui-delay-1">
+          Stock asignado al area. El total de la sede no cambio.
+        </div>
+      ) : null}
+
       {productIdsWithStockNoLoc.length > 0 ? (
         <div className="ui-alert ui-alert--warn ui-fade-up ui-delay-1">
           <strong>Sin ubicacion:</strong> {productIdsWithStockNoLoc.length} producto(s) tienen stock en esta sede pero
-          no tienen area asignada. Asigna ubicacion en Entradas al recibir o en Traslados.
+          no esta completamente asignado a un area.
         </div>
       ) : null}
 
@@ -731,7 +890,7 @@ export default async function InventoryStockPage({
           <div>
             <div className="ui-h3">Vista</div>
             <div className="mt-1 ui-caption">
-              Elige sede y área cuando necesites acotar el stock.
+              Elige sede y area cuando necesites acotar el stock.
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -872,6 +1031,71 @@ export default async function InventoryStockPage({
         </form>
       </div>
 
+      {siteId && locList.length > 0 && unassignedStockRows.length > 0 ? (
+        <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <div className="ui-h3">Asignar stock sin area</div>
+              <div className="mt-1 ui-body-muted">
+                Mueve stock existente de la sede a un LOC activo sin cambiar el total de inventario.
+              </div>
+            </div>
+            <span className="ui-chip ui-chip--warn">{unassignedStockRows.length} visibles</span>
+          </div>
+
+          <div className="ui-scrollbar-subtle mt-4 max-h-[360px] overflow-x-auto overflow-y-auto">
+            <Table className="min-w-[820px] table-auto [&_th]:pr-4 [&_td]:pr-4">
+              <thead>
+                <tr>
+                  <TableHeaderCell>Producto</TableHeaderCell>
+                  <TableHeaderCell className="text-right">Sin area</TableHeaderCell>
+                  <TableHeaderCell>Asignacion</TableHeaderCell>
+                </tr>
+              </thead>
+              <tbody>
+                {unassignedStockRows.map((row) => (
+                  <tr key={row.product.id} className="ui-body">
+                    <TableCell className="font-medium text-[var(--ui-text)]">{row.product.name}</TableCell>
+                    <TableCell className="font-mono text-right whitespace-nowrap">
+                      {row.unassigned.toLocaleString("es-CO", { maximumFractionDigits: 3 })} {row.unit}
+                    </TableCell>
+                    <TableCell>
+                      <form action={assignStockWithoutLocation} className="grid gap-2 md:grid-cols-[minmax(220px,1fr)_130px_auto]">
+                        <input type="hidden" name="site_id" value={siteId} />
+                        <input type="hidden" name="product_id" value={row.product.id} />
+                        <select name="location_id" className="ui-input" required defaultValue="">
+                          <option value="" disabled>
+                            Selecciona area
+                          </option>
+                          {locList.map((loc) => (
+                            <option key={loc.id} value={loc.id}>
+                              {loc.description || loc.code || loc.zone || loc.id.slice(0, 8)}
+                            </option>
+                          ))}
+                        </select>
+                        <input
+                          name="quantity"
+                          type="number"
+                          min="0"
+                          step="0.001"
+                          max={row.unassigned}
+                          defaultValue={row.unassigned}
+                          className="ui-input text-right"
+                          required
+                        />
+                        <button className="ui-btn ui-btn--brand" type="submit">
+                          Asignar
+                        </button>
+                      </form>
+                    </TableCell>
+                  </tr>
+                ))}
+              </tbody>
+            </Table>
+          </div>
+        </div>
+      ) : null}
+
       {viewByLoc && siteId && locList.length > 0 ? (
         <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
@@ -896,7 +1120,7 @@ export default async function InventoryStockPage({
               rows={stockTableRows}
               locations={stockTableLocations}
               mode="by-location"
-              emptyMessage="No hay stock por área para mostrar con estos filtros."
+              emptyMessage="No hay stock por area para mostrar con estos filtros."
             />
           </div>
         </div>

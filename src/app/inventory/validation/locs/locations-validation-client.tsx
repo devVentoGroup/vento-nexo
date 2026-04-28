@@ -102,6 +102,7 @@ export function LocationsValidationClient({
           .from("inventory_locations")
           .select("id, code, description, site_id")
           .eq("site_id", employee?.site_id)
+          .eq("is_active", true)
           .order("code");
 
         if (error) throw error;

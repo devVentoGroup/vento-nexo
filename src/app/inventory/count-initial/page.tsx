@@ -149,6 +149,7 @@ export default async function InventoryCountInitialPage({
     .from("inventory_locations")
     .select("id,code,zone")
     .eq("site_id", siteId)
+    .eq("is_active", true)
     .order("zone", { ascending: true })
     .order("code", { ascending: true })
     .limit(300);

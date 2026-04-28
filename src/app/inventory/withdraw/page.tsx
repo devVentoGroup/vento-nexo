@@ -150,6 +150,7 @@ async function submitWithdraw(formData: FormData) {
     .from("inventory_locations")
     .select("id,code,site_id")
     .eq("id", locationId)
+    .eq("is_active", true)
     .single();
 
   if (!locRow || (locRow as { site_id?: string }).site_id !== siteId) {
@@ -289,6 +290,7 @@ export default async function WithdrawPage({
       .from("inventory_locations")
       .select("id,code,zone,description")
       .eq("site_id", siteId)
+      .eq("is_active", true)
       .order("code", { ascending: true })
       .limit(200);
 
@@ -312,6 +314,7 @@ export default async function WithdrawPage({
       .from("inventory_locations")
       .select("id,code,zone,description,site_id")
       .ilike("code", locCodeParam)
+      .eq("is_active", true)
       .limit(5);
     const found = (locByCode ?? []) as (LocRow & { site_id?: string })[];
     const match = found.find((l) => (l.code ?? "").toUpperCase() === locCodeParam);
@@ -322,6 +325,7 @@ export default async function WithdrawPage({
         .from("inventory_locations")
         .select("id,code,zone,description")
         .eq("site_id", siteId)
+        .eq("is_active", true)
         .order("code", { ascending: true })
         .limit(200);
       locations = (locData ?? []) as LocRow[];

@@ -103,6 +103,16 @@ async function createTransfer(formData: FormData) {
     redirect("/inventory/transfers?error=" + encodeURIComponent("Origen y destino deben ser distintos."));
   }
 
+  const { data: activeLocRows } = await supabase
+    .from("inventory_locations")
+    .select("id")
+    .eq("site_id", siteId)
+    .eq("is_active", true)
+    .in("id", [fromLocId, toLocId]);
+  if ((activeLocRows ?? []).length !== 2) {
+    redirect("/inventory/transfers?error=" + encodeURIComponent("Origen o destino ya no esta activo."));
+  }
+
   const productIds = formData.getAll("item_product_id").map((v) => String(v).trim());
   const quantities = formData.getAll("item_quantity").map((v) => String(v).trim());
   const inputUnits = formData
@@ -254,6 +264,7 @@ async function createTransfer(formData: FormData) {
   const { data: locRows } = await supabase
     .from("inventory_locations")
     .select("id,code")
+    .eq("is_active", true)
     .in("id", [fromLocId, toLocId]);
   type LocRow = { id: string; code?: string | null };
   const locMap = new Map(((locRows ?? []) as LocRow[]).map((l) => [l.id, l.code ?? l.id]));

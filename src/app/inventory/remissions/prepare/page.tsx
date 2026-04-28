@@ -154,6 +154,7 @@ export default async function RemissionsPreparePage() {
     .from("inventory_locations")
     .select("id,code")
     .eq("site_id", siteId)
+    .eq("is_active", true)
     .order("code", { ascending: true })
     .limit(500);
   const locRows = (locsData ?? []) as LocRow[];

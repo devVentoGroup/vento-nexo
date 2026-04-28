@@ -43,6 +43,7 @@ export async function loadOriginStockContext(params: {
         .from("inventory_locations")
         .select("id,code,zone,aisle,level,description")
         .eq("site_id", fromSiteId)
+        .eq("is_active", true)
         .order("code", { ascending: true })
         .limit(500)
     : { data: [] as LocRow[] };

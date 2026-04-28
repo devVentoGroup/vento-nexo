@@ -442,6 +442,7 @@ export default async function InventoryLocationsPage({
     let batchQuery = supabase
       .from("inventory_locations")
       .select("id,code,zone,aisle,level,description,site_id")
+      .eq("is_active", true)
       .order("code", { ascending: true })
       .limit(500);
 
@@ -481,6 +482,7 @@ export default async function InventoryLocationsPage({
   let locationsQuery = supabase
     .from("inventory_locations")
     .select("id,code,zone,aisle,level,site_id,description")
+    .eq("is_active", true)
     .order("code", { ascending: true })
     .limit(500);
 

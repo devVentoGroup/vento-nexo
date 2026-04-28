@@ -34,6 +34,7 @@ export async function GET(req: Request) {
     const { data, error } = await supabase
         .from("inventory_locations")
         .select("id, code, description, zone, site_id, created_at")
+        .eq("is_active", true)
         .order("created_at", { ascending: false })
         .limit(limit);
 

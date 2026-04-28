@@ -780,6 +780,7 @@ export default async function EntriesPage({
         .from("inventory_locations")
         .select("id,code,zone,description")
         .eq("site_id", siteId)
+        .eq("is_active", true)
         .order("code", { ascending: true })
         .limit(300)
     : { data: [] as LocRow[] };

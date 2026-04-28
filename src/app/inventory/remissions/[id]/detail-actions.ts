@@ -1087,6 +1087,7 @@ export async function chooseSourceLoc(formData: FormData) {
     .select("id")
     .eq("id", locationId)
     .eq("site_id", fromSiteId)
+    .eq("is_active", true)
     .single();
   if (!locRow) {
     redirect(
