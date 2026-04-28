@@ -81,7 +81,7 @@ function suggestLocationDescription(loc: Pick<LocationRow, "zone" | "aisle" | "l
   const parts = [zoneLabel];
   if (aisle) parts.push(aisle);
   if (level) parts.push(`nivel ${level}`);
-  const suggested = parts.join(" · ").trim();
+  const suggested = parts.join(" / ").trim();
 
   return suggested || String(loc.code ?? "").trim() || "Ubicacion";
 }
@@ -374,7 +374,7 @@ export default async function InventoryLocationsPage({
     const zone = String(formData.get("zone") ?? "").trim().toUpperCase();
     if (!code || !areaId || !zone) {
       redirect(
-        `/inventory/locations?error=${encodeURIComponent("Código y zona son obligatorios.")}`,
+        `/inventory/locations?error=${encodeURIComponent("Codigo y zona son obligatorios.")}`,
       );
     }
 
@@ -785,27 +785,27 @@ export default async function InventoryLocationsPage({
           </form>
         </details>
 
-        <div className="mt-4 overflow-x-auto">
-          <Table>
-            <thead>
+        <div className="mt-4 overflow-x-auto rounded-2xl border border-[var(--ui-border)] bg-white">
+          <Table className="min-w-[900px] table-auto [&_td]:px-4 [&_td]:py-4 [&_th]:px-4 [&_th]:py-3">
+            <thead className="bg-[var(--ui-bg-soft)]">
               <tr>
                 <TableHeaderCell>Nombre</TableHeaderCell>
                 <TableHeaderCell>Area madre</TableHeaderCell>
-                <TableHeaderCell>Código</TableHeaderCell>
+                <TableHeaderCell>Codigo</TableHeaderCell>
                 <TableHeaderCell>Zona</TableHeaderCell>
                 <TableHeaderCell>Pasillo</TableHeaderCell>
                 <TableHeaderCell>Nivel</TableHeaderCell>
-                {canEditLoc || canDeleteLoc ? <TableHeaderCell>Acciones</TableHeaderCell> : null}
+                {canEditLoc || canDeleteLoc ? <TableHeaderCell className="w-[170px]">Acciones</TableHeaderCell> : null}
               </tr>
             </thead>
-            <tbody>
+            <tbody className="divide-y divide-[var(--ui-border)]">
               {locationRows.map((loc) => (
-                <tr key={loc.id} className="ui-body">
+                <tr key={loc.id} className="ui-body transition hover:bg-[var(--ui-bg-soft)]/60">
                   <TableCell>
-                    <div className="space-y-1">
+                    <div className="min-w-0 space-y-1.5">
                       <Link
                         href={`/inventory/locations/${encodeURIComponent(loc.id)}`}
-                        className="font-semibold text-[var(--ui-brand-600)] hover:underline"
+                        className="block truncate text-base font-semibold text-[var(--ui-text)] hover:text-[var(--ui-brand-600)]"
                       >
                         {loc.description?.trim() || "Sin nombre"}
                       </Link>
@@ -817,49 +817,49 @@ export default async function InventoryLocationsPage({
                     </div>
                   </TableCell>
                   <TableCell>
-                    {loc.area_id ? areaLabelById.get(loc.area_id) ?? "Area" : "Sin area"}
+                    <span className="inline-flex rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1 text-xs font-semibold text-slate-700">
+                      {loc.area_id ? areaLabelById.get(loc.area_id) ?? "Area" : "Sin area"}
+                    </span>
                   </TableCell>
-                  <TableCell className="font-mono">
-                    {loc.code}
+                  <TableCell>
+                    <span className="inline-flex max-w-[170px] rounded-lg bg-slate-100 px-2.5 py-1 font-mono text-xs font-semibold text-slate-800">
+                      {loc.code}
+                    </span>
                   </TableCell>
-                  <TableCell className="font-mono">
-                    {loc.zone ?? "—"}
+                  <TableCell className="font-mono text-sm">
+                    {loc.zone ?? "-"}
                   </TableCell>
-                  <TableCell className="font-mono">
-                    {loc.aisle ?? "—"}
+                  <TableCell className="font-mono text-sm">
+                    {loc.aisle ?? "-"}
                   </TableCell>
-                  <TableCell className="font-mono">
-                    {loc.level ?? "—"}
+                  <TableCell className="font-mono text-sm">
+                    {loc.level ?? "-"}
                   </TableCell>
                   {canEditLoc || canDeleteLoc ? (
-                    <TableCell className="flex flex-wrap items-center gap-2">
-                      <Link
-                        href={`/inventory/locations/${encodeURIComponent(loc.id)}`}
-                        className="text-sm font-semibold text-[var(--ui-brand-600)] hover:underline"
-                      >
-                        Abrir
-                      </Link>
-                      {canEditLoc ? (
-                        <>
-                          <span className="text-[var(--ui-muted)]">/</span>
+                    <TableCell>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <Link
+                          href={`/inventory/locations/${encodeURIComponent(loc.id)}`}
+                          className="rounded-lg border border-cyan-200 bg-cyan-50 px-3 py-1.5 text-xs font-semibold text-cyan-800 transition hover:bg-cyan-100"
+                        >
+                          Abrir
+                        </Link>
+                        {canEditLoc ? (
                           <Link
                             href={`/inventory/locations?${baseQuery.toString() ? `${baseQuery.toString()}&` : ""}edit=${encodeURIComponent(loc.id)}`}
-                            className="text-sm font-semibold text-[var(--ui-brand-600)] hover:underline"
+                            className="rounded-lg border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50"
                           >
                             Editar
                           </Link>
-                        </>
-                      ) : null}
-                      {canDeleteLoc ? (
-                        <>
-                          {canEditLoc ? <span className="text-[var(--ui-muted)]">·</span> : null}
+                        ) : null}
+                        {canDeleteLoc ? (
                           <LocDeleteButton
                             locId={loc.id}
                             locCode={loc.code}
                             action={deleteLocAction}
                           />
-                        </>
-                      ) : null}
+                        ) : null}
+                      </div>
                     </TableCell>
                   ) : null}
                 </tr>
