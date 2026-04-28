@@ -326,6 +326,16 @@ export default async function LocationPositionsPage({
     .filter((row) => row.total !== 0);
 
   const locTitle = buildLocTitle(location);
+  const topLevelPositions = positions.filter((position) => !position.parent_position_id);
+  const childrenByParentId = new Map<string, PositionRow[]>();
+  for (const position of positions) {
+    if (!position.parent_position_id) continue;
+    const rows = childrenByParentId.get(position.parent_position_id) ?? [];
+    rows.push(position);
+    childrenByParentId.set(position.parent_position_id, rows);
+  }
+  const visibleTopLevelPositions = topLevelPositions.slice(0, 12);
+  const hiddenTopLevelCount = Math.max(0, topLevelPositions.length - visibleTopLevelPositions.length);
 
   return (
     <div className="ui-scene w-full space-y-6">
@@ -392,7 +402,7 @@ export default async function LocationPositionsPage({
           <span className="ui-chip">{positions.length} posiciones</span>
         </div>
 
-        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(320px,0.9fr)_minmax(420px,1.1fr)]">
+        <div className="mt-4 grid gap-4 xl:grid-cols-[minmax(320px,0.8fr)_minmax(520px,1.2fr)]">
           <form action={createPositionAction} className="ui-panel-soft space-y-3 p-4">
             <input type="hidden" name="location_id" value={id} />
             <div className="ui-h3 text-base">Nueva posicion</div>
@@ -436,36 +446,114 @@ export default async function LocationPositionsPage({
             </button>
           </form>
 
-          <div className="ui-panel-soft p-4">
-            <div className="ui-h3 text-base">Posiciones actuales</div>
-            <div className="mt-3 grid gap-2">
-              {positions.map((position) => (
-                <form
-                  key={position.id}
-                  action={updatePositionNameAction}
-                  className="grid gap-2 rounded-2xl border border-[var(--ui-border)] bg-white p-3 md:grid-cols-[minmax(180px,1fr)_minmax(220px,1.2fr)_auto]"
-                >
-                  <input type="hidden" name="location_id" value={id} />
-                  <input type="hidden" name="position_id" value={position.id} />
-                  <div className="min-w-0">
-                    <div className="truncate text-sm font-semibold text-[var(--ui-text)]">
-                      {positionLabels.get(position.id) ?? position.name}
+          <div className="rounded-3xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-4">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="ui-h3 text-base">Mapa interno</div>
+                <div className="mt-1 ui-caption">
+                  Estanterias como grupos. Niveles y zonas aparecen dentro de cada una.
+                </div>
+              </div>
+              <span className="ui-chip">{topLevelPositions.length} grupos</span>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              {visibleTopLevelPositions.map((position) => {
+                const children = childrenByParentId.get(position.id) ?? [];
+                const visibleChildren = children.slice(0, 8);
+                const hiddenChildren = Math.max(0, children.length - visibleChildren.length);
+                return (
+                  <article
+                    key={position.id}
+                    className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm"
+                  >
+                    <div className="border-b border-slate-100 bg-white px-4 py-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <div className="truncate text-sm font-semibold text-[var(--ui-text)]">{position.name}</div>
+                          <div className="mt-1 flex flex-wrap gap-1.5">
+                            <span className="rounded-full bg-slate-100 px-2 py-0.5 font-mono text-[11px] font-semibold text-slate-600">
+                              {position.code}
+                            </span>
+                            <span className="rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-semibold text-amber-800">
+                              {children.length} internos
+                            </span>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <div className="ui-caption">
-                      {position.kind} / {position.code}
+
+                    <div className="space-y-2 p-3">
+                      <form action={updatePositionNameAction} className="grid grid-cols-[1fr_auto] gap-2">
+                        <input type="hidden" name="location_id" value={id} />
+                        <input type="hidden" name="position_id" value={position.id} />
+                        <input
+                          name="name"
+                          className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm"
+                          defaultValue={position.name}
+                        />
+                        <button
+                          type="submit"
+                          className="rounded-xl border border-slate-200 bg-slate-50 px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-100"
+                        >
+                          Guardar
+                        </button>
+                      </form>
+
+                      {visibleChildren.length > 0 ? (
+                        <div className="grid gap-2">
+                          {visibleChildren.map((child) => (
+                            <form
+                              key={child.id}
+                              action={updatePositionNameAction}
+                              className="grid grid-cols-[minmax(92px,0.55fr)_minmax(130px,1fr)_auto] items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2"
+                            >
+                              <input type="hidden" name="location_id" value={id} />
+                              <input type="hidden" name="position_id" value={child.id} />
+                              <div className="min-w-0">
+                                <div className="truncate text-xs font-semibold text-slate-700">{child.name}</div>
+                                <div className="font-mono text-[11px] text-slate-500">{child.code}</div>
+                              </div>
+                              <input
+                                name="name"
+                                className="h-8 min-w-0 rounded-lg border border-slate-200 bg-white px-2 text-xs"
+                                defaultValue={child.name}
+                              />
+                              <button
+                                type="submit"
+                                className="rounded-lg border border-slate-200 bg-white px-2 py-1 text-[11px] font-semibold text-slate-700 transition hover:bg-slate-100"
+                              >
+                                OK
+                              </button>
+                            </form>
+                          ))}
+                        </div>
+                      ) : (
+                        <div className="rounded-xl border border-dashed border-slate-200 bg-slate-50 px-3 py-4 text-center text-xs text-[var(--ui-muted)]">
+                          Sin niveles internos todavia.
+                        </div>
+                      )}
+
+                      {hiddenChildren > 0 ? (
+                        <div className="rounded-xl bg-slate-100 px-3 py-2 text-xs font-semibold text-slate-600">
+                          +{hiddenChildren} posiciones mas en este grupo
+                        </div>
+                      ) : null}
                     </div>
-                  </div>
-                  <input name="name" className="ui-input" defaultValue={position.name} />
-                  <button type="submit" className="ui-btn ui-btn--ghost">
-                    Renombrar
-                  </button>
-                </form>
-              ))}
+                  </article>
+                );
+              })}
 
               {positions.length === 0 ? (
-                <div className="ui-empty">Todavia no hay posiciones internas en este LOC.</div>
+                <div className="ui-empty md:col-span-2">Todavia no hay posiciones internas en este LOC.</div>
               ) : null}
             </div>
+
+            {hiddenTopLevelCount > 0 ? (
+              <div className="mt-3 rounded-2xl border border-slate-200 bg-white px-4 py-3 text-sm font-semibold text-slate-600">
+                Hay {hiddenTopLevelCount} grupos mas. Usa el selector Depende de al crear nuevas posiciones o filtra desde el board.
+              </div>
+            ) : null}
           </div>
         </div>
       </section>
