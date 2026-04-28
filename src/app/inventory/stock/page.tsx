@@ -17,6 +17,10 @@ import {
   shouldShowCategoryDomain,
   type InventoryCategoryRow,
 } from "@/lib/inventory/categories";
+import {
+  selectProductUomProfileForContext,
+  type ProductUomProfile,
+} from "@/lib/inventory/uom";
 
 export const dynamic = "force-dynamic";
 
@@ -39,7 +43,7 @@ type SearchParams = {
   error?: string;
   count_initial?: string;
   adjust?: string;
-  /** 1.4 Vista Stock por LOC: tabla producto Ã— LOC */
+  /** 1.4 Vista Stock por LOC: tabla producto ? LOC */
   view?: string;
 };
 
@@ -377,6 +381,17 @@ export default async function InventoryStockPage({
 
   const { data: products, error: productError } = await productsQuery;
   let productRows = (products ?? []) as unknown as ProductRow[];
+  const productIdsForProfiles = productRows.map((product) => product.id);
+  const { data: uomProfilesData } = productIdsForProfiles.length
+    ? await supabase
+        .from("product_uom_profiles")
+        .select(
+          "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
+        )
+        .in("product_id", productIdsForProfiles)
+        .eq("is_active", true)
+    : { data: [] as ProductUomProfile[] };
+  const uomProfiles = (uomProfilesData ?? []) as ProductUomProfile[];
 
   const { data: stockData, error: stockError } = siteId
     ? await supabase
@@ -526,9 +541,9 @@ export default async function InventoryStockPage({
     : "Stock por sede";
   const heroSubtitle = isOperatorFocusMode
     ? isSatellite
-      ? "Consulta rÃ¡pido si tu sede tiene saldo, quÃ© Ã¡reas estÃ¡n activas y desde aquÃ­ vuelve a pedir o recibir."
-      : "Usa esta vista para confirmar saldo, ubicar producto por Ã¡rea y seguir con preparaciÃ³n o conteo."
-    : "Lee el inventario actual y entra a conteos, movimientos o vista por Ã¡rea sin cambiar de flujo.";
+      ? "Consulta rapido si tu sede tiene saldo, que areas estan activas y desde aqui vuelve a pedir o recibir."
+      : "Usa esta vista para confirmar saldo, ubicar producto por area y seguir con preparacion o conteo."
+    : "Lee el inventario actual y entra a conteos, movimientos o vista por area sin cambiar de flujo.";
   const heroModeLabel = isSatellite
     ? "Modo satelite"
     : isProductionCenter
@@ -552,13 +567,28 @@ export default async function InventoryStockPage({
       const stockRow = stockMap.get(product.id);
       const qtyValue = Number(stockRow?.current_qty ?? 0);
       const unit = product.stock_unit_code ?? product.unit ?? "-";
+      const purchaseProfile = selectProductUomProfileForContext({
+        profiles: uomProfiles,
+        productId: product.id,
+        context: "purchase",
+      });
+      const stockQtyPerPurchaseUnit =
+        purchaseProfile &&
+        Number(purchaseProfile.qty_in_input_unit) > 0 &&
+        Number(purchaseProfile.qty_in_stock_unit) > 0
+          ? Number(purchaseProfile.qty_in_stock_unit) / Number(purchaseProfile.qty_in_input_unit)
+          : null;
+      const purchaseUnitLabel =
+        purchaseProfile && stockQtyPerPurchaseUnit
+          ? String(purchaseProfile.label || purchaseProfile.input_unit_code || "").trim()
+          : null;
       const locSummary = locSummaryByProduct.get(product.id);
       const areaSummary =
         siteId && locList.length > 0
           ? locSummary?.lines?.length
-            ? locSummary.lines.join(" Â· ")
+            ? locSummary.lines.join(" / ")
             : qtyValue > 0
-              ? "Sin Ã¡rea"
+              ? "Sin area"
               : ""
           : "";
       const byLocation = Object.fromEntries(
@@ -569,6 +599,8 @@ export default async function InventoryStockPage({
         product: product.name,
         unit,
         totalQty: Number.isFinite(qtyValue) ? qtyValue : 0,
+        purchaseUnitLabel,
+        stockQtyPerPurchaseUnit,
         updatedAt: formatDate(stockRow?.updated_at),
         areaSummary,
         hasStockWithoutArea: Boolean(siteId && qtyValue > 0 && !locSummary?.hasAny),
@@ -577,6 +609,7 @@ export default async function InventoryStockPage({
           product.name,
           product.sku ?? "",
           unit,
+          purchaseUnitLabel ?? "",
           areaSummary,
           ...locList.map((loc) => `${loc.code ?? ""} ${loc.zone ?? ""} ${loc.description ?? ""}`),
         ].join(" "),
@@ -594,7 +627,7 @@ export default async function InventoryStockPage({
       <section className="ui-remission-hero ui-fade-up">
         <div className="ui-remission-hero-grid">
           <div>
-            <span className="ui-chip ui-chip--brand">{heroModeLabel} Â· {siteLabel}</span>
+            <span className="ui-chip ui-chip--brand">{heroModeLabel} / {siteLabel}</span>
             <h1 className="mt-4 text-3xl font-semibold tracking-[-0.03em] text-[var(--ui-text)]">
               {heroTitle}
             </h1>
@@ -615,9 +648,9 @@ export default async function InventoryStockPage({
               <div className="ui-remission-kpi-note">Suma de stock visible</div>
             </div>
             <div className="ui-remission-kpi" data-tone="success">
-              <div className="ui-remission-kpi-label">SeÃ±ales</div>
+              <div className="ui-remission-kpi-label">Alertas</div>
               <div className="ui-remission-kpi-value">{negativeCount + productIdsWithStockNoLoc.length}</div>
-              <div className="ui-remission-kpi-note">Negativos o sin Ã¡rea</div>
+              <div className="ui-remission-kpi-note">Negativos o sin area</div>
             </div>
           </div>
         </div>
@@ -627,7 +660,7 @@ export default async function InventoryStockPage({
         <div>
           <div className="ui-caption">
             {activeFilterCount > 0 ? `${activeFilterCount} filtro(s) activos` : "Sin filtros adicionales"}
-            {locCount > 0 ? ` Â· ${locCount} Ã¡reas visibles` : ""}
+            {locCount > 0 ? ` / ${locCount} areas visibles` : ""}
           </div>
         </div>
 
@@ -655,7 +688,7 @@ export default async function InventoryStockPage({
                 href={`/inventory/stock?site_id=${encodeURIComponent(siteId)}&view=by_loc${searchQuery ? `&q=${encodeURIComponent(searchQuery)}` : ""}${stockClass ? `&stock_class=${encodeURIComponent(stockClass)}` : ""}${productType ? `&product_type=${encodeURIComponent(productType)}` : ""}${inventoryKind ? `&inventory_kind=${encodeURIComponent(inventoryKind)}` : ""}`}
                 className="ui-btn ui-btn--brand"
               >
-                Stock por Ã¡rea (tabla)
+                Stock por area (tabla)
               </Link>
             )
           ) : null}
@@ -682,8 +715,8 @@ export default async function InventoryStockPage({
 
       {productIdsWithStockNoLoc.length > 0 ? (
         <div className="ui-alert ui-alert--warn ui-fade-up ui-delay-1">
-          <strong>Sin ubicaciÃ³n:</strong> {productIdsWithStockNoLoc.length} producto(s) tienen stock en esta sede pero
-          no tienen Ã¡rea asignada. Asigna ubicaciÃ³n en Entradas al recibir o en Traslados.
+          <strong>Sin ubicacion:</strong> {productIdsWithStockNoLoc.length} producto(s) tienen stock en esta sede pero
+          no tienen area asignada. Asigna ubicacion en Entradas al recibir o en Traslados.
         </div>
       ) : null}
 
@@ -704,7 +737,7 @@ export default async function InventoryStockPage({
           <div className="flex flex-wrap gap-2">
             <span className="ui-chip">{siteLabel}</span>
             <span className="ui-chip ui-chip--warn">{negativeCount} negativos</span>
-            <span className="ui-chip ui-chip--brand">{productIdsWithStockNoLoc.length} sin Ã¡rea</span>
+            <span className="ui-chip ui-chip--brand">{productIdsWithStockNoLoc.length} sin area</span>
           </div>
         </div>
         <form method="get" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -723,7 +756,7 @@ export default async function InventoryStockPage({
           {siteId && locList.length > 0 ? (
             <>
               <label className="flex flex-col gap-1">
-                <span className="ui-label">Ãrea</span>
+                <span className="ui-label">Area</span>
                 <select name="location_id" defaultValue={locationIdFilter} className="ui-input">
                   <option value="">Todas</option>
                   {locList.map((loc) => (
@@ -843,9 +876,9 @@ export default async function InventoryStockPage({
         <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <div className="ui-h3">Stock por Ã¡rea (producto Ã— ubicaciÃ³n)</div>
+              <div className="ui-h3">Stock por area</div>
               <div className="mt-1 ui-body-muted">
-                Cantidades por producto y por Ã¡rea. Sede: {siteNameMap.get(siteId) ?? siteId}.
+                Cantidades por producto y por area. Sede: {siteNameMap.get(siteId) ?? siteId}.
               </div>
             </div>
             {canExportByLoc ? (

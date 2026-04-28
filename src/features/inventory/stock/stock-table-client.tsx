@@ -14,6 +14,8 @@ export type StockTableRow = {
   product: string;
   unit: string;
   totalQty: number;
+  purchaseUnitLabel?: string | null;
+  stockQtyPerPurchaseUnit?: number | null;
   updatedAt?: string | null;
   searchText: string;
   areaSummary?: string;
@@ -33,8 +35,16 @@ function formatQty(value: number) {
   return value.toLocaleString("es-CO", { maximumFractionDigits: 3 });
 }
 
+function formatPurchaseQty(row: StockTableRow, value: number) {
+  const factor = Number(row.stockQtyPerPurchaseUnit ?? 0);
+  const label = String(row.purchaseUnitLabel ?? "").trim();
+  if (!label || !Number.isFinite(factor) || factor <= 0) return `${formatQty(value)} ${row.unit}`;
+  return `${formatQty(value / factor)} ${label}`;
+}
+
 export function StockTableClient({ rows, locations = [], mode, emptyMessage }: Props) {
   const [query, setQuery] = useState("");
+  const [displayMode, setDisplayMode] = useState<"base" | "purchase">("base");
   const normalizedQuery = query.trim().toLowerCase();
 
   const filteredRows = useMemo(() => {
@@ -43,6 +53,7 @@ export function StockTableClient({ rows, locations = [], mode, emptyMessage }: P
   }, [normalizedQuery, rows]);
 
   const isByLocation = mode === "by-location";
+  const hasPurchaseUnits = rows.some((row) => row.purchaseUnitLabel && row.stockQtyPerPurchaseUnit);
 
   return (
     <div className="space-y-3">
@@ -61,6 +72,29 @@ export function StockTableClient({ rows, locations = [], mode, emptyMessage }: P
           {filteredRows.length} de {rows.length} producto(s)
         </div>
       </div>
+
+      {hasPurchaseUnits ? (
+        <div className="inline-flex rounded-lg border border-[var(--ui-border)] bg-white p-1 text-sm">
+          <button
+            type="button"
+            onClick={() => setDisplayMode("base")}
+            className={`rounded-md px-3 py-1.5 font-semibold ${
+              displayMode === "base" ? "bg-[var(--ui-bg-soft)] text-[var(--ui-text)]" : "text-[var(--ui-muted)]"
+            }`}
+          >
+            Unidad base
+          </button>
+          <button
+            type="button"
+            onClick={() => setDisplayMode("purchase")}
+            className={`rounded-md px-3 py-1.5 font-semibold ${
+              displayMode === "purchase" ? "bg-[var(--ui-bg-soft)] text-[var(--ui-text)]" : "text-[var(--ui-muted)]"
+            }`}
+          >
+            Presentacion compra
+          </button>
+        </div>
+      ) : null}
 
       <div className="ui-scrollbar-subtle max-h-[70vh] overflow-x-auto overflow-y-auto">
         <Table
@@ -99,7 +133,7 @@ export function StockTableClient({ rows, locations = [], mode, emptyMessage }: P
                 <tr key={row.id} className="ui-body">
                   <TableCell className="align-top font-medium text-[var(--ui-text)]">{row.product}</TableCell>
                   <TableCell className={`font-mono text-right align-top whitespace-nowrap ${qtyClass}`}>
-                    {formatQty(row.totalQty)}
+                    {displayMode === "purchase" ? formatPurchaseQty(row, row.totalQty) : formatQty(row.totalQty)}
                   </TableCell>
                   <TableCell className="align-top whitespace-nowrap">{row.unit}</TableCell>
                   {isByLocation ? (
@@ -107,7 +141,7 @@ export function StockTableClient({ rows, locations = [], mode, emptyMessage }: P
                       const qty = row.byLocation?.[location.id] ?? 0;
                       return (
                         <TableCell key={location.id} className="font-mono text-right align-top whitespace-nowrap">
-                          {qty > 0 ? formatQty(qty) : "-"}
+                          {qty > 0 ? displayMode === "purchase" ? formatPurchaseQty(row, qty) : formatQty(qty) : "-"}
                         </TableCell>
                       );
                     })

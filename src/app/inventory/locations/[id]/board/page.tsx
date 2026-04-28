@@ -3,6 +3,10 @@ import { notFound } from "next/navigation";
 
 import { LocationBoardAutoRefresh } from "@/features/inventory/locations/location-board-auto-refresh";
 import { requireAppAccess } from "@/lib/auth/guard";
+import {
+  selectProductUomProfileForContext,
+  type ProductUomProfile,
+} from "@/lib/inventory/uom";
 
 export const dynamic = "force-dynamic";
 
@@ -13,6 +17,24 @@ function formatQty(value: number | null | undefined) {
   const n = Number(value ?? 0);
   if (!Number.isFinite(n)) return "-";
   return new Intl.NumberFormat("es-CO", { maximumFractionDigits: 3 }).format(n);
+}
+
+function formatPurchaseQty(params: {
+  qty: number;
+  profile: ProductUomProfile | null;
+  fallbackUnit: string;
+}) {
+  const factor =
+    params.profile &&
+    Number(params.profile.qty_in_input_unit) > 0 &&
+    Number(params.profile.qty_in_stock_unit) > 0
+      ? Number(params.profile.qty_in_stock_unit) / Number(params.profile.qty_in_input_unit)
+      : 0;
+  const label = String(params.profile?.label || params.profile?.input_unit_code || "").trim();
+  if (!label || !Number.isFinite(factor) || factor <= 0) {
+    return `${formatQty(params.qty)} ${params.fallbackUnit}`;
+  }
+  return `${formatQty(params.qty / factor)} ${label}`;
 }
 
 function buildLocTitle(loc: {
@@ -144,6 +166,17 @@ export default async function LocationBoardPage({
     ...row,
     products: normalizeProductRelation(row.products),
   }));
+  const productIds = stockRows.map((row) => row.product_id);
+  const { data: uomProfilesData } = productIds.length
+    ? await supabase
+        .from("product_uom_profiles")
+        .select(
+          "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
+        )
+        .in("product_id", productIds)
+        .eq("is_active", true)
+    : { data: [] as ProductUomProfile[] };
+  const uomProfiles = (uomProfilesData ?? []) as ProductUomProfile[];
 
   const title = buildLocTitle(location);
   const totalQty = stockRows.reduce((sum, row) => sum + Number(row.current_qty ?? 0), 0);
@@ -254,6 +287,17 @@ export default async function LocationBoardPage({
             const product = row.products;
             const imageUrl = product?.image_url || product?.catalog_image_url || "";
             const qty = Number(row.current_qty ?? 0);
+            const unit = product?.stock_unit_code ?? product?.unit ?? "un";
+            const purchaseProfile = selectProductUomProfileForContext({
+              profiles: uomProfiles,
+              productId: row.product_id,
+              context: "purchase",
+            });
+            const purchaseQtyLabel = formatPurchaseQty({
+              qty,
+              profile: purchaseProfile,
+              fallbackUnit: unit,
+            });
             return (
               <article
                 key={row.product_id}
@@ -279,15 +323,20 @@ export default async function LocationBoardPage({
                   </div>
                   <div className="flex items-center justify-between gap-3">
                     <div className="text-sm text-[var(--ui-muted)]">
-                      {product?.stock_unit_code ?? product?.unit ?? "un"}
+                      {unit}
                     </div>
                     <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${toneForQty(qty)}`}>
                       {qty <= 3 ? "Bajo" : "Disponible"}
                     </span>
                   </div>
                   <div className="text-3xl font-semibold tracking-[-0.03em] text-[var(--ui-text)]">
-                    {formatQty(qty)}
+                    {purchaseQtyLabel}
                   </div>
+                  {purchaseProfile ? (
+                    <div className="text-sm text-[var(--ui-muted)]">
+                      Base: {formatQty(qty)} {unit}
+                    </div>
+                  ) : null}
                 </div>
               </article>
             );
