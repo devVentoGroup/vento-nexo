@@ -803,7 +803,12 @@ export default async function InventoryLocationsPage({
                 <tr key={loc.id} className="ui-body">
                   <TableCell>
                     <div className="space-y-1">
-                      <div>{loc.description?.trim() || "Sin nombre"}</div>
+                      <Link
+                        href={`/inventory/locations/${encodeURIComponent(loc.id)}`}
+                        className="font-semibold text-[var(--ui-brand-600)] hover:underline"
+                      >
+                        {loc.description?.trim() || "Sin nombre"}
+                      </Link>
                       {!loc.description?.trim() ? (
                         <div className="ui-caption">
                           Sugerido: {suggestLocationDescription(loc)}
@@ -828,13 +833,22 @@ export default async function InventoryLocationsPage({
                   </TableCell>
                   {canEditLoc || canDeleteLoc ? (
                     <TableCell className="flex flex-wrap items-center gap-2">
+                      <Link
+                        href={`/inventory/locations/${encodeURIComponent(loc.id)}`}
+                        className="text-sm font-semibold text-[var(--ui-brand-600)] hover:underline"
+                      >
+                        Abrir
+                      </Link>
                       {canEditLoc ? (
-                        <Link
-                          href={`/inventory/locations?${baseQuery.toString() ? `${baseQuery.toString()}&` : ""}edit=${encodeURIComponent(loc.id)}`}
-                          className="text-sm font-semibold text-[var(--ui-brand-600)] hover:underline"
-                        >
-                          Editar
-                        </Link>
+                        <>
+                          <span className="text-[var(--ui-muted)]">Â·</span>
+                          <Link
+                            href={`/inventory/locations?${baseQuery.toString() ? `${baseQuery.toString()}&` : ""}edit=${encodeURIComponent(loc.id)}`}
+                            className="text-sm font-semibold text-[var(--ui-brand-600)] hover:underline"
+                          >
+                            Editar
+                          </Link>
+                        </>
                       ) : null}
                       {canDeleteLoc ? (
                         <>
