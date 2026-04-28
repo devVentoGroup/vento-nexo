@@ -841,7 +841,7 @@ export default async function InventoryLocationsPage({
                       </Link>
                       {canEditLoc ? (
                         <>
-                          <span className="text-[var(--ui-muted)]">Â·</span>
+                          <span className="text-[var(--ui-muted)]">/</span>
                           <Link
                             href={`/inventory/locations?${baseQuery.toString() ? `${baseQuery.toString()}&` : ""}edit=${encodeURIComponent(loc.id)}`}
                             className="text-sm font-semibold text-[var(--ui-brand-600)] hover:underline"
