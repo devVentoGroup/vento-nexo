@@ -50,6 +50,7 @@ type TransferRow = {
 
 type SearchParams = {
   error?: string;
+  error_product_id?: string;
   ok?: string;
 };
 
@@ -80,6 +81,13 @@ function normalizeProduct(value: StockProductRow["products"]): ProductRow | null
 function locLabel(loc: LocRow | null | undefined, fallback = "-") {
   if (!loc) return fallback;
   return String(loc.description ?? "").trim() || String(loc.code ?? "").trim() || loc.id;
+}
+
+function transferErrorUrl(message: string, productId?: string | null) {
+  const params = new URLSearchParams({ error: message });
+  const normalizedProductId = String(productId ?? "").trim();
+  if (normalizedProductId) params.set("error_product_id", normalizedProductId);
+  return `/inventory/transfers?${params.toString()}`;
 }
 
 async function createTransfer(formData: FormData) {
@@ -176,9 +184,11 @@ async function createTransfer(formData: FormData) {
     stock_unit_code: string;
     notes: string | null;
   }> = [];
+  let conversionErrorProductId = "";
   try {
     items = productIds
       .map((productId, idx) => {
+        conversionErrorProductId = productId;
         const product = productMap.get(productId);
         const stockUnitCode = normalizeUnitCode(product?.stock_unit_code || product?.unit || "un");
         const quantityInInput = roundQuantity(
@@ -207,10 +217,10 @@ async function createTransfer(formData: FormData) {
       .filter((item) => item.product_id && item.quantity > 0);
   } catch (error) {
     redirect(
-      "/inventory/transfers?error=" +
-        encodeURIComponent(
-          error instanceof Error ? error.message : "Error en conversion de unidades."
-        )
+      transferErrorUrl(
+        error instanceof Error ? error.message : "Error en conversion de unidades.",
+        conversionErrorProductId
+      )
     );
   }
 
@@ -240,10 +250,10 @@ async function createTransfer(formData: FormData) {
     if (availableAtOrigin < requestedQty) {
       const item = items.find((candidate) => candidate.product_id === productId);
       redirect(
-        "/inventory/transfers?error=" +
-          encodeURIComponent(
-            `No alcanza stock: solicitaste ${requestedQty} ${item?.stock_unit_code ?? "un"}, disponibles ${availableAtOrigin} ${item?.stock_unit_code ?? "un"}.`
-          )
+        transferErrorUrl(
+          `No alcanza stock: solicitaste ${requestedQty} ${item?.stock_unit_code ?? "un"}, disponibles ${availableAtOrigin} ${item?.stock_unit_code ?? "un"}.`,
+          productId
+        )
       );
     }
   }
@@ -322,7 +332,7 @@ async function createTransfer(formData: FormData) {
       p_note: `Traslado interno ${fromCode} -> ${toCode}: menor stock primero`,
     });
     if (positionErr) {
-      redirect("/inventory/transfers?error=" + encodeURIComponent(positionErr.message));
+      redirect(transferErrorUrl(positionErr.message, item.product_id));
     }
 
     const { error: fromErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
@@ -331,7 +341,7 @@ async function createTransfer(formData: FormData) {
       p_delta: -item.quantity,
     });
     if (fromErr) {
-      redirect("/inventory/transfers?error=" + encodeURIComponent(fromErr.message));
+      redirect(transferErrorUrl(fromErr.message, item.product_id));
     }
 
     const { error: toErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
@@ -340,7 +350,7 @@ async function createTransfer(formData: FormData) {
       p_delta: item.quantity,
     });
     if (toErr) {
-      redirect("/inventory/transfers?error=" + encodeURIComponent(toErr.message));
+      redirect(transferErrorUrl(toErr.message, item.product_id));
     }
   }
 
@@ -354,6 +364,7 @@ export default async function TransfersPage({
 }) {
   const sp = (await searchParams) ?? {};
   const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
+  const errorProductId = sp.error_product_id ? String(sp.error_product_id).trim() : "";
   const okMsg = sp.ok ? safeDecodeURIComponent(sp.ok) : "";
 
   const access = await requireAppAccess({
@@ -480,7 +491,7 @@ export default async function TransfersPage({
         </div>
       </section>
 
-      {errorMsg ? (
+      {errorMsg && !errorProductId ? (
         <div className="ui-alert ui-alert--error">Error: {errorMsg}</div>
       ) : null}
       {okMsg ? (
@@ -492,6 +503,9 @@ export default async function TransfersPage({
         products={productRows}
         stockByLocation={stockByLocation}
         defaultUomProfiles={defaultUomProfiles}
+        errorMessage={errorMsg}
+        errorProductId={errorProductId}
+        clearDraft={okMsg === "created"}
         action={createTransfer}
       />
 

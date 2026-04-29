@@ -1,6 +1,6 @@
-﻿"use client";
+"use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { SearchableSingleSelect } from "@/components/inventory/forms/SearchableSingleSelect";
 import {
@@ -20,9 +20,12 @@ type ProductOption = {
 type Props = {
   products: ProductOption[];
   defaultUomProfiles?: ProductUomProfile[];
+  initialRows?: TransferDraftRow[];
+  onRowsChange?: (rows: TransferDraftRow[]) => void;
+  itemErrorsByProductId?: Record<string, string>;
 };
 
-type Row = {
+export type TransferDraftRow = {
   id: number;
   productId: string;
   quantity: string;
@@ -43,8 +46,14 @@ function profileOptionLabel(profile: ProductUomProfile, stockUnitCode: string) {
   )} = ${formatQty(Number(profile.qty_in_stock_unit))} ${stockUnitCode || "un"})`;
 }
 
-export function TransfersItems({ products, defaultUomProfiles = [] }: Props) {
-  const [rows, setRows] = useState<Row[]>([
+export function TransfersItems({
+  products,
+  defaultUomProfiles = [],
+  initialRows,
+  onRowsChange,
+  itemErrorsByProductId = {},
+}: Props) {
+  const [rows, setRows] = useState<TransferDraftRow[]>(initialRows?.length ? initialRows : [
     {
       id: 0,
       productId: "",
@@ -54,6 +63,10 @@ export function TransfersItems({ products, defaultUomProfiles = [] }: Props) {
       notes: "",
     },
   ]);
+
+  useEffect(() => {
+    onRowsChange?.(rows);
+  }, [onRowsChange, rows]);
 
   const profilesByProduct = useMemo(() => {
     const profilesByProduct = new Map<string, ProductUomProfile[]>();
@@ -141,10 +154,17 @@ export function TransfersItems({ products, defaultUomProfiles = [] }: Props) {
           Number.isFinite(Number(row.quantity)) &&
           Number(row.quantity) > 0 &&
           Boolean(row.inputUnitCode);
+        const rowError = row.productId ? itemErrorsByProductId[row.productId] ?? "" : "";
 
         return (
           <div key={row.id} className="space-y-3">
             <div className="rounded-2xl border border-[var(--ui-border)] bg-[linear-gradient(180deg,rgba(255,255,255,0.96)_0%,rgba(247,250,252,0.96)_100%)] p-4 shadow-sm sm:p-5">
+              {rowError ? (
+                <div className="mb-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  {rowError}
+                </div>
+              ) : null}
+
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3">
                   <div className="text-sm font-semibold text-[var(--ui-text)]">Item {idx + 1}</div>

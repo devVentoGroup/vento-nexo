@@ -1,10 +1,12 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { type ProductUomProfile } from "@/lib/inventory/uom";
 
-import { TransfersItems } from "./transfers-items";
+import { TransfersItems, type TransferDraftRow } from "./transfers-items";
+
+const TRANSFER_DRAFT_STORAGE_KEY = "vento:nexo:inventory-transfer-draft";
 
 type ProductOption = {
   id: string;
@@ -31,6 +33,9 @@ type Props = {
   products: ProductOption[];
   stockByLocation: StockByLocation[];
   defaultUomProfiles?: ProductUomProfile[];
+  errorMessage?: string;
+  errorProductId?: string;
+  clearDraft?: boolean;
   action: (formData: FormData) => void | Promise<void>;
 };
 
@@ -39,10 +44,80 @@ function locLabel(loc: LocOption | null | undefined, fallback = "Sin area") {
   return String(loc.description ?? "").trim() || String(loc.code ?? "").trim() || loc.id;
 }
 
-export function TransfersForm({ locations, products, stockByLocation, defaultUomProfiles = [], action }: Props) {
+type TransferDraft = {
+  fromLocId: string;
+  toLocId: string;
+  notes: string;
+  rows: TransferDraftRow[];
+};
+
+const emptyRows: TransferDraftRow[] = [
+  {
+    id: 0,
+    productId: "",
+    quantity: "",
+    inputUnitCode: "",
+    inputUomProfileId: "",
+    notes: "",
+  },
+];
+
+export function TransfersForm({
+  locations,
+  products,
+  stockByLocation,
+  defaultUomProfiles = [],
+  errorMessage = "",
+  errorProductId = "",
+  clearDraft = false,
+  action,
+}: Props) {
   const [fromLocId, setFromLocId] = useState("");
   const [toLocId, setToLocId] = useState("");
   const [notes, setNotes] = useState("");
+  const [rows, setRows] = useState<TransferDraftRow[]>(emptyRows);
+  const [draftLoaded, setDraftLoaded] = useState(false);
+
+  useEffect(() => {
+    if (clearDraft) {
+      window.localStorage.removeItem(TRANSFER_DRAFT_STORAGE_KEY);
+      setDraftLoaded(true);
+      return;
+    }
+
+    const raw = window.localStorage.getItem(TRANSFER_DRAFT_STORAGE_KEY);
+    if (!raw) {
+      setDraftLoaded(true);
+      return;
+    }
+
+    try {
+      const draft = JSON.parse(raw) as Partial<TransferDraft>;
+      setFromLocId(String(draft.fromLocId ?? ""));
+      setToLocId(String(draft.toLocId ?? ""));
+      setNotes(String(draft.notes ?? ""));
+      setRows(Array.isArray(draft.rows) && draft.rows.length ? draft.rows : emptyRows);
+    } catch {
+      window.localStorage.removeItem(TRANSFER_DRAFT_STORAGE_KEY);
+    } finally {
+      setDraftLoaded(true);
+    }
+  }, [clearDraft]);
+
+  useEffect(() => {
+    if (!draftLoaded || clearDraft) return;
+    const hasContent =
+      Boolean(fromLocId || toLocId || notes) ||
+      rows.some((row) => Boolean(row.productId || row.quantity || row.inputUnitCode || row.notes));
+
+    if (!hasContent) {
+      window.localStorage.removeItem(TRANSFER_DRAFT_STORAGE_KEY);
+      return;
+    }
+
+    const draft: TransferDraft = { fromLocId, toLocId, notes, rows };
+    window.localStorage.setItem(TRANSFER_DRAFT_STORAGE_KEY, JSON.stringify(draft));
+  }, [clearDraft, draftLoaded, fromLocId, notes, rows, toLocId]);
 
   const selectedFrom = useMemo(
     () => locations.find((loc) => loc.id === fromLocId) ?? null,
@@ -188,6 +263,11 @@ export function TransfersForm({ locations, products, stockByLocation, defaultUom
               key={fromLocId}
               products={productsInOrigin}
               defaultUomProfiles={defaultUomProfiles}
+              initialRows={rows}
+              onRowsChange={setRows}
+              itemErrorsByProductId={
+                errorMessage && errorProductId ? { [errorProductId]: errorMessage } : {}
+              }
             />
           ) : (
             <div className="ui-alert ui-alert--neutral">
