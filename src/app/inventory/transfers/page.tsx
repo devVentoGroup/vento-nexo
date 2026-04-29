@@ -77,6 +77,11 @@ function normalizeProduct(value: StockProductRow["products"]): ProductRow | null
   return value ?? null;
 }
 
+function locLabel(loc: LocRow | null | undefined, fallback = "-") {
+  if (!loc) return fallback;
+  return String(loc.description ?? "").trim() || String(loc.code ?? "").trim() || loc.id;
+}
+
 async function createTransfer(formData: FormData) {
   "use server";
 
@@ -210,10 +215,10 @@ async function createTransfer(formData: FormData) {
   }
 
   if (items.length === 0) {
-    redirect("/inventory/transfers?error=" + encodeURIComponent("Agrega al menos un ítem con cantidad > 0."));
+    redirect("/inventory/transfers?error=" + encodeURIComponent("Agrega al menos un item con cantidad > 0."));
   }
 
-  // 5.1: validar que cantidad ≤ stock disponible en LOC origen
+  // 5.1: validar que la cantidad total pedida no supere el stock disponible en el LOC origen.
   const productIdsForStock = [...new Set(items.map((i) => i.product_id))];
   const { data: stockRows } = await supabase
     .from("inventory_stock_by_location")
@@ -276,7 +281,7 @@ async function createTransfer(formData: FormData) {
     .from("inventory_transfer_items")
     .insert(payload);
   if (itemsErr) {
-    redirect("/inventory/transfers?error=" + encodeURIComponent(itemsErr.message ?? "No se pudieron crear los ítems."));
+    redirect("/inventory/transfers?error=" + encodeURIComponent(itemsErr.message ?? "No se pudieron crear los items."));
   }
 
   const { data: locRows } = await supabase
@@ -428,7 +433,7 @@ export default async function TransfersPage({
 
   const transferRows = (transfers ?? []) as TransferRow[];
   const locMap = new Map(
-    ((locations ?? []) as LocRow[]).map((loc) => [loc.id, loc.code ?? loc.description ?? loc.id])
+    ((locations ?? []) as LocRow[]).map((loc) => [loc.id, locLabel(loc)])
   );
   const completedTransfers = transferRows.filter((row) => row.status === "completed").length;
 
@@ -441,7 +446,7 @@ export default async function TransfersPage({
               <a href="/inventory/stock" className="ui-caption underline">Volver a stock</a>
               <h1 className="ui-h1">Traslados internos</h1>
               <p className="ui-body-muted">
-                Mueve inventario entre áreas dentro de la misma sede con un flujo corto y directo.
+                Mueve inventario entre areas dentro de la misma sede con un flujo corto y directo.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -449,7 +454,7 @@ export default async function TransfersPage({
                 Misma sede
               </span>
               <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
-                {(locations ?? []).length} áreas
+                {(locations ?? []).length} areas
               </span>
               <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
                 {productRows.length} productos
@@ -458,7 +463,7 @@ export default async function TransfersPage({
           </div>
           <div className="ui-remission-kpis sm:grid-cols-3 lg:grid-cols-1">
             <article className="ui-remission-kpi" data-tone="warm">
-              <div className="ui-remission-kpi-label">Áreas activas</div>
+              <div className="ui-remission-kpi-label">Areas activas</div>
               <div className="ui-remission-kpi-value">{(locations ?? []).length}</div>
               <div className="ui-remission-kpi-note">Origen y destino disponibles para mover inventario</div>
             </article>

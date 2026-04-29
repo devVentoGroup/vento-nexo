@@ -20,7 +20,8 @@ type KioskTarget =
 const KIOSK_TARGETS: Record<string, KioskTarget> = {
   bodega: { kind: "location", code: "LOC-CP-BOD-MAIN" },
   "bodega-principal": { kind: "location", code: "LOC-CP-BOD-MAIN" },
-  "nevera-produccion": { kind: "location", code: "LOC-CP-N2P-MAIN" },
+  "nevera-produccion": { kind: "location", code: "LOC-CP-N3P-MAIN" },
+  "nevera-preparaciones": { kind: "location", code: "LOC-CP-N3P-MAIN" },
   "nevera-despacho": { kind: "location", code: "LOC-CP-N3P-MAIN" },
   empaques: { kind: "zone", zone: "EMP" },
   "zona-empaques": { kind: "zone", zone: "EMP" },

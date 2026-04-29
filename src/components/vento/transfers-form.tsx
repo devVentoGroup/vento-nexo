@@ -34,6 +34,11 @@ type Props = {
   action: (formData: FormData) => void | Promise<void>;
 };
 
+function locLabel(loc: LocOption | null | undefined, fallback = "Sin area") {
+  if (!loc) return fallback;
+  return String(loc.description ?? "").trim() || String(loc.code ?? "").trim() || loc.id;
+}
+
 export function TransfersForm({ locations, products, stockByLocation, defaultUomProfiles = [], action }: Props) {
   const [fromLocId, setFromLocId] = useState("");
   const [toLocId, setToLocId] = useState("");
@@ -82,12 +87,12 @@ export function TransfersForm({ locations, products, stockByLocation, defaultUom
           <div className="flex flex-wrap gap-2 text-xs font-semibold">
             {selectedFrom ? (
               <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-amber-900">
-                Origen {selectedFrom.code ?? selectedFrom.description}
+                Origen {locLabel(selectedFrom)}
               </span>
             ) : null}
             {selectedTo ? (
               <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-cyan-900">
-                Destino {selectedTo.code ?? selectedTo.description}
+                Destino {locLabel(selectedTo)}
               </span>
             ) : null}
           </div>
@@ -106,7 +111,7 @@ export function TransfersForm({ locations, products, stockByLocation, defaultUom
               <option value="">Selecciona area origen</option>
               {locations.map((loc) => (
                 <option key={loc.id} value={loc.id}>
-                  {loc.code ?? loc.description ?? loc.id}
+                  {locLabel(loc)}
                 </option>
               ))}
             </select>
@@ -125,7 +130,7 @@ export function TransfersForm({ locations, products, stockByLocation, defaultUom
                 <option value="">Selecciona area destino</option>
                 {destinationOptions.map((loc) => (
                   <option key={loc.id} value={loc.id}>
-                    {loc.code ?? loc.description ?? loc.id}
+                    {locLabel(loc)}
                   </option>
                 ))}
               </select>
@@ -200,8 +205,7 @@ export function TransfersForm({ locations, products, stockByLocation, defaultUom
 
       <div className="ui-mobile-sticky-footer ui-fade-up ui-delay-3 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ui-border)] bg-white/92 px-4 py-3 backdrop-blur">
         <div className="text-sm text-[var(--ui-muted)]">
-          {(selectedFrom?.code ?? selectedFrom?.description ?? "Sin origen")} -&gt;{" "}
-          {selectedTo?.code ?? selectedTo?.description ?? "Sin destino"}
+          {locLabel(selectedFrom, "Sin origen")} -&gt; {locLabel(selectedTo, "Sin destino")}
         </div>
         <button type="submit" className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold" disabled={!canRegister}>
           Registrar traslado
