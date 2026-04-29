@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 import { requireAppAccess } from "@/lib/auth/guard";
+import { formatHistoryDateParts } from "@/lib/formatters";
 import { safeDecodeURIComponent } from "@/lib/url";
 
 export const dynamic = "force-dynamic";
@@ -112,16 +113,14 @@ function formatMovementType(value: string) {
   return MOVEMENT_TYPE_LABELS[value] ?? value.replaceAll("_", " ");
 }
 
-function formatMovementDate(value: string) {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) return value;
-  return parsed.toLocaleString("es-CO", {
-    year: "numeric",
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
+function HistoryDate({ value }: { value: string | null | undefined }) {
+  const parts = formatHistoryDateParts(value);
+  return (
+    <div className="min-w-[130px]">
+      <div className="font-semibold text-[var(--ui-text)]">{parts.date}</div>
+      {parts.time ? <div className="mt-0.5 text-xs text-[var(--ui-muted)]">{parts.time}</div> : null}
+    </div>
+  );
 }
 
 function movementTone(value: string) {
@@ -526,7 +525,9 @@ export default async function InventoryMovementsPage({
                 <div className="mt-4 grid grid-cols-2 gap-3">
                   <div className="rounded-xl bg-[var(--ui-bg-soft)] p-3">
                     <div className="text-xs text-[var(--ui-muted)]">Fecha</div>
-                    <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">{formatMovementDate(createdAt)}</div>
+                    <div className="mt-1 text-sm font-medium text-[var(--ui-text)]">
+                      <HistoryDate value={createdAt} />
+                    </div>
                   </div>
                   <div className="rounded-xl bg-[var(--ui-bg-soft)] p-3">
                     <div className="text-xs text-[var(--ui-muted)]">Cantidad</div>
@@ -608,7 +609,7 @@ export default async function InventoryMovementsPage({
 
                 return (
                   <tr key={String(row.id ?? `${createdAt}-${productLabel}-${balances.movement}`)} className="ui-body">
-                    <TableCell>{formatMovementDate(createdAt)}</TableCell>
+                    <TableCell><HistoryDate value={createdAt} /></TableCell>
                     <TableCell>
                       <span
                         className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${

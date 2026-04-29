@@ -5,6 +5,7 @@ import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { EntriesForm } from "@/components/vento/entries-form";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
+import { formatHistoryDateParts } from "@/lib/formatters";
 import { safeDecodeURIComponent } from "@/lib/url";
 import {
   convertQuantity,
@@ -22,6 +23,16 @@ import {
 } from "@/lib/inventory/costing";
 
 export const dynamic = "force-dynamic";
+
+function HistoryDate({ value }: { value: string | null | undefined }) {
+  const parts = formatHistoryDateParts(value);
+  return (
+    <div className="min-w-[130px]">
+      <div className="font-semibold text-[var(--ui-text)]">{parts.date}</div>
+      {parts.time ? <div className="mt-0.5 text-xs text-[var(--ui-muted)]">{parts.time}</div> : null}
+    </div>
+  );
+}
 
 type ProductRow = {
   id: string;
@@ -975,23 +986,23 @@ export default async function EntriesPage({
           </div>
         </div>
 
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-4 overflow-hidden rounded-2xl border border-[var(--ui-border)] bg-white">
           <table className="ui-table min-w-full text-sm">
-            <thead className="text-left text-[var(--ui-muted)]">
+            <thead className="bg-[var(--ui-bg-soft)] text-left text-xs uppercase tracking-[0.08em] text-[var(--ui-muted)]">
               <tr>
-                <th className="py-2 pr-4">Fecha</th>
-                <th className="py-2 pr-4">Proveedor</th>
-                <th className="py-2 pr-4">Factura</th>
-                <th className="py-2 pr-4">Estado</th>
+                <th className="px-4 py-3">Fecha</th>
+                <th className="px-4 py-3">Proveedor</th>
+                <th className="px-4 py-3">Factura</th>
+                <th className="px-4 py-3">Estado</th>
               </tr>
             </thead>
             <tbody>
               {entryRows.map((row) => (
-                <tr key={row.id} className="border-t border-zinc-200/60">
-                  <td className="py-3 pr-4 font-mono">{row.received_at ?? row.created_at ?? ""}</td>
-                  <td className="py-3 pr-4">{row.supplier_name ?? "-"}</td>
-                  <td className="py-3 pr-4">{row.invoice_number ?? "-"}</td>
-                  <td className="py-3 pr-4">
+                <tr key={row.id} className="border-t border-zinc-200/70 transition hover:bg-[var(--ui-bg-soft)]">
+                  <td className="px-4 py-3"><HistoryDate value={row.received_at ?? row.created_at} /></td>
+                  <td className="px-4 py-3 font-medium text-[var(--ui-text)]">{row.supplier_name ?? "-"}</td>
+                  <td className="px-4 py-3">{row.invoice_number ?? "-"}</td>
+                  <td className="px-4 py-3">
                     <span className={formatStatus(row.status).className}>
                       {formatStatus(row.status).label}
                     </span>
@@ -1000,7 +1011,7 @@ export default async function EntriesPage({
               ))}
               {!entryRows.length ? (
                 <tr>
-                  <td className="py-4 text-[var(--ui-muted)]" colSpan={4}>
+                  <td className="px-4 py-5 text-[var(--ui-muted)]" colSpan={4}>
                     No hay entradas registradas.
                   </td>
                 </tr>

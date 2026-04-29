@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { requireAppAccess } from "@/lib/auth/guard";
+import { formatHistoryDateTime } from "@/lib/formatters";
 import { CatalogOptionalDetails } from "@/features/inventory/catalog/catalog-ui";
 
 import { CountInitialForm } from "@/features/inventory/count-initial/count-initial-form";
@@ -75,7 +76,7 @@ export default async function InventoryCountInitialPage({
                 <Link href="/inventory/stock" className="ui-caption underline">Volver a stock</Link>
                 <h1 className="ui-h1">Conteos</h1>
                 <p className="ui-body-muted">
-                  Registra cantidades contadas por sede, zona o área y confirma el ajuste del stock inicial.
+                  Registra cantidades contadas por sede, zona o area y confirma el ajuste del stock inicial.
                 </p>
               </div>
               <div className="flex flex-wrap gap-2">
@@ -181,7 +182,7 @@ export default async function InventoryCountInitialPage({
   const { data: products, error: productError } = await productsQuery;
   let productRows = (products ?? []) as unknown as ProductRow[];
 
-  // Si se eligió zona o LOC: filtrar productos a los que tienen stock en esa zona/LOC (conteo por zona/LOC)
+  // Si se eligio zona o LOC: filtrar productos a los que tienen stock en esa zona/LOC (conteo por zona/LOC)
   let productIdsInLoc: Set<string> | null = null;
   if (locationIdParam && locRows.some((l) => l.id === locationIdParam)) {
     const { data: stockByLoc } = await supabase
@@ -208,7 +209,7 @@ export default async function InventoryCountInitialPage({
   const siteName = siteNameMap.get(siteId) ?? siteId;
   const selectedLoc = locationIdParam ? locRows.find((l) => l.id === locationIdParam) : null;
   const countScopeLabel = selectedLoc
-    ? `Área: ${selectedLoc.code ?? selectedLoc.zone ?? selectedLoc.id}`
+    ? `Area: ${selectedLoc.code ?? selectedLoc.zone ?? selectedLoc.id}`
     : zoneParam
       ? `Zona: ${zoneParam}`
       : "Toda la sede";
@@ -264,12 +265,12 @@ export default async function InventoryCountInitialPage({
             <article className="ui-remission-kpi" data-tone="cool">
               <div className="ui-remission-kpi-label">Productos</div>
               <div className="ui-remission-kpi-value">{productRows.length}</div>
-              <div className="ui-remission-kpi-note">Filtrados según sede, zona o área</div>
+              <div className="ui-remission-kpi-note">Filtrados segun sede, zona o area</div>
             </article>
             <article className="ui-remission-kpi" data-tone="success">
               <div className="ui-remission-kpi-label">Sesiones abiertas</div>
               <div className="ui-remission-kpi-value">{openSessions.length}</div>
-              <div className="ui-remission-kpi-note">Conteos por zona o área pendientes de cierre</div>
+              <div className="ui-remission-kpi-note">Conteos por zona o area pendientes de cierre</div>
             </article>
           </div>
         </div>
@@ -277,15 +278,15 @@ export default async function InventoryCountInitialPage({
 
       {openSessions.length > 0 ? (
         <div className="ui-panel ui-remission-section ui-fade-up ui-delay-1">
-          <div className="ui-h3">Sesiones abiertas (por zona/área)</div>
+          <div className="ui-h3">Sesiones abiertas (por zona/area)</div>
           <p className="mt-1 ui-body-muted">
-            Conteos por zona/área pendientes de cerrar. Cierra el conteo para calcular diferencias y aprobar ajustes.
+            Conteos por zona/area pendientes de cerrar. Cierra el conteo para calcular diferencias y aprobar ajustes.
           </p>
           <ul className="mt-4 space-y-2">
             {openSessions.map((s) => (
               <li key={s.id} className="flex items-center justify-between gap-3 ui-panel-soft px-4 py-3">
                 <span className="ui-body">
-                  {s.name ?? s.id.slice(0, 8)} · {s.scope_zone ? `Zona ${s.scope_zone}` : "Área"} · {s.created_at ? new Date(s.created_at).toLocaleString() : ""}
+                  {s.name ?? s.id.slice(0, 8)} - {s.scope_zone ? `Zona ${s.scope_zone}` : "Area"} - {formatHistoryDateTime(s.created_at)}
                 </span>
                 <Link
                   href={`/inventory/count-initial/session/${s.id}`}
@@ -305,7 +306,7 @@ export default async function InventoryCountInitialPage({
         </div>
       ) : productRows.length === 0 ? (
         <div className="ui-alert ui-alert--warn">
-          No hay productos con inventario trackeado para esta sede. Revisa el catálogo y
+          No hay productos con inventario trackeado para esta sede. Revisa el catalogo y
           product_site_settings, o &quot;Inventario &gt; Stock&quot; para ver el filtro por sede.
         </div>
       ) : (
@@ -313,7 +314,7 @@ export default async function InventoryCountInitialPage({
           {locRows.length > 0 ? (
             <CatalogOptionalDetails
               title="Filtros avanzados"
-              summary="Ajusta por zona o área solo cuando no vayas a contar toda la sede."
+              summary="Ajusta por zona o area solo cuando no vayas a contar toda la sede."
               badge={zoneParam || locationIdParam ? "Activos" : "Opcional"}
               defaultOpen={Boolean(zoneParam || locationIdParam)}
             >
@@ -335,13 +336,13 @@ export default async function InventoryCountInitialPage({
                   </select>
                 </label>
                 <label className="flex flex-col gap-1">
-                  <span className="ui-caption">Área (opcional)</span>
+                  <span className="ui-caption">Area (opcional)</span>
                   <select
                     name="location_id"
                     className="ui-input min-w-[200px] font-mono"
                     defaultValue={locationIdParam}
                   >
-                    <option value="">—</option>
+                    <option value="">-</option>
                     {locRows.map((l) => (
                       <option key={l.id} value={l.id}>
                         {l.code ?? l.zone ?? l.id}

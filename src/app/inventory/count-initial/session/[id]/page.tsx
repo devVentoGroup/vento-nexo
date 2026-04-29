@@ -5,6 +5,7 @@ import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/t
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { CloseCountForm } from "@/features/inventory/count-initial/close-count-form";
+import { formatHistoryDateTime } from "@/lib/formatters";
 import { safeDecodeURIComponent } from "@/lib/url";
 
 export const dynamic = "force-dynamic";
@@ -28,7 +29,7 @@ async function closeCountAction(formData: FormData) {
     .eq("id", sessionId)
     .single();
   if (!session || (session as { status?: string }).status !== "open") {
-    redirect(`/inventory/count-initial/session/${sessionId}?error=` + encodeURIComponent("Sesión no encontrada o ya cerrada"));
+    redirect(`/inventory/count-initial/session/${sessionId}?error=` + encodeURIComponent("Sesion no encontrada o ya cerrada"));
   }
 
   const { error: closeErr } = await supabase.rpc("close_inventory_count_session", {
@@ -57,7 +58,7 @@ async function approveAdjustmentsAction(formData: FormData) {
     .eq("id", sessionId)
     .single();
   if (!session || (session as { status?: string }).status !== "closed") {
-    redirect(`/inventory/count-initial/session/${sessionId}?error=` + encodeURIComponent("Sesión debe estar cerrada"));
+    redirect(`/inventory/count-initial/session/${sessionId}?error=` + encodeURIComponent("Sesion debe estar cerrada"));
   }
 
   const { error: applyErr } = await supabase.rpc("apply_inventory_count_adjustments", {
@@ -123,7 +124,7 @@ export default async function CountSessionPage({
           Volver a conteos
         </Link>
         <div className="mt-4 ui-alert ui-alert--error">
-          Sesión no encontrada o sin acceso.
+          Sesion no encontrada o sin acceso.
         </div>
       </div>
     );
@@ -171,16 +172,16 @@ export default async function CountSessionPage({
           Volver a conteos
         </Link>
         <h1 className="mt-2 ui-h1">
-          Sesión de conteo — {sess.name ?? sess.id.slice(0, 8)}
+          Sesion de conteo - {sess.name ?? sess.id.slice(0, 8)}
         </h1>
         <p className="mt-2 ui-body-muted">
-          Sede: {siteName} · Ámbito: {scopeLabel}
-          {locCode ? ` (${locCode})` : ""} · Estado:{" "}
+          Sede: {siteName} - Ambito: {scopeLabel}
+          {locCode ? ` (${locCode})` : ""} - Estado:{" "}
           <strong>{isOpen ? "Abierta" : "Cerrada"}</strong>
         </p>
         <p className="mt-1 ui-caption">
-          Creada: {sess.created_at ? new Date(sess.created_at).toLocaleString() : "—"}
-          {sess.closed_at ? ` · Cerrada: ${new Date(sess.closed_at).toLocaleString()}` : ""}
+          Creada: {formatHistoryDateTime(sess.created_at)}
+          {sess.closed_at ? ` - Cerrada: ${formatHistoryDateTime(sess.closed_at)}` : ""}
         </p>
       </div>
 
@@ -197,7 +198,7 @@ export default async function CountSessionPage({
       ) : null}
 
       <div className="ui-panel">
-        <div className="ui-h3">Líneas del conteo</div>
+        <div className="ui-h3">Lineas del conteo</div>
         <div className="mt-4 overflow-x-auto">
           <Table>
             <thead>
@@ -221,13 +222,13 @@ export default async function CountSessionPage({
                 return (
                   <tr key={line.id} className="ui-body">
                     <TableCell>{line.product?.name ?? line.product_id}</TableCell>
-                    <TableCell>{line.product?.unit ?? "—"}</TableCell>
+                    <TableCell>{line.product?.unit ?? "-"}</TableCell>
                     <TableCell className="font-mono">{counted}</TableCell>
                     <TableCell className="font-mono">{current}</TableCell>
                     <TableCell className="font-mono">
                       {delta !== 0 ? (delta > 0 ? `+${delta}` : delta) : "0"}
                     </TableCell>
-                    <TableCell>{applied ? "Aplicado" : delta !== 0 ? "Pendiente" : "—"}</TableCell>
+                    <TableCell>{applied ? "Aplicado" : delta !== 0 ? "Pendiente" : "-"}</TableCell>
                   </tr>
                 );
               })}
@@ -267,7 +268,7 @@ async function ApproveAdjustmentsForm({
     <form action={approveAction} className="ui-panel">
       <div className="ui-h3">Aprobar ajustes (Fase 3.4)</div>
       <p className="mt-1 ui-body-muted">
-        {lines.length} línea(s) con diferencia. Al aprobar se generan movimientos de ajuste y se actualiza el stock.
+        {lines.length} linea(s) con diferencia. Al aprobar se generan movimientos de ajuste y se actualiza el stock.
       </p>
       <div className="mt-4">
         <input type="hidden" name="session_id" value={sessionId} />

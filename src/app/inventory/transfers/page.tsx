@@ -4,6 +4,7 @@ import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { TransfersForm } from "@/components/vento/transfers-form";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
+import { formatHistoryDateParts } from "@/lib/formatters";
 import { safeDecodeURIComponent } from "@/lib/url";
 import {
   convertByProductProfile,
@@ -88,6 +89,16 @@ function transferErrorUrl(message: string, productId?: string | null) {
   const normalizedProductId = String(productId ?? "").trim();
   if (normalizedProductId) params.set("error_product_id", normalizedProductId);
   return `/inventory/transfers?${params.toString()}`;
+}
+
+function HistoryDate({ value }: { value: string | null | undefined }) {
+  const parts = formatHistoryDateParts(value);
+  return (
+    <div className="min-w-[130px]">
+      <div className="font-semibold text-[var(--ui-text)]">{parts.date}</div>
+      {parts.time ? <div className="mt-0.5 text-xs text-[var(--ui-muted)]">{parts.time}</div> : null}
+    </div>
+  );
 }
 
 async function createTransfer(formData: FormData) {
@@ -520,23 +531,27 @@ export default async function TransfersPage({
           </div>
         </div>
 
-        <div className="mt-4 overflow-x-auto">
+        <div className="mt-4 overflow-hidden rounded-2xl border border-[var(--ui-border)] bg-white">
           <table className="ui-table min-w-full text-sm">
-            <thead className="text-left text-[var(--ui-muted)]">
+            <thead className="bg-[var(--ui-bg-soft)] text-left text-xs uppercase tracking-[0.08em] text-[var(--ui-muted)]">
               <tr>
-                <th className="py-2 pr-4">Fecha</th>
-                <th className="py-2 pr-4">Origen</th>
-                <th className="py-2 pr-4">Destino</th>
-                <th className="py-2 pr-4">Estado</th>
+                <th className="px-4 py-3">Fecha</th>
+                <th className="px-4 py-3">Origen</th>
+                <th className="px-4 py-3">Destino</th>
+                <th className="px-4 py-3">Estado</th>
               </tr>
             </thead>
             <tbody>
               {transferRows.map((row) => (
-                <tr key={row.id} className="border-t border-zinc-200/60">
-                  <td className="py-3 pr-4 font-mono">{row.created_at ?? "-"}</td>
-                  <td className="py-3 pr-4">{locMap.get(row.from_loc_id ?? "") ?? row.from_loc_id ?? "-"}</td>
-                  <td className="py-3 pr-4">{locMap.get(row.to_loc_id ?? "") ?? row.to_loc_id ?? "-"}</td>
-                  <td className="py-3 pr-4">
+                <tr key={row.id} className="border-t border-zinc-200/70 transition hover:bg-[var(--ui-bg-soft)]">
+                  <td className="px-4 py-3"><HistoryDate value={row.created_at} /></td>
+                  <td className="px-4 py-3 font-medium text-[var(--ui-text)]">
+                    {locMap.get(row.from_loc_id ?? "") ?? row.from_loc_id ?? "-"}
+                  </td>
+                  <td className="px-4 py-3 font-medium text-[var(--ui-text)]">
+                    {locMap.get(row.to_loc_id ?? "") ?? row.to_loc_id ?? "-"}
+                  </td>
+                  <td className="px-4 py-3">
                     <span className={formatStatus(row.status).className}>
                       {formatStatus(row.status).label}
                     </span>
@@ -545,7 +560,7 @@ export default async function TransfersPage({
               ))}
               {!transferRows.length ? (
                 <tr>
-                  <td className="py-4 text-[var(--ui-muted)]" colSpan={4}>
+                  <td className="px-4 py-5 text-[var(--ui-muted)]" colSpan={4}>
                     No hay traslados registrados.
                   </td>
                 </tr>
