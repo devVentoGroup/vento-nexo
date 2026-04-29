@@ -36,6 +36,13 @@ function formatQty(value: number) {
   return new Intl.NumberFormat("es-CO", { maximumFractionDigits: 3 }).format(value);
 }
 
+function profileOptionLabel(profile: ProductUomProfile, stockUnitCode: string) {
+  const label = String(profile.label ?? "").trim() || normalizeUnitCode(profile.input_unit_code);
+  return `${label} (${formatQty(Number(profile.qty_in_input_unit))} ${normalizeUnitCode(
+    profile.input_unit_code
+  )} = ${formatQty(Number(profile.qty_in_stock_unit))} ${stockUnitCode || "un"})`;
+}
+
 export function TransfersItems({ products, defaultUomProfiles = [] }: Props) {
   const [rows, setRows] = useState<Row[]>([
     {
@@ -48,15 +55,19 @@ export function TransfersItems({ products, defaultUomProfiles = [] }: Props) {
     },
   ]);
 
-  const defaultProfileByProduct = useMemo(() => {
+  const profilesByProduct = useMemo(() => {
     const profilesByProduct = new Map<string, ProductUomProfile[]>();
     for (const profile of defaultUomProfiles) {
-      if (!profile.is_active || !profile.is_default) continue;
+      if (!profile.is_active) continue;
       const productId = String(profile.product_id).trim();
       const current = profilesByProduct.get(productId) ?? [];
       current.push(profile);
       profilesByProduct.set(productId, current);
     }
+    return profilesByProduct;
+  }, [defaultUomProfiles]);
+
+  const defaultProfileByProduct = useMemo(() => {
     const selected = new Map<string, ProductUomProfile>();
     for (const [productId, profiles] of profilesByProduct.entries()) {
       const preferred = selectProductUomProfileForContext({
@@ -67,7 +78,7 @@ export function TransfersItems({ products, defaultUomProfiles = [] }: Props) {
       if (preferred) selected.set(productId, preferred);
     }
     return selected;
-  }, [defaultUomProfiles]);
+  }, [profilesByProduct]);
 
   const addRow = () => {
     setRows((prev) => [
@@ -102,7 +113,26 @@ export function TransfersItems({ products, defaultUomProfiles = [] }: Props) {
         const product = products.find((item) => item.id === row.productId);
         const stockUnitCode = normalizeUnitCode(product?.stock_unit_code ?? product?.unit ?? "");
         const availableQty = Number(product?.available_qty ?? 0);
+        const productProfiles = row.productId ? profilesByProduct.get(row.productId) ?? [] : [];
         const defaultProfile = row.productId ? defaultProfileByProduct.get(row.productId) ?? null : null;
+        const selectedProfile = row.inputUomProfileId
+          ? productProfiles.find((profile) => profile.id === row.inputUomProfileId) ?? null
+          : null;
+        const selectedUnitValue = selectedProfile
+          ? `profile:${selectedProfile.id}`
+          : row.inputUnitCode
+            ? `unit:${row.inputUnitCode}`
+            : "";
+        const selectedFactor = selectedProfile
+          ? Number(selectedProfile.qty_in_stock_unit) / Number(selectedProfile.qty_in_input_unit)
+          : 1;
+        const availableInSelectedUnit =
+          selectedProfile && Number.isFinite(selectedFactor) && selectedFactor > 0
+            ? availableQty / selectedFactor
+            : availableQty;
+        const selectedUnitLabel = selectedProfile
+          ? String(selectedProfile.label ?? selectedProfile.input_unit_code).trim()
+          : stockUnitCode || "un";
         const conversionLabel = defaultProfile
           ? `${defaultProfile.qty_in_input_unit} ${defaultProfile.input_unit_code} = ${defaultProfile.qty_in_stock_unit} ${stockUnitCode || "un"}`
           : "";
@@ -130,45 +160,47 @@ export function TransfersItems({ products, defaultUomProfiles = [] }: Props) {
               </div>
 
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-              <SearchableSingleSelect
-                name="item_product_id"
-                className="md:col-span-2 xl:col-span-2"
-                value={row.productId}
-                onValueChange={(next) => {
-                  const product = products.find((p) => p.id === next);
-                  const stockUnit = normalizeUnitCode(product?.stock_unit_code ?? product?.unit ?? "");
-                  const nextProfile = defaultProfileByProduct.get(next) ?? null;
-                  setRows((prev) =>
-                    prev.map((r) =>
-                      r.id === row.id
-                        ? {
-                            ...r,
-                            productId: next,
-                            inputUnitCode:
-                              normalizeUnitCode(nextProfile?.input_unit_code ?? "") ||
-                              stockUnit ||
-                              r.inputUnitCode,
-                            inputUomProfileId: nextProfile?.id ?? "",
-                          }
-                        : r
-                    )
-                  );
-                }}
-                options={productOptions}
-                placeholder="Selecciona producto"
-                searchPlaceholder="Buscar producto..."
-                sheetTitle="Selecciona producto"
-                mobilePresentation="sheet"
-                mobileBreakpointPx={1024}
-              />
+                <div className="flex flex-col gap-1 md:col-span-2 xl:col-span-2">
+                  <span className="ui-label">Producto</span>
+                  <SearchableSingleSelect
+                    name="item_product_id"
+                    value={row.productId}
+                    onValueChange={(next) => {
+                      const product = products.find((p) => p.id === next);
+                      const stockUnit = normalizeUnitCode(product?.stock_unit_code ?? product?.unit ?? "");
+                      const nextProfile = defaultProfileByProduct.get(next) ?? null;
+                      setRows((prev) =>
+                        prev.map((r) =>
+                          r.id === row.id
+                            ? {
+                                ...r,
+                                productId: next,
+                                inputUnitCode:
+                                  normalizeUnitCode(nextProfile?.input_unit_code ?? "") ||
+                                  stockUnit ||
+                                  r.inputUnitCode,
+                                inputUomProfileId: nextProfile?.id ?? "",
+                              }
+                            : r
+                        )
+                      );
+                    }}
+                    options={productOptions}
+                    placeholder="Selecciona producto"
+                    searchPlaceholder="Buscar producto..."
+                    sheetTitle="Selecciona producto"
+                    mobilePresentation="sheet"
+                    mobileBreakpointPx={1024}
+                  />
+                </div>
 
               {row.productId ? (
                 <>
                   <label className="flex flex-col gap-1">
-                    <span className="ui-label">
-                      Cantidad
-                      <span className="ml-2 font-normal text-[var(--ui-muted)]">
-                        Disponible: {formatQty(availableQty)} {stockUnitCode || "un"}
+                    <span className="flex min-h-5 items-center justify-between gap-2">
+                      <span className="ui-label">Cantidad</span>
+                      <span className="truncate text-xs font-normal text-[var(--ui-muted)]">
+                        Disponible: {formatQty(availableInSelectedUnit)} {selectedUnitLabel}
                       </span>
                     </span>
                     <input
@@ -187,38 +219,43 @@ export function TransfersItems({ products, defaultUomProfiles = [] }: Props) {
                   <label className="flex flex-col gap-1">
                     <span className="ui-label">Unidad</span>
                     <select
-                      name="item_input_unit_code"
                       className="ui-input h-12"
-                      value={row.inputUnitCode}
+                      value={selectedUnitValue}
                       onChange={(e) =>
-                        setRows((prev) =>
-                          prev.map((r) =>
+                        setRows((prev) => {
+                          const nextValue = e.target.value;
+                          const nextProfileId = nextValue.startsWith("profile:")
+                            ? nextValue.slice("profile:".length)
+                            : "";
+                          const nextProfile = nextProfileId
+                            ? productProfiles.find((profile) => profile.id === nextProfileId) ?? null
+                            : null;
+                          const nextUnit = nextProfile
+                            ? normalizeUnitCode(nextProfile.input_unit_code)
+                            : normalizeUnitCode(nextValue.replace(/^unit:/, ""));
+
+                          return prev.map((r) =>
                             r.id === row.id
                               ? {
                                   ...r,
-                                  inputUnitCode: normalizeUnitCode(e.target.value),
-                                  inputUomProfileId:
-                                    defaultProfile &&
-                                    normalizeUnitCode(defaultProfile.input_unit_code) ===
-                                      normalizeUnitCode(e.target.value)
-                                      ? defaultProfile.id
-                                      : "",
+                                  inputUnitCode: nextUnit,
+                                  inputUomProfileId: nextProfile?.id ?? "",
                                 }
                               : r
-                          )
-                        )
+                          );
+                        })
                       }
                       required
                     >
                       <option value="">Unidad</option>
-                      {stockUnitCode ? <option value={stockUnitCode}>{stockUnitCode}</option> : null}
-                      {defaultProfile &&
-                      normalizeUnitCode(defaultProfile.input_unit_code) !== normalizeUnitCode(stockUnitCode) ? (
-                        <option value={normalizeUnitCode(defaultProfile.input_unit_code)}>
-                          {normalizeUnitCode(defaultProfile.input_unit_code)} ({defaultProfile.label})
+                      {stockUnitCode ? <option value={`unit:${stockUnitCode}`}>{stockUnitCode}</option> : null}
+                      {productProfiles.map((profile) => (
+                        <option key={profile.id} value={`profile:${profile.id}`}>
+                          {profileOptionLabel(profile, stockUnitCode)}
                         </option>
-                      ) : null}
+                      ))}
                     </select>
+                    <input type="hidden" name="item_input_unit_code" value={row.inputUnitCode} />
                   </label>
                 </>
               ) : (
@@ -251,7 +288,11 @@ export function TransfersItems({ products, defaultUomProfiles = [] }: Props) {
                       />
                     </label>
 
-                    {conversionLabel ? (
+                    {selectedProfile ? (
+                      <div className="text-xs text-[var(--ui-muted)]">
+                        Conversion aplicada: {profileOptionLabel(selectedProfile, stockUnitCode)}
+                      </div>
+                    ) : conversionLabel ? (
                       <div className="text-xs text-[var(--ui-muted)]">
                         Conversion aplicada: {conversionLabel}
                       </div>
