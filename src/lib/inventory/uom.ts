@@ -72,10 +72,14 @@ export function selectProductUomProfileForContext(params: {
   );
   const generalDefault = generalMatches.find((profile) => profile.is_default);
   if (generalDefault) return generalDefault;
-  if (generalMatches.length) return generalMatches[0] ?? null;
 
   const anyDefault = candidates.find((profile) => profile.is_default);
-  return anyDefault ?? candidates[0] ?? null;
+  if (anyDefault) return anyDefault;
+
+  const anyOperational = candidates.find(
+    (profile) => normalizeProductUomUsageContext(profile.usage_context) !== "general"
+  );
+  return anyOperational ?? null;
 }
 
 export function normalizeUnitCode(code: string | null | undefined): string {
@@ -231,6 +235,28 @@ export type OperationalStockPart = {
   stockQty: number;
 };
 
+function formatOperationalPartLabel(label: string, qty: number) {
+  const cleanLabel = String(label || "un").trim();
+  const normalized = cleanLabel.toLowerCase();
+  const isOne = Math.abs(qty - 1) < 0.000001;
+
+  const knownLabels: Record<string, { singular: string; plural: string }> = {
+    bolsa: { singular: "bolsa", plural: "bolsas" },
+    bolsas: { singular: "bolsa", plural: "bolsas" },
+    paquete: { singular: "paquete", plural: "paquetes" },
+    paquetes: { singular: "paquete", plural: "paquetes" },
+    unidad: { singular: "unidad", plural: "unidades" },
+    unidades: { singular: "unidad", plural: "unidades" },
+  };
+
+  const known = knownLabels[normalized];
+  if (known) return isOne ? known.singular : known.plural;
+
+  if (isOne) return cleanLabel;
+  if (normalized.endsWith("s")) return cleanLabel;
+  return `${cleanLabel}s`;
+}
+
 export function formatOperationalStockParts(params: {
   qty: number;
   profiles: ProductUomProfile[];
@@ -284,17 +310,29 @@ export function formatOperationalStockParts(params: {
     const count = Math.floor((remaining + epsilon) / candidate.stockPerInput);
     if (count <= 0) continue;
     const stockQty = roundQuantity(count * candidate.stockPerInput);
-    parts.push({ qty: count, label: candidate.label, stockQty });
+    parts.push({
+      qty: count,
+      label: formatOperationalPartLabel(candidate.label, count),
+      stockQty,
+    });
     remaining = roundQuantity(remaining - stockQty);
   }
 
   if (remaining > epsilon) {
     parts.push({
       qty: roundQuantity(remaining),
-      label: params.fallbackUnit || "un",
+      label: formatOperationalPartLabel(params.fallbackUnit || "un", remaining),
       stockQty: roundQuantity(remaining),
     });
   }
 
-  return parts.length ? parts : [{ qty: roundQuantity(qty), label: params.fallbackUnit || "un", stockQty: qty }];
+  return parts.length
+    ? parts
+    : [
+        {
+          qty: roundQuantity(qty),
+          label: formatOperationalPartLabel(params.fallbackUnit || "un", qty),
+          stockQty: qty,
+        },
+      ];
 }

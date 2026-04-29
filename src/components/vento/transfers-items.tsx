@@ -127,9 +127,13 @@ export function TransfersItems({
         const stockUnitCode = normalizeUnitCode(product?.stock_unit_code ?? product?.unit ?? "");
         const availableQty = Number(product?.available_qty ?? 0);
         const productProfiles = row.productId ? profilesByProduct.get(row.productId) ?? [] : [];
+        const selectableProductProfiles = productProfiles.filter((profile) => {
+          const context = String(profile.usage_context ?? "general").trim().toLowerCase();
+          return context !== "general" || profile.is_default;
+        });
         const defaultProfile = row.productId ? defaultProfileByProduct.get(row.productId) ?? null : null;
         const selectedProfile = row.inputUomProfileId
-          ? productProfiles.find((profile) => profile.id === row.inputUomProfileId) ?? null
+          ? selectableProductProfiles.find((profile) => profile.id === row.inputUomProfileId) ?? null
           : null;
         const selectedUnitValue = selectedProfile
           ? `profile:${selectedProfile.id}`
@@ -248,7 +252,7 @@ export function TransfersItems({
                             ? nextValue.slice("profile:".length)
                             : "";
                           const nextProfile = nextProfileId
-                            ? productProfiles.find((profile) => profile.id === nextProfileId) ?? null
+                            ? selectableProductProfiles.find((profile) => profile.id === nextProfileId) ?? null
                             : null;
                           const nextUnit = nextProfile
                             ? normalizeUnitCode(nextProfile.input_unit_code)
@@ -269,7 +273,7 @@ export function TransfersItems({
                     >
                       <option value="">Unidad</option>
                       {stockUnitCode ? <option value={`unit:${stockUnitCode}`}>{stockUnitCode}</option> : null}
-                      {productProfiles.map((profile) => (
+                      {selectableProductProfiles.map((profile) => (
                         <option key={profile.id} value={`profile:${profile.id}`}>
                           {profileOptionLabel(profile, stockUnitCode)}
                         </option>

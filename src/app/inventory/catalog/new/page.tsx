@@ -12,6 +12,7 @@ import { getCategoryDomainOptions } from "@/lib/constants";
 import { ProductSuppliersEditor } from "@/features/inventory/catalog/product-suppliers-editor";
 import { ProductFormFooter } from "@/features/inventory/catalog/product-form-footer";
 import { ProductIdentityFields } from "@/features/inventory/catalog/product-identity-fields";
+import { ProductInternalBreakdownFields } from "@/features/inventory/catalog/product-internal-breakdown-fields";
 import { ProductAssetTechnicalSection } from "@/features/inventory/catalog/product-asset-technical-section";
 import { ProductPhotoSection } from "@/features/inventory/catalog/product-photo-section";
 import { ProductRemissionUomFields } from "@/features/inventory/catalog/product-remission-uom-fields";
@@ -966,6 +967,14 @@ async function createProduct(formData: FormData) {
   const remissionInputUnitCodeRaw = asText(formData.get("remission_uom_code"));
   const remissionQtyInStockText = asText(formData.get("remission_uom_qty_in_stock"));
   const remissionLabelText = asText(formData.get("remission_uom_label"));
+  const internalBreakdownEnabled = asText(formData.get("internal_breakdown_enabled")) === "on";
+  const internalBreakdownLabel = asText(formData.get("internal_breakdown_label"));
+  const internalBreakdownUnitCode = normalizeUnitCode(asText(formData.get("internal_breakdown_unit_code")));
+  const internalBreakdownQtyRaw = Number(asText(formData.get("internal_breakdown_qty_in_stock")) || 0);
+  const internalBreakdownQtyInStock =
+    Number.isFinite(internalBreakdownQtyRaw) && internalBreakdownQtyRaw > 0
+      ? internalBreakdownQtyRaw
+      : 0;
   const remissionSourceModeRaw = asText(formData.get("remission_source_mode")).toLowerCase();
   const remissionSourceMode =
     remissionSourceModeRaw === "disabled" ||
@@ -1030,6 +1039,14 @@ async function createProduct(formData: FormData) {
     redirect(
       `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
         "Primero crea y publica la receta. Luego en edición podrás usar remisión desde porción de receta."
+      )}`
+    );
+  }
+
+  if (internalBreakdownEnabled && (!internalBreakdownLabel || !internalBreakdownUnitCode || internalBreakdownQtyInStock <= 0)) {
+    redirect(
+      `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
+        "Completa el desglose visual interno: nombre, unidad y equivalencia a base."
       )}`
     );
   }
@@ -1100,6 +1117,21 @@ async function createProduct(formData: FormData) {
       qtyInInputUnit: remissionUomFromSupplier.qtyInInputUnit,
       qtyInStockUnit: remissionUomFromSupplier.qtyInStockUnit,
       source: remissionUomFromSupplier.source,
+    });
+  }
+
+  if (internalBreakdownEnabled) {
+    await supabase.from("product_uom_profiles").insert({
+      product_id: productId,
+      label: internalBreakdownLabel,
+      input_unit_code: internalBreakdownUnitCode,
+      qty_in_input_unit: 1,
+      qty_in_stock_unit: internalBreakdownQtyInStock,
+      usage_context: "general",
+      is_default: false,
+      is_active: true,
+      source: "manual",
+      updated_at: new Date().toISOString(),
     });
   }
 
@@ -1517,19 +1549,6 @@ export default async function NewProductPage({
                     </div>
                   </>
                 ) : null}
-                {config.hasStorage ? (
-                  <div className="sm:col-span-2">
-                    <ProductRemissionUomFields
-                      units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
-                      stockUnitCode={defaultStockUnitCode}
-                      defaultLabel="Unidad operativa"
-                      defaultInputUnitCode={defaultStockUnitCode}
-                      defaultQtyInStockUnit={1}
-                      defaultSourceMode="disabled"
-                      allowPurchasePrimaryOption={config.hasSuppliers}
-                    />
-                  </div>
-                ) : null}
               </>
             }
           />
@@ -1538,8 +1557,8 @@ export default async function NewProductPage({
         {/* --- Unidades y almacenamiento (definir antes de proveedores) --- */}
         {config.hasStorage && (
           <CatalogSection
-            title="Unidades y almacenamiento"
-            description="Define unidad base, unidad operativa y politica de costo para inventario."
+            title="Unidades del producto"
+            description="Configura unidad base, unidad de remision y unidad de vista interna para este producto."
           >
             <ProductStorageFields
               stockUnitFieldId={STOCK_UNIT_FIELD_ID}
@@ -1561,6 +1580,21 @@ export default async function NewProductPage({
                 collapsible: true,
               }}
             />
+            <div className="grid gap-4 lg:grid-cols-2">
+              <ProductRemissionUomFields
+                units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
+                stockUnitCode={defaultStockUnitCode}
+                defaultLabel="Unidad operativa"
+                defaultInputUnitCode={defaultStockUnitCode}
+                defaultQtyInStockUnit={1}
+                defaultSourceMode="disabled"
+                allowPurchasePrimaryOption={config.hasSuppliers}
+              />
+              <ProductInternalBreakdownFields
+                units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
+                stockUnitCode={defaultStockUnitCode}
+              />
+            </div>
           </CatalogSection>
         )}
 

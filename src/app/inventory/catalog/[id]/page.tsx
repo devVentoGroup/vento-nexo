@@ -4,6 +4,7 @@ import { notFound, redirect } from "next/navigation";
 import { ProductCostStatusPanel } from "@/features/inventory/catalog/product-cost-status-panel";
 import { ProductFormFooter } from "@/features/inventory/catalog/product-form-footer";
 import { ProductIdentityFields } from "@/features/inventory/catalog/product-identity-fields";
+import { ProductInternalBreakdownFields } from "@/features/inventory/catalog/product-internal-breakdown-fields";
 import { ProductAssetTechnicalSection } from "@/features/inventory/catalog/product-asset-technical-section";
 import { ProductPhotoSection } from "@/features/inventory/catalog/product-photo-section";
 import { ProductPurchaseSection } from "@/features/inventory/catalog/product-purchase-section";
@@ -807,20 +808,6 @@ async function updateProduct(formData: FormData) {
       const packUnitCode = normalizeUnitCode(
         (line.purchase_pack_unit_code as string) || stockUnitCode
       );
-      let purchaseUnitSizeLegacy: number | null = null;
-      if (packQty > 0 && packUnitCode) {
-        try {
-          const { quantity } = convertQuantity({
-            quantity: packQty,
-            fromUnitCode: packUnitCode,
-            toUnitCode: stockUnitCode,
-            unitMap,
-          });
-          purchaseUnitSizeLegacy = quantity;
-        } catch {
-          purchaseUnitSizeLegacy = null;
-        }
-      }
       const purchasePrice = Number(line.purchase_price ?? 0) || null;
       const purchasePriceIncludesTax = Boolean(line.purchase_price_includes_tax);
       const purchaseTaxRateRaw = Number(line.purchase_tax_rate ?? 0);
@@ -974,6 +961,14 @@ async function updateProduct(formData: FormData) {
   const remissionInputUnitCodeRaw = asText(formData.get("remission_uom_code"));
   const remissionQtyInStockText = asText(formData.get("remission_uom_qty_in_stock"));
   const remissionLabelText = asText(formData.get("remission_uom_label"));
+  const internalBreakdownEnabled = asText(formData.get("internal_breakdown_enabled")) === "on";
+  const internalBreakdownLabel = asText(formData.get("internal_breakdown_label"));
+  const internalBreakdownUnitCode = normalizeUnitCode(asText(formData.get("internal_breakdown_unit_code")));
+  const internalBreakdownQtyRaw = Number(asText(formData.get("internal_breakdown_qty_in_stock")) || 0);
+  const internalBreakdownQtyInStock =
+    Number.isFinite(internalBreakdownQtyRaw) && internalBreakdownQtyRaw > 0
+      ? internalBreakdownQtyRaw
+      : 0;
   const remissionSourceModeRaw = asText(formData.get("remission_source_mode")).toLowerCase();
   const remissionSourceMode =
     remissionSourceModeRaw === "disabled" ||
@@ -1070,6 +1065,10 @@ async function updateProduct(formData: FormData) {
     }
   }
 
+  if (internalBreakdownEnabled && (!internalBreakdownLabel || !internalBreakdownUnitCode || internalBreakdownQtyInStock <= 0)) {
+    redirectWithError("Completa el desglose visual interno: nombre, unidad y equivalencia a base.");
+  }
+
   async function upsertContextProfile(params: {
     usageContext: "purchase" | "remission";
     label: string;
@@ -1117,6 +1116,50 @@ async function updateProduct(formData: FormData) {
     });
   }
 
+  async function syncInternalBreakdownProfile() {
+    const now = new Date().toISOString();
+    const { data: existingRows } = await supabase
+      .from("product_uom_profiles")
+      .select("id")
+      .eq("product_id", productId)
+      .eq("usage_context", "general")
+      .eq("is_default", false)
+      .eq("source", "manual")
+      .order("updated_at", { ascending: false })
+      .limit(1);
+    const existing = existingRows?.[0] ?? null;
+
+    if (!internalBreakdownEnabled) {
+      if (existing?.id) {
+        await supabase
+          .from("product_uom_profiles")
+          .update({ is_active: false, updated_at: now })
+          .eq("id", existing.id);
+      }
+      return;
+    }
+
+    const payload = {
+      product_id: productId,
+      label: internalBreakdownLabel,
+      input_unit_code: internalBreakdownUnitCode,
+      qty_in_input_unit: 1,
+      qty_in_stock_unit: internalBreakdownQtyInStock,
+      usage_context: "general",
+      is_default: false,
+      is_active: true,
+      source: "manual",
+      updated_at: now,
+    };
+
+    if (existing?.id) {
+      await supabase.from("product_uom_profiles").update(payload).eq("id", existing.id);
+      return;
+    }
+
+    await supabase.from("product_uom_profiles").insert(payload);
+  }
+
   if (purchaseUomFromSupplier) {
     await upsertContextProfile({
       usageContext: "purchase",
@@ -1138,6 +1181,8 @@ async function updateProduct(formData: FormData) {
       source: remissionUomFromSupplier.source,
     });
   }
+
+  await syncInternalBreakdownProfile();
 
   if (costingMode === "auto_primary_supplier" && manualCost == null && autoCostFromPrimary != null) {
     const { error: costErr } = await supabase
@@ -1675,9 +1720,16 @@ export default async function ProductCatalogDetailPage({
     .from("product_uom_profiles")
     .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context")
     .eq("product_id", id)
-    .eq("is_active", true)
-    .eq("is_default", true);
-  const defaultUomProfiles = (uomProfileData ?? []) as ProductUomProfileRow[];
+    .eq("is_active", true);
+  const activeUomProfiles = (uomProfileData ?? []) as ProductUomProfileRow[];
+  const defaultUomProfiles = activeUomProfiles.filter((profile) => profile.is_default);
+  const internalBreakdownProfile =
+    activeUomProfiles.find(
+      (profile) =>
+        String(profile.usage_context ?? "general").trim().toLowerCase() === "general" &&
+        !profile.is_default &&
+        profile.source === "manual"
+    ) ?? null;
   const profileByContext = new Map(
     defaultUomProfiles.map((profile) => [
       String(profile.usage_context ?? "general").trim().toLowerCase() || "general",
@@ -2012,20 +2064,6 @@ export default async function ProductCatalogDetailPage({
                 hiddenName: "product_type",
                 hiddenValue: productRow.product_type ?? "insumo",
               }}
-              trailingContent={
-                <div className="sm:col-span-2">
-                  <ProductRemissionUomFields
-                    units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
-                    stockUnitCode={stockUnitCode}
-                    defaultLabel={remissionUomProfile?.label ?? "Unidad operativa"}
-                    defaultInputUnitCode={remissionUomProfile?.input_unit_code ?? resolvedDefaultUnit}
-                    defaultQtyInStockUnit={remissionUomProfile?.qty_in_stock_unit ?? 1}
-                    defaultSourceMode={remissionEnabledDefault ? remissionSourceModeDefault : "disabled"}
-                    allowPurchasePrimaryOption={hasSuppliers}
-                    allowRecipePortionOption={hasPublishedRecipePortion}
-                  />
-                </div>
-              }
             />
           </CatalogSection>
 
@@ -2052,8 +2090,8 @@ export default async function ProductCatalogDetailPage({
           )}
 
           <CatalogSection
-            title="Unidades y almacenamiento"
-            description="Define unidad base, unidad operativa y politica de costo para inventario."
+            title="Unidades del producto"
+            description="Configura unidad base, unidad de remision y unidad de vista interna para este producto."
           >
             <ProductStorageFields
               stockUnitFieldId={STOCK_UNIT_FIELD_ID}
@@ -2117,6 +2155,26 @@ export default async function ProductCatalogDetailPage({
                 expiryTrackingDefaultChecked: Boolean(profileRow?.expiry_tracking),
               }}
             />
+            <div className="grid gap-4 lg:grid-cols-2">
+              <ProductRemissionUomFields
+                units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
+                stockUnitCode={stockUnitCode}
+                defaultLabel={remissionUomProfile?.label ?? "Unidad operativa"}
+                defaultInputUnitCode={remissionUomProfile?.input_unit_code ?? resolvedDefaultUnit}
+                defaultQtyInStockUnit={remissionUomProfile?.qty_in_stock_unit ?? 1}
+                defaultSourceMode={remissionEnabledDefault ? remissionSourceModeDefault : "disabled"}
+                allowPurchasePrimaryOption={hasSuppliers}
+                allowRecipePortionOption={hasPublishedRecipePortion}
+              />
+              <ProductInternalBreakdownFields
+                units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
+                stockUnitCode={stockUnitCode}
+                defaultEnabled={Boolean(internalBreakdownProfile)}
+                defaultLabel={internalBreakdownProfile?.label ?? ""}
+                defaultInputUnitCode={internalBreakdownProfile?.input_unit_code ?? resolvedDefaultUnit}
+                defaultQtyInStockUnit={internalBreakdownProfile?.qty_in_stock_unit ?? null}
+              />
+            </div>
           </CatalogSection>
 
           <ProductPurchaseSection
