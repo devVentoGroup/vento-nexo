@@ -99,21 +99,46 @@ function formatDateTime(value: string | null | undefined) {
   }).format(date);
 }
 
-function buildPositionLabels(positions: PositionRow[]) {
-  const byId = new Map(positions.map((position) => [position.id, position]));
-  const labelById = new Map<string, string>();
-
-  function labelFor(position: PositionRow): string {
-    if (labelById.has(position.id)) return labelById.get(position.id)!;
-    const self = String(position.name || position.code).trim();
-    const parent = position.parent_position_id ? byId.get(position.parent_position_id) : null;
-    const label = parent ? `${labelFor(parent)} / ${self}` : self;
-    labelById.set(position.id, label);
-    return label;
+function buildChildrenByParent(positions: PositionRow[]) {
+  const childrenByParentId = new Map<string, PositionRow[]>();
+  for (const position of positions) {
+    if (!position.parent_position_id) continue;
+    const current = childrenByParentId.get(position.parent_position_id) ?? [];
+    current.push(position);
+    childrenByParentId.set(position.parent_position_id, current);
   }
+  return childrenByParentId;
+}
 
-  for (const position of positions) labelFor(position);
-  return labelById;
+function collectDescendantIds(positionId: string, childrenByParentId: Map<string, PositionRow[]>) {
+  const ids = [positionId];
+  const stack = [...(childrenByParentId.get(positionId) ?? [])];
+  while (stack.length > 0) {
+    const current = stack.shift();
+    if (!current) continue;
+    ids.push(current.id);
+    stack.push(...(childrenByParentId.get(current.id) ?? []));
+  }
+  return ids;
+}
+
+function findRootPosition(position: PositionRow | null, positionsById: Map<string, PositionRow>) {
+  let current = position;
+  while (current?.parent_position_id) {
+    const parent = positionsById.get(current.parent_position_id) ?? null;
+    if (!parent) break;
+    current = parent;
+  }
+  return current;
+}
+
+function positionKindLabel(position: PositionRow) {
+  const kind = String(position.kind ?? "").toLowerCase();
+  if (kind === "zone") return "Zona";
+  if (kind === "level") return "Nivel";
+  if (kind === "bin") return "Contenedor";
+  if (kind === "section") return "Seccion";
+  return "Estanteria";
 }
 
 export default async function LocationBoardPage({
@@ -168,14 +193,20 @@ export default async function LocationBoardPage({
     .order("sort_order", { ascending: true })
     .order("code", { ascending: true });
   const positions = (positionsData ?? []) as PositionRow[];
-  const positionLabels = buildPositionLabels(positions);
+  const positionsById = new Map(positions.map((position) => [position.id, position]));
+  const childrenByParentId = buildChildrenByParent(positions);
+  const topLevelPositions = positions.filter((position) => !position.parent_position_id);
   const selectedPosition = positionId ? positions.find((position) => position.id === positionId) ?? null : null;
+  const selectedRootPosition = findRootPosition(selectedPosition, positionsById);
+  const selectedPositionIds = selectedPosition
+    ? collectDescendantIds(selectedPosition.id, childrenByParentId)
+    : [];
 
   const { data: stockRowsData } = selectedPosition
     ? await supabase
         .from("inventory_stock_by_position")
         .select("product_id,current_qty,updated_at")
-        .eq("position_id", selectedPosition.id)
+        .in("position_id", selectedPositionIds)
         .gt("current_qty", 0)
         .order("current_qty", { ascending: false })
     : await supabase
@@ -207,6 +238,25 @@ export default async function LocationBoardPage({
       catalog_image_url?: string | null;
     }> | null;
   }>;
+  const aggregatedPositionRows = selectedPosition
+    ? Array.from(
+        stockRowsRaw.reduce((map, row) => {
+          const current = map.get(row.product_id) ?? {
+            product_id: row.product_id,
+            current_qty: 0,
+            updated_at: row.updated_at,
+          };
+          current.current_qty += Number(row.current_qty ?? 0);
+          const currentUpdated = String(current.updated_at ?? "");
+          const rowUpdated = String(row.updated_at ?? "");
+          if (rowUpdated && (!currentUpdated || new Date(rowUpdated).getTime() > new Date(currentUpdated).getTime())) {
+            current.updated_at = rowUpdated;
+          }
+          map.set(row.product_id, current);
+          return map;
+        }, new Map<string, { product_id: string; current_qty: number; updated_at: string | null }>())
+      ).map(([, row]) => row)
+    : stockRowsRaw;
   const selectedPositionProductIds = selectedPosition ? stockRowsRaw.map((row) => row.product_id) : [];
   const { data: selectedPositionProducts } =
     selectedPosition && selectedPositionProductIds.length > 0
@@ -217,12 +267,15 @@ export default async function LocationBoardPage({
       : { data: [] as Array<{ id: string; name: string | null; stock_unit_code: string | null; unit: string | null; image_url?: string | null; catalog_image_url?: string | null }> };
   const selectedPositionProductById = new Map((selectedPositionProducts ?? []).map((product) => [product.id, product]));
 
-  const stockRows = stockRowsRaw.map((row) => ({
-    ...row,
-    products: selectedPosition
-      ? selectedPositionProductById.get(row.product_id) ?? null
-      : normalizeProductRelation(row.products),
-  }));
+  const stockRows = selectedPosition
+    ? aggregatedPositionRows.map((row) => ({
+        ...row,
+        products: selectedPositionProductById.get(row.product_id) ?? null,
+      }))
+    : stockRowsRaw.map((row) => ({
+        ...row,
+        products: normalizeProductRelation(row.products),
+      }));
   const productIds = stockRows.map((row) => row.product_id);
   const { data: uomProfilesData } = productIds.length
     ? await supabase
@@ -354,22 +407,57 @@ export default async function LocationBoardPage({
               Administrar detalle
             </Link>
           </div>
-          <div className="mt-3 flex flex-wrap gap-2">
+          <div className="mt-4 space-y-4">
+            <div>
+              <div className="mb-2 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
+                Zonas generales
+              </div>
+              <div className="flex flex-wrap gap-2">
             <Link
               href={`/inventory/locations/${encodeURIComponent(location.id)}/board${isKiosk ? "?kiosk=1" : ""}`}
               className={!selectedPosition ? "ui-chip ui-chip--brand" : "ui-chip"}
             >
               Todo el LOC
             </Link>
-            {positions.map((position) => (
+            {topLevelPositions.map((position) => (
               <Link
                 key={position.id}
                 href={`/inventory/locations/${encodeURIComponent(location.id)}/board?position_id=${encodeURIComponent(position.id)}${isKiosk ? "&kiosk=1" : ""}`}
-                className={selectedPosition?.id === position.id ? "ui-chip ui-chip--brand" : "ui-chip"}
+                className={selectedRootPosition?.id === position.id ? "ui-chip ui-chip--brand" : "ui-chip"}
               >
-                {positionLabels.get(position.id) ?? position.name}
+                {position.name}
               </Link>
             ))}
+              </div>
+            </div>
+
+            {selectedRootPosition && (childrenByParentId.get(selectedRootPosition.id) ?? []).length > 0 ? (
+              <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
+                    {positionKindLabel(selectedRootPosition)} seleccionada
+                  </div>
+                  <div className="text-sm font-semibold text-[var(--ui-text)]">{selectedRootPosition.name}</div>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Link
+                    href={`/inventory/locations/${encodeURIComponent(location.id)}/board?position_id=${encodeURIComponent(selectedRootPosition.id)}${isKiosk ? "&kiosk=1" : ""}`}
+                    className={selectedPosition?.id === selectedRootPosition.id ? "ui-chip ui-chip--brand" : "ui-chip"}
+                  >
+                    Todo {selectedRootPosition.name}
+                  </Link>
+                  {(childrenByParentId.get(selectedRootPosition.id) ?? []).map((position) => (
+                    <Link
+                      key={position.id}
+                      href={`/inventory/locations/${encodeURIComponent(location.id)}/board?position_id=${encodeURIComponent(position.id)}${isKiosk ? "&kiosk=1" : ""}`}
+                      className={selectedPosition?.id === position.id ? "ui-chip ui-chip--brand" : "ui-chip"}
+                    >
+                      {position.name}
+                    </Link>
+                  ))}
+                </div>
+              </div>
+            ) : null}
           </div>
         </section>
       ) : null}
