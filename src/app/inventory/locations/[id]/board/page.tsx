@@ -4,7 +4,7 @@ import { notFound } from "next/navigation";
 import { LocationBoardAutoRefresh } from "@/features/inventory/locations/location-board-auto-refresh";
 import { requireAppAccess } from "@/lib/auth/guard";
 import {
-  selectProductUomProfileForContext,
+  formatOperationalStockParts,
   type ProductUomProfile,
 } from "@/lib/inventory/uom";
 
@@ -26,24 +26,6 @@ function formatQty(value: number | null | undefined) {
   const n = Number(value ?? 0);
   if (!Number.isFinite(n)) return "-";
   return new Intl.NumberFormat("es-CO", { maximumFractionDigits: 3 }).format(n);
-}
-
-function formatPurchaseQty(params: {
-  qty: number;
-  profile: ProductUomProfile | null;
-  fallbackUnit: string;
-}) {
-  const factor =
-    params.profile &&
-    Number(params.profile.qty_in_input_unit) > 0 &&
-    Number(params.profile.qty_in_stock_unit) > 0
-      ? Number(params.profile.qty_in_stock_unit) / Number(params.profile.qty_in_input_unit)
-      : 0;
-  const label = String(params.profile?.label || params.profile?.input_unit_code || "").trim();
-  if (!label || !Number.isFinite(factor) || factor <= 0) {
-    return `${formatQty(params.qty)} ${params.fallbackUnit}`;
-  }
-  return `${formatQty(params.qty / factor)} ${label}`;
 }
 
 function buildLocTitle(loc: {
@@ -311,21 +293,21 @@ export default async function LocationBoardPage({
           <div className="space-y-4">
             {!isKiosk ? (
               <Link href={`/inventory/locations/${encodeURIComponent(location.id)}`} className="ui-caption underline">
-                Volver al área
+                Volver al area
               </Link>
             ) : null}
             <div className="space-y-2">
-              <div className="ui-caption">{isKiosk ? "Modo kiosco" : "Vista del área"}</div>
+              <div className="ui-caption">{isKiosk ? "Modo kiosco" : "Vista del area"}</div>
               <h1 className="ui-h1">{title}</h1>
               <p className="ui-body-muted">
-                Vista rápida y visual de lo que hoy contiene esta área. Ideal para tablet o pantalla fija de consulta.
+                Vista rapida y visual de lo que hoy contiene esta area. Ideal para tablet o pantalla fija de consulta.
               </p>
             </div>
             {isKiosk ? (
               <div className="flex flex-wrap items-center gap-3">
                 <LocationBoardAutoRefresh intervalSeconds={30} />
                 <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-[var(--ui-muted)] shadow-sm">
-                  Ultima actualización: <span className="font-semibold text-[var(--ui-text)]">{formatDateTime(lastUpdatedAt)}</span>
+                  Ultima actualizacion: <span className="font-semibold text-[var(--ui-text)]">{formatDateTime(lastUpdatedAt)}</span>
                 </div>
               </div>
             ) : null}
@@ -355,7 +337,7 @@ export default async function LocationBoardPage({
                   href={`/inventory/stock?site_id=${encodeURIComponent(location.site_id ?? "")}&view=by_loc&location_id=${encodeURIComponent(location.id)}`}
                   className="ui-btn ui-btn--ghost"
                 >
-                  Ver stock técnico
+                  Ver stock tecnico
                 </Link>
                 <Link
                   href={`/inventory/locations/${encodeURIComponent(location.id)}/board?kiosk=1`}
@@ -375,7 +357,7 @@ export default async function LocationBoardPage({
             <article className="ui-remission-kpi" data-tone="warm">
               <div className="ui-remission-kpi-label">Productos</div>
               <div className="ui-remission-kpi-value">{stockRows.length}</div>
-              <div className="ui-remission-kpi-note">Activos en esta área</div>
+              <div className="ui-remission-kpi-note">Activos en esta area</div>
             </article>
             <article className="ui-remission-kpi" data-tone="cool">
               <div className="ui-remission-kpi-label">Qty total</div>
@@ -385,7 +367,7 @@ export default async function LocationBoardPage({
             <article className="ui-remission-kpi" data-tone="success">
               <div className="ui-remission-kpi-label">Vista</div>
               <div className="ui-remission-kpi-value">{isKiosk ? "Kiosco" : "Board"}</div>
-              <div className="ui-remission-kpi-note">Visual y de consulta rápida</div>
+              <div className="ui-remission-kpi-note">Visual y de consulta rapida</div>
             </article>
           </div>
         </div>
@@ -469,16 +451,14 @@ export default async function LocationBoardPage({
             const imageUrl = product?.image_url || product?.catalog_image_url || "";
             const qty = Number(row.current_qty ?? 0);
             const unit = product?.stock_unit_code ?? product?.unit ?? "un";
-            const purchaseProfile = selectProductUomProfileForContext({
+            const stockParts = formatOperationalStockParts({
+              qty,
               profiles: uomProfiles,
               productId: row.product_id,
-              context: "purchase",
-            });
-            const purchaseQtyLabel = formatPurchaseQty({
-              qty,
-              profile: purchaseProfile,
               fallbackUnit: unit,
             });
+            const primaryPart = stockParts[0];
+            const secondaryParts = stockParts.slice(1);
             return (
               <article
                 key={row.product_id}
@@ -510,14 +490,26 @@ export default async function LocationBoardPage({
                       {qty <= 3 ? "Bajo" : "Disponible"}
                     </span>
                   </div>
-                  <div className="text-3xl font-semibold tracking-[-0.03em] text-[var(--ui-text)]">
-                    {purchaseQtyLabel}
-                  </div>
-                  {purchaseProfile ? (
-                    <div className="text-sm text-[var(--ui-muted)]">
-                      Base: {formatQty(qty)} {unit}
+                  <div className="space-y-1">
+                    <div className="text-3xl font-semibold tracking-[-0.03em] text-[var(--ui-text)]">
+                      {formatQty(primaryPart?.qty ?? qty)} {primaryPart?.label ?? unit}
                     </div>
-                  ) : null}
+                    {secondaryParts.length > 0 ? (
+                      <div className="flex flex-wrap gap-1.5 text-sm font-medium text-[var(--ui-text)]">
+                        {secondaryParts.map((part) => (
+                          <span
+                            key={`${part.label}-${part.stockQty}`}
+                            className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1"
+                          >
+                            + {formatQty(part.qty)} {part.label}
+                          </span>
+                        ))}
+                      </div>
+                    ) : null}
+                  </div>
+                  <div className="text-sm text-[var(--ui-muted)]">
+                    Base: {formatQty(qty)} {unit}
+                  </div>
                 </div>
               </article>
             );
@@ -525,9 +517,9 @@ export default async function LocationBoardPage({
         </section>
       ) : (
         <div className={`ui-panel ui-remission-section text-center ${isKiosk ? "min-h-[45vh] flex flex-col items-center justify-center" : ""}`}>
-          <div className="ui-h3">Área sin contenido visible</div>
+          <div className="ui-h3">Area sin contenido visible</div>
           <p className="mt-2 ui-body-muted">
-            Todavía no hay stock positivo cargado en esta ubicación.
+            Todavia no hay stock positivo cargado en esta ubicacion.
           </p>
         </div>
       )}

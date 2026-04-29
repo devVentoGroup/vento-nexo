@@ -224,3 +224,77 @@ export function convertByProductProfile(params: {
     factorToStock: roundQuantity(factorToStock),
   };
 }
+
+export type OperationalStockPart = {
+  qty: number;
+  label: string;
+  stockQty: number;
+};
+
+export function formatOperationalStockParts(params: {
+  qty: number;
+  profiles: ProductUomProfile[];
+  productId: string;
+  fallbackUnit: string;
+}): OperationalStockPart[] {
+  const qty = Number(params.qty);
+  if (!Number.isFinite(qty) || qty <= 0) {
+    return [{ qty: 0, label: params.fallbackUnit || "un", stockQty: 0 }];
+  }
+
+  const productId = String(params.productId).trim();
+  const candidates = params.profiles
+    .filter((profile) => {
+      if (!profile.is_active || String(profile.product_id).trim() !== productId) return false;
+      const qtyInInput = Number(profile.qty_in_input_unit);
+      const qtyInStock = Number(profile.qty_in_stock_unit);
+      return Number.isFinite(qtyInInput) && Number.isFinite(qtyInStock) && qtyInInput > 0 && qtyInStock > 0;
+    })
+    .map((profile) => {
+      const qtyInInput = Number(profile.qty_in_input_unit);
+      const qtyInStock = Number(profile.qty_in_stock_unit);
+      return {
+        profile,
+        stockPerInput: qtyInStock / qtyInInput,
+        label: String(profile.label || profile.input_unit_code || params.fallbackUnit || "un").trim(),
+      };
+    })
+    .filter((item) => item.stockPerInput > 1.000001)
+    .sort((a, b) => {
+      if (b.stockPerInput !== a.stockPerInput) return b.stockPerInput - a.stockPerInput;
+      if (a.profile.is_default !== b.profile.is_default) return a.profile.is_default ? -1 : 1;
+      return a.label.localeCompare(b.label, "es", { sensitivity: "base" });
+    });
+
+  const deduped: typeof candidates = [];
+  const seenFactors = new Set<string>();
+  for (const candidate of candidates) {
+    const key = roundQuantity(candidate.stockPerInput, 6).toString();
+    if (seenFactors.has(key)) continue;
+    seenFactors.add(key);
+    deduped.push(candidate);
+  }
+
+  const parts: OperationalStockPart[] = [];
+  let remaining = qty;
+  const epsilon = 0.000001;
+
+  for (const candidate of deduped) {
+    if (remaining + epsilon < candidate.stockPerInput) continue;
+    const count = Math.floor((remaining + epsilon) / candidate.stockPerInput);
+    if (count <= 0) continue;
+    const stockQty = roundQuantity(count * candidate.stockPerInput);
+    parts.push({ qty: count, label: candidate.label, stockQty });
+    remaining = roundQuantity(remaining - stockQty);
+  }
+
+  if (remaining > epsilon) {
+    parts.push({
+      qty: roundQuantity(remaining),
+      label: params.fallbackUnit || "un",
+      stockQty: roundQuantity(remaining),
+    });
+  }
+
+  return parts.length ? parts : [{ qty: roundQuantity(qty), label: params.fallbackUnit || "un", stockQty: qty }];
+}
