@@ -457,7 +457,7 @@ export default async function LocationPositionsPage({
               <span className="ui-chip">{topLevelPositions.length} grupos</span>
             </div>
 
-            <div className="mt-4 grid gap-3 md:grid-cols-2">
+            <div className="mt-4 grid gap-3 2xl:grid-cols-2">
               {visibleTopLevelPositions.map((position) => {
                 const children = childrenByParentId.get(position.id) ?? [];
                 const visibleChildren = children.slice(0, 8);
@@ -484,12 +484,12 @@ export default async function LocationPositionsPage({
                     </div>
 
                     <div className="space-y-2 p-3">
-                      <form action={updatePositionNameAction} className="grid grid-cols-[1fr_auto] gap-2">
+                      <form action={updatePositionNameAction} className="grid gap-2 sm:grid-cols-[1fr_auto]">
                         <input type="hidden" name="location_id" value={id} />
                         <input type="hidden" name="position_id" value={position.id} />
                         <input
                           name="name"
-                          className="h-9 rounded-xl border border-slate-200 bg-white px-3 text-sm"
+                          className="h-9 min-w-0 rounded-xl border border-slate-200 bg-white px-3 text-sm"
                           defaultValue={position.name}
                         />
                         <button
@@ -506,13 +506,13 @@ export default async function LocationPositionsPage({
                             <form
                               key={child.id}
                               action={updatePositionNameAction}
-                              className="grid grid-cols-[minmax(92px,0.55fr)_minmax(130px,1fr)_auto] items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2"
+                              className="grid gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2 sm:grid-cols-[minmax(120px,0.7fr)_minmax(160px,1fr)_auto] sm:items-center"
                             >
                               <input type="hidden" name="location_id" value={id} />
                               <input type="hidden" name="position_id" value={child.id} />
                               <div className="min-w-0">
                                 <div className="truncate text-xs font-semibold text-slate-700">{child.name}</div>
-                                <div className="font-mono text-[11px] text-slate-500">{child.code}</div>
+                                <div className="break-all font-mono text-[11px] text-slate-500">{child.code}</div>
                               </div>
                               <input
                                 name="name"
@@ -545,7 +545,7 @@ export default async function LocationPositionsPage({
               })}
 
               {positions.length === 0 ? (
-                <div className="ui-empty md:col-span-2">Todavia no hay posiciones internas en este LOC.</div>
+                <div className="ui-empty 2xl:col-span-2">Todavia no hay posiciones internas en este LOC.</div>
               ) : null}
             </div>
 
