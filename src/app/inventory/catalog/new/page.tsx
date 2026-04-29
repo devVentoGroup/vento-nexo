@@ -7,7 +7,6 @@ import { CreateRequestKeyField } from "@/components/inventory/forms/create-reque
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
-import { getCategoryDomainOptions } from "@/lib/constants";
 
 import { ProductSuppliersEditor } from "@/features/inventory/catalog/product-suppliers-editor";
 import { ProductFormFooter } from "@/features/inventory/catalog/product-form-footer";
@@ -19,15 +18,12 @@ import { ProductRemissionUomFields } from "@/features/inventory/catalog/product-
 import { ProductSiteAvailabilitySection } from "@/features/inventory/catalog/product-site-availability-section";
 import { ProductStorageFields } from "@/features/inventory/catalog/product-storage-fields";
 import {
-  CatalogCategoryContextForm,
-  CatalogHintPanel,
   CatalogOptionalDetails,
   CatalogSection,
 } from "@/features/inventory/catalog/catalog-ui";
 import {
   categorySupportsKind,
   filterCategoryRows,
-  getCategoryDomainCodes,
   normalizeCategoryDomain,
   normalizeCategoryScope,
   shouldShowCategoryDomain,
@@ -971,10 +967,19 @@ async function createProduct(formData: FormData) {
   const internalBreakdownLabel = asText(formData.get("internal_breakdown_label"));
   const internalBreakdownUnitCode = normalizeUnitCode(asText(formData.get("internal_breakdown_unit_code")));
   const internalBreakdownQtyRaw = Number(asText(formData.get("internal_breakdown_qty_in_stock")) || 0);
-  const internalBreakdownQtyInStock =
-    Number.isFinite(internalBreakdownQtyRaw) && internalBreakdownQtyRaw > 0
-      ? internalBreakdownQtyRaw
-      : 0;
+  let internalBreakdownQtyInStock = 0;
+  if (Number.isFinite(internalBreakdownQtyRaw) && internalBreakdownQtyRaw > 0 && internalBreakdownUnitCode) {
+    try {
+      internalBreakdownQtyInStock = convertQuantity({
+        quantity: internalBreakdownQtyRaw,
+        fromUnitCode: internalBreakdownUnitCode,
+        toUnitCode: stockUnitCode,
+        unitMap,
+      }).quantity;
+    } catch {
+      internalBreakdownQtyInStock = 0;
+    }
+  }
   const remissionSourceModeRaw = asText(formData.get("remission_source_mode")).toLowerCase();
   const remissionSourceMode =
     remissionSourceModeRaw === "disabled" ||
@@ -1310,10 +1315,6 @@ export default async function NewProductPage({
     scope: categoryScope,
     siteId: effectiveCategorySiteId,
   });
-  const categoryDomainOptions = getCategoryDomainOptions(
-    getCategoryDomainCodes(allCategoryRows, categoryKind)
-  );
-
   const { data: areaKindsWithPurpose, error: areaKindsWithPurposeError } = await supabase
     .from("area_kinds")
     .select("code,name,use_for_remission")
@@ -1466,33 +1467,6 @@ export default async function NewProductPage({
           </div>
         </div>
       </section>
-
-      <CatalogOptionalDetails
-        title="Criterio de esta ficha"
-        summary="Abre este bloque solo si necesitas revisar el marco operativo o cambiar el arbol disponible."
-      >
-          <CatalogHintPanel title="Norte del catalogo">
-            <p>
-              Aqui creas el <strong className="text-[var(--ui-text)]">producto maestro</strong>. La categoria de esta
-              pantalla es operativa: sirve para inventario, abastecimiento y setup por sede.
-            </p>
-            <p>
-              Este flujo es el definitivo para alta de insumos, productos y activos con su configuracion operativa.
-            </p>
-          </CatalogHintPanel>
-
-        {isSaleCategoryKind ? null : (
-          <CatalogCategoryContextForm
-            hiddenFields={[{ name: "type", value: typeKey }]}
-            categoryScope={categoryScope}
-            categorySiteId={effectiveCategorySiteId}
-            categoryDomain={categoryDomain}
-            showDomain={shouldShowCategoryDomain(categoryKind)}
-            categoryDomainOptions={categoryDomainOptions}
-            sites={sitesList.map((site) => ({ id: site.id, name: site.name }))}
-          />
-        )}
-      </CatalogOptionalDetails>
 
       <RequiredFieldsGuardForm
         action={createProduct}

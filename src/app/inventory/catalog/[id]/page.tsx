@@ -13,8 +13,6 @@ import { ProductSiteAvailabilitySection } from "@/features/inventory/catalog/pro
 import { ProductStorageFields } from "@/features/inventory/catalog/product-storage-fields";
 import { RequiredFieldsGuardForm } from "@/components/inventory/forms/RequiredFieldsGuardForm";
 import {
-  CatalogCategoryContextForm,
-  CatalogHintPanel,
   CatalogOptionalDetails,
   CatalogSection,
 } from "@/features/inventory/catalog/catalog-ui";
@@ -33,13 +31,11 @@ import {
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
-import { getCategoryDomainOptions } from "@/lib/constants";
 import { safeDecodeURIComponent } from "@/lib/url";
 import {
   categoryKindFromProduct,
   categorySupportsKind,
   filterCategoryRows,
-  getCategoryDomainCodes,
   normalizeCategoryDomain,
   normalizeCategoryScope,
   shouldShowCategoryDomain,
@@ -965,10 +961,19 @@ async function updateProduct(formData: FormData) {
   const internalBreakdownLabel = asText(formData.get("internal_breakdown_label"));
   const internalBreakdownUnitCode = normalizeUnitCode(asText(formData.get("internal_breakdown_unit_code")));
   const internalBreakdownQtyRaw = Number(asText(formData.get("internal_breakdown_qty_in_stock")) || 0);
-  const internalBreakdownQtyInStock =
-    Number.isFinite(internalBreakdownQtyRaw) && internalBreakdownQtyRaw > 0
-      ? internalBreakdownQtyRaw
-      : 0;
+  let internalBreakdownQtyInStock = 0;
+  if (Number.isFinite(internalBreakdownQtyRaw) && internalBreakdownQtyRaw > 0 && internalBreakdownUnitCode) {
+    try {
+      internalBreakdownQtyInStock = convertQuantity({
+        quantity: internalBreakdownQtyRaw,
+        fromUnitCode: internalBreakdownUnitCode,
+        toUnitCode: stockUnitCode,
+        unitMap,
+      }).quantity;
+    } catch {
+      internalBreakdownQtyInStock = 0;
+    }
+  }
   const remissionSourceModeRaw = asText(formData.get("remission_source_mode")).toLowerCase();
   const remissionSourceMode =
     remissionSourceModeRaw === "disabled" ||
@@ -1823,9 +1828,6 @@ export default async function ProductCatalogDetailPage({
     scope: categoryScope,
     siteId: effectiveCategorySiteId,
   });
-  const categoryDomainOptions = getCategoryDomainOptions(
-    getCategoryDomainCodes(allCategoryRows, categoryKind)
-  );
   const resolvedCategoryPath =
     allCategoryRows.find((row) => row.id === productRow.category_id)?.name?.trim() || "";
   const normalizedCategoryPath = resolvedCategoryPath.toLowerCase();
@@ -1904,6 +1906,19 @@ export default async function ProductCatalogDetailPage({
     const siteType = siteTypeById.get(String(row.site_id ?? "")) ?? "";
     return siteType === "satellite";
   });
+  let internalBreakdownQtyInInputUnit: number | null = null;
+  if (internalBreakdownProfile?.input_unit_code && internalBreakdownProfile?.qty_in_stock_unit) {
+    try {
+      internalBreakdownQtyInInputUnit = convertQuantity({
+        quantity: Number(internalBreakdownProfile.qty_in_stock_unit),
+        fromUnitCode: stockUnitCode,
+        toUnitCode: internalBreakdownProfile.input_unit_code,
+        unitMap: inventoryUnitMap,
+      }).quantity;
+    } catch {
+      internalBreakdownQtyInInputUnit = Number(internalBreakdownProfile.qty_in_stock_unit);
+    }
+  }
 
   const supplierInitialRows = supplierRows.map((r) => ({
     id: r.id,
@@ -1993,31 +2008,6 @@ export default async function ProductCatalogDetailPage({
       </section>
 
       {okMsg ? <div className="ui-alert ui-alert--success">{okMsg}</div> : null}
-      <CatalogOptionalDetails
-        title="Criterio de esta ficha"
-        summary="Abre este bloque solo si necesitas revisar el marco operativo o cambiar el arbol visible."
-      >
-        <CatalogHintPanel title="Ficha maestra">
-          <p>
-            Esta ficha concentra la identidad operativa del producto: categoria operativa, unidades, costo base,
-            proveedor y setup por sede.
-          </p>
-          <p>
-            Esta edicion es el flujo definitivo para mantener compras, costo automatico y abastecimiento entre sedes.
-          </p>
-        </CatalogHintPanel>
-        {isSaleCategoryKind ? null : (
-          <CatalogCategoryContextForm
-            hiddenFields={from ? [{ name: "from", value: from }] : []}
-            categoryScope={categoryScope}
-            categorySiteId={effectiveCategorySiteId}
-            categoryDomain={categoryDomain}
-            showDomain={shouldShowCategoryDomain(categoryKind)}
-            categoryDomainOptions={categoryDomainOptions}
-            sites={sitesList.map((site) => ({ id: site.id, name: site.name }))}
-          />
-        )}
-      </CatalogOptionalDetails>
       {hasSuppliers && profileRow?.costing_mode === "auto_primary_supplier" && autoCostReadinessReason ? (
         <div className="ui-alert ui-alert--warn">
           Auto-costo incompleto: {autoCostReadinessReason}
@@ -2172,7 +2162,7 @@ export default async function ProductCatalogDetailPage({
                 defaultEnabled={Boolean(internalBreakdownProfile)}
                 defaultLabel={internalBreakdownProfile?.label ?? ""}
                 defaultInputUnitCode={internalBreakdownProfile?.input_unit_code ?? resolvedDefaultUnit}
-                defaultQtyInStockUnit={internalBreakdownProfile?.qty_in_stock_unit ?? null}
+                defaultQtyInStockUnit={internalBreakdownQtyInInputUnit}
               />
             </div>
           </CatalogSection>

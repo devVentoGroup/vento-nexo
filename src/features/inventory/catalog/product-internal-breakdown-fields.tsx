@@ -64,7 +64,7 @@ export function ProductInternalBreakdownFields({
         </label>
 
         <label className="flex flex-col gap-1 sm:col-span-2">
-          <span className="ui-label">Equivalencia a base</span>
+          <span className="ui-label">Cantidad por unidad visual</span>
           <input
             name="internal_breakdown_qty_in_stock"
             type="number"
@@ -72,10 +72,10 @@ export function ProductInternalBreakdownFields({
             min="0"
             defaultValue={defaultQtyInStockUnit ?? ""}
             className="ui-input"
-            placeholder={`1 bolsa = ? ${stockUnitCode}`}
+            placeholder="Ej. 1"
           />
           <span className="ui-caption">
-            Ejemplo leche: remision = paquete x6, desglose interno = bolsa, equivalencia = 1000 ml.
+            Ejemplo leche: nombre bolsa, unidad l, cantidad 1. El sistema lo convierte a {stockUnitCode}.
           </span>
         </label>
       </div>

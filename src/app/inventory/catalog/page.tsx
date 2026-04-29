@@ -9,10 +9,7 @@ import {
   type PurchaseSuggestionRow,
 } from "@/features/inventory/catalog/catalog-results-panel";
 import { CatalogToolbar } from "@/features/inventory/catalog/catalog-toolbar";
-import {
-  CatalogHintPanel,
-  CatalogOptionalDetails,
-} from "@/features/inventory/catalog/catalog-ui";
+import { CatalogOptionalDetails } from "@/features/inventory/catalog/catalog-ui";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { getCategoryDomainOptions } from "@/lib/constants";
@@ -973,21 +970,6 @@ export default async function InventoryCatalogPage({
 
       {okMsg ? <div className="ui-alert ui-alert--success">{okMsg}</div> : null}
       {errorMsg ? <div className="ui-alert ui-alert--error">Error: {errorMsg}</div> : null}
-      <CatalogOptionalDetails
-        title="Criterio de esta vista"
-        summary="Abre este bloque solo si necesitas revisar el marco operativo o refinar la vista."
-      >
-        <CatalogHintPanel title="Norte de esta vista">
-          <p>
-            Esta pantalla gobierna el <strong className="text-[var(--ui-text)]">producto maestro</strong> y su salud
-            operativa. La categoria aqui es operativa, no comercial.
-          </p>
-          <p>
-            La vista de compras se integra con ORIGO para emitir ordenes sugeridas por proveedor.
-          </p>
-        </CatalogHintPanel>
-      </CatalogOptionalDetails>
-
       <CatalogToolbar tabs={tabLinks} actions={toolbarActions} />
 
       <CatalogOptionalDetails
