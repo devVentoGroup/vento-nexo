@@ -11,6 +11,7 @@ type ProductOption = {
   name: string | null;
   unit: string | null;
   stock_unit_code?: string | null;
+  available_qty?: number;
 };
 
 type LocOption = {
@@ -19,14 +20,21 @@ type LocOption = {
   description: string | null;
 };
 
+type StockByLocation = {
+  location_id: string;
+  product_id: string;
+  current_qty: number;
+};
+
 type Props = {
   locations: LocOption[];
   products: ProductOption[];
+  stockByLocation: StockByLocation[];
   defaultUomProfiles?: ProductUomProfile[];
   action: (formData: FormData) => void | Promise<void>;
 };
 
-export function TransfersForm({ locations, products, defaultUomProfiles = [], action }: Props) {
+export function TransfersForm({ locations, products, stockByLocation, defaultUomProfiles = [], action }: Props) {
   const [fromLocId, setFromLocId] = useState("");
   const [toLocId, setToLocId] = useState("");
   const [notes, setNotes] = useState("");
@@ -46,6 +54,22 @@ export function TransfersForm({ locations, products, defaultUomProfiles = [], ac
     () => locations.filter((loc) => loc.id !== fromLocId),
     [fromLocId, locations]
   );
+  const productsInOrigin = useMemo(() => {
+    if (!fromLocId) return [];
+    const stockByProduct = new Map(
+      stockByLocation
+        .filter((row) => row.location_id === fromLocId && Number(row.current_qty ?? 0) > 0)
+        .map((row) => [row.product_id, Number(row.current_qty ?? 0)])
+    );
+
+    return products
+      .map((product) => ({
+        ...product,
+        available_qty: stockByProduct.get(product.id) ?? 0,
+      }))
+      .filter((product) => product.available_qty > 0);
+  }, [fromLocId, products, stockByLocation]);
+  const canRegister = canSubmit && productsInOrigin.length > 0;
 
   return (
     <form className="space-y-6 pb-24 lg:pb-0" action={action}>
@@ -145,14 +169,26 @@ export function TransfersForm({ locations, products, defaultUomProfiles = [], ac
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <div className="ui-h3">Productos</div>
-              <div className="ui-caption mt-1">Captura lo que realmente se mueve entre ambas areas.</div>
+              <div className="ui-caption mt-1">
+                Solo aparecen productos con saldo real en el area origen.
+              </div>
             </div>
             <div className="rounded-full border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-1 text-xs font-semibold text-[var(--ui-muted)]">
-              {locations.length} areas disponibles
+              {productsInOrigin.length} productos con stock
             </div>
           </div>
 
-          <TransfersItems products={products} defaultUomProfiles={defaultUomProfiles} />
+          {productsInOrigin.length > 0 ? (
+            <TransfersItems
+              key={fromLocId}
+              products={productsInOrigin}
+              defaultUomProfiles={defaultUomProfiles}
+            />
+          ) : (
+            <div className="ui-alert ui-alert--neutral">
+              El area origen no tiene productos disponibles para trasladar.
+            </div>
+          )}
         </section>
       ) : (
         <section className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
@@ -167,7 +203,7 @@ export function TransfersForm({ locations, products, defaultUomProfiles = [], ac
           {(selectedFrom?.code ?? selectedFrom?.description ?? "Sin origen")} -&gt;{" "}
           {selectedTo?.code ?? selectedTo?.description ?? "Sin destino"}
         </div>
-        <button type="submit" className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold" disabled={!canSubmit}>
+        <button type="submit" className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold" disabled={!canRegister}>
           Registrar traslado
         </button>
       </div>

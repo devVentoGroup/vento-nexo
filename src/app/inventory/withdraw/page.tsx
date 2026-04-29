@@ -183,6 +183,17 @@ async function submitWithdraw(formData: FormData) {
       ? `Retiro ${locCode}: ${item.note}`
       : `Retiro ${locCode}`;
 
+    const { error: positionErr } = await supabase.rpc("consume_inventory_stock_from_positions", {
+      p_location_id: locationId,
+      p_product_id: item.product_id,
+      p_quantity: item.quantity,
+      p_created_by: user.id,
+      p_note: `Retiro interno ${locCode}: menor stock primero`,
+    });
+    if (positionErr) {
+      redirect("/inventory/withdraw?error=" + encodeURIComponent(positionErr.message));
+    }
+
     const { error: moveErr } = await supabase.from("inventory_movements").insert({
       site_id: siteId,
       product_id: item.product_id,

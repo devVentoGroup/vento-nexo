@@ -21,9 +21,17 @@ type ProductRow = {
   stock_unit_code: string | null;
 };
 
-type ProductProfileWithProduct = {
+type StockProductRow = {
+  location_id: string;
   product_id: string;
-  products: ProductRow | null;
+  current_qty: number | null;
+  products: ProductRow | ProductRow[] | null;
+};
+
+type StockByLocationRow = {
+  location_id: string;
+  product_id: string;
+  current_qty: number;
 };
 
 type LocRow = {
@@ -62,6 +70,11 @@ function formatStatus(status?: string | null) {
     default:
       return { label: value || "Registrado", className: "ui-chip ui-chip--brand" };
   }
+}
+
+function normalizeProduct(value: StockProductRow["products"]): ProductRow | null {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
 }
 
 async function createTransfer(formData: FormData) {
@@ -213,13 +226,18 @@ async function createTransfer(formData: FormData) {
       Number(r.current_qty ?? 0),
     ])
   );
+  const requestedByProduct = new Map<string, number>();
   for (const item of items) {
-    const availableAtOrigin = stockByProduct.get(item.product_id) ?? 0;
-    if (availableAtOrigin < item.quantity) {
+    requestedByProduct.set(item.product_id, (requestedByProduct.get(item.product_id) ?? 0) + item.quantity);
+  }
+  for (const [productId, requestedQty] of requestedByProduct.entries()) {
+    const availableAtOrigin = stockByProduct.get(productId) ?? 0;
+    if (availableAtOrigin < requestedQty) {
+      const item = items.find((candidate) => candidate.product_id === productId);
       redirect(
         "/inventory/transfers?error=" +
           encodeURIComponent(
-            `No alcanza stock: solicitaste ${item.input_qty} ${item.input_unit_code} (${item.quantity} ${item.stock_unit_code}), disponibles ${availableAtOrigin} ${item.stock_unit_code}.`
+            `No alcanza stock: solicitaste ${requestedQty} ${item?.stock_unit_code ?? "un"}, disponibles ${availableAtOrigin} ${item?.stock_unit_code ?? "un"}.`
           )
       );
     }
@@ -291,6 +309,17 @@ async function createTransfer(formData: FormData) {
   }
 
   for (const item of items) {
+    const { error: positionErr } = await supabase.rpc("consume_inventory_stock_from_positions", {
+      p_location_id: fromLocId,
+      p_product_id: item.product_id,
+      p_quantity: item.quantity,
+      p_created_by: user.id,
+      p_note: `Traslado interno ${fromCode} -> ${toCode}: menor stock primero`,
+    });
+    if (positionErr) {
+      redirect("/inventory/transfers?error=" + encodeURIComponent(positionErr.message));
+    }
+
     const { error: fromErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
       p_location_id: fromLocId,
       p_product_id: item.product_id,
@@ -354,17 +383,30 @@ export default async function TransfersPage({
         .limit(200)
     : { data: [] as LocRow[] };
 
-  const { data: products } = await supabase
-    .from("product_inventory_profiles")
-    .select("product_id, products(id,name,unit,stock_unit_code)")
-    .eq("track_inventory", true)
-    .in("inventory_kind", ["ingredient", "finished", "resale", "packaging"])
-    .order("name", { foreignTable: "products", ascending: true })
-    .limit(400);
+  const locationIds = ((locations ?? []) as LocRow[]).map((loc) => loc.id);
+  const { data: stockData } = locationIds.length
+    ? await supabase
+        .from("inventory_stock_by_location")
+        .select("location_id,product_id,current_qty,products(id,name,unit,stock_unit_code)")
+        .in("location_id", locationIds)
+        .gt("current_qty", 0)
+    : { data: [] as StockProductRow[] };
 
-  const productRows = ((products ?? []) as unknown as ProductProfileWithProduct[])
-    .map((row) => row.products)
-    .filter((row): row is ProductRow => Boolean(row));
+  const stockRowsForForm = (stockData ?? []) as unknown as StockProductRow[];
+  const productById = new Map<string, ProductRow>();
+  for (const row of stockRowsForForm) {
+    const product = normalizeProduct(row.products);
+    if (product) productById.set(product.id, product);
+  }
+
+  const productRows = Array.from(productById.values()).sort((a, b) =>
+    String(a.name ?? a.id).localeCompare(String(b.name ?? b.id), "es")
+  );
+  const stockByLocation: StockByLocationRow[] = stockRowsForForm.map((row) => ({
+    location_id: row.location_id,
+    product_id: row.product_id,
+    current_qty: Number(row.current_qty ?? 0),
+  }));
   const productIds = productRows.map((row) => row.id);
   const { data: uomProfilesData } = productIds.length
     ? await supabase
@@ -444,6 +486,7 @@ export default async function TransfersPage({
       <TransfersForm
         locations={(locations ?? []) as LocRow[]}
         products={productRows}
+        stockByLocation={stockByLocation}
         defaultUomProfiles={defaultUomProfiles}
         action={createTransfer}
       />

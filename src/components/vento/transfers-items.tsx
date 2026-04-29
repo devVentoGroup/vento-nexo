@@ -14,6 +14,7 @@ type ProductOption = {
   name: string | null;
   unit: string | null;
   stock_unit_code?: string | null;
+  available_qty?: number;
 };
 
 type Props = {
@@ -29,6 +30,11 @@ type Row = {
   inputUomProfileId: string;
   notes: string;
 };
+
+function formatQty(value: number) {
+  if (!Number.isFinite(value)) return "0";
+  return new Intl.NumberFormat("es-CO", { maximumFractionDigits: 3 }).format(value);
+}
 
 export function TransfersItems({ products, defaultUomProfiles = [] }: Props) {
   const [rows, setRows] = useState<Row[]>([
@@ -83,7 +89,9 @@ export function TransfersItems({ products, defaultUomProfiles = [] }: Props) {
 
   const productOptions = products.map((product) => ({
     value: product.id,
-    label: `${product.name ?? product.id}${product.unit ? ` (${product.unit})` : ""}`,
+    label: `${product.name ?? product.id} - ${formatQty(product.available_qty ?? 0)} ${
+      product.stock_unit_code ?? product.unit ?? "un"
+    } disponibles`,
     searchText: `${product.name ?? ""} ${product.unit ?? ""} ${product.stock_unit_code ?? ""}`,
   }));
 
@@ -93,6 +101,7 @@ export function TransfersItems({ products, defaultUomProfiles = [] }: Props) {
         const isLast = idx === rows.length - 1;
         const product = products.find((item) => item.id === row.productId);
         const stockUnitCode = normalizeUnitCode(product?.stock_unit_code ?? product?.unit ?? "");
+        const availableQty = Number(product?.available_qty ?? 0);
         const defaultProfile = row.productId ? defaultProfileByProduct.get(row.productId) ?? null : null;
         const conversionLabel = defaultProfile
           ? `${defaultProfile.qty_in_input_unit} ${defaultProfile.input_unit_code} = ${defaultProfile.qty_in_stock_unit} ${stockUnitCode || "un"}`
@@ -156,7 +165,12 @@ export function TransfersItems({ products, defaultUomProfiles = [] }: Props) {
               {row.productId ? (
                 <>
                   <label className="flex flex-col gap-1">
-                    <span className="ui-label">Cantidad</span>
+                    <span className="ui-label">
+                      Cantidad
+                      <span className="ml-2 font-normal text-[var(--ui-muted)]">
+                        Disponible: {formatQty(availableQty)} {stockUnitCode || "un"}
+                      </span>
+                    </span>
                     <input
                       name="item_quantity"
                       placeholder="Cantidad"
