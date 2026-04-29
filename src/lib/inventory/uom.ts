@@ -240,6 +240,19 @@ function formatOperationalPartLabel(label: string, qty: number) {
   const normalized = cleanLabel.toLowerCase();
   const isOne = Math.abs(qty - 1) < 0.000001;
 
+  const invariantSymbols = new Set([
+    "ml",
+    "l",
+    "g",
+    "kg",
+    "mg",
+    "oz",
+    "lb",
+    "cm",
+    "m",
+  ]);
+  if (invariantSymbols.has(normalized)) return cleanLabel;
+
   const knownLabels: Record<string, { singular: string; plural: string }> = {
     bolsa: { singular: "bolsa", plural: "bolsas" },
     bolsas: { singular: "bolsa", plural: "bolsas" },
