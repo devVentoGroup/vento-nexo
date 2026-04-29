@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
 type SelectOption = {
@@ -49,15 +49,19 @@ export function SearchableSingleSelect({
   const [query, setQuery] = useState("");
   const [isMobile, setIsMobile] = useState(false);
   const [isCoarsePointer, setIsCoarsePointer] = useState(false);
+  const [floatingStyle, setFloatingStyle] = useState<CSSProperties>({});
+  const [floatingListMaxHeight, setFloatingListMaxHeight] = useState(260);
   const rootRef = useRef<HTMLDivElement | null>(null);
+  const dropdownRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
-      if (!rootRef.current) return;
       const target = event.target as Node | null;
-      if (target && !rootRef.current.contains(target)) {
-        setIsOpen(false);
+      if (!target) return;
+      if (rootRef.current?.contains(target) || dropdownRef.current?.contains(target)) {
+        return;
       }
+      setIsOpen(false);
     }
 
     if (isOpen) {
@@ -148,6 +152,118 @@ export function SearchableSingleSelect({
   const shouldRenderDropdown = !useNativeMobile && !useSheetMobile;
 
   const isInlineDropdown = dropdownMode === "inline";
+  const renderFloatingDropdown = isOpen && shouldRenderDropdown && !isInlineDropdown;
+
+  useEffect(() => {
+    if (!renderFloatingDropdown) return;
+
+    const updateFloatingPosition = () => {
+      const root = rootRef.current;
+      if (!root) return;
+
+      const rect = root.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const viewportWidth = window.innerWidth;
+      const gap = 6;
+      const edgePadding = 12;
+      const belowSpace = viewportHeight - rect.bottom - edgePadding;
+      const aboveSpace = rect.top - edgePadding;
+      const openAbove = belowSpace < 260 && aboveSpace > belowSpace;
+      const availableHeight = Math.max(180, (openAbove ? aboveSpace : belowSpace) - gap);
+      const listHeight = Math.max(140, Math.min(320, availableHeight - 76));
+      const width = Math.max(rect.width, 260);
+      const left = Math.min(Math.max(rect.left, edgePadding), viewportWidth - width - edgePadding);
+
+      setFloatingListMaxHeight(listHeight);
+      setFloatingStyle({
+        left,
+        width,
+        top: openAbove ? undefined : rect.bottom + gap,
+        bottom: openAbove ? viewportHeight - rect.top + gap : undefined,
+        zIndex: 1000,
+      });
+    };
+
+    updateFloatingPosition();
+    window.addEventListener("resize", updateFloatingPosition);
+    window.addEventListener("scroll", updateFloatingPosition, true);
+
+    return () => {
+      window.removeEventListener("resize", updateFloatingPosition);
+      window.removeEventListener("scroll", updateFloatingPosition, true);
+    };
+  }, [renderFloatingDropdown]);
+
+  const dropdownContent = isOpen && shouldRenderDropdown ? (
+    <div
+      ref={dropdownRef}
+      style={isInlineDropdown ? undefined : floatingStyle}
+      className={`w-full rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-2 shadow-[var(--ui-shadow-2)] ${
+        isInlineDropdown ? "mt-2" : "fixed"
+      }`}
+    >
+      <input
+        type="search"
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder={searchPlaceholder}
+        className="ui-input mb-2 h-10 w-full"
+      />
+      <div
+        className="overflow-auto rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)]"
+        style={{ maxHeight: isInlineDropdown ? 256 : floatingListMaxHeight }}
+      >
+        {allowEmptySelection ? (
+          <button
+            type="button"
+            className={`block w-full border-b border-[var(--ui-border)] px-3 py-2 text-left text-sm hover:bg-[var(--ui-surface)] ${
+              value === "" ? "bg-[var(--ui-surface)] font-semibold" : ""
+            }`}
+            onClick={() => {
+              onValueChange("");
+              setIsOpen(false);
+            }}
+          >
+            {placeholder}
+          </button>
+        ) : (
+          <div className="border-b border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
+            {placeholder}
+          </div>
+        )}
+
+        {groupedOptions.length ? (
+          groupedOptions.map((group) => (
+            <div key={group.label} className="border-b border-[var(--ui-border)] last:border-b-0">
+              <div className="flex items-center justify-between bg-slate-100 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-700">
+                <span>{group.label}</span>
+                <span className="rounded-full border border-slate-300 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                  {group.options.length}
+                </span>
+              </div>
+              {group.options.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={`block w-full border-t border-[var(--ui-border)] px-3 py-2 text-left text-sm hover:bg-[var(--ui-surface)] ${
+                    option.value === value ? "bg-[var(--ui-surface)] font-semibold" : ""
+                  }`}
+                  onClick={() => {
+                    onValueChange(option.value);
+                    setIsOpen(false);
+                  }}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          ))
+        ) : (
+          <div className="px-3 py-2 text-sm text-[var(--ui-muted)]">{emptyMessage}</div>
+        )}
+      </div>
+    </div>
+  ) : null;
 
   return (
     <div ref={rootRef} className={`relative ${className}`.trim()}>
@@ -181,71 +297,8 @@ export function SearchableSingleSelect({
       </button>
       )}
 
-      {isOpen && shouldRenderDropdown ? (
-        <div
-          className={`w-full rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-2 shadow-[var(--ui-shadow-2)] ${
-            isInlineDropdown ? "mt-2" : "absolute left-0 top-[calc(100%+4px)] z-40"
-          }`}
-        >
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder={searchPlaceholder}
-            className="ui-input mb-2 h-10 w-full"
-          />
-          <div className="max-h-64 overflow-auto rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)]">
-            {allowEmptySelection ? (
-              <button
-                type="button"
-                className={`block w-full border-b border-[var(--ui-border)] px-3 py-2 text-left text-sm hover:bg-[var(--ui-surface)] ${
-                  value === "" ? "bg-[var(--ui-surface)] font-semibold" : ""
-                }`}
-                onClick={() => {
-                  onValueChange("");
-                  setIsOpen(false);
-                }}
-              >
-                {placeholder}
-              </button>
-            ) : (
-              <div className="border-b border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
-                {placeholder}
-              </div>
-            )}
-
-            {groupedOptions.length ? (
-              groupedOptions.map((group) => (
-                <div key={group.label} className="border-b border-[var(--ui-border)] last:border-b-0">
-                  <div className="flex items-center justify-between bg-slate-100 px-3 py-2 text-[11px] font-bold uppercase tracking-[0.08em] text-slate-700">
-                    <span>{group.label}</span>
-                    <span className="rounded-full border border-slate-300 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
-                      {group.options.length}
-                    </span>
-                  </div>
-                  {group.options.map((option) => (
-                    <button
-                      key={option.value}
-                      type="button"
-                      className={`block w-full border-t border-[var(--ui-border)] px-3 py-2 text-left text-sm hover:bg-[var(--ui-surface)] ${
-                        option.value === value ? "bg-[var(--ui-surface)] font-semibold" : ""
-                      }`}
-                      onClick={() => {
-                        onValueChange(option.value);
-                        setIsOpen(false);
-                      }}
-                    >
-                      {option.label}
-                    </button>
-                  ))}
-                </div>
-              ))
-            ) : (
-              <div className="px-3 py-2 text-sm text-[var(--ui-muted)]">{emptyMessage}</div>
-            )}
-          </div>
-        </div>
-      ) : null}
+      {isInlineDropdown ? dropdownContent : null}
+      {renderFloatingDropdown ? createPortal(dropdownContent, document.body) : null}
 
       {isOpen && useSheetMobile
         ? createPortal(
