@@ -357,12 +357,14 @@ function SidebarLink({
       href={item.href}
       onClick={onNavigate}
       title={collapsed ? item.label : undefined}
-      className={`ui-sidebar-item ${active ? "active" : ""} ${collapsed ? "xl:justify-center xl:px-2" : ""}`}
+      className={`ui-sidebar-item ${active ? "active" : ""} ${
+        collapsed ? "xl:h-10 xl:w-10 xl:items-center xl:justify-center xl:gap-0 xl:overflow-hidden xl:p-0" : ""
+      }`}
     >
       <span className="ui-sidebar-item-icon">
         <Icon name={item.icon} />
       </span>
-      <span className={`ui-sidebar-item-content ${collapsed ? "xl:hidden" : ""}`}>
+      <span className={`ui-sidebar-item-content ${collapsed ? "xl:!hidden" : ""}`}>
         <span className="ui-sidebar-item-title">{item.label}</span>
         {item.description ? (
           <span className="ui-sidebar-item-desc">{item.description}</span>
@@ -662,11 +664,11 @@ export function VentoChrome({
         />
 
         <aside
-          className={`ui-sidebar fixed left-0 top-0 z-50 flex h-full w-72 flex-col gap-4 px-4 py-5 transition-all xl:static xl:translate-x-0 xl:shadow-none ${
+          className={`ui-sidebar fixed left-0 top-0 z-50 flex h-full w-72 flex-col gap-4 overflow-hidden px-4 py-5 transition-all xl:static xl:translate-x-0 xl:shadow-none ${
             menuOpen ? "translate-x-0" : "-translate-x-full"
-          } ${sidebarCollapsed ? "xl:w-16 xl:px-2" : "xl:w-72 xl:px-4"}`}
+          } ${sidebarCollapsed ? "xl:w-16 xl:items-center xl:px-2" : "xl:w-72 xl:items-stretch xl:px-4"}`}
         >
-          <div className="flex items-center justify-between">
+          <div className={`flex items-center ${sidebarCollapsed ? "xl:flex-col xl:gap-3" : "justify-between"}`}>
             <div className={sidebarCollapsed ? "xl:hidden" : ""}>
               <VentoLogo
                 entity={APP_ENTITY}
@@ -674,14 +676,13 @@ export function VentoChrome({
                 subtitle={`${APP_NAME} - Inventario`}
               />
             </div>
-            <div className={sidebarCollapsed ? "hidden xl:flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--ui-surface-2)] ring-1 ring-inset ring-[var(--ui-border)]" : "hidden"}>
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src={`/logos/${APP_ENTITY}.svg`} alt={APP_NAME} className="h-6 w-6" />
+            <div className={sidebarCollapsed ? "hidden xl:block" : "hidden"}>
+              <VentoLogo entity="default" showText={false} />
             </div>
             <button
               type="button"
               onClick={() => setSidebarCollapsed((value) => !value)}
-              className="hidden h-10 w-10 items-center justify-center rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] text-[var(--ui-muted)] transition hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)] xl:inline-flex"
+              className="hidden h-9 w-9 items-center justify-center text-[var(--ui-muted)] transition hover:text-[var(--ui-text)] xl:inline-flex"
               aria-label={sidebarCollapsed ? "Expandir menu lateral" : "Contraer menu lateral"}
               title={sidebarCollapsed ? "Expandir menu" : "Contraer menu"}
             >
@@ -696,7 +697,7 @@ export function VentoChrome({
             </button>
           </div>
 
-          <div className={`rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-4 py-3 ${sidebarCollapsed ? "xl:hidden" : ""}`}>
+          <div className={`rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-4 py-3 ${sidebarCollapsed ? "xl:!hidden" : ""}`}>
             <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
               Sede activa
             </div>
@@ -710,7 +711,7 @@ export function VentoChrome({
             ) : null}
           </div>
 
-          <nav className={`flex flex-1 flex-col gap-4 overflow-y-auto pr-1 ${sidebarCollapsed ? "xl:pr-0" : ""}`}>
+          <nav className={`flex flex-1 flex-col gap-4 overflow-y-auto pr-1 ${sidebarCollapsed ? "xl:items-center xl:pr-0" : ""}`}>
             {!permissionsReady ? (
               <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-3 py-2 text-xs text-[var(--ui-muted)]">
                 Cargando permisos...
@@ -722,7 +723,7 @@ export function VentoChrome({
             ) : (
               visibleGroups.map((group) => (
                 <div key={group.label} className="space-y-2">
-                  <div className={`px-2 text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)] ${sidebarCollapsed ? "xl:hidden" : ""}`}>
+                  <div className={`px-2 text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)] ${sidebarCollapsed ? "xl:!hidden" : ""}`}>
                     {group.label}
                   </div>
                   <div className="space-y-1">

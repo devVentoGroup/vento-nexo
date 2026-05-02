@@ -74,7 +74,7 @@ export function InternalPositionAssignmentList({ locationId, rows, positions, ac
 
   return (
     <div className="space-y-4">
-      <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
+      <div className="grid gap-3 xl:grid-cols-[minmax(0,1fr)_auto] xl:items-end">
         <label className="flex flex-col gap-1">
           <span className="ui-label">Buscar producto</span>
           <input
@@ -124,9 +124,9 @@ export function InternalPositionAssignmentList({ locationId, rows, positions, ac
           return (
             <article
               key={row.productId}
-              className="rounded-3xl border border-[var(--ui-border)] bg-white p-4 shadow-sm"
+              className="overflow-hidden rounded-3xl border border-[var(--ui-border)] bg-white p-4 shadow-sm"
             >
-              <div className="grid gap-4 xl:grid-cols-[minmax(240px,1fr)_minmax(220px,0.7fr)_minmax(360px,1.3fr)] xl:items-center">
+              <div className="grid gap-4">
                 <div className="min-w-0">
                   <div className="truncate text-base font-semibold text-[var(--ui-text)]">{row.productName}</div>
                   <div className="mt-2 flex flex-wrap gap-2 text-xs font-semibold">
@@ -145,34 +145,36 @@ export function InternalPositionAssignmentList({ locationId, rows, positions, ac
                   </div>
                 </div>
 
-                <div className="text-sm text-[var(--ui-muted)]">
-                  <div className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">Asignado</div>
-                  <div className="mt-1 leading-relaxed">
+                <div className="min-w-0 rounded-2xl bg-slate-50 px-3 py-2 text-sm text-[var(--ui-muted)]">
+                  <div className="text-[11px] font-semibold uppercase tracking-[0.08em] text-slate-500">Asignado</div>
+                  <div className="mt-1 break-words leading-relaxed">
                     {row.positionLines.length > 0 ? row.positionLines.join(" / ") : "-"}
                   </div>
                 </div>
 
                 {isPending && positions.length > 0 ? (
-                  <form action={action} className="grid gap-2 md:grid-cols-[minmax(220px,1fr)_130px_auto]">
+                  <form action={action} className="grid min-w-0 gap-2 lg:grid-cols-[minmax(0,1fr)_140px_112px] lg:items-center">
                     <input type="hidden" name="location_id" value={locationId} />
                     <input type="hidden" name="product_id" value={row.productId} />
-                    <SearchableSingleSelect
-                      name="position_id"
-                      value={selectedPositionId}
-                      onValueChange={(next) =>
-                        setSelectedPositionsByProduct((prev) => ({
-                          ...prev,
-                          [row.productId]: next,
-                        }))
-                      }
-                      options={positionOptions}
-                      placeholder="Selecciona estanteria/nivel"
-                      searchPlaceholder="Buscar posicion..."
-                      emptyMessage="Sin posiciones"
-                      sheetTitle="Selecciona ubicacion interna"
-                      mobilePresentation="sheet"
-                      mobileBreakpointPx={1024}
-                    />
+                    <div className="min-w-0">
+                      <SearchableSingleSelect
+                        name="position_id"
+                        value={selectedPositionId}
+                        onValueChange={(next) =>
+                          setSelectedPositionsByProduct((prev) => ({
+                            ...prev,
+                            [row.productId]: next,
+                          }))
+                        }
+                        options={positionOptions}
+                        placeholder="Ubicacion interna"
+                        searchPlaceholder="Buscar posicion..."
+                        emptyMessage="Sin posiciones"
+                        sheetTitle="Selecciona ubicacion interna"
+                        mobilePresentation="sheet"
+                        mobileBreakpointPx={1024}
+                      />
+                    </div>
                     <input
                       name="quantity"
                       type="number"
@@ -183,7 +185,7 @@ export function InternalPositionAssignmentList({ locationId, rows, positions, ac
                       className="ui-input text-right"
                       required
                     />
-                    <button type="submit" className="ui-btn ui-btn--brand">
+                    <button type="submit" className="ui-btn ui-btn--brand w-full justify-center">
                       Ubicar
                     </button>
                   </form>
