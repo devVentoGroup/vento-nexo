@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useState } from "react";
 
 type StockPart = {
@@ -23,6 +24,10 @@ export type KioskBoardStockItem = {
 type Props = {
   items: KioskBoardStockItem[];
   isKiosk: boolean;
+  locationId: string;
+  positionId?: string;
+  initialViewMode?: string;
+  initialCategoryId?: string;
 };
 
 type ViewMode = "cards" | "compact" | "list";
@@ -88,10 +93,38 @@ function ProductImage({ item, compact = false }: { item: KioskBoardStockItem; co
   );
 }
 
-export function KioskBoardStockView({ items, isKiosk }: Props) {
+function buildBoardHref(params: {
+  locationId: string;
+  isKiosk: boolean;
+  positionId?: string;
+  viewMode: ViewMode;
+  categoryId: string;
+}) {
+  const search = new URLSearchParams();
+  if (params.isKiosk) search.set("kiosk", "1");
+  if (params.positionId) search.set("position_id", params.positionId);
+  if (params.viewMode) search.set("view", params.viewMode);
+  if (params.categoryId && params.categoryId !== "all") search.set("category_id", params.categoryId);
+  const qs = search.toString();
+  return `/inventory/locations/${encodeURIComponent(params.locationId)}/board${qs ? `?${qs}` : ""}`;
+}
+
+function normalizeViewMode(value: string | undefined, isKiosk: boolean): ViewMode {
+  if (value === "cards" || value === "compact" || value === "list") return value;
+  return isKiosk ? "compact" : "cards";
+}
+
+export function KioskBoardStockView({
+  items,
+  isKiosk,
+  locationId,
+  positionId = "",
+  initialViewMode,
+  initialCategoryId,
+}: Props) {
   const [query, setQuery] = useState("");
-  const [categoryId, setCategoryId] = useState("all");
-  const [viewMode, setViewMode] = useState<ViewMode>(isKiosk ? "compact" : "cards");
+  const [categoryId, setCategoryId] = useState(initialCategoryId || "all");
+  const [viewMode, setViewMode] = useState<ViewMode>(() => normalizeViewMode(initialViewMode, isKiosk));
 
   const categories = useMemo(() => {
     const map = new Map<string, { id: string; label: string; count: number }>();
@@ -140,10 +173,16 @@ export function KioskBoardStockView({ items, isKiosk }: Props) {
                 ["compact", "Compactas"],
                 ["list", "Lista"],
               ].map(([value, label]) => (
-                <button
+                <Link
                   key={value}
-                  type="button"
                   onClick={() => setViewMode(value as ViewMode)}
+                  href={buildBoardHref({
+                    locationId,
+                    isKiosk,
+                    positionId,
+                    viewMode: value as ViewMode,
+                    categoryId,
+                  })}
                   className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
                     viewMode === value
                       ? "bg-amber-100 text-amber-950"
@@ -151,28 +190,40 @@ export function KioskBoardStockView({ items, isKiosk }: Props) {
                   }`}
                 >
                   {label}
-                </button>
+                </Link>
               ))}
             </div>
           </div>
 
           <div className="flex flex-wrap gap-2">
-            <button
-              type="button"
+            <Link
               onClick={() => setCategoryId("all")}
+              href={buildBoardHref({
+                locationId,
+                isKiosk,
+                positionId,
+                viewMode,
+                categoryId: "all",
+              })}
               className={categoryId === "all" ? "ui-chip ui-chip--brand" : "ui-chip"}
             >
               Todas ({items.length})
-            </button>
+            </Link>
             {categories.map((category) => (
-              <button
+              <Link
                 key={category.id}
-                type="button"
                 onClick={() => setCategoryId(category.id)}
+                href={buildBoardHref({
+                  locationId,
+                  isKiosk,
+                  positionId,
+                  viewMode,
+                  categoryId: category.id,
+                })}
                 className={categoryId === category.id ? "ui-chip ui-chip--brand" : "ui-chip"}
               >
                 {category.label} ({category.count})
-              </button>
+              </Link>
             ))}
           </div>
 

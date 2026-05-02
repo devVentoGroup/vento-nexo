@@ -13,7 +13,7 @@ import {
 export const dynamic = "force-dynamic";
 
 type Params = { id: string };
-type SearchParams = { kiosk?: string; position_id?: string };
+type SearchParams = { kiosk?: string; position_id?: string; view?: string; category_id?: string };
 
 type PositionRow = {
   id: string;
@@ -132,6 +132,8 @@ export default async function LocationBoardPage({
   const sp = (await searchParams) ?? {};
   const isKiosk = String(sp.kiosk ?? "").trim() === "1";
   const positionId = String(sp.position_id ?? "").trim();
+  const viewMode = String(sp.view ?? "").trim();
+  const categoryId = String(sp.category_id ?? "").trim();
 
   const { supabase } = await requireAppAccess({
     appId: "nexo",
@@ -428,12 +430,14 @@ export default async function LocationBoardPage({
                 La operacion sigue siendo por LOC. Estos filtros solo cambian la vista del board/quiosco.
               </div>
             </div>
-            <Link
-              href={`/inventory/locations/${encodeURIComponent(location.id)}/positions`}
-              className="ui-btn ui-btn--ghost"
-            >
-              Administrar detalle
-            </Link>
+            {!isKiosk ? (
+              <Link
+                href={`/inventory/locations/${encodeURIComponent(location.id)}/positions`}
+                className="ui-btn ui-btn--ghost"
+              >
+                Administrar detalle
+              </Link>
+            ) : null}
           </div>
           <div className="mt-4 space-y-4">
             <div>
@@ -491,7 +495,15 @@ export default async function LocationBoardPage({
       ) : null}
 
       {stockItems.length > 0 ? (
-        <KioskBoardStockView items={stockItems} isKiosk={isKiosk} />
+        <KioskBoardStockView
+          key={`${isKiosk ? "kiosk" : "board"}:${positionId}:${viewMode}:${categoryId}`}
+          items={stockItems}
+          isKiosk={isKiosk}
+          locationId={location.id}
+          positionId={positionId}
+          initialViewMode={viewMode}
+          initialCategoryId={categoryId}
+        />
       ) : (
         <div className={`ui-panel ui-remission-section text-center ${isKiosk ? "min-h-[45vh] flex flex-col items-center justify-center" : ""}`}>
           <div className="ui-h3">Area sin contenido visible</div>
