@@ -23,6 +23,18 @@ type ProductRow = {
   stock_unit_code: string | null;
 };
 type ProductSiteRow = { product_id: string; is_active: boolean | null };
+type ProductUomProfileRow = {
+  id: string;
+  product_id: string;
+  label: string | null;
+  input_unit_code: string | null;
+  qty_in_input_unit: number | null;
+  qty_in_stock_unit: number | null;
+  is_default: boolean | null;
+  is_active: boolean | null;
+  source: "manual" | "supplier_primary" | "recipe_portion" | null;
+  usage_context: "general" | "purchase" | "remission" | null;
+};
 
 export default async function InventoryCountInitialPage({
   searchParams,
@@ -145,10 +157,10 @@ export default async function InventoryCountInitialPage({
   }
 
   // LOCs de la sede (para filtro por zona/LOC en conteo - Fase 3.1)
-  type LocRow = { id: string; code: string | null; zone: string | null };
+  type LocRow = { id: string; code: string | null; zone: string | null; description: string | null };
   const { data: locsData } = await supabase
     .from("inventory_locations")
-    .select("id,code,zone")
+    .select("id,code,zone,description")
     .eq("site_id", siteId)
     .eq("is_active", true)
     .order("zone", { ascending: true })
@@ -181,6 +193,48 @@ export default async function InventoryCountInitialPage({
 
   const { data: products, error: productError } = await productsQuery;
   let productRows = (products ?? []) as unknown as ProductRow[];
+  const productIdsForProfiles = productRows.map((product) => product.id);
+
+  const { data: productProfilesData } =
+    productIdsForProfiles.length > 0
+      ? await supabase
+          .from("product_uom_profiles")
+          .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context")
+          .in("product_id", productIdsForProfiles)
+          .eq("is_active", true)
+          .order("is_default", { ascending: false })
+      : { data: [] as ProductUomProfileRow[] };
+  const productProfiles = (productProfilesData ?? []) as ProductUomProfileRow[];
+
+  type PositionRow = {
+    id: string;
+    parent_position_id: string | null;
+    code: string;
+    name: string;
+    kind: string;
+    sort_order: number | null;
+  };
+  const { data: positionsData } = locationIdParam
+    ? await supabase
+        .from("inventory_location_positions")
+        .select("id,parent_position_id,code,name,kind,sort_order")
+        .eq("location_id", locationIdParam)
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true })
+        .order("code", { ascending: true })
+    : { data: [] as PositionRow[] };
+  const positions = (positionsData ?? []) as PositionRow[];
+  const positionById = new Map(positions.map((position) => [position.id, position]));
+  const positionLabelById = new Map<string, string>();
+  function buildPositionLabel(position: PositionRow): string {
+    if (positionLabelById.has(position.id)) return positionLabelById.get(position.id)!;
+    const self = String(position.name || position.code).trim();
+    const parent = position.parent_position_id ? positionById.get(position.parent_position_id) : null;
+    const label = parent ? `${buildPositionLabel(parent)} / ${self}` : self;
+    positionLabelById.set(position.id, label);
+    return label;
+  }
+  positions.forEach(buildPositionLabel);
 
   // Si se eligio zona o LOC: filtrar productos a los que tienen stock en esa zona/LOC (conteo por zona/LOC)
   let productIdsInLoc: Set<string> | null = null;
@@ -368,11 +422,30 @@ export default async function InventoryCountInitialPage({
               name: p.name,
               sku: p.sku,
               unit: p.stock_unit_code ?? p.unit,
+              stockUnitCode: p.stock_unit_code ?? p.unit,
+              profiles: productProfiles
+                .filter((profile) => profile.product_id === p.id)
+                .map((profile) => ({
+                  id: profile.id,
+                  product_id: profile.product_id,
+                  label: profile.label ?? "",
+                  input_unit_code: profile.input_unit_code ?? "",
+                  qty_in_input_unit: Number(profile.qty_in_input_unit ?? 0),
+                  qty_in_stock_unit: Number(profile.qty_in_stock_unit ?? 0),
+                  is_default: Boolean(profile.is_default),
+                  is_active: Boolean(profile.is_active),
+                  source: profile.source ?? "manual",
+                  usage_context: profile.usage_context ?? "general",
+                })),
             }))}
             siteId={siteId}
             siteName={siteName}
             countScopeLabel={countScopeLabel}
             zoneOrLocNote={locationIdParam ? `loc_id:${locationIdParam}` : zoneParam ? `zone:${zoneParam}` : undefined}
+            internalPositions={positions.map((position) => ({
+              id: position.id,
+              label: positionLabelById.get(position.id) ?? position.name,
+            }))}
           />
         </>
       )}

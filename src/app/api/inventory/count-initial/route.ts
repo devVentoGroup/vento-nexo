@@ -32,7 +32,11 @@ export async function POST(req: Request) {
 
   let body: {
     site_id?: string;
-    lines?: Array<{ product_id?: string; quantity?: number }>;
+    lines?: Array<{
+      product_id?: string;
+      quantity?: number;
+      position_id?: string;
+    }>;
     scope_note?: string;
   };
   try {
@@ -53,6 +57,7 @@ export async function POST(req: Request) {
     .map((l) => ({
       product_id: typeof l?.product_id === "string" ? l.product_id.trim() : "",
       quantity: typeof l?.quantity === "number" && l.quantity >= 0 ? l.quantity : -1,
+      position_id: typeof l?.position_id === "string" ? l.position_id.trim() : "",
     }))
     .filter((l) => l.product_id && l.quantity > 0);
 
@@ -118,6 +123,24 @@ export async function POST(req: Request) {
           { error: "apply_inventory_count_adjustments: " + applyErr.message },
           { status: 500 }
         );
+      }
+
+      const positionedLines = lines.filter((line) => line.position_id);
+      for (const line of positionedLines) {
+        const { error: positionErr } = await supabase.rpc("assign_inventory_stock_to_position", {
+          p_location_id: scopeLocationId,
+          p_product_id: line.product_id,
+          p_position_id: line.position_id,
+          p_quantity: line.quantity,
+          p_created_by: user.id,
+          p_note: `count:${countSessionId}`,
+        });
+        if (positionErr) {
+          return NextResponse.json(
+            { error: "assign_inventory_stock_to_position: " + positionErr.message },
+            { status: 500 }
+          );
+        }
       }
     }
 
