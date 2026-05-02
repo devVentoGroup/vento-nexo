@@ -664,11 +664,11 @@ export function VentoChrome({
         />
 
         <aside
-          className={`ui-sidebar fixed left-0 top-0 z-50 flex h-full w-72 flex-col gap-4 overflow-hidden px-4 py-5 transition-all xl:static xl:translate-x-0 xl:shadow-none ${
+          className={`ui-sidebar fixed left-0 top-0 z-50 flex h-full w-72 flex-col gap-4 overflow-hidden px-4 py-5 transition-[width,padding,transform] duration-200 ease-out xl:static xl:translate-x-0 xl:shadow-none ${
             menuOpen ? "translate-x-0" : "-translate-x-full"
           } ${sidebarCollapsed ? "xl:w-16 xl:items-center xl:px-2" : "xl:w-72 xl:items-stretch xl:px-4"}`}
         >
-          <div className={`flex items-center ${sidebarCollapsed ? "xl:flex-col xl:gap-3" : "justify-between"}`}>
+          <div className={`flex items-center ${sidebarCollapsed ? "xl:justify-center" : "justify-between"}`}>
             <div className={sidebarCollapsed ? "xl:hidden" : ""}>
               <VentoLogo
                 entity={APP_ENTITY}
@@ -676,17 +676,27 @@ export function VentoChrome({
                 subtitle={`${APP_NAME} - Inventario`}
               />
             </div>
-            <div className={sidebarCollapsed ? "hidden xl:block" : "hidden"}>
-              <VentoLogo entity="default" showText={false} />
-            </div>
             <button
               type="button"
               onClick={() => setSidebarCollapsed((value) => !value)}
-              className="hidden h-9 w-9 items-center justify-center text-[var(--ui-muted)] transition hover:text-[var(--ui-text)] xl:inline-flex"
+              className={`hidden h-10 w-10 items-center justify-center text-[var(--ui-muted)] transition hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)] xl:inline-flex ${
+                sidebarCollapsed ? "group rounded-xl" : ""
+              }`}
               aria-label={sidebarCollapsed ? "Expandir menu lateral" : "Contraer menu lateral"}
               title={sidebarCollapsed ? "Expandir menu" : "Contraer menu"}
             >
-              <SidebarToggleIcon />
+              {sidebarCollapsed ? (
+                <>
+                  <span className="block group-hover:hidden">
+                    <VentoLogo entity={APP_ENTITY} showText={false} />
+                  </span>
+                  <span className="hidden group-hover:block">
+                    <SidebarToggleIcon />
+                  </span>
+                </>
+              ) : (
+                <SidebarToggleIcon />
+              )}
             </button>
             <button
               type="button"
