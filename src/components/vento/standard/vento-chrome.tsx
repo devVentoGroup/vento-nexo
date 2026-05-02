@@ -332,17 +332,37 @@ function Icon({ name }: { name?: IconName }) {
   }
 }
 
-function SidebarLink({ item, active, onNavigate }: { item: NavItem; active: boolean; onNavigate: () => void }) {
+function SidebarToggleIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8">
+      <rect x="4" y="5" width="16" height="14" rx="2" />
+      <path d="M9 5v14" />
+    </svg>
+  );
+}
+
+function SidebarLink({
+  item,
+  active,
+  collapsed,
+  onNavigate,
+}: {
+  item: NavItem;
+  active: boolean;
+  collapsed: boolean;
+  onNavigate: () => void;
+}) {
   return (
     <Link
       href={item.href}
       onClick={onNavigate}
-      className={`ui-sidebar-item ${active ? "active" : ""}`}
+      title={collapsed ? item.label : undefined}
+      className={`ui-sidebar-item ${active ? "active" : ""} ${collapsed ? "xl:justify-center xl:px-2" : ""}`}
     >
       <span className="ui-sidebar-item-icon">
         <Icon name={item.icon} />
       </span>
-      <span className="ui-sidebar-item-content">
+      <span className={`ui-sidebar-item-content ${collapsed ? "xl:hidden" : ""}`}>
         <span className="ui-sidebar-item-title">{item.label}</span>
         {item.description ? (
           <span className="ui-sidebar-item-desc">{item.description}</span>
@@ -377,11 +397,27 @@ export function VentoChrome({
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [menuOpen, setMenuOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
+    if (typeof window === "undefined") return false;
+    try {
+      return window.localStorage.getItem("vento:sidebar-collapsed") === "1";
+    } catch {
+      return false;
+    }
+  });
   const [overrideRole, setOverrideRole] = useState<string | null>(null);
   const [permMap, setPermMap] = useState<Record<string, boolean>>({});
   const [permissionsReady, setPermissionsReady] = useState(false);
   const authRecoveryRef = useRef(false);
   const isKioskMode = searchParams.get("kiosk") === "1";
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem("vento:sidebar-collapsed", sidebarCollapsed ? "1" : "0");
+    } catch {
+      // Persistence is optional.
+    }
+  }, [sidebarCollapsed]);
 
   const currentSiteId = searchParams.get("site_id") ?? activeSiteId ?? "";
   const currentSite = useMemo(
@@ -626,16 +662,31 @@ export function VentoChrome({
         />
 
         <aside
-          className={`ui-sidebar fixed left-0 top-0 z-50 flex h-full w-72 flex-col gap-4 px-4 py-5 transition-transform xl:static xl:translate-x-0 xl:shadow-none ${
+          className={`ui-sidebar fixed left-0 top-0 z-50 flex h-full w-72 flex-col gap-4 px-4 py-5 transition-all xl:static xl:translate-x-0 xl:shadow-none ${
             menuOpen ? "translate-x-0" : "-translate-x-full"
-          }`}
+          } ${sidebarCollapsed ? "xl:w-16 xl:px-2" : "xl:w-72 xl:px-4"}`}
         >
           <div className="flex items-center justify-between">
-            <VentoLogo
-              entity={APP_ENTITY}
-              title="Vento OS"
-              subtitle={`${APP_NAME} - Inventario`}
-            />
+            <div className={sidebarCollapsed ? "xl:hidden" : ""}>
+              <VentoLogo
+                entity={APP_ENTITY}
+                title="Vento OS"
+                subtitle={`${APP_NAME} - Inventario`}
+              />
+            </div>
+            <div className={sidebarCollapsed ? "hidden xl:flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--ui-surface-2)] ring-1 ring-inset ring-[var(--ui-border)]" : "hidden"}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src={`/logos/${APP_ENTITY}.svg`} alt={APP_NAME} className="h-6 w-6" />
+            </div>
+            <button
+              type="button"
+              onClick={() => setSidebarCollapsed((value) => !value)}
+              className="hidden h-10 w-10 items-center justify-center rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] text-[var(--ui-muted)] transition hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)] xl:inline-flex"
+              aria-label={sidebarCollapsed ? "Expandir menu lateral" : "Contraer menu lateral"}
+              title={sidebarCollapsed ? "Expandir menu" : "Contraer menu"}
+            >
+              <SidebarToggleIcon />
+            </button>
             <button
               type="button"
               onClick={() => setMenuOpen(false)}
@@ -645,7 +696,7 @@ export function VentoChrome({
             </button>
           </div>
 
-          <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-4 py-3">
+          <div className={`rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-4 py-3 ${sidebarCollapsed ? "xl:hidden" : ""}`}>
             <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
               Sede activa
             </div>
@@ -659,7 +710,7 @@ export function VentoChrome({
             ) : null}
           </div>
 
-          <nav className="flex flex-1 flex-col gap-4 overflow-y-auto pr-1">
+          <nav className={`flex flex-1 flex-col gap-4 overflow-y-auto pr-1 ${sidebarCollapsed ? "xl:pr-0" : ""}`}>
             {!permissionsReady ? (
               <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-3 py-2 text-xs text-[var(--ui-muted)]">
                 Cargando permisos...
@@ -671,7 +722,7 @@ export function VentoChrome({
             ) : (
               visibleGroups.map((group) => (
                 <div key={group.label} className="space-y-2">
-                  <div className="px-2 text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
+                  <div className={`px-2 text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)] ${sidebarCollapsed ? "xl:hidden" : ""}`}>
                     {group.label}
                   </div>
                   <div className="space-y-1">
@@ -680,6 +731,7 @@ export function VentoChrome({
                         key={item.href}
                         item={item}
                         active={isActive(item.href)}
+                        collapsed={sidebarCollapsed}
                         onNavigate={() => setMenuOpen(false)}
                       />
                     ))}

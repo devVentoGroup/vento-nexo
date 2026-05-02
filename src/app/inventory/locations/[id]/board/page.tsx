@@ -1,8 +1,10 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 
+import { KioskBoardStockView, type KioskBoardStockItem } from "@/components/vento/kiosk-board-stock-view";
 import { LocationBoardAutoRefresh } from "@/features/inventory/locations/location-board-auto-refresh";
 import { requireAppAccess } from "@/lib/auth/guard";
+import { getCategoryPath, type InventoryCategoryRow } from "@/lib/inventory/categories";
 import {
   formatOperationalStockParts,
   type ProductUomProfile,
@@ -47,6 +49,7 @@ function normalizeProductRelation(
         name: string | null;
         stock_unit_code: string | null;
         unit: string | null;
+        category_id?: string | null;
         image_url?: string | null;
         catalog_image_url?: string | null;
       }
@@ -55,6 +58,7 @@ function normalizeProductRelation(
         name: string | null;
         stock_unit_code: string | null;
         unit: string | null;
+        category_id?: string | null;
         image_url?: string | null;
         catalog_image_url?: string | null;
       }>
@@ -63,12 +67,6 @@ function normalizeProductRelation(
 ) {
   if (Array.isArray(value)) return value[0] ?? null;
   return value ?? null;
-}
-
-function toneForQty(value: number) {
-  if (value <= 0) return "border-slate-200 bg-slate-100 text-slate-700";
-  if (value <= 3) return "border-amber-200 bg-amber-50 text-amber-900";
-  return "border-emerald-200 bg-emerald-50 text-emerald-900";
 }
 
 function formatDateTime(value: string | null | undefined) {
@@ -194,7 +192,7 @@ export default async function LocationBoardPage({
     : await supabase
         .from("inventory_stock_by_location")
         .select(
-          "product_id,current_qty,updated_at,products(id,name,stock_unit_code,unit,image_url,catalog_image_url)"
+          "product_id,current_qty,updated_at,products(id,name,stock_unit_code,unit,category_id,image_url,catalog_image_url)"
         )
         .eq("location_id", id)
         .gt("current_qty", 0)
@@ -209,6 +207,7 @@ export default async function LocationBoardPage({
       name: string | null;
       stock_unit_code: string | null;
       unit: string | null;
+      category_id?: string | null;
       image_url?: string | null;
       catalog_image_url?: string | null;
     } | Array<{
@@ -216,6 +215,7 @@ export default async function LocationBoardPage({
       name: string | null;
       stock_unit_code: string | null;
       unit: string | null;
+      category_id?: string | null;
       image_url?: string | null;
       catalog_image_url?: string | null;
     }> | null;
@@ -244,9 +244,9 @@ export default async function LocationBoardPage({
     selectedPosition && selectedPositionProductIds.length > 0
       ? await supabase
           .from("products")
-          .select("id,name,stock_unit_code,unit,image_url,catalog_image_url")
+          .select("id,name,stock_unit_code,unit,category_id,image_url,catalog_image_url")
           .in("id", selectedPositionProductIds)
-      : { data: [] as Array<{ id: string; name: string | null; stock_unit_code: string | null; unit: string | null; image_url?: string | null; catalog_image_url?: string | null }> };
+      : { data: [] as Array<{ id: string; name: string | null; stock_unit_code: string | null; unit: string | null; category_id?: string | null; image_url?: string | null; catalog_image_url?: string | null }> };
   const selectedPositionProductById = new Map((selectedPositionProducts ?? []).map((product) => [product.id, product]));
 
   const stockRows = selectedPosition
@@ -269,6 +269,45 @@ export default async function LocationBoardPage({
         .eq("is_active", true)
     : { data: [] as ProductUomProfile[] };
   const uomProfiles = (uomProfilesData ?? []) as ProductUomProfile[];
+  const categoryIds = Array.from(
+    new Set(
+      stockRows
+        .map((row) => String(row.products?.category_id ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+  const { data: categoryRowsData } = categoryIds.length
+    ? await supabase
+        .from("product_categories")
+        .select("id,name,parent_id,domain,site_id,is_active,applies_to_kinds")
+        .in("id", categoryIds)
+    : { data: [] as InventoryCategoryRow[] };
+  const categoryRows = (categoryRowsData ?? []) as InventoryCategoryRow[];
+  const categoryMap = new Map(categoryRows.map((row) => [row.id, row]));
+  const stockItems: KioskBoardStockItem[] = stockRows.map((row) => {
+    const product = row.products;
+    const qty = Number(row.current_qty ?? 0);
+    const unit = product?.stock_unit_code ?? product?.unit ?? "un";
+    const categoryId = String(product?.category_id ?? "").trim();
+    const categoryPath = getCategoryPath(categoryId, categoryMap);
+    const categoryLabel = categoryPath.split(" / ").at(-1) || "Sin categoria";
+    return {
+      productId: row.product_id,
+      name: product?.name ?? row.product_id,
+      imageUrl: product?.image_url || product?.catalog_image_url || "",
+      qty,
+      unit,
+      categoryId,
+      categoryLabel,
+      categoryPath,
+      stockParts: formatOperationalStockParts({
+        qty,
+        profiles: uomProfiles,
+        productId: row.product_id,
+        fallbackUnit: unit,
+      }),
+    };
+  });
 
   const title = buildLocTitle(location);
   const totalQty = stockRows.reduce((sum, row) => sum + Number(row.current_qty ?? 0), 0);
@@ -451,77 +490,8 @@ export default async function LocationBoardPage({
         </section>
       ) : null}
 
-      {stockRows.length > 0 ? (
-        <section className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
-          {stockRows.map((row) => {
-            const product = row.products;
-            const imageUrl = product?.image_url || product?.catalog_image_url || "";
-            const qty = Number(row.current_qty ?? 0);
-            const unit = product?.stock_unit_code ?? product?.unit ?? "un";
-            const stockParts = formatOperationalStockParts({
-              qty,
-              profiles: uomProfiles,
-              productId: row.product_id,
-              fallbackUnit: unit,
-            });
-            const primaryPart = stockParts[0];
-            const secondaryParts = stockParts.slice(1);
-            return (
-              <article
-                key={row.product_id}
-                className="overflow-hidden rounded-[28px] border border-[var(--ui-border)] bg-white shadow-sm"
-              >
-                <div className="aspect-[4/3] w-full bg-[linear-gradient(135deg,rgba(245,158,11,0.14)_0%,rgba(255,255,255,1)_100%)]">
-                  {imageUrl ? (
-                    // eslint-disable-next-line @next/next/no-img-element
-                    <img
-                      src={imageUrl}
-                      alt={product?.name ?? "Producto"}
-                      className="h-full w-full object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-full items-center justify-center text-sm font-semibold text-[var(--ui-muted)]">
-                      Sin foto
-                    </div>
-                  )}
-                </div>
-                <div className="space-y-3 p-4">
-                  <div className="line-clamp-2 text-base font-semibold text-[var(--ui-text)]">
-                    {product?.name ?? row.product_id}
-                  </div>
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="text-sm text-[var(--ui-muted)]">
-                      {unit}
-                    </div>
-                    <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${toneForQty(qty)}`}>
-                      {qty <= 3 ? "Bajo" : "Disponible"}
-                    </span>
-                  </div>
-                  <div className="space-y-1">
-                    <div className="text-3xl font-semibold tracking-[-0.03em] text-[var(--ui-text)]">
-                      {formatQty(primaryPart?.qty ?? qty)} {primaryPart?.label ?? unit}
-                    </div>
-                    {secondaryParts.length > 0 ? (
-                      <div className="flex flex-wrap gap-1.5 text-sm font-medium text-[var(--ui-text)]">
-                        {secondaryParts.map((part) => (
-                          <span
-                            key={`${part.label}-${part.stockQty}`}
-                            className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1"
-                          >
-                            + {formatQty(part.qty)} {part.label}
-                          </span>
-                        ))}
-                      </div>
-                    ) : null}
-                  </div>
-                  <div className="text-sm text-[var(--ui-muted)]">
-                    Base: {formatQty(qty)} {unit}
-                  </div>
-                </div>
-              </article>
-            );
-          })}
-        </section>
+      {stockItems.length > 0 ? (
+        <KioskBoardStockView items={stockItems} isKiosk={isKiosk} />
       ) : (
         <div className={`ui-panel ui-remission-section text-center ${isKiosk ? "min-h-[45vh] flex flex-col items-center justify-center" : ""}`}>
           <div className="ui-h3">Area sin contenido visible</div>

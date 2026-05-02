@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
-import { Table, TableCell, TableHeaderCell } from "@/components/vento/standard/table";
+import { InternalPositionAssignmentList } from "@/components/vento/internal-position-assignment-list";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { safeDecodeURIComponent } from "@/lib/url";
 
@@ -571,75 +571,17 @@ export default async function LocationPositionsPage({
           </Link>
         </div>
 
-        <div className="ui-scrollbar-subtle mt-4 max-h-[70vh] overflow-x-auto overflow-y-auto">
-          <Table className="min-w-[980px] table-auto [&_th]:pr-4 [&_td]:pr-4">
-            <thead>
-              <tr>
-                <TableHeaderCell>Producto</TableHeaderCell>
-                <TableHeaderCell className="text-right">Total LOC</TableHeaderCell>
-                <TableHeaderCell className="text-right">Sin posicion</TableHeaderCell>
-                <TableHeaderCell>Asignado</TableHeaderCell>
-                <TableHeaderCell>Nueva ubicacion</TableHeaderCell>
-              </tr>
-            </thead>
-            <tbody>
-              {assignableRows.map((row) => (
-                <tr key={row.productId} className="ui-body">
-                  <TableCell className="font-medium text-[var(--ui-text)]">{row.productName}</TableCell>
-                  <TableCell className="font-mono text-right whitespace-nowrap">
-                    {formatQty(row.total)} {row.unit}
-                  </TableCell>
-                  <TableCell className="font-mono text-right whitespace-nowrap">
-                    {formatQty(row.unpositioned)} {row.unit}
-                  </TableCell>
-                  <TableCell className="max-w-[260px] align-top text-sm text-[var(--ui-muted)]">
-                    {row.positionLines.length > 0 ? row.positionLines.join(" / ") : "-"}
-                  </TableCell>
-                  <TableCell>
-                    {row.unpositioned > 0.000001 && positions.length > 0 ? (
-                      <form action={assignPositionAction} className="grid gap-2 md:grid-cols-[minmax(240px,1fr)_130px_auto]">
-                        <input type="hidden" name="location_id" value={id} />
-                        <input type="hidden" name="product_id" value={row.productId} />
-                        <select name="position_id" className="ui-input" required defaultValue="">
-                          <option value="" disabled>
-                            Selecciona estanteria/nivel
-                          </option>
-                          {positions.map((position) => (
-                            <option key={position.id} value={position.id}>
-                              {positionLabels.get(position.id) ?? position.name}
-                            </option>
-                          ))}
-                        </select>
-                        <input
-                          name="quantity"
-                          type="number"
-                          min="0"
-                          step="0.001"
-                          max={row.unpositioned}
-                          defaultValue={row.unpositioned}
-                          className="ui-input text-right"
-                          required
-                        />
-                        <button type="submit" className="ui-btn ui-btn--brand">
-                          Ubicar
-                        </button>
-                      </form>
-                    ) : (
-                      <span className="ui-caption">Sin pendiente</span>
-                    )}
-                  </TableCell>
-                </tr>
-              ))}
-
-              {assignableRows.length === 0 ? (
-                <tr>
-                  <TableCell colSpan={5} className="ui-empty">
-                    No hay stock en este LOC para ubicar internamente.
-                  </TableCell>
-                </tr>
-              ) : null}
-            </tbody>
-          </Table>
+        <div className="mt-4">
+          <InternalPositionAssignmentList
+            locationId={id}
+            rows={assignableRows}
+            positions={positions.map((position) => ({
+              id: position.id,
+              label: positionLabels.get(position.id) ?? position.name,
+              kind: position.kind,
+            }))}
+            action={assignPositionAction}
+          />
         </div>
       </section>
     </div>
