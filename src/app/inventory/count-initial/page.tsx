@@ -65,10 +65,10 @@ export default async function InventoryCountInitialPage({
   const { data: sites } =
     siteIds.length > 0
       ? await supabase
-          .from("sites")
-          .select("id,name")
-          .in("id", siteIds)
-          .order("name", { ascending: true })
+        .from("sites")
+        .select("id,name")
+        .in("id", siteIds)
+        .order("name", { ascending: true })
       : { data: [] as SiteRow[] };
 
   const siteRows = (sites ?? []) as SiteRow[];
@@ -198,11 +198,11 @@ export default async function InventoryCountInitialPage({
   const { data: productProfilesData } =
     productIdsForProfiles.length > 0
       ? await supabase
-          .from("product_uom_profiles")
-          .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context")
-          .in("product_id", productIdsForProfiles)
-          .eq("is_active", true)
-          .order("is_default", { ascending: false })
+        .from("product_uom_profiles")
+        .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context")
+        .in("product_id", productIdsForProfiles)
+        .eq("is_active", true)
+        .order("is_default", { ascending: false })
       : { data: [] as ProductUomProfileRow[] };
   const productProfiles = (productProfilesData ?? []) as ProductUomProfileRow[];
 
@@ -216,25 +216,76 @@ export default async function InventoryCountInitialPage({
   };
   const { data: positionsData } = locationIdParam
     ? await supabase
-        .from("inventory_location_positions")
-        .select("id,parent_position_id,code,name,kind,sort_order")
-        .eq("location_id", locationIdParam)
-        .eq("is_active", true)
-        .order("sort_order", { ascending: true })
-        .order("code", { ascending: true })
+      .from("inventory_location_positions")
+      .select("id,parent_position_id,code,name,kind,sort_order")
+      .eq("location_id", locationIdParam)
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true })
+      .order("code", { ascending: true })
     : { data: [] as PositionRow[] };
   const positions = (positionsData ?? []) as PositionRow[];
   const positionById = new Map(positions.map((position) => [position.id, position]));
-  const positionLabelById = new Map<string, string>();
-  function buildPositionLabel(position: PositionRow): string {
-    if (positionLabelById.has(position.id)) return positionLabelById.get(position.id)!;
-    const self = String(position.name || position.code).trim();
-    const parent = position.parent_position_id ? positionById.get(position.parent_position_id) : null;
-    const label = parent ? `${buildPositionLabel(parent)} / ${self}` : self;
-    positionLabelById.set(position.id, label);
-    return label;
+
+  const positionCollator = new Intl.Collator("es", {
+    numeric: true,
+    sensitivity: "base",
+  });
+
+  function getPositionName(position: PositionRow): string {
+    return String(position.name || position.code || position.id).trim();
   }
-  positions.forEach(buildPositionLabel);
+
+  function getPositionSortValue(position: PositionRow): number {
+    return typeof position.sort_order === "number" && Number.isFinite(position.sort_order)
+      ? position.sort_order
+      : Number.MAX_SAFE_INTEGER;
+  }
+
+  function comparePositions(a: PositionRow, b: PositionRow): number {
+    const sortDiff = getPositionSortValue(a) - getPositionSortValue(b);
+    if (sortDiff !== 0) return sortDiff;
+
+    return positionCollator.compare(getPositionName(a), getPositionName(b));
+  }
+
+  const positionChildrenByParentId = new Map<string | null, PositionRow[]>();
+
+  for (const position of positions) {
+    const parentId =
+      position.parent_position_id && positionById.has(position.parent_position_id)
+        ? position.parent_position_id
+        : null;
+
+    const children = positionChildrenByParentId.get(parentId) ?? [];
+    children.push(position);
+    positionChildrenByParentId.set(parentId, children);
+  }
+
+  for (const children of positionChildrenByParentId.values()) {
+    children.sort(comparePositions);
+  }
+
+  const internalPositionOptions: Array<{ id: string; label: string }> = [];
+
+  function pushPositionOptions(parentId: string | null, depth = 0) {
+    const children = positionChildrenByParentId.get(parentId) ?? [];
+
+    for (const position of children) {
+      const childCount = positionChildrenByParentId.get(position.id)?.length ?? 0;
+      const indent = depth > 0 ? "\u00A0".repeat(depth * 4) : "";
+      const marker = depth > 0 ? "↳ " : childCount > 0 ? "▾ " : "";
+      const label = `${indent}${marker}${getPositionName(position)}`;
+
+      internalPositionOptions.push({
+        id: position.id,
+        label,
+      });
+
+      pushPositionOptions(position.id, depth + 1);
+    }
+  }
+
+  pushPositionOptions(null);
 
   // Si se eligio zona o LOC: filtrar productos a los que tienen stock en esa zona/LOC (conteo por zona/LOC)
   let productIdsInLoc: Set<string> | null = null;
@@ -442,10 +493,7 @@ export default async function InventoryCountInitialPage({
             siteName={siteName}
             countScopeLabel={countScopeLabel}
             zoneOrLocNote={locationIdParam ? `loc_id:${locationIdParam}` : zoneParam ? `zone:${zoneParam}` : undefined}
-            internalPositions={positions.map((position) => ({
-              id: position.id,
-              label: positionLabelById.get(position.id) ?? position.name,
-            }))}
+            internalPositions={internalPositionOptions}
           />
         </>
       )}
