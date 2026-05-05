@@ -192,7 +192,7 @@ export default async function InventoryCountInitialPage({
   }
 
   const { data: products, error: productError } = await productsQuery;
-  let productRows = (products ?? []) as unknown as ProductRow[];
+  const productRows = (products ?? []) as unknown as ProductRow[];
   const productIdsForProfiles = productRows.map((product) => product.id);
 
   const { data: productProfilesData } =
@@ -286,30 +286,6 @@ export default async function InventoryCountInitialPage({
   }
 
   pushPositionOptions(null);
-
-  // Si se eligio zona o LOC: filtrar productos a los que tienen stock en esa zona/LOC (conteo por zona/LOC)
-  let productIdsInLoc: Set<string> | null = null;
-  if (locationIdParam && locRows.some((l) => l.id === locationIdParam)) {
-    const { data: stockByLoc } = await supabase
-      .from("inventory_stock_by_location")
-      .select("product_id")
-      .eq("location_id", locationIdParam)
-      .limit(2000);
-    productIdsInLoc = new Set((stockByLoc ?? []).map((r: { product_id: string }) => r.product_id));
-  } else if (zoneParam && zones.includes(zoneParam)) {
-    const locIdsInZone = locRows.filter((l) => l.zone === zoneParam).map((l) => l.id);
-    if (locIdsInZone.length > 0) {
-      const { data: stockByLoc } = await supabase
-        .from("inventory_stock_by_location")
-        .select("product_id")
-        .in("location_id", locIdsInZone)
-        .limit(2000);
-      productIdsInLoc = new Set((stockByLoc ?? []).map((r: { product_id: string }) => r.product_id));
-    }
-  }
-  if (productIdsInLoc && productIdsInLoc.size > 0) {
-    productRows = productRows.filter((p) => productIdsInLoc!.has(p.id));
-  }
 
   const siteName = siteNameMap.get(siteId) ?? siteId;
   const selectedLoc = locationIdParam ? locRows.find((l) => l.id === locationIdParam) : null;
