@@ -453,7 +453,16 @@ export function CountInitialForm({
         router.push(`/inventory/count-initial/session/${encodeURIComponent(data.countSessionId)}`);
         return;
       }
-      router.push(`/inventory/stock?site_id=${encodeURIComponent(siteId)}&count_initial=1`);
+
+      const params = new URLSearchParams({
+        site_id: siteId,
+        count_initial: "1",
+      });
+      const [scopeKey, scopeValue] = String(zoneOrLocNote ?? "").split(":", 2);
+      if (scopeKey === "zone" && scopeValue) params.set("zone", scopeValue);
+      if (scopeKey === "loc_id" && scopeValue) params.set("location_id", scopeValue);
+
+      router.push(`/inventory/count-initial?${params.toString()}`);
     } catch {
       setError("Error de red al guardar.");
       setLoading(false);
