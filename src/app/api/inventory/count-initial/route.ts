@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import { revalidatePath } from "next/cache";
 import { createServerClient } from "@supabase/ssr";
 
 // POST: ejecutar conteo cíclico para una sede.
@@ -154,8 +155,13 @@ export async function POST(req: Request) {
             { status: 500 }
           );
         }
+
+        revalidatePath(`/inventory/locations/${encodeURIComponent(scopeLocationId)}/board`);
       }
     }
+
+    revalidatePath("/inventory/stock");
+    revalidatePath("/inventory/count-initial");
 
     return NextResponse.json({
       ok: true,
@@ -178,6 +184,9 @@ export async function POST(req: Request) {
       { status: 500 }
     );
   }
+
+  revalidatePath("/inventory/stock");
+  revalidatePath("/inventory/count-initial");
 
   return NextResponse.json({
     ok: true,
