@@ -26,6 +26,12 @@ type InternalPositionOption = {
   label: string;
 };
 
+type CountEntry = {
+  id: string;
+  rawQuantity: string;
+  positionId: string;
+};
+
 type CountLine = {
   product_id: string;
   quantity: number;
@@ -47,13 +53,14 @@ type Props = {
 type CountRowProps = {
   product: Product;
   compactMode: boolean;
-  value: string;
+  entries: CountEntry[];
   qtyPositive: boolean;
-  selectedPositionId: string;
   internalPositions: InternalPositionOption[];
-  onQtyChange: (productId: string, rawValue: string) => void;
-  onPositionChange: (productId: string, positionId: string) => void;
-  onSetZero: (productId: string) => void;
+  onEntryQtyChange: (productId: string, entryId: string, rawValue: string) => void;
+  onEntryPositionChange: (productId: string, entryId: string, positionId: string) => void;
+  onAddEntry: (productId: string) => void;
+  onRemoveEntry: (productId: string, entryId: string) => void;
+  onSetEntryZero: (productId: string, entryId: string) => void;
   onClear: (productId: string) => void;
   onQtyKeyDown: (event: React.KeyboardEvent<HTMLInputElement>, productId: string) => void;
   registerInputRef: (productId: string, element: HTMLInputElement | null) => void;
@@ -64,6 +71,27 @@ function parseQty(value: string | undefined) {
   if (!v) return 0;
   const n = Number(v);
   return Number.isFinite(n) && n >= 0 ? n : 0;
+}
+
+function makeDefaultEntry(productId: string): CountEntry {
+  return {
+    id: `${productId}:base`,
+    rawQuantity: "",
+    positionId: "",
+  };
+}
+
+function makeNewEntry(productId: string): CountEntry {
+  const randomId =
+    typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID()
+      : `${Date.now()}:${Math.random().toString(36).slice(2)}`;
+
+  return {
+    id: `${productId}:${randomId}`,
+    rawQuantity: "",
+    positionId: "",
+  };
 }
 
 function getCaptureConfig(product: Product) {
@@ -85,18 +113,23 @@ function getCaptureConfig(product: Product) {
 const CountRow = memo(function CountRow({
   product,
   compactMode,
-  value,
+  entries,
   qtyPositive,
-  selectedPositionId,
   internalPositions,
-  onQtyChange,
-  onPositionChange,
-  onSetZero,
+  onEntryQtyChange,
+  onEntryPositionChange,
+  onAddEntry,
+  onRemoveEntry,
+  onSetEntryZero,
   onClear,
   onQtyKeyDown,
   registerInputRef,
 }: CountRowProps) {
   const capture = getCaptureConfig(product);
+  const entryGridClass =
+    internalPositions.length > 0
+      ? "grid min-w-0 gap-2 xl:grid-cols-[minmax(120px,0.8fr)_minmax(190px,1fr)_auto_auto] xl:items-center"
+      : "grid min-w-0 gap-2 xl:grid-cols-[minmax(120px,0.8fr)_auto_auto] xl:items-center";
 
   return (
     <tr className={`ui-body ${qtyPositive ? "bg-emerald-50/40" : ""}`}>
@@ -121,40 +154,65 @@ const CountRow = memo(function CountRow({
         </TableCell>
       ) : null}
       <TableCell>
-        <div className="grid min-w-0 gap-2 xl:grid-cols-[minmax(120px,0.8fr)_minmax(190px,1fr)_auto_auto] xl:items-center">
-          <input
-            type="number"
-            min={0}
-            step="any"
-            value={value}
-            onChange={(event) => onQtyChange(product.id, event.target.value)}
-            onKeyDown={(event) => onQtyKeyDown(event, product.id)}
-            ref={(element) => {
-              registerInputRef(product.id, element);
-            }}
-            placeholder={`0 ${capture.label}`}
-            className="ui-input min-w-0"
-          />
-          {internalPositions.length > 0 ? (
-            <select
-              value={selectedPositionId}
-              onChange={(event) => onPositionChange(product.id, event.target.value)}
-              className="ui-input min-w-0"
-            >
-              <option value="">Sin ubicacion interna</option>
-              {internalPositions.map((position) => (
-                <option key={position.id} value={position.id}>
-                  {position.label}
-                </option>
-              ))}
-            </select>
-          ) : null}
-          <button type="button" onClick={() => onSetZero(product.id)} className="ui-btn ui-btn--ghost h-9 px-3 text-xs">
-            0
-          </button>
-          <button type="button" onClick={() => onClear(product.id)} className="ui-btn ui-btn--ghost h-9 px-3 text-xs">
-            Limpiar
-          </button>
+        <div className="space-y-2">
+          {entries.map((entry, index) => (
+            <div key={entry.id} className={entryGridClass}>
+              <input
+                type="number"
+                min={0}
+                step="any"
+                value={entry.rawQuantity}
+                onChange={(event) => onEntryQtyChange(product.id, entry.id, event.target.value)}
+                onKeyDown={(event) => onQtyKeyDown(event, product.id)}
+                ref={(element) => {
+                  if (index === 0) registerInputRef(product.id, element);
+                }}
+                placeholder={`0 ${capture.label}`}
+                className="ui-input min-w-0"
+              />
+              {internalPositions.length > 0 ? (
+                <select
+                  value={entry.positionId}
+                  onChange={(event) => onEntryPositionChange(product.id, entry.id, event.target.value)}
+                  className="ui-input min-w-0"
+                >
+                  <option value="">Sin ubicacion interna</option>
+                  {internalPositions.map((position) => (
+                    <option key={position.id} value={position.id}>
+                      {position.label}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
+              <button
+                type="button"
+                onClick={() => onSetEntryZero(product.id, entry.id)}
+                className="ui-btn ui-btn--ghost h-9 px-3 text-xs"
+              >
+                0
+              </button>
+              {entries.length > 1 ? (
+                <button
+                  type="button"
+                  onClick={() => onRemoveEntry(product.id, entry.id)}
+                  className="ui-btn ui-btn--ghost h-9 px-3 text-xs"
+                >
+                  Quitar
+                </button>
+              ) : null}
+            </div>
+          ))}
+
+          <div className="flex flex-wrap gap-2">
+            {internalPositions.length > 0 ? (
+              <button type="button" onClick={() => onAddEntry(product.id)} className="ui-btn ui-btn--ghost h-9 px-3 text-xs">
+                + Otra ubicacion
+              </button>
+            ) : null}
+            <button type="button" onClick={() => onClear(product.id)} className="ui-btn ui-btn--ghost h-9 px-3 text-xs">
+              Limpiar producto
+            </button>
+          </div>
         </div>
       </TableCell>
     </tr>
@@ -170,8 +228,7 @@ export function CountInitialForm({
   internalPositions = [],
 }: Props) {
   const router = useRouter();
-  const [qty, setQty] = useState<Record<string, string>>({});
-  const [positionByProductId, setPositionByProductId] = useState<Record<string, string>>({});
+  const [entriesByProductId, setEntriesByProductId] = useState<Record<string, CountEntry[]>>({});
   const [search, setSearch] = useState("");
   const [onlyWithQty, setOnlyWithQty] = useState(false);
   const [compactMode, setCompactMode] = useState(true);
@@ -180,35 +237,51 @@ export function CountInitialForm({
   const [error, setError] = useState("");
   const qtyInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
+  const getProductEntries = useCallback(
+    (productId: string) => {
+      const entries = entriesByProductId[productId];
+      return entries?.length ? entries : [makeDefaultEntry(productId)];
+    },
+    [entriesByProductId]
+  );
+
   const qtyByProductId = useMemo(() => {
     const next: Record<string, number> = {};
-    for (const [productId, raw] of Object.entries(qty)) next[productId] = parseQty(raw);
+    for (const product of products) {
+      next[product.id] = getProductEntries(product.id).reduce((acc, entry) => acc + parseQty(entry.rawQuantity), 0);
+    }
     return next;
-  }, [qty]);
+  }, [getProductEntries, products]);
 
   const lines = useMemo(() => {
     const next: CountLine[] = [];
     for (const product of products) {
-      const inputQty = qtyByProductId[product.id] ?? 0;
-      if (inputQty <= 0) continue;
       const capture = getCaptureConfig(product);
-      const converted = convertByProductProfile({
-        quantityInInput: inputQty,
-        inputUnitCode: capture.inputUnitCode,
-        stockUnitCode: capture.stockUnitCode,
-        profile: capture.profile,
-      });
-      next.push({
-        product_id: product.id,
-        quantity: converted.quantityInStock,
-        input_quantity: inputQty,
-        input_unit_code: capture.inputUnitCode,
-        stock_unit_code: capture.stockUnitCode,
-        position_id: positionByProductId[product.id] || undefined,
-      });
+      const entries = getProductEntries(product.id);
+
+      for (const entry of entries) {
+        const inputQty = parseQty(entry.rawQuantity);
+        if (inputQty <= 0) continue;
+
+        const converted = convertByProductProfile({
+          quantityInInput: inputQty,
+          inputUnitCode: capture.inputUnitCode,
+          stockUnitCode: capture.stockUnitCode,
+          profile: capture.profile,
+        });
+
+        next.push({
+          product_id: product.id,
+          quantity: converted.quantityInStock,
+          input_quantity: inputQty,
+          input_unit_code: capture.inputUnitCode,
+          stock_unit_code: capture.stockUnitCode,
+          position_id: entry.positionId || undefined,
+        });
+      }
     }
     return next;
-  }, [positionByProductId, products, qtyByProductId]);
+  }, [getProductEntries, products]);
 
   const filteredProducts = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -225,7 +298,11 @@ export function CountInitialForm({
   }, [onlyWithQty, products, qtyByProductId, search]);
 
   const totalBaseQty = useMemo(() => lines.reduce((acc, line) => acc + line.quantity, 0), [lines]);
-  const filledCount = lines.length;
+  const filledLineCount = lines.length;
+  const filledProductCount = useMemo(
+    () => products.filter((product) => (qtyByProductId[product.id] ?? 0) > 0).length,
+    [products, qtyByProductId]
+  );
 
   const scopeToneClass = useMemo(() => {
     if (countScopeLabel?.toLowerCase().includes("area")) return "border-emerald-200 bg-emerald-50 text-emerald-900";
@@ -250,21 +327,63 @@ export function CountInitialForm({
     return map;
   }, [sortedProducts]);
 
-  const handleQtyChange = useCallback((productId: string, rawValue: string) => {
-    setQty((state) => ({ ...state, [productId]: rawValue }));
+  const handleEntryQtyChange = useCallback((productId: string, entryId: string, rawValue: string) => {
+    setEntriesByProductId((state) => {
+      const entries = state[productId]?.length ? state[productId] : [makeDefaultEntry(productId)];
+      return {
+        ...state,
+        [productId]: entries.map((entry) => (entry.id === entryId ? { ...entry, rawQuantity: rawValue } : entry)),
+      };
+    });
   }, []);
 
-  const handlePositionChange = useCallback((productId: string, positionId: string) => {
-    setPositionByProductId((state) => ({ ...state, [productId]: positionId }));
+  const handleEntryPositionChange = useCallback((productId: string, entryId: string, positionId: string) => {
+    setEntriesByProductId((state) => {
+      const entries = state[productId]?.length ? state[productId] : [makeDefaultEntry(productId)];
+      return {
+        ...state,
+        [productId]: entries.map((entry) => (entry.id === entryId ? { ...entry, positionId } : entry)),
+      };
+    });
+  }, []);
+
+  const addProductEntry = useCallback((productId: string) => {
+    setEntriesByProductId((state) => {
+      const entries = state[productId]?.length ? state[productId] : [makeDefaultEntry(productId)];
+      return {
+        ...state,
+        [productId]: [...entries, makeNewEntry(productId)],
+      };
+    });
+  }, []);
+
+  const removeProductEntry = useCallback((productId: string, entryId: string) => {
+    setEntriesByProductId((state) => {
+      const entries = state[productId]?.length ? state[productId] : [makeDefaultEntry(productId)];
+      const nextEntries = entries.filter((entry) => entry.id !== entryId);
+      return {
+        ...state,
+        [productId]: nextEntries.length ? nextEntries : [makeDefaultEntry(productId)],
+      };
+    });
   }, []);
 
   const clearProductQty = useCallback((productId: string) => {
-    setQty((state) => ({ ...state, [productId]: "" }));
-    setPositionByProductId((state) => ({ ...state, [productId]: "" }));
+    setEntriesByProductId((state) => {
+      const next = { ...state };
+      delete next[productId];
+      return next;
+    });
   }, []);
 
-  const setProductQtyToZero = useCallback((productId: string) => {
-    setQty((state) => ({ ...state, [productId]: "0" }));
+  const setProductEntryQtyToZero = useCallback((productId: string, entryId: string) => {
+    setEntriesByProductId((state) => {
+      const entries = state[productId]?.length ? state[productId] : [makeDefaultEntry(productId)];
+      return {
+        ...state,
+        [productId]: entries.map((entry) => (entry.id === entryId ? { ...entry, rawQuantity: "0" } : entry)),
+      };
+    });
   }, []);
 
   const focusQtyByOffset = useCallback(
@@ -366,15 +485,15 @@ export function CountInitialForm({
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-2">
               <div className="ui-caption">Productos con cantidad</div>
-              <div className="text-lg font-semibold text-[var(--ui-text)]">{filledCount}</div>
+              <div className="text-lg font-semibold text-[var(--ui-text)]">{filledProductCount}</div>
+            </div>
+            <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-2">
+              <div className="ui-caption">Lineas contadas</div>
+              <div className="text-lg font-semibold text-[var(--ui-text)]">{filledLineCount}</div>
             </div>
             <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-2">
               <div className="ui-caption">Cantidad base</div>
               <div className="text-lg font-semibold text-[var(--ui-text)]">{totalBaseQty}</div>
-            </div>
-            <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-2">
-              <div className="ui-caption">Ambito activo</div>
-              <div className="text-sm font-semibold text-[var(--ui-text)]">{countScopeLabel || "Sede completa"}</div>
             </div>
           </div>
 
@@ -417,13 +536,14 @@ export function CountInitialForm({
                     key={product.id}
                     product={product}
                     compactMode={compactMode}
-                    value={qty[product.id] ?? ""}
+                    entries={getProductEntries(product.id)}
                     qtyPositive={(qtyByProductId[product.id] ?? 0) > 0}
-                    selectedPositionId={positionByProductId[product.id] ?? ""}
                     internalPositions={internalPositions}
-                    onQtyChange={handleQtyChange}
-                    onPositionChange={handlePositionChange}
-                    onSetZero={setProductQtyToZero}
+                    onEntryQtyChange={handleEntryQtyChange}
+                    onEntryPositionChange={handleEntryPositionChange}
+                    onAddEntry={addProductEntry}
+                    onRemoveEntry={removeProductEntry}
+                    onSetEntryZero={setProductEntryQtyToZero}
                     onClear={clearProductQty}
                     onQtyKeyDown={handleQtyKeyDown}
                     registerInputRef={registerInputRef}
@@ -444,7 +564,7 @@ export function CountInitialForm({
           <div className="text-sm text-[var(--ui-muted)]">
             {siteName}
             {countScopeLabel ? ` / ${countScopeLabel}` : ""}
-            {lines.length > 0 ? ` / ${lines.length} con cantidad` : ""}
+            {lines.length > 0 ? ` / ${lines.length} linea(s) con cantidad` : ""}
           </div>
           <Link href={`/inventory/count-initial?site_id=${encodeURIComponent(siteId)}`} className="ui-btn ui-btn--ghost">
             Limpiar
@@ -471,10 +591,10 @@ export function CountInitialForm({
                   </tr>
                 </thead>
                 <tbody>
-                  {lines.map((line) => {
+                  {lines.map((line, index) => {
                     const product = products.find((p) => p.id === line.product_id);
                     return (
-                      <tr key={line.product_id} className="ui-body">
+                      <tr key={`${line.product_id}:${line.position_id ?? "sin-ubicacion"}:${index}`} className="ui-body">
                         <TableCell>{product?.name ?? line.product_id}</TableCell>
                         <TableCell className="font-mono">
                           {line.input_quantity} {line.input_unit_code}
@@ -493,7 +613,7 @@ export function CountInitialForm({
             </div>
             <div className="mt-4 flex flex-wrap items-center justify-between gap-2">
               <div className="ui-caption">
-                {lines.length} producto(s) / {totalBaseQty} base
+                {filledLineCount} linea(s) / {filledProductCount} producto(s) / {totalBaseQty} base
               </div>
               <div className="flex gap-2">
                 <button type="button" onClick={() => setShowConfirm(false)} className="ui-btn ui-btn--ghost" disabled={loading}>

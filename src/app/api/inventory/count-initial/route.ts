@@ -20,7 +20,7 @@ export async function POST(req: Request) {
         getAll() {
           return cookieStore.getAll();
         },
-        setAll() {},
+        setAll() { },
       },
     }
   );
@@ -65,6 +65,21 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Al menos una linea con cantidad > 0" }, { status: 400 });
   }
 
+  const countLinesByProductId = new Map<string, { product_id: string; quantity: number }>();
+  for (const line of lines) {
+    const current = countLinesByProductId.get(line.product_id);
+    if (current) {
+      current.quantity += line.quantity;
+    } else {
+      countLinesByProductId.set(line.product_id, {
+        product_id: line.product_id,
+        quantity: line.quantity,
+      });
+    }
+  }
+
+  const countLines = Array.from(countLinesByProductId.values());
+
   const sessionId = crypto.randomUUID();
   const note = scopeNote
     ? `${SESSION_PREFIX}${sessionId} ${scopeNote}`
@@ -90,7 +105,7 @@ export async function POST(req: Request) {
         p_scope_location_id: scopeLocationId || null,
         p_name: scopeZone ? `Conteo zona ${scopeZone}` : scopeLocationId ? "Conteo por LOC" : "Conteo",
         p_created_by: user.id,
-        p_lines: lines,
+        p_lines: countLines,
       }
     );
     if (scopedErr) {
@@ -125,19 +140,17 @@ export async function POST(req: Request) {
         );
       }
 
-      const positionedLines = lines.filter((line) => line.position_id);
-      for (const line of positionedLines) {
-        const { error: positionErr } = await supabase.rpc("assign_inventory_stock_to_position", {
+      if (scopeLocationId) {
+        const { error: positionErr } = await supabase.rpc("reconcile_inventory_stock_positions_for_count", {
           p_location_id: scopeLocationId,
-          p_product_id: line.product_id,
-          p_position_id: line.position_id,
-          p_quantity: line.quantity,
+          p_lines: lines,
           p_created_by: user.id,
           p_note: `count:${countSessionId}`,
         });
+
         if (positionErr) {
           return NextResponse.json(
-            { error: "assign_inventory_stock_to_position: " + positionErr.message },
+            { error: "reconcile_inventory_stock_positions_for_count: " + positionErr.message },
             { status: 500 }
           );
         }
@@ -149,7 +162,7 @@ export async function POST(req: Request) {
       sessionId,
       countSessionId: countSessionId ?? undefined,
       applied: scopeType === "loc",
-      count: lines.length,
+      count: countLines.length,
     });
   }
 
@@ -157,7 +170,7 @@ export async function POST(req: Request) {
     p_site_id: siteId,
     p_user_id: user.id,
     p_note: note,
-    p_lines: lines,
+    p_lines: countLines,
   });
   if (countErr) {
     return NextResponse.json(
@@ -170,6 +183,6 @@ export async function POST(req: Request) {
     ok: true,
     sessionId,
     countSessionId: countSessionId ?? undefined,
-    count: lines.length,
+    count: countLines.length,
   });
 }
