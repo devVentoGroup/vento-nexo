@@ -121,6 +121,11 @@ function getCaptureConfig(product: Product) {
 
 function getUnitOptions(product: Product) {
   const capture = getCaptureConfig(product);
+  const contextLabelMap: Record<string, string> = {
+    purchase: "compra",
+    remission: "remision",
+    general: "general",
+  };
   const options: Array<{
     value: string;
     inputUnitCode: string;
@@ -132,7 +137,7 @@ function getUnitOptions(product: Product) {
       value: `stock:${capture.stockUnitCode}`,
       inputUnitCode: capture.stockUnitCode,
       profile: null,
-      label: capture.stockUnitCode,
+      label: `${capture.stockUnitCode} base`,
       conversionLabel: `Unidad base: ${capture.stockUnitCode}`,
     },
   ];
@@ -145,12 +150,19 @@ function getUnitOptions(product: Product) {
     const inputUnitCode = normalizeUnitCode(profile.input_unit_code);
     if (!inputUnitCode) continue;
 
-    const label = String(profile.label || inputUnitCode).trim();
+    const baseLabel = String(profile.label || inputUnitCode).trim();
+    const contextLabel = contextLabelMap[String(profile.usage_context ?? "general")] ?? "general";
+    const stockQty = Number(profile.qty_in_stock_unit);
+    const inputQty = Number(profile.qty_in_input_unit);
+    const factorLabel =
+      Number.isFinite(inputQty) && Number.isFinite(stockQty) && inputQty > 0
+        ? `${stockQty / inputQty} ${capture.stockUnitCode}`
+        : `? ${capture.stockUnitCode}`;
     options.push({
       value: `profile:${profile.id}`,
       inputUnitCode,
       profile,
-      label,
+      label: `${baseLabel} ${contextLabel} - ${factorLabel}`,
       conversionLabel: `${profile.qty_in_input_unit} ${inputUnitCode} = ${profile.qty_in_stock_unit} ${capture.stockUnitCode}`,
     });
   }
