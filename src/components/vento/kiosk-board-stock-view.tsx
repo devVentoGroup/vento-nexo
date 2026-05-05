@@ -109,6 +109,11 @@ function buildBoardHref(params: {
   return `/inventory/locations/${encodeURIComponent(params.locationId)}/board${qs ? `?${qs}` : ""}`;
 }
 
+function buildKioskWithdrawHref(locationId: string, productId: string) {
+  const params = new URLSearchParams({ product_id: productId });
+  return `/inventory/locations/${encodeURIComponent(locationId)}/kiosk-withdraw?${params.toString()}`;
+}
+
 function normalizeViewMode(value: string | undefined, isKiosk: boolean): ViewMode {
   if (value === "cards" || value === "compact" || value === "list") return value;
   return isKiosk ? "compact" : "cards";
@@ -310,6 +315,14 @@ export function KioskBoardStockView({
                     <div className="mt-1 text-xs text-[var(--ui-muted)]">
                       Base: {formatQty(item.qty)} {item.unit}
                     </div>
+                    {isKiosk ? (
+                      <Link
+                        href={buildKioskWithdrawHref(locationId, item.productId)}
+                        className="ui-btn ui-btn--brand mt-2 h-10 px-3 text-xs"
+                      >
+                        Retirar / trasladar
+                      </Link>
+                    ) : null}
                   </div>
                 </article>
               ))}
@@ -339,6 +352,14 @@ export function KioskBoardStockView({
                   <div className="text-sm text-[var(--ui-muted)]">
                     Base: {formatQty(item.qty)} {item.unit}
                   </div>
+                  {isKiosk ? (
+                    <Link
+                      href={buildKioskWithdrawHref(locationId, item.productId)}
+                      className="ui-btn ui-btn--brand h-10 w-full px-3 text-xs"
+                    >
+                      Retirar / trasladar
+                    </Link>
+                  ) : null}
                 </div>
               </article>
             ))}

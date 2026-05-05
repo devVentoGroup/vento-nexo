@@ -22,6 +22,7 @@ type WorkerOption = {
   label: string;
   role: string | null;
   destination_label: string;
+  has_destination: boolean;
 };
 
 type Props = {
@@ -33,6 +34,7 @@ type Props = {
   errorMessage?: string;
   errorProductId?: string;
   clearDraft?: boolean;
+  initialProductId?: string;
   action: (formData: FormData) => void | Promise<void>;
 };
 
@@ -68,6 +70,7 @@ export function KioskWithdrawForm({
   errorMessage = "",
   errorProductId = "",
   clearDraft = false,
+  initialProductId = "",
   action,
 }: Props) {
   const [workerId, setWorkerId] = useState("");
@@ -77,56 +80,6 @@ export function KioskWithdrawForm({
   const [inputUomProfileId, setInputUomProfileId] = useState("");
   const [notes, setNotes] = useState("");
   const [draftLoaded, setDraftLoaded] = useState(false);
-
-  useEffect(() => {
-    if (clearDraft) {
-      window.localStorage.removeItem(STORAGE_KEY);
-      setDraftLoaded(true);
-      return;
-    }
-
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      setDraftLoaded(true);
-      return;
-    }
-
-    try {
-      const draft = JSON.parse(raw) as Partial<KioskWithdrawDraft>;
-      setWorkerId(String(draft.workerId ?? ""));
-      setProductId(String(draft.productId ?? ""));
-      setQuantity(String(draft.quantity ?? ""));
-      setInputUnitCode(String(draft.inputUnitCode ?? ""));
-      setInputUomProfileId(String(draft.inputUomProfileId ?? ""));
-      setNotes(String(draft.notes ?? ""));
-    } catch {
-      window.localStorage.removeItem(STORAGE_KEY);
-    } finally {
-      setDraftLoaded(true);
-    }
-  }, [clearDraft]);
-
-  useEffect(() => {
-    if (!draftLoaded || clearDraft) return;
-    const hasContent = Boolean(workerId || productId || quantity || inputUnitCode || notes);
-    if (!hasContent) {
-      window.localStorage.removeItem(STORAGE_KEY);
-      return;
-    }
-
-    const draft: KioskWithdrawDraft = {
-      workerId,
-      productId,
-      quantity,
-      inputUnitCode,
-      inputUomProfileId,
-      notes,
-    };
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
-  }, [clearDraft, draftLoaded, inputUnitCode, inputUomProfileId, notes, productId, quantity, workerId]);
-
-  const product = products.find((item) => item.id === productId) ?? null;
-  const selectedWorker = workers.find((worker) => worker.employee_id === workerId) ?? null;
 
   const profilesByProduct = useMemo(() => {
     const map = new Map<string, ProductUomProfile[]>();
@@ -154,6 +107,72 @@ export function KioskWithdrawForm({
     }
     return selected;
   }, [products, profilesByProduct]);
+
+  useEffect(() => {
+    if (clearDraft) {
+      window.localStorage.removeItem(STORAGE_KEY);
+      setDraftLoaded(true);
+      return;
+    }
+
+    const raw = window.localStorage.getItem(STORAGE_KEY);
+    if (!raw) {
+      if (initialProductId) {
+        const nextProduct = products.find((item) => item.id === initialProductId) ?? null;
+        const nextStockUnit = normalizeUnitCode(nextProduct?.stock_unit_code ?? nextProduct?.unit ?? "un");
+        const nextProfile = nextProduct ? defaultProfileByProduct.get(initialProductId) ?? null : null;
+        setProductId(initialProductId);
+        setInputUnitCode(normalizeUnitCode(nextProfile?.input_unit_code ?? "") || nextStockUnit);
+        setInputUomProfileId(nextProfile?.id ?? "");
+      }
+      setDraftLoaded(true);
+      return;
+    }
+
+    try {
+      const draft = JSON.parse(raw) as Partial<KioskWithdrawDraft>;
+      const draftProductId = initialProductId || String(draft.productId ?? "");
+      const nextProduct = products.find((item) => item.id === draftProductId) ?? null;
+      const nextStockUnit = normalizeUnitCode(nextProduct?.stock_unit_code ?? nextProduct?.unit ?? "un");
+      const nextProfile = initialProductId && nextProduct ? defaultProfileByProduct.get(initialProductId) ?? null : null;
+      setWorkerId(String(draft.workerId ?? ""));
+      setProductId(draftProductId);
+      setQuantity(initialProductId ? "" : String(draft.quantity ?? ""));
+      setInputUnitCode(
+        initialProductId
+          ? normalizeUnitCode(nextProfile?.input_unit_code ?? "") || nextStockUnit
+          : String(draft.inputUnitCode ?? "")
+      );
+      setInputUomProfileId(initialProductId ? nextProfile?.id ?? "" : String(draft.inputUomProfileId ?? ""));
+      setNotes(String(draft.notes ?? ""));
+    } catch {
+      window.localStorage.removeItem(STORAGE_KEY);
+    } finally {
+      setDraftLoaded(true);
+    }
+  }, [clearDraft, defaultProfileByProduct, initialProductId, products]);
+
+  useEffect(() => {
+    if (!draftLoaded || clearDraft) return;
+    const hasContent = Boolean(workerId || productId || quantity || inputUnitCode || notes);
+    if (!hasContent) {
+      window.localStorage.removeItem(STORAGE_KEY);
+      return;
+    }
+
+    const draft: KioskWithdrawDraft = {
+      workerId,
+      productId,
+      quantity,
+      inputUnitCode,
+      inputUomProfileId,
+      notes,
+    };
+    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
+  }, [clearDraft, draftLoaded, inputUnitCode, inputUomProfileId, notes, productId, quantity, workerId]);
+
+  const product = products.find((item) => item.id === productId) ?? null;
+  const selectedWorker = workers.find((worker) => worker.employee_id === workerId) ?? null;
 
   const productProfiles = productId ? profilesByProduct.get(productId) ?? [] : [];
   const selectedProfile = inputUomProfileId
@@ -196,12 +215,12 @@ export function KioskWithdrawForm({
           <div>
             <div className="ui-h3">Quien retira</div>
             <div className="ui-caption mt-1">
-              El PIN confirma la identidad y define el LOC destino del traslado.
+              Si el trabajador tiene LOC asignado se traslada. Si no, se descuenta del inventario.
             </div>
           </div>
           {selectedWorker ? (
             <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-900">
-              Destino {selectedWorker.destination_label}
+              {selectedWorker.has_destination ? `Destino ${selectedWorker.destination_label}` : "Sin destino"}
             </span>
           ) : null}
         </div>
@@ -359,10 +378,14 @@ export function KioskWithdrawForm({
 
       <div className="ui-mobile-sticky-footer ui-fade-up ui-delay-2 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ui-border)] bg-white/92 px-4 py-3 backdrop-blur">
         <div className="text-sm text-[var(--ui-muted)]">
-          {selectedWorker ? `Destino: ${selectedWorker.destination_label}` : "Selecciona trabajador y producto"}
+          {selectedWorker
+            ? selectedWorker.has_destination
+              ? `Traslado a: ${selectedWorker.destination_label}`
+              : "Retiro sin destino"
+            : "Selecciona trabajador y producto"}
         </div>
         <button type="submit" className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold" disabled={!canSubmit}>
-          Confirmar retiro
+          Confirmar
         </button>
       </div>
     </form>

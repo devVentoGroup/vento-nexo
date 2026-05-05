@@ -16,7 +16,7 @@ import { safeDecodeURIComponent } from "@/lib/url";
 export const dynamic = "force-dynamic";
 
 type Params = { id: string };
-type SearchParams = { error?: string; error_product_id?: string; ok?: string };
+type SearchParams = { error?: string; error_product_id?: string; ok?: string; product_id?: string };
 
 type ProductRow = {
   id: string;
@@ -126,10 +126,7 @@ async function submitKioskWithdraw(formData: FormData) {
     location?: LocationRow | LocationRow[] | null;
   } | null;
 
-  if (!assignment?.location_id) {
-    redirect(errorUrl(sourceLocationId, "Este trabajador no tiene LOC de retiro asignado en VISO.", productId));
-  }
-  if (assignment.location_id === sourceLocationId) {
+  if (assignment?.location_id === sourceLocationId) {
     redirect(errorUrl(sourceLocationId, "El LOC destino del trabajador no puede ser el mismo origen.", productId));
   }
 
@@ -205,60 +202,49 @@ async function submitKioskWithdraw(formData: FormData) {
     );
   }
 
-  const destination = Array.isArray(assignment.location)
+  const destination = Array.isArray(assignment?.location)
     ? assignment.location[0] ?? null
-    : assignment.location ?? null;
+    : assignment?.location ?? null;
   const fromLabel = locLabel(source);
-  const toLabel = locLabel(destination);
+  const hasDestination = Boolean(assignment?.location_id);
+  const toLabel = hasDestination ? locLabel(destination) : "sin destino";
 
-  const { data: transfer, error: transferErr } = await supabase
-    .from("inventory_transfers")
-    .insert({
-      site_id: source.site_id,
-      from_loc_id: sourceLocationId,
-      to_loc_id: assignment.location_id,
-      status: "completed",
-      notes: notes
-        ? `Quiosco: ${employeeLabel}. ${notes}`
-        : `Quiosco: retiro confirmado por ${employeeLabel}.`,
-      created_by: user.id,
-    })
-    .select("id")
-    .single();
+  let transferId = "";
+  if (hasDestination) {
+    const { data: transfer, error: transferErr } = await supabase
+      .from("inventory_transfers")
+      .insert({
+        site_id: source.site_id,
+        from_loc_id: sourceLocationId,
+        to_loc_id: assignment!.location_id,
+        status: "completed",
+        notes: notes
+          ? `Quiosco: ${employeeLabel}. ${notes}`
+          : `Quiosco: traslado confirmado por ${employeeLabel}.`,
+        created_by: user.id,
+      })
+      .select("id")
+      .single();
 
-  if (transferErr || !transfer) {
-    redirect(errorUrl(sourceLocationId, transferErr?.message ?? "No se pudo crear el traslado.", productId));
-  }
+    if (transferErr || !transfer) {
+      redirect(errorUrl(sourceLocationId, transferErr?.message ?? "No se pudo crear el traslado.", productId));
+    }
+    transferId = String(transfer.id);
 
-  const { error: itemErr } = await supabase.from("inventory_transfer_items").insert({
-    transfer_id: transfer.id,
-    product_id: productId,
-    quantity: quantityInStock,
-    unit: stockUnitCode,
-    input_qty: quantityInInput,
-    input_unit_code: inputUnitCode || stockUnitCode,
-    conversion_factor_to_stock: conversionFactorToStock,
-    stock_unit_code: stockUnitCode,
-    notes: notes || null,
-  });
-  if (itemErr) {
-    redirect(errorUrl(sourceLocationId, itemErr.message, productId));
-  }
-
-  const { error: movementErr } = await supabase.from("inventory_movements").insert({
-    site_id: source.site_id,
-    product_id: productId,
-    movement_type: "transfer_internal",
-    quantity: quantityInStock,
-    input_qty: quantityInInput,
-    input_unit_code: inputUnitCode || stockUnitCode,
-    conversion_factor_to_stock: conversionFactorToStock,
-    stock_unit_code: stockUnitCode,
-    note: `Quiosco ${transfer.id}: ${employeeLabel} retiro ${fromLabel} -> ${toLabel}`,
-    created_by: user.id,
-  });
-  if (movementErr) {
-    redirect(errorUrl(sourceLocationId, movementErr.message, productId));
+    const { error: itemErr } = await supabase.from("inventory_transfer_items").insert({
+      transfer_id: transfer.id,
+      product_id: productId,
+      quantity: quantityInStock,
+      unit: stockUnitCode,
+      input_qty: quantityInInput,
+      input_unit_code: inputUnitCode || stockUnitCode,
+      conversion_factor_to_stock: conversionFactorToStock,
+      stock_unit_code: stockUnitCode,
+      notes: notes || null,
+    });
+    if (itemErr) {
+      redirect(errorUrl(sourceLocationId, itemErr.message, productId));
+    }
   }
 
   const { error: positionErr } = await supabase.rpc("consume_inventory_stock_from_positions", {
@@ -266,7 +252,9 @@ async function submitKioskWithdraw(formData: FormData) {
     p_product_id: productId,
     p_quantity: quantityInStock,
     p_created_by: user.id,
-    p_note: `Quiosco ${fromLabel} -> ${toLabel}: menor stock primero`,
+    p_note: hasDestination
+      ? `Quiosco ${fromLabel} -> ${toLabel}: menor stock primero`
+      : `Quiosco retiro ${fromLabel}: menor stock primero`,
   });
   if (positionErr) {
     redirect(errorUrl(sourceLocationId, positionErr.message, productId));
@@ -281,13 +269,73 @@ async function submitKioskWithdraw(formData: FormData) {
     redirect(errorUrl(sourceLocationId, fromErr.message, productId));
   }
 
-  const { error: toErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
-    p_location_id: assignment.location_id,
-    p_product_id: productId,
-    p_delta: quantityInStock,
-  });
-  if (toErr) {
-    redirect(errorUrl(sourceLocationId, toErr.message, productId));
+  if (hasDestination) {
+    const { error: movementErr } = await supabase.from("inventory_movements").insert({
+      site_id: source.site_id,
+      product_id: productId,
+      movement_type: "transfer_internal",
+      quantity: quantityInStock,
+      input_qty: quantityInInput,
+      input_unit_code: inputUnitCode || stockUnitCode,
+      conversion_factor_to_stock: conversionFactorToStock,
+      stock_unit_code: stockUnitCode,
+      note: `Quiosco ${transferId}: ${employeeLabel} traslado ${fromLabel} -> ${toLabel}`,
+      created_by: user.id,
+    });
+    if (movementErr) {
+      redirect(errorUrl(sourceLocationId, movementErr.message, productId));
+    }
+
+    const { error: toErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
+      p_location_id: assignment!.location_id,
+      p_product_id: productId,
+      p_delta: quantityInStock,
+    });
+    if (toErr) {
+      redirect(errorUrl(sourceLocationId, toErr.message, productId));
+    }
+  } else {
+    const { error: movementErr } = await supabase.from("inventory_movements").insert({
+      site_id: source.site_id,
+      product_id: productId,
+      movement_type: "consumption",
+      quantity: -quantityInStock,
+      input_qty: quantityInInput,
+      input_unit_code: inputUnitCode || stockUnitCode,
+      conversion_factor_to_stock: conversionFactorToStock,
+      stock_unit_code: stockUnitCode,
+      note: notes
+        ? `Quiosco retiro ${fromLabel}: ${employeeLabel}. ${notes}`
+        : `Quiosco retiro ${fromLabel}: ${employeeLabel} sin LOC destino`,
+      created_by: user.id,
+    });
+    if (movementErr) {
+      redirect(errorUrl(sourceLocationId, movementErr.message, productId));
+    }
+
+    const { data: siteStock } = await supabase
+      .from("inventory_stock_by_site")
+      .select("current_qty")
+      .eq("site_id", source.site_id)
+      .eq("product_id", productId)
+      .maybeSingle();
+
+    const currentQty = Number((siteStock as { current_qty?: number } | null)?.current_qty ?? 0);
+    const newQty = Math.max(0, currentQty - quantityInStock);
+    const { error: siteErr } = await supabase
+      .from("inventory_stock_by_site")
+      .upsert(
+        {
+          site_id: source.site_id,
+          product_id: productId,
+          current_qty: newQty,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "site_id,product_id" }
+      );
+    if (siteErr) {
+      redirect(errorUrl(sourceLocationId, siteErr.message, productId));
+    }
   }
 
   const redirectTarget = returnTo || `/inventory/locations/${encodeURIComponent(sourceLocationId)}/board?kiosk=1`;
@@ -306,12 +354,13 @@ export default async function KioskWithdrawPage({
   const sp = (await searchParams) ?? {};
   const errorMessage = sp.error ? safeDecodeURIComponent(sp.error) : "";
   const errorProductId = sp.error_product_id ? String(sp.error_product_id).trim() : "";
+  const initialProductId = sp.product_id ? String(sp.product_id).trim() : "";
   const clearDraft = sp.ok === "1";
 
   const { supabase } = await requireAppAccess({
     appId: "nexo",
     returnTo: `/inventory/locations/${id}/kiosk-withdraw`,
-    permissionCode: "inventory.transfers",
+    permissionCode: ["inventory.transfers", "inventory.withdraw"],
   });
 
   const { data: locationData } = await supabase
@@ -364,7 +413,23 @@ export default async function KioskWithdrawPage({
     location_id: string;
     location?: LocationRow | LocationRow[] | null;
   }>;
-  const employeeIds = assignments.map((assignment) => assignment.employee_id);
+  const assignmentByEmployeeId = new Map(assignments.map((assignment) => [assignment.employee_id, assignment]));
+
+  const { data: employeeSiteData } = await supabase
+    .from("employee_sites")
+    .select("employee_id")
+    .eq("site_id", location.site_id)
+    .eq("is_active", true)
+    .limit(500);
+  const employeeIds = Array.from(
+    new Set([
+      ...((employeeSiteData ?? []) as Array<{ employee_id: string | null }>)
+        .map((row) => row.employee_id)
+        .filter((employeeId): employeeId is string => Boolean(employeeId)),
+      ...assignments.map((assignment) => assignment.employee_id),
+    ])
+  );
+
   const { data: employeesData } = employeeIds.length
     ? await supabase
         .from("employees")
@@ -373,22 +438,22 @@ export default async function KioskWithdrawPage({
         .eq("is_active", true)
         .order("full_name", { ascending: true })
     : { data: [] as Array<{ id: string; full_name: string | null; alias: string | null; role: string | null }> };
-  const employeeById = new Map((employeesData ?? []).map((employee) => [employee.id, employee]));
-  const workers = assignments
-    .map((assignment) => {
-      const employee = employeeById.get(assignment.employee_id);
-      if (!employee) return null;
-      const destination = Array.isArray(assignment.location)
+  const workers = (employeesData ?? [])
+    .map((employee) => {
+      const assignment = assignmentByEmployeeId.get(employee.id) ?? null;
+      const destination = Array.isArray(assignment?.location)
         ? assignment.location[0] ?? null
-        : assignment.location ?? null;
+        : assignment?.location ?? null;
+      const hasDestination = Boolean(assignment?.location_id && assignment.location_id !== id);
       return {
-        employee_id: assignment.employee_id,
-        label: String(employee.alias ?? employee.full_name ?? assignment.employee_id).trim(),
+        employee_id: employee.id,
+        label: String(employee.alias ?? employee.full_name ?? employee.id).trim(),
         role: employee.role ?? null,
-        destination_label: locLabel(destination),
+        destination_label: hasDestination ? locLabel(destination) : "Sin destino (descuento)",
+        has_destination: hasDestination,
       };
     })
-    .filter((worker): worker is { employee_id: string; label: string; role: string | null; destination_label: string } =>
+    .filter((worker): worker is { employee_id: string; label: string; role: string | null; destination_label: string; has_destination: boolean } =>
       Boolean(worker)
     )
     .sort((a, b) => a.label.localeCompare(b.label, "es", { sensitivity: "base" }));
@@ -405,10 +470,10 @@ export default async function KioskWithdrawPage({
               Volver al kiosco
             </Link>
             <div className="space-y-2">
-              <div className="ui-caption">Retiro desde quiosco</div>
+              <div className="ui-caption">Quiosco operativo</div>
               <h1 className="ui-h1">{title}</h1>
               <p className="ui-body-muted">
-                El trabajador confirma con PIN y NEXO registra un traslado interno hacia su LOC asignado.
+                El trabajador confirma con PIN. Si tiene LOC asignado, NEXO traslada; si no, descuenta del inventario.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -431,8 +496,8 @@ export default async function KioskWithdrawPage({
             </article>
             <article className="ui-remission-kpi" data-tone="cool">
               <div className="ui-remission-kpi-label">Movimiento</div>
-              <div className="ui-remission-kpi-value">LOC</div>
-              <div className="ui-remission-kpi-note">Traslado interno, no consumo directo</div>
+              <div className="ui-remission-kpi-value">LOC / retiro</div>
+              <div className="ui-remission-kpi-note">Destino asignado o descuento directo</div>
             </article>
           </div>
         </div>
@@ -444,7 +509,7 @@ export default async function KioskWithdrawPage({
 
       {workers.length === 0 ? (
         <div className="ui-alert ui-alert--neutral">
-          No hay trabajadores con LOC de retiro asignado para esta sede. Configuralos en VISO.
+          No hay trabajadores activos para esta sede.
         </div>
       ) : null}
 
@@ -457,6 +522,7 @@ export default async function KioskWithdrawPage({
         errorMessage={errorMessage}
         errorProductId={errorProductId}
         clearDraft={clearDraft}
+        initialProductId={initialProductId}
         action={submitKioskWithdraw}
       />
     </div>

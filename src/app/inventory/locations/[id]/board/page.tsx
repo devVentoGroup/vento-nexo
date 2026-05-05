@@ -348,7 +348,7 @@ export default async function LocationBoardPage({
             {isKiosk ? (
               <div className="flex flex-wrap items-center gap-3">
                 <Link href={kioskWithdrawHref} className="ui-btn ui-btn--brand">
-                  Retirar insumo
+                  Retirar / trasladar
                 </Link>
                 <LocationBoardAutoRefresh intervalSeconds={30} />
                 <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-[var(--ui-muted)] shadow-sm">
