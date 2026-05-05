@@ -56,6 +56,7 @@ const APP_TAGLINE =
   APP_TAGLINE_RAW && !/[\u00C3\u00C2\u00E2\uFFFD]/.test(APP_TAGLINE_RAW)
     ? APP_TAGLINE_RAW
     : "Logistica e inventario operativo";
+const PERMISSION_RETRY_DELAY_MS = 350;
 
 const NAV_GROUPS: NavGroup[] = [
   {
@@ -388,6 +389,10 @@ function isRefreshSessionError(error: unknown) {
   );
 }
 
+function delay(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
+}
+
 export function VentoChrome({
   children,
   displayName,
@@ -410,6 +415,7 @@ export function VentoChrome({
   const [overrideRole, setOverrideRole] = useState<string | null>(null);
   const [permMap, setPermMap] = useState<Record<string, boolean>>({});
   const [permissionsReady, setPermissionsReady] = useState(false);
+  const permMapRef = useRef<Record<string, boolean>>({});
   const authRecoveryRef = useRef(false);
   const isKioskMode = searchParams.get("kiosk") === "1";
 
@@ -489,24 +495,41 @@ export function VentoChrome({
     const supabase = createClient();
     const siteId = currentSiteId || activeSiteId || null;
 
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setPermissionsReady(false);
+    if (Object.keys(permMapRef.current).length === 0) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setPermissionsReady(false);
+    }
 
-    Promise.all(
-      permissionCodes.map((code) =>
+    const loadPermissionMap = async () => {
+      const fetchPermission = (code: string) =>
         supabase.rpc("has_permission", {
           p_permission_code: `nexo.${code}`,
           p_site_id: siteId,
           p_area_id: null,
-        })
-      )
-    )
+        });
+
+      const firstResults = await Promise.all(permissionCodes.map(fetchPermission));
+      const retryCodes = permissionCodes.filter((_, idx) => firstResults[idx]?.error);
+      if (retryCodes.length === 0) return firstResults;
+
+      await delay(PERMISSION_RETRY_DELAY_MS);
+      const retryResults = await Promise.all(retryCodes.map(fetchPermission));
+      const retryByCode = new Map(retryCodes.map((code, idx) => [code, retryResults[idx]]));
+
+      return firstResults.map((result, idx) => {
+        const retryResult = retryByCode.get(permissionCodes[idx]);
+        return result.error && retryResult ? retryResult : result;
+      });
+    };
+
+    loadPermissionMap()
       .then((results) => {
         if (!isActiveRequest) return;
         const nextMap: Record<string, boolean> = {};
         results.forEach((res, idx) => {
           nextMap[permissionCodes[idx]] = !res.error && Boolean(res.data);
         });
+        permMapRef.current = nextMap;
         setPermMap(nextMap);
         setPermissionsReady(true);
       })
@@ -531,8 +554,12 @@ export function VentoChrome({
             });
           return;
         }
-        setPermMap({});
-        setPermissionsReady(true);
+        if (Object.keys(permMapRef.current).length > 0) {
+          setPermMap(permMapRef.current);
+        } else {
+          setPermMap({});
+          setPermissionsReady(true);
+        }
       });
 
     return () => {
