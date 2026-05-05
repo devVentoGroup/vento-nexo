@@ -125,6 +125,7 @@ export function KioskBoardStockView({
   const [query, setQuery] = useState("");
   const [categoryId, setCategoryId] = useState(initialCategoryId || "all");
   const [viewMode, setViewMode] = useState<ViewMode>(() => normalizeViewMode(initialViewMode, isKiosk));
+  const [showCategoryFilters, setShowCategoryFilters] = useState(false);
 
   const categories = useMemo(() => {
     const map = new Map<string, { id: string; label: string; count: number }>();
@@ -137,6 +138,11 @@ export function KioskBoardStockView({
     }
     return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, "es", { sensitivity: "base" }));
   }, [items]);
+
+  const activeCategory = useMemo(() => {
+    if (categoryId === "all") return null;
+    return categories.find((category) => category.id === categoryId) ?? null;
+  }, [categories, categoryId]);
 
   const filteredItems = useMemo(() => {
     const needle = normalizeSearch(query);
@@ -183,11 +189,10 @@ export function KioskBoardStockView({
                     viewMode: value as ViewMode,
                     categoryId,
                   })}
-                  className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${
-                    viewMode === value
-                      ? "bg-amber-100 text-amber-950"
-                      : "text-[var(--ui-muted)] hover:bg-slate-50 hover:text-[var(--ui-text)]"
-                  }`}
+                  className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${viewMode === value
+                    ? "bg-amber-100 text-amber-950"
+                    : "text-[var(--ui-muted)] hover:bg-slate-50 hover:text-[var(--ui-text)]"
+                    }`}
                 >
                   {label}
                 </Link>
@@ -195,36 +200,90 @@ export function KioskBoardStockView({
             </div>
           </div>
 
-          <div className="flex flex-wrap gap-2">
-            <Link
-              onClick={() => setCategoryId("all")}
-              href={buildBoardHref({
-                locationId,
-                isKiosk,
-                positionId,
-                viewMode,
-                categoryId: "all",
-              })}
-              className={categoryId === "all" ? "ui-chip ui-chip--brand" : "ui-chip"}
-            >
-              Todas ({items.length})
-            </Link>
-            {categories.map((category) => (
-              <Link
-                key={category.id}
-                onClick={() => setCategoryId(category.id)}
-                href={buildBoardHref({
-                  locationId,
-                  isKiosk,
-                  positionId,
-                  viewMode,
-                  categoryId: category.id,
-                })}
-                className={categoryId === category.id ? "ui-chip ui-chip--brand" : "ui-chip"}
+          <div className="rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3 shadow-sm">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-[var(--ui-text)]">Categorias</div>
+                <div className="mt-0.5 text-xs text-[var(--ui-muted)]">
+                  {activeCategory
+                    ? `Activa: ${activeCategory.label} (${activeCategory.count})`
+                    : `Todas (${items.length}) · ${categories.length} categorias disponibles`}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowCategoryFilters((value) => !value)}
+                aria-expanded={showCategoryFilters}
+                className="ui-btn ui-btn--ghost h-9 px-3 text-xs"
               >
-                {category.label} ({category.count})
-              </Link>
-            ))}
+                {showCategoryFilters ? "Ocultar filtros" : activeCategory ? "Cambiar" : "Ver filtros"}
+              </button>
+            </div>
+
+            {activeCategory ? (
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                <span className="ui-chip ui-chip--brand">
+                  {activeCategory.label} ({activeCategory.count})
+                </span>
+                <Link
+                  onClick={() => {
+                    setCategoryId("all");
+                    setShowCategoryFilters(false);
+                  }}
+                  href={buildBoardHref({
+                    locationId,
+                    isKiosk,
+                    positionId,
+                    viewMode,
+                    categoryId: "all",
+                  })}
+                  className="ui-chip"
+                >
+                  Limpiar categoria
+                </Link>
+              </div>
+            ) : null}
+
+            {showCategoryFilters ? (
+              <div className="mt-3 flex flex-wrap gap-2 border-t border-[var(--ui-border)] pt-3">
+                <Link
+                  onClick={() => {
+                    setCategoryId("all");
+                    setShowCategoryFilters(false);
+                  }}
+                  href={buildBoardHref({
+                    locationId,
+                    isKiosk,
+                    positionId,
+                    viewMode,
+                    categoryId: "all",
+                  })}
+                  className={categoryId === "all" ? "ui-chip ui-chip--brand" : "ui-chip"}
+                >
+                  Todas ({items.length})
+                </Link>
+                {categories.map((category) => (
+                  <Link
+                    key={category.id}
+                    onClick={() => {
+                      setCategoryId(category.id);
+                      setShowCategoryFilters(false);
+                    }}
+                    href={buildBoardHref({
+                      locationId,
+                      isKiosk,
+                      positionId,
+                      viewMode,
+                      categoryId: category.id,
+                    })}
+                    className={categoryId === category.id ? "ui-chip ui-chip--brand" : "ui-chip"}
+                  >
+                    {category.label} ({category.count})
+                  </Link>
+                ))}
+              </div>
+            ) : null}
           </div>
 
           <div className="text-sm text-[var(--ui-muted)]">
