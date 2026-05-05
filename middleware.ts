@@ -4,6 +4,8 @@ import { createServerClient } from "@supabase/ssr";
 const DEBUG_AUTH = process.env.NEXT_PUBLIC_DEBUG_AUTH === "1";
 const COOKIE_DOMAIN =
   process.env.NEXT_PUBLIC_COOKIE_DOMAIN || process.env.COOKIE_DOMAIN;
+const BODEGA_KIOSK_EMAIL = "bodega@ventogroup.co";
+const BODEGA_KIOSK_LOCATION_CODE = "LOC-CP-BOD-MAIN";
 
 function buildLoginRedirect(request: NextRequest) {
   const target = new URL("/login", request.url);
@@ -62,8 +64,36 @@ function withNoStoreHeaders(response: NextResponse) {
   return response;
 }
 
+function isBodegaKioskUser(user: unknown) {
+  const email = String((user as { email?: string | null } | null)?.email ?? "")
+    .trim()
+    .toLowerCase();
+  return email === BODEGA_KIOSK_EMAIL;
+}
+
+function buildBodegaKioskRedirect(request: NextRequest) {
+  return withNoStoreHeaders(NextResponse.redirect(new URL("/kiosk/bodega", request.url)));
+}
+
+function withRequiredKioskParam(request: NextRequest) {
+  if (request.nextUrl.searchParams.get("kiosk") === "1") return null;
+
+  const target = request.nextUrl.clone();
+  target.searchParams.set("kiosk", "1");
+  return withNoStoreHeaders(NextResponse.redirect(target));
+}
+
+function isStaticKioskEntry(pathname: string) {
+  return pathname === "/kiosk/bodega" || pathname === "/kiosk/bodega-principal";
+}
+
+function isAllowedBodegaLocationRoute(pathname: string, locationId: string) {
+  const base = `/inventory/locations/${encodeURIComponent(locationId)}`;
+  return pathname === `${base}/board` || pathname === `${base}/kiosk-withdraw`;
+}
+
 export const config = {
-  matcher: ["/((?!_next|login|favicon.ico|manifest.webmanifest|logos|apps|images|fonts|api).*)"],
+  matcher: ["/((?!_next|login|favicon.ico|manifest.webmanifest|logos|images|fonts|api).*)"],
 };
 
 export async function middleware(request: NextRequest) {
@@ -112,6 +142,37 @@ export async function middleware(request: NextRequest) {
     const redirect = buildLoginRedirect(request);
     clearSupabaseCookies(request, redirect);
     return withDebugHeaders(redirect, request, "no-user");
+  }
+
+  if (isBodegaKioskUser(data.user)) {
+    const pathname = request.nextUrl.pathname;
+
+    if (isStaticKioskEntry(pathname)) {
+      return withDebugHeaders(response, request, "bodega-kiosk-entry");
+    }
+
+    const { data: locationData } = await supabase
+      .from("inventory_locations")
+      .select("id")
+      .eq("code", BODEGA_KIOSK_LOCATION_CODE)
+      .eq("is_active", true)
+      .maybeSingle();
+    const locationId = String(
+      (locationData as { id?: string | null } | null)?.id ?? ""
+    ).trim();
+
+    if (!locationId || !isAllowedBodegaLocationRoute(pathname, locationId)) {
+      return withDebugHeaders(
+        buildBodegaKioskRedirect(request),
+        request,
+        "bodega-kiosk-redirect"
+      );
+    }
+
+    const kioskRedirect = withRequiredKioskParam(request);
+    if (kioskRedirect) {
+      return withDebugHeaders(kioskRedirect, request, "bodega-kiosk-param");
+    }
   }
 
   return withDebugHeaders(response, request, "ok");

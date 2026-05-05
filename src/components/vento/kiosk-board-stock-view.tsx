@@ -110,7 +110,7 @@ function buildBoardHref(params: {
 }
 
 function buildKioskWithdrawHref(locationId: string, productId: string) {
-  const params = new URLSearchParams({ product_id: productId });
+  const params = new URLSearchParams({ kiosk: "1", product_id: productId });
   return `/inventory/locations/${encodeURIComponent(locationId)}/kiosk-withdraw?${params.toString()}`;
 }
 

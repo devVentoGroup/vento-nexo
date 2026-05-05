@@ -16,7 +16,13 @@ import { safeDecodeURIComponent } from "@/lib/url";
 export const dynamic = "force-dynamic";
 
 type Params = { id: string };
-type SearchParams = { error?: string; error_product_id?: string; ok?: string; product_id?: string };
+type SearchParams = {
+  error?: string;
+  error_product_id?: string;
+  kiosk?: string;
+  ok?: string;
+  product_id?: string;
+};
 
 type ProductRow = {
   id: string;
@@ -59,7 +65,7 @@ function locLabel(loc: Pick<LocationRow, "id" | "code" | "description" | "zone">
 }
 
 function errorUrl(sourceLocationId: string, message: string, productId?: string | null) {
-  const params = new URLSearchParams({ error: message });
+  const params = new URLSearchParams({ error: message, kiosk: "1" });
   const normalizedProductId = String(productId ?? "").trim();
   if (normalizedProductId) params.set("error_product_id", normalizedProductId);
   return `/inventory/locations/${encodeURIComponent(sourceLocationId)}/kiosk-withdraw?${params.toString()}`;
@@ -74,7 +80,7 @@ async function submitKioskWithdraw(formData: FormData) {
   const sourceLocationId = asText(formData.get("source_location_id"));
   const returnTo = asText(formData.get("return_to"));
   const fallbackRoute = sourceLocationId
-    ? `/inventory/locations/${encodeURIComponent(sourceLocationId)}/kiosk-withdraw`
+    ? `/inventory/locations/${encodeURIComponent(sourceLocationId)}/kiosk-withdraw?kiosk=1`
     : "/inventory/stock";
 
   if (!user) {
@@ -359,7 +365,7 @@ export default async function KioskWithdrawPage({
 
   const { supabase } = await requireAppAccess({
     appId: "nexo",
-    returnTo: `/inventory/locations/${id}/kiosk-withdraw`,
+    returnTo: `/inventory/locations/${id}/kiosk-withdraw?kiosk=1`,
     permissionCode: ["inventory.transfers", "inventory.withdraw"],
   });
 

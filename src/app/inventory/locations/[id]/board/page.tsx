@@ -76,6 +76,7 @@ function formatDateTime(value: string | null | undefined) {
   return new Intl.DateTimeFormat("es-CO", {
     dateStyle: "short",
     timeStyle: "short",
+    timeZone: "America/Bogota",
   }).format(date);
 }
 
@@ -322,7 +323,7 @@ export default async function LocationBoardPage({
   const withdrawHref = `/inventory/withdraw?loc_id=${encodeURIComponent(location.id)}${
     location.site_id ? `&site_id=${encodeURIComponent(location.site_id)}` : ""
   }`;
-  const kioskWithdrawHref = `/inventory/locations/${encodeURIComponent(location.id)}/kiosk-withdraw`;
+  const kioskWithdrawHref = `/inventory/locations/${encodeURIComponent(location.id)}/kiosk-withdraw?kiosk=1`;
   const zoneHref =
     location.site_id && location.zone
       ? `/inventory/locations/zone?site_id=${encodeURIComponent(location.site_id)}&zone=${encodeURIComponent(location.zone)}`

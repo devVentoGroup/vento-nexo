@@ -25,6 +25,7 @@ function formatDateTime(value: string | null | undefined) {
   return new Intl.DateTimeFormat("es-CO", {
     dateStyle: "short",
     timeStyle: "short",
+    timeZone: "America/Bogota",
   }).format(date);
 }
 
