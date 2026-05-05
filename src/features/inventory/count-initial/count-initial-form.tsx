@@ -94,6 +94,8 @@ function makeNewEntry(productId: string): CountEntry {
   };
 }
 
+const SAVE_TIMEOUT_MS = 45_000;
+
 function getCaptureConfig(product: Product) {
   const stockUnitCode = normalizeUnitCode(product.stockUnitCode ?? product.unit ?? "un") || "un";
   const profile = selectProductUomProfileForContext({
@@ -235,6 +237,7 @@ export function CountInitialForm({
   const [showConfirm, setShowConfirm] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [savedMessage, setSavedMessage] = useState("");
   const qtyInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
 
   const getProductEntries = useCallback(
@@ -423,6 +426,7 @@ export function CountInitialForm({
       return;
     }
     setError("");
+    setSavedMessage("");
     setShowConfirm(true);
   };
 
@@ -432,11 +436,15 @@ export function CountInitialForm({
       return;
     }
     setError("");
+    setSavedMessage("");
     setLoading(true);
+    const controller = new AbortController();
+    const timeoutId = window.setTimeout(() => controller.abort(), SAVE_TIMEOUT_MS);
     try {
       const res = await fetch("/api/inventory/count-initial", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
+        signal: controller.signal,
         body: JSON.stringify({
           site_id: siteId,
           lines,
@@ -462,10 +470,24 @@ export function CountInitialForm({
       if (scopeKey === "zone" && scopeValue) params.set("zone", scopeValue);
       if (scopeKey === "loc_id" && scopeValue) params.set("location_id", scopeValue);
 
-      router.push(`/inventory/count-initial?${params.toString()}`);
-    } catch {
-      setError("Error de red al guardar.");
+      setEntriesByProductId({});
+      setOnlyWithQty(false);
+      setShowConfirm(false);
       setLoading(false);
+      setSavedMessage(`Conteo guardado: ${data?.count ?? lines.length} linea(s).`);
+
+      router.replace(`/inventory/count-initial?${params.toString()}`);
+      router.refresh();
+    } catch (err) {
+      const isAbortError = err instanceof DOMException && err.name === "AbortError";
+      setError(
+        isAbortError
+          ? "No se pudo confirmar el guardado. Revisa Stock o Movimientos antes de intentarlo de nuevo."
+          : "Error de red al guardar."
+      );
+      setLoading(false);
+    } finally {
+      window.clearTimeout(timeoutId);
     }
   };
 
@@ -567,6 +589,7 @@ export function CountInitialForm({
             </Table>
           </div>
           {error ? <div className="ui-alert ui-alert--error">{error}</div> : null}
+          {savedMessage ? <div className="ui-alert ui-alert--success">{savedMessage}</div> : null}
         </section>
 
         <div className="ui-mobile-sticky-footer ui-fade-up ui-delay-4 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ui-border)] bg-white/92 px-4 py-3 backdrop-blur">
