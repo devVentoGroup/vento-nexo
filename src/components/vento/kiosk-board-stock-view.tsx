@@ -131,7 +131,14 @@ export function KioskBoardStockView({
   const [categoryId, setCategoryId] = useState(initialCategoryId || "all");
   const [viewMode, setViewMode] = useState<ViewMode>(() => normalizeViewMode(initialViewMode, isKiosk));
   const [showCategoryFilters, setShowCategoryFilters] = useState(false);
+  function handleSearchChange(nextValue: string) {
+    setQuery(nextValue);
 
+    if (normalizeSearch(nextValue) && categoryId !== "all") {
+      setCategoryId("all");
+      setShowCategoryFilters(false);
+    }
+  }
   const categories = useMemo(() => {
     const map = new Map<string, { id: string; label: string; count: number }>();
     for (const item of items) {
@@ -151,13 +158,26 @@ export function KioskBoardStockView({
 
   const filteredItems = useMemo(() => {
     const needle = normalizeSearch(query);
+
     return items.filter((item) => {
       if (categoryId !== "all") {
         const itemCategory = item.categoryId || "uncategorized";
         if (itemCategory !== categoryId) return false;
       }
+
       if (!needle) return true;
-      const haystack = normalizeSearch(`${item.name} ${item.unit} ${item.categoryPath}`);
+
+      const haystack = normalizeSearch(
+        [
+          item.name,
+          item.unit,
+          item.categoryLabel,
+          item.categoryPath,
+          item.productId,
+          ...item.stockParts.map((part) => part.label),
+        ].join(" ")
+      );
+
       return haystack.includes(needle);
     });
   }, [categoryId, items, query]);
@@ -169,15 +189,54 @@ export function KioskBoardStockView({
       {showTools ? (
         <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-4">
           <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
-            <label className="flex flex-col gap-1">
-              <span className="ui-label">Buscar producto</span>
-              <input
-                value={query}
-                onChange={(event) => setQuery(event.target.value)}
-                className="ui-input h-12"
-                placeholder="Nombre, unidad o categoria"
-              />
-            </label>
+            <div className="flex flex-col gap-1">
+              <div className="flex items-center justify-between gap-3">
+                <span className="ui-label">Buscar producto</span>
+                {query ? (
+                  <button
+                    type="button"
+                    onClick={() => handleSearchChange("")}
+                    className="text-xs font-semibold text-[var(--ui-muted)] underline underline-offset-4"
+                  >
+                    Limpiar
+                  </button>
+                ) : null}
+              </div>
+
+              <div className="flex min-h-12 items-center gap-2 rounded-2xl border border-[var(--ui-border)] bg-white px-3 shadow-sm focus-within:border-amber-300 focus-within:ring-2 focus-within:ring-amber-100">
+                <input
+                  type="search"
+                  inputMode="search"
+                  enterKeyHint="done"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  value={query}
+                  onChange={(event) => handleSearchChange(event.currentTarget.value)}
+                  onInput={(event) => handleSearchChange(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  className="min-h-11 flex-1 bg-transparent text-base font-semibold text-[var(--ui-text)] outline-none placeholder:text-[var(--ui-muted)]"
+                  placeholder="Buscar por nombre, unidad o categoría"
+                />
+
+                {query ? (
+                  <button
+                    type="button"
+                    onClick={() => handleSearchChange("")}
+                    className="flex h-9 min-w-9 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-600"
+                    aria-label="Limpiar busqueda"
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </div>
+            </div>
             <div className="flex rounded-2xl border border-[var(--ui-border)] bg-white p-1 shadow-sm">
               {[
                 ["cards", "Tarjetas"],
@@ -369,8 +428,19 @@ export function KioskBoardStockView({
         <div className={`ui-panel ui-remission-section text-center ${isKiosk ? "flex min-h-[35vh] flex-col items-center justify-center" : ""}`}>
           <div className="ui-h3">Sin productos visibles</div>
           <p className="mt-2 ui-body-muted">
-            Ajusta la busqueda o el filtro de categoria.
+            {query
+              ? `No encontramos productos para "${query}". Limpia la búsqueda o intenta con otra palabra.`
+              : "Ajusta la búsqueda o el filtro de categoría."}
           </p>
+          {query ? (
+            <button
+              type="button"
+              onClick={() => handleSearchChange("")}
+              className="ui-btn ui-btn--brand mt-4"
+            >
+              Limpiar búsqueda
+            </button>
+          ) : null}
         </div>
       )}
     </section>
