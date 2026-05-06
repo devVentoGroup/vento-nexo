@@ -383,7 +383,7 @@ export function KioskWithdrawForm({
                 ) : null}
 
                 <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                  <div className="relative flex flex-col gap-1 md:col-span-2">
+                  <div className="flex flex-col gap-1 md:col-span-2">
                     <span className="ui-label">Buscar o seleccionar producto</span>
                     <input type="hidden" name="item_product_id" value={line.productId} />
                     <input
@@ -404,27 +404,28 @@ export function KioskWithdrawForm({
                     />
                     {product ? <div className="text-xs text-[var(--ui-muted)]">Seleccionado: {productLabel(product)}</div> : null}
                     {line.isOpen ? (
-                      <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-40 overflow-hidden rounded-2xl border border-[var(--ui-border)] bg-white shadow-2xl">
-                        <div className="max-h-80 overflow-auto p-2">
-                          {filteredProducts(line).slice(0, 80).map((item) => (
-                            <button
-                              key={item.id}
-                              type="button"
-                              className="block w-full rounded-xl px-4 py-3 text-left text-sm hover:bg-[var(--ui-bg-soft)]"
-                              onMouseDown={(event) => {
-                                event.preventDefault();
-                                selectProduct(line.key, item.id);
-                              }}
-                            >
-                              <div className="font-semibold text-[var(--ui-text)]">{item.name ?? item.id}</div>
-                              <div className="mt-0.5 text-xs text-[var(--ui-muted)]">
-                                Disponible: {formatQty(item.available_qty)} {item.stock_unit_code ?? item.unit ?? "un"}
-                              </div>
-                            </button>
-                          ))}
-                          {filteredProducts(line).length === 0 ? (
+                      <div className="mt-2 overflow-hidden rounded-2xl border border-[var(--ui-border)] bg-white shadow-sm">
+                        <div className="border-b border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-2 text-xs font-semibold text-[var(--ui-muted)]">
+                          {filteredProducts(line).length} producto(s) encontrados
+                        </div>
+                        <div className="max-h-72 overflow-auto p-2">
+                          {filteredProducts(line).length > 0 ? (
+                            filteredProducts(line).slice(0, 80).map((item) => (
+                              <button
+                                key={item.id}
+                                type="button"
+                                className="block w-full rounded-xl px-4 py-3 text-left text-sm hover:bg-[var(--ui-bg-soft)] active:bg-amber-50"
+                                onClick={() => selectProduct(line.key, item.id)}
+                              >
+                                <div className="font-semibold text-[var(--ui-text)]">{item.name ?? item.id}</div>
+                                <div className="mt-0.5 text-xs text-[var(--ui-muted)]">
+                                  Disponible: {formatQty(item.available_qty)} {item.stock_unit_code ?? item.unit ?? "un"}
+                                </div>
+                              </button>
+                            ))
+                          ) : (
                             <div className="px-4 py-4 text-sm text-[var(--ui-muted)]">Sin productos para esa busqueda.</div>
-                          ) : null}
+                          )}
                         </div>
                       </div>
                     ) : null}
