@@ -41,6 +41,13 @@ type ConfirmationDialog =
   | { kind: "missing"; missing: string[] }
   | { kind: "confirm" };
 
+type UnitOption = {
+  value: string;
+  label: string;
+  inputUnitCode: string;
+  profileId: string;
+};
+
 function formatQty(value: number) {
   if (!Number.isFinite(value)) return "0";
   return new Intl.NumberFormat("es-CO", { maximumFractionDigits: 3 }).format(value);
@@ -53,11 +60,18 @@ function profileOptionLabel(profile: ProductUomProfile, stockUnitCode: string) {
   )} = ${formatQty(Number(profile.qty_in_stock_unit))} ${stockUnitCode || "un"})`;
 }
 
+function unitLabel(value: string) {
+  const clean = String(value ?? "").trim();
+  if (!clean) return "Unidad";
+  const normalized = clean.toLowerCase();
+  if (normalized === "un") return "Unidad";
+  return clean;
+}
+
 function activeProfilesForProduct(profiles: ProductUomProfile[], productId: string) {
   const candidates = profiles.filter((profile) => {
     if (!profile.is_active || profile.product_id !== productId) return false;
-    const context = normalizeProductUomUsageContext(profile.usage_context);
-    return context !== "general" || profile.is_default;
+    return true;
   });
 
   const priority = (profile: ProductUomProfile) => {
@@ -125,6 +139,8 @@ export function KioskWithdrawForm({
   const [inputUomProfileId, setInputUomProfileId] = useState(initialProfile?.id ?? "");
   const [notes, setNotes] = useState("");
   const [dialog, setDialog] = useState<ConfirmationDialog | null>(null);
+  const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
+  const [productQuery, setProductQuery] = useState("");
   const formRef = useRef<HTMLFormElement>(null);
   const allowNextSubmitRef = useRef(false);
 
@@ -154,7 +170,10 @@ export function KioskWithdrawForm({
   const product = products.find((item) => item.id === productId) ?? null;
   const selectedWorker = workers.find((worker) => worker.employee_id === workerId) ?? null;
 
-  const productProfiles = productId ? profilesByProduct.get(productId) ?? [] : [];
+  const productProfiles = useMemo(
+    () => (productId ? profilesByProduct.get(productId) ?? [] : []),
+    [productId, profilesByProduct]
+  );
   const selectedProfile = inputUomProfileId
     ? productProfiles.find((profile) => profile.id === inputUomProfileId) ?? null
     : null;
@@ -173,10 +192,15 @@ export function KioskWithdrawForm({
       : Number(product?.available_qty ?? 0);
   const selectedUnitLabel = selectedProfile
     ? String(selectedProfile.label ?? selectedProfile.input_unit_code).trim()
-    : stockUnitCode;
-  const productError = errorMessage && (!errorProductId || errorProductId === productId) ? errorMessage : "";
+    : unitLabel(inputUnitCode || stockUnitCode);
+  const productError = errorMessage && errorProductId && errorProductId === productId ? errorMessage : "";
   const quantityNumber = Number(quantity);
   const canSubmit = Boolean(workerId && productId && inputUnitCode && quantityNumber > 0);
+  const selectedProductLabel = product
+    ? `${product.name ?? product.id} - ${formatQty(product.available_qty)} ${
+        product.stock_unit_code ?? product.unit ?? "un"
+      } disponibles`
+    : "Selecciona producto";
 
   function selectProduct(next: string) {
     const nextProduct = products.find((item) => item.id === next) ?? null;
@@ -185,7 +209,68 @@ export function KioskWithdrawForm({
     setProductId(next);
     setInputUnitCode(normalizeUnitCode(nextProfile?.input_unit_code ?? "") || (nextProduct ? nextStockUnit : ""));
     setInputUomProfileId(nextProfile?.id ?? "");
+    setIsProductPickerOpen(false);
+    setProductQuery("");
   }
+
+  const filteredProducts = useMemo(() => {
+    const query = productQuery
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .toLowerCase()
+      .trim();
+    if (!query) return products;
+    return products.filter((item) => {
+      const haystack = `${item.name ?? ""} ${item.unit ?? ""} ${item.stock_unit_code ?? ""}`
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [productQuery, products]);
+
+  const unitOptions = useMemo(() => {
+    const options: UnitOption[] = [];
+    const seen = new Set<string>();
+
+    function addOption(option: UnitOption) {
+      const key = option.profileId
+        ? `profile:${option.profileId}`
+        : `unit:${normalizeUnitCode(option.inputUnitCode)}`;
+      if (!option.inputUnitCode || seen.has(key)) return;
+      seen.add(key);
+      options.push(option);
+    }
+
+    addOption({
+      value: `unit:${stockUnitCode}`,
+      label: unitLabel(stockUnitCode),
+      inputUnitCode: stockUnitCode,
+      profileId: "",
+    });
+
+    for (const profile of productProfiles) {
+      addOption({
+        value: `profile:${profile.id}`,
+        label: profileOptionLabel(profile, stockUnitCode),
+        inputUnitCode: normalizeUnitCode(profile.input_unit_code),
+        profileId: profile.id,
+      });
+    }
+
+    const profileInputUnits = new Set(productProfiles.map((profile) => normalizeUnitCode(profile.input_unit_code)));
+    const productUnitCode = normalizeUnitCode(product?.unit ?? "");
+    if (productUnitCode && productUnitCode !== stockUnitCode && !profileInputUnits.has(productUnitCode)) {
+      addOption({
+        value: `unit:${productUnitCode}`,
+        label: unitLabel(productUnitCode),
+        inputUnitCode: productUnitCode,
+        profileId: "",
+      });
+    }
+
+    return options;
+  }, [product?.unit, productProfiles, stockUnitCode]);
 
   const missingFields = [
     !workerId ? "Trabajador" : "",
@@ -194,6 +279,15 @@ export function KioskWithdrawForm({
     !(quantityNumber > 0) ? "Cantidad mayor a cero" : "",
   ].filter(Boolean);
 
+  function validateAndOpenDialog() {
+    if (missingFields.length > 0) {
+      setDialog({ kind: "missing", missing: missingFields });
+      return;
+    }
+
+    setDialog({ kind: "confirm" });
+  }
+
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     if (allowNextSubmitRef.current) {
       allowNextSubmitRef.current = false;
@@ -201,12 +295,7 @@ export function KioskWithdrawForm({
     }
 
     event.preventDefault();
-    if (missingFields.length > 0) {
-      setDialog({ kind: "missing", missing: missingFields });
-      return;
-    }
-
-    setDialog({ kind: "confirm" });
+    validateAndOpenDialog();
   }
 
   function submitConfirmed() {
@@ -280,20 +369,15 @@ export function KioskWithdrawForm({
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <div className="flex flex-col gap-1 md:col-span-2">
               <span className="ui-label">Producto</span>
-              <select
-                name="product_id"
-                className="ui-input h-12"
-                value={productId}
-                onChange={(event) => selectProduct(event.target.value)}
+              <input type="hidden" name="product_id" value={productId} />
+              <button
+                type="button"
+                className="ui-input flex min-h-14 w-full items-center justify-between gap-3 px-4 py-3 text-left text-base"
+                onClick={() => setIsProductPickerOpen(true)}
               >
-                <option value="">Selecciona producto</option>
-                {products.map((item) => (
-                  <option key={item.id} value={item.id}>
-                    {item.name ?? item.id} - {formatQty(item.available_qty)}{" "}
-                    {item.stock_unit_code ?? item.unit ?? "un"} disponibles
-                  </option>
-                ))}
-              </select>
+                <span className="line-clamp-2">{selectedProductLabel}</span>
+                <span className="shrink-0 text-sm font-semibold text-[var(--ui-muted)]">Elegir</span>
+              </button>
             </div>
 
             <label className="flex flex-col gap-1">
@@ -336,10 +420,9 @@ export function KioskWithdrawForm({
                 }}
               >
                 <option value="">Unidad</option>
-                {stockUnitCode ? <option value={`unit:${stockUnitCode}`}>{stockUnitCode}</option> : null}
-                {productProfiles.map((profile) => (
-                  <option key={profile.id} value={`profile:${profile.id}`}>
-                    {profileOptionLabel(profile, stockUnitCode)}
+                {unitOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
                   </option>
                 ))}
               </select>
@@ -374,10 +457,62 @@ export function KioskWithdrawForm({
               : "Retiro sin destino"
             : "Selecciona trabajador y producto"}
         </div>
-        <button type="submit" className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold">
+        <button type="button" className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold" onClick={validateAndOpenDialog}>
           Confirmar
         </button>
       </div>
+
+      {isProductPickerOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 px-3 py-4 backdrop-blur-sm sm:items-center">
+          <div className="flex max-h-[86vh] w-full max-w-3xl flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white shadow-2xl">
+            <div className="border-b border-[var(--ui-border)] bg-[linear-gradient(135deg,rgba(245,158,11,0.18)_0%,rgba(255,255,255,1)_72%)] px-5 py-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="ui-caption">Producto</div>
+                  <div className="mt-1 text-2xl font-semibold text-[var(--ui-text)]">Selecciona producto</div>
+                </div>
+                <button type="button" className="ui-btn ui-btn--ghost" onClick={() => setIsProductPickerOpen(false)}>
+                  Cerrar
+                </button>
+              </div>
+              <input
+                value={productQuery}
+                onChange={(event) => setProductQuery(event.target.value)}
+                className="ui-input mt-4 h-14 w-full text-base"
+                placeholder="Buscar producto"
+                autoFocus
+              />
+            </div>
+            <div className="min-h-0 flex-1 overflow-auto p-3">
+              {filteredProducts.length > 0 ? (
+                <div className="grid gap-2">
+                  {filteredProducts.map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      className={`rounded-2xl border px-4 py-4 text-left text-base shadow-sm transition ${
+                        item.id === productId
+                          ? "border-amber-300 bg-amber-50 text-amber-950"
+                          : "border-[var(--ui-border)] bg-white text-[var(--ui-text)]"
+                      }`}
+                      onClick={() => selectProduct(item.id)}
+                    >
+                      <div className="font-semibold">{item.name ?? item.id}</div>
+                      <div className="mt-1 text-sm text-[var(--ui-muted)]">
+                        Disponible: {formatQty(item.available_qty)} {item.stock_unit_code ?? item.unit ?? "un"}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-5 text-sm text-[var(--ui-muted)]">
+                  Sin productos para esa búsqueda.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       {dialog ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 px-4 py-5 backdrop-blur-sm sm:items-center">
