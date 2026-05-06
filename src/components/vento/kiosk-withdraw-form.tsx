@@ -3,8 +3,8 @@
 import { useMemo, useRef, useState, type FormEvent } from "react";
 
 import {
-  normalizeUnitCode,
   normalizeProductUomUsageContext,
+  normalizeUnitCode,
   selectProductUomProfileForContext,
   type ProductUomProfile,
 } from "@/lib/inventory/uom";
@@ -37,9 +37,15 @@ type Props = {
   action: (formData: FormData) => void | Promise<void>;
 };
 
-type ConfirmationDialog =
-  | { kind: "missing"; missing: string[] }
-  | { kind: "confirm" };
+type Line = {
+  key: string;
+  productId: string;
+  query: string;
+  quantity: string;
+  inputUnitCode: string;
+  inputUomProfileId: string;
+  isOpen: boolean;
+};
 
 type UnitOption = {
   value: string;
@@ -48,21 +54,27 @@ type UnitOption = {
   profileId: string;
 };
 
-type CartItem = {
-  id: string;
-  productId: string;
-  productName: string;
-  quantity: number;
-  inputUnitCode: string;
-  inputUomProfileId: string;
-  unitLabel: string;
-  availableQty: number;
-  stockUnitCode: string;
-};
+type Dialog =
+  | { kind: "missing"; missing: string[] }
+  | { kind: "confirm" };
 
 function formatQty(value: number) {
   if (!Number.isFinite(value)) return "0";
   return new Intl.NumberFormat("es-CO", { maximumFractionDigits: 3 }).format(value);
+}
+
+function searchKey(value: string) {
+  return value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function unitLabel(value: string) {
+  const clean = String(value ?? "").trim();
+  if (!clean) return "Unidad";
+  return clean.toLowerCase() === "un" ? "Unidad" : clean;
 }
 
 function profileOptionLabel(profile: ProductUomProfile, stockUnitCode: string) {
@@ -72,34 +84,16 @@ function profileOptionLabel(profile: ProductUomProfile, stockUnitCode: string) {
   )} = ${formatQty(Number(profile.qty_in_stock_unit))} ${stockUnitCode || "un"})`;
 }
 
-function unitLabel(value: string) {
-  const clean = String(value ?? "").trim();
-  if (!clean) return "Unidad";
-  const normalized = clean.toLowerCase();
-  if (normalized === "un") return "Unidad";
-  return clean;
-}
-
-function normalizeProductSearch(value: string) {
-  return String(value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
-}
-
 function activeProfilesForProduct(profiles: ProductUomProfile[], productId: string) {
-  const candidates = profiles.filter((profile) => {
-    if (!profile.is_active || profile.product_id !== productId) return false;
-    return true;
-  });
+  const candidates = profiles.filter((profile) => profile.is_active && profile.product_id === productId);
 
   const priority = (profile: ProductUomProfile) => {
     const context = normalizeProductUomUsageContext(profile.usage_context);
     if (context === "purchase") return 0;
-    if (context === "remission" && profile.source !== "supplier_primary") return 1;
-    if (context === "remission") return 2;
-    return 3;
+    if (context === "general") return 1;
+    if (context === "remission" && profile.source !== "supplier_primary") return 2;
+    if (context === "remission") return 3;
+    return 4;
   };
 
   const sorted = [...candidates].sort((a, b) => {
@@ -111,11 +105,9 @@ function activeProfilesForProduct(profiles: ProductUomProfile[], productId: stri
 
   const deduped: ProductUomProfile[] = [];
   const seen = new Set<string>();
-
   for (const profile of sorted) {
     const qtyInInput = Number(profile.qty_in_input_unit);
     const qtyInStock = Number(profile.qty_in_stock_unit);
-
     if (!Number.isFinite(qtyInInput) || !Number.isFinite(qtyInStock) || qtyInInput <= 0 || qtyInStock <= 0) {
       continue;
     }
@@ -124,13 +116,15 @@ function activeProfilesForProduct(profiles: ProductUomProfile[], productId: stri
       normalizeUnitCode(profile.input_unit_code),
       Math.round((qtyInStock / qtyInInput) * 1_000_000) / 1_000_000,
     ].join(":");
-
     if (seen.has(key)) continue;
     seen.add(key);
     deduped.push(profile);
   }
-
   return deduped;
+}
+
+function createKey() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 }
 
 export function KioskWithdrawForm({
@@ -144,146 +138,86 @@ export function KioskWithdrawForm({
   initialProductId = "",
   action,
 }: Props) {
-  const initialProduct = products.find((item) => item.id === initialProductId) ?? null;
-  const initialStockUnit = normalizeUnitCode(initialProduct?.stock_unit_code ?? initialProduct?.unit ?? "un");
-  const initialProfile = initialProduct
-    ? selectProductUomProfileForContext({
-      profiles: activeProfilesForProduct(uomProfiles, initialProduct.id),
-      productId: initialProduct.id,
-      context: "remission",
-    })
-    : null;
-
-  const [workerId, setWorkerId] = useState("");
-  const [productId, setProductId] = useState(initialProduct?.id ?? "");
-  const [quantity, setQuantity] = useState("");
-  const [inputUnitCode, setInputUnitCode] = useState(
-    normalizeUnitCode(initialProfile?.input_unit_code ?? "") || (initialProduct ? initialStockUnit : "")
-  );
-  const [inputUomProfileId, setInputUomProfileId] = useState(initialProfile?.id ?? "");
-  const [notes, setNotes] = useState("");
-  const [dialog, setDialog] = useState<ConfirmationDialog | null>(null);
-  const [productQuery, setProductQuery] = useState("");
-  const [cartItems, setCartItems] = useState<CartItem[]>([]);
-  const [isAddingProduct, setIsAddingProduct] = useState(Boolean(initialProduct));
-
   const formRef = useRef<HTMLFormElement>(null);
   const allowNextSubmitRef = useRef(false);
+  const [workerId, setWorkerId] = useState("");
+  const [notes, setNotes] = useState("");
+  const [dialog, setDialog] = useState<Dialog | null>(null);
 
   const profilesByProduct = useMemo(() => {
     const map = new Map<string, ProductUomProfile[]>();
-
-    for (const profile of uomProfiles) {
-      const key = String(profile.product_id ?? "").trim();
-      if (!key) continue;
-      map.set(key, activeProfilesForProduct(uomProfiles, key));
-    }
-
+    const ids = new Set(uomProfiles.map((profile) => String(profile.product_id ?? "").trim()).filter(Boolean));
+    for (const id of ids) map.set(id, activeProfilesForProduct(uomProfiles, id));
     return map;
   }, [uomProfiles]);
 
+  const productById = useMemo(() => new Map(products.map((product) => [product.id, product])), [products]);
+
   const defaultProfileByProduct = useMemo(() => {
     const selected = new Map<string, ProductUomProfile>();
-
-    for (const productOption of products) {
+    for (const product of products) {
       const profile = selectProductUomProfileForContext({
-        profiles: profilesByProduct.get(productOption.id) ?? [],
-        productId: productOption.id,
+        profiles: profilesByProduct.get(product.id) ?? [],
+        productId: product.id,
         context: "remission",
       });
-
-      if (profile) selected.set(productOption.id, profile);
+      if (profile) selected.set(product.id, profile);
     }
-
     return selected;
   }, [products, profilesByProduct]);
 
-  const product = products.find((item) => item.id === productId) ?? null;
+  function lineFromProduct(productId: string): Line {
+    const product = productById.get(productId) ?? null;
+    const stockUnit = normalizeUnitCode(product?.stock_unit_code ?? product?.unit ?? "un");
+    const profile = defaultProfileByProduct.get(productId) ?? null;
+    return {
+      key: createKey(),
+      productId: product?.id ?? "",
+      query: product?.name ?? "",
+      quantity: "",
+      inputUnitCode: normalizeUnitCode(profile?.input_unit_code ?? "") || (product ? stockUnit : ""),
+      inputUomProfileId: profile?.id ?? "",
+      isOpen: false,
+    };
+  }
+
+  const [lines, setLines] = useState<Line[]>(() => [lineFromProduct(initialProductId)]);
   const selectedWorker = workers.find((worker) => worker.employee_id === workerId) ?? null;
 
-  const productProfiles = useMemo(
-    () => (productId ? profilesByProduct.get(productId) ?? [] : []),
-    [productId, profilesByProduct]
-  );
+  function productLabel(product: ProductOption | null) {
+    if (!product) return "Selecciona producto";
+    return `${product.name ?? product.id} - ${formatQty(product.available_qty)} ${
+      product.stock_unit_code ?? product.unit ?? "un"
+    } disponibles`;
+  }
 
-  const selectedProfile = inputUomProfileId
-    ? productProfiles.find((profile) => profile.id === inputUomProfileId) ?? null
-    : null;
+  function getLineProduct(line: Line) {
+    return productById.get(line.productId) ?? null;
+  }
 
-  const stockUnitCode = normalizeUnitCode(product?.stock_unit_code ?? product?.unit ?? "un");
-  const selectedUnitValue = selectedProfile
-    ? `profile:${selectedProfile.id}`
-    : inputUnitCode
-      ? `unit:${inputUnitCode}`
-      : "";
+  function getLineProfiles(line: Line) {
+    return line.productId ? profilesByProduct.get(line.productId) ?? [] : [];
+  }
 
-  const selectedFactor = selectedProfile
-    ? Number(selectedProfile.qty_in_stock_unit) / Number(selectedProfile.qty_in_input_unit)
-    : 1;
-
-  const availableInSelectedUnit =
-    selectedProfile && Number.isFinite(selectedFactor) && selectedFactor > 0
-      ? Number(product?.available_qty ?? 0) / selectedFactor
-      : Number(product?.available_qty ?? 0);
-
-  const selectedUnitLabel = selectedProfile
-    ? String(selectedProfile.label ?? selectedProfile.input_unit_code).trim()
-    : unitLabel(inputUnitCode || stockUnitCode);
-
-  const quantityNumber = Number(quantity);
-  const canSubmit = Boolean(workerId && cartItems.length > 0);
-  const draftCanBeAdded = Boolean(product && inputUnitCode && quantityNumber > 0);
-
-  const productError =
-    errorMessage && errorProductId && (errorProductId === productId || cartItems.some((item) => item.productId === errorProductId))
-      ? errorMessage
-      : "";
-
-  const generalProductError = errorMessage && errorProductId && !productError ? errorMessage : "";
-
-  const selectedProductLabel = product
-    ? `${product.name ?? product.id} · Disponible ${formatQty(product.available_qty)} ${product.stock_unit_code ?? product.unit ?? "un"
-    }`
-    : "";
-
-  const normalizedProductQuery = normalizeProductSearch(productQuery);
-  const shouldShowSearchResults = isAddingProduct && !product && normalizedProductQuery.length >= 2;
-
-  const filteredProducts = useMemo(() => {
-    const query = normalizeProductSearch(productQuery);
-
-    if (query.length < 2) return [];
-
-    return products.filter((item) => {
-      const haystack = normalizeProductSearch([item.name, item.unit, item.stock_unit_code, item.id].join(" "));
-      return haystack.includes(query);
-    });
-  }, [productQuery, products]);
-
-  const unitOptions = useMemo(() => {
+  function getUnitOptions(line: Line) {
+    const product = getLineProduct(line);
+    const stockUnitCode = normalizeUnitCode(product?.stock_unit_code ?? product?.unit ?? "un");
     const options: UnitOption[] = [];
     const seen = new Set<string>();
 
-    function addOption(option: UnitOption) {
-      const key = option.profileId
-        ? `profile:${option.profileId}`
-        : `unit:${normalizeUnitCode(option.inputUnitCode)}`;
-
-      if (!option.inputUnitCode || seen.has(key)) return;
-
+    function add(option: UnitOption) {
+      if (!option.inputUnitCode) return;
+      const key = option.profileId ? `profile:${option.profileId}` : `unit:${normalizeUnitCode(option.inputUnitCode)}`;
+      if (seen.has(key)) return;
       seen.add(key);
       options.push(option);
     }
 
-    addOption({
-      value: `unit:${stockUnitCode}`,
-      label: unitLabel(stockUnitCode),
-      inputUnitCode: stockUnitCode,
-      profileId: "",
-    });
+    add({ value: `unit:${stockUnitCode}`, label: unitLabel(stockUnitCode), inputUnitCode: stockUnitCode, profileId: "" });
 
-    for (const profile of productProfiles) {
-      addOption({
+    const profiles = getLineProfiles(line);
+    for (const profile of profiles) {
+      add({
         value: `profile:${profile.id}`,
         label: profileOptionLabel(profile, stockUnitCode),
         inputUnitCode: normalizeUnitCode(profile.input_unit_code),
@@ -291,114 +225,74 @@ export function KioskWithdrawForm({
       });
     }
 
-    const profileInputUnits = new Set(productProfiles.map((profile) => normalizeUnitCode(profile.input_unit_code)));
-    const productUnitCode = normalizeUnitCode(product?.unit ?? "");
-
-    if (productUnitCode && productUnitCode !== stockUnitCode && !profileInputUnits.has(productUnitCode)) {
-      addOption({
-        value: `unit:${productUnitCode}`,
-        label: unitLabel(productUnitCode),
-        inputUnitCode: productUnitCode,
-        profileId: "",
-      });
-    }
-
     return options;
-  }, [product?.unit, productProfiles, stockUnitCode]);
+  }
 
+  function selectedUnitLabel(line: Line) {
+    const profile = line.inputUomProfileId
+      ? getLineProfiles(line).find((item) => item.id === line.inputUomProfileId) ?? null
+      : null;
+    return profile ? String(profile.label ?? profile.input_unit_code).trim() : unitLabel(line.inputUnitCode);
+  }
+
+  function filteredProducts(line: Line) {
+    const needle = searchKey(line.query);
+    if (!needle) return products;
+    return products.filter((product) =>
+      searchKey(`${product.name ?? ""} ${product.unit ?? ""} ${product.stock_unit_code ?? ""}`).includes(needle)
+    );
+  }
+
+  function updateLine(key: string, patch: Partial<Line>) {
+    setLines((current) => current.map((line) => (line.key === key ? { ...line, ...patch } : line)));
+  }
+
+  function selectProduct(lineKey: string, productId: string) {
+    const next = lineFromProduct(productId);
+    setLines((current) =>
+      current.map((line) =>
+        line.key === lineKey
+          ? {
+              ...line,
+              productId: next.productId,
+              query: next.query,
+              inputUnitCode: next.inputUnitCode,
+              inputUomProfileId: next.inputUomProfileId,
+              isOpen: false,
+            }
+          : line
+      )
+    );
+  }
+
+  function addLine() {
+    setLines((current) => [...current, lineFromProduct("")]);
+  }
+
+  function removeLine(key: string) {
+    setLines((current) => (current.length > 1 ? current.filter((line) => line.key !== key) : current));
+  }
+
+  const activeLines = lines.filter((line) => line.productId || line.quantity || line.inputUnitCode);
   const missingFields = [
     !workerId ? "Trabajador" : "",
-    cartItems.length === 0 ? "Agrega al menos un producto al retiro" : "",
-  ].filter(Boolean);
-
-  function selectProduct(next: string) {
-    const nextProduct = products.find((item) => item.id === next) ?? null;
-    const nextStockUnit = normalizeUnitCode(nextProduct?.stock_unit_code ?? nextProduct?.unit ?? "un");
-    const nextProfile = defaultProfileByProduct.get(next) ?? null;
-
-    setProductId(next);
-    setInputUnitCode(normalizeUnitCode(nextProfile?.input_unit_code ?? "") || (nextProduct ? nextStockUnit : ""));
-    setInputUomProfileId(nextProfile?.id ?? "");
-    setProductQuery("");
-  }
-
-  function clearDraftProduct() {
-    setProductId("");
-    setQuantity("");
-    setInputUnitCode("");
-    setInputUomProfileId("");
-    setProductQuery("");
-  }
-
-  function openAddProduct() {
-    clearDraftProduct();
-    setIsAddingProduct(true);
-  }
-
-  function cancelAddProduct() {
-    clearDraftProduct();
-    setIsAddingProduct(false);
-  }
-
-  function addDraftToCart() {
-    if (!product || !draftCanBeAdded) return;
-
-    const nextQuantity = Number(quantity);
-    const nextInputUnitCode = inputUnitCode || stockUnitCode;
-    const nextInputUomProfileId = inputUomProfileId;
-    const nextProductName = product.name ?? product.id;
-    const nextStockUnitCode = product.stock_unit_code ?? product.unit ?? "un";
-    const nextUnitLabel = selectedUnitLabel;
-
-    setCartItems((currentItems) => {
-      const existingIndex = currentItems.findIndex(
-        (item) =>
-          item.productId === product.id &&
-          item.inputUnitCode === nextInputUnitCode &&
-          item.inputUomProfileId === nextInputUomProfileId
-      );
-
-      if (existingIndex >= 0) {
-        return currentItems.map((item, index) =>
-          index === existingIndex
-            ? {
-              ...item,
-              quantity: item.quantity + nextQuantity,
-            }
-            : item
-        );
-      }
-
+    activeLines.length === 0 ? "Al menos un producto" : "",
+    ...lines.flatMap((line, index) => {
+      const hasAny = Boolean(line.productId || line.quantity || line.inputUnitCode);
+      if (!hasAny) return [];
       return [
-        ...currentItems,
-        {
-          id: `${product.id}:${nextInputUnitCode}:${nextInputUomProfileId || "unit"}:${Date.now()}`,
-          productId: product.id,
-          productName: nextProductName,
-          quantity: nextQuantity,
-          inputUnitCode: nextInputUnitCode,
-          inputUomProfileId: nextInputUomProfileId,
-          unitLabel: nextUnitLabel,
-          availableQty: product.available_qty,
-          stockUnitCode: nextStockUnitCode,
-        },
+        !line.productId ? `Producto en línea ${index + 1}` : "",
+        !(Number(line.quantity) > 0) ? `Cantidad mayor a cero en línea ${index + 1}` : "",
+        !line.inputUnitCode ? `Unidad en línea ${index + 1}` : "",
       ];
-    });
-
-    clearDraftProduct();
-    setIsAddingProduct(false);
-  }
-
-  function removeCartItem(itemId: string) {
-    setCartItems((currentItems) => currentItems.filter((item) => item.id !== itemId));
-  }
+    }),
+  ].filter(Boolean);
 
   function validateAndOpenDialog() {
     if (missingFields.length > 0) {
       setDialog({ kind: "missing", missing: missingFields });
       return;
     }
-
     setDialog({ kind: "confirm" });
   }
 
@@ -407,7 +301,6 @@ export function KioskWithdrawForm({
       allowNextSubmitRef.current = false;
       return;
     }
-
     event.preventDefault();
     validateAndOpenDialog();
   }
@@ -415,10 +308,7 @@ export function KioskWithdrawForm({
   function submitConfirmed() {
     allowNextSubmitRef.current = true;
     setDialog(null);
-
-    window.setTimeout(() => {
-      formRef.current?.requestSubmit();
-    }, 0);
+    window.setTimeout(() => formRef.current?.requestSubmit(), 0);
   }
 
   return (
@@ -426,40 +316,14 @@ export function KioskWithdrawForm({
       <input type="hidden" name="source_location_id" value={sourceLocationId} />
       <input type="hidden" name="return_to" value={returnTo} />
 
-      {cartItems.map((item) => (
-        <div key={`hidden-${item.id}`} className="hidden">
-          <input type="hidden" name="item_product_id" value={item.productId} />
-          <input type="hidden" name="item_quantity" value={String(item.quantity)} />
-          <input type="hidden" name="item_input_unit_code" value={item.inputUnitCode} />
-          <input type="hidden" name="item_input_uom_profile_id" value={item.inputUomProfileId} />
-          <input type="hidden" name="item_notes" value="" />
-        </div>
-      ))}
-
       <section className="ui-panel ui-remission-section ui-fade-up space-y-4 !overflow-visible">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="ui-h3">Quién retira</div>
-            <div className="ui-caption mt-1">
-              Selecciona el trabajador que está retirando productos desde este punto.
-            </div>
-          </div>
-
-          {selectedWorker ? (
-            <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-900">
-              {selectedWorker.has_destination ? `Destino ${selectedWorker.destination_label}` : "Sin destino"}
-            </span>
-          ) : null}
+        <div>
+          <div className="ui-h3">Quien retira</div>
+          <div className="ui-caption mt-1">Si el trabajador tiene LOC asignado se traslada. Si no, se descuenta del inventario.</div>
         </div>
-
         <label className="flex flex-col gap-1">
           <span className="ui-label">Trabajador</span>
-          <select
-            name="employee_id"
-            className="ui-input h-12"
-            value={workerId}
-            onChange={(event) => setWorkerId(event.target.value)}
-          >
+          <select name="employee_id" className="ui-input h-12" value={workerId} onChange={(event) => setWorkerId(event.target.value)}>
             <option value="">Selecciona trabajador</option>
             {workers.map((worker) => (
               <option key={worker.employee_id} value={worker.employee_id}>
@@ -473,219 +337,132 @@ export function KioskWithdrawForm({
       <section className="ui-panel ui-remission-section ui-fade-up ui-delay-1 space-y-4 !overflow-visible">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="ui-h3">Productos del retiro</div>
-            <div className="ui-caption mt-1">
-              Agrega solo los productos que realmente se van a retirar o trasladar.
-            </div>
+            <div className="ui-h3">Productos</div>
+            <div className="ui-caption mt-1">Agrega uno o varios productos con saldo positivo en este LOC.</div>
           </div>
-
           <span className="rounded-full border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-1 text-xs font-semibold text-[var(--ui-muted)]">
-            {cartItems.length} agregado{cartItems.length === 1 ? "" : "s"}
+            {products.length} productos con stock
           </span>
         </div>
 
-        {generalProductError || productError ? (
-          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {productError || generalProductError}
-          </div>
+        {errorMessage && !errorProductId ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{errorMessage}</div>
         ) : null}
 
-        <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
-          {cartItems.length > 0 ? (
-            <div className="space-y-2">
-              {cartItems.map((item) => (
-                <div
-                  key={item.id}
-                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3"
-                >
-                  <div className="min-w-0">
-                    <div className="line-clamp-2 text-base font-semibold text-[var(--ui-text)]">
-                      {item.productName}
-                    </div>
-                    <div className="mt-1 text-sm text-[var(--ui-muted)]">
-                      {formatQty(item.quantity)} {item.unitLabel}
-                    </div>
-                  </div>
+        <div className="space-y-3">
+          {lines.map((line, index) => {
+            const product = getLineProduct(line);
+            const profiles = getLineProfiles(line);
+            const selectedProfile = line.inputUomProfileId
+              ? profiles.find((profile) => profile.id === line.inputUomProfileId) ?? null
+              : null;
+            const factor = selectedProfile
+              ? Number(selectedProfile.qty_in_stock_unit) / Number(selectedProfile.qty_in_input_unit)
+              : 1;
+            const available =
+              selectedProfile && Number.isFinite(factor) && factor > 0
+                ? Number(product?.available_qty ?? 0) / factor
+                : Number(product?.available_qty ?? 0);
+            const productError = errorMessage && errorProductId && errorProductId === line.productId ? errorMessage : "";
+            const unitOptions = getUnitOptions(line);
+            const unitValue = selectedProfile ? `profile:${selectedProfile.id}` : line.inputUnitCode ? `unit:${line.inputUnitCode}` : "";
 
-                  <button
-                    type="button"
-                    onClick={() => removeCartItem(item.id)}
-                    className="rounded-full border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700"
-                  >
-                    Quitar
-                  </button>
+            return (
+              <div key={line.key} className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
+                <div className="mb-3 flex items-center justify-between gap-3">
+                  <div className="text-sm font-semibold text-[var(--ui-text)]">Producto {index + 1}</div>
+                  {lines.length > 1 ? (
+                    <button type="button" className="text-sm font-semibold text-red-600" onClick={() => removeLine(line.key)}>
+                      Quitar
+                    </button>
+                  ) : null}
                 </div>
-              ))}
-            </div>
-          ) : (
-            <div className="rounded-2xl border border-dashed border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-6 text-center">
-              <div className="text-base font-semibold text-[var(--ui-text)]">
-                No hay productos agregados
-              </div>
-              <p className="mt-1 text-sm text-[var(--ui-muted)]">
-                Toca + Agregar producto para comenzar.
-              </p>
-            </div>
-          )}
 
-          {!isAddingProduct ? (
-            <button
-              type="button"
-              onClick={openAddProduct}
-              className="ui-btn ui-btn--brand mt-4 h-12 w-full text-base font-semibold"
-            >
-              + Agregar producto
-            </button>
-          ) : null}
-        </div>
+                {productError ? (
+                  <div className="mb-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{productError}</div>
+                ) : null}
 
-        {isAddingProduct ? (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 shadow-sm">
-            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-              <div>
-                <div className="ui-h3">Agregar producto</div>
-                <div className="ui-caption mt-1">
-                  Busca, selecciona, escribe cantidad y agrega.
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={cancelAddProduct}
-                className="ui-btn ui-btn--ghost h-10 px-3 text-sm"
-              >
-                Cancelar
-              </button>
-            </div>
-
-            {!product ? (
-              <div className="space-y-3">
-                <label className="flex flex-col gap-1">
-                  <span className="ui-label">Buscar producto</span>
-                  <div className="flex min-h-12 items-center gap-2 rounded-2xl border border-[var(--ui-border)] bg-white px-3 shadow-sm focus-within:border-amber-300 focus-within:ring-2 focus-within:ring-amber-100">
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                  <div className="relative flex flex-col gap-1 md:col-span-2">
+                    <span className="ui-label">Buscar o seleccionar producto</span>
+                    <input type="hidden" name="item_product_id" value={line.productId} />
                     <input
-                      type="search"
-                      inputMode="search"
-                      enterKeyHint="done"
+                      value={line.query}
+                      onChange={(event) =>
+                        updateLine(line.key, {
+                          query: event.target.value,
+                          productId: "",
+                          inputUnitCode: "",
+                          inputUomProfileId: "",
+                          isOpen: true,
+                        })
+                      }
+                      onFocus={() => updateLine(line.key, { isOpen: true })}
+                      className="ui-input h-14 w-full text-base"
+                      placeholder="Buscar producto"
                       autoComplete="off"
-                      autoCorrect="off"
-                      autoCapitalize="none"
-                      spellCheck={false}
-                      value={productQuery}
-                      onChange={(event) => setProductQuery(event.currentTarget.value)}
-                      onInput={(event) => setProductQuery(event.currentTarget.value)}
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          event.currentTarget.blur();
-                        }
-                      }}
-                      className="min-h-11 flex-1 bg-transparent text-base font-semibold text-[var(--ui-text)] outline-none placeholder:text-[var(--ui-muted)]"
-                      placeholder="Escribe mínimo 2 letras"
                     />
-
-                    {productQuery ? (
-                      <button
-                        type="button"
-                        onClick={() => setProductQuery("")}
-                        className="flex h-9 min-w-9 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-600"
-                        aria-label="Limpiar búsqueda"
-                      >
-                        ×
-                      </button>
+                    {product ? <div className="text-xs text-[var(--ui-muted)]">Seleccionado: {productLabel(product)}</div> : null}
+                    {line.isOpen ? (
+                      <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-40 overflow-hidden rounded-2xl border border-[var(--ui-border)] bg-white shadow-2xl">
+                        <div className="max-h-80 overflow-auto p-2">
+                          {filteredProducts(line).slice(0, 80).map((item) => (
+                            <button
+                              key={item.id}
+                              type="button"
+                              className="block w-full rounded-xl px-4 py-3 text-left text-sm hover:bg-[var(--ui-bg-soft)]"
+                              onMouseDown={(event) => {
+                                event.preventDefault();
+                                selectProduct(line.key, item.id);
+                              }}
+                            >
+                              <div className="font-semibold text-[var(--ui-text)]">{item.name ?? item.id}</div>
+                              <div className="mt-0.5 text-xs text-[var(--ui-muted)]">
+                                Disponible: {formatQty(item.available_qty)} {item.stock_unit_code ?? item.unit ?? "un"}
+                              </div>
+                            </button>
+                          ))}
+                          {filteredProducts(line).length === 0 ? (
+                            <div className="px-4 py-4 text-sm text-[var(--ui-muted)]">Sin productos para esa busqueda.</div>
+                          ) : null}
+                        </div>
+                      </div>
                     ) : null}
                   </div>
-                </label>
 
-                {!shouldShowSearchResults ? (
-                  <div className="rounded-2xl border border-dashed border-amber-200 bg-white px-4 py-5 text-center text-sm text-[var(--ui-muted)]">
-                    Escribe mínimo 2 letras para mostrar productos.
-                  </div>
-                ) : filteredProducts.length > 0 ? (
-                  <div className="grid max-h-[34vh] gap-2 overflow-auto pr-1 sm:grid-cols-2">
-                    {filteredProducts.slice(0, 40).map((item) => (
-                      <button
-                        key={item.id}
-                        type="button"
-                        onClick={() => selectProduct(item.id)}
-                        className="rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3 text-left shadow-sm active:scale-[0.99]"
-                      >
-                        <div className="line-clamp-2 text-sm font-semibold text-[var(--ui-text)]">
-                          {item.name ?? item.id}
-                        </div>
-                        <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                          Disponible:{" "}
-                          <span className="font-semibold text-[var(--ui-text)]">
-                            {formatQty(item.available_qty)} {item.stock_unit_code ?? item.unit ?? "un"}
-                          </span>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-5 text-center">
-                    <div className="text-base font-semibold text-[var(--ui-text)]">Sin productos</div>
-                    <p className="mt-1 text-sm text-[var(--ui-muted)]">
-                      No encontramos productos para esa búsqueda.
-                    </p>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="space-y-3">
-                <div className="rounded-2xl border border-amber-200 bg-white px-4 py-3">
-                  <div className="text-xs font-semibold uppercase tracking-[0.08em] text-amber-900">
-                    Producto seleccionado
-                  </div>
-                  <div className="mt-1 text-base font-semibold text-[var(--ui-text)]">
-                    {selectedProductLabel}
-                  </div>
-                  <button
-                    type="button"
-                    onClick={clearDraftProduct}
-                    className="mt-2 text-xs font-semibold text-amber-950 underline underline-offset-4"
-                  >
-                    Cambiar producto
-                  </button>
-                </div>
-
-                <div className="grid gap-3 sm:grid-cols-2">
                   <label className="flex flex-col gap-1">
                     <span className="flex min-h-5 items-center justify-between gap-2">
                       <span className="ui-label">Cantidad</span>
-                      <span className="truncate text-xs font-normal text-[var(--ui-muted)]">
-                        Disponible: {formatQty(availableInSelectedUnit)} {selectedUnitLabel}
-                      </span>
+                      {product ? (
+                        <span className="truncate text-xs font-normal text-[var(--ui-muted)]">
+                          Disponible: {formatQty(available)} {selectedUnitLabel(line)}
+                        </span>
+                      ) : null}
                     </span>
                     <input
-                      name="quantity"
-                      className="ui-input h-12 bg-white"
+                      name="item_quantity"
+                      className="ui-input h-12"
                       placeholder="Cantidad"
-                      value={quantity}
-                      onChange={(event) => setQuantity(event.target.value)}
+                      value={line.quantity}
+                      onChange={(event) => updateLine(line.key, { quantity: event.target.value })}
                     />
                   </label>
 
                   <label className="flex flex-col gap-1">
                     <span className="ui-label">Unidad</span>
                     <select
-                      className="ui-input h-12 bg-white"
-                      value={selectedUnitValue}
+                      className="ui-input h-12"
+                      value={unitValue}
                       onChange={(event) => {
                         const nextValue = event.target.value;
-                        const nextProfileId = nextValue.startsWith("profile:")
-                          ? nextValue.slice("profile:".length)
-                          : "";
-                        const nextProfile = nextProfileId
-                          ? productProfiles.find((profile) => profile.id === nextProfileId) ?? null
-                          : null;
-
-                        setInputUomProfileId(nextProfile?.id ?? "");
-                        setInputUnitCode(
-                          nextProfile
-                            ? normalizeUnitCode(nextProfile.input_unit_code)
-                            : normalizeUnitCode(nextValue.replace(/^unit:/, ""))
-                        );
+                        const profileId = nextValue.startsWith("profile:") ? nextValue.slice("profile:".length) : "";
+                        const profile = profileId ? profiles.find((item) => item.id === profileId) ?? null : null;
+                        updateLine(line.key, {
+                          inputUomProfileId: profile?.id ?? "",
+                          inputUnitCode: profile
+                            ? normalizeUnitCode(profile.input_unit_code)
+                            : normalizeUnitCode(nextValue.replace(/^unit:/, "")),
+                        });
                       }}
                     >
                       <option value="">Unidad</option>
@@ -695,39 +472,24 @@ export function KioskWithdrawForm({
                         </option>
                       ))}
                     </select>
+                    <input type="hidden" name="item_input_unit_code" value={line.inputUnitCode} />
+                    <input type="hidden" name="item_input_uom_profile_id" value={line.inputUomProfileId} />
                   </label>
                 </div>
-
-                <input type="hidden" name="product_id" value={productId} />
-                <input type="hidden" name="input_unit_code" value={inputUnitCode} />
-                <input type="hidden" name="input_uom_profile_id" value={inputUomProfileId} />
-
-                <button
-                  type="button"
-                  onClick={addDraftToCart}
-                  disabled={!draftCanBeAdded}
-                  className="ui-btn ui-btn--brand h-12 w-full text-base font-semibold disabled:opacity-50"
-                >
-                  Agregar al retiro
-                </button>
               </div>
-            )}
-          </div>
-        ) : null}
+            );
+          })}
+        </div>
+
+        <button type="button" className="ui-btn ui-btn--ghost h-12 w-full" onClick={addLine}>
+          + Agregar otro producto
+        </button>
 
         <details className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3">
-          <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
-            Nota opcional
-          </summary>
+          <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">Nota opcional</summary>
           <label className="mt-3 flex flex-col gap-1">
             <span className="ui-label">Detalle</span>
-            <input
-              name="notes"
-              className="ui-input"
-              placeholder="Ejemplo: retiro para mise en place"
-              value={notes}
-              onChange={(event) => setNotes(event.target.value)}
-            />
+            <input name="notes" className="ui-input" placeholder="Ejemplo: retiro para mise en place" value={notes} onChange={(event) => setNotes(event.target.value)} />
           </label>
         </details>
       </section>
@@ -735,13 +497,12 @@ export function KioskWithdrawForm({
       <div className="ui-mobile-sticky-footer ui-fade-up ui-delay-2 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ui-border)] bg-white/92 px-4 py-3 backdrop-blur">
         <div className="text-sm text-[var(--ui-muted)]">
           {selectedWorker
-            ? `${cartItems.length} producto${cartItems.length === 1 ? "" : "s"} · ${selectedWorker.has_destination
+            ? selectedWorker.has_destination
               ? `Traslado a: ${selectedWorker.destination_label}`
               : "Retiro sin destino"
-            }`
             : "Selecciona trabajador"}
         </div>
-        <button type="submit" className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold">
+        <button type="button" className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold" onClick={validateAndOpenDialog}>
           Confirmar
         </button>
       </div>
@@ -752,21 +513,15 @@ export function KioskWithdrawForm({
             <div className="border-b border-[var(--ui-border)] bg-[linear-gradient(135deg,rgba(245,158,11,0.18)_0%,rgba(255,255,255,1)_72%)] px-5 py-4">
               <div className="ui-caption">{dialog.kind === "confirm" ? "Confirmar retiro" : "Faltan datos"}</div>
               <div className="mt-1 text-xl font-semibold text-[var(--ui-text)]">
-                {dialog.kind === "confirm" ? "Revisa antes de guardar" : "Completa la información"}
+                {dialog.kind === "confirm" ? "Revisa antes de guardar" : "Completa la informacion"}
               </div>
             </div>
-
             {dialog.kind === "missing" ? (
               <div className="space-y-4 px-5 py-5">
-                <p className="text-sm text-[var(--ui-muted)]">
-                  Para registrar el retiro falta completar:
-                </p>
+                <p className="text-sm text-[var(--ui-muted)]">Para registrar el retiro falta completar:</p>
                 <div className="grid gap-2">
                   {dialog.missing.map((field) => (
-                    <div
-                      key={field}
-                      className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950"
-                    >
+                    <div key={field} className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950">
                       {field}
                     </div>
                   ))}
@@ -783,51 +538,35 @@ export function KioskWithdrawForm({
                   <div className="text-sm text-[var(--ui-muted)]">Resumen</div>
                   <div className="mt-3 space-y-3">
                     <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
-                        Trabajador
-                      </div>
-                      <div className="text-base font-semibold text-[var(--ui-text)]">
-                        {selectedWorker?.label ?? "Sin trabajador"}
+                      <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">Trabajador</div>
+                      <div className="text-base font-semibold text-[var(--ui-text)]">{selectedWorker?.label ?? "Sin trabajador"}</div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">Productos</div>
+                      <div className="mt-1 space-y-1">
+                        {activeLines.map((line) => {
+                          const product = getLineProduct(line);
+                          return (
+                            <div key={line.key} className="text-sm font-semibold text-[var(--ui-text)]">
+                              {formatQty(Number(line.quantity))} {selectedUnitLabel(line)} de {product?.name ?? "producto"}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                     <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
-                        Productos
-                      </div>
-                      <div className="mt-2 space-y-2">
-                        {cartItems.map((item) => (
-                          <div
-                            key={`confirm-${item.id}`}
-                            className="rounded-2xl border border-[var(--ui-border)] bg-white px-3 py-2"
-                          >
-                            <div className="text-sm font-semibold text-[var(--ui-text)]">
-                              {item.productName}
-                            </div>
-                            <div className="mt-0.5 text-xs text-[var(--ui-muted)]">
-                              {formatQty(item.quantity)} {item.unitLabel}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
-                        Movimiento
-                      </div>
+                      <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">Movimiento</div>
                       <div className="text-base font-semibold text-[var(--ui-text)]">
-                        {selectedWorker?.has_destination
-                          ? `Hacia ${selectedWorker.destination_label}`
-                          : "Retiro sin destino: descuenta inventario"}
+                        {selectedWorker?.has_destination ? `Hacia ${selectedWorker.destination_label}` : "Retiro sin destino: descuenta inventario"}
                       </div>
                     </div>
                   </div>
                 </div>
-
                 <div className="flex flex-wrap justify-end gap-2">
                   <button type="button" className="ui-btn ui-btn--ghost" onClick={() => setDialog(null)}>
                     Revisar
                   </button>
-                  <button type="button" className="ui-btn ui-btn--brand" onClick={submitConfirmed} disabled={!canSubmit}>
+                  <button type="button" className="ui-btn ui-btn--brand" onClick={submitConfirmed}>
                     Confirmar retiro
                   </button>
                 </div>
