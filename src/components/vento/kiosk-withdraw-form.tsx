@@ -2,7 +2,6 @@
 
 import { useMemo, useRef, useState, type FormEvent } from "react";
 
-import { SearchableSingleSelect } from "@/components/inventory/forms/SearchableSingleSelect";
 import {
   normalizeUnitCode,
   normalizeProductUomUsageContext,
@@ -179,13 +178,14 @@ export function KioskWithdrawForm({
   const quantityNumber = Number(quantity);
   const canSubmit = Boolean(workerId && productId && inputUnitCode && quantityNumber > 0);
 
-  const productOptions = products.map((item) => ({
-    value: item.id,
-    label: `${item.name ?? item.id} - ${formatQty(item.available_qty)} ${
-      item.stock_unit_code ?? item.unit ?? "un"
-    } disponibles`,
-    searchText: `${item.name ?? ""} ${item.unit ?? ""} ${item.stock_unit_code ?? ""}`,
-  }));
+  function selectProduct(next: string) {
+    const nextProduct = products.find((item) => item.id === next) ?? null;
+    const nextStockUnit = normalizeUnitCode(nextProduct?.stock_unit_code ?? nextProduct?.unit ?? "un");
+    const nextProfile = defaultProfileByProduct.get(next) ?? null;
+    setProductId(next);
+    setInputUnitCode(normalizeUnitCode(nextProfile?.input_unit_code ?? "") || (nextProduct ? nextStockUnit : ""));
+    setInputUomProfileId(nextProfile?.id ?? "");
+  }
 
   const missingFields = [
     !workerId ? "Trabajador" : "",
@@ -280,26 +280,20 @@ export function KioskWithdrawForm({
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
             <div className="flex flex-col gap-1 md:col-span-2">
               <span className="ui-label">Producto</span>
-              <SearchableSingleSelect
+              <select
                 name="product_id"
+                className="ui-input h-12"
                 value={productId}
-                onValueChange={(next) => {
-                  const nextProduct = products.find((item) => item.id === next) ?? null;
-                  const nextStockUnit = normalizeUnitCode(
-                    nextProduct?.stock_unit_code ?? nextProduct?.unit ?? "un"
-                  );
-                  const nextProfile = defaultProfileByProduct.get(next) ?? null;
-                  setProductId(next);
-                  setInputUnitCode(normalizeUnitCode(nextProfile?.input_unit_code ?? "") || nextStockUnit);
-                  setInputUomProfileId(nextProfile?.id ?? "");
-                }}
-                options={productOptions}
-                placeholder="Selecciona producto"
-                searchPlaceholder="Buscar producto..."
-                sheetTitle="Selecciona producto"
-                mobilePresentation="sheet"
-                mobileBreakpointPx={1024}
-              />
+                onChange={(event) => selectProduct(event.target.value)}
+              >
+                <option value="">Selecciona producto</option>
+                {products.map((item) => (
+                  <option key={item.id} value={item.id}>
+                    {item.name ?? item.id} - {formatQty(item.available_qty)}{" "}
+                    {item.stock_unit_code ?? item.unit ?? "un"} disponibles
+                  </option>
+                ))}
+              </select>
             </div>
 
             <label className="flex flex-col gap-1">
