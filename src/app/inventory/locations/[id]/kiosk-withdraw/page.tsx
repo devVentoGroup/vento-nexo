@@ -45,6 +45,17 @@ type LocationRow = {
   site_id: string | null;
 };
 
+type ParsedKioskWithdrawItem = {
+  product_id: string;
+  quantity: number;
+  input_qty: number;
+  input_unit_code: string;
+  input_uom_profile_id: string;
+  conversion_factor_to_stock: number;
+  stock_unit_code: string;
+  note: string | null;
+};
+
 function asText(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -92,17 +103,53 @@ async function submitKioskWithdraw(formData: FormData) {
   }
 
   const employeeId = asText(formData.get("employee_id"));
-  const productId = asText(formData.get("product_id"));
-  const quantityInInput = roundQuantity(parseNumber(asText(formData.get("quantity"))));
-  const inputUnitCode = normalizeUnitCode(asText(formData.get("input_unit_code")));
-  const inputUomProfileId = asText(formData.get("input_uom_profile_id"));
   const notes = asText(formData.get("notes"));
 
+  const itemProductIds = formData.getAll("item_product_id").map((value) => String(value).trim());
+  const itemQuantities = formData.getAll("item_quantity").map((value) => String(value).trim());
+  const itemInputUnits = formData
+    .getAll("item_input_unit_code")
+    .map((value) => normalizeUnitCode(String(value).trim()));
+  const itemInputUomProfileIds = formData
+    .getAll("item_input_uom_profile_id")
+    .map((value) => String(value).trim());
+  const itemNotes = formData.getAll("item_notes").map((value) => String(value).trim());
+
+  const hasCartItems = itemProductIds.some((productId) => Boolean(productId));
+
+  const rawItems = hasCartItems
+    ? itemProductIds.map((productId, index) => ({
+      product_id: productId,
+      input_qty: roundQuantity(parseNumber(itemQuantities[index] ?? "0")),
+      input_unit_code: normalizeUnitCode(itemInputUnits[index] ?? ""),
+      input_uom_profile_id: itemInputUomProfileIds[index] ?? "",
+      note: itemNotes[index] || null,
+    }))
+    : [
+      {
+        product_id: asText(formData.get("product_id")),
+        input_qty: roundQuantity(parseNumber(asText(formData.get("quantity")))),
+        input_unit_code: normalizeUnitCode(asText(formData.get("input_unit_code"))),
+        input_uom_profile_id: asText(formData.get("input_uom_profile_id")),
+        note: notes || null,
+      },
+    ];
+
+  const normalizedRawItems = rawItems.filter((item) => item.product_id || item.input_qty > 0);
+  const firstProductId = normalizedRawItems[0]?.product_id ?? "";
+
   if (!employeeId) {
-    redirect(errorUrl(sourceLocationId, "Selecciona trabajador.", productId));
+    redirect(errorUrl(sourceLocationId, "Selecciona trabajador.", firstProductId));
   }
-  if (!productId || quantityInInput <= 0) {
-    redirect(errorUrl(sourceLocationId, "Selecciona producto y cantidad mayor a cero.", productId));
+
+  if (normalizedRawItems.length === 0) {
+    redirect(errorUrl(sourceLocationId, "Agrega al menos un producto.", firstProductId));
+  }
+
+  for (const item of normalizedRawItems) {
+    if (!item.product_id || item.input_qty <= 0) {
+      redirect(errorUrl(sourceLocationId, "Cada producto debe tener cantidad mayor a cero.", item.product_id));
+    }
   }
 
   const { data: sourceLoc } = await supabase
@@ -112,8 +159,9 @@ async function submitKioskWithdraw(formData: FormData) {
     .eq("is_active", true)
     .maybeSingle();
   const source = (sourceLoc ?? null) as LocationRow | null;
+
   if (!source?.site_id) {
-    redirect(errorUrl(sourceLocationId, "El LOC de origen no esta activo o no tiene sede.", productId));
+    redirect(errorUrl(sourceLocationId, "El LOC de origen no esta activo o no tiene sede.", firstProductId));
   }
 
   const { data: assignmentData } = await supabase
@@ -132,7 +180,7 @@ async function submitKioskWithdraw(formData: FormData) {
   } | null;
 
   if (assignment?.location_id === sourceLocationId) {
-    redirect(errorUrl(sourceLocationId, "El LOC destino del trabajador no puede ser el mismo origen.", productId));
+    redirect(errorUrl(sourceLocationId, "El LOC destino del trabajador no puede ser el mismo origen.", firstProductId));
   }
 
   const { data: employeeData } = await supabase
@@ -142,61 +190,126 @@ async function submitKioskWithdraw(formData: FormData) {
     .maybeSingle();
   const employeeLabel = String(employeeData?.alias ?? employeeData?.full_name ?? employeeId).trim();
 
-  const { data: productData } = await supabase
-    .from("products")
-    .select("id,unit,stock_unit_code")
-    .eq("id", productId)
-    .maybeSingle();
-  const product = (productData ?? null) as ProductRow | null;
-  const stockUnitCode = normalizeUnitCode(product?.stock_unit_code || product?.unit || "un");
-
-  const { data: profileData } = inputUomProfileId
+  const productIdsForLookup = Array.from(new Set(normalizedRawItems.map((item) => item.product_id).filter(Boolean)));
+  const { data: productsData } = productIdsForLookup.length
     ? await supabase
-        .from("product_uom_profiles")
-        .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context")
-        .eq("id", inputUomProfileId)
-        .eq("product_id", productId)
-        .eq("is_active", true)
-        .maybeSingle()
-    : { data: null as ProductUomProfile | null };
-  const selectedProfile = (profileData ?? null) as ProductUomProfile | null;
+      .from("products")
+      .select("id,unit,stock_unit_code")
+      .in("id", productIdsForLookup)
+    : { data: [] as ProductRow[] };
 
-  let quantityInStock = 0;
-  let conversionFactorToStock = 1;
-  try {
-    const conversion = convertByProductProfile({
-      quantityInInput,
-      inputUnitCode: inputUnitCode || stockUnitCode,
-      stockUnitCode,
-      profile: selectedProfile,
-    });
-    quantityInStock = conversion.quantityInStock;
-    conversionFactorToStock = conversion.factorToStock;
-  } catch (error) {
-    redirect(
-      errorUrl(
-        sourceLocationId,
-        error instanceof Error ? error.message : "Error en conversion de unidades.",
-        productId
-      )
-    );
+  const productMap = new Map(((productsData ?? []) as ProductRow[]).map((product) => [product.id, product]));
+
+  const requestedUomProfileIds = Array.from(
+    new Set(normalizedRawItems.map((item) => item.input_uom_profile_id).filter(Boolean))
+  );
+
+  const { data: uomProfilesData } = requestedUomProfileIds.length
+    ? await supabase
+      .from("product_uom_profiles")
+      .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context")
+      .in("id", requestedUomProfileIds)
+      .eq("is_active", true)
+    : { data: [] as ProductUomProfile[] };
+
+  const uomProfileById = new Map(
+    ((uomProfilesData ?? []) as ProductUomProfile[]).map((profile) => [profile.id, profile])
+  );
+
+  const items: ParsedKioskWithdrawItem[] = [];
+
+  for (const rawItem of normalizedRawItems) {
+    const product = productMap.get(rawItem.product_id) ?? null;
+    if (!product) {
+      redirect(errorUrl(sourceLocationId, "Producto no encontrado.", rawItem.product_id));
+    }
+
+    const stockUnitCode = normalizeUnitCode(product.stock_unit_code || product.unit || "un");
+    const selectedProfile = rawItem.input_uom_profile_id
+      ? uomProfileById.get(rawItem.input_uom_profile_id) ?? null
+      : null;
+
+    if (rawItem.input_uom_profile_id && (!selectedProfile || selectedProfile.product_id !== rawItem.product_id)) {
+      redirect(errorUrl(sourceLocationId, "Perfil de unidad invalido para el producto.", rawItem.product_id));
+    }
+
+    try {
+      const conversion = convertByProductProfile({
+        quantityInInput: rawItem.input_qty,
+        inputUnitCode: rawItem.input_unit_code || stockUnitCode,
+        stockUnitCode,
+        profile: selectedProfile,
+      });
+
+      items.push({
+        product_id: rawItem.product_id,
+        quantity: conversion.quantityInStock,
+        input_qty: rawItem.input_qty,
+        input_unit_code: rawItem.input_unit_code || stockUnitCode,
+        input_uom_profile_id: rawItem.input_uom_profile_id,
+        conversion_factor_to_stock: conversion.factorToStock,
+        stock_unit_code: stockUnitCode,
+        note: rawItem.note,
+      });
+    } catch (error) {
+      redirect(
+        errorUrl(
+          sourceLocationId,
+          error instanceof Error ? error.message : "Error en conversion de unidades.",
+          rawItem.product_id
+        )
+      );
+    }
   }
 
-  const { data: stockLoc } = await supabase
-    .from("inventory_stock_by_location")
-    .select("current_qty")
-    .eq("location_id", sourceLocationId)
-    .eq("product_id", productId)
-    .maybeSingle();
-  const availableAtLoc = Number((stockLoc as { current_qty?: number } | null)?.current_qty ?? 0);
-  if (availableAtLoc < quantityInStock) {
-    redirect(
-      errorUrl(
-        sourceLocationId,
-        `No alcanza stock: solicitaste ${quantityInInput} ${inputUnitCode || stockUnitCode}, disponibles ${availableAtLoc} ${stockUnitCode}.`,
-        productId
-      )
-    );
+  if (items.length === 0) {
+    redirect(errorUrl(sourceLocationId, "Agrega al menos un producto valido.", firstProductId));
+  }
+
+  const requestedByProduct = new Map<
+    string,
+    {
+      product_id: string;
+      quantity: number;
+      stock_unit_code: string;
+      input_summary: string;
+    }
+  >();
+
+  for (const item of items) {
+    const current = requestedByProduct.get(item.product_id) ?? {
+      product_id: item.product_id,
+      quantity: 0,
+      stock_unit_code: item.stock_unit_code,
+      input_summary: "",
+    };
+
+    current.quantity += item.quantity;
+    current.input_summary = current.input_summary
+      ? `${current.input_summary}, ${item.input_qty} ${item.input_unit_code}`
+      : `${item.input_qty} ${item.input_unit_code}`;
+
+    requestedByProduct.set(item.product_id, current);
+  }
+
+  for (const requested of requestedByProduct.values()) {
+    const { data: stockLoc } = await supabase
+      .from("inventory_stock_by_location")
+      .select("current_qty")
+      .eq("location_id", sourceLocationId)
+      .eq("product_id", requested.product_id)
+      .maybeSingle();
+
+    const availableAtLoc = Number((stockLoc as { current_qty?: number } | null)?.current_qty ?? 0);
+    if (availableAtLoc < requested.quantity) {
+      redirect(
+        errorUrl(
+          sourceLocationId,
+          `No alcanza stock: solicitaste ${requested.input_summary}, disponibles ${availableAtLoc} ${requested.stock_unit_code}.`,
+          requested.product_id
+        )
+      );
+    }
   }
 
   const destination = Array.isArray(assignment?.location)
@@ -207,7 +320,10 @@ async function submitKioskWithdraw(formData: FormData) {
   const toLabel = hasDestination ? locLabel(destination) : "sin destino";
 
   let transferId = "";
+
   if (hasDestination) {
+    const itemCountLabel = items.length === 1 ? "1 producto" : `${items.length} productos`;
+
     const { data: transfer, error: transferErr } = await supabase
       .from("inventory_transfers")
       .insert({
@@ -216,122 +332,137 @@ async function submitKioskWithdraw(formData: FormData) {
         to_loc_id: assignment!.location_id,
         status: "completed",
         notes: notes
-          ? `Quiosco: ${employeeLabel}. ${notes}`
-          : `Quiosco: traslado confirmado por ${employeeLabel}.`,
+          ? `Quiosco: ${employeeLabel}. ${itemCountLabel}. ${notes}`
+          : `Quiosco: traslado confirmado por ${employeeLabel}. ${itemCountLabel}.`,
         created_by: user.id,
       })
       .select("id")
       .single();
 
     if (transferErr || !transfer) {
-      redirect(errorUrl(sourceLocationId, transferErr?.message ?? "No se pudo crear el traslado.", productId));
+      redirect(errorUrl(sourceLocationId, transferErr?.message ?? "No se pudo crear el traslado.", firstProductId));
     }
+
     transferId = String(transfer.id);
 
-    const { error: itemErr } = await supabase.from("inventory_transfer_items").insert({
-      transfer_id: transfer.id,
-      product_id: productId,
-      quantity: quantityInStock,
-      unit: stockUnitCode,
-      input_qty: quantityInInput,
-      input_unit_code: inputUnitCode || stockUnitCode,
-      conversion_factor_to_stock: conversionFactorToStock,
-      stock_unit_code: stockUnitCode,
-      notes: notes || null,
-    });
+    const { error: itemErr } = await supabase.from("inventory_transfer_items").insert(
+      items.map((item) => ({
+        transfer_id: transfer.id,
+        product_id: item.product_id,
+        quantity: item.quantity,
+        unit: item.stock_unit_code,
+        input_qty: item.input_qty,
+        input_unit_code: item.input_unit_code,
+        conversion_factor_to_stock: item.conversion_factor_to_stock,
+        stock_unit_code: item.stock_unit_code,
+        notes: item.note,
+      }))
+    );
+
     if (itemErr) {
-      redirect(errorUrl(sourceLocationId, itemErr.message, productId));
+      redirect(errorUrl(sourceLocationId, itemErr.message, firstProductId));
     }
   }
 
-  const { error: positionErr } = await supabase.rpc("consume_inventory_stock_from_positions", {
-    p_location_id: sourceLocationId,
-    p_product_id: productId,
-    p_quantity: quantityInStock,
-    p_created_by: user.id,
-    p_note: hasDestination
-      ? `Quiosco ${fromLabel} -> ${toLabel}: menor stock primero`
-      : `Quiosco retiro ${fromLabel}: menor stock primero`,
-  });
-  if (positionErr) {
-    redirect(errorUrl(sourceLocationId, positionErr.message, productId));
-  }
-
-  const { error: fromErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
-    p_location_id: sourceLocationId,
-    p_product_id: productId,
-    p_delta: -quantityInStock,
-  });
-  if (fromErr) {
-    redirect(errorUrl(sourceLocationId, fromErr.message, productId));
-  }
-
-  if (hasDestination) {
-    const { error: movementErr } = await supabase.from("inventory_movements").insert({
-      site_id: source.site_id,
-      product_id: productId,
-      movement_type: "transfer_internal",
-      quantity: quantityInStock,
-      input_qty: quantityInInput,
-      input_unit_code: inputUnitCode || stockUnitCode,
-      conversion_factor_to_stock: conversionFactorToStock,
-      stock_unit_code: stockUnitCode,
-      note: `Quiosco ${transferId}: ${employeeLabel} traslado ${fromLabel} -> ${toLabel}`,
-      created_by: user.id,
+  for (const item of items) {
+    const { error: positionErr } = await supabase.rpc("consume_inventory_stock_from_positions", {
+      p_location_id: sourceLocationId,
+      p_product_id: item.product_id,
+      p_quantity: item.quantity,
+      p_created_by: user.id,
+      p_note: hasDestination
+        ? `Quiosco ${fromLabel} -> ${toLabel}: menor stock primero`
+        : `Quiosco retiro ${fromLabel}: menor stock primero`,
     });
-    if (movementErr) {
-      redirect(errorUrl(sourceLocationId, movementErr.message, productId));
+
+    if (positionErr) {
+      redirect(errorUrl(sourceLocationId, positionErr.message, item.product_id));
     }
 
-    const { error: toErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
-      p_location_id: assignment!.location_id,
-      p_product_id: productId,
-      p_delta: quantityInStock,
+    const { error: fromErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
+      p_location_id: sourceLocationId,
+      p_product_id: item.product_id,
+      p_delta: -item.quantity,
     });
-    if (toErr) {
-      redirect(errorUrl(sourceLocationId, toErr.message, productId));
-    }
-  } else {
-    const { error: movementErr } = await supabase.from("inventory_movements").insert({
-      site_id: source.site_id,
-      product_id: productId,
-      movement_type: "consumption",
-      quantity: -quantityInStock,
-      input_qty: quantityInInput,
-      input_unit_code: inputUnitCode || stockUnitCode,
-      conversion_factor_to_stock: conversionFactorToStock,
-      stock_unit_code: stockUnitCode,
-      note: notes
-        ? `Quiosco retiro ${fromLabel}: ${employeeLabel}. ${notes}`
-        : `Quiosco retiro ${fromLabel}: ${employeeLabel} sin LOC destino`,
-      created_by: user.id,
-    });
-    if (movementErr) {
-      redirect(errorUrl(sourceLocationId, movementErr.message, productId));
+
+    if (fromErr) {
+      redirect(errorUrl(sourceLocationId, fromErr.message, item.product_id));
     }
 
-    const { data: siteStock } = await supabase
-      .from("inventory_stock_by_site")
-      .select("current_qty")
-      .eq("site_id", source.site_id)
-      .eq("product_id", productId)
-      .maybeSingle();
+    if (hasDestination) {
+      const { error: movementErr } = await supabase.from("inventory_movements").insert({
+        site_id: source.site_id,
+        product_id: item.product_id,
+        movement_type: "transfer_internal",
+        quantity: item.quantity,
+        input_qty: item.input_qty,
+        input_unit_code: item.input_unit_code,
+        conversion_factor_to_stock: item.conversion_factor_to_stock,
+        stock_unit_code: item.stock_unit_code,
+        note: item.note
+          ? `Quiosco ${transferId}: ${employeeLabel} traslado ${fromLabel} -> ${toLabel}. ${item.note}`
+          : `Quiosco ${transferId}: ${employeeLabel} traslado ${fromLabel} -> ${toLabel}`,
+        created_by: user.id,
+      });
 
-    const currentQty = Number((siteStock as { current_qty?: number } | null)?.current_qty ?? 0);
-    const newQty = Math.max(0, currentQty - quantityInStock);
-    const { error: siteErr } = await supabase
-      .from("inventory_stock_by_site")
-      .upsert(
-        {
-          site_id: source.site_id,
-          product_id: productId,
-          current_qty: newQty,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "site_id,product_id" }
-      );
-    if (siteErr) {
-      redirect(errorUrl(sourceLocationId, siteErr.message, productId));
+      if (movementErr) {
+        redirect(errorUrl(sourceLocationId, movementErr.message, item.product_id));
+      }
+
+      const { error: toErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
+        p_location_id: assignment!.location_id,
+        p_product_id: item.product_id,
+        p_delta: item.quantity,
+      });
+
+      if (toErr) {
+        redirect(errorUrl(sourceLocationId, toErr.message, item.product_id));
+      }
+    } else {
+      const { error: movementErr } = await supabase.from("inventory_movements").insert({
+        site_id: source.site_id,
+        product_id: item.product_id,
+        movement_type: "consumption",
+        quantity: -item.quantity,
+        input_qty: item.input_qty,
+        input_unit_code: item.input_unit_code,
+        conversion_factor_to_stock: item.conversion_factor_to_stock,
+        stock_unit_code: item.stock_unit_code,
+        note: item.note
+          ? `Quiosco retiro ${fromLabel}: ${employeeLabel}. ${item.note}`
+          : `Quiosco retiro ${fromLabel}: ${employeeLabel} sin LOC destino`,
+        created_by: user.id,
+      });
+
+      if (movementErr) {
+        redirect(errorUrl(sourceLocationId, movementErr.message, item.product_id));
+      }
+
+      const { data: siteStock } = await supabase
+        .from("inventory_stock_by_site")
+        .select("current_qty")
+        .eq("site_id", source.site_id)
+        .eq("product_id", item.product_id)
+        .maybeSingle();
+
+      const currentQty = Number((siteStock as { current_qty?: number } | null)?.current_qty ?? 0);
+      const newQty = Math.max(0, currentQty - item.quantity);
+
+      const { error: siteErr } = await supabase
+        .from("inventory_stock_by_site")
+        .upsert(
+          {
+            site_id: source.site_id,
+            product_id: item.product_id,
+            current_qty: newQty,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "site_id,product_id" }
+        );
+
+      if (siteErr) {
+        redirect(errorUrl(sourceLocationId, siteErr.message, item.product_id));
+      }
     }
   }
 
@@ -389,10 +520,10 @@ export default async function KioskWithdrawPage({
   const productIds = products.map((product) => product.id);
   const { data: uomProfilesData } = productIds.length
     ? await supabase
-        .from("product_uom_profiles")
-        .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context")
-        .in("product_id", productIds)
-        .eq("is_active", true)
+      .from("product_uom_profiles")
+      .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context")
+      .in("product_id", productIds)
+      .eq("is_active", true)
     : { data: [] as ProductUomProfile[] };
 
   const { data: workersData, error: workersError } = await supabase.rpc("nexo_kiosk_withdraw_workers", {
