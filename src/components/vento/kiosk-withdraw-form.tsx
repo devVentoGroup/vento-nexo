@@ -139,8 +139,8 @@ export function KioskWithdrawForm({
   const [inputUomProfileId, setInputUomProfileId] = useState(initialProfile?.id ?? "");
   const [notes, setNotes] = useState("");
   const [dialog, setDialog] = useState<ConfirmationDialog | null>(null);
-  const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
   const [productQuery, setProductQuery] = useState("");
+  const [isProductListOpen, setIsProductListOpen] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const allowNextSubmitRef = useRef(false);
 
@@ -199,8 +199,9 @@ export function KioskWithdrawForm({
   const selectedProductLabel = product
     ? `${product.name ?? product.id} - ${formatQty(product.available_qty)} ${
         product.stock_unit_code ?? product.unit ?? "un"
-      } disponibles`
+    } disponibles`
     : "Selecciona producto";
+  const productSearchValue = productQuery || (product ? product.name ?? "" : "");
 
   function selectProduct(next: string) {
     const nextProduct = products.find((item) => item.id === next) ?? null;
@@ -209,8 +210,8 @@ export function KioskWithdrawForm({
     setProductId(next);
     setInputUnitCode(normalizeUnitCode(nextProfile?.input_unit_code ?? "") || (nextProduct ? nextStockUnit : ""));
     setInputUomProfileId(nextProfile?.id ?? "");
-    setIsProductPickerOpen(false);
-    setProductQuery("");
+    setProductQuery(nextProduct?.name ?? "");
+    setIsProductListOpen(false);
   }
 
   const filteredProducts = useMemo(() => {
@@ -370,14 +371,62 @@ export function KioskWithdrawForm({
             <div className="flex flex-col gap-1 md:col-span-2">
               <span className="ui-label">Producto</span>
               <input type="hidden" name="product_id" value={productId} />
-              <button
-                type="button"
-                className="ui-input flex min-h-14 w-full items-center justify-between gap-3 px-4 py-3 text-left text-base"
-                onClick={() => setIsProductPickerOpen(true)}
-              >
-                <span className="line-clamp-2">{selectedProductLabel}</span>
-                <span className="shrink-0 text-sm font-semibold text-[var(--ui-muted)]">Elegir</span>
-              </button>
+              <div className="relative">
+                <input
+                  value={productSearchValue}
+                  onChange={(event) => {
+                    setProductQuery(event.target.value);
+                    setIsProductListOpen(true);
+                    if (productId) {
+                      setProductId("");
+                      setInputUnitCode("");
+                      setInputUomProfileId("");
+                    }
+                  }}
+                  onFocus={() => setIsProductListOpen(true)}
+                  className="ui-input h-14 w-full text-base"
+                  placeholder="Buscar producto"
+                  autoComplete="off"
+                />
+                {product ? (
+                  <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                    Seleccionado: {selectedProductLabel}
+                  </div>
+                ) : null}
+
+                {isProductListOpen ? (
+                  <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-40 overflow-hidden rounded-2xl border border-[var(--ui-border)] bg-white shadow-2xl">
+                    <div className="max-h-80 overflow-auto p-2">
+                      {filteredProducts.length > 0 ? (
+                        filteredProducts.slice(0, 80).map((item) => (
+                          <button
+                            key={item.id}
+                            type="button"
+                            className={`block w-full rounded-xl px-4 py-3 text-left text-sm transition ${
+                              item.id === productId
+                                ? "bg-amber-50 font-semibold text-amber-950"
+                                : "hover:bg-[var(--ui-bg-soft)]"
+                            }`}
+                            onMouseDown={(event) => {
+                              event.preventDefault();
+                              selectProduct(item.id);
+                            }}
+                          >
+                            <div className="font-semibold text-[var(--ui-text)]">{item.name ?? item.id}</div>
+                            <div className="mt-0.5 text-xs text-[var(--ui-muted)]">
+                              Disponible: {formatQty(item.available_qty)} {item.stock_unit_code ?? item.unit ?? "un"}
+                            </div>
+                          </button>
+                        ))
+                      ) : (
+                        <div className="px-4 py-4 text-sm text-[var(--ui-muted)]">
+                          Sin productos para esa búsqueda.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             </div>
 
             <label className="flex flex-col gap-1">
@@ -461,58 +510,6 @@ export function KioskWithdrawForm({
           Confirmar
         </button>
       </div>
-
-      {isProductPickerOpen ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 px-3 py-4 backdrop-blur-sm sm:items-center">
-          <div className="flex max-h-[86vh] w-full max-w-3xl flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white shadow-2xl">
-            <div className="border-b border-[var(--ui-border)] bg-[linear-gradient(135deg,rgba(245,158,11,0.18)_0%,rgba(255,255,255,1)_72%)] px-5 py-4">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="ui-caption">Producto</div>
-                  <div className="mt-1 text-2xl font-semibold text-[var(--ui-text)]">Selecciona producto</div>
-                </div>
-                <button type="button" className="ui-btn ui-btn--ghost" onClick={() => setIsProductPickerOpen(false)}>
-                  Cerrar
-                </button>
-              </div>
-              <input
-                value={productQuery}
-                onChange={(event) => setProductQuery(event.target.value)}
-                className="ui-input mt-4 h-14 w-full text-base"
-                placeholder="Buscar producto"
-                autoFocus
-              />
-            </div>
-            <div className="min-h-0 flex-1 overflow-auto p-3">
-              {filteredProducts.length > 0 ? (
-                <div className="grid gap-2">
-                  {filteredProducts.map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      className={`rounded-2xl border px-4 py-4 text-left text-base shadow-sm transition ${
-                        item.id === productId
-                          ? "border-amber-300 bg-amber-50 text-amber-950"
-                          : "border-[var(--ui-border)] bg-white text-[var(--ui-text)]"
-                      }`}
-                      onClick={() => selectProduct(item.id)}
-                    >
-                      <div className="font-semibold">{item.name ?? item.id}</div>
-                      <div className="mt-1 text-sm text-[var(--ui-muted)]">
-                        Disponible: {formatQty(item.available_qty)} {item.stock_unit_code ?? item.unit ?? "un"}
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-5 text-sm text-[var(--ui-muted)]">
-                  Sin productos para esa búsqueda.
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : null}
 
       {dialog ? (
         <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 px-4 py-5 backdrop-blur-sm sm:items-center">
