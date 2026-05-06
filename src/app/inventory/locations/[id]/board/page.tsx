@@ -13,7 +13,13 @@ import {
 export const dynamic = "force-dynamic";
 
 type Params = { id: string };
-type SearchParams = { kiosk?: string; position_id?: string; view?: string; category_id?: string };
+type SearchParams = {
+  kiosk?: string;
+  position_id?: string;
+  view?: string;
+  category_id?: string;
+  search?: string;
+};
 
 type PositionRow = {
   id: string;
@@ -45,23 +51,23 @@ function buildLocTitle(loc: {
 function normalizeProductRelation(
   value:
     | {
-        id: string;
-        name: string | null;
-        stock_unit_code: string | null;
-        unit: string | null;
-        category_id?: string | null;
-        image_url?: string | null;
-        catalog_image_url?: string | null;
-      }
+      id: string;
+      name: string | null;
+      stock_unit_code: string | null;
+      unit: string | null;
+      category_id?: string | null;
+      image_url?: string | null;
+      catalog_image_url?: string | null;
+    }
     | Array<{
-        id: string;
-        name: string | null;
-        stock_unit_code: string | null;
-        unit: string | null;
-        category_id?: string | null;
-        image_url?: string | null;
-        catalog_image_url?: string | null;
-      }>
+      id: string;
+      name: string | null;
+      stock_unit_code: string | null;
+      unit: string | null;
+      category_id?: string | null;
+      image_url?: string | null;
+      catalog_image_url?: string | null;
+    }>
     | null
     | undefined
 ) {
@@ -121,6 +127,13 @@ function positionKindLabel(position: PositionRow) {
   if (kind === "section") return "Seccion";
   return "Estanteria";
 }
+function normalizeBoardSearch(value: string | null | undefined) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
 
 export default async function LocationBoardPage({
   params,
@@ -135,6 +148,8 @@ export default async function LocationBoardPage({
   const positionId = String(sp.position_id ?? "").trim();
   const viewMode = String(sp.view ?? "").trim();
   const categoryId = String(sp.category_id ?? "").trim();
+  const searchQuery = String(sp.search ?? "").trim();
+  const normalizedSearchQuery = normalizeBoardSearch(searchQuery);
 
   const { supabase } = await requireAppAccess({
     appId: "nexo",
@@ -160,10 +175,10 @@ export default async function LocationBoardPage({
 
   const { data: siteData } = location.site_id
     ? await supabase
-        .from("sites")
-        .select("id,name")
-        .eq("id", location.site_id)
-        .maybeSingle()
+      .from("sites")
+      .select("id,name")
+      .eq("id", location.site_id)
+      .maybeSingle()
     : { data: null };
 
   const site = (siteData ?? null) as { id: string; name: string | null } | null;
@@ -187,19 +202,19 @@ export default async function LocationBoardPage({
 
   const { data: stockRowsData } = selectedPosition
     ? await supabase
-        .from("inventory_stock_by_position")
-        .select("product_id,current_qty,updated_at")
-        .in("position_id", selectedPositionIds)
-        .gt("current_qty", 0)
-        .order("current_qty", { ascending: false })
+      .from("inventory_stock_by_position")
+      .select("product_id,current_qty,updated_at")
+      .in("position_id", selectedPositionIds)
+      .gt("current_qty", 0)
+      .order("current_qty", { ascending: false })
     : await supabase
-        .from("inventory_stock_by_location")
-        .select(
-          "product_id,current_qty,updated_at,products(id,name,stock_unit_code,unit,category_id,image_url,catalog_image_url)"
-        )
-        .eq("location_id", id)
-        .gt("current_qty", 0)
-        .order("current_qty", { ascending: false });
+      .from("inventory_stock_by_location")
+      .select(
+        "product_id,current_qty,updated_at,products(id,name,stock_unit_code,unit,category_id,image_url,catalog_image_url)"
+      )
+      .eq("location_id", id)
+      .gt("current_qty", 0)
+      .order("current_qty", { ascending: false });
 
   const stockRowsRaw = (stockRowsData ?? []) as unknown as Array<{
     product_id: string;
@@ -225,51 +240,51 @@ export default async function LocationBoardPage({
   }>;
   const aggregatedPositionRows = selectedPosition
     ? Array.from(
-        stockRowsRaw.reduce((map, row) => {
-          const current = map.get(row.product_id) ?? {
-            product_id: row.product_id,
-            current_qty: 0,
-            updated_at: row.updated_at,
-          };
-          current.current_qty += Number(row.current_qty ?? 0);
-          const currentUpdated = String(current.updated_at ?? "");
-          const rowUpdated = String(row.updated_at ?? "");
-          if (rowUpdated && (!currentUpdated || new Date(rowUpdated).getTime() > new Date(currentUpdated).getTime())) {
-            current.updated_at = rowUpdated;
-          }
-          map.set(row.product_id, current);
-          return map;
-        }, new Map<string, { product_id: string; current_qty: number; updated_at: string | null }>())
-      ).map(([, row]) => row)
+      stockRowsRaw.reduce((map, row) => {
+        const current = map.get(row.product_id) ?? {
+          product_id: row.product_id,
+          current_qty: 0,
+          updated_at: row.updated_at,
+        };
+        current.current_qty += Number(row.current_qty ?? 0);
+        const currentUpdated = String(current.updated_at ?? "");
+        const rowUpdated = String(row.updated_at ?? "");
+        if (rowUpdated && (!currentUpdated || new Date(rowUpdated).getTime() > new Date(currentUpdated).getTime())) {
+          current.updated_at = rowUpdated;
+        }
+        map.set(row.product_id, current);
+        return map;
+      }, new Map<string, { product_id: string; current_qty: number; updated_at: string | null }>())
+    ).map(([, row]) => row)
     : stockRowsRaw;
   const selectedPositionProductIds = selectedPosition ? stockRowsRaw.map((row) => row.product_id) : [];
   const { data: selectedPositionProducts } =
     selectedPosition && selectedPositionProductIds.length > 0
       ? await supabase
-          .from("products")
-          .select("id,name,stock_unit_code,unit,category_id,image_url,catalog_image_url")
-          .in("id", selectedPositionProductIds)
+        .from("products")
+        .select("id,name,stock_unit_code,unit,category_id,image_url,catalog_image_url")
+        .in("id", selectedPositionProductIds)
       : { data: [] as Array<{ id: string; name: string | null; stock_unit_code: string | null; unit: string | null; category_id?: string | null; image_url?: string | null; catalog_image_url?: string | null }> };
   const selectedPositionProductById = new Map((selectedPositionProducts ?? []).map((product) => [product.id, product]));
 
   const stockRows = selectedPosition
     ? aggregatedPositionRows.map((row) => ({
-        ...row,
-        products: selectedPositionProductById.get(row.product_id) ?? null,
-      }))
+      ...row,
+      products: selectedPositionProductById.get(row.product_id) ?? null,
+    }))
     : stockRowsRaw.map((row) => ({
-        ...row,
-        products: normalizeProductRelation(row.products),
-      }));
+      ...row,
+      products: normalizeProductRelation(row.products),
+    }));
   const productIds = stockRows.map((row) => row.product_id);
   const { data: uomProfilesData } = productIds.length
     ? await supabase
-        .from("product_uom_profiles")
-        .select(
-          "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
-        )
-        .in("product_id", productIds)
-        .eq("is_active", true)
+      .from("product_uom_profiles")
+      .select(
+        "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
+      )
+      .in("product_id", productIds)
+      .eq("is_active", true)
     : { data: [] as ProductUomProfile[] };
   const uomProfiles = (uomProfilesData ?? []) as ProductUomProfile[];
   const categoryIds = Array.from(
@@ -281,19 +296,20 @@ export default async function LocationBoardPage({
   );
   const { data: categoryRowsData } = categoryIds.length
     ? await supabase
-        .from("product_categories")
-        .select("id,name,parent_id,domain,site_id,is_active,applies_to_kinds")
-        .in("id", categoryIds)
+      .from("product_categories")
+      .select("id,name,parent_id,domain,site_id,is_active,applies_to_kinds")
+      .in("id", categoryIds)
     : { data: [] as InventoryCategoryRow[] };
   const categoryRows = (categoryRowsData ?? []) as InventoryCategoryRow[];
   const categoryMap = new Map(categoryRows.map((row) => [row.id, row]));
-  const stockItems: KioskBoardStockItem[] = stockRows.map((row) => {
+  const allStockItems: KioskBoardStockItem[] = stockRows.map((row) => {
     const product = row.products;
     const qty = Number(row.current_qty ?? 0);
     const unit = product?.stock_unit_code ?? product?.unit ?? "un";
     const categoryId = String(product?.category_id ?? "").trim();
     const categoryPath = getCategoryPath(categoryId, categoryMap);
     const categoryLabel = categoryPath.split(" / ").at(-1) || "Sin categoria";
+
     return {
       productId: row.product_id,
       name: product?.name ?? row.product_id,
@@ -312,17 +328,33 @@ export default async function LocationBoardPage({
     };
   });
 
+  const stockItems: KioskBoardStockItem[] = normalizedSearchQuery
+    ? allStockItems.filter((item) => {
+      const haystack = normalizeBoardSearch(
+        [
+          item.name,
+          item.unit,
+          item.categoryLabel,
+          item.categoryPath,
+          item.productId,
+          ...item.stockParts.map((part) => part.label),
+        ].join(" ")
+      );
+
+      return haystack.includes(normalizedSearchQuery);
+    })
+    : allStockItems;
+
   const title = buildLocTitle(location);
-  const totalQty = stockRows.reduce((sum, row) => sum + Number(row.current_qty ?? 0), 0);
+  const totalQty = stockItems.reduce((sum, item) => sum + Number(item.qty ?? 0), 0);
   const lastUpdatedAt = stockRows.reduce<string | null>((latest, row) => {
     const current = String(row.updated_at ?? "").trim();
     if (!current) return latest;
     if (!latest) return current;
     return new Date(current).getTime() > new Date(latest).getTime() ? current : latest;
   }, null);
-  const withdrawHref = `/inventory/withdraw?loc_id=${encodeURIComponent(location.id)}${
-    location.site_id ? `&site_id=${encodeURIComponent(location.site_id)}` : ""
-  }`;
+  const withdrawHref = `/inventory/withdraw?loc_id=${encodeURIComponent(location.id)}${location.site_id ? `&site_id=${encodeURIComponent(location.site_id)}` : ""
+    }`;
   const kioskWithdrawHref = `/inventory/locations/${encodeURIComponent(location.id)}/kiosk-withdraw?kiosk=1`;
   const zoneHref =
     location.site_id && location.zone
@@ -405,8 +437,10 @@ export default async function LocationBoardPage({
           <div className="ui-remission-kpis sm:grid-cols-3 lg:grid-cols-1">
             <article className="ui-remission-kpi" data-tone="warm">
               <div className="ui-remission-kpi-label">Productos</div>
-              <div className="ui-remission-kpi-value">{stockRows.length}</div>
-              <div className="ui-remission-kpi-note">Activos en esta area</div>
+              <div className="ui-remission-kpi-value">{stockItems.length}</div>
+              <div className="ui-remission-kpi-note">
+                {searchQuery ? `Filtrados de ${allStockItems.length}` : "Activos en esta area"}
+              </div>
             </article>
             <article className="ui-remission-kpi" data-tone="cool">
               <div className="ui-remission-kpi-label">Qty total</div>
@@ -446,21 +480,21 @@ export default async function LocationBoardPage({
                 Zonas generales
               </div>
               <div className="flex flex-wrap gap-2">
-            <Link
-              href={`/inventory/locations/${encodeURIComponent(location.id)}/board${isKiosk ? "?kiosk=1" : ""}`}
-              className={!selectedPosition ? "ui-chip ui-chip--brand" : "ui-chip"}
-            >
-              Todo el LOC
-            </Link>
-            {topLevelPositions.map((position) => (
-              <Link
-                key={position.id}
-                href={`/inventory/locations/${encodeURIComponent(location.id)}/board?position_id=${encodeURIComponent(position.id)}${isKiosk ? "&kiosk=1" : ""}`}
-                className={selectedRootPosition?.id === position.id ? "ui-chip ui-chip--brand" : "ui-chip"}
-              >
-                {position.name}
-              </Link>
-            ))}
+                <Link
+                  href={`/inventory/locations/${encodeURIComponent(location.id)}/board${isKiosk ? "?kiosk=1" : ""}`}
+                  className={!selectedPosition ? "ui-chip ui-chip--brand" : "ui-chip"}
+                >
+                  Todo el LOC
+                </Link>
+                {topLevelPositions.map((position) => (
+                  <Link
+                    key={position.id}
+                    href={`/inventory/locations/${encodeURIComponent(location.id)}/board?position_id=${encodeURIComponent(position.id)}${isKiosk ? "&kiosk=1" : ""}`}
+                    className={selectedRootPosition?.id === position.id ? "ui-chip ui-chip--brand" : "ui-chip"}
+                  >
+                    {position.name}
+                  </Link>
+                ))}
               </div>
             </div>
 
@@ -497,13 +531,15 @@ export default async function LocationBoardPage({
 
       {stockItems.length > 0 ? (
         <KioskBoardStockView
-          key={`${isKiosk ? "kiosk" : "board"}:${positionId}:${viewMode}:${categoryId}`}
+          key={`${isKiosk ? "kiosk" : "board"}:${positionId}:${viewMode}:${categoryId}:${searchQuery}`}
           items={stockItems}
           isKiosk={isKiosk}
           locationId={location.id}
           positionId={positionId}
           initialViewMode={viewMode}
           initialCategoryId={categoryId}
+          initialSearchQuery={searchQuery}
+          totalItemsCount={allStockItems.length}
         />
       ) : (
         <div className={`ui-panel ui-remission-section text-center ${isKiosk ? "min-h-[45vh] flex flex-col items-center justify-center" : ""}`}>

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 
 type StockPart = {
   qty: number;
@@ -28,11 +28,11 @@ type Props = {
   positionId?: string;
   initialViewMode?: string;
   initialCategoryId?: string;
+  initialSearchQuery?: string;
+  totalItemsCount?: number;
 };
 
 type ViewMode = "cards" | "compact" | "list";
-const KIOSK_SEARCH_QUERY_PARAM = "search";
-const KIOSK_SEARCH_STORAGE_KEY = "nexo:kiosk-board-search";
 
 function formatQty(value: number | null | undefined) {
   const n = Number(value ?? 0);
@@ -101,12 +101,17 @@ function buildBoardHref(params: {
   positionId?: string;
   viewMode: ViewMode;
   categoryId: string;
+  searchQuery?: string;
 }) {
   const search = new URLSearchParams();
+  const searchQuery = String(params.searchQuery ?? "").trim();
+
   if (params.isKiosk) search.set("kiosk", "1");
   if (params.positionId) search.set("position_id", params.positionId);
   if (params.viewMode) search.set("view", params.viewMode);
   if (params.categoryId && params.categoryId !== "all") search.set("category_id", params.categoryId);
+  if (searchQuery) search.set("search", searchQuery);
+
   const qs = search.toString();
   return `/inventory/locations/${encodeURIComponent(params.locationId)}/board${qs ? `?${qs}` : ""}`;
 }
@@ -128,91 +133,14 @@ export function KioskBoardStockView({
   positionId = "",
   initialViewMode,
   initialCategoryId,
+  initialSearchQuery = "",
+  totalItemsCount,
 }: Props) {
-  const searchInputRef = useRef<HTMLInputElement>(null);
-  const [query, setQuery] = useState("");
+  const searchQuery = String(initialSearchQuery ?? "").trim();
+  const totalCount = typeof totalItemsCount === "number" ? totalItemsCount : items.length;
   const [categoryId, setCategoryId] = useState(initialCategoryId || "all");
   const [viewMode, setViewMode] = useState<ViewMode>(() => normalizeViewMode(initialViewMode, isKiosk));
   const [showCategoryFilters, setShowCategoryFilters] = useState(false);
-
-  const handleSearchChange = useCallback(
-    (nextValue: string) => {
-      const value = String(nextValue ?? "");
-      const normalized = normalizeSearch(value);
-
-      setQuery(value);
-
-      if (typeof window !== "undefined") {
-        try {
-          const url = new URL(window.location.href);
-
-          if (normalized) {
-            window.sessionStorage.setItem(KIOSK_SEARCH_STORAGE_KEY, value);
-            url.searchParams.set(KIOSK_SEARCH_QUERY_PARAM, value);
-          } else {
-            window.sessionStorage.removeItem(KIOSK_SEARCH_STORAGE_KEY);
-            url.searchParams.delete(KIOSK_SEARCH_QUERY_PARAM);
-          }
-
-          window.history.replaceState(null, "", url.toString());
-        } catch {
-          // Safari privado o storage bloqueado: la busqueda igual funciona en memoria.
-        }
-      }
-
-      if (typeof document !== "undefined") {
-        if (normalized) {
-          document.documentElement.dataset.nexoKioskUserInteracting = "1";
-        } else {
-          delete document.documentElement.dataset.nexoKioskUserInteracting;
-        }
-      }
-
-      if (normalized && categoryId !== "all") {
-        setCategoryId("all");
-        setShowCategoryFilters(false);
-      }
-    },
-    [categoryId]
-  );
-
-  useEffect(() => {
-    const input = searchInputRef.current;
-    if (!input || typeof window === "undefined") return;
-
-    let restoredValue = "";
-
-    try {
-      const params = new URLSearchParams(window.location.search);
-      restoredValue =
-        params.get(KIOSK_SEARCH_QUERY_PARAM) ??
-        window.sessionStorage.getItem(KIOSK_SEARCH_STORAGE_KEY) ??
-        "";
-    } catch {
-      restoredValue = "";
-    }
-
-    if (restoredValue) {
-      input.value = restoredValue;
-      handleSearchChange(restoredValue);
-    }
-
-    const syncFromNativeInput = () => {
-      handleSearchChange(input.value);
-    };
-
-    input.addEventListener("input", syncFromNativeInput);
-    input.addEventListener("change", syncFromNativeInput);
-    input.addEventListener("keyup", syncFromNativeInput);
-    input.addEventListener("search", syncFromNativeInput);
-
-    return () => {
-      input.removeEventListener("input", syncFromNativeInput);
-      input.removeEventListener("change", syncFromNativeInput);
-      input.removeEventListener("keyup", syncFromNativeInput);
-      input.removeEventListener("search", syncFromNativeInput);
-    };
-  }, [handleSearchChange]);
   const categories = useMemo(() => {
     const map = new Map<string, { id: string; label: string; count: number }>();
     for (const item of items) {
@@ -231,30 +159,15 @@ export function KioskBoardStockView({
   }, [categories, categoryId]);
 
   const filteredItems = useMemo(() => {
-    const needle = normalizeSearch(query);
-
     return items.filter((item) => {
       if (categoryId !== "all") {
         const itemCategory = item.categoryId || "uncategorized";
         if (itemCategory !== categoryId) return false;
       }
 
-      if (!needle) return true;
-
-      const haystack = normalizeSearch(
-        [
-          item.name,
-          item.unit,
-          item.categoryLabel,
-          item.categoryPath,
-          item.productId,
-          ...item.stockParts.map((part) => part.label),
-        ].join(" ")
-      );
-
-      return haystack.includes(needle);
+      return true;
     });
-  }, [categoryId, items, query]);
+  }, [categoryId, items]);
 
   const showTools = isKiosk && items.length > 0;
 
@@ -263,71 +176,64 @@ export function KioskBoardStockView({
       {showTools ? (
         <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-4">
           <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
-            <div className="flex flex-col gap-1">
+            <form
+              action={`/inventory/locations/${encodeURIComponent(locationId)}/board`}
+              method="get"
+              className="flex flex-col gap-1"
+            >
+              {isKiosk ? <input type="hidden" name="kiosk" value="1" /> : null}
+              {positionId ? <input type="hidden" name="position_id" value={positionId} /> : null}
+              {viewMode ? <input type="hidden" name="view" value={viewMode} /> : null}
+              {categoryId && categoryId !== "all" ? (
+                <input type="hidden" name="category_id" value={categoryId} />
+              ) : null}
+
               <div className="flex items-center justify-between gap-3">
-                <span className="ui-label">Buscar producto</span>
-                {query ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (searchInputRef.current) searchInputRef.current.value = "";
-                      handleSearchChange("");
-                    }}
+                <label htmlFor="kiosk-board-search" className="ui-label">
+                  Buscar producto
+                </label>
+
+                {searchQuery ? (
+                  <Link
+                    href={buildBoardHref({
+                      locationId,
+                      isKiosk,
+                      positionId,
+                      viewMode,
+                      categoryId,
+                      searchQuery: "",
+                    })}
                     className="text-xs font-semibold text-[var(--ui-muted)] underline underline-offset-4"
                   >
                     Limpiar
-                  </button>
+                  </Link>
                 ) : null}
               </div>
 
               <div className="flex min-h-12 items-center gap-2 rounded-2xl border border-[var(--ui-border)] bg-white px-3 shadow-sm focus-within:border-amber-300 focus-within:ring-2 focus-within:ring-amber-100">
                 <input
-                  ref={searchInputRef}
-                  type="text"
+                  id="kiosk-board-search"
+                  name="search"
+                  type="search"
                   inputMode="search"
-                  enterKeyHint="done"
+                  enterKeyHint="search"
                   autoComplete="off"
                   autoCorrect="off"
                   autoCapitalize="none"
                   spellCheck={false}
-                  value={query}
-                  onFocus={() => {
-                    document.documentElement.dataset.nexoKioskUserInteracting = "1";
-                  }}
-                  onBlur={() => {
-                    if (!normalizeSearch(query)) {
-                      delete document.documentElement.dataset.nexoKioskUserInteracting;
-                    }
-                  }}
-                  onChange={(event) => handleSearchChange(event.currentTarget.value)}
-                  onInput={(event) => handleSearchChange(event.currentTarget.value)}
-                  onKeyUp={(event) => handleSearchChange(event.currentTarget.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      handleSearchChange(event.currentTarget.value);
-                      event.currentTarget.blur();
-                    }
-                  }}
+                  defaultValue={searchQuery}
                   className="min-h-11 flex-1 bg-transparent text-base font-semibold text-[var(--ui-text)] outline-none placeholder:text-[var(--ui-muted)]"
                   placeholder="Buscar por nombre, unidad o categoría"
                 />
 
-                {query ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (searchInputRef.current) searchInputRef.current.value = "";
-                      handleSearchChange("");
-                    }}
-                    className="flex h-9 min-w-9 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-600"
-                    aria-label="Limpiar busqueda"
-                  >
-                    ×
-                  </button>
-                ) : null}
+                <button
+                  type="submit"
+                  className="ui-btn ui-btn--brand h-10 px-4 text-sm"
+                >
+                  Buscar
+                </button>
               </div>
-            </div>
+            </form>
             <div className="flex rounded-2xl border border-[var(--ui-border)] bg-white p-1 shadow-sm">
               {[
                 ["cards", "Tarjetas"],
@@ -343,6 +249,7 @@ export function KioskBoardStockView({
                     positionId,
                     viewMode: value as ViewMode,
                     categoryId,
+                    searchQuery,
                   })}
                   className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${viewMode === value
                     ? "bg-amber-100 text-amber-950"
@@ -392,6 +299,7 @@ export function KioskBoardStockView({
                     positionId,
                     viewMode,
                     categoryId: "all",
+                    searchQuery,
                   })}
                   className="ui-chip"
                 >
@@ -431,6 +339,7 @@ export function KioskBoardStockView({
                       positionId,
                       viewMode,
                       categoryId: category.id,
+                      searchQuery,
                     })}
                     className={categoryId === category.id ? "ui-chip ui-chip--brand" : "ui-chip"}
                   >
@@ -519,21 +428,24 @@ export function KioskBoardStockView({
         <div className={`ui-panel ui-remission-section text-center ${isKiosk ? "flex min-h-[35vh] flex-col items-center justify-center" : ""}`}>
           <div className="ui-h3">Sin productos visibles</div>
           <p className="mt-2 ui-body-muted">
-            {query
-              ? `No encontramos productos para "${query}". Limpia la búsqueda o intenta con otra palabra.`
+            {searchQuery
+              ? `No encontramos productos para "${searchQuery}". Limpia la búsqueda o intenta con otra palabra.`
               : "Ajusta la búsqueda o el filtro de categoría."}
           </p>
-          {query ? (
-            <button
-              type="button"
-              onClick={() => {
-                if (searchInputRef.current) searchInputRef.current.value = "";
-                handleSearchChange("");
-              }}
+          {searchQuery ? (
+            <Link
+              href={buildBoardHref({
+                locationId,
+                isKiosk,
+                positionId,
+                viewMode,
+                categoryId,
+                searchQuery: "",
+              })}
               className="ui-btn ui-btn--brand mt-4"
             >
               Limpiar búsqueda
-            </button>
+            </Link>
           ) : null}
         </div>
       )}
