@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 type StockPart = {
   qty: number;
@@ -31,6 +31,8 @@ type Props = {
 };
 
 type ViewMode = "cards" | "compact" | "list";
+const KIOSK_SEARCH_QUERY_PARAM = "search";
+const KIOSK_SEARCH_STORAGE_KEY = "nexo:kiosk-board-search";
 
 function formatQty(value: number | null | undefined) {
   const n = Number(value ?? 0);
@@ -127,18 +129,90 @@ export function KioskBoardStockView({
   initialViewMode,
   initialCategoryId,
 }: Props) {
+  const searchInputRef = useRef<HTMLInputElement>(null);
   const [query, setQuery] = useState("");
   const [categoryId, setCategoryId] = useState(initialCategoryId || "all");
   const [viewMode, setViewMode] = useState<ViewMode>(() => normalizeViewMode(initialViewMode, isKiosk));
   const [showCategoryFilters, setShowCategoryFilters] = useState(false);
-  function handleSearchChange(nextValue: string) {
-    setQuery(nextValue);
 
-    if (normalizeSearch(nextValue) && categoryId !== "all") {
-      setCategoryId("all");
-      setShowCategoryFilters(false);
+  const handleSearchChange = useCallback(
+    (nextValue: string) => {
+      const value = String(nextValue ?? "");
+      const normalized = normalizeSearch(value);
+
+      setQuery(value);
+
+      if (typeof window !== "undefined") {
+        try {
+          const url = new URL(window.location.href);
+
+          if (normalized) {
+            window.sessionStorage.setItem(KIOSK_SEARCH_STORAGE_KEY, value);
+            url.searchParams.set(KIOSK_SEARCH_QUERY_PARAM, value);
+          } else {
+            window.sessionStorage.removeItem(KIOSK_SEARCH_STORAGE_KEY);
+            url.searchParams.delete(KIOSK_SEARCH_QUERY_PARAM);
+          }
+
+          window.history.replaceState(null, "", url.toString());
+        } catch {
+          // Safari privado o storage bloqueado: la busqueda igual funciona en memoria.
+        }
+      }
+
+      if (typeof document !== "undefined") {
+        if (normalized) {
+          document.documentElement.dataset.nexoKioskUserInteracting = "1";
+        } else {
+          delete document.documentElement.dataset.nexoKioskUserInteracting;
+        }
+      }
+
+      if (normalized && categoryId !== "all") {
+        setCategoryId("all");
+        setShowCategoryFilters(false);
+      }
+    },
+    [categoryId]
+  );
+
+  useEffect(() => {
+    const input = searchInputRef.current;
+    if (!input || typeof window === "undefined") return;
+
+    let restoredValue = "";
+
+    try {
+      const params = new URLSearchParams(window.location.search);
+      restoredValue =
+        params.get(KIOSK_SEARCH_QUERY_PARAM) ??
+        window.sessionStorage.getItem(KIOSK_SEARCH_STORAGE_KEY) ??
+        "";
+    } catch {
+      restoredValue = "";
     }
-  }
+
+    if (restoredValue) {
+      input.value = restoredValue;
+      handleSearchChange(restoredValue);
+    }
+
+    const syncFromNativeInput = () => {
+      handleSearchChange(input.value);
+    };
+
+    input.addEventListener("input", syncFromNativeInput);
+    input.addEventListener("change", syncFromNativeInput);
+    input.addEventListener("keyup", syncFromNativeInput);
+    input.addEventListener("search", syncFromNativeInput);
+
+    return () => {
+      input.removeEventListener("input", syncFromNativeInput);
+      input.removeEventListener("change", syncFromNativeInput);
+      input.removeEventListener("keyup", syncFromNativeInput);
+      input.removeEventListener("search", syncFromNativeInput);
+    };
+  }, [handleSearchChange]);
   const categories = useMemo(() => {
     const map = new Map<string, { id: string; label: string; count: number }>();
     for (const item of items) {
@@ -195,7 +269,10 @@ export function KioskBoardStockView({
                 {query ? (
                   <button
                     type="button"
-                    onClick={() => handleSearchChange("")}
+                    onClick={() => {
+                      if (searchInputRef.current) searchInputRef.current.value = "";
+                      handleSearchChange("");
+                    }}
                     className="text-xs font-semibold text-[var(--ui-muted)] underline underline-offset-4"
                   >
                     Limpiar
@@ -205,7 +282,8 @@ export function KioskBoardStockView({
 
               <div className="flex min-h-12 items-center gap-2 rounded-2xl border border-[var(--ui-border)] bg-white px-3 shadow-sm focus-within:border-amber-300 focus-within:ring-2 focus-within:ring-amber-100">
                 <input
-                  type="search"
+                  ref={searchInputRef}
+                  type="text"
                   inputMode="search"
                   enterKeyHint="done"
                   autoComplete="off"
@@ -213,11 +291,21 @@ export function KioskBoardStockView({
                   autoCapitalize="none"
                   spellCheck={false}
                   value={query}
+                  onFocus={() => {
+                    document.documentElement.dataset.nexoKioskUserInteracting = "1";
+                  }}
+                  onBlur={() => {
+                    if (!normalizeSearch(query)) {
+                      delete document.documentElement.dataset.nexoKioskUserInteracting;
+                    }
+                  }}
                   onChange={(event) => handleSearchChange(event.currentTarget.value)}
                   onInput={(event) => handleSearchChange(event.currentTarget.value)}
+                  onKeyUp={(event) => handleSearchChange(event.currentTarget.value)}
                   onKeyDown={(event) => {
                     if (event.key === "Enter") {
                       event.preventDefault();
+                      handleSearchChange(event.currentTarget.value);
                       event.currentTarget.blur();
                     }
                   }}
@@ -228,7 +316,10 @@ export function KioskBoardStockView({
                 {query ? (
                   <button
                     type="button"
-                    onClick={() => handleSearchChange("")}
+                    onClick={() => {
+                      if (searchInputRef.current) searchInputRef.current.value = "";
+                      handleSearchChange("");
+                    }}
                     className="flex h-9 min-w-9 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-600"
                     aria-label="Limpiar busqueda"
                   >
@@ -435,7 +526,10 @@ export function KioskBoardStockView({
           {query ? (
             <button
               type="button"
-              onClick={() => handleSearchChange("")}
+              onClick={() => {
+                if (searchInputRef.current) searchInputRef.current.value = "";
+                handleSearchChange("");
+              }}
               className="ui-btn ui-btn--brand mt-4"
             >
               Limpiar búsqueda
