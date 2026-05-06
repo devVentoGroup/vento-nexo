@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useMemo, useRef, useState, type FormEvent } from "react";
 
 import {
@@ -74,7 +75,14 @@ function normalizeProductSearch(value: string) {
     .toLowerCase()
     .trim();
 }
+function buildKioskWithdrawProductHref(sourceLocationId: string, productId: string) {
+  const params = new URLSearchParams({
+    kiosk: "1",
+    product_id: productId,
+  });
 
+  return `/inventory/locations/${encodeURIComponent(sourceLocationId)}/kiosk-withdraw?${params.toString()}`;
+}
 function activeProfilesForProduct(profiles: ProductUomProfile[], productId: string) {
   const candidates = profiles.filter((profile) => {
     if (!profile.is_active || profile.product_id !== productId) return false;
@@ -147,7 +155,6 @@ export function KioskWithdrawForm({
   const [notes, setNotes] = useState("");
   const [dialog, setDialog] = useState<ConfirmationDialog | null>(null);
   const [productQuery, setProductQuery] = useState("");
-  const [isProductListOpen, setIsProductListOpen] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const allowNextSubmitRef = useRef(false);
 
@@ -212,11 +219,11 @@ export function KioskWithdrawForm({
     const nextProduct = products.find((item) => item.id === next) ?? null;
     const nextStockUnit = normalizeUnitCode(nextProduct?.stock_unit_code ?? nextProduct?.unit ?? "un");
     const nextProfile = defaultProfileByProduct.get(next) ?? null;
+
     setProductId(next);
     setInputUnitCode(normalizeUnitCode(nextProfile?.input_unit_code ?? "") || (nextProduct ? nextStockUnit : ""));
     setInputUomProfileId(nextProfile?.id ?? "");
     setProductQuery("");
-    setIsProductListOpen(false);
   }
 
   const filteredProducts = useMemo(() => {
@@ -376,28 +383,23 @@ export function KioskWithdrawForm({
           ) : null}
 
           <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-            <div className="flex flex-col gap-1 md:col-span-2">
+            <div className="flex flex-col gap-2 md:col-span-2">
               <span className="ui-label">Producto</span>
               <input type="hidden" name="product_id" value={productId} />
 
-              <button
-                type="button"
-                onClick={() => {
-                  setProductQuery("");
-                  setIsProductListOpen(true);
-                }}
-                className={`min-h-14 w-full rounded-2xl border px-4 py-3 text-left shadow-sm transition ${product
+              <div
+                className={`min-h-14 w-full rounded-2xl border px-4 py-3 text-left shadow-sm ${product
                   ? "border-amber-200 bg-amber-50 text-amber-950"
                   : "border-[var(--ui-border)] bg-white text-[var(--ui-muted)]"
                   }`}
               >
                 <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
-                  {product ? "Producto seleccionado" : "Toca para buscar"}
+                  {product ? "Producto seleccionado" : "Selecciona producto"}
                 </div>
                 <div className="mt-1 text-base font-semibold text-[var(--ui-text)]">
                   {selectedProductLabel}
                 </div>
-              </button>
+              </div>
 
               {product ? (
                 <button
@@ -407,13 +409,106 @@ export function KioskWithdrawForm({
                     setProductQuery("");
                     setInputUnitCode("");
                     setInputUomProfileId("");
-                    setIsProductListOpen(true);
                   }}
                   className="w-fit text-xs font-semibold text-[var(--ui-muted)] underline underline-offset-4"
                 >
-                  Cambiar producto
+                  Quitar selección
                 </button>
               ) : null}
+
+              <details
+                open={!product}
+                className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3"
+              >
+                <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+                  Buscar / cambiar producto
+                </summary>
+
+                <div className="mt-3 space-y-3">
+                  <div className="flex min-h-12 items-center gap-2 rounded-2xl border border-[var(--ui-border)] bg-white px-3 shadow-sm focus-within:border-amber-300 focus-within:ring-2 focus-within:ring-amber-100">
+                    <input
+                      type="search"
+                      inputMode="search"
+                      enterKeyHint="done"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      value={productQuery}
+                      onChange={(event) => setProductQuery(event.currentTarget.value)}
+                      onInput={(event) => setProductQuery(event.currentTarget.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          event.currentTarget.blur();
+                        }
+                      }}
+                      className="min-h-11 flex-1 bg-transparent text-base font-semibold text-[var(--ui-text)] outline-none placeholder:text-[var(--ui-muted)]"
+                      placeholder="Buscar por nombre o unidad"
+                    />
+
+                    {productQuery ? (
+                      <button
+                        type="button"
+                        onClick={() => setProductQuery("")}
+                        className="flex h-9 min-w-9 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-600"
+                        aria-label="Limpiar búsqueda"
+                      >
+                        ×
+                      </button>
+                    ) : null}
+                  </div>
+
+                  <div className="text-xs font-medium text-[var(--ui-muted)]">
+                    Mostrando {filteredProducts.length} de {products.length} productos.
+                  </div>
+
+                  {filteredProducts.length > 0 ? (
+                    <div className="grid max-h-[42vh] gap-2 overflow-auto pr-1 sm:grid-cols-2">
+                      {filteredProducts.slice(0, 120).map((item) => (
+                        <Link
+                          key={item.id}
+                          href={buildKioskWithdrawProductHref(sourceLocationId, item.id)}
+                          onClick={(event) => {
+                            event.preventDefault();
+                            selectProduct(item.id);
+                          }}
+                          className={`rounded-2xl border px-4 py-4 text-left shadow-sm transition active:scale-[0.99] ${item.id === productId
+                            ? "border-amber-300 bg-amber-50 text-amber-950"
+                            : "border-[var(--ui-border)] bg-white hover:bg-white"
+                            }`}
+                        >
+                          <div className="line-clamp-2 text-base font-semibold text-[var(--ui-text)]">
+                            {item.name ?? item.id}
+                          </div>
+                          <div className="mt-2 text-sm text-[var(--ui-muted)]">
+                            Disponible:{" "}
+                            <span className="font-semibold text-[var(--ui-text)]">
+                              {formatQty(item.available_qty)} {item.stock_unit_code ?? item.unit ?? "un"}
+                            </span>
+                          </div>
+                        </Link>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="flex min-h-[20vh] flex-col items-center justify-center rounded-3xl border border-[var(--ui-border)] bg-white px-5 py-8 text-center">
+                      <div className="ui-h3">Sin productos</div>
+                      <p className="mt-2 ui-body-muted">
+                        No encontramos productos para esa búsqueda.
+                      </p>
+                      {productQuery ? (
+                        <button
+                          type="button"
+                          onClick={() => setProductQuery("")}
+                          className="ui-btn ui-btn--brand mt-4"
+                        >
+                          Limpiar búsqueda
+                        </button>
+                      ) : null}
+                    </div>
+                  )}
+                </div>
+              </details>
             </div>
 
             <label className="flex flex-col gap-1">
@@ -485,118 +580,6 @@ export function KioskWithdrawForm({
         </div>
       </section>
 
-      {isProductListOpen ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 px-3 py-4 backdrop-blur-sm sm:items-center">
-          <div className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white shadow-2xl">
-            <div className="border-b border-[var(--ui-border)] bg-[linear-gradient(135deg,rgba(245,158,11,0.18)_0%,rgba(255,255,255,1)_72%)] px-4 py-4 sm:px-5">
-              <div className="flex items-start justify-between gap-3">
-                <div>
-                  <div className="ui-caption">Seleccionar producto</div>
-                  <div className="mt-1 text-xl font-semibold text-[var(--ui-text)]">
-                    Busca y toca el producto
-                  </div>
-                </div>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setProductQuery("");
-                    setIsProductListOpen(false);
-                  }}
-                  className="flex h-10 min-w-10 items-center justify-center rounded-full bg-white text-lg font-bold text-slate-700 shadow-sm"
-                  aria-label="Cerrar selector de producto"
-                >
-                  ×
-                </button>
-              </div>
-
-              <div className="mt-4 flex min-h-12 items-center gap-2 rounded-2xl border border-[var(--ui-border)] bg-white px-3 shadow-sm focus-within:border-amber-300 focus-within:ring-2 focus-within:ring-amber-100">
-                <input
-                  type="search"
-                  inputMode="search"
-                  enterKeyHint="done"
-                  autoComplete="off"
-                  autoCorrect="off"
-                  autoCapitalize="none"
-                  spellCheck={false}
-                  value={productQuery}
-                  onChange={(event) => setProductQuery(event.currentTarget.value)}
-                  onInput={(event) => setProductQuery(event.currentTarget.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      event.currentTarget.blur();
-                    }
-                  }}
-                  className="min-h-11 flex-1 bg-transparent text-base font-semibold text-[var(--ui-text)] outline-none placeholder:text-[var(--ui-muted)]"
-                  placeholder="Buscar por nombre o unidad"
-                  autoFocus
-                />
-
-                {productQuery ? (
-                  <button
-                    type="button"
-                    onClick={() => setProductQuery("")}
-                    className="flex h-9 min-w-9 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-600"
-                    aria-label="Limpiar búsqueda"
-                  >
-                    ×
-                  </button>
-                ) : null}
-              </div>
-
-              <div className="mt-2 text-xs font-medium text-[var(--ui-muted)]">
-                Mostrando {filteredProducts.length} de {products.length} productos.
-              </div>
-            </div>
-
-            <div className="flex-1 overflow-auto p-3 sm:p-4">
-              {filteredProducts.length > 0 ? (
-                <div className="grid gap-2 sm:grid-cols-2">
-                  {filteredProducts.slice(0, 120).map((item) => (
-                    <button
-                      key={item.id}
-                      type="button"
-                      onClick={() => selectProduct(item.id)}
-                      className={`rounded-2xl border px-4 py-4 text-left shadow-sm transition active:scale-[0.99] ${item.id === productId
-                        ? "border-amber-300 bg-amber-50 text-amber-950"
-                        : "border-[var(--ui-border)] bg-white hover:bg-[var(--ui-bg-soft)]"
-                        }`}
-                    >
-                      <div className="line-clamp-2 text-base font-semibold text-[var(--ui-text)]">
-                        {item.name ?? item.id}
-                      </div>
-                      <div className="mt-2 text-sm text-[var(--ui-muted)]">
-                        Disponible:{" "}
-                        <span className="font-semibold text-[var(--ui-text)]">
-                          {formatQty(item.available_qty)} {item.stock_unit_code ?? item.unit ?? "un"}
-                        </span>
-                      </div>
-                    </button>
-                  ))}
-                </div>
-              ) : (
-                <div className="flex min-h-[28vh] flex-col items-center justify-center rounded-3xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-5 py-8 text-center">
-                  <div className="ui-h3">Sin productos</div>
-                  <p className="mt-2 ui-body-muted">
-                    No encontramos productos para esa búsqueda.
-                  </p>
-                  {productQuery ? (
-                    <button
-                      type="button"
-                      onClick={() => setProductQuery("")}
-                      className="ui-btn ui-btn--brand mt-4"
-                    >
-                      Limpiar búsqueda
-                    </button>
-                  ) : null}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      ) : null}
-
       <div className="ui-mobile-sticky-footer ui-fade-up ui-delay-2 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ui-border)] bg-white/92 px-4 py-3 backdrop-blur">
         <div className="text-sm text-[var(--ui-muted)]">
           {selectedWorker
@@ -605,7 +588,7 @@ export function KioskWithdrawForm({
               : "Retiro sin destino"
             : "Selecciona trabajador y producto"}
         </div>
-        <button type="button" className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold" onClick={validateAndOpenDialog}>
+        <button type="submit" className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold">
           Confirmar
         </button>
       </div>
