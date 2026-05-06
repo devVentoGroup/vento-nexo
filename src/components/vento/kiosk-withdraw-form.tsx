@@ -67,6 +67,13 @@ function unitLabel(value: string) {
   if (normalized === "un") return "Unidad";
   return clean;
 }
+function normalizeProductSearch(value: string) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
 
 function activeProfilesForProduct(profiles: ProductUomProfile[], productId: string) {
   const candidates = profiles.filter((profile) => {
@@ -125,10 +132,10 @@ export function KioskWithdrawForm({
   const initialStockUnit = normalizeUnitCode(initialProduct?.stock_unit_code ?? initialProduct?.unit ?? "un");
   const initialProfile = initialProduct
     ? selectProductUomProfileForContext({
-        profiles: activeProfilesForProduct(uomProfiles, initialProduct.id),
-        productId: initialProduct.id,
-        context: "remission",
-      })
+      profiles: activeProfilesForProduct(uomProfiles, initialProduct.id),
+      productId: initialProduct.id,
+      context: "remission",
+    })
     : null;
   const [workerId, setWorkerId] = useState("");
   const [productId, setProductId] = useState(initialProduct?.id ?? "");
@@ -197,11 +204,9 @@ export function KioskWithdrawForm({
   const quantityNumber = Number(quantity);
   const canSubmit = Boolean(workerId && productId && inputUnitCode && quantityNumber > 0);
   const selectedProductLabel = product
-    ? `${product.name ?? product.id} - ${formatQty(product.available_qty)} ${
-        product.stock_unit_code ?? product.unit ?? "un"
+    ? `${product.name ?? product.id} - ${formatQty(product.available_qty)} ${product.stock_unit_code ?? product.unit ?? "un"
     } disponibles`
     : "Selecciona producto";
-  const productSearchValue = productQuery || (product ? product.name ?? "" : "");
 
   function selectProduct(next: string) {
     const nextProduct = products.find((item) => item.id === next) ?? null;
@@ -210,22 +215,25 @@ export function KioskWithdrawForm({
     setProductId(next);
     setInputUnitCode(normalizeUnitCode(nextProfile?.input_unit_code ?? "") || (nextProduct ? nextStockUnit : ""));
     setInputUomProfileId(nextProfile?.id ?? "");
-    setProductQuery(nextProduct?.name ?? "");
+    setProductQuery("");
     setIsProductListOpen(false);
   }
 
   const filteredProducts = useMemo(() => {
-    const query = productQuery
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "")
-      .toLowerCase()
-      .trim();
+    const query = normalizeProductSearch(productQuery);
+
     if (!query) return products;
+
     return products.filter((item) => {
-      const haystack = `${item.name ?? ""} ${item.unit ?? ""} ${item.stock_unit_code ?? ""}`
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .toLowerCase();
+      const haystack = normalizeProductSearch(
+        [
+          item.name,
+          item.unit,
+          item.stock_unit_code,
+          item.id,
+        ].join(" ")
+      );
+
       return haystack.includes(query);
     });
   }, [productQuery, products]);
@@ -371,62 +379,41 @@ export function KioskWithdrawForm({
             <div className="flex flex-col gap-1 md:col-span-2">
               <span className="ui-label">Producto</span>
               <input type="hidden" name="product_id" value={productId} />
-              <div className="relative">
-                <input
-                  value={productSearchValue}
-                  onChange={(event) => {
-                    setProductQuery(event.target.value);
-                    setIsProductListOpen(true);
-                    if (productId) {
-                      setProductId("");
-                      setInputUnitCode("");
-                      setInputUomProfileId("");
-                    }
-                  }}
-                  onFocus={() => setIsProductListOpen(true)}
-                  className="ui-input h-14 w-full text-base"
-                  placeholder="Buscar producto"
-                  autoComplete="off"
-                />
-                {product ? (
-                  <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                    Seleccionado: {selectedProductLabel}
-                  </div>
-                ) : null}
 
-                {isProductListOpen ? (
-                  <div className="absolute left-0 right-0 top-[calc(100%+8px)] z-40 overflow-hidden rounded-2xl border border-[var(--ui-border)] bg-white shadow-2xl">
-                    <div className="max-h-80 overflow-auto p-2">
-                      {filteredProducts.length > 0 ? (
-                        filteredProducts.slice(0, 80).map((item) => (
-                          <button
-                            key={item.id}
-                            type="button"
-                            className={`block w-full rounded-xl px-4 py-3 text-left text-sm transition ${
-                              item.id === productId
-                                ? "bg-amber-50 font-semibold text-amber-950"
-                                : "hover:bg-[var(--ui-bg-soft)]"
-                            }`}
-                            onMouseDown={(event) => {
-                              event.preventDefault();
-                              selectProduct(item.id);
-                            }}
-                          >
-                            <div className="font-semibold text-[var(--ui-text)]">{item.name ?? item.id}</div>
-                            <div className="mt-0.5 text-xs text-[var(--ui-muted)]">
-                              Disponible: {formatQty(item.available_qty)} {item.stock_unit_code ?? item.unit ?? "un"}
-                            </div>
-                          </button>
-                        ))
-                      ) : (
-                        <div className="px-4 py-4 text-sm text-[var(--ui-muted)]">
-                          Sin productos para esa búsqueda.
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                ) : null}
-              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setProductQuery("");
+                  setIsProductListOpen(true);
+                }}
+                className={`min-h-14 w-full rounded-2xl border px-4 py-3 text-left shadow-sm transition ${product
+                  ? "border-amber-200 bg-amber-50 text-amber-950"
+                  : "border-[var(--ui-border)] bg-white text-[var(--ui-muted)]"
+                  }`}
+              >
+                <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
+                  {product ? "Producto seleccionado" : "Toca para buscar"}
+                </div>
+                <div className="mt-1 text-base font-semibold text-[var(--ui-text)]">
+                  {selectedProductLabel}
+                </div>
+              </button>
+
+              {product ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProductId("");
+                    setProductQuery("");
+                    setInputUnitCode("");
+                    setInputUomProfileId("");
+                    setIsProductListOpen(true);
+                  }}
+                  className="w-fit text-xs font-semibold text-[var(--ui-muted)] underline underline-offset-4"
+                >
+                  Cambiar producto
+                </button>
+              ) : null}
             </div>
 
             <label className="flex flex-col gap-1">
@@ -497,6 +484,118 @@ export function KioskWithdrawForm({
           </details>
         </div>
       </section>
+
+      {isProductListOpen ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 px-3 py-4 backdrop-blur-sm sm:items-center">
+          <div className="flex max-h-[88vh] w-full max-w-3xl flex-col overflow-hidden rounded-[28px] border border-white/70 bg-white shadow-2xl">
+            <div className="border-b border-[var(--ui-border)] bg-[linear-gradient(135deg,rgba(245,158,11,0.18)_0%,rgba(255,255,255,1)_72%)] px-4 py-4 sm:px-5">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="ui-caption">Seleccionar producto</div>
+                  <div className="mt-1 text-xl font-semibold text-[var(--ui-text)]">
+                    Busca y toca el producto
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setProductQuery("");
+                    setIsProductListOpen(false);
+                  }}
+                  className="flex h-10 min-w-10 items-center justify-center rounded-full bg-white text-lg font-bold text-slate-700 shadow-sm"
+                  aria-label="Cerrar selector de producto"
+                >
+                  ×
+                </button>
+              </div>
+
+              <div className="mt-4 flex min-h-12 items-center gap-2 rounded-2xl border border-[var(--ui-border)] bg-white px-3 shadow-sm focus-within:border-amber-300 focus-within:ring-2 focus-within:ring-amber-100">
+                <input
+                  type="search"
+                  inputMode="search"
+                  enterKeyHint="done"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  value={productQuery}
+                  onChange={(event) => setProductQuery(event.currentTarget.value)}
+                  onInput={(event) => setProductQuery(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      event.currentTarget.blur();
+                    }
+                  }}
+                  className="min-h-11 flex-1 bg-transparent text-base font-semibold text-[var(--ui-text)] outline-none placeholder:text-[var(--ui-muted)]"
+                  placeholder="Buscar por nombre o unidad"
+                  autoFocus
+                />
+
+                {productQuery ? (
+                  <button
+                    type="button"
+                    onClick={() => setProductQuery("")}
+                    className="flex h-9 min-w-9 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-600"
+                    aria-label="Limpiar búsqueda"
+                  >
+                    ×
+                  </button>
+                ) : null}
+              </div>
+
+              <div className="mt-2 text-xs font-medium text-[var(--ui-muted)]">
+                Mostrando {filteredProducts.length} de {products.length} productos.
+              </div>
+            </div>
+
+            <div className="flex-1 overflow-auto p-3 sm:p-4">
+              {filteredProducts.length > 0 ? (
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {filteredProducts.slice(0, 120).map((item) => (
+                    <button
+                      key={item.id}
+                      type="button"
+                      onClick={() => selectProduct(item.id)}
+                      className={`rounded-2xl border px-4 py-4 text-left shadow-sm transition active:scale-[0.99] ${item.id === productId
+                        ? "border-amber-300 bg-amber-50 text-amber-950"
+                        : "border-[var(--ui-border)] bg-white hover:bg-[var(--ui-bg-soft)]"
+                        }`}
+                    >
+                      <div className="line-clamp-2 text-base font-semibold text-[var(--ui-text)]">
+                        {item.name ?? item.id}
+                      </div>
+                      <div className="mt-2 text-sm text-[var(--ui-muted)]">
+                        Disponible:{" "}
+                        <span className="font-semibold text-[var(--ui-text)]">
+                          {formatQty(item.available_qty)} {item.stock_unit_code ?? item.unit ?? "un"}
+                        </span>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex min-h-[28vh] flex-col items-center justify-center rounded-3xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-5 py-8 text-center">
+                  <div className="ui-h3">Sin productos</div>
+                  <p className="mt-2 ui-body-muted">
+                    No encontramos productos para esa búsqueda.
+                  </p>
+                  {productQuery ? (
+                    <button
+                      type="button"
+                      onClick={() => setProductQuery("")}
+                      className="ui-btn ui-btn--brand mt-4"
+                    >
+                      Limpiar búsqueda
+                    </button>
+                  ) : null}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      ) : null}
 
       <div className="ui-mobile-sticky-footer ui-fade-up ui-delay-2 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ui-border)] bg-white/92 px-4 py-3 backdrop-blur">
         <div className="text-sm text-[var(--ui-muted)]">
