@@ -1089,7 +1089,9 @@ async function updateProduct(formData: FormData) {
       .eq("product_id", productId)
       .eq("usage_context", params.usageContext)
       .eq("is_default", true)
-      .eq("is_active", true)
+      .order("is_active", { ascending: false })
+      .order("updated_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (existing?.id) {
@@ -1101,6 +1103,7 @@ async function updateProduct(formData: FormData) {
           qty_in_input_unit: params.qtyInInputUnit,
           qty_in_stock_unit: params.qtyInStockUnit,
           source: params.source,
+          is_active: true,
           updated_at: now,
         })
         .eq("id", existing.id);
@@ -1119,6 +1122,17 @@ async function updateProduct(formData: FormData) {
       source: params.source,
       updated_at: now,
     });
+  }
+
+  async function deactivateRemissionProfile() {
+    const { error } = await supabase
+      .from("product_uom_profiles")
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq("product_id", productId)
+      .eq("usage_context", "remission")
+      .eq("is_default", true)
+      .eq("is_active", true);
+    if (error) redirectWithError(error.message);
   }
 
   async function syncInternalBreakdownProfile() {
@@ -1185,6 +1199,8 @@ async function updateProduct(formData: FormData) {
       qtyInStockUnit: remissionUomFromSupplier.qtyInStockUnit,
       source: remissionUomFromSupplier.source,
     });
+  } else {
+    await deactivateRemissionProfile();
   }
 
   await syncInternalBreakdownProfile();

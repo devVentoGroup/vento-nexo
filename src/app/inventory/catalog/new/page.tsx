@@ -1071,7 +1071,9 @@ async function createProduct(formData: FormData) {
       .eq("product_id", productId)
       .eq("usage_context", params.usageContext)
       .eq("is_default", true)
-      .eq("is_active", true)
+      .order("is_active", { ascending: false })
+      .order("updated_at", { ascending: false })
+      .limit(1)
       .maybeSingle();
 
     if (existing?.id) {
@@ -1083,6 +1085,7 @@ async function createProduct(formData: FormData) {
           qty_in_input_unit: params.qtyInInputUnit,
           qty_in_stock_unit: params.qtyInStockUnit,
           source: params.source,
+          is_active: true,
           updated_at: now,
         })
         .eq("id", existing.id);

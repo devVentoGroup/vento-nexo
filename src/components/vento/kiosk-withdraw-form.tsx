@@ -5,6 +5,7 @@ import { useMemo, useState } from "react";
 import { SearchableSingleSelect } from "@/components/inventory/forms/SearchableSingleSelect";
 import {
   normalizeUnitCode,
+  normalizeProductUomUsageContext,
   selectProductUomProfileForContext,
   type ProductUomProfile,
 } from "@/lib/inventory/uom";
@@ -50,11 +51,46 @@ function profileOptionLabel(profile: ProductUomProfile, stockUnitCode: string) {
 }
 
 function activeProfilesForProduct(profiles: ProductUomProfile[], productId: string) {
-  return profiles.filter((profile) => {
+  const candidates = profiles.filter((profile) => {
     if (!profile.is_active || profile.product_id !== productId) return false;
-    const context = String(profile.usage_context ?? "general").trim().toLowerCase();
+    const context = normalizeProductUomUsageContext(profile.usage_context);
     return context !== "general" || profile.is_default;
   });
+
+  const priority = (profile: ProductUomProfile) => {
+    const context = normalizeProductUomUsageContext(profile.usage_context);
+    if (context === "purchase") return 0;
+    if (context === "remission" && profile.source !== "supplier_primary") return 1;
+    if (context === "remission") return 2;
+    return 3;
+  };
+
+  const sorted = [...candidates].sort((a, b) => {
+    const priorityDiff = priority(a) - priority(b);
+    if (priorityDiff !== 0) return priorityDiff;
+    if (a.is_default !== b.is_default) return a.is_default ? -1 : 1;
+    return String(a.label ?? "").localeCompare(String(b.label ?? ""), "es", { sensitivity: "base" });
+  });
+
+  const deduped: ProductUomProfile[] = [];
+  const seen = new Set<string>();
+  for (const profile of sorted) {
+    const qtyInInput = Number(profile.qty_in_input_unit);
+    const qtyInStock = Number(profile.qty_in_stock_unit);
+    if (!Number.isFinite(qtyInInput) || !Number.isFinite(qtyInStock) || qtyInInput <= 0 || qtyInStock <= 0) {
+      continue;
+    }
+
+    const key = [
+      normalizeUnitCode(profile.input_unit_code),
+      Math.round((qtyInStock / qtyInInput) * 1_000_000) / 1_000_000,
+    ].join(":");
+    if (seen.has(key)) continue;
+    seen.add(key);
+    deduped.push(profile);
+  }
+
+  return deduped;
 }
 
 export function KioskWithdrawForm({
@@ -89,13 +125,9 @@ export function KioskWithdrawForm({
   const profilesByProduct = useMemo(() => {
     const map = new Map<string, ProductUomProfile[]>();
     for (const profile of uomProfiles) {
-      if (!profile.is_active) continue;
-      const context = String(profile.usage_context ?? "general").trim().toLowerCase();
-      if (context === "general" && !profile.is_default) continue;
       const key = String(profile.product_id ?? "").trim();
-      const current = map.get(key) ?? [];
-      current.push(profile);
-      map.set(key, current);
+      if (!key) continue;
+      map.set(key, activeProfilesForProduct(uomProfiles, key));
     }
     return map;
   }, [uomProfiles]);
