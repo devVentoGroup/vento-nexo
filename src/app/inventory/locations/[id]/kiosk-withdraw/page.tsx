@@ -92,15 +92,14 @@ async function submitKioskWithdraw(formData: FormData) {
   }
 
   const employeeId = asText(formData.get("employee_id"));
-  const pin = asText(formData.get("pin"));
   const productId = asText(formData.get("product_id"));
   const quantityInInput = roundQuantity(parseNumber(asText(formData.get("quantity"))));
   const inputUnitCode = normalizeUnitCode(asText(formData.get("input_unit_code")));
   const inputUomProfileId = asText(formData.get("input_uom_profile_id"));
   const notes = asText(formData.get("notes"));
 
-  if (!employeeId || !pin) {
-    redirect(errorUrl(sourceLocationId, "Selecciona trabajador e ingresa su PIN.", productId));
+  if (!employeeId) {
+    redirect(errorUrl(sourceLocationId, "Selecciona trabajador.", productId));
   }
   if (!productId || quantityInInput <= 0) {
     redirect(errorUrl(sourceLocationId, "Selecciona producto y cantidad mayor a cero.", productId));
@@ -134,14 +133,6 @@ async function submitKioskWithdraw(formData: FormData) {
 
   if (assignment?.location_id === sourceLocationId) {
     redirect(errorUrl(sourceLocationId, "El LOC destino del trabajador no puede ser el mismo origen.", productId));
-  }
-
-  const { data: pinOk, error: pinError } = await supabase.rpc("verify_employee_kiosk_pin", {
-    p_employee_id: employeeId,
-    p_pin: pin,
-  });
-  if (pinError || pinOk !== true) {
-    redirect(errorUrl(sourceLocationId, "PIN incorrecto o trabajador inactivo.", productId));
   }
 
   const { data: employeeData } = await supabase
@@ -361,8 +352,6 @@ export default async function KioskWithdrawPage({
   const errorMessage = sp.error ? safeDecodeURIComponent(sp.error) : "";
   const errorProductId = sp.error_product_id ? String(sp.error_product_id).trim() : "";
   const initialProductId = sp.product_id ? String(sp.product_id).trim() : "";
-  const clearDraft = sp.ok === "1";
-
   const { supabase } = await requireAppAccess({
     appId: "nexo",
     returnTo: `/inventory/locations/${id}/kiosk-withdraw?kiosk=1`,
@@ -406,63 +395,22 @@ export default async function KioskWithdrawPage({
         .eq("is_active", true)
     : { data: [] as ProductUomProfile[] };
 
-  const { data: assignmentData } = await supabase
-    .from("employee_inventory_location_assignments")
-    .select("employee_id,location_id,location:inventory_locations(id,code,description,zone,site_id)")
-    .eq("site_id", location.site_id)
-    .eq("purpose", "kiosk_withdraw")
-    .eq("is_active", true)
-    .neq("location_id", id)
-    .limit(300);
-  const assignments = (assignmentData ?? []) as Array<{
+  const { data: workersData, error: workersError } = await supabase.rpc("nexo_kiosk_withdraw_workers", {
+    p_source_location_id: id,
+  });
+  const workers = ((workersData ?? []) as Array<{
     employee_id: string;
-    location_id: string;
-    location?: LocationRow | LocationRow[] | null;
-  }>;
-  const assignmentByEmployeeId = new Map(assignments.map((assignment) => [assignment.employee_id, assignment]));
-
-  const { data: employeeSiteData } = await supabase
-    .from("employee_sites")
-    .select("employee_id")
-    .eq("site_id", location.site_id)
-    .eq("is_active", true)
-    .limit(500);
-  const employeeIds = Array.from(
-    new Set([
-      ...((employeeSiteData ?? []) as Array<{ employee_id: string | null }>)
-        .map((row) => row.employee_id)
-        .filter((employeeId): employeeId is string => Boolean(employeeId)),
-      ...assignments.map((assignment) => assignment.employee_id),
-    ])
-  );
-
-  const { data: employeesData } = employeeIds.length
-    ? await supabase
-        .from("employees")
-        .select("id,full_name,alias,role,is_active")
-        .in("id", employeeIds)
-        .eq("is_active", true)
-        .order("full_name", { ascending: true })
-    : { data: [] as Array<{ id: string; full_name: string | null; alias: string | null; role: string | null }> };
-  const workers = (employeesData ?? [])
-    .map((employee) => {
-      const assignment = assignmentByEmployeeId.get(employee.id) ?? null;
-      const destination = Array.isArray(assignment?.location)
-        ? assignment.location[0] ?? null
-        : assignment?.location ?? null;
-      const hasDestination = Boolean(assignment?.location_id && assignment.location_id !== id);
-      return {
-        employee_id: employee.id,
-        label: String(employee.alias ?? employee.full_name ?? employee.id).trim(),
-        role: employee.role ?? null,
-        destination_label: hasDestination ? locLabel(destination) : "Sin destino (descuento)",
-        has_destination: hasDestination,
-      };
-    })
-    .filter((worker): worker is { employee_id: string; label: string; role: string | null; destination_label: string; has_destination: boolean } =>
-      Boolean(worker)
-    )
-    .sort((a, b) => a.label.localeCompare(b.label, "es", { sensitivity: "base" }));
+    label: string | null;
+    role: string | null;
+    destination_label: string | null;
+    has_destination: boolean | null;
+  }>).map((worker) => ({
+    employee_id: worker.employee_id,
+    label: String(worker.label ?? worker.employee_id).trim(),
+    role: worker.role ?? null,
+    destination_label: String(worker.destination_label ?? "Sin destino (descuento)").trim(),
+    has_destination: worker.has_destination === true,
+  }));
 
   const title = locLabel(location);
   const returnTo = `/inventory/locations/${encodeURIComponent(id)}/board?kiosk=1`;
@@ -479,7 +427,7 @@ export default async function KioskWithdrawPage({
               <div className="ui-caption">Quiosco operativo</div>
               <h1 className="ui-h1">{title}</h1>
               <p className="ui-body-muted">
-                El trabajador confirma con PIN. Si tiene LOC asignado, NEXO traslada; si no, descuenta del inventario.
+                Selecciona quien retira. Si tiene LOC asignado, NEXO traslada; si no, descuenta del inventario.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -490,15 +438,15 @@ export default async function KioskWithdrawPage({
                 {products.length} productos
               </span>
               <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
-                {workers.length} trabajadores configurados
+                {workers.length} trabajadores disponibles
               </span>
             </div>
           </div>
           <div className="ui-remission-kpis sm:grid-cols-3 lg:grid-cols-1">
             <article className="ui-remission-kpi" data-tone="warm">
               <div className="ui-remission-kpi-label">Confirmacion</div>
-              <div className="ui-remission-kpi-value">PIN</div>
-              <div className="ui-remission-kpi-note">PIN hash configurado desde VISO</div>
+              <div className="ui-remission-kpi-value">Trabajador</div>
+              <div className="ui-remission-kpi-note">Sin PIN personal</div>
             </article>
             <article className="ui-remission-kpi" data-tone="cool">
               <div className="ui-remission-kpi-label">Movimiento</div>
@@ -513,13 +461,20 @@ export default async function KioskWithdrawPage({
         <div className="ui-alert ui-alert--error">Error: {errorMessage}</div>
       ) : null}
 
-      {workers.length === 0 ? (
+      {workersError ? (
+        <div className="ui-alert ui-alert--error">
+          Error cargando trabajadores: {workersError.message}
+        </div>
+      ) : null}
+
+      {!workersError && workers.length === 0 ? (
         <div className="ui-alert ui-alert--neutral">
           No hay trabajadores activos para esta sede.
         </div>
       ) : null}
 
       <KioskWithdrawForm
+        key={initialProductId || "blank"}
         sourceLocationId={id}
         returnTo={returnTo}
         products={products}
@@ -527,7 +482,6 @@ export default async function KioskWithdrawPage({
         uomProfiles={(uomProfilesData ?? []) as ProductUomProfile[]}
         errorMessage={errorMessage}
         errorProductId={errorProductId}
-        clearDraft={clearDraft}
         initialProductId={initialProductId}
         action={submitKioskWithdraw}
       />

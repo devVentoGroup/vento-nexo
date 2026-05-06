@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 import { SearchableSingleSelect } from "@/components/inventory/forms/SearchableSingleSelect";
 import {
@@ -33,21 +33,9 @@ type Props = {
   uomProfiles: ProductUomProfile[];
   errorMessage?: string;
   errorProductId?: string;
-  clearDraft?: boolean;
   initialProductId?: string;
   action: (formData: FormData) => void | Promise<void>;
 };
-
-type KioskWithdrawDraft = {
-  workerId: string;
-  productId: string;
-  quantity: string;
-  inputUnitCode: string;
-  inputUomProfileId: string;
-  notes: string;
-};
-
-const STORAGE_KEY = "vento:nexo:kiosk-withdraw-draft";
 
 function formatQty(value: number) {
   if (!Number.isFinite(value)) return "0";
@@ -61,6 +49,14 @@ function profileOptionLabel(profile: ProductUomProfile, stockUnitCode: string) {
   )} = ${formatQty(Number(profile.qty_in_stock_unit))} ${stockUnitCode || "un"})`;
 }
 
+function activeProfilesForProduct(profiles: ProductUomProfile[], productId: string) {
+  return profiles.filter((profile) => {
+    if (!profile.is_active || profile.product_id !== productId) return false;
+    const context = String(profile.usage_context ?? "general").trim().toLowerCase();
+    return context !== "general" || profile.is_default;
+  });
+}
+
 export function KioskWithdrawForm({
   sourceLocationId,
   returnTo,
@@ -69,17 +65,26 @@ export function KioskWithdrawForm({
   uomProfiles,
   errorMessage = "",
   errorProductId = "",
-  clearDraft = false,
   initialProductId = "",
   action,
 }: Props) {
+  const initialProduct = products.find((item) => item.id === initialProductId) ?? null;
+  const initialStockUnit = normalizeUnitCode(initialProduct?.stock_unit_code ?? initialProduct?.unit ?? "un");
+  const initialProfile = initialProduct
+    ? selectProductUomProfileForContext({
+        profiles: activeProfilesForProduct(uomProfiles, initialProduct.id),
+        productId: initialProduct.id,
+        context: "remission",
+      })
+    : null;
   const [workerId, setWorkerId] = useState("");
-  const [productId, setProductId] = useState("");
+  const [productId, setProductId] = useState(initialProduct?.id ?? "");
   const [quantity, setQuantity] = useState("");
-  const [inputUnitCode, setInputUnitCode] = useState("");
-  const [inputUomProfileId, setInputUomProfileId] = useState("");
+  const [inputUnitCode, setInputUnitCode] = useState(
+    normalizeUnitCode(initialProfile?.input_unit_code ?? "") || (initialProduct ? initialStockUnit : "")
+  );
+  const [inputUomProfileId, setInputUomProfileId] = useState(initialProfile?.id ?? "");
   const [notes, setNotes] = useState("");
-  const [draftLoaded, setDraftLoaded] = useState(false);
 
   const profilesByProduct = useMemo(() => {
     const map = new Map<string, ProductUomProfile[]>();
@@ -107,69 +112,6 @@ export function KioskWithdrawForm({
     }
     return selected;
   }, [products, profilesByProduct]);
-
-  useEffect(() => {
-    if (clearDraft) {
-      window.localStorage.removeItem(STORAGE_KEY);
-      setDraftLoaded(true);
-      return;
-    }
-
-    const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) {
-      if (initialProductId) {
-        const nextProduct = products.find((item) => item.id === initialProductId) ?? null;
-        const nextStockUnit = normalizeUnitCode(nextProduct?.stock_unit_code ?? nextProduct?.unit ?? "un");
-        const nextProfile = nextProduct ? defaultProfileByProduct.get(initialProductId) ?? null : null;
-        setProductId(initialProductId);
-        setInputUnitCode(normalizeUnitCode(nextProfile?.input_unit_code ?? "") || nextStockUnit);
-        setInputUomProfileId(nextProfile?.id ?? "");
-      }
-      setDraftLoaded(true);
-      return;
-    }
-
-    try {
-      const draft = JSON.parse(raw) as Partial<KioskWithdrawDraft>;
-      const draftProductId = initialProductId || String(draft.productId ?? "");
-      const nextProduct = products.find((item) => item.id === draftProductId) ?? null;
-      const nextStockUnit = normalizeUnitCode(nextProduct?.stock_unit_code ?? nextProduct?.unit ?? "un");
-      const nextProfile = initialProductId && nextProduct ? defaultProfileByProduct.get(initialProductId) ?? null : null;
-      setWorkerId(String(draft.workerId ?? ""));
-      setProductId(draftProductId);
-      setQuantity(initialProductId ? "" : String(draft.quantity ?? ""));
-      setInputUnitCode(
-        initialProductId
-          ? normalizeUnitCode(nextProfile?.input_unit_code ?? "") || nextStockUnit
-          : String(draft.inputUnitCode ?? "")
-      );
-      setInputUomProfileId(initialProductId ? nextProfile?.id ?? "" : String(draft.inputUomProfileId ?? ""));
-      setNotes(String(draft.notes ?? ""));
-    } catch {
-      window.localStorage.removeItem(STORAGE_KEY);
-    } finally {
-      setDraftLoaded(true);
-    }
-  }, [clearDraft, defaultProfileByProduct, initialProductId, products]);
-
-  useEffect(() => {
-    if (!draftLoaded || clearDraft) return;
-    const hasContent = Boolean(workerId || productId || quantity || inputUnitCode || notes);
-    if (!hasContent) {
-      window.localStorage.removeItem(STORAGE_KEY);
-      return;
-    }
-
-    const draft: KioskWithdrawDraft = {
-      workerId,
-      productId,
-      quantity,
-      inputUnitCode,
-      inputUomProfileId,
-      notes,
-    };
-    window.localStorage.setItem(STORAGE_KEY, JSON.stringify(draft));
-  }, [clearDraft, draftLoaded, inputUnitCode, inputUomProfileId, notes, productId, quantity, workerId]);
 
   const product = products.find((item) => item.id === productId) ?? null;
   const selectedWorker = workers.find((worker) => worker.employee_id === workerId) ?? null;
@@ -225,7 +167,7 @@ export function KioskWithdrawForm({
           ) : null}
         </div>
 
-        <div className="grid gap-3 md:grid-cols-[1.3fr_0.7fr]">
+        <div className="grid gap-3">
           <label className="flex flex-col gap-1">
             <span className="ui-label">Trabajador</span>
             <select
@@ -242,19 +184,6 @@ export function KioskWithdrawForm({
                 </option>
               ))}
             </select>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">PIN personal</span>
-            <input
-              name="pin"
-              type="password"
-              inputMode="numeric"
-              pattern="[0-9]*"
-              autoComplete="off"
-              className="ui-input h-12"
-              placeholder="PIN"
-              required
-            />
           </label>
         </div>
       </section>
