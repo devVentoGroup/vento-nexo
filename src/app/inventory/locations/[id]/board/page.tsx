@@ -355,7 +355,6 @@ export default async function LocationBoardPage({
   }, null);
   const withdrawHref = `/inventory/withdraw?loc_id=${encodeURIComponent(location.id)}${location.site_id ? `&site_id=${encodeURIComponent(location.site_id)}` : ""
     }`;
-  const kioskWithdrawHref = `/inventory/locations/${encodeURIComponent(location.id)}/kiosk-withdraw?kiosk=1`;
   const zoneHref =
     location.site_id && location.zone
       ? `/inventory/locations/zone?site_id=${encodeURIComponent(location.site_id)}&zone=${encodeURIComponent(location.zone)}`
@@ -380,9 +379,6 @@ export default async function LocationBoardPage({
             </div>
             {isKiosk ? (
               <div className="flex flex-wrap items-center gap-3">
-                <Link href={kioskWithdrawHref} className="ui-btn ui-btn--brand">
-                  Retirar / trasladar
-                </Link>
                 <LocationBoardAutoRefresh intervalSeconds={30} />
                 <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-[var(--ui-muted)] shadow-sm">
                   Ultima actualizacion: <span className="font-semibold text-[var(--ui-text)]">{formatDateTime(lastUpdatedAt)}</span>
@@ -422,9 +418,6 @@ export default async function LocationBoardPage({
                   className="ui-btn ui-btn--ghost"
                 >
                   Abrir modo kiosco
-                </Link>
-                <Link href={kioskWithdrawHref} className="ui-btn ui-btn--ghost">
-                  Retiro con PIN
                 </Link>
                 {zoneHref ? (
                   <Link href={zoneHref} className="ui-btn ui-btn--ghost">

@@ -483,6 +483,12 @@ export default async function KioskWithdrawPage({
   const errorMessage = sp.error ? safeDecodeURIComponent(sp.error) : "";
   const errorProductId = sp.error_product_id ? String(sp.error_product_id).trim() : "";
   const initialProductId = sp.product_id ? String(sp.product_id).trim() : "";
+  const returnTo = `/inventory/locations/${encodeURIComponent(id)}/board?kiosk=1`;
+
+  if (!initialProductId) {
+    redirect(returnTo);
+  }
+
   const { supabase } = await requireAppAccess({
     appId: "nexo",
     returnTo: `/inventory/locations/${id}/kiosk-withdraw?kiosk=1`,
@@ -516,8 +522,13 @@ export default async function KioskWithdrawPage({
     })
     .filter((row): row is ProductRow & { available_qty: number } => Boolean(row))
     .sort((a, b) => String(a.name ?? a.id).localeCompare(String(b.name ?? b.id), "es", { sensitivity: "base" }));
+  const selectedProduct = products.find((product) => product.id === initialProductId) ?? null;
 
-  const productIds = products.map((product) => product.id);
+  if (!selectedProduct) {
+    redirect(returnTo);
+  }
+
+  const productIds = [selectedProduct.id];
   const { data: uomProfilesData } = productIds.length
     ? await supabase
       .from("product_uom_profiles")
@@ -544,7 +555,6 @@ export default async function KioskWithdrawPage({
   }));
 
   const title = locLabel(location);
-  const returnTo = `/inventory/locations/${encodeURIComponent(id)}/board?kiosk=1`;
 
   return (
     <div className="ui-scene w-full space-y-5 px-4 py-5">
