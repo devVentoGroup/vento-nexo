@@ -117,6 +117,7 @@ export function KioskWithdrawForm({
   action,
 }: Props) {
   const formRef = useRef<HTMLFormElement>(null);
+  const submitButtonRef = useRef<HTMLButtonElement>(null);
   const allowNextSubmitRef = useRef(false);
   const product = useMemo(
     () => products.find((item) => item.id === initialProductId) ?? null,
@@ -218,7 +219,7 @@ export function KioskWithdrawForm({
   function submitConfirmed() {
     allowNextSubmitRef.current = true;
     setDialog(null);
-    window.setTimeout(() => formRef.current?.requestSubmit(), 0);
+    window.setTimeout(() => submitButtonRef.current?.click(), 0);
   }
 
   return (
@@ -228,6 +229,9 @@ export function KioskWithdrawForm({
       <input type="hidden" name="item_product_id" value={product?.id ?? ""} />
       <input type="hidden" name="item_input_unit_code" value={inputUnitCode} />
       <input type="hidden" name="item_input_uom_profile_id" value={inputUomProfileId} />
+      <button ref={submitButtonRef} type="submit" className="hidden" aria-hidden="true" tabIndex={-1}>
+        Guardar retiro
+      </button>
 
       <section className="ui-panel ui-remission-section ui-fade-up space-y-4">
         <div>

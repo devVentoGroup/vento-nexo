@@ -371,12 +371,12 @@ export function KioskBoardStockView({
                       Base: {formatQty(item.qty)} {item.unit}
                     </div>
                     {isKiosk ? (
-                      <Link
+                      <a
                         href={buildKioskWithdrawHref(locationId, item.productId)}
-                        className="ui-btn ui-btn--brand mt-2 h-10 px-3 text-xs"
+                        className="ui-btn ui-btn--brand mt-3 h-14 px-4 text-base"
                       >
-                        Retirar / trasladar
-                      </Link>
+                        Retirar
+                      </a>
                     ) : null}
                   </div>
                 </article>
@@ -408,12 +408,12 @@ export function KioskBoardStockView({
                     Base: {formatQty(item.qty)} {item.unit}
                   </div>
                   {isKiosk ? (
-                    <Link
+                    <a
                       href={buildKioskWithdrawHref(locationId, item.productId)}
-                      className="ui-btn ui-btn--brand h-10 w-full px-3 text-xs"
+                      className="ui-btn ui-btn--brand h-14 w-full px-4 text-base"
                     >
-                      Retirar / trasladar
-                    </Link>
+                      Retirar
+                    </a>
                   ) : null}
                 </div>
               </article>
