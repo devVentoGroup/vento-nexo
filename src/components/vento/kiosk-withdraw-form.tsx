@@ -1,6 +1,5 @@
 "use client";
 
-import Link from "next/link";
 import { useMemo, useRef, useState, type FormEvent } from "react";
 
 import {
@@ -80,6 +79,7 @@ function unitLabel(value: string) {
   if (normalized === "un") return "Unidad";
   return clean;
 }
+
 function normalizeProductSearch(value: string) {
   return String(value ?? "")
     .normalize("NFD")
@@ -87,14 +87,7 @@ function normalizeProductSearch(value: string) {
     .toLowerCase()
     .trim();
 }
-function buildKioskWithdrawProductHref(sourceLocationId: string, productId: string) {
-  const params = new URLSearchParams({
-    kiosk: "1",
-    product_id: productId,
-  });
 
-  return `/inventory/locations/${encodeURIComponent(sourceLocationId)}/kiosk-withdraw?${params.toString()}`;
-}
 function activeProfilesForProduct(profiles: ProductUomProfile[], productId: string) {
   const candidates = profiles.filter((profile) => {
     if (!profile.is_active || profile.product_id !== productId) return false;
@@ -118,9 +111,11 @@ function activeProfilesForProduct(profiles: ProductUomProfile[], productId: stri
 
   const deduped: ProductUomProfile[] = [];
   const seen = new Set<string>();
+
   for (const profile of sorted) {
     const qtyInInput = Number(profile.qty_in_input_unit);
     const qtyInStock = Number(profile.qty_in_stock_unit);
+
     if (!Number.isFinite(qtyInInput) || !Number.isFinite(qtyInStock) || qtyInInput <= 0 || qtyInStock <= 0) {
       continue;
     }
@@ -129,6 +124,7 @@ function activeProfilesForProduct(profiles: ProductUomProfile[], productId: stri
       normalizeUnitCode(profile.input_unit_code),
       Math.round((qtyInStock / qtyInInput) * 1_000_000) / 1_000_000,
     ].join(":");
+
     if (seen.has(key)) continue;
     seen.add(key);
     deduped.push(profile);
@@ -157,6 +153,7 @@ export function KioskWithdrawForm({
       context: "remission",
     })
     : null;
+
   const [workerId, setWorkerId] = useState("");
   const [productId, setProductId] = useState(initialProduct?.id ?? "");
   const [quantity, setQuantity] = useState("");
@@ -168,29 +165,36 @@ export function KioskWithdrawForm({
   const [dialog, setDialog] = useState<ConfirmationDialog | null>(null);
   const [productQuery, setProductQuery] = useState("");
   const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const [isAddingProduct, setIsAddingProduct] = useState(Boolean(initialProduct));
+
   const formRef = useRef<HTMLFormElement>(null);
   const allowNextSubmitRef = useRef(false);
 
   const profilesByProduct = useMemo(() => {
     const map = new Map<string, ProductUomProfile[]>();
+
     for (const profile of uomProfiles) {
       const key = String(profile.product_id ?? "").trim();
       if (!key) continue;
       map.set(key, activeProfilesForProduct(uomProfiles, key));
     }
+
     return map;
   }, [uomProfiles]);
 
   const defaultProfileByProduct = useMemo(() => {
     const selected = new Map<string, ProductUomProfile>();
+
     for (const productOption of products) {
       const profile = selectProductUomProfileForContext({
         profiles: profilesByProduct.get(productOption.id) ?? [],
         productId: productOption.id,
         context: "remission",
       });
+
       if (profile) selected.set(productOption.id, profile);
     }
+
     return selected;
   }, [products, profilesByProduct]);
 
@@ -201,33 +205,111 @@ export function KioskWithdrawForm({
     () => (productId ? profilesByProduct.get(productId) ?? [] : []),
     [productId, profilesByProduct]
   );
+
   const selectedProfile = inputUomProfileId
     ? productProfiles.find((profile) => profile.id === inputUomProfileId) ?? null
     : null;
+
   const stockUnitCode = normalizeUnitCode(product?.stock_unit_code ?? product?.unit ?? "un");
   const selectedUnitValue = selectedProfile
     ? `profile:${selectedProfile.id}`
     : inputUnitCode
       ? `unit:${inputUnitCode}`
       : "";
+
   const selectedFactor = selectedProfile
     ? Number(selectedProfile.qty_in_stock_unit) / Number(selectedProfile.qty_in_input_unit)
     : 1;
+
   const availableInSelectedUnit =
     selectedProfile && Number.isFinite(selectedFactor) && selectedFactor > 0
       ? Number(product?.available_qty ?? 0) / selectedFactor
       : Number(product?.available_qty ?? 0);
+
   const selectedUnitLabel = selectedProfile
     ? String(selectedProfile.label ?? selectedProfile.input_unit_code).trim()
     : unitLabel(inputUnitCode || stockUnitCode);
-  const productError = errorMessage && errorProductId && errorProductId === productId ? errorMessage : "";
+
   const quantityNumber = Number(quantity);
   const canSubmit = Boolean(workerId && cartItems.length > 0);
-  const selectedProductLabel = product
-    ? `${product.name ?? product.id} - ${formatQty(product.available_qty)} ${product.stock_unit_code ?? product.unit ?? "un"
-    } disponibles`
-    : "Selecciona producto";
   const draftCanBeAdded = Boolean(product && inputUnitCode && quantityNumber > 0);
+
+  const productError =
+    errorMessage && errorProductId && (errorProductId === productId || cartItems.some((item) => item.productId === errorProductId))
+      ? errorMessage
+      : "";
+
+  const generalProductError = errorMessage && errorProductId && !productError ? errorMessage : "";
+
+  const selectedProductLabel = product
+    ? `${product.name ?? product.id} · Disponible ${formatQty(product.available_qty)} ${product.stock_unit_code ?? product.unit ?? "un"
+    }`
+    : "";
+
+  const normalizedProductQuery = normalizeProductSearch(productQuery);
+  const shouldShowSearchResults = isAddingProduct && !product && normalizedProductQuery.length >= 2;
+
+  const filteredProducts = useMemo(() => {
+    const query = normalizeProductSearch(productQuery);
+
+    if (query.length < 2) return [];
+
+    return products.filter((item) => {
+      const haystack = normalizeProductSearch([item.name, item.unit, item.stock_unit_code, item.id].join(" "));
+      return haystack.includes(query);
+    });
+  }, [productQuery, products]);
+
+  const unitOptions = useMemo(() => {
+    const options: UnitOption[] = [];
+    const seen = new Set<string>();
+
+    function addOption(option: UnitOption) {
+      const key = option.profileId
+        ? `profile:${option.profileId}`
+        : `unit:${normalizeUnitCode(option.inputUnitCode)}`;
+
+      if (!option.inputUnitCode || seen.has(key)) return;
+
+      seen.add(key);
+      options.push(option);
+    }
+
+    addOption({
+      value: `unit:${stockUnitCode}`,
+      label: unitLabel(stockUnitCode),
+      inputUnitCode: stockUnitCode,
+      profileId: "",
+    });
+
+    for (const profile of productProfiles) {
+      addOption({
+        value: `profile:${profile.id}`,
+        label: profileOptionLabel(profile, stockUnitCode),
+        inputUnitCode: normalizeUnitCode(profile.input_unit_code),
+        profileId: profile.id,
+      });
+    }
+
+    const profileInputUnits = new Set(productProfiles.map((profile) => normalizeUnitCode(profile.input_unit_code)));
+    const productUnitCode = normalizeUnitCode(product?.unit ?? "");
+
+    if (productUnitCode && productUnitCode !== stockUnitCode && !profileInputUnits.has(productUnitCode)) {
+      addOption({
+        value: `unit:${productUnitCode}`,
+        label: unitLabel(productUnitCode),
+        inputUnitCode: productUnitCode,
+        profileId: "",
+      });
+    }
+
+    return options;
+  }, [product?.unit, productProfiles, stockUnitCode]);
+
+  const missingFields = [
+    !workerId ? "Trabajador" : "",
+    cartItems.length === 0 ? "Agrega al menos un producto al retiro" : "",
+  ].filter(Boolean);
 
   function selectProduct(next: string) {
     const nextProduct = products.find((item) => item.id === next) ?? null;
@@ -246,6 +328,16 @@ export function KioskWithdrawForm({
     setInputUnitCode("");
     setInputUomProfileId("");
     setProductQuery("");
+  }
+
+  function openAddProduct() {
+    clearDraftProduct();
+    setIsAddingProduct(true);
+  }
+
+  function cancelAddProduct() {
+    clearDraftProduct();
+    setIsAddingProduct(false);
   }
 
   function addDraftToCart() {
@@ -294,78 +386,12 @@ export function KioskWithdrawForm({
     });
 
     clearDraftProduct();
+    setIsAddingProduct(false);
   }
 
   function removeCartItem(itemId: string) {
     setCartItems((currentItems) => currentItems.filter((item) => item.id !== itemId));
   }
-
-  const filteredProducts = useMemo(() => {
-    const query = normalizeProductSearch(productQuery);
-
-    if (!query) return products;
-
-    return products.filter((item) => {
-      const haystack = normalizeProductSearch(
-        [
-          item.name,
-          item.unit,
-          item.stock_unit_code,
-          item.id,
-        ].join(" ")
-      );
-
-      return haystack.includes(query);
-    });
-  }, [productQuery, products]);
-
-  const unitOptions = useMemo(() => {
-    const options: UnitOption[] = [];
-    const seen = new Set<string>();
-
-    function addOption(option: UnitOption) {
-      const key = option.profileId
-        ? `profile:${option.profileId}`
-        : `unit:${normalizeUnitCode(option.inputUnitCode)}`;
-      if (!option.inputUnitCode || seen.has(key)) return;
-      seen.add(key);
-      options.push(option);
-    }
-
-    addOption({
-      value: `unit:${stockUnitCode}`,
-      label: unitLabel(stockUnitCode),
-      inputUnitCode: stockUnitCode,
-      profileId: "",
-    });
-
-    for (const profile of productProfiles) {
-      addOption({
-        value: `profile:${profile.id}`,
-        label: profileOptionLabel(profile, stockUnitCode),
-        inputUnitCode: normalizeUnitCode(profile.input_unit_code),
-        profileId: profile.id,
-      });
-    }
-
-    const profileInputUnits = new Set(productProfiles.map((profile) => normalizeUnitCode(profile.input_unit_code)));
-    const productUnitCode = normalizeUnitCode(product?.unit ?? "");
-    if (productUnitCode && productUnitCode !== stockUnitCode && !profileInputUnits.has(productUnitCode)) {
-      addOption({
-        value: `unit:${productUnitCode}`,
-        label: unitLabel(productUnitCode),
-        inputUnitCode: productUnitCode,
-        profileId: "",
-      });
-    }
-
-    return options;
-  }, [product?.unit, productProfiles, stockUnitCode]);
-
-  const missingFields = [
-    !workerId ? "Trabajador" : "",
-    cartItems.length === 0 ? "Agrega al menos un producto al retiro" : "",
-  ].filter(Boolean);
 
   function validateAndOpenDialog() {
     if (missingFields.length > 0) {
@@ -389,6 +415,7 @@ export function KioskWithdrawForm({
   function submitConfirmed() {
     allowNextSubmitRef.current = true;
     setDialog(null);
+
     window.setTimeout(() => {
       formRef.current?.requestSubmit();
     }, 0);
@@ -398,6 +425,7 @@ export function KioskWithdrawForm({
     <form ref={formRef} action={action} noValidate onSubmit={handleSubmit} className="space-y-5 pb-24 lg:pb-0">
       <input type="hidden" name="source_location_id" value={sourceLocationId} />
       <input type="hidden" name="return_to" value={returnTo} />
+
       {cartItems.map((item) => (
         <div key={`hidden-${item.id}`} className="hidden">
           <input type="hidden" name="item_product_id" value={item.productId} />
@@ -411,11 +439,12 @@ export function KioskWithdrawForm({
       <section className="ui-panel ui-remission-section ui-fade-up space-y-4 !overflow-visible">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="ui-h3">Quien retira</div>
+            <div className="ui-h3">Quién retira</div>
             <div className="ui-caption mt-1">
-              Si el trabajador tiene LOC asignado se traslada. Si no, se descuenta del inventario.
+              Selecciona el trabajador que está retirando productos desde este punto.
             </div>
           </div>
+
           {selectedWorker ? (
             <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-900">
               {selectedWorker.has_destination ? `Destino ${selectedWorker.destination_label}` : "Sin destino"}
@@ -423,87 +452,188 @@ export function KioskWithdrawForm({
           ) : null}
         </div>
 
-        <div className="grid gap-3">
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Trabajador</span>
-            <select
-              name="employee_id"
-              className="ui-input h-12"
-              value={workerId}
-              onChange={(event) => setWorkerId(event.target.value)}
-            >
-              <option value="">Selecciona trabajador</option>
-              {workers.map((worker) => (
-                <option key={worker.employee_id} value={worker.employee_id}>
-                  {worker.label} - {worker.destination_label}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+        <label className="flex flex-col gap-1">
+          <span className="ui-label">Trabajador</span>
+          <select
+            name="employee_id"
+            className="ui-input h-12"
+            value={workerId}
+            onChange={(event) => setWorkerId(event.target.value)}
+          >
+            <option value="">Selecciona trabajador</option>
+            {workers.map((worker) => (
+              <option key={worker.employee_id} value={worker.employee_id}>
+                {worker.label} - {worker.destination_label}
+              </option>
+            ))}
+          </select>
+        </label>
       </section>
 
       <section className="ui-panel ui-remission-section ui-fade-up ui-delay-1 space-y-4 !overflow-visible">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="ui-h3">Producto</div>
+            <div className="ui-h3">Productos del retiro</div>
             <div className="ui-caption mt-1">
-              Solo aparecen productos con saldo positivo en este LOC.
+              Agrega solo los productos que realmente se van a retirar o trasladar.
             </div>
           </div>
+
           <span className="rounded-full border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-1 text-xs font-semibold text-[var(--ui-muted)]">
-            {products.length} productos con stock
+            {cartItems.length} agregado{cartItems.length === 1 ? "" : "s"}
           </span>
         </div>
 
-        <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm sm:p-5">
-          {productError ? (
-            <div className="mb-3 rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-              {productError}
+        {generalProductError || productError ? (
+          <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+            {productError || generalProductError}
+          </div>
+        ) : null}
+
+        <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
+          {cartItems.length > 0 ? (
+            <div className="space-y-2">
+              {cartItems.map((item) => (
+                <div
+                  key={item.id}
+                  className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3"
+                >
+                  <div className="min-w-0">
+                    <div className="line-clamp-2 text-base font-semibold text-[var(--ui-text)]">
+                      {item.productName}
+                    </div>
+                    <div className="mt-1 text-sm text-[var(--ui-muted)]">
+                      {formatQty(item.quantity)} {item.unitLabel}
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => removeCartItem(item.id)}
+                    className="rounded-full border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700"
+                  >
+                    Quitar
+                  </button>
+                </div>
+              ))}
             </div>
+          ) : (
+            <div className="rounded-2xl border border-dashed border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-6 text-center">
+              <div className="text-base font-semibold text-[var(--ui-text)]">
+                No hay productos agregados
+              </div>
+              <p className="mt-1 text-sm text-[var(--ui-muted)]">
+                Toca + Agregar producto para comenzar.
+              </p>
+            </div>
+          )}
+
+          {!isAddingProduct ? (
+            <button
+              type="button"
+              onClick={openAddProduct}
+              className="ui-btn ui-btn--brand mt-4 h-12 w-full text-base font-semibold"
+            >
+              + Agregar producto
+            </button>
           ) : null}
+        </div>
 
-          <div className="grid gap-4 xl:grid-cols-[1.2fr_0.8fr]">
-            <div className="space-y-3">
+        {isAddingProduct ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4 shadow-sm">
+            <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
               <div>
-                <div className="ui-label mb-1">Buscar producto</div>
-                <div className="flex min-h-12 items-center gap-2 rounded-2xl border border-[var(--ui-border)] bg-white px-3 shadow-sm focus-within:border-amber-300 focus-within:ring-2 focus-within:ring-amber-100">
-                  <input
-                    type="search"
-                    inputMode="search"
-                    enterKeyHint="done"
-                    autoComplete="off"
-                    autoCorrect="off"
-                    autoCapitalize="none"
-                    spellCheck={false}
-                    value={productQuery}
-                    onChange={(event) => setProductQuery(event.currentTarget.value)}
-                    onInput={(event) => setProductQuery(event.currentTarget.value)}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        event.currentTarget.blur();
-                      }
-                    }}
-                    className="min-h-11 flex-1 bg-transparent text-base font-semibold text-[var(--ui-text)] outline-none placeholder:text-[var(--ui-muted)]"
-                    placeholder="Buscar por nombre o unidad"
-                  />
-
-                  {productQuery ? (
-                    <button
-                      type="button"
-                      onClick={() => setProductQuery("")}
-                      className="flex h-9 min-w-9 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-600"
-                      aria-label="Limpiar búsqueda"
-                    >
-                      ×
-                    </button>
-                  ) : null}
+                <div className="ui-h3">Agregar producto</div>
+                <div className="ui-caption mt-1">
+                  Busca, selecciona, escribe cantidad y agrega.
                 </div>
               </div>
 
-              {product ? (
-                <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 shadow-sm">
+              <button
+                type="button"
+                onClick={cancelAddProduct}
+                className="ui-btn ui-btn--ghost h-10 px-3 text-sm"
+              >
+                Cancelar
+              </button>
+            </div>
+
+            {!product ? (
+              <div className="space-y-3">
+                <label className="flex flex-col gap-1">
+                  <span className="ui-label">Buscar producto</span>
+                  <div className="flex min-h-12 items-center gap-2 rounded-2xl border border-[var(--ui-border)] bg-white px-3 shadow-sm focus-within:border-amber-300 focus-within:ring-2 focus-within:ring-amber-100">
+                    <input
+                      type="search"
+                      inputMode="search"
+                      enterKeyHint="done"
+                      autoComplete="off"
+                      autoCorrect="off"
+                      autoCapitalize="none"
+                      spellCheck={false}
+                      value={productQuery}
+                      onChange={(event) => setProductQuery(event.currentTarget.value)}
+                      onInput={(event) => setProductQuery(event.currentTarget.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") {
+                          event.preventDefault();
+                          event.currentTarget.blur();
+                        }
+                      }}
+                      className="min-h-11 flex-1 bg-transparent text-base font-semibold text-[var(--ui-text)] outline-none placeholder:text-[var(--ui-muted)]"
+                      placeholder="Escribe mínimo 2 letras"
+                    />
+
+                    {productQuery ? (
+                      <button
+                        type="button"
+                        onClick={() => setProductQuery("")}
+                        className="flex h-9 min-w-9 items-center justify-center rounded-full bg-slate-100 text-sm font-bold text-slate-600"
+                        aria-label="Limpiar búsqueda"
+                      >
+                        ×
+                      </button>
+                    ) : null}
+                  </div>
+                </label>
+
+                {!shouldShowSearchResults ? (
+                  <div className="rounded-2xl border border-dashed border-amber-200 bg-white px-4 py-5 text-center text-sm text-[var(--ui-muted)]">
+                    Escribe mínimo 2 letras para mostrar productos.
+                  </div>
+                ) : filteredProducts.length > 0 ? (
+                  <div className="grid max-h-[34vh] gap-2 overflow-auto pr-1 sm:grid-cols-2">
+                    {filteredProducts.slice(0, 40).map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => selectProduct(item.id)}
+                        className="rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3 text-left shadow-sm active:scale-[0.99]"
+                      >
+                        <div className="line-clamp-2 text-sm font-semibold text-[var(--ui-text)]">
+                          {item.name ?? item.id}
+                        </div>
+                        <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                          Disponible:{" "}
+                          <span className="font-semibold text-[var(--ui-text)]">
+                            {formatQty(item.available_qty)} {item.stock_unit_code ?? item.unit ?? "un"}
+                          </span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-5 text-center">
+                    <div className="text-base font-semibold text-[var(--ui-text)]">Sin productos</div>
+                    <p className="mt-1 text-sm text-[var(--ui-muted)]">
+                      No encontramos productos para esa búsqueda.
+                    </p>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="space-y-3">
+                <div className="rounded-2xl border border-amber-200 bg-white px-4 py-3">
                   <div className="text-xs font-semibold uppercase tracking-[0.08em] text-amber-900">
                     Producto seleccionado
                   </div>
@@ -518,196 +648,88 @@ export function KioskWithdrawForm({
                     Cambiar producto
                   </button>
                 </div>
-              ) : null}
 
-              <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
-                <div className="mb-2 flex items-center justify-between gap-3">
-                  <div className="text-sm font-semibold text-[var(--ui-text)]">Resultados</div>
-                  <div className="text-xs font-medium text-[var(--ui-muted)]">
-                    {filteredProducts.length} de {products.length}
-                  </div>
-                </div>
-
-                {filteredProducts.length > 0 ? (
-                  <div className="grid max-h-[34vh] gap-2 overflow-auto pr-1 sm:grid-cols-2">
-                    {filteredProducts.slice(0, productQuery ? 80 : 16).map((item) => (
-                      <Link
-                        key={item.id}
-                        href={buildKioskWithdrawProductHref(sourceLocationId, item.id)}
-                        onClick={(event) => {
-                          event.preventDefault();
-                          selectProduct(item.id);
-                        }}
-                        className={`rounded-2xl border px-4 py-3 text-left shadow-sm transition active:scale-[0.99] ${item.id === productId
-                          ? "border-amber-300 bg-amber-50 text-amber-950"
-                          : "border-[var(--ui-border)] bg-white hover:bg-white"
-                          }`}
-                      >
-                        <div className="line-clamp-2 text-sm font-semibold text-[var(--ui-text)]">
-                          {item.name ?? item.id}
-                        </div>
-                        <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                          Disponible:{" "}
-                          <span className="font-semibold text-[var(--ui-text)]">
-                            {formatQty(item.available_qty)} {item.stock_unit_code ?? item.unit ?? "un"}
-                          </span>
-                        </div>
-                      </Link>
-                    ))}
-                  </div>
-                ) : (
-                  <div className="flex min-h-[18vh] flex-col items-center justify-center rounded-3xl border border-[var(--ui-border)] bg-white px-5 py-8 text-center">
-                    <div className="ui-h3">Sin productos</div>
-                    <p className="mt-2 ui-body-muted">
-                      No encontramos productos para esa búsqueda.
-                    </p>
-                    {productQuery ? (
-                      <button
-                        type="button"
-                        onClick={() => setProductQuery("")}
-                        className="ui-btn ui-btn--brand mt-4"
-                      >
-                        Limpiar búsqueda
-                      </button>
-                    ) : null}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div className="space-y-3 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-4">
-              <div>
-                <div className="ui-h3">Agregar al retiro</div>
-                <div className="ui-caption mt-1">
-                  Selecciona producto, cantidad y unidad. Luego toca + Agregar producto.
-                </div>
-              </div>
-
-              <input type="hidden" name="product_id" value={productId} />
-
-              <label className="flex flex-col gap-1">
-                <span className="flex min-h-5 items-center justify-between gap-2">
-                  <span className="ui-label">Cantidad</span>
-                  {product ? (
-                    <span className="truncate text-xs font-normal text-[var(--ui-muted)]">
-                      Disponible: {formatQty(availableInSelectedUnit)} {selectedUnitLabel}
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="flex flex-col gap-1">
+                    <span className="flex min-h-5 items-center justify-between gap-2">
+                      <span className="ui-label">Cantidad</span>
+                      <span className="truncate text-xs font-normal text-[var(--ui-muted)]">
+                        Disponible: {formatQty(availableInSelectedUnit)} {selectedUnitLabel}
+                      </span>
                     </span>
-                  ) : null}
-                </span>
-                <input
-                  name="quantity"
-                  className="ui-input h-12 bg-white"
-                  placeholder="Cantidad"
-                  value={quantity}
-                  onChange={(event) => setQuantity(event.target.value)}
-                />
-              </label>
+                    <input
+                      name="quantity"
+                      className="ui-input h-12 bg-white"
+                      placeholder="Cantidad"
+                      value={quantity}
+                      onChange={(event) => setQuantity(event.target.value)}
+                    />
+                  </label>
 
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">Unidad</span>
-                <select
-                  className="ui-input h-12 bg-white"
-                  value={selectedUnitValue}
-                  onChange={(event) => {
-                    const nextValue = event.target.value;
-                    const nextProfileId = nextValue.startsWith("profile:")
-                      ? nextValue.slice("profile:".length)
-                      : "";
-                    const nextProfile = nextProfileId
-                      ? productProfiles.find((profile) => profile.id === nextProfileId) ?? null
-                      : null;
-                    setInputUomProfileId(nextProfile?.id ?? "");
-                    setInputUnitCode(
-                      nextProfile
-                        ? normalizeUnitCode(nextProfile.input_unit_code)
-                        : normalizeUnitCode(nextValue.replace(/^unit:/, ""))
-                    );
-                  }}
-                >
-                  <option value="">Unidad</option>
-                  {unitOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
-                </select>
+                  <label className="flex flex-col gap-1">
+                    <span className="ui-label">Unidad</span>
+                    <select
+                      className="ui-input h-12 bg-white"
+                      value={selectedUnitValue}
+                      onChange={(event) => {
+                        const nextValue = event.target.value;
+                        const nextProfileId = nextValue.startsWith("profile:")
+                          ? nextValue.slice("profile:".length)
+                          : "";
+                        const nextProfile = nextProfileId
+                          ? productProfiles.find((profile) => profile.id === nextProfileId) ?? null
+                          : null;
+
+                        setInputUomProfileId(nextProfile?.id ?? "");
+                        setInputUnitCode(
+                          nextProfile
+                            ? normalizeUnitCode(nextProfile.input_unit_code)
+                            : normalizeUnitCode(nextValue.replace(/^unit:/, ""))
+                        );
+                      }}
+                    >
+                      <option value="">Unidad</option>
+                      {unitOptions.map((option) => (
+                        <option key={option.value} value={option.value}>
+                          {option.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                <input type="hidden" name="product_id" value={productId} />
                 <input type="hidden" name="input_unit_code" value={inputUnitCode} />
                 <input type="hidden" name="input_uom_profile_id" value={inputUomProfileId} />
-              </label>
 
-              <button
-                type="button"
-                onClick={addDraftToCart}
-                disabled={!draftCanBeAdded}
-                className="ui-btn ui-btn--brand h-12 w-full text-base font-semibold disabled:opacity-50"
-              >
-                + Agregar producto
-              </button>
-            </div>
-          </div>
-
-          <div className="mt-4 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="ui-h3">Productos del retiro</div>
-                <div className="ui-caption mt-1">
-                  {cartItems.length > 0
-                    ? `${cartItems.length} producto${cartItems.length === 1 ? "" : "s"} agregado${cartItems.length === 1 ? "" : "s"}.`
-                    : "Todavía no has agregado productos al retiro."}
-                </div>
-              </div>
-            </div>
-
-            {cartItems.length > 0 ? (
-              <div className="mt-3 space-y-2">
-                {cartItems.map((item) => (
-                  <div
-                    key={item.id}
-                    className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3 shadow-sm"
-                  >
-                    <div className="min-w-0">
-                      <div className="line-clamp-2 text-sm font-semibold text-[var(--ui-text)]">
-                        {item.productName}
-                      </div>
-                      <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                        {formatQty(item.quantity)} {item.unitLabel} · Disponible base:{" "}
-                        {formatQty(item.availableQty)} {item.stockUnitCode}
-                      </div>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => removeCartItem(item.id)}
-                      className="rounded-full border border-red-200 bg-red-50 px-3 py-2 text-xs font-semibold text-red-700"
-                    >
-                      Quitar
-                    </button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="mt-3 rounded-2xl border border-dashed border-[var(--ui-border)] bg-white px-4 py-5 text-sm text-[var(--ui-muted)]">
-                Usa el buscador, escribe una cantidad y toca + Agregar producto.
+                <button
+                  type="button"
+                  onClick={addDraftToCart}
+                  disabled={!draftCanBeAdded}
+                  className="ui-btn ui-btn--brand h-12 w-full text-base font-semibold disabled:opacity-50"
+                >
+                  Agregar al retiro
+                </button>
               </div>
             )}
           </div>
+        ) : null}
 
-          <details className="mt-3 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3">
-            <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
-              Nota opcional
-            </summary>
-            <label className="mt-3 flex flex-col gap-1">
-              <span className="ui-label">Detalle</span>
-              <input
-                name="notes"
-                className="ui-input"
-                placeholder="Ejemplo: retiro para mise en place"
-                value={notes}
-                onChange={(event) => setNotes(event.target.value)}
-              />
-            </label>
-          </details>
-        </div>
+        <details className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3">
+          <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+            Nota opcional
+          </summary>
+          <label className="mt-3 flex flex-col gap-1">
+            <span className="ui-label">Detalle</span>
+            <input
+              name="notes"
+              className="ui-input"
+              placeholder="Ejemplo: retiro para mise en place"
+              value={notes}
+              onChange={(event) => setNotes(event.target.value)}
+            />
+          </label>
+        </details>
       </section>
 
       <div className="ui-mobile-sticky-footer ui-fade-up ui-delay-2 flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ui-border)] bg-white/92 px-4 py-3 backdrop-blur">
