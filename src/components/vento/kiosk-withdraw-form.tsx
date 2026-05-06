@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, type FormEvent } from "react";
 
 import { SearchableSingleSelect } from "@/components/inventory/forms/SearchableSingleSelect";
 import {
@@ -37,6 +37,10 @@ type Props = {
   initialProductId?: string;
   action: (formData: FormData) => void | Promise<void>;
 };
+
+type ConfirmationDialog =
+  | { kind: "missing"; missing: string[] }
+  | { kind: "confirm" };
 
 function formatQty(value: number) {
   if (!Number.isFinite(value)) return "0";
@@ -121,6 +125,9 @@ export function KioskWithdrawForm({
   );
   const [inputUomProfileId, setInputUomProfileId] = useState(initialProfile?.id ?? "");
   const [notes, setNotes] = useState("");
+  const [dialog, setDialog] = useState<ConfirmationDialog | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  const allowNextSubmitRef = useRef(false);
 
   const profilesByProduct = useMemo(() => {
     const map = new Map<string, ProductUomProfile[]>();
@@ -169,7 +176,8 @@ export function KioskWithdrawForm({
     ? String(selectedProfile.label ?? selectedProfile.input_unit_code).trim()
     : stockUnitCode;
   const productError = errorMessage && (!errorProductId || errorProductId === productId) ? errorMessage : "";
-  const canSubmit = Boolean(workerId && productId && inputUnitCode && Number(quantity) > 0);
+  const quantityNumber = Number(quantity);
+  const canSubmit = Boolean(workerId && productId && inputUnitCode && quantityNumber > 0);
 
   const productOptions = products.map((item) => ({
     value: item.id,
@@ -179,8 +187,38 @@ export function KioskWithdrawForm({
     searchText: `${item.name ?? ""} ${item.unit ?? ""} ${item.stock_unit_code ?? ""}`,
   }));
 
+  const missingFields = [
+    !workerId ? "Trabajador" : "",
+    !productId ? "Producto" : "",
+    !inputUnitCode ? "Unidad" : "",
+    !(quantityNumber > 0) ? "Cantidad mayor a cero" : "",
+  ].filter(Boolean);
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    if (allowNextSubmitRef.current) {
+      allowNextSubmitRef.current = false;
+      return;
+    }
+
+    event.preventDefault();
+    if (missingFields.length > 0) {
+      setDialog({ kind: "missing", missing: missingFields });
+      return;
+    }
+
+    setDialog({ kind: "confirm" });
+  }
+
+  function submitConfirmed() {
+    allowNextSubmitRef.current = true;
+    setDialog(null);
+    window.setTimeout(() => {
+      formRef.current?.requestSubmit();
+    }, 0);
+  }
+
   return (
-    <form action={action} className="space-y-5 pb-24 lg:pb-0">
+    <form ref={formRef} action={action} noValidate onSubmit={handleSubmit} className="space-y-5 pb-24 lg:pb-0">
       <input type="hidden" name="source_location_id" value={sourceLocationId} />
       <input type="hidden" name="return_to" value={returnTo} />
 
@@ -207,7 +245,6 @@ export function KioskWithdrawForm({
               className="ui-input h-12"
               value={workerId}
               onChange={(event) => setWorkerId(event.target.value)}
-              required
             >
               <option value="">Selecciona trabajador</option>
               {workers.map((worker) => (
@@ -280,7 +317,6 @@ export function KioskWithdrawForm({
                 placeholder="Cantidad"
                 value={quantity}
                 onChange={(event) => setQuantity(event.target.value)}
-                required
               />
             </label>
 
@@ -304,7 +340,6 @@ export function KioskWithdrawForm({
                       : normalizeUnitCode(nextValue.replace(/^unit:/, ""))
                   );
                 }}
-                required
               >
                 <option value="">Unidad</option>
                 {stockUnitCode ? <option value={`unit:${stockUnitCode}`}>{stockUnitCode}</option> : null}
@@ -345,10 +380,89 @@ export function KioskWithdrawForm({
               : "Retiro sin destino"
             : "Selecciona trabajador y producto"}
         </div>
-        <button type="submit" className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold" disabled={!canSubmit}>
+        <button type="submit" className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold">
           Confirmar
         </button>
       </div>
+
+      {dialog ? (
+        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 px-4 py-5 backdrop-blur-sm sm:items-center">
+          <div className="w-full max-w-md overflow-hidden rounded-[28px] border border-white/70 bg-white shadow-2xl">
+            <div className="border-b border-[var(--ui-border)] bg-[linear-gradient(135deg,rgba(245,158,11,0.18)_0%,rgba(255,255,255,1)_72%)] px-5 py-4">
+              <div className="ui-caption">{dialog.kind === "confirm" ? "Confirmar retiro" : "Faltan datos"}</div>
+              <div className="mt-1 text-xl font-semibold text-[var(--ui-text)]">
+                {dialog.kind === "confirm" ? "Revisa antes de guardar" : "Completa la información"}
+              </div>
+            </div>
+
+            {dialog.kind === "missing" ? (
+              <div className="space-y-4 px-5 py-5">
+                <p className="text-sm text-[var(--ui-muted)]">
+                  Para registrar el retiro falta completar:
+                </p>
+                <div className="grid gap-2">
+                  {dialog.missing.map((field) => (
+                    <div
+                      key={field}
+                      className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950"
+                    >
+                      {field}
+                    </div>
+                  ))}
+                </div>
+                <div className="flex justify-end">
+                  <button type="button" className="ui-btn ui-btn--brand" onClick={() => setDialog(null)}>
+                    Entendido
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-4 px-5 py-5">
+                <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-4">
+                  <div className="text-sm text-[var(--ui-muted)]">Resumen</div>
+                  <div className="mt-3 space-y-3">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
+                        Trabajador
+                      </div>
+                      <div className="text-base font-semibold text-[var(--ui-text)]">
+                        {selectedWorker?.label ?? "Sin trabajador"}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
+                        Producto
+                      </div>
+                      <div className="text-base font-semibold text-[var(--ui-text)]">
+                        {formatQty(quantityNumber)} {selectedUnitLabel} de {product?.name ?? "producto"}
+                      </div>
+                    </div>
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
+                        Movimiento
+                      </div>
+                      <div className="text-base font-semibold text-[var(--ui-text)]">
+                        {selectedWorker?.has_destination
+                          ? `Hacia ${selectedWorker.destination_label}`
+                          : "Retiro sin destino: descuenta inventario"}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="flex flex-wrap justify-end gap-2">
+                  <button type="button" className="ui-btn ui-btn--ghost" onClick={() => setDialog(null)}>
+                    Revisar
+                  </button>
+                  <button type="button" className="ui-btn ui-btn--brand" onClick={submitConfirmed} disabled={!canSubmit}>
+                    Confirmar retiro
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      ) : null}
     </form>
   );
 }
