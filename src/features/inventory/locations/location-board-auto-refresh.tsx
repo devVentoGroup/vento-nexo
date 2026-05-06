@@ -3,7 +3,7 @@ type Props = {
 };
 
 export function LocationBoardAutoRefresh({ intervalSeconds = 30 }: Props) {
-  const safeInterval = Math.max(5, Math.floor(intervalSeconds));
+  const safeInterval = Math.max(10, Math.floor(intervalSeconds));
   const script = `
 (() => {
   const id = "vento-location-board-refresh";
@@ -11,25 +11,82 @@ export function LocationBoardAutoRefresh({ intervalSeconds = 30 }: Props) {
   if (!el) return;
 
   const intervalMs = ${safeInterval} * 1000;
-  const startedAt = Date.now();
 
   if (window.__ventoLocationBoardRefreshTimer) {
     window.clearInterval(window.__ventoLocationBoardRefreshTimer);
   }
 
+  window.__ventoLocationBoardRefreshDeadline = Date.now() + intervalMs;
+  window.__ventoLocationBoardRefreshIsNavigating = false;
+
+  const isEditableElement = (element) => {
+    if (!element) return false;
+    const tagName = String(element.tagName || "").toLowerCase();
+    return (
+      tagName === "input" ||
+      tagName === "textarea" ||
+      tagName === "select" ||
+      element.isContentEditable === true
+    );
+  };
+
+  const hasActiveSearch = () => {
+    try {
+      const url = new URL(window.location.href);
+      return String(url.searchParams.get("search") || "").trim().length > 0;
+    } catch {
+      return false;
+    }
+  };
+
+  const isUserInteracting = () => {
+    if (document.hidden) return true;
+    if (hasActiveSearch()) return true;
+    if (isEditableElement(document.activeElement)) return true;
+    if (document.documentElement.dataset.nexoKioskUserInteracting === "1") return true;
+    return false;
+  };
+
+  const postpone = (label) => {
+    window.__ventoLocationBoardRefreshDeadline = Date.now() + intervalMs;
+    el.textContent = label;
+  };
+
   const tick = () => {
     const currentEl = document.getElementById(id);
-    if (!currentEl) return;
+    if (!currentEl) {
+      if (window.__ventoLocationBoardRefreshTimer) {
+        window.clearInterval(window.__ventoLocationBoardRefreshTimer);
+      }
+      return;
+    }
 
-    const elapsed = Date.now() - startedAt;
-    const remaining = Math.max(0, Math.ceil((intervalMs - elapsed) / 1000));
+    if (window.__ventoLocationBoardRefreshIsNavigating) {
+      currentEl.textContent = "Actualizando...";
+      return;
+    }
+
+    if (isUserInteracting()) {
+      postpone(hasActiveSearch() ? "Pausado por búsqueda" : "Pausado por interacción");
+      return;
+    }
+
+    const remainingMs = Number(window.__ventoLocationBoardRefreshDeadline || 0) - Date.now();
+    const remaining = Math.max(0, Math.ceil(remainingMs / 1000));
+
     currentEl.textContent = remaining > 0 ? "Actualiza en " + remaining + "s" : "Actualizando...";
 
-    if (remaining <= 0) {
-      const nextUrl = new URL(window.location.href);
-      nextUrl.searchParams.set("_refresh", String(Date.now()));
-      window.location.replace(nextUrl.toString());
+    if (remaining > 0) return;
+
+    window.__ventoLocationBoardRefreshIsNavigating = true;
+
+    if (window.__ventoLocationBoardRefreshTimer) {
+      window.clearInterval(window.__ventoLocationBoardRefreshTimer);
     }
+
+    const nextUrl = new URL(window.location.href);
+    nextUrl.searchParams.set("_refresh", String(Date.now()));
+    window.location.replace(nextUrl.toString());
   };
 
   tick();

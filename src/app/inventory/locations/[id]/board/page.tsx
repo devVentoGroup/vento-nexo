@@ -529,7 +529,7 @@ export default async function LocationBoardPage({
         </section>
       ) : null}
 
-      {stockItems.length > 0 ? (
+      {allStockItems.length > 0 ? (
         <KioskBoardStockView
           key={`${isKiosk ? "kiosk" : "board"}:${positionId}:${viewMode}:${categoryId}:${searchQuery}`}
           items={stockItems}

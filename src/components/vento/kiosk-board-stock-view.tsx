@@ -46,14 +46,6 @@ function toneForQty(value: number) {
   return "border-emerald-200 bg-emerald-50 text-emerald-900";
 }
 
-function normalizeSearch(value: string) {
-  return value
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
-}
-
 function StockAmount({ item, size = "lg" }: { item: KioskBoardStockItem; size?: "lg" | "sm" }) {
   const primaryPart = item.stockParts[0];
   const secondaryParts = item.stockParts.slice(1);
@@ -169,7 +161,7 @@ export function KioskBoardStockView({
     });
   }, [categoryId, items]);
 
-  const showTools = isKiosk && items.length > 0;
+  const showTools = isKiosk && totalCount > 0;
 
   return (
     <section className="space-y-4">
@@ -269,7 +261,9 @@ export function KioskBoardStockView({
                 <div className="mt-0.5 text-xs text-[var(--ui-muted)]">
                   {activeCategory
                     ? `Activa: ${activeCategory.label} (${activeCategory.count})`
-                    : `Todas (${items.length}) · ${categories.length} categorias disponibles`}
+                    : searchQuery
+                      ? `Resultados (${items.length}) · ${totalCount} productos totales`
+                      : `Todas (${totalCount}) · ${categories.length} categorias disponibles`}
                 </div>
               </div>
 
@@ -324,7 +318,7 @@ export function KioskBoardStockView({
                   })}
                   className={categoryId === "all" ? "ui-chip ui-chip--brand" : "ui-chip"}
                 >
-                  Todas ({items.length})
+                  Todas ({totalCount})
                 </Link>
                 {categories.map((category) => (
                   <Link
@@ -351,7 +345,9 @@ export function KioskBoardStockView({
           </div>
 
           <div className="text-sm text-[var(--ui-muted)]">
-            Mostrando {filteredItems.length} de {items.length} productos.
+            {searchQuery
+              ? `Mostrando ${filteredItems.length} resultados de ${totalCount} productos.`
+              : `Mostrando ${filteredItems.length} de ${totalCount} productos.`}
           </div>
         </div>
       ) : null}
