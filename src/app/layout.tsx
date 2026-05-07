@@ -31,9 +31,12 @@ export const metadata: Metadata = {
     telephone: false,
   },
   icons: {
-    icon: "/logos/nexo.svg",
-    shortcut: "/logos/nexo.svg",
-    apple: "/logos/nexo.svg",
+    icon: [
+      { url: "/icons/nexo-192.png", sizes: "192x192", type: "image/png" },
+      { url: "/icons/nexo-512.png", sizes: "512x512", type: "image/png" },
+    ],
+    shortcut: "/icons/nexo-192.png",
+    apple: [{ url: "/icons/nexo-180.png", sizes: "180x180", type: "image/png" }],
   },
   other: {
     "mobile-web-app-capable": "yes",
