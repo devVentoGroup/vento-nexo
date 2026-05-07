@@ -205,6 +205,8 @@ export function KioskWithdrawForm({
     !(Number(quantity) > 0) ? "Cantidad mayor a cero" : "",
     !inputUnitCode ? "Unidad" : "",
   ].filter(Boolean);
+  const workerErrors = validationErrors.filter((error) => error === "Trabajador");
+  const productSectionErrors = validationErrors.filter((error) => error !== "Trabajador");
 
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
     if (submitStartedRef.current) {
@@ -236,6 +238,11 @@ export function KioskWithdrawForm({
           <div className="ui-h3">Quien retira</div>
           <div className="ui-caption mt-1">Si el trabajador tiene LOC asignado se traslada. Si no, se descuenta del inventario.</div>
         </div>
+        {workerErrors.length > 0 ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950">
+            Selecciona trabajador.
+          </div>
+        ) : null}
         <label className="flex flex-col gap-1">
           <span className="ui-label">Trabajador</span>
           <select name="employee_id" className="ui-input h-14 text-base" value={workerId} onChange={(event) => setWorkerId(event.target.value)}>
@@ -275,10 +282,10 @@ export function KioskWithdrawForm({
           </div>
         ) : null}
 
-        {validationErrors.length > 0 ? (
+        {productSectionErrors.length > 0 ? (
           <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
             <div className="font-semibold">Falta completar:</div>
-            <div className="mt-1">{validationErrors.join(", ")}</div>
+            <div className="mt-1">{productSectionErrors.join(", ")}</div>
           </div>
         ) : null}
 
