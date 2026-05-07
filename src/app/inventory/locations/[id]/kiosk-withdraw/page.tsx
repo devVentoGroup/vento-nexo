@@ -19,9 +19,14 @@ type Params = { id: string };
 type SearchParams = {
   error?: string;
   error_product_id?: string;
+  employee_id?: string;
+  input_unit_code?: string;
+  input_uom_profile_id?: string;
   kiosk?: string;
+  notes?: string;
   ok?: string;
   product_id?: string;
+  quantity?: string;
 };
 
 type ProductRow = {
@@ -75,10 +80,34 @@ function locLabel(loc: Pick<LocationRow, "id" | "code" | "description" | "zone">
   return String(loc.description ?? "").trim() || String(loc.zone ?? "").trim() || String(loc.code ?? "").trim() || loc.id;
 }
 
-function errorUrl(sourceLocationId: string, message: string, productId?: string | null) {
+function errorUrl(
+  sourceLocationId: string,
+  message: string,
+  productId?: string | null,
+  values?: {
+    employeeId?: string;
+    inputUnitCode?: string;
+    inputUomProfileId?: string;
+    notes?: string;
+    quantity?: string;
+  }
+) {
   const params = new URLSearchParams({ error: message, kiosk: "1" });
   const normalizedProductId = String(productId ?? "").trim();
-  if (normalizedProductId) params.set("error_product_id", normalizedProductId);
+  if (normalizedProductId) {
+    params.set("product_id", normalizedProductId);
+    params.set("error_product_id", normalizedProductId);
+  }
+  const employeeId = String(values?.employeeId ?? "").trim();
+  const quantity = String(values?.quantity ?? "").trim();
+  const inputUnitCode = normalizeUnitCode(String(values?.inputUnitCode ?? "").trim());
+  const inputUomProfileId = String(values?.inputUomProfileId ?? "").trim();
+  const notes = String(values?.notes ?? "").trim();
+  if (employeeId) params.set("employee_id", employeeId);
+  if (quantity) params.set("quantity", quantity);
+  if (inputUnitCode) params.set("input_unit_code", inputUnitCode);
+  if (inputUomProfileId) params.set("input_uom_profile_id", inputUomProfileId);
+  if (notes) params.set("notes", notes);
   return `/inventory/locations/${encodeURIComponent(sourceLocationId)}/kiosk-withdraw?${params.toString()}`;
 }
 
@@ -136,19 +165,28 @@ async function submitKioskWithdraw(formData: FormData) {
     ];
 
   const normalizedRawItems = rawItems.filter((item) => item.product_id || item.input_qty > 0);
-  const firstProductId = normalizedRawItems[0]?.product_id ?? "";
+  const firstProductId = normalizedRawItems[0]?.product_id || itemProductIds.find(Boolean) || "";
+  const preserveValues = {
+    employeeId,
+    inputUnitCode: itemInputUnits[0] ?? "",
+    inputUomProfileId: itemInputUomProfileIds[0] ?? "",
+    notes,
+    quantity: itemQuantities[0] ?? "",
+  };
+  const redirectWithError = (message: string, productId: string | null | undefined = firstProductId) =>
+    redirect(errorUrl(sourceLocationId, message, productId, preserveValues));
 
   if (!employeeId) {
-    redirect(errorUrl(sourceLocationId, "Selecciona trabajador.", firstProductId));
+    redirectWithError("Selecciona trabajador.");
   }
 
   if (normalizedRawItems.length === 0) {
-    redirect(errorUrl(sourceLocationId, "Agrega al menos un producto.", firstProductId));
+    redirectWithError("Agrega al menos un producto.");
   }
 
   for (const item of normalizedRawItems) {
     if (!item.product_id || item.input_qty <= 0) {
-      redirect(errorUrl(sourceLocationId, "Cada producto debe tener cantidad mayor a cero.", item.product_id));
+      redirectWithError("Cada producto debe tener cantidad mayor a cero.", item.product_id);
     }
   }
 
@@ -483,6 +521,11 @@ export default async function KioskWithdrawPage({
   const errorMessage = sp.error ? safeDecodeURIComponent(sp.error) : "";
   const errorProductId = sp.error_product_id ? String(sp.error_product_id).trim() : "";
   const initialProductId = sp.product_id ? String(sp.product_id).trim() : "";
+  const initialEmployeeId = sp.employee_id ? String(sp.employee_id).trim() : "";
+  const initialQuantity = sp.quantity ? String(sp.quantity).trim() : "";
+  const initialInputUnitCode = sp.input_unit_code ? normalizeUnitCode(String(sp.input_unit_code).trim()) : "";
+  const initialInputUomProfileId = sp.input_uom_profile_id ? String(sp.input_uom_profile_id).trim() : "";
+  const initialNotes = sp.notes ? safeDecodeURIComponent(sp.notes) : "";
   const returnTo = `/inventory/locations/${encodeURIComponent(id)}/board?kiosk=1`;
 
   if (!initialProductId) {
@@ -623,7 +666,12 @@ export default async function KioskWithdrawPage({
         uomProfiles={(uomProfilesData ?? []) as ProductUomProfile[]}
         errorMessage={errorMessage}
         errorProductId={errorProductId}
+        initialEmployeeId={initialEmployeeId}
+        initialInputUnitCode={initialInputUnitCode}
+        initialInputUomProfileId={initialInputUomProfileId}
+        initialNotes={initialNotes}
         initialProductId={initialProductId}
+        initialQuantity={initialQuantity}
         action={submitKioskWithdraw}
       />
     </div>

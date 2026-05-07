@@ -33,7 +33,12 @@ type Props = {
   uomProfiles: ProductUomProfile[];
   errorMessage?: string;
   errorProductId?: string;
+  initialEmployeeId?: string;
+  initialInputUnitCode?: string;
+  initialInputUomProfileId?: string;
+  initialNotes?: string;
   initialProductId?: string;
+  initialQuantity?: string;
   action: (formData: FormData) => void | Promise<void>;
 };
 
@@ -109,7 +114,12 @@ export function KioskWithdrawForm({
   uomProfiles,
   errorMessage = "",
   errorProductId = "",
+  initialEmployeeId = "",
+  initialInputUnitCode = "",
+  initialInputUomProfileId = "",
+  initialNotes = "",
   initialProductId = "",
+  initialQuantity = "",
   action,
 }: Props) {
   const submitStartedRef = useRef(false);
@@ -134,14 +144,16 @@ export function KioskWithdrawForm({
     [product, profiles]
   );
 
-  const [workerId, setWorkerId] = useState("");
-  const [quantity, setQuantity] = useState("");
+  const [workerId, setWorkerId] = useState(initialEmployeeId);
+  const [quantity, setQuantity] = useState(initialQuantity);
   const [inputUnitCode, setInputUnitCode] = useState(
-    normalizeUnitCode(defaultProfile?.input_unit_code ?? "") || stockUnitCode
+    normalizeUnitCode(initialInputUnitCode || defaultProfile?.input_unit_code || "") || stockUnitCode
   );
-  const [inputUomProfileId, setInputUomProfileId] = useState(defaultProfile?.id ?? "");
-  const [notes, setNotes] = useState("");
-  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [inputUomProfileId, setInputUomProfileId] = useState(initialInputUomProfileId || defaultProfile?.id || "");
+  const [notes, setNotes] = useState(initialNotes);
+  const [validationErrors, setValidationErrors] = useState<string[]>(
+    errorMessage && !errorProductId ? [errorMessage] : []
+  );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const selectedWorker = workers.find((worker) => worker.employee_id === workerId) ?? null;
@@ -257,9 +269,9 @@ export function KioskWithdrawForm({
           </div>
         )}
 
-        {productError || (errorMessage && !errorProductId) ? (
+        {productError ? (
           <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
-            {productError || errorMessage}
+            {productError}
           </div>
         ) : null}
 
