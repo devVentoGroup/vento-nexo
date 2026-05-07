@@ -31,6 +31,7 @@ type Props = {
   products: ProductOption[];
   workers: WorkerOption[];
   uomProfiles: ProductUomProfile[];
+  errorField?: string;
   errorMessage?: string;
   errorProductId?: string;
   initialEmployeeId?: string;
@@ -112,6 +113,7 @@ export function KioskWithdrawForm({
   products,
   workers,
   uomProfiles,
+  errorField = "",
   errorMessage = "",
   errorProductId = "",
   initialEmployeeId = "",
@@ -151,8 +153,10 @@ export function KioskWithdrawForm({
   );
   const [inputUomProfileId, setInputUomProfileId] = useState(initialInputUomProfileId || defaultProfile?.id || "");
   const [notes, setNotes] = useState(initialNotes);
+  const initialWorkerError = errorField === "worker" && errorMessage ? "Trabajador" : "";
+  const initialProductError = errorField !== "worker" && errorMessage && !errorProductId ? errorMessage : "";
   const [validationErrors, setValidationErrors] = useState<string[]>(
-    errorMessage && !errorProductId ? [errorMessage] : []
+    [initialWorkerError, initialProductError].filter(Boolean)
   );
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -198,7 +202,8 @@ export function KioskWithdrawForm({
   const selectedUnitLabel = selectedProfile
     ? String(selectedProfile.label ?? selectedProfile.input_unit_code).trim()
     : unitLabel(inputUnitCode);
-  const productError = errorMessage && errorProductId && errorProductId === product?.id ? errorMessage : "";
+  const productError =
+    errorField !== "worker" && errorMessage && errorProductId && errorProductId === product?.id ? errorMessage : "";
   const missingFields = [
     !workerId ? "Trabajador" : "",
     !product ? "Producto" : "",

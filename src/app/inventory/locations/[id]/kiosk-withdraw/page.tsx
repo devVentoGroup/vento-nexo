@@ -18,6 +18,7 @@ export const dynamic = "force-dynamic";
 type Params = { id: string };
 type SearchParams = {
   error?: string;
+  error_field?: string;
   error_product_id?: string;
   employee_id?: string;
   input_unit_code?: string;
@@ -86,6 +87,7 @@ function errorUrl(
   productId?: string | null,
   values?: {
     employeeId?: string;
+    field?: "worker" | "product";
     inputUnitCode?: string;
     inputUomProfileId?: string;
     notes?: string;
@@ -99,11 +101,13 @@ function errorUrl(
     params.set("error_product_id", normalizedProductId);
   }
   const employeeId = String(values?.employeeId ?? "").trim();
+  const field = values?.field === "worker" ? "worker" : values?.field === "product" ? "product" : "";
   const quantity = String(values?.quantity ?? "").trim();
   const inputUnitCode = normalizeUnitCode(String(values?.inputUnitCode ?? "").trim());
   const inputUomProfileId = String(values?.inputUomProfileId ?? "").trim();
   const notes = String(values?.notes ?? "").trim();
   if (employeeId) params.set("employee_id", employeeId);
+  if (field) params.set("error_field", field);
   if (quantity) params.set("quantity", quantity);
   if (inputUnitCode) params.set("input_unit_code", inputUnitCode);
   if (inputUomProfileId) params.set("input_uom_profile_id", inputUomProfileId);
@@ -173,20 +177,24 @@ async function submitKioskWithdraw(formData: FormData) {
     notes,
     quantity: itemQuantities[0] ?? "",
   };
-  const redirectWithError = (message: string, productId: string | null | undefined = firstProductId) =>
-    redirect(errorUrl(sourceLocationId, message, productId, preserveValues));
+  const redirectWithError = (
+    message: string,
+    productId: string | null | undefined = firstProductId,
+    field: "worker" | "product" = "product"
+  ) =>
+    redirect(errorUrl(sourceLocationId, message, productId, { ...preserveValues, field }));
 
   if (!employeeId) {
-    redirectWithError("Selecciona trabajador.");
+    redirectWithError("Selecciona trabajador.", firstProductId, "worker");
   }
 
   if (normalizedRawItems.length === 0) {
-    redirectWithError("Agrega al menos un producto.");
+    redirectWithError("Agrega al menos un producto.", firstProductId, "product");
   }
 
   for (const item of normalizedRawItems) {
     if (!item.product_id || item.input_qty <= 0) {
-      redirectWithError("Cada producto debe tener cantidad mayor a cero.", item.product_id);
+      redirectWithError("Cada producto debe tener cantidad mayor a cero.", item.product_id, "product");
     }
   }
 
@@ -519,6 +527,7 @@ export default async function KioskWithdrawPage({
   const { id } = await params;
   const sp = (await searchParams) ?? {};
   const errorMessage = sp.error ? safeDecodeURIComponent(sp.error) : "";
+  const errorField = sp.error_field === "worker" ? "worker" : sp.error_field === "product" ? "product" : "";
   const errorProductId = sp.error_product_id ? String(sp.error_product_id).trim() : "";
   const initialProductId = sp.product_id ? String(sp.product_id).trim() : "";
   const initialEmployeeId = sp.employee_id ? String(sp.employee_id).trim() : "";
@@ -665,6 +674,7 @@ export default async function KioskWithdrawPage({
         workers={workers}
         uomProfiles={(uomProfilesData ?? []) as ProductUomProfile[]}
         errorMessage={errorMessage}
+        errorField={errorField}
         errorProductId={errorProductId}
         initialEmployeeId={initialEmployeeId}
         initialInputUnitCode={initialInputUnitCode}
