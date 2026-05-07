@@ -17,7 +17,6 @@ type SearchParams = {
   kiosk?: string;
   position_id?: string;
   view?: string;
-  category_id?: string;
   search?: string;
 };
 
@@ -127,6 +126,23 @@ function positionKindLabel(position: PositionRow) {
   if (kind === "section") return "Seccion";
   return "Estanteria";
 }
+
+function positionPath(positionId: string, positionsById: Map<string, PositionRow>) {
+  const path: PositionRow[] = [];
+  let current = positionsById.get(positionId) ?? null;
+  while (current) {
+    path.unshift(current);
+    current = current.parent_position_id ? positionsById.get(current.parent_position_id) ?? null : null;
+  }
+  return path;
+}
+
+function compactLocationLabel(labels: string[]) {
+  const unique = Array.from(new Set(labels.filter(Boolean)));
+  if (unique.length <= 2) return unique.join(" / ");
+  return `${unique.slice(0, 2).join(" / ")} + ${unique.length - 2}`;
+}
+
 function normalizeBoardSearch(value: string | null | undefined) {
   return String(value ?? "")
     .normalize("NFD")
@@ -147,7 +163,6 @@ export default async function LocationBoardPage({
   const isKiosk = String(sp.kiosk ?? "").trim() === "1";
   const positionId = String(sp.position_id ?? "").trim();
   const viewMode = String(sp.view ?? "").trim();
-  const categoryId = String(sp.category_id ?? "").trim();
   const searchQuery = String(sp.search ?? "").trim();
   const normalizedSearchQuery = normalizeBoardSearch(searchQuery);
 
@@ -203,7 +218,7 @@ export default async function LocationBoardPage({
   const { data: stockRowsData } = selectedPosition
     ? await supabase
       .from("inventory_stock_by_position")
-      .select("product_id,current_qty,updated_at")
+      .select("product_id,position_id,current_qty,updated_at")
       .in("position_id", selectedPositionIds)
       .gt("current_qty", 0)
       .order("current_qty", { ascending: false })
@@ -218,6 +233,7 @@ export default async function LocationBoardPage({
 
   const stockRowsRaw = (stockRowsData ?? []) as unknown as Array<{
     product_id: string;
+    position_id?: string | null;
     current_qty: number | null;
     updated_at: string | null;
     products?: {
@@ -238,6 +254,34 @@ export default async function LocationBoardPage({
       catalog_image_url?: string | null;
     }> | null;
   }>;
+  const { data: allPositionStockData } =
+    !selectedPosition && positions.length > 0
+      ? await supabase
+        .from("inventory_stock_by_position")
+        .select("product_id,position_id,current_qty")
+        .in("position_id", positions.map((position) => position.id))
+        .gt("current_qty", 0)
+      : { data: [] as Array<{ product_id: string; position_id: string | null; current_qty: number | null }> };
+  const positionStockRows = selectedPosition
+    ? stockRowsRaw.map((row) => ({
+      product_id: row.product_id,
+      position_id: row.position_id ?? "",
+      current_qty: row.current_qty,
+    }))
+    : ((allPositionStockData ?? []) as Array<{ product_id: string; position_id: string | null; current_qty: number | null }>);
+  const internalLocationLabelsByProduct = new Map<string, string[]>();
+  for (const row of positionStockRows) {
+    const positionIdForRow = String(row.position_id ?? "").trim();
+    if (!positionIdForRow || Number(row.current_qty ?? 0) <= 0) continue;
+    const path = positionPath(positionIdForRow, positionsById);
+    const selectedIndex = selectedPosition ? path.findIndex((position) => position.id === selectedPosition.id) : -1;
+    const visiblePath = selectedPosition ? path.slice(selectedIndex + 1) : path;
+    const label = visiblePath.map((position) => position.name).filter(Boolean).join(", ");
+    if (!label) continue;
+    const current = internalLocationLabelsByProduct.get(row.product_id) ?? [];
+    current.push(label);
+    internalLocationLabelsByProduct.set(row.product_id, current);
+  }
   const aggregatedPositionRows = selectedPosition
     ? Array.from(
       stockRowsRaw.reduce((map, row) => {
@@ -319,6 +363,7 @@ export default async function LocationBoardPage({
       categoryId,
       categoryLabel,
       categoryPath,
+      internalLocationLabel: compactLocationLabel(internalLocationLabelsByProduct.get(row.product_id) ?? []),
       stockParts: formatOperationalStockParts({
         qty,
         profiles: uomProfiles,
@@ -334,9 +379,8 @@ export default async function LocationBoardPage({
         [
           item.name,
           item.unit,
-          item.categoryLabel,
-          item.categoryPath,
           item.productId,
+          item.internalLocationLabel,
           ...item.stockParts.map((part) => part.label),
         ].join(" ")
       );
@@ -524,13 +568,12 @@ export default async function LocationBoardPage({
 
       {allStockItems.length > 0 ? (
         <KioskBoardStockView
-          key={`${isKiosk ? "kiosk" : "board"}:${positionId}:${viewMode}:${categoryId}:${searchQuery}`}
+          key={`${isKiosk ? "kiosk" : "board"}:${positionId}:${viewMode}:${searchQuery}`}
           items={stockItems}
           isKiosk={isKiosk}
           locationId={location.id}
           positionId={positionId}
           initialViewMode={viewMode}
-          initialCategoryId={categoryId}
           initialSearchQuery={searchQuery}
           totalItemsCount={allStockItems.length}
         />

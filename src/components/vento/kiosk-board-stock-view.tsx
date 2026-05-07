@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useState } from "react";
 
 type StockPart = {
   qty: number;
@@ -18,6 +18,7 @@ export type KioskBoardStockItem = {
   categoryId: string;
   categoryLabel: string;
   categoryPath: string;
+  internalLocationLabel: string;
   stockParts: StockPart[];
 };
 
@@ -27,7 +28,6 @@ type Props = {
   locationId: string;
   positionId?: string;
   initialViewMode?: string;
-  initialCategoryId?: string;
   initialSearchQuery?: string;
   totalItemsCount?: number;
 };
@@ -92,7 +92,6 @@ function buildBoardHref(params: {
   isKiosk: boolean;
   positionId?: string;
   viewMode: ViewMode;
-  categoryId: string;
   searchQuery?: string;
 }) {
   const search = new URLSearchParams();
@@ -101,7 +100,6 @@ function buildBoardHref(params: {
   if (params.isKiosk) search.set("kiosk", "1");
   if (params.positionId) search.set("position_id", params.positionId);
   if (params.viewMode) search.set("view", params.viewMode);
-  if (params.categoryId && params.categoryId !== "all") search.set("category_id", params.categoryId);
   if (searchQuery) search.set("search", searchQuery);
 
   const qs = search.toString();
@@ -124,42 +122,13 @@ export function KioskBoardStockView({
   locationId,
   positionId = "",
   initialViewMode,
-  initialCategoryId,
   initialSearchQuery = "",
   totalItemsCount,
 }: Props) {
   const searchQuery = String(initialSearchQuery ?? "").trim();
   const totalCount = typeof totalItemsCount === "number" ? totalItemsCount : items.length;
-  const [categoryId, setCategoryId] = useState(initialCategoryId || "all");
   const [viewMode, setViewMode] = useState<ViewMode>(() => normalizeViewMode(initialViewMode, isKiosk));
-  const [showCategoryFilters, setShowCategoryFilters] = useState(false);
-  const categories = useMemo(() => {
-    const map = new Map<string, { id: string; label: string; count: number }>();
-    for (const item of items) {
-      const id = item.categoryId || "uncategorized";
-      const label = item.categoryLabel || "Sin categoria";
-      const current = map.get(id) ?? { id, label, count: 0 };
-      current.count += 1;
-      map.set(id, current);
-    }
-    return Array.from(map.values()).sort((a, b) => a.label.localeCompare(b.label, "es", { sensitivity: "base" }));
-  }, [items]);
-
-  const activeCategory = useMemo(() => {
-    if (categoryId === "all") return null;
-    return categories.find((category) => category.id === categoryId) ?? null;
-  }, [categories, categoryId]);
-
-  const filteredItems = useMemo(() => {
-    return items.filter((item) => {
-      if (categoryId !== "all") {
-        const itemCategory = item.categoryId || "uncategorized";
-        if (itemCategory !== categoryId) return false;
-      }
-
-      return true;
-    });
-  }, [categoryId, items]);
+  const filteredItems = items;
 
   const showTools = isKiosk && totalCount > 0;
 
@@ -176,9 +145,6 @@ export function KioskBoardStockView({
               {isKiosk ? <input type="hidden" name="kiosk" value="1" /> : null}
               {positionId ? <input type="hidden" name="position_id" value={positionId} /> : null}
               {viewMode ? <input type="hidden" name="view" value={viewMode} /> : null}
-              {categoryId && categoryId !== "all" ? (
-                <input type="hidden" name="category_id" value={categoryId} />
-              ) : null}
 
               <div className="flex items-center justify-between gap-3">
                 <label htmlFor="kiosk-board-search" className="ui-label">
@@ -192,7 +158,6 @@ export function KioskBoardStockView({
                       isKiosk,
                       positionId,
                       viewMode,
-                      categoryId,
                       searchQuery: "",
                     })}
                     className="text-xs font-semibold text-[var(--ui-muted)] underline underline-offset-4"
@@ -215,7 +180,7 @@ export function KioskBoardStockView({
                   spellCheck={false}
                   defaultValue={searchQuery}
                   className="min-h-11 flex-1 bg-transparent text-base font-semibold text-[var(--ui-text)] outline-none placeholder:text-[var(--ui-muted)]"
-                  placeholder="Buscar por nombre, unidad o categoría"
+                  placeholder="Buscar por nombre o unidad"
                 />
 
                 <button
@@ -240,7 +205,6 @@ export function KioskBoardStockView({
                     isKiosk,
                     positionId,
                     viewMode: value as ViewMode,
-                    categoryId,
                     searchQuery,
                   })}
                   className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${viewMode === value
@@ -254,95 +218,6 @@ export function KioskBoardStockView({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3 shadow-sm">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div>
-                <div className="text-sm font-semibold text-[var(--ui-text)]">Categorias</div>
-                <div className="mt-0.5 text-xs text-[var(--ui-muted)]">
-                  {activeCategory
-                    ? `Activa: ${activeCategory.label} (${activeCategory.count})`
-                    : searchQuery
-                      ? `Resultados (${items.length}) · ${totalCount} productos totales`
-                      : `Todas (${totalCount}) · ${categories.length} categorias disponibles`}
-                </div>
-              </div>
-
-              <button
-                type="button"
-                onClick={() => setShowCategoryFilters((value) => !value)}
-                aria-expanded={showCategoryFilters}
-                className="ui-btn ui-btn--ghost h-9 px-3 text-xs"
-              >
-                {showCategoryFilters ? "Ocultar filtros" : activeCategory ? "Cambiar" : "Ver filtros"}
-              </button>
-            </div>
-
-            {activeCategory ? (
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <span className="ui-chip ui-chip--brand">
-                  {activeCategory.label} ({activeCategory.count})
-                </span>
-                <Link
-                  onClick={() => {
-                    setCategoryId("all");
-                    setShowCategoryFilters(false);
-                  }}
-                  href={buildBoardHref({
-                    locationId,
-                    isKiosk,
-                    positionId,
-                    viewMode,
-                    categoryId: "all",
-                    searchQuery,
-                  })}
-                  className="ui-chip"
-                >
-                  Limpiar categoria
-                </Link>
-              </div>
-            ) : null}
-
-            {showCategoryFilters ? (
-              <div className="mt-3 flex flex-wrap gap-2 border-t border-[var(--ui-border)] pt-3">
-                <Link
-                  onClick={() => {
-                    setCategoryId("all");
-                    setShowCategoryFilters(false);
-                  }}
-                  href={buildBoardHref({
-                    locationId,
-                    isKiosk,
-                    positionId,
-                    viewMode,
-                    categoryId: "all",
-                  })}
-                  className={categoryId === "all" ? "ui-chip ui-chip--brand" : "ui-chip"}
-                >
-                  Todas ({totalCount})
-                </Link>
-                {categories.map((category) => (
-                  <Link
-                    key={category.id}
-                    onClick={() => {
-                      setCategoryId(category.id);
-                      setShowCategoryFilters(false);
-                    }}
-                    href={buildBoardHref({
-                      locationId,
-                      isKiosk,
-                      positionId,
-                      viewMode,
-                      categoryId: category.id,
-                      searchQuery,
-                    })}
-                    className={categoryId === category.id ? "ui-chip ui-chip--brand" : "ui-chip"}
-                  >
-                    {category.label} ({category.count})
-                  </Link>
-                ))}
-              </div>
-            ) : null}
-          </div>
 
           <div className="text-sm text-[var(--ui-muted)]">
             {searchQuery
@@ -363,6 +238,9 @@ export function KioskBoardStockView({
                     <div className="min-w-0">
                       <div className="truncate text-base font-semibold text-[var(--ui-text)]">{item.name}</div>
                       <div className="mt-1 text-sm text-[var(--ui-muted)]">{item.categoryLabel}</div>
+                      {item.internalLocationLabel ? (
+                        <div className="mt-1 text-xs font-semibold text-amber-900">{item.internalLocationLabel}</div>
+                      ) : null}
                     </div>
                   </div>
                   <div className="sm:text-right">
@@ -403,6 +281,9 @@ export function KioskBoardStockView({
                       {item.qty <= 3 ? "Bajo" : "Disponible"}
                     </span>
                   </div>
+                  {item.internalLocationLabel ? (
+                    <div className="text-xs font-semibold text-amber-900">{item.internalLocationLabel}</div>
+                  ) : null}
                   <StockAmount item={item} size={viewMode === "compact" ? "sm" : "lg"} />
                   <div className="text-sm text-[var(--ui-muted)]">
                     Base: {formatQty(item.qty)} {item.unit}
@@ -426,7 +307,7 @@ export function KioskBoardStockView({
           <p className="mt-2 ui-body-muted">
             {searchQuery
               ? `No encontramos productos para "${searchQuery}". Limpia la búsqueda o intenta con otra palabra.`
-              : "Ajusta la búsqueda o el filtro de categoría."}
+              : "Ajusta la búsqueda."}
           </p>
           {searchQuery ? (
             <Link
@@ -435,7 +316,6 @@ export function KioskBoardStockView({
                 isKiosk,
                 positionId,
                 viewMode,
-                categoryId,
                 searchQuery: "",
               })}
               className="ui-btn ui-btn--brand mt-4"
