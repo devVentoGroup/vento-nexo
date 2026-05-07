@@ -216,6 +216,16 @@ function formatMoney(value: number | null | undefined): string {
   }).format(value);
 }
 
+function formatUnitMoney(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return "-";
+  return new Intl.NumberFormat("es-CO", {
+    style: "currency",
+    currency: "COP",
+    minimumFractionDigits: value > 0 && value < 100 ? 2 : 0,
+    maximumFractionDigits: value > 0 && value < 100 ? 2 : 0,
+  }).format(value);
+}
+
 function formatDate(value: string | null | undefined): string {
   if (!value) return "-";
   const parsed = new Date(value);
@@ -548,7 +558,7 @@ export default async function ProductTechnicalSheetPage({
     profile: purchaseProfile,
     stockUnitCode,
     unitRows,
-    normalizeByCatalog: true,
+    normalizeByCatalog: false,
   });
   const remissionProfileDisplay = resolveProfileDisplay({
     profile: remissionProfile,
@@ -577,6 +587,18 @@ export default async function ProductTechnicalSheetPage({
       ? "Usa porción de receta publicada."
       : "Usa presentación de remisión."
     : "No usa remisión: opera con unidad operativa.";
+
+  const primarySupplierPackPrice = primarySupplier
+    ? Number(primarySupplier.purchase_price_net ?? primarySupplier.purchase_price ?? 0)
+    : 0;
+  const purchaseQtyInStockUnit = Number(purchaseProfileDisplay?.qtyInStockUnit ?? 0);
+  const primarySupplierUnitPrice =
+    Number.isFinite(primarySupplierPackPrice) &&
+    primarySupplierPackPrice > 0 &&
+    Number.isFinite(purchaseQtyInStockUnit) &&
+    purchaseQtyInStockUnit > 0
+      ? primarySupplierPackPrice / purchaseQtyInStockUnit
+      : null;
 
   const stockBySite = new Map<string, number>();
   stockRows.forEach((row) => {
@@ -1215,6 +1237,12 @@ export default async function ProductTechnicalSheetPage({
                 <p>
                   <strong className="text-[var(--ui-text)]">Precio empaque:</strong>{" "}
                   {formatMoney(primarySupplier.purchase_price_net ?? primarySupplier.purchase_price)}
+                </p>
+                <p>
+                  <strong className="text-[var(--ui-text)]">Precio unitario:</strong>{" "}
+                  {primarySupplierUnitPrice == null
+                    ? "-"
+                    : `${formatUnitMoney(primarySupplierUnitPrice)} / ${stockUnitCode}`}
                 </p>
                 {secondarySuppliers.length > 0 ? (
                   <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
