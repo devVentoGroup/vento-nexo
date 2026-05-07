@@ -3,6 +3,7 @@ import Link from "next/link";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { formatHistoryDateTime } from "@/lib/formatters";
 import { CatalogOptionalDetails } from "@/features/inventory/catalog/catalog-ui";
+import { createClient } from "@/lib/supabase/server";
 
 import { CountInitialForm } from "@/features/inventory/count-initial/count-initial-form";
 
@@ -35,6 +36,37 @@ type ProductUomProfileRow = {
   source: "manual" | "supplier_primary" | "recipe_portion" | null;
   usage_context: "general" | "purchase" | "remission" | null;
 };
+
+const PRODUCT_PAGE_SIZE = 1000;
+type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
+
+async function fetchProductRowsForInitialCount(
+  supabase: SupabaseClient,
+  productSiteIds: string[]
+) {
+  const rows: ProductRow[] = [];
+  const hasProductSiteFilter = productSiteIds.length > 0;
+
+  for (let from = 0; ; from += PRODUCT_PAGE_SIZE) {
+    let query = supabase
+      .from("products")
+      .select("id,name,sku,unit,stock_unit_code,product_inventory_profiles(track_inventory)")
+      .eq("product_inventory_profiles.track_inventory", true)
+      .order("name", { ascending: true })
+      .range(from, from + PRODUCT_PAGE_SIZE - 1);
+
+    if (hasProductSiteFilter) {
+      query = query.in("id", productSiteIds);
+    }
+
+    const { data, error } = await query;
+    if (error) return { rows, error };
+
+    const pageRows = (data ?? []) as unknown as ProductRow[];
+    rows.push(...pageRows);
+    if (pageRows.length < PRODUCT_PAGE_SIZE) return { rows, error: null };
+  }
+}
 
 export default async function InventoryCountInitialPage({
   searchParams,
@@ -178,21 +210,7 @@ export default async function InventoryCountInitialPage({
 
   const productSiteRows = (productSites ?? []) as ProductSiteRow[];
   const productSiteIds = productSiteRows.map((r) => r.product_id);
-  const hasProductSiteFilter = productSiteIds.length > 0;
-
-  let productsQuery = supabase
-    .from("products")
-    .select("id,name,sku,unit,stock_unit_code,product_inventory_profiles(track_inventory)")
-    .eq("product_inventory_profiles.track_inventory", true)
-    .order("name", { ascending: true })
-    .limit(500);
-
-  if (hasProductSiteFilter) {
-    productsQuery = productsQuery.in("id", productSiteIds);
-  }
-
-  const { data: products, error: productError } = await productsQuery;
-  const productRows = (products ?? []) as unknown as ProductRow[];
+  const { rows: productRows, error: productError } = await fetchProductRowsForInitialCount(supabase, productSiteIds);
   const productIdsForProfiles = productRows.map((product) => product.id);
 
   const { data: productProfilesData } =
