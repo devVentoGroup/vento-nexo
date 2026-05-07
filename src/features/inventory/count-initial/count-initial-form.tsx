@@ -76,6 +76,11 @@ function parseQty(value: string | undefined) {
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
+function formatProfileQty(value: number) {
+  if (!Number.isFinite(value)) return "?";
+  return value.toLocaleString("es-CO", { maximumFractionDigits: 3 });
+}
+
 function makeDefaultEntry(productId: string): CountEntry {
   return {
     id: `${productId}:base`,
@@ -156,7 +161,7 @@ function getUnitOptions(product: Product) {
     const inputQty = Number(profile.qty_in_input_unit);
     const factorLabel =
       Number.isFinite(inputQty) && Number.isFinite(stockQty) && inputQty > 0
-        ? `${stockQty / inputQty} ${capture.stockUnitCode}`
+        ? `${formatProfileQty(inputQty)} ${inputUnitCode} = ${formatProfileQty(stockQty)} ${capture.stockUnitCode}`
         : `? ${capture.stockUnitCode}`;
     options.push({
       value: `profile:${profile.id}`,
