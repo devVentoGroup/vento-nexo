@@ -29,6 +29,11 @@ export const dynamic = "force-dynamic";
 
 const APP_ID = "nexo";
 const PERMISSION = "inventory.stock";
+const PAGE_SIZE = 1000;
+const IN_CHUNK_SIZE = 150;
+
+type SupabaseClient = Awaited<ReturnType<typeof requireAppAccess>>["supabase"];
+type QueryError = { message: string } | null;
 
 type SearchParams = {
   site_id?: string;
@@ -157,6 +162,14 @@ type ProductSiteRow = {
   is_active: boolean | null;
 };
 
+function chunkArray<T>(values: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
+}
+
 function formatDate(value?: string | null) {
   if (!value) return "-";
   if (value.length >= 10) return value.slice(0, 10);
@@ -170,6 +183,158 @@ function parseQuantity(value: FormDataEntryValue | null): number {
     .replace(",", ".");
   const parsed = Number(normalized);
   return Number.isFinite(parsed) ? parsed : 0;
+}
+
+async function fetchActiveProductSiteRows(
+  supabase: SupabaseClient,
+  siteId: string
+): Promise<{ rows: ProductSiteRow[]; error: QueryError }> {
+  const rows: ProductSiteRow[] = [];
+
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("product_site_settings")
+      .select("product_id,is_active")
+      .eq("site_id", siteId)
+      .eq("is_active", true)
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) return { rows, error };
+
+    const pageRows = (data ?? []) as ProductSiteRow[];
+    rows.push(...pageRows);
+    if (pageRows.length < PAGE_SIZE) return { rows, error: null };
+  }
+}
+
+async function fetchProductRowsForStock(
+  supabase: SupabaseClient,
+  {
+    searchQuery,
+    filteredCategoryIds,
+    productSiteIds,
+  }: {
+    searchQuery: string;
+    filteredCategoryIds: string[] | null;
+    productSiteIds: string[];
+  }
+): Promise<{ rows: ProductRow[]; error: QueryError }> {
+  if (filteredCategoryIds !== null && filteredCategoryIds.length === 0) {
+    return { rows: [], error: null };
+  }
+
+  const rows: ProductRow[] = [];
+  const productIdChunks = productSiteIds.length > 0 ? chunkArray(productSiteIds, IN_CHUNK_SIZE) : [null];
+
+  for (const productIdChunk of productIdChunks) {
+    for (let from = 0; ; from += PAGE_SIZE) {
+      let query = supabase
+        .from("products")
+        .select(
+          "id,name,sku,unit,stock_unit_code,product_type,category_id,product_inventory_profiles(track_inventory,inventory_kind)"
+        )
+        .order("name", { ascending: true })
+        .range(from, from + PAGE_SIZE - 1);
+
+      if (searchQuery) {
+        const pattern = `%${searchQuery}%`;
+        query = query.or(`name.ilike.${pattern},sku.ilike.${pattern}`);
+      }
+
+      if (filteredCategoryIds !== null) {
+        query = query.in("category_id", filteredCategoryIds);
+      }
+
+      if (productIdChunk) {
+        query = query.in("id", productIdChunk);
+      }
+
+      const { data, error } = await query;
+      if (error) return { rows, error };
+
+      const pageRows = (data ?? []) as unknown as ProductRow[];
+      rows.push(...pageRows);
+      if (pageRows.length < PAGE_SIZE) break;
+    }
+  }
+
+  rows.sort((a, b) => a.name.localeCompare(b.name, "es", { sensitivity: "base" }));
+  return { rows, error: null };
+}
+
+async function fetchProductUomProfiles(
+  supabase: SupabaseClient,
+  productIds: string[]
+): Promise<ProductUomProfile[]> {
+  const rows: ProductUomProfile[] = [];
+
+  for (const productIdChunk of chunkArray(productIds, IN_CHUNK_SIZE)) {
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from("product_uom_profiles")
+        .select(
+          "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
+        )
+        .in("product_id", productIdChunk)
+        .eq("is_active", true)
+        .range(from, from + PAGE_SIZE - 1);
+
+      if (error) break;
+
+      const pageRows = (data ?? []) as ProductUomProfile[];
+      rows.push(...pageRows);
+      if (pageRows.length < PAGE_SIZE) break;
+    }
+  }
+
+  return rows;
+}
+
+async function fetchStockRowsBySite(
+  supabase: SupabaseClient,
+  siteId: string
+): Promise<{ rows: StockRow[]; error: QueryError }> {
+  const rows: StockRow[] = [];
+
+  for (let from = 0; ; from += PAGE_SIZE) {
+    const { data, error } = await supabase
+      .from("inventory_stock_by_site")
+      .select("site_id,product_id,current_qty,updated_at")
+      .eq("site_id", siteId)
+      .range(from, from + PAGE_SIZE - 1);
+
+    if (error) return { rows, error };
+
+    const pageRows = (data ?? []) as StockRow[];
+    rows.push(...pageRows);
+    if (pageRows.length < PAGE_SIZE) return { rows, error: null };
+  }
+}
+
+async function fetchStockRowsByLocation(
+  supabase: SupabaseClient,
+  locationIds: string[]
+): Promise<StockByLocRow[]> {
+  const rows: StockByLocRow[] = [];
+
+  for (const locationIdChunk of chunkArray(locationIds, IN_CHUNK_SIZE)) {
+    for (let from = 0; ; from += PAGE_SIZE) {
+      const { data, error } = await supabase
+        .from("inventory_stock_by_location")
+        .select("location_id,product_id,current_qty,location:inventory_locations(code,zone,site_id)")
+        .in("location_id", locationIdChunk)
+        .neq("current_qty", 0)
+        .range(from, from + PAGE_SIZE - 1);
+
+      if (error) break;
+
+      const pageRows = (data ?? []) as unknown as StockByLocRow[];
+      rows.push(...pageRows);
+      if (pageRows.length < PAGE_SIZE) break;
+    }
+  }
+
+  return rows;
 }
 
 async function assignStockWithoutLocation(formData: FormData) {
@@ -392,65 +557,25 @@ export default async function InventoryStockPage({
     return `/inventory/stock${qs ? `?${qs}` : ""}`;
   };
 
-  const { data: productSites } = siteId
-    ? await supabase
-        .from("product_site_settings")
-        .select("product_id,is_active")
-        .eq("site_id", siteId)
-        .eq("is_active", true)
-    : { data: [] as ProductSiteRow[] };
-
-  const productSiteRows = (productSites ?? []) as ProductSiteRow[];
+  const { rows: productSiteRows } = siteId
+    ? await fetchActiveProductSiteRows(supabase, siteId)
+    : { rows: [] as ProductSiteRow[] };
   const productSiteIds = productSiteRows.map((row) => row.product_id);
-  const hasProductSiteFilter = productSiteIds.length > 0;
 
-  let productsQuery = supabase
-    .from("products")
-    .select(
-      "id,name,sku,unit,stock_unit_code,product_type,category_id,product_inventory_profiles(track_inventory,inventory_kind)"
-    )
-    .order("name", { ascending: true })
-    .limit(1000);
-
-  if (searchQuery) {
-    const pattern = `%${searchQuery}%`;
-    productsQuery = productsQuery.or(`name.ilike.${pattern},sku.ilike.${pattern}`);
-  }
-
-  if (filteredCategoryIds !== null) {
-    if (filteredCategoryIds.length === 0) {
-      productsQuery = productsQuery.eq("id", "00000000-0000-0000-0000-000000000000");
-    } else {
-      productsQuery = productsQuery.in("category_id", filteredCategoryIds);
-    }
-  }
-
-  if (hasProductSiteFilter) {
-    productsQuery = productsQuery.in("id", productSiteIds);
-  }
-
-  const { data: products, error: productError } = await productsQuery;
-  let productRows = (products ?? []) as unknown as ProductRow[];
+  const { rows: fetchedProductRows, error: productError } = await fetchProductRowsForStock(supabase, {
+    searchQuery,
+    filteredCategoryIds,
+    productSiteIds,
+  });
+  let productRows = fetchedProductRows;
   const productIdsForProfiles = productRows.map((product) => product.id);
-  const { data: uomProfilesData } = productIdsForProfiles.length
-    ? await supabase
-        .from("product_uom_profiles")
-        .select(
-          "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
-        )
-        .in("product_id", productIdsForProfiles)
-        .eq("is_active", true)
-    : { data: [] as ProductUomProfile[] };
-  const uomProfiles = (uomProfilesData ?? []) as ProductUomProfile[];
+  const uomProfiles = productIdsForProfiles.length
+    ? await fetchProductUomProfiles(supabase, productIdsForProfiles)
+    : [];
 
-  const { data: stockData, error: stockError } = siteId
-    ? await supabase
-        .from("inventory_stock_by_site")
-        .select("site_id,product_id,current_qty,updated_at")
-        .eq("site_id", siteId)
-    : { data: [] as StockRow[] };
-
-  const stockRows = (stockData ?? []) as StockRow[];
+  const { rows: stockRows, error: stockError } = siteId
+    ? await fetchStockRowsBySite(supabase, siteId)
+    : { rows: [] as StockRow[], error: null };
   const stockMap = new Map(stockRows.map((row) => [row.product_id, row]));
 
   const { data: locationRows } =
@@ -467,16 +592,10 @@ export default async function InventoryStockPage({
 
   const locList = (locationRows ?? []) as LocRow[];
   const locIdsForSite = new Set(locList.map((l) => l.id));
-  const { data: stockByLocData } =
+  const stockByLocRows =
     siteId && locIdsForSite.size > 0
-      ? await supabase
-          .from("inventory_stock_by_location")
-          .select("location_id,product_id,current_qty,location:inventory_locations(code,zone,site_id)")
-          .in("location_id", Array.from(locIdsForSite))
-          .neq("current_qty", 0)
-      : { data: [] as StockByLocRow[] };
-
-  const stockByLocRows = (stockByLocData ?? []) as StockByLocRow[];
+      ? await fetchStockRowsByLocation(supabase, Array.from(locIdsForSite))
+      : [];
 
   const locSummaryByProduct = new Map<
     string,
@@ -1065,7 +1184,7 @@ export default async function InventoryStockPage({
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <div className="ui-h3">Stock</div>
-            <div className="mt-1 ui-caption">Mostrando hasta 1000 productos.</div>
+            <div className="mt-1 ui-caption">Mostrando productos segun filtros actuales.</div>
           </div>
           <div className="flex flex-wrap gap-2">
             <span className="ui-chip">{productRows.length} items</span>
