@@ -78,6 +78,10 @@ type SupplierRow = {
   purchase_pack_unit_code: string | null;
   purchase_price_net: number | null;
   purchase_price: number | null;
+  purchase_price_includes_tax: boolean | null;
+  purchase_tax_rate: number | null;
+  purchase_price_includes_icui: boolean | null;
+  purchase_icui_rate: number | null;
   is_primary: boolean | null;
   suppliers?: { name: string | null } | { name: string | null }[] | null;
 };
@@ -278,6 +282,23 @@ function toPositiveNumber(value: number | null | undefined, fallback: number): n
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
 }
 
+function getSupplierGrossPackPrice(supplier: SupplierRow | null): number | null {
+  if (!supplier) return null;
+  const price = Number(supplier.purchase_price ?? 0);
+  if (!Number.isFinite(price) || price <= 0) return null;
+
+  const taxRate = Number(supplier.purchase_tax_rate ?? 0);
+  const safeTaxRate = Number.isFinite(taxRate) && taxRate > 0 ? taxRate : 0;
+  const icuiRate = Number(supplier.purchase_icui_rate ?? 0);
+  const safeIcuiRate = Number.isFinite(icuiRate) && icuiRate > 0 ? icuiRate : 0;
+  const includedRate =
+    (supplier.purchase_price_includes_tax ? safeTaxRate : 0) +
+    (supplier.purchase_price_includes_icui ? safeIcuiRate : 0);
+
+  if (includedRate > 0) return price;
+  return price * (1 + (safeTaxRate + safeIcuiRate) / 100);
+}
+
 function resolveProfileDisplay(params: {
   profile: ProductUomProfile | null;
   stockUnitCode: string;
@@ -427,7 +448,7 @@ export default async function ProductTechnicalSheetPage({
     supabase
       .from("product_suppliers")
       .select(
-        "supplier_id,purchase_unit,purchase_pack_qty,purchase_pack_unit_code,purchase_price_net,purchase_price,is_primary,suppliers(name)"
+        "supplier_id,purchase_unit,purchase_pack_qty,purchase_pack_unit_code,purchase_price_net,purchase_price,purchase_price_includes_tax,purchase_tax_rate,purchase_price_includes_icui,purchase_icui_rate,is_primary,suppliers(name)"
       )
       .eq("product_id", id)
       .order("is_primary", { ascending: false }),
@@ -591,6 +612,7 @@ export default async function ProductTechnicalSheetPage({
   const primarySupplierPackPrice = primarySupplier
     ? Number(primarySupplier.purchase_price_net ?? primarySupplier.purchase_price ?? 0)
     : 0;
+  const primarySupplierGrossPackPrice = getSupplierGrossPackPrice(primarySupplier);
   const purchaseQtyInStockUnit = Number(purchaseProfileDisplay?.qtyInStockUnit ?? 0);
   const primarySupplierUnitPrice =
     Number.isFinite(primarySupplierPackPrice) &&
@@ -599,6 +621,17 @@ export default async function ProductTechnicalSheetPage({
     purchaseQtyInStockUnit > 0
       ? primarySupplierPackPrice / purchaseQtyInStockUnit
       : null;
+  const primarySupplierGrossUnitPrice =
+    primarySupplierGrossPackPrice != null &&
+    primarySupplierGrossPackPrice > 0 &&
+    Number.isFinite(purchaseQtyInStockUnit) &&
+    purchaseQtyInStockUnit > 0
+      ? primarySupplierGrossPackPrice / purchaseQtyInStockUnit
+      : null;
+  const shouldShowGrossUnitPrice =
+    primarySupplierUnitPrice != null &&
+    primarySupplierGrossUnitPrice != null &&
+    Math.abs(primarySupplierGrossUnitPrice - primarySupplierUnitPrice) > 0.01;
 
   const stockBySite = new Map<string, number>();
   stockRows.forEach((row) => {
@@ -1235,15 +1268,21 @@ export default async function ProductTechnicalSheetPage({
                   {normalizeUnitCode(primarySupplier.purchase_pack_unit_code || "") || stockUnitCode})
                 </p>
                 <p>
-                  <strong className="text-[var(--ui-text)]">Precio empaque:</strong>{" "}
+                  <strong className="text-[var(--ui-text)]">Precio empaque sin impuestos:</strong>{" "}
                   {formatMoney(primarySupplier.purchase_price_net ?? primarySupplier.purchase_price)}
                 </p>
                 <p>
-                  <strong className="text-[var(--ui-text)]">Precio unitario:</strong>{" "}
+                  <strong className="text-[var(--ui-text)]">Costo unitario sin impuestos:</strong>{" "}
                   {primarySupplierUnitPrice == null
                     ? "-"
                     : `${formatUnitMoney(primarySupplierUnitPrice)} / ${stockUnitCode}`}
                 </p>
+                {shouldShowGrossUnitPrice ? (
+                  <p>
+                    <strong className="text-[var(--ui-text)]">Costo unitario completo:</strong>{" "}
+                    {`${formatUnitMoney(primarySupplierGrossUnitPrice)} / ${stockUnitCode}`}
+                  </p>
+                ) : null}
                 {secondarySuppliers.length > 0 ? (
                   <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
                     <p className="text-xs uppercase tracking-wide text-[var(--ui-muted)]">
@@ -1279,7 +1318,8 @@ export default async function ProductTechnicalSheetPage({
               <p>No hay proveedor primario configurado.</p>
             )}
             <p>
-              <strong className="text-[var(--ui-text)]">Costo actual:</strong> {formatMoney(product.cost)}
+              <strong className="text-[var(--ui-text)]">Costo actual inventario:</strong>{" "}
+              {product.cost == null ? "-" : `${formatUnitMoney(product.cost)} / ${stockUnitCode}`}
             </p>
             {isAsset ? (
               <p className="text-xs">
