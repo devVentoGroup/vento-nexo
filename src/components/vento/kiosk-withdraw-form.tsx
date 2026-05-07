@@ -44,10 +44,6 @@ type UnitOption = {
   profileId: string;
 };
 
-type Dialog =
-  | { kind: "missing"; missing: string[] }
-  | { kind: "confirm" };
-
 function formatQty(value: number) {
   if (!Number.isFinite(value)) return "0";
   return new Intl.NumberFormat("es-CO", { maximumFractionDigits: 3 }).format(value);
@@ -116,9 +112,7 @@ export function KioskWithdrawForm({
   initialProductId = "",
   action,
 }: Props) {
-  const formRef = useRef<HTMLFormElement>(null);
-  const submitButtonRef = useRef<HTMLButtonElement>(null);
-  const allowNextSubmitRef = useRef(false);
+  const submitStartedRef = useRef(false);
   const product = useMemo(
     () => products.find((item) => item.id === initialProductId) ?? null,
     [initialProductId, products]
@@ -147,7 +141,8 @@ export function KioskWithdrawForm({
   );
   const [inputUomProfileId, setInputUomProfileId] = useState(defaultProfile?.id ?? "");
   const [notes, setNotes] = useState("");
-  const [dialog, setDialog] = useState<Dialog | null>(null);
+  const [validationErrors, setValidationErrors] = useState<string[]>([]);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const selectedWorker = workers.find((worker) => worker.employee_id === workerId) ?? null;
   const selectedProfile = inputUomProfileId
@@ -199,39 +194,30 @@ export function KioskWithdrawForm({
     !inputUnitCode ? "Unidad" : "",
   ].filter(Boolean);
 
-  function validateAndOpenDialog() {
-    if (missingFields.length > 0) {
-      setDialog({ kind: "missing", missing: missingFields });
-      return;
-    }
-    setDialog({ kind: "confirm" });
-  }
-
   function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    if (allowNextSubmitRef.current) {
-      allowNextSubmitRef.current = false;
+    if (submitStartedRef.current) {
+      event.preventDefault();
       return;
     }
-    event.preventDefault();
-    validateAndOpenDialog();
-  }
 
-  function submitConfirmed() {
-    allowNextSubmitRef.current = true;
-    setDialog(null);
-    window.setTimeout(() => submitButtonRef.current?.click(), 0);
+    if (missingFields.length > 0) {
+      event.preventDefault();
+      setValidationErrors(missingFields);
+      return;
+    }
+
+    submitStartedRef.current = true;
+    setValidationErrors([]);
+    setIsSubmitting(true);
   }
 
   return (
-    <form ref={formRef} action={action} noValidate onSubmit={handleSubmit} className="space-y-5 pb-24 lg:pb-0">
+    <form action={action} noValidate onSubmit={handleSubmit} className="space-y-5 pb-24 lg:pb-0">
       <input type="hidden" name="source_location_id" value={sourceLocationId} />
       <input type="hidden" name="return_to" value={returnTo} />
       <input type="hidden" name="item_product_id" value={product?.id ?? ""} />
       <input type="hidden" name="item_input_unit_code" value={inputUnitCode} />
       <input type="hidden" name="item_input_uom_profile_id" value={inputUomProfileId} />
-      <button ref={submitButtonRef} type="submit" className="hidden" aria-hidden="true" tabIndex={-1}>
-        Guardar retiro
-      </button>
 
       <section className="ui-panel ui-remission-section ui-fade-up space-y-4">
         <div>
@@ -274,6 +260,13 @@ export function KioskWithdrawForm({
         {productError || (errorMessage && !errorProductId) ? (
           <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             {productError || errorMessage}
+          </div>
+        ) : null}
+
+        {validationErrors.length > 0 ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+            <div className="font-semibold">Falta completar:</div>
+            <div className="mt-1">{validationErrors.join(", ")}</div>
           </div>
         ) : null}
 
@@ -339,72 +332,14 @@ export function KioskWithdrawForm({
               : "Retiro sin destino"
             : "Selecciona trabajador"}
         </div>
-        <button type="button" className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold" onClick={validateAndOpenDialog}>
-          Retirar
+        <button
+          type="submit"
+          className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold"
+          disabled={isSubmitting}
+        >
+          {isSubmitting ? "Retirando..." : "Retirar"}
         </button>
       </div>
-
-      {dialog ? (
-        <div className="fixed inset-0 z-50 flex items-end justify-center bg-slate-950/45 px-4 py-5 backdrop-blur-sm sm:items-center">
-          <div className="w-full max-w-md overflow-hidden rounded-[28px] border border-white/70 bg-white shadow-2xl">
-            <div className="border-b border-[var(--ui-border)] bg-[linear-gradient(135deg,rgba(245,158,11,0.18)_0%,rgba(255,255,255,1)_72%)] px-5 py-4">
-              <div className="ui-caption">{dialog.kind === "confirm" ? "Confirmar retiro" : "Faltan datos"}</div>
-              <div className="mt-1 text-xl font-semibold text-[var(--ui-text)]">
-                {dialog.kind === "confirm" ? "Revisa antes de guardar" : "Completa la informacion"}
-              </div>
-            </div>
-            {dialog.kind === "missing" ? (
-              <div className="space-y-4 px-5 py-5">
-                <p className="text-sm text-[var(--ui-muted)]">Para registrar el retiro falta completar:</p>
-                <div className="grid gap-2">
-                  {dialog.missing.map((field) => (
-                    <div key={field} className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950">
-                      {field}
-                    </div>
-                  ))}
-                </div>
-                <div className="flex justify-end">
-                  <button type="button" className="ui-btn ui-btn--brand" onClick={() => setDialog(null)}>
-                    Entendido
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div className="space-y-4 px-5 py-5">
-                <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-4">
-                  <div className="text-sm text-[var(--ui-muted)]">Resumen</div>
-                  <div className="mt-3 space-y-3">
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">Trabajador</div>
-                      <div className="text-base font-semibold text-[var(--ui-text)]">{selectedWorker?.label ?? "Sin trabajador"}</div>
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">Producto</div>
-                      <div className="text-sm font-semibold text-[var(--ui-text)]">
-                        {formatQty(Number(quantity))} {selectedUnitLabel} de {product?.name ?? "producto"}
-                      </div>
-                    </div>
-                    <div>
-                      <div className="text-xs font-semibold uppercase tracking-[0.08em] text-[var(--ui-muted)]">Movimiento</div>
-                      <div className="text-base font-semibold text-[var(--ui-text)]">
-                        {selectedWorker?.has_destination ? `Hacia ${selectedWorker.destination_label}` : "Retiro sin destino: descuenta inventario"}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-                <div className="flex flex-wrap justify-end gap-2">
-                  <button type="button" className="ui-btn ui-btn--ghost" onClick={() => setDialog(null)}>
-                    Revisar
-                  </button>
-                  <button type="button" className="ui-btn ui-btn--brand" onClick={submitConfirmed}>
-                    Retirar
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        </div>
-      ) : null}
     </form>
   );
 }
