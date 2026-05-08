@@ -45,6 +45,7 @@ type Props = {
   categoryNameById?: Record<string, string>;
   defaultUomProfiles?: ProductUomProfile[];
   areaOptions: AreaOption[];
+  defaultAreaKind?: string;
   originStockRows?: OriginStockReference[];
   initialExpectedDate?: string;
   initialNotes?: string;
@@ -65,6 +66,7 @@ export function RemissionsCreateForm({
   categoryNameById = {},
   defaultUomProfiles = [],
   areaOptions,
+  defaultAreaKind: defaultAreaKindProp = "",
   originStockRows = [],
   initialExpectedDate = "",
   initialNotes = "",
@@ -72,7 +74,7 @@ export function RemissionsCreateForm({
   submitLabel = "Crear remision",
   formMode = "create",
 }: Props) {
-  const initialRowsSource = initialRows ?? [];
+  const initialRowsSource = useMemo(() => initialRows ?? [], [initialRows]);
   const initialRowsKey = useMemo(() => JSON.stringify(initialRowsSource), [initialRowsSource]);
   const normalizedInitialRows = useMemo<RemissionDraftRow[]>(
     () =>
@@ -84,7 +86,7 @@ export function RemissionsCreateForm({
         inputUomProfileId: String(row.inputUomProfileId ?? "").trim(),
         areaKind: String(row.areaKind ?? "").trim(),
       })),
-    [initialRowsKey]
+    [initialRowsSource]
   );
 
   const [fromSiteId, setFromSiteId] = useState(defaultFromSiteId);
@@ -149,7 +151,10 @@ export function RemissionsCreateForm({
     [areaOptions]
   );
   const siteMode: SiteMode = zonifiedAreaOptions.length > 1 ? "zonified" : "simple";
-  const defaultAreaKind = siteMode === "simple" ? "general" : "";
+  const defaultAreaKind =
+    defaultAreaKindProp || (siteMode === "simple" ? "general" : "");
+  const defaultAreaLabel =
+    areaOptions.find((option) => option.value === defaultAreaKind)?.label ?? "";
 
   const draftSummary = useMemo(() => {
     const productMap = new Map(products.map((product) => [product.id, product]));
@@ -345,7 +350,9 @@ export function RemissionsCreateForm({
                 </div>
                 <div>
                   <div className="text-xs text-[var(--ui-muted)]">Areas</div>
-                  <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">{requestedAreasLabel}</div>
+                  <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">
+                    {defaultAreaLabel || requestedAreasLabel}
+                  </div>
                 </div>
               </div>
             </div>
@@ -396,6 +403,7 @@ export function RemissionsCreateForm({
             areaOptions={areaOptions}
             siteMode={siteMode}
             defaultAreaKind={defaultAreaKind}
+            lockAreaKind={Boolean(defaultAreaKindProp)}
             defaultUomProfiles={defaultUomProfiles}
             onRowsChange={setDraftRows}
             referenceStockByProduct={selectedOriginStockByProduct}

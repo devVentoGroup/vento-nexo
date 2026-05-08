@@ -92,6 +92,7 @@ type ProductSiteRow = {
   product_id: string;
   is_active: boolean | null;
   default_area_kind: string | null;
+  area_kinds?: string[] | null;
   audience?: string | null;
   updated_at?: string | null;
   created_at?: string | null;
@@ -185,13 +186,38 @@ function supportsAudience(
   return normalized === "BOTH" || requestedAudience === "BOTH" || normalized === requestedAudience;
 }
 
+function getDefaultRemissionAreaForRole(role: string | null | undefined): string {
+  const normalized = normalizeText(role);
+  if (normalized === "cajero") return "mostrador";
+  if (normalized === "barista") return "bar";
+  if (normalized === "cocinero") return "cocina";
+  return "";
+}
+
+function normalizeProductSiteAreaKinds(row: ProductSiteRow): string[] {
+  const values = [
+    ...(Array.isArray(row.area_kinds) ? row.area_kinds : []),
+    row.default_area_kind,
+  ]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+  return Array.from(new Set(values));
+}
+
+function supportsRequestedArea(row: ProductSiteRow, requestedAreaKind: string): boolean {
+  const areaKind = String(requestedAreaKind ?? "").trim();
+  if (!areaKind) return true;
+  const configuredKinds = normalizeProductSiteAreaKinds(row);
+  return configuredKinds.includes(areaKind) || configuredKinds.includes("general");
+}
+
 async function loadProductSiteRows(
   supabase: Awaited<ReturnType<typeof createClient>>,
   siteId: string
 ): Promise<ProductSiteRow[]> {
   const withAudience = await supabase
     .from("product_site_settings")
-    .select("product_id,is_active,default_area_kind,audience,updated_at,created_at")
+    .select("product_id,is_active,default_area_kind,area_kinds,audience,updated_at,created_at")
     .eq("site_id", siteId)
     .eq("is_active", true);
 
@@ -214,7 +240,7 @@ async function loadProductSiteRows(
 
   const fallback = await supabase
     .from("product_site_settings")
-    .select("product_id,is_active,default_area_kind,updated_at,created_at")
+    .select("product_id,is_active,default_area_kind,area_kinds,updated_at,created_at")
     .eq("site_id", siteId)
     .eq("is_active", true);
 
@@ -578,6 +604,11 @@ async function createRemission(formData: FormData) {
     .eq("id", user.id)
     .maybeSingle();
   const actualRole = String(employee?.role ?? "");
+  const cookieStore = await cookies();
+  const roleOverride = String(cookieStore.get(ROLE_OVERRIDE_COOKIE)?.value ?? "").trim().toLowerCase();
+  const canUseRoleOverride =
+    Boolean(roleOverride) && PRIVILEGED_ROLE_OVERRIDES.has(actualRole.toLowerCase());
+  const effectiveRole = (canUseRoleOverride ? roleOverride : actualRole).toLowerCase();
 
   const fromSiteId = asText(formData.get("from_site_id"));
   const toSiteId = asText(formData.get("to_site_id"));
@@ -725,6 +756,7 @@ async function createRemission(formData: FormData) {
   }
 
   const requestedAudience = inferAudienceFromSiteName(toSite?.name ?? "");
+  const requestedRoleAreaKind = getDefaultRemissionAreaForRole(effectiveRole);
   const configuredRows = await loadProductSiteRows(supabase, toSiteId);
   if (configuredRows.length === 0) {
     redirect(
@@ -737,7 +769,11 @@ async function createRemission(formData: FormData) {
 
   const allowedProductIds = new Set(
     configuredRows
-      .filter((row) => supportsAudience(row.audience, requestedAudience))
+      .filter(
+        (row) =>
+          supportsAudience(row.audience, requestedAudience) &&
+          supportsRequestedArea(row, requestedRoleAreaKind)
+      )
       .map((row) => row.product_id)
   );
   if (allowedProductIds.size === 0) {
@@ -754,6 +790,23 @@ async function createRemission(formData: FormData) {
       "/inventory/remissions?error=" +
       encodeURIComponent(
         "Algunos productos no estan habilitados para esta sede o flujo operativo. Revisa disponibilidad por sede."
+      )
+    );
+  }
+
+  const configuredByProductId = new Map(configuredRows.map((row) => [row.product_id, row]));
+  const invalidAreaItems = items.filter((item) => {
+    const row = configuredByProductId.get(item.product_id);
+    if (!row) return true;
+    const itemAreaKind = String(item.production_area_kind ?? "").trim();
+    if (requestedRoleAreaKind && itemAreaKind !== requestedRoleAreaKind) return true;
+    return itemAreaKind ? !supportsRequestedArea(row, itemAreaKind) : false;
+  });
+  if (invalidAreaItems.length > 0) {
+    redirect(
+      "/inventory/remissions?error=" +
+      encodeURIComponent(
+        "Algunos productos no corresponden al area de solicitud de tu rol o sede."
       )
     );
   }
@@ -1165,6 +1218,8 @@ export default async function RemissionsPage({
       return a.label.localeCompare(b.label, "es", { sensitivity: "base" });
     });
   })();
+  const roleDefaultAreaKind = canCreate ? getDefaultRemissionAreaForRole(effectiveRole) : "";
+  const requestedAreaKind = roleDefaultAreaKind;
 
   // Insumos por satélite: filtrar por sede DESTINO (Saudo), no por sede origen (Centro).
   // Cuando el satélite solicita, solo debe ver productos configurados para su sede.
@@ -1175,7 +1230,11 @@ export default async function RemissionsPage({
     : [];
   const hasActiveSiteProductConfig = productSiteRows.length > 0;
   const productSiteIds = productSiteRows
-    .filter((row) => supportsAudience(row.audience, requestedAudience))
+    .filter(
+      (row) =>
+        supportsAudience(row.audience, requestedAudience) &&
+        supportsRequestedArea(row, requestedAreaKind)
+    )
     .map((row) => row.product_id);
   const hasAudienceProducts = productSiteIds.length > 0;
 
@@ -1738,6 +1797,7 @@ export default async function RemissionsPage({
               categoryNameById={Object.fromEntries(categoryNameById)}
               defaultUomProfiles={defaultUomProfiles}
               areaOptions={areaOptions}
+              defaultAreaKind={requestedAreaKind}
               originStockRows={originStockRows}
             />
           </div>

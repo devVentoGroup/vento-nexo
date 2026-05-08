@@ -235,7 +235,7 @@ export type OperationalStockPart = {
   stockQty: number;
 };
 
-function formatOperationalPartLabel(label: string, qty: number) {
+export function formatOperationalPartLabel(label: string, qty: number) {
   const cleanLabel = String(label || "un").trim();
   const normalized = cleanLabel.toLowerCase();
   const isOne = Math.abs(qty - 1) < 0.000001;
@@ -250,6 +250,8 @@ function formatOperationalPartLabel(label: string, qty: number) {
     "lb",
     "cm",
     "m",
+    "und",
+    "uds",
   ]);
   if (invariantSymbols.has(normalized)) return cleanLabel;
 
@@ -264,6 +266,15 @@ function formatOperationalPartLabel(label: string, qty: number) {
 
   const known = knownLabels[normalized];
   if (known) return isOne ? known.singular : known.plural;
+
+  const [firstWord = "", ...restWords] = normalized.split(/\s+/);
+  const compoundKnown = knownLabels[firstWord];
+  if (compoundKnown && restWords.length > 0) {
+    return `${isOne ? compoundKnown.singular : compoundKnown.plural} ${restWords.join(" ")}`;
+  }
+
+  const lastWord = restWords.at(-1) ?? firstWord;
+  if (invariantSymbols.has(lastWord)) return cleanLabel;
 
   if (isOne) return cleanLabel;
   if (normalized.endsWith("s")) return cleanLabel;

@@ -50,6 +50,7 @@ type Props = {
   areaOptions: AreaOption[];
   siteMode?: "simple" | "zonified";
   defaultAreaKind?: string;
+  lockAreaKind?: boolean;
   defaultUomProfiles?: ProductUomProfile[];
   onRowsChange?: (rows: RemissionDraftRow[]) => void;
   referenceStockByProduct?: Record<
@@ -91,6 +92,7 @@ export function RemissionsItems({
   areaOptions,
   siteMode = "zonified",
   defaultAreaKind = "",
+  lockAreaKind = false,
   defaultUomProfiles = [],
   onRowsChange,
   referenceStockByProduct = {},
@@ -99,17 +101,16 @@ export function RemissionsItems({
 }: Props) {
   const initialRowsSource = useMemo(() => initialRows ?? [], [initialRows]);
   const normalizedInitialRows = useMemo<RemissionDraftRow[]>(() => {
-    if (!initialRowsSource.length) return [EMPTY_ROW];
+    if (!initialRowsSource.length) return [{ ...EMPTY_ROW, areaKind: defaultAreaKind }];
     return initialRowsSource.map((row, index) => ({
       id: Number.isFinite(row.id) ? row.id : index,
       productId: String(row.productId ?? "").trim(),
       quantity: String(row.quantity ?? "").trim(),
       inputUnitCode: normalizeUnitCode(String(row.inputUnitCode ?? "").trim()),
       inputUomProfileId: String(row.inputUomProfileId ?? "").trim(),
-      areaKind:
-        String(row.areaKind ?? "").trim() || (siteMode === "simple" ? defaultAreaKind : ""),
+      areaKind: String(row.areaKind ?? "").trim() || defaultAreaKind,
     }));
-  }, [defaultAreaKind, initialRowsSource, siteMode]);
+  }, [defaultAreaKind, initialRowsSource]);
 
   const [rows, setRows] = useState<Row[]>(normalizedInitialRows);
 
@@ -142,9 +143,10 @@ export function RemissionsItems({
     setRows((prev) => [
       ...prev,
       {
-        ...EMPTY_ROW,
-        id: prev.length ? Math.max(...prev.map((row) => row.id)) + 1 : 0,
-      },
+          ...EMPTY_ROW,
+          areaKind: defaultAreaKind,
+          id: prev.length ? Math.max(...prev.map((row) => row.id)) + 1 : 0,
+        },
     ]);
   };
 
@@ -202,6 +204,9 @@ export function RemissionsItems({
           ? `${defaultProfile.qty_in_input_unit} ${conversionInputUnit} = ${defaultProfile.qty_in_stock_unit} ${stockUnitCode || "un"}`
           : "";
         const referenceMeta = row.productId ? referenceStockByProduct[row.productId] ?? null : null;
+        const selectedAreaLabel =
+          areaOptions.find((option) => option.value === (row.areaKind || defaultAreaKind))?.label ??
+          (row.areaKind || defaultAreaKind);
         const availableReference = Number(referenceMeta?.currentQty ?? 0);
         const referenceComparison =
           row.productId && referenceSiteName
@@ -360,10 +365,10 @@ export function RemissionsItems({
                   <span className="ui-label">
                     {siteMode === "simple" ? "Destino de la remision" : "Area operativa"}
                   </span>
-                  {siteMode === "simple" ? (
+                  {siteMode === "simple" || lockAreaKind ? (
                     <>
                       <div className="ui-input flex h-10 items-center bg-[linear-gradient(180deg,rgba(255,251,235,0.9)_0%,rgba(255,255,255,0.92)_100%)] font-semibold text-[var(--ui-text)]">
-                        Solicitud global
+                        {lockAreaKind ? selectedAreaLabel || "Area asignada" : "Solicitud global"}
                       </div>
                       <input type="hidden" name="item_area_kind" value={row.areaKind || defaultAreaKind} />
                     </>

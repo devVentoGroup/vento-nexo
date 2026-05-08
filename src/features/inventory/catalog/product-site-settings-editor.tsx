@@ -2,6 +2,8 @@
 
 import { useMemo, useState } from "react";
 
+import { formatOperationalPartLabel } from "@/lib/inventory/uom";
+
 export type SiteSettingLine = {
   id?: string;
   site_id: string;
@@ -251,7 +253,7 @@ export function ProductSiteSettingsEditor({
     if (!operationUnitHint || !operationFactorToStock) return null;
     const inOperationUnits = minStockQty / operationFactorToStock;
     const rounded = Math.round(inOperationUnits * 100) / 100;
-    return `${rounded} ${operationUnitHint.label.toLowerCase()}${rounded === 1 ? "" : "s"}`;
+    return `${rounded} ${formatOperationalPartLabel(operationUnitHint.label, rounded)}`;
   };
 
   const lines = useMemo(() => {
