@@ -230,11 +230,11 @@ export function ProductSiteSettingsEditor({
   const getProductionLocationsForSite = (siteId: string) =>
     productionLocations.filter((location) => String(location.site_id ?? "").trim() === siteId);
   const centerProductionLocationOptions = getProductionLocationsForSite(centerSiteId);
-  const resolvedCenterProductionLocationId = centerProductionLocationOptions.some(
+  const validCenterProductionLocationId = centerProductionLocationOptions.some(
     (location) => location.id === centerProductionLocationId
   )
     ? centerProductionLocationId
-    : centerProductionLocationOptions[0]?.id ?? "";
+    : "";
 
   const operationFactorToStock =
     operationUnitHint &&
@@ -286,7 +286,7 @@ export function ProductSiteSettingsEditor({
         site_id: centerSiteId,
         is_active: centerIsActive,
         default_area_kind: centerDefaultAreaKind || undefined,
-        production_location_id: resolvedCenterProductionLocationId || undefined,
+        production_location_id: validCenterProductionLocationId || undefined,
         min_stock_qty: centerMinStockQty,
         min_stock_input_mode:
           centerMinStockInputMode === "purchase" && purchaseFactorToStock ? "purchase" : "base",
@@ -368,7 +368,7 @@ export function ProductSiteSettingsEditor({
             Este bloque define la configuracion interna del Centro. Aqui vive el stock real (por LOC).
           </p>
         </div>
-        <div className="grid gap-3 md:grid-cols-11">
+        <div className="grid gap-3 md:grid-cols-12">
           <label className="flex flex-col gap-1 md:col-span-4">
             <span className="ui-label">Sede centro</span>
             <select
@@ -376,7 +376,7 @@ export function ProductSiteSettingsEditor({
               onChange={(event) => {
                 const nextSiteId = event.target.value;
                 setCenterSiteId(nextSiteId);
-                setCenterProductionLocationId(getProductionLocationsForSite(nextSiteId)[0]?.id ?? "");
+                setCenterProductionLocationId("");
               }}
               className="ui-input"
             >
@@ -388,37 +388,6 @@ export function ProductSiteSettingsEditor({
               ))}
             </select>
           </label>
-
-          <label className="flex flex-col gap-1 md:col-span-4">
-            <span className="ui-label">LOC de produccion</span>
-            <select
-              value={resolvedCenterProductionLocationId}
-              onChange={(event) => setCenterProductionLocationId(event.target.value)}
-              className="ui-input"
-            >
-              <option value="">Sin definir</option>
-              {centerProductionLocationOptions.map((location) => (
-                <option key={location.id} value={location.id}>
-                  {location.code}
-                  {location.zone ? ` (${location.zone})` : ""}
-                </option>
-              ))}
-            </select>
-            <p className="text-xs text-[var(--ui-muted)]">
-              Produccion consume insumos y suma terminado en este mismo LOC.
-            </p>
-          </label>
-
-          <div className="flex items-end md:col-span-1">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={centerIsActive}
-                onChange={(event) => setCenterIsActive(event.target.checked)}
-              />
-              <span className="ui-label">Disponible</span>
-            </label>
-          </div>
 
           <label className="flex flex-col gap-1 md:col-span-3">
             <span className="ui-label">Area por defecto</span>
@@ -440,6 +409,37 @@ export function ProductSiteSettingsEditor({
           </label>
 
           <label className="flex flex-col gap-1 md:col-span-3">
+            <span className="ui-label">LOC de produccion</span>
+            <select
+              value={validCenterProductionLocationId}
+              onChange={(event) => setCenterProductionLocationId(event.target.value)}
+              className="ui-input"
+            >
+              <option value="">Sin definir</option>
+              {centerProductionLocationOptions.map((location) => (
+                <option key={location.id} value={location.id}>
+                  {location.code}
+                  {location.zone ? ` (${location.zone})` : ""}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-[var(--ui-muted)]">
+              Solo para productos producidos con receta.
+            </p>
+          </label>
+
+          <div className="flex items-center md:col-span-2 md:pt-6">
+            <label className="flex items-center gap-2">
+              <input
+                type="checkbox"
+                checked={centerIsActive}
+                onChange={(event) => setCenterIsActive(event.target.checked)}
+              />
+              <span className="ui-label">Disponible</span>
+            </label>
+          </div>
+
+          <label className="flex flex-col gap-1 md:col-span-4">
             {purchaseUnitHint && purchaseFactorToStock ? (
               <div className="flex items-center justify-between gap-2">
                 <span className="ui-label">Modo de minimo</span>
