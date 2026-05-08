@@ -38,9 +38,11 @@ type ProductUomProfileRow = {
   usage_context: "general" | "purchase" | "remission" | null;
 };
 type ProductSupplierRow = {
+  id: string;
   product_id: string;
   supplier_id: string | null;
   purchase_unit: string | null;
+  purchase_unit_size: number | null;
   purchase_pack_qty: number | null;
   purchase_pack_unit_code: string | null;
   is_primary: boolean | null;
@@ -125,7 +127,7 @@ async function fetchProductSuppliersForInitialCount(
   for (const productIdChunk of chunkArray(productIds, IN_CHUNK_SIZE)) {
     const { data } = await supabase
       .from("product_suppliers")
-      .select("product_id,supplier_id,purchase_unit,purchase_pack_qty,purchase_pack_unit_code,is_primary")
+      .select("id,product_id,supplier_id,purchase_unit,purchase_unit_size,purchase_pack_qty,purchase_pack_unit_code,is_primary")
       .in("product_id", productIdChunk);
 
     rows.push(...((data ?? []) as unknown as ProductSupplierRow[]));
@@ -327,8 +329,8 @@ export default async function InventoryCountInitialPage({
     if (!product) continue;
 
     const stockUnitCode = normalizeUnitCode(product.stock_unit_code ?? product.unit ?? "un");
-    const packUnitCode = normalizeUnitCode(supplier.purchase_pack_unit_code ?? "");
-    const packQty = Number(supplier.purchase_pack_qty ?? 0);
+    const packUnitCode = normalizeUnitCode(supplier.purchase_pack_unit_code ?? stockUnitCode);
+    const packQty = Number(supplier.purchase_pack_qty ?? supplier.purchase_unit_size ?? 0);
     if (!stockUnitCode || !packUnitCode || !Number.isFinite(packQty) || packQty <= 0) continue;
 
     let qtyInStockUnit = packQty;
@@ -353,7 +355,7 @@ export default async function InventoryCountInitialPage({
       : `${packLabel} ${packSizeLabel}`;
 
     secondarySupplierProfiles.push({
-      id: `supplier:${supplier.supplier_id ?? "secondary"}:${supplier.product_id}:${packUnitCode}:${packQty}`,
+      id: `supplier:${supplier.id}`,
       product_id: supplier.product_id,
       label,
       input_unit_code: normalizeUnitCode(packLabel),
