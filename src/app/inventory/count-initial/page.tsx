@@ -4,6 +4,7 @@ import { requireAppAccess } from "@/lib/auth/guard";
 import { formatHistoryDateTime } from "@/lib/formatters";
 import { CatalogOptionalDetails } from "@/features/inventory/catalog/catalog-ui";
 import { createClient } from "@/lib/supabase/server";
+import { convertQuantity, createUnitMap, normalizeUnitCode } from "@/lib/inventory/uom";
 
 import { CountInitialForm } from "@/features/inventory/count-initial/count-initial-form";
 
@@ -36,9 +37,36 @@ type ProductUomProfileRow = {
   source: "manual" | "supplier_primary" | "recipe_portion" | null;
   usage_context: "general" | "purchase" | "remission" | null;
 };
+type ProductSupplierRow = {
+  product_id: string;
+  supplier_id: string | null;
+  purchase_unit: string | null;
+  purchase_pack_qty: number | null;
+  purchase_pack_unit_code: string | null;
+  is_primary: boolean | null;
+  suppliers?: { name: string | null } | { name: string | null }[] | null;
+};
+type UnitRow = {
+  code: string;
+  name: string;
+  family: "volume" | "mass" | "count";
+  factor_to_base: number;
+  symbol: string | null;
+  display_decimals: number | null;
+  is_active: boolean;
+};
 
 const PRODUCT_PAGE_SIZE = 1000;
+const IN_CHUNK_SIZE = 150;
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
+
+function chunkArray<T>(values: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size));
+  }
+  return chunks;
+}
 
 async function fetchProductRowsForInitialCount(
   supabase: SupabaseClient,
@@ -66,6 +94,45 @@ async function fetchProductRowsForInitialCount(
     rows.push(...pageRows);
     if (pageRows.length < PRODUCT_PAGE_SIZE) return { rows, error: null };
   }
+}
+
+async function fetchProductProfilesForInitialCount(
+  supabase: SupabaseClient,
+  productIds: string[]
+) {
+  const rows: ProductUomProfileRow[] = [];
+
+  for (const productIdChunk of chunkArray(productIds, IN_CHUNK_SIZE)) {
+    const { data } = await supabase
+      .from("product_uom_profiles")
+      .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context")
+      .in("product_id", productIdChunk)
+      .eq("is_active", true)
+      .order("is_default", { ascending: false });
+
+    rows.push(...((data ?? []) as ProductUomProfileRow[]));
+  }
+
+  return rows;
+}
+
+async function fetchProductSuppliersForInitialCount(
+  supabase: SupabaseClient,
+  productIds: string[]
+) {
+  const rows: ProductSupplierRow[] = [];
+
+  for (const productIdChunk of chunkArray(productIds, IN_CHUNK_SIZE)) {
+    const { data } = await supabase
+      .from("product_suppliers")
+      .select("product_id,supplier_id,purchase_unit,purchase_pack_qty,purchase_pack_unit_code,is_primary,suppliers(name)")
+      .in("product_id", productIdChunk)
+      .eq("is_primary", false);
+
+    rows.push(...((data ?? []) as unknown as ProductSupplierRow[]));
+  }
+
+  return rows;
 }
 
 export default async function InventoryCountInitialPage({
@@ -213,16 +280,63 @@ export default async function InventoryCountInitialPage({
   const { rows: productRows, error: productError } = await fetchProductRowsForInitialCount(supabase, productSiteIds);
   const productIdsForProfiles = productRows.map((product) => product.id);
 
-  const { data: productProfilesData } =
+  const [productProfiles, supplierRows, unitsData] =
     productIdsForProfiles.length > 0
-      ? await supabase
-        .from("product_uom_profiles")
-        .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context")
-        .in("product_id", productIdsForProfiles)
-        .eq("is_active", true)
-        .order("is_default", { ascending: false })
-      : { data: [] as ProductUomProfileRow[] };
-  const productProfiles = (productProfilesData ?? []) as ProductUomProfileRow[];
+      ? await Promise.all([
+        fetchProductProfilesForInitialCount(supabase, productIdsForProfiles),
+        fetchProductSuppliersForInitialCount(supabase, productIdsForProfiles),
+        supabase
+          .from("units")
+          .select("code,name,family,factor_to_base,symbol,display_decimals,is_active")
+          .eq("is_active", true),
+      ])
+      : [[], [], { data: [] as UnitRow[] }];
+  const unitMap = createUnitMap((unitsData.data ?? []) as UnitRow[]);
+  const productsById = new Map(productRows.map((product) => [product.id, product]));
+  const secondarySupplierProfiles: ProductUomProfileRow[] = [];
+
+  for (const supplier of supplierRows) {
+    const product = productsById.get(supplier.product_id);
+    if (!product) continue;
+
+    const stockUnitCode = normalizeUnitCode(product.stock_unit_code ?? product.unit ?? "un");
+    const packUnitCode = normalizeUnitCode(supplier.purchase_pack_unit_code ?? "");
+    const packQty = Number(supplier.purchase_pack_qty ?? 0);
+    if (!stockUnitCode || !packUnitCode || !Number.isFinite(packQty) || packQty <= 0) continue;
+
+    let qtyInStockUnit = packQty;
+    try {
+      qtyInStockUnit = convertQuantity({
+        quantity: packQty,
+        fromUnitCode: packUnitCode,
+        toUnitCode: stockUnitCode,
+        unitMap,
+      }).quantity;
+    } catch {
+      continue;
+    }
+
+    const supplierName = Array.isArray(supplier.suppliers)
+      ? supplier.suppliers[0]?.name ?? ""
+      : supplier.suppliers?.name ?? "";
+    const packLabel = String(supplier.purchase_unit ?? "").trim() || "Empaque";
+    const label = supplierName ? `${packLabel} ${supplierName}` : packLabel;
+
+    secondarySupplierProfiles.push({
+      id: `supplier:${supplier.supplier_id ?? "secondary"}:${supplier.product_id}:${packUnitCode}:${packQty}`,
+      product_id: supplier.product_id,
+      label,
+      input_unit_code: packUnitCode,
+      qty_in_input_unit: 1,
+      qty_in_stock_unit: qtyInStockUnit,
+      is_default: false,
+      is_active: true,
+      source: "manual",
+      usage_context: "purchase",
+    });
+  }
+
+  const allProductProfiles = [...productProfiles, ...secondarySupplierProfiles];
 
   type PositionRow = {
     id: string;
@@ -468,7 +582,7 @@ export default async function InventoryCountInitialPage({
               sku: p.sku,
               unit: p.stock_unit_code ?? p.unit,
               stockUnitCode: p.stock_unit_code ?? p.unit,
-              profiles: productProfiles
+              profiles: allProductProfiles
                 .filter((profile) => profile.product_id === p.id)
                 .map((profile) => ({
                   id: profile.id,
