@@ -127,7 +127,7 @@ async function fetchProductSuppliersForInitialCount(
       .from("product_suppliers")
       .select("product_id,supplier_id,purchase_unit,purchase_pack_qty,purchase_pack_unit_code,is_primary,suppliers(name)")
       .in("product_id", productIdChunk)
-      .eq("is_primary", false);
+      .or("is_primary.is.false,is_primary.is.null");
 
     rows.push(...((data ?? []) as unknown as ProductSupplierRow[]));
   }
@@ -320,13 +320,18 @@ export default async function InventoryCountInitialPage({
       ? supplier.suppliers[0]?.name ?? ""
       : supplier.suppliers?.name ?? "";
     const packLabel = String(supplier.purchase_unit ?? "").trim() || "Empaque";
-    const label = supplierName ? `${packLabel} ${supplierName}` : packLabel;
+    const packSizeLabel = `${packQty.toLocaleString("es-CO", {
+      maximumFractionDigits: 3,
+    })} ${packUnitCode}`;
+    const label = supplierName
+      ? `${packLabel} ${packSizeLabel} ${supplierName}`
+      : `${packLabel} ${packSizeLabel}`;
 
     secondarySupplierProfiles.push({
       id: `supplier:${supplier.supplier_id ?? "secondary"}:${supplier.product_id}:${packUnitCode}:${packQty}`,
       product_id: supplier.product_id,
       label,
-      input_unit_code: packUnitCode,
+      input_unit_code: normalizeUnitCode(packLabel),
       qty_in_input_unit: 1,
       qty_in_stock_unit: qtyInStockUnit,
       is_default: false,
