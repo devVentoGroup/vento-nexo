@@ -246,7 +246,9 @@ export function RemissionLineCard({
                 </div>
               ) : !item.source_location_id ? (
                 <div className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] px-3 py-2 text-sm text-[var(--ui-muted)]">
-                  No hay áreas con stock para este producto.
+                  {vm.availableSite <= 0
+                    ? `Sin stock en origen para este producto. Stock total en sede: 0 ${vm.itemUnitLabel}.`
+                    : `No hay áreas con stock para este producto. Stock total en sede: ${vm.availableSite} ${vm.itemUnitLabel}.`}
                 </div>
               ) : null}
 

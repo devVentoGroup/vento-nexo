@@ -285,6 +285,7 @@ export function buildRemissionLineVm(params: BuildRemissionLineVmParams) {
     shortageQty,
     plannedQty,
     accountedQty,
+    availableSite,
     availableAtSelectedLoc,
     itemUnitLabel,
     missingSourceLoc,

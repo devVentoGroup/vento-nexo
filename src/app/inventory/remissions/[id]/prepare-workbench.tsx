@@ -152,7 +152,7 @@ function parseQty(value: string, fallback = 0) {
 }
 
 function getLineTone(line: DraftLine) {
-  if (!line.selectedLocId) return "pending";
+  if (!line.selectedLocId && line.dispatchQty > 0) return "pending";
   if (line.dispatchQty < 0 || line.dispatchQty > line.requestedQty) return "error";
   if (line.dispatchQty < line.requestedQty && !line.shortageReason.trim()) return "warn";
   return "ok";
@@ -331,7 +331,7 @@ function RemissionPrepareWorkbenchInteractive({
   );
 
   const blockers = useMemo(() => {
-    const missingLoc = lines.filter((line) => !line.selectedLocId).length;
+    const missingLoc = lines.filter((line) => line.dispatchQty > 0 && !line.selectedLocId).length;
     const invalidQty = lines.filter(
       (line) => line.dispatchQty < 0 || line.dispatchQty > line.requestedQty
     ).length;
@@ -346,7 +346,7 @@ function RemissionPrepareWorkbenchInteractive({
 
   const progress = useMemo(() => {
     const done = lines.filter((line) => {
-      if (!line.selectedLocId) return false;
+      if (line.dispatchQty > 0 && !line.selectedLocId) return false;
       if (line.dispatchQty < 0 || line.dispatchQty > line.requestedQty) return false;
       if (line.dispatchQty < line.requestedQty && !line.shortageReason.trim()) return false;
       return true;
@@ -485,6 +485,10 @@ function RemissionPrepareWorkbenchInteractive({
                           line.selectedLocId) || "Sin área"}
                       </strong>
                     </div>
+                  ) : line.locOptions.length === 0 ? (
+                    <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900">
+                      No hay stock disponible en ningún LOC del origen. Déjalo en 0 y registra el faltante como pendiente de producción.
+                    </div>
                   ) : null}
                 </div>
 
@@ -494,7 +498,9 @@ function RemissionPrepareWorkbenchInteractive({
                     onChange={(e) => updateLine(line.id, { selectedLocId: e.target.value })}
                     className="ui-input h-10"
                   >
-                    <option value="">Selecciona área</option>
+                    <option value="">
+                      {line.locOptions.length > 0 ? "Selecciona área" : "Sin stock en LOC"}
+                    </option>
                     {line.locOptions.map((loc) => (
                       <option key={loc.id} value={loc.id}>
                         {loc.label} · {loc.qty} {line.unitLabel}
@@ -548,6 +554,11 @@ function RemissionPrepareWorkbenchInteractive({
                     }
                     className="ui-input h-10 w-full"
                   />
+                  {line.locOptions.length === 0 && line.dispatchQty === 0 ? (
+                    <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                      Sin despacho hasta que producción cargue stock al LOC.
+                    </div>
+                  ) : null}
                 </div>
 
                 <div>
