@@ -169,12 +169,14 @@ function buildProductSiteSettingPayloadVariants(
   const variantKeysToOmit: string[][] = [
     [],
     [
+      "production_location_id",
       "min_stock_input_mode",
       "min_stock_purchase_qty",
       "min_stock_purchase_unit_code",
       "min_stock_purchase_to_base_factor",
     ],
     [
+      "production_location_id",
       "min_stock_input_mode",
       "min_stock_purchase_qty",
       "min_stock_purchase_unit_code",
@@ -182,6 +184,7 @@ function buildProductSiteSettingPayloadVariants(
       "audience",
     ],
     [
+      "production_location_id",
       "min_stock_input_mode",
       "min_stock_purchase_qty",
       "min_stock_purchase_unit_code",
@@ -1172,6 +1175,7 @@ async function createProduct(formData: FormData) {
       const hasMeaningfulData =
         Boolean(siteIdFromLine) ||
         Boolean(String(line.default_area_kind ?? "").trim()) ||
+        Boolean(String(line.production_location_id ?? "").trim()) ||
         Boolean(String(line.audience ?? "").trim()) ||
         String(line.min_stock_qty ?? "").trim() !== "";
       if (!siteIdFromLine && hasMeaningfulData) {
@@ -1208,6 +1212,7 @@ async function createProduct(formData: FormData) {
         site_id: siteIdFromLine,
         is_active: Boolean(line.is_active),
         default_area_kind: (line.default_area_kind as string) || null,
+        production_location_id: String(line.production_location_id ?? "").trim() || null,
         min_stock_qty: parsedMinStockQty,
         min_stock_input_mode: minStockInputMode,
         min_stock_purchase_qty:
@@ -1342,6 +1347,18 @@ export default async function NewProductPage({
     .from("areas")
     .select("site_id,kind,is_active")
     .eq("is_active", true);
+  const { data: productionLocationsData } = await supabase
+    .from("inventory_locations")
+    .select("id,site_id,code,zone,location_type,is_active")
+    .eq("is_active", true)
+    .eq("location_type", "production")
+    .order("code", { ascending: true });
+  const productionLocationsList = (productionLocationsData ?? []) as Array<{
+    id: string;
+    site_id: string;
+    code: string;
+    zone: string | null;
+  }>;
   const siteAreaKindsList = Array.from(
     new Set(
       ((siteAreasData ?? []) as Array<{ site_id: string | null; kind: string | null }>)
@@ -1679,6 +1696,12 @@ export default async function NewProductPage({
               use_for_remission: a.use_for_remission ?? null,
             }))}
             siteAreaKinds={siteAreaKindsList}
+            productionLocations={productionLocationsList.map((location) => ({
+              id: location.id,
+              site_id: location.site_id,
+              code: location.code,
+              zone: location.zone,
+            }))}
             remissionAreaKindsBySite={remissionAreaKindsBySite}
             stockUnitCode={defaultStockUnitCode}
             operationUnitHint={buildOperationUnitHintFromUnits({

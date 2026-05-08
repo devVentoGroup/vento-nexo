@@ -10,6 +10,7 @@ export type SiteSettingLine = {
   is_active: boolean;
   default_area_kind?: string;
   area_kinds?: string[];
+  production_location_id?: string;
   min_stock_qty?: number;
   min_stock_input_mode?: "base" | "purchase";
   min_stock_purchase_qty?: number;
@@ -22,6 +23,12 @@ export type SiteSettingLine = {
 type SiteOption = { id: string; name: string | null; site_type?: string | null };
 type AreaKindOption = { code: string; name: string; use_for_remission?: boolean | null };
 type SiteAreaKindOption = { site_id: string; kind: string };
+type ProductionLocationOption = {
+  id: string;
+  site_id: string;
+  code: string;
+  zone?: string | null;
+};
 
 type Props = {
   name?: string;
@@ -29,6 +36,7 @@ type Props = {
   sites: SiteOption[];
   areaKinds: AreaKindOption[];
   siteAreaKinds: SiteAreaKindOption[];
+  productionLocations?: ProductionLocationOption[];
   remissionAreaKindsBySite?: Record<string, string[]>;
   stockUnitCode?: string;
   operationUnitHint?: {
@@ -85,6 +93,7 @@ export function ProductSiteSettingsEditor({
   sites,
   areaKinds,
   siteAreaKinds,
+  productionLocations = [],
   remissionAreaKindsBySite = {},
   stockUnitCode,
   operationUnitHint,
@@ -185,6 +194,9 @@ export function ProductSiteSettingsEditor({
   const [centerSiteId, setCenterSiteId] = useState(existingCenter?.site_id ?? fallbackCenter);
   const [centerIsActive, setCenterIsActive] = useState(Boolean(existingCenter?.is_active ?? true));
   const [centerDefaultAreaKind, setCenterDefaultAreaKind] = useState(existingCenter?.default_area_kind ?? "");
+  const [centerProductionLocationId, setCenterProductionLocationId] = useState(
+    existingCenter?.production_location_id ?? ""
+  );
   const [centerMinStockInputMode, setCenterMinStockInputMode] = useState<"base" | "purchase">(
     existingCenter?.min_stock_input_mode === "purchase" && purchaseUnitHint ? "purchase" : "base"
   );
@@ -215,6 +227,14 @@ export function ProductSiteSettingsEditor({
     () => initialRows.filter((row) => !managedSiteIds.has(String(row.site_id ?? "").trim())),
     [initialRows, managedSiteIds]
   );
+  const getProductionLocationsForSite = (siteId: string) =>
+    productionLocations.filter((location) => String(location.site_id ?? "").trim() === siteId);
+  const centerProductionLocationOptions = getProductionLocationsForSite(centerSiteId);
+  const resolvedCenterProductionLocationId = centerProductionLocationOptions.some(
+    (location) => location.id === centerProductionLocationId
+  )
+    ? centerProductionLocationId
+    : centerProductionLocationOptions[0]?.id ?? "";
 
   const operationFactorToStock =
     operationUnitHint &&
@@ -256,7 +276,7 @@ export function ProductSiteSettingsEditor({
     return `${rounded} ${formatOperationalPartLabel(operationUnitHint.label, rounded)}`;
   };
 
-  const lines = useMemo(() => {
+  const lines = (() => {
     const next: SiteSettingLine[] = [...unknownRows];
 
     if (centerSiteId) {
@@ -266,6 +286,7 @@ export function ProductSiteSettingsEditor({
         site_id: centerSiteId,
         is_active: centerIsActive,
         default_area_kind: centerDefaultAreaKind || undefined,
+        production_location_id: resolvedCenterProductionLocationId || undefined,
         min_stock_qty: centerMinStockQty,
         min_stock_input_mode:
           centerMinStockInputMode === "purchase" && purchaseFactorToStock ? "purchase" : "base",
@@ -307,20 +328,7 @@ export function ProductSiteSettingsEditor({
     }
 
     return next;
-  }, [
-    centerDefaultAreaKind,
-    centerIsActive,
-    centerMinStockInputMode,
-    centerMinStockQty,
-    centerPurchaseQtyForSave,
-    centerSiteId,
-    initialBySite,
-    purchaseFactorToStock,
-    purchaseUnitHint?.inputUnitCode,
-    satelliteSites,
-    satelliteState,
-    unknownRows,
-  ]);
+  })();
 
   const updateSatellite = (siteId: string, patch: Partial<SatelliteState>) => {
     setSatelliteState((prev) => {
@@ -365,7 +373,11 @@ export function ProductSiteSettingsEditor({
             <span className="ui-label">Sede centro</span>
             <select
               value={centerSiteId}
-              onChange={(event) => setCenterSiteId(event.target.value)}
+              onChange={(event) => {
+                const nextSiteId = event.target.value;
+                setCenterSiteId(nextSiteId);
+                setCenterProductionLocationId(getProductionLocationsForSite(nextSiteId)[0]?.id ?? "");
+              }}
               className="ui-input"
             >
               <option value="">Seleccionar centro</option>
@@ -375,6 +387,26 @@ export function ProductSiteSettingsEditor({
                 </option>
               ))}
             </select>
+          </label>
+
+          <label className="flex flex-col gap-1 md:col-span-4">
+            <span className="ui-label">LOC de produccion</span>
+            <select
+              value={resolvedCenterProductionLocationId}
+              onChange={(event) => setCenterProductionLocationId(event.target.value)}
+              className="ui-input"
+            >
+              <option value="">Sin definir</option>
+              {centerProductionLocationOptions.map((location) => (
+                <option key={location.id} value={location.id}>
+                  {location.code}
+                  {location.zone ? ` (${location.zone})` : ""}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-[var(--ui-muted)]">
+              Produccion consume insumos y suma terminado en este mismo LOC.
+            </p>
           </label>
 
           <div className="flex items-end md:col-span-1">

@@ -7,6 +7,12 @@ import {
 type SiteOption = { id: string; name: string | null; site_type?: string | null };
 type AreaKindOption = { code: string; name: string; use_for_remission?: boolean | null };
 type SiteAreaKindOption = { site_id: string; kind: string };
+type ProductionLocationOption = {
+  id: string;
+  site_id: string;
+  code: string;
+  zone?: string | null;
+};
 type UnitHint = {
   label: string;
   inputUnitCode: string;
@@ -19,6 +25,7 @@ type ProductSiteAvailabilitySectionProps = {
   sites: SiteOption[];
   areaKinds: AreaKindOption[];
   siteAreaKinds: SiteAreaKindOption[];
+  productionLocations?: ProductionLocationOption[];
   remissionAreaKindsBySite?: Record<string, string[]>;
   stockUnitCode: string;
   purchaseUnitHint?: UnitHint;
@@ -30,6 +37,7 @@ export function ProductSiteAvailabilitySection({
   sites,
   areaKinds,
   siteAreaKinds,
+  productionLocations = [],
   remissionAreaKindsBySite = {},
   stockUnitCode,
   purchaseUnitHint = null,
@@ -46,6 +54,7 @@ export function ProductSiteAvailabilitySection({
         sites={sites}
         areaKinds={areaKinds}
         siteAreaKinds={siteAreaKinds}
+        productionLocations={productionLocations}
         remissionAreaKindsBySite={remissionAreaKindsBySite}
         stockUnitCode={stockUnitCode}
         purchaseUnitHint={purchaseUnitHint}

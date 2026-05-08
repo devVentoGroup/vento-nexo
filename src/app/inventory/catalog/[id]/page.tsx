@@ -204,6 +204,7 @@ type SiteSettingRow = {
   is_active: boolean | null;
   default_area_kind: string | null;
   area_kinds?: string[] | null;
+  production_location_id?: string | null;
   min_stock_qty: number | null;
   min_stock_input_mode?: "base" | "purchase" | null;
   min_stock_purchase_qty?: number | null;
@@ -218,6 +219,12 @@ type SiteSettingRow = {
 type AreaKindRow = { code: string; name: string | null; use_for_remission?: boolean | null };
 type SiteAreaKindRow = { site_id: string | null; kind: string | null; is_active?: boolean | null };
 type SiteOptionRow = { id: string; name: string | null; site_type: string | null };
+type ProductionLocationRow = {
+  id: string;
+  site_id: string;
+  code: string;
+  zone: string | null;
+};
 type SiteAreaPurposeRuleRow = {
   site_id: string | null;
   area_kind: string | null;
@@ -455,6 +462,7 @@ function buildProductSiteSettingPayloadVariants(
   const variantKeysToOmit: string[][] = [
     [],
     [
+      "production_location_id",
       "area_kinds",
       "min_stock_input_mode",
       "min_stock_purchase_qty",
@@ -462,6 +470,7 @@ function buildProductSiteSettingPayloadVariants(
       "min_stock_purchase_to_base_factor",
     ],
     [
+      "production_location_id",
       "area_kinds",
       "min_stock_input_mode",
       "min_stock_purchase_qty",
@@ -470,6 +479,7 @@ function buildProductSiteSettingPayloadVariants(
       "audience",
     ],
     [
+      "production_location_id",
       "area_kinds",
       "min_stock_input_mode",
       "min_stock_purchase_qty",
@@ -1224,6 +1234,7 @@ async function updateProduct(formData: FormData) {
       is_active?: boolean;
       default_area_kind?: string;
       area_kinds?: string[];
+      production_location_id?: string;
       min_stock_qty?: number | string;
       min_stock_input_mode?: "base" | "purchase" | string;
       min_stock_purchase_qty?: number | string;
@@ -1245,6 +1256,7 @@ async function updateProduct(formData: FormData) {
         Boolean(String(line.site_id ?? "").trim()) ||
         Boolean(String(line.default_area_kind ?? "").trim()) ||
         (Array.isArray(line.area_kinds) && line.area_kinds.some((kind) => String(kind ?? "").trim())) ||
+        Boolean(String(line.production_location_id ?? "").trim()) ||
         Boolean(String(line.audience ?? "").trim()) ||
         String(line.min_stock_qty ?? "").trim() !== "";
       if (!line.site_id && hasMeaningfulData) {
@@ -1297,6 +1309,7 @@ async function updateProduct(formData: FormData) {
         is_active: Boolean(line.is_active),
         default_area_kind: normalizedDefaultAreaKind || null,
         area_kinds: normalizedAreaKinds.length ? normalizedAreaKinds : null,
+        production_location_id: String(line.production_location_id ?? "").trim() || null,
         min_stock_qty: parsedMinStockQty,
         min_stock_input_mode: minStockInputMode,
         min_stock_purchase_qty:
@@ -1620,10 +1633,10 @@ export default async function ProductCatalogDetailPage({
   const allCategoryRows = await loadCategoryRows(supabase);
 
   const { data: siteSettingsWithAudience, error: siteSettingsAudienceError } = await supabase
-    .from("product_site_settings")
-    .select(
-      "id,site_id,is_active,default_area_kind,area_kinds,min_stock_qty,min_stock_input_mode,min_stock_purchase_qty,min_stock_purchase_unit_code,min_stock_purchase_to_base_factor,audience,updated_at,created_at,sites(id,name)"
-    )
+      .from("product_site_settings")
+      .select(
+      "id,site_id,is_active,default_area_kind,area_kinds,production_location_id,min_stock_qty,min_stock_input_mode,min_stock_purchase_qty,min_stock_purchase_unit_code,min_stock_purchase_to_base_factor,audience,updated_at,created_at,sites(id,name)"
+      )
     .eq("product_id", id);
   const siteSettings =
     !siteSettingsAudienceError
@@ -1686,6 +1699,13 @@ export default async function ProductCatalogDetailPage({
     .from("areas")
     .select("site_id,kind,is_active")
     .eq("is_active", true);
+  const { data: productionLocationsData } = await supabase
+    .from("inventory_locations")
+    .select("id,site_id,code,zone,location_type,is_active")
+    .eq("is_active", true)
+    .eq("location_type", "production")
+    .order("code", { ascending: true });
+  const productionLocationsList = (productionLocationsData ?? []) as ProductionLocationRow[];
   const siteAreaKindsList = Array.from(
     new Set(
       ((siteAreasData ?? []) as SiteAreaKindRow[])
@@ -2252,6 +2272,7 @@ export default async function ProductCatalogDetailPage({
                     : r.default_area_kind
                       ? [r.default_area_kind]
                       : [],
+                production_location_id: r.production_location_id ?? "",
                 min_stock_qty: r.min_stock_qty ?? undefined,
                 min_stock_input_mode: r.min_stock_input_mode === "purchase" ? "purchase" : "base",
                 min_stock_purchase_qty: r.min_stock_purchase_qty ?? undefined,
@@ -2266,6 +2287,12 @@ export default async function ProductCatalogDetailPage({
                 use_for_remission: Boolean(a.use_for_remission),
               }))}
               siteAreaKinds={siteAreaKindsList}
+              productionLocations={productionLocationsList.map((location) => ({
+                id: location.id,
+                site_id: location.site_id,
+                code: location.code,
+                zone: location.zone,
+              }))}
               remissionAreaKindsBySite={remissionAreaKindsBySite}
               stockUnitCode={stockUnitCode}
               purchaseUnitHint={
