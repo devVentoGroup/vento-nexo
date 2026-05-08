@@ -44,8 +44,8 @@ type ProductSupplierRow = {
   purchase_pack_qty: number | null;
   purchase_pack_unit_code: string | null;
   is_primary: boolean | null;
-  suppliers?: { name: string | null } | { name: string | null }[] | null;
 };
+type SupplierRow = { id: string; name: string | null };
 type UnitRow = {
   code: string;
   name: string;
@@ -125,14 +125,34 @@ async function fetchProductSuppliersForInitialCount(
   for (const productIdChunk of chunkArray(productIds, IN_CHUNK_SIZE)) {
     const { data } = await supabase
       .from("product_suppliers")
-      .select("product_id,supplier_id,purchase_unit,purchase_pack_qty,purchase_pack_unit_code,is_primary,suppliers(name)")
-      .in("product_id", productIdChunk)
-      .or("is_primary.is.false,is_primary.is.null");
+      .select("product_id,supplier_id,purchase_unit,purchase_pack_qty,purchase_pack_unit_code,is_primary")
+      .in("product_id", productIdChunk);
 
     rows.push(...((data ?? []) as unknown as ProductSupplierRow[]));
   }
 
   return rows;
+}
+
+async function fetchSupplierNameMap(
+  supabase: SupabaseClient,
+  supplierIds: string[]
+) {
+  const ids = Array.from(new Set(supplierIds.map((id) => id.trim()).filter(Boolean)));
+  const map = new Map<string, string>();
+
+  for (const supplierIdChunk of chunkArray(ids, IN_CHUNK_SIZE)) {
+    const { data } = await supabase
+      .from("suppliers")
+      .select("id,name")
+      .in("id", supplierIdChunk);
+
+    for (const supplier of (data ?? []) as SupplierRow[]) {
+      map.set(supplier.id, supplier.name ?? supplier.id);
+    }
+  }
+
+  return map;
 }
 
 export default async function InventoryCountInitialPage({
@@ -293,9 +313,16 @@ export default async function InventoryCountInitialPage({
       : [[], [], { data: [] as UnitRow[] }];
   const unitMap = createUnitMap((unitsData.data ?? []) as UnitRow[]);
   const productsById = new Map(productRows.map((product) => [product.id, product]));
+  const supplierNameMap = await fetchSupplierNameMap(
+    supabase,
+    supplierRows
+      .map((supplier) => supplier.supplier_id ?? "")
+      .filter((id): id is string => Boolean(id))
+  );
   const secondarySupplierProfiles: ProductUomProfileRow[] = [];
 
   for (const supplier of supplierRows) {
+    if (supplier.is_primary === true) continue;
     const product = productsById.get(supplier.product_id);
     if (!product) continue;
 
@@ -316,9 +343,7 @@ export default async function InventoryCountInitialPage({
       continue;
     }
 
-    const supplierName = Array.isArray(supplier.suppliers)
-      ? supplier.suppliers[0]?.name ?? ""
-      : supplier.suppliers?.name ?? "";
+    const supplierName = supplier.supplier_id ? supplierNameMap.get(supplier.supplier_id) ?? "" : "";
     const packLabel = String(supplier.purchase_unit ?? "").trim() || "Empaque";
     const packSizeLabel = `${packQty.toLocaleString("es-CO", {
       maximumFractionDigits: 3,

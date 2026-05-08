@@ -904,8 +904,11 @@ async function createProduct(formData: FormData) {
               unitMap,
             });
             if (qtyInStockUnit > 0) {
+              const purchaseUnitLabel = String(line.purchase_unit || "Empaque").trim();
               purchaseUomFromSupplier = {
-                label: String(line.purchase_unit || "Empaque"),
+                label: `${purchaseUnitLabel} ${packQty.toLocaleString("es-CO", {
+                  maximumFractionDigits: 3,
+                })} ${packUnitCode}`,
                 inputUnitCode: packUnitCode,
                 qtyInInputUnit: 1,
                 qtyInStockUnit,
