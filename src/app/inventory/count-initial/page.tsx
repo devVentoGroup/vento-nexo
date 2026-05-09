@@ -308,7 +308,7 @@ export default async function InventoryCountInitialPage({
         fetchProductProfilesForInitialCount(supabase, productIdsForProfiles),
         fetchProductSuppliersForInitialCount(supabase, productIdsForProfiles),
         supabase
-          .from("units")
+          .from("inventory_units")
           .select("code,name,family,factor_to_base,symbol,display_decimals,is_active")
           .eq("is_active", true),
       ])
@@ -358,7 +358,7 @@ export default async function InventoryCountInitialPage({
       id: `supplier:${supplier.id}`,
       product_id: supplier.product_id,
       label,
-      input_unit_code: normalizeUnitCode(packLabel),
+      input_unit_code: packUnitCode,
       qty_in_input_unit: 1,
       qty_in_stock_unit: qtyInStockUnit,
       is_default: false,
