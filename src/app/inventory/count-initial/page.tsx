@@ -157,6 +157,29 @@ async function fetchSupplierNameMap(
   return map;
 }
 
+function shouldShowProfileInInitialCount(
+  profile: ProductUomProfileRow,
+  stockUnitCode: string
+) {
+  const usageContext = profile.usage_context ?? "general";
+  const source = profile.source ?? "manual";
+
+  if (usageContext !== "remission") return true;
+  if (source !== "manual") return false;
+
+  const inputUnitCode = normalizeUnitCode(profile.input_unit_code ?? "");
+  const normalizedStockUnitCode = normalizeUnitCode(stockUnitCode);
+  const qtyInInputUnit = Number(profile.qty_in_input_unit ?? 0);
+  const qtyInStockUnit = Number(profile.qty_in_stock_unit ?? 0);
+
+  const isSameAsBaseUnit =
+    inputUnitCode === normalizedStockUnitCode &&
+    qtyInInputUnit === 1 &&
+    qtyInStockUnit === 1;
+
+  return !isSameAsBaseUnit;
+}
+
 export default async function InventoryCountInitialPage({
   searchParams,
 }: {
@@ -615,7 +638,13 @@ export default async function InventoryCountInitialPage({
               unit: p.stock_unit_code ?? p.unit,
               stockUnitCode: p.stock_unit_code ?? p.unit,
               profiles: allProductProfiles
-                .filter((profile) => profile.product_id === p.id)
+                .filter((profile) => {
+                  const stockUnitCode = p.stock_unit_code ?? p.unit ?? "";
+                  return (
+                    profile.product_id === p.id &&
+                    shouldShowProfileInInitialCount(profile, stockUnitCode)
+                  );
+                })
                 .map((profile) => ({
                   id: profile.id,
                   product_id: profile.product_id,
