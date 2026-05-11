@@ -74,12 +74,21 @@ type PresentationStockPart = {
 type PresentationStockRow = {
   product_id: string;
   uom_profile_id: string;
+  location_position_id: string | null;
   presentation_qty: number | null;
   base_qty: number | null;
   product_uom_profiles:
-    | (ProductUomProfile & { image_url?: string | null; catalog_image_url?: string | null })
-    | Array<ProductUomProfile & { image_url?: string | null; catalog_image_url?: string | null }>
-    | null;
+  | (ProductUomProfile & { image_url?: string | null; catalog_image_url?: string | null })
+  | Array<ProductUomProfile & { image_url?: string | null; catalog_image_url?: string | null }>
+  | null;
+};
+
+type PresentationStockLedgerRow = {
+  product_id: string;
+  uom_profile_id: string;
+  location_position_id: string | null;
+  presentation_qty: number | null;
+  base_qty: number | null;
 };
 
 function asText(value: FormDataEntryValue | null) {
@@ -99,6 +108,26 @@ function normalizeProduct(value: StockRow["products"]): ProductRow | null {
 function normalizeUomProfileRelation(value: PresentationStockRow["product_uom_profiles"]) {
   if (Array.isArray(value)) return value[0] ?? null;
   return value ?? null;
+}
+
+const PRESENTATION_EPSILON = 0.000001;
+
+function profileBaseFactor(profile: ProductUomProfile | null | undefined) {
+  const inputQty = Number(profile?.qty_in_input_unit ?? 0);
+  const stockQty = Number(profile?.qty_in_stock_unit ?? 0);
+
+  if (!Number.isFinite(inputQty) || !Number.isFinite(stockQty) || inputQty <= 0 || stockQty <= 0) {
+    return 0;
+  }
+
+  return stockQty / inputQty;
+}
+
+function isWholeCompatibleMultiple(largerFactor: number, smallerFactor: number) {
+  if (largerFactor <= smallerFactor || smallerFactor <= 0) return false;
+
+  const units = largerFactor / smallerFactor;
+  return Math.abs(units - Math.round(units)) < PRESENTATION_EPSILON;
 }
 
 function locLabel(loc: Pick<LocationRow, "id" | "code" | "description" | "zone"> | null | undefined) {
@@ -271,15 +300,11 @@ async function submitKioskWithdraw(formData: FormData) {
 
   const productMap = new Map(((productsData ?? []) as ProductRow[]).map((product) => [product.id, product]));
 
-  const requestedUomProfileIds = Array.from(
-    new Set(normalizedRawItems.map((item) => item.input_uom_profile_id).filter(Boolean))
-  );
-
-  const { data: uomProfilesData } = requestedUomProfileIds.length
+  const { data: uomProfilesData } = productIdsForLookup.length
     ? await supabase
       .from("product_uom_profiles")
       .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context")
-      .in("id", requestedUomProfileIds)
+      .in("product_id", productIdsForLookup)
       .eq("is_active", true)
     : { data: [] as ProductUomProfile[] };
 
@@ -407,24 +432,58 @@ async function submitKioskWithdraw(formData: FormData) {
     }
   }
 
-  for (const requested of requestedByPresentation.values()) {
-    const { data: presentationStock } = await supabase
-      .from("inventory_stock_by_uom_profile")
-      .select("presentation_qty,base_qty")
-      .eq("location_id", sourceLocationId)
-      .is("location_position_id", null)
-      .eq("product_id", requested.product_id)
-      .eq("uom_profile_id", requested.uom_profile_id)
-      .maybeSingle();
+  const presentationProductIds = Array.from(
+    new Set(Array.from(requestedByPresentation.values()).map((requested) => requested.product_id))
+  );
 
-    const availablePresentation = Number(
-      (presentationStock as { presentation_qty?: number | null } | null)?.presentation_qty ?? 0
-    );
-    if (availablePresentation + 0.000001 < requested.presentation_qty) {
+  const { data: presentationRowsData } = presentationProductIds.length
+    ? await supabase
+      .from("inventory_stock_by_uom_profile")
+      .select("product_id,uom_profile_id,location_position_id,presentation_qty,base_qty")
+      .eq("location_id", sourceLocationId)
+      .in("product_id", presentationProductIds)
+      .gt("presentation_qty", 0)
+    : { data: [] as PresentationStockLedgerRow[] };
+
+  const presentationRows = (presentationRowsData ?? []) as PresentationStockLedgerRow[];
+
+  for (const requested of requestedByPresentation.values()) {
+    const requestedProfile = uomProfileById.get(requested.uom_profile_id) ?? null;
+    const requestedFactor = profileBaseFactor(requestedProfile);
+
+    if (!requestedProfile || requestedFactor <= 0) {
+      redirect(errorUrl(sourceLocationId, "Perfil de unidad invalido para retiro fisico.", requested.product_id));
+    }
+
+    let availableAsRequestedUnits = 0;
+
+    for (const row of presentationRows) {
+      if (row.product_id !== requested.product_id) continue;
+
+      const rowQty = Number(row.presentation_qty ?? 0);
+      if (rowQty <= 0) continue;
+
+      const rowProfile = uomProfileById.get(row.uom_profile_id) ?? null;
+      const rowFactor = profileBaseFactor(rowProfile);
+      if (rowFactor <= 0) continue;
+
+      if (row.uom_profile_id === requested.uom_profile_id) {
+        availableAsRequestedUnits += rowQty;
+        continue;
+      }
+
+      if (isWholeCompatibleMultiple(rowFactor, requestedFactor)) {
+        availableAsRequestedUnits += rowQty * Math.round(rowFactor / requestedFactor);
+      }
+    }
+
+    if (availableAsRequestedUnits + PRESENTATION_EPSILON < requested.presentation_qty) {
       redirect(
         errorUrl(
           sourceLocationId,
-          `No alcanza stock fisico: solicitaste ${requested.presentation_qty} ${requested.label}, disponibles ${availablePresentation}.`,
+          `No alcanza stock fisico: solicitaste ${requested.presentation_qty} ${requested.label}, disponibles ${roundQuantity(
+            availableAsRequestedUnits
+          )} equivalentes.`,
           requested.product_id
         )
       );
@@ -484,21 +543,172 @@ async function submitKioskWithdraw(formData: FormData) {
     }
   }
 
-  for (const item of items) {
-    if (item.input_uom_profile_id) {
-      const { error: presentationErr } = await supabase.rpc("consume_inventory_stock_by_uom_profile", {
+  const consumePhysicalPresentationForItem = async (item: ParsedKioskWithdrawItem) => {
+    if (!item.input_uom_profile_id) return;
+
+    const requestedProfile = uomProfileById.get(item.input_uom_profile_id) ?? null;
+    const requestedFactor = profileBaseFactor(requestedProfile);
+
+    if (!requestedProfile || requestedFactor <= 0) {
+      redirect(errorUrl(sourceLocationId, "Perfil de unidad invalido para retiro fisico.", item.product_id));
+    }
+
+    let remainingPresentationQty = item.input_qty;
+
+    const { data: exactRowsData, error: exactRowsErr } = await supabase
+      .from("inventory_stock_by_uom_profile")
+      .select("product_id,uom_profile_id,location_position_id,presentation_qty,base_qty")
+      .eq("location_id", sourceLocationId)
+      .eq("product_id", item.product_id)
+      .eq("uom_profile_id", item.input_uom_profile_id)
+      .gt("presentation_qty", 0);
+
+    if (exactRowsErr) {
+      redirect(errorUrl(sourceLocationId, exactRowsErr.message, item.product_id));
+    }
+
+    const exactRows = ((exactRowsData ?? []) as PresentationStockLedgerRow[]).sort((a, b) => {
+      const aPositionRank = a.location_position_id ? 0 : 1;
+      const bPositionRank = b.location_position_id ? 0 : 1;
+      if (aPositionRank !== bPositionRank) return aPositionRank - bPositionRank;
+      return Number(a.presentation_qty ?? 0) - Number(b.presentation_qty ?? 0);
+    });
+
+    for (const row of exactRows) {
+      if (remainingPresentationQty <= PRESENTATION_EPSILON) break;
+
+      const availableQty = Number(row.presentation_qty ?? 0);
+      if (availableQty <= 0) continue;
+
+      const consumedQty = Math.min(availableQty, remainingPresentationQty);
+      const consumedBaseQty = roundQuantity(consumedQty * requestedFactor);
+
+      const { error: consumeExactErr } = await supabase.rpc("upsert_inventory_stock_by_uom_profile", {
         p_location_id: sourceLocationId,
         p_product_id: item.product_id,
         p_uom_profile_id: item.input_uom_profile_id,
-        p_presentation_qty: item.input_qty,
-        p_base_qty: item.quantity,
-        p_location_position_id: null,
+        p_presentation_delta: -consumedQty,
+        p_base_delta: -consumedBaseQty,
+        p_location_position_id: row.location_position_id ?? null,
       });
 
-      if (presentationErr) {
-        redirect(errorUrl(sourceLocationId, presentationErr.message, item.product_id));
+      if (consumeExactErr) {
+        redirect(errorUrl(sourceLocationId, consumeExactErr.message, item.product_id));
       }
+
+      remainingPresentationQty = roundQuantity(remainingPresentationQty - consumedQty);
     }
+
+    if (remainingPresentationQty <= PRESENTATION_EPSILON) return;
+
+    const { data: candidateRowsData, error: candidateRowsErr } = await supabase
+      .from("inventory_stock_by_uom_profile")
+      .select("product_id,uom_profile_id,location_position_id,presentation_qty,base_qty")
+      .eq("location_id", sourceLocationId)
+      .eq("product_id", item.product_id)
+      .gt("presentation_qty", 0);
+
+    if (candidateRowsErr) {
+      redirect(errorUrl(sourceLocationId, candidateRowsErr.message, item.product_id));
+    }
+
+    const candidates = ((candidateRowsData ?? []) as PresentationStockLedgerRow[])
+      .map((row) => {
+        const profile = uomProfileById.get(row.uom_profile_id) ?? null;
+        const factor = profileBaseFactor(profile);
+        const presentationQty = Number(row.presentation_qty ?? 0);
+
+        if (!profile || factor <= 0 || presentationQty <= 0) return null;
+        if (!isWholeCompatibleMultiple(factor, requestedFactor)) return null;
+
+        return {
+          row,
+          factor,
+          presentationQty,
+          requestedUnitsPerPresentation: Math.round(factor / requestedFactor),
+        };
+      })
+      .filter(
+        (
+          candidate
+        ): candidate is {
+          row: PresentationStockLedgerRow;
+          factor: number;
+          presentationQty: number;
+          requestedUnitsPerPresentation: number;
+        } => Boolean(candidate)
+      )
+      .sort((a, b) => {
+        if (a.requestedUnitsPerPresentation !== b.requestedUnitsPerPresentation) {
+          return a.requestedUnitsPerPresentation - b.requestedUnitsPerPresentation;
+        }
+
+        const aPositionRank = a.row.location_position_id ? 0 : 1;
+        const bPositionRank = b.row.location_position_id ? 0 : 1;
+        if (aPositionRank !== bPositionRank) return aPositionRank - bPositionRank;
+
+        return a.presentationQty - b.presentationQty;
+      });
+
+    for (const candidate of candidates) {
+      if (remainingPresentationQty <= PRESENTATION_EPSILON) break;
+
+      const presentationsToOpen = Math.min(
+        candidate.presentationQty,
+        Math.ceil(remainingPresentationQty / candidate.requestedUnitsPerPresentation)
+      );
+
+      if (presentationsToOpen <= 0) continue;
+
+      const openedBaseQty = roundQuantity(presentationsToOpen * candidate.factor);
+      const createdRequestedQty = roundQuantity(presentationsToOpen * candidate.requestedUnitsPerPresentation);
+      const consumedFromOpenedQty = Math.min(createdRequestedQty, remainingPresentationQty);
+      const leftoverRequestedQty = roundQuantity(createdRequestedQty - consumedFromOpenedQty);
+
+      const { error: openErr } = await supabase.rpc("upsert_inventory_stock_by_uom_profile", {
+        p_location_id: sourceLocationId,
+        p_product_id: item.product_id,
+        p_uom_profile_id: candidate.row.uom_profile_id,
+        p_presentation_delta: -presentationsToOpen,
+        p_base_delta: -openedBaseQty,
+        p_location_position_id: candidate.row.location_position_id ?? null,
+      });
+
+      if (openErr) {
+        redirect(errorUrl(sourceLocationId, openErr.message, item.product_id));
+      }
+
+      if (leftoverRequestedQty > PRESENTATION_EPSILON) {
+        const { error: leftoverErr } = await supabase.rpc("upsert_inventory_stock_by_uom_profile", {
+          p_location_id: sourceLocationId,
+          p_product_id: item.product_id,
+          p_uom_profile_id: item.input_uom_profile_id,
+          p_presentation_delta: leftoverRequestedQty,
+          p_base_delta: roundQuantity(leftoverRequestedQty * requestedFactor),
+          p_location_position_id: candidate.row.location_position_id ?? null,
+        });
+
+        if (leftoverErr) {
+          redirect(errorUrl(sourceLocationId, leftoverErr.message, item.product_id));
+        }
+      }
+
+      remainingPresentationQty = roundQuantity(remainingPresentationQty - consumedFromOpenedQty);
+    }
+
+    if (remainingPresentationQty > PRESENTATION_EPSILON) {
+      redirect(
+        errorUrl(
+          sourceLocationId,
+          `No alcanza stock fisico para retirar ${item.input_qty} ${item.input_unit_code}.`,
+          item.product_id
+        )
+      );
+    }
+  };
+
+  for (const item of items) {
+    await consumePhysicalPresentationForItem(item);
 
     const { error: positionErr } = await supabase.rpc("consume_inventory_stock_from_positions", {
       p_location_id: sourceLocationId,
@@ -553,6 +763,20 @@ async function submitKioskWithdraw(formData: FormData) {
 
       if (toErr) {
         redirect(errorUrl(sourceLocationId, toErr.message, item.product_id));
+      }
+      if (item.input_uom_profile_id) {
+        const { error: toPresentationErr } = await supabase.rpc("upsert_inventory_stock_by_uom_profile", {
+          p_location_id: assignment!.location_id,
+          p_product_id: item.product_id,
+          p_uom_profile_id: item.input_uom_profile_id,
+          p_presentation_delta: item.input_qty,
+          p_base_delta: item.quantity,
+          p_location_position_id: null,
+        });
+
+        if (toPresentationErr) {
+          redirect(errorUrl(sourceLocationId, toPresentationErr.message, item.product_id));
+        }
       }
     } else {
       const { error: movementErr } = await supabase.from("inventory_movements").insert({
@@ -691,30 +915,52 @@ export default async function KioskWithdrawPage({
       .eq("is_active", true),
     supabase
       .from("inventory_stock_by_uom_profile")
-      .select("product_id,uom_profile_id,presentation_qty,base_qty,product_uom_profiles(id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context,image_url,catalog_image_url)")
+      .select("product_id,uom_profile_id,location_position_id,presentation_qty,base_qty,product_uom_profiles(id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context,image_url,catalog_image_url)")
       .eq("location_id", id)
-      .is("location_position_id", null)
       .eq("product_id", selectedProduct.id)
       .gt("presentation_qty", 0),
     supabase.rpc("nexo_kiosk_withdraw_workers", {
       p_source_location_id: id,
     }),
   ]);
-  selectedProduct.presentationParts = ((presentationStockData ?? []) as unknown as PresentationStockRow[])
-    .map((row): PresentationStockPart | null => {
-      const profile = normalizeUomProfileRelation(row.product_uom_profiles);
-      const qty = Number(row.presentation_qty ?? 0);
-      const baseQty = Number(row.base_qty ?? 0);
-      if (!profile || qty <= 0 || baseQty <= 0) return null;
-      return {
-        uomProfileId: row.uom_profile_id,
-        label: formatOperationalPartLabel(String(profile.label || profile.input_unit_code || "presentacion").trim(), qty),
-        qty,
-        baseQty,
-        imageUrl: profile.image_url || profile.catalog_image_url || "",
-      };
-    })
-    .filter((part): part is PresentationStockPart => Boolean(part));
+  const presentationPartsByProfile = new Map<
+    string,
+    {
+      uomProfileId: string;
+      baseLabel: string;
+      qty: number;
+      baseQty: number;
+      imageUrl: string;
+    }
+  >();
+
+  for (const row of (presentationStockData ?? []) as unknown as PresentationStockRow[]) {
+    const profile = normalizeUomProfileRelation(row.product_uom_profiles);
+    const qty = Number(row.presentation_qty ?? 0);
+    const baseQty = Number(row.base_qty ?? 0);
+
+    if (!profile || qty <= 0 || baseQty <= 0) continue;
+
+    const current = presentationPartsByProfile.get(row.uom_profile_id) ?? {
+      uomProfileId: row.uom_profile_id,
+      baseLabel: String(profile.label || profile.input_unit_code || "presentacion").trim(),
+      qty: 0,
+      baseQty: 0,
+      imageUrl: profile.image_url || profile.catalog_image_url || "",
+    };
+
+    current.qty = roundQuantity(current.qty + qty);
+    current.baseQty = roundQuantity(current.baseQty + baseQty);
+    presentationPartsByProfile.set(row.uom_profile_id, current);
+  }
+
+  selectedProduct.presentationParts = Array.from(presentationPartsByProfile.values()).map((part) => ({
+    uomProfileId: part.uomProfileId,
+    label: formatOperationalPartLabel(part.baseLabel, part.qty),
+    qty: part.qty,
+    baseQty: part.baseQty,
+    imageUrl: part.imageUrl,
+  }));
 
   const products = [selectedProduct];
   const workers = ((workersData ?? []) as Array<{
