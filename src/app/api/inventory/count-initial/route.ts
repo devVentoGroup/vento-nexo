@@ -171,6 +171,14 @@ export async function POST(req: Request) {
           );
         }
 
+        const affectedPhysicalScopes = new Map<
+          string,
+          {
+            product_id: string;
+            location_position_id: string | null;
+          }
+        >();
+
         const physicalLinesByProfile = new Map<
           string,
           {
@@ -183,12 +191,21 @@ export async function POST(req: Request) {
         >();
 
         for (const line of lines) {
+          const locationPositionId = line.position_id || null;
+          const scopeKey = `${line.product_id}:${locationPositionId ?? "sin-posicion"}`;
+
+          if (!affectedPhysicalScopes.has(scopeKey)) {
+            affectedPhysicalScopes.set(scopeKey, {
+              product_id: line.product_id,
+              location_position_id: locationPositionId,
+            });
+          }
+
           if (!line.uom_profile_id || line.input_quantity <= 0) continue;
 
-          const locationPositionId = line.position_id || null;
-          const key = `${line.product_id}:${line.uom_profile_id}:${locationPositionId ?? "sin-posicion"}`;
+          const physicalKey = `${line.product_id}:${line.uom_profile_id}:${locationPositionId ?? "sin-posicion"}`;
 
-          const current = physicalLinesByProfile.get(key) ?? {
+          const current = physicalLinesByProfile.get(physicalKey) ?? {
             product_id: line.product_id,
             uom_profile_id: line.uom_profile_id,
             location_position_id: locationPositionId,
@@ -198,44 +215,39 @@ export async function POST(req: Request) {
 
           current.presentation_qty += line.input_quantity;
           current.base_qty += line.quantity;
-          physicalLinesByProfile.set(key, current);
+          physicalLinesByProfile.set(physicalKey, current);
         }
 
-        for (const physicalLine of physicalLinesByProfile.values()) {
-          let existingPhysicalQuery = supabase
+        for (const scope of affectedPhysicalScopes.values()) {
+          let deletePhysicalQuery = supabase
             .from("inventory_stock_by_uom_profile")
-            .select("presentation_qty,base_qty")
+            .delete()
             .eq("location_id", scopeLocationId)
-            .eq("product_id", physicalLine.product_id)
-            .eq("uom_profile_id", physicalLine.uom_profile_id);
+            .eq("product_id", scope.product_id);
 
-          existingPhysicalQuery = physicalLine.location_position_id
-            ? existingPhysicalQuery.eq("location_position_id", physicalLine.location_position_id)
-            : existingPhysicalQuery.is("location_position_id", null);
+          deletePhysicalQuery = scope.location_position_id
+            ? deletePhysicalQuery.eq("location_position_id", scope.location_position_id)
+            : deletePhysicalQuery.is("location_position_id", null);
 
-          const { data: existingPhysicalStock, error: existingPhysicalErr } =
-            await existingPhysicalQuery.maybeSingle();
+          const { error: deletePhysicalErr } = await deletePhysicalQuery;
 
-          if (existingPhysicalErr) {
+          if (deletePhysicalErr) {
             return NextResponse.json(
-              { error: "inventory_stock_by_uom_profile: " + existingPhysicalErr.message },
+              { error: "delete inventory_stock_by_uom_profile: " + deletePhysicalErr.message },
               { status: 500 }
             );
           }
+        }
 
-          const currentPresentationQty = Number(
-            (existingPhysicalStock as { presentation_qty?: number | null } | null)?.presentation_qty ?? 0
-          );
-          const currentBaseQty = Number(
-            (existingPhysicalStock as { base_qty?: number | null } | null)?.base_qty ?? 0
-          );
+        for (const physicalLine of physicalLinesByProfile.values()) {
+          if (physicalLine.presentation_qty <= 0 || physicalLine.base_qty <= 0) continue;
 
           const { error: physicalErr } = await supabase.rpc("upsert_inventory_stock_by_uom_profile", {
             p_location_id: scopeLocationId,
             p_product_id: physicalLine.product_id,
             p_uom_profile_id: physicalLine.uom_profile_id,
-            p_presentation_delta: physicalLine.presentation_qty - currentPresentationQty,
-            p_base_delta: physicalLine.base_qty - currentBaseQty,
+            p_presentation_delta: physicalLine.presentation_qty,
+            p_base_delta: physicalLine.base_qty,
             p_location_position_id: physicalLine.location_position_id,
           });
 
