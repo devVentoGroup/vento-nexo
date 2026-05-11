@@ -82,6 +82,8 @@ type CountRowProps = {
   entries: CountEntry[];
   qtyPositive: boolean;
   internalPositions: InternalPositionOption[];
+  activeUnitEntryId: string | null;
+  onActivateUnitEntry: (productId: string, entryId: string) => void;
   onEntryQtyChange: (productId: string, entryId: string, rawValue: string) => void;
   onEntryUnitChange: (productId: string, entryId: string, rawValue: string) => void;
   onEntryPositionChange: (productId: string, entryId: string, positionId: string) => void;
@@ -216,6 +218,8 @@ const CountRow = memo(function CountRow({
   entries,
   qtyPositive,
   internalPositions,
+  activeUnitEntryId,
+  onActivateUnitEntry,
   onEntryQtyChange,
   onEntryUnitChange,
   onEntryPositionChange,
@@ -257,6 +261,7 @@ const CountRow = memo(function CountRow({
         <div className="space-y-2">
           {entries.map((entry, index) => {
             const selectedUnit = resolveEntryUnit(capture, unitOptions, entry);
+            const unitSelectIsActive = activeUnitEntryId === entry.id;
 
             return (
               <div key={entry.id} className={entryGridClass}>
@@ -275,15 +280,21 @@ const CountRow = memo(function CountRow({
                 />
                 <select
                   value={selectedUnit.value}
+                  onPointerDown={() => onActivateUnitEntry(product.id, entry.id)}
+                  onFocus={() => onActivateUnitEntry(product.id, entry.id)}
                   onChange={(event) => onEntryUnitChange(product.id, entry.id, event.target.value)}
                   className="ui-input min-w-0"
                   title={selectedUnit.conversionLabel}
                 >
-                  {unitOptions.map((option) => (
-                    <option key={option.value} value={option.value}>
-                      {option.label}
-                    </option>
-                  ))}
+                  {unitSelectIsActive ? (
+                    unitOptions.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))
+                  ) : (
+                    <option value={selectedUnit.value}>{selectedUnit.label}</option>
+                  )}
                 </select>
                 {internalPositions.length > 0 ? (
                   <select
@@ -347,6 +358,7 @@ export function CountInitialForm({
   const [entriesByProductId, setEntriesByProductId] = useState<Record<string, CountEntry[]>>({});
   const [search, setSearch] = useState("");
   const [visibleLimit, setVisibleLimit] = useState(80);
+  const [activeUnitEntry, setActiveUnitEntry] = useState<{ productId: string; entryId: string } | null>(null);
   const [onlyWithQty, setOnlyWithQty] = useState(false);
   const [compactMode, setCompactMode] = useState(true);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -490,6 +502,12 @@ export function CountInitialForm({
     });
     return map;
   }, [visibleProducts]);
+
+  const handleActivateUnitEntry = useCallback((productId: string, entryId: string) => {
+    setActiveUnitEntry((current) =>
+      current?.productId === productId && current.entryId === entryId ? current : { productId, entryId }
+    );
+  }, []);
 
   const handleEntryQtyChange = useCallback((productId: string, entryId: string, rawValue: string) => {
     setEntriesByProductId((state) => {
@@ -772,6 +790,8 @@ export function CountInitialForm({
                       entries={getProductEntries(product.id)}
                       qtyPositive={(qtyByProductId[product.id] ?? 0) > 0}
                       internalPositions={internalPositions}
+                      activeUnitEntryId={activeUnitEntry?.productId === product.id ? activeUnitEntry.entryId : null}
+                      onActivateUnitEntry={handleActivateUnitEntry}
                       onEntryQtyChange={handleEntryQtyChange}
                       onEntryUnitChange={handleEntryUnitChange}
                       onEntryPositionChange={handleEntryPositionChange}
