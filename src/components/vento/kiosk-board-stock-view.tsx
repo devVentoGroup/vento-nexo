@@ -77,7 +77,14 @@ function ProductImage({ item, compact = false }: { item: KioskBoardStockItem; co
     <div className={`${sizeClass} overflow-hidden bg-[linear-gradient(135deg,rgba(245,158,11,0.14)_0%,rgba(255,255,255,1)_100%)]`}>
       {item.imageUrl ? (
         // eslint-disable-next-line @next/next/no-img-element
-        <img src={item.imageUrl} alt={item.name} className="h-full w-full object-cover" />
+        <img
+          src={item.imageUrl}
+          alt={item.name}
+          className="h-full w-full object-cover"
+          loading="lazy"
+          decoding="async"
+          fetchPriority="low"
+        />
       ) : (
         <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-[var(--ui-muted)]">
           Sin foto
@@ -128,7 +135,10 @@ export function KioskBoardStockView({
   const searchQuery = String(initialSearchQuery ?? "").trim();
   const totalCount = typeof totalItemsCount === "number" ? totalItemsCount : items.length;
   const [viewMode, setViewMode] = useState<ViewMode>(() => normalizeViewMode(initialViewMode, isKiosk));
+  const [visibleLimit, setVisibleLimit] = useState(() => (isKiosk ? 48 : Number.MAX_SAFE_INTEGER));
   const filteredItems = items;
+  const visibleItems = filteredItems.slice(0, visibleLimit);
+  const hasMoreItems = visibleItems.length < filteredItems.length;
 
   const showTools = isKiosk && totalCount > 0;
 
@@ -221,8 +231,8 @@ export function KioskBoardStockView({
 
           <div className="text-sm text-[var(--ui-muted)]">
             {searchQuery
-              ? `Mostrando ${filteredItems.length} resultados de ${totalCount} productos.`
-              : `Mostrando ${filteredItems.length} de ${totalCount} productos.`}
+              ? `Mostrando ${visibleItems.length} de ${filteredItems.length} resultados.`
+              : `Mostrando ${visibleItems.length} de ${totalCount} productos.`}
           </div>
         </div>
       ) : null}
@@ -231,7 +241,7 @@ export function KioskBoardStockView({
         viewMode === "list" ? (
           <div className="overflow-hidden rounded-3xl border border-[var(--ui-border)] bg-white shadow-sm">
             <div className="divide-y divide-slate-200">
-              {filteredItems.map((item) => (
+              {visibleItems.map((item) => (
                 <article key={item.productId} className="grid gap-3 p-4 sm:grid-cols-[1fr_auto] sm:items-center">
                   <div className="flex min-w-0 items-center gap-3">
                     <ProductImage item={item} compact />
@@ -263,7 +273,7 @@ export function KioskBoardStockView({
           </div>
         ) : (
           <div className={viewMode === "compact" ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-3" : "grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"}>
-            {filteredItems.map((item) => (
+            {visibleItems.map((item) => (
               <article
                 key={item.productId}
                 className={
@@ -301,7 +311,21 @@ export function KioskBoardStockView({
             ))}
           </div>
         )
-      ) : (
+      ) : null}
+
+      {hasMoreItems ? (
+        <div className="flex justify-center pt-2">
+          <button
+            type="button"
+            className="ui-btn ui-btn--ghost h-12 px-5 text-base"
+            onClick={() => setVisibleLimit((current) => current + 48)}
+          >
+            Mostrar más productos
+          </button>
+        </div>
+      ) : null}
+
+      {filteredItems.length === 0 ? (
         <div className={`ui-panel ui-remission-section text-center ${isKiosk ? "flex min-h-[35vh] flex-col items-center justify-center" : ""}`}>
           <div className="ui-h3">Sin productos visibles</div>
           <p className="mt-2 ui-body-muted">
@@ -324,7 +348,7 @@ export function KioskBoardStockView({
             </Link>
           ) : null}
         </div>
-      )}
+      ) : null}
     </section>
   );
 }

@@ -240,7 +240,7 @@ async function submitKioskWithdraw(formData: FormData) {
   const { data: productsData } = productIdsForLookup.length
     ? await supabase
       .from("products")
-      .select("id,unit,stock_unit_code")
+      .select("id,name,unit,stock_unit_code")
       .in("id", productIdsForLookup)
     : { data: [] as ProductRow[] };
 
@@ -514,7 +514,20 @@ async function submitKioskWithdraw(formData: FormData) {
 
   const redirectTarget = returnTo || `/inventory/locations/${encodeURIComponent(sourceLocationId)}/board?kiosk=1`;
   const joiner = redirectTarget.includes("?") ? "&" : "?";
-  redirect(`${redirectTarget}${joiner}ok=kiosk_withdraw`);
+
+  const successProductLabel =
+    items.length === 1
+      ? `${items[0].input_qty} ${items[0].input_unit_code} de ${productMap.get(items[0].product_id)?.name ?? "producto"
+      }`
+      : `${items.length} productos`;
+
+  const successMessage = hasDestination
+    ? `Se retiró ${successProductLabel} desde ${fromLabel} hacia ${toLabel}.`
+    : `Se retiró ${successProductLabel} desde ${fromLabel}.`;
+
+  redirect(
+    `${redirectTarget}${joiner}ok=kiosk_withdraw&success_message=${encodeURIComponent(successMessage)}`
+  );
 }
 
 export default async function KioskWithdrawPage({

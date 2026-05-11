@@ -244,8 +244,8 @@ export function KioskWithdrawForm({
           <div className="ui-caption mt-1">Si el trabajador tiene LOC asignado se traslada. Si no, se descuenta del inventario.</div>
         </div>
         {workerErrors.length > 0 ? (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold text-amber-950">
-            Selecciona trabajador.
+          <div className="rounded-2xl border-2 border-rose-300 bg-rose-50 px-4 py-3 text-sm font-bold text-rose-950 shadow-sm">
+            Falta seleccionar trabajador.
           </div>
         ) : null}
         <label className="flex flex-col gap-1">
@@ -288,9 +288,9 @@ export function KioskWithdrawForm({
         ) : null}
 
         {productSectionErrors.length > 0 ? (
-          <div className="rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">
-            <div className="font-semibold">Falta completar:</div>
-            <div className="mt-1">{productSectionErrors.join(", ")}</div>
+          <div className="rounded-2xl border-2 border-rose-300 bg-rose-50 px-4 py-3 text-sm text-rose-950 shadow-sm">
+            <div className="font-bold">Falta completar:</div>
+            <div className="mt-1 font-semibold">{productSectionErrors.join(", ")}</div>
           </div>
         ) : null}
 

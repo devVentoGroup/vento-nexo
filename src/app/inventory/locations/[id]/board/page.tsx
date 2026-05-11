@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { KioskBoardStockView, type KioskBoardStockItem } from "@/components/vento/kiosk-board-stock-view";
+import { KioskInlineSuccessAlert } from "@/components/vento/kiosk-inline-success-alert";
 import { LocationBoardAutoRefresh } from "@/features/inventory/locations/location-board-auto-refresh";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { getCategoryPath, type InventoryCategoryRow } from "@/lib/inventory/categories";
@@ -15,7 +16,9 @@ export const dynamic = "force-dynamic";
 type Params = { id: string };
 type SearchParams = {
   kiosk?: string;
+  ok?: string;
   position_id?: string;
+  success_message?: string;
   view?: string;
   search?: string;
 };
@@ -151,6 +154,15 @@ function normalizeBoardSearch(value: string | null | undefined) {
     .trim();
 }
 
+function safeDecodeBoardParam(value: string | null | undefined) {
+  if (!value) return "";
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
+}
+
 export default async function LocationBoardPage({
   params,
   searchParams,
@@ -165,6 +177,10 @@ export default async function LocationBoardPage({
   const viewMode = String(sp.view ?? "").trim();
   const searchQuery = String(sp.search ?? "").trim();
   const normalizedSearchQuery = normalizeBoardSearch(searchQuery);
+  const successMessage =
+    String(sp.ok ?? "").trim() === "kiosk_withdraw"
+      ? safeDecodeBoardParam(sp.success_message) || "Retiro registrado correctamente."
+      : "";
 
   const { supabase } = await requireAppAccess({
     appId: "nexo",
@@ -492,6 +508,10 @@ export default async function LocationBoardPage({
           </div>
         </div>
       </section>
+
+      {isKiosk && successMessage ? (
+        <KioskInlineSuccessAlert message={successMessage} />
+      ) : null}
 
       {positions.length > 0 ? (
         <section className="ui-panel ui-remission-section ui-fade-up ui-delay-1">
