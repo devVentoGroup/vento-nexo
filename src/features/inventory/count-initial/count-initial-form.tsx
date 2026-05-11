@@ -44,6 +44,27 @@ type CountLine = {
   position_id?: string;
 };
 
+type UnitOption = {
+  value: string;
+  inputUnitCode: string;
+  profile: ProductUomProfile | null;
+  label: string;
+  conversionLabel: string;
+};
+
+type CaptureConfig = {
+  stockUnitCode: string;
+  profile: ProductUomProfile | null;
+  inputUnitCode: string;
+  label: string;
+  conversionLabel: string;
+};
+
+type ProductRuntime = {
+  capture: CaptureConfig;
+  unitOptions: UnitOption[];
+};
+
 type Props = {
   products: Product[];
   siteId: string;
@@ -55,6 +76,8 @@ type Props = {
 
 type CountRowProps = {
   product: Product;
+  capture: CaptureConfig;
+  unitOptions: UnitOption[];
   compactMode: boolean;
   entries: CountEntry[];
   qtyPositive: boolean;
@@ -109,7 +132,7 @@ function makeNewEntry(productId: string): CountEntry {
 
 const SAVE_TIMEOUT_MS = 45_000;
 
-function getCaptureConfig(product: Product) {
+function getCaptureConfig(product: Product): CaptureConfig {
   const stockUnitCode = normalizeUnitCode(product.stockUnitCode ?? product.unit ?? "un") || "un";
   const profile = selectProductUomProfileForContext({
     profiles: product.profiles ?? [],
@@ -122,11 +145,10 @@ function getCaptureConfig(product: Product) {
     ? `${profile.qty_in_input_unit} ${inputUnitCode} = ${profile.qty_in_stock_unit} ${stockUnitCode}`
     : `Unidad base: ${stockUnitCode}`;
 
-  return { stockUnitCode, profile, inputUnitCode, label, conversionLabel };
+  return { stockUnitCode, profile: profile ?? null, inputUnitCode, label, conversionLabel };
 }
 
-function getUnitOptions(product: Product) {
-  const capture = getCaptureConfig(product);
+function getUnitOptions(product: Product, capture = getCaptureConfig(product)): UnitOption[] {
   const contextLabelMap: Record<string, string> = {
     purchase: "compra",
     remission: "remision",
@@ -139,14 +161,14 @@ function getUnitOptions(product: Product) {
     label: string;
     conversionLabel: string;
   }> = [
-    {
-      value: `stock:${capture.stockUnitCode}`,
-      inputUnitCode: capture.stockUnitCode,
-      profile: null,
-      label: `${capture.stockUnitCode} base`,
-      conversionLabel: `Unidad base: ${capture.stockUnitCode}`,
-    },
-  ];
+      {
+        value: `stock:${capture.stockUnitCode}`,
+        inputUnitCode: capture.stockUnitCode,
+        profile: null,
+        label: `${capture.stockUnitCode} base`,
+        conversionLabel: `Unidad base: ${capture.stockUnitCode}`,
+      },
+    ];
 
   const seenProfileIds = new Set<string>();
   for (const profile of product.profiles ?? []) {
@@ -176,9 +198,7 @@ function getUnitOptions(product: Product) {
   return options;
 }
 
-function resolveEntryUnit(product: Product, entry: CountEntry) {
-  const capture = getCaptureConfig(product);
-  const options = getUnitOptions(product);
+function resolveEntryUnit(capture: CaptureConfig, options: UnitOption[], entry: CountEntry) {
   const selected =
     options.find((option) => option.value === entry.uomProfileId) ??
     options.find((option) => option.inputUnitCode === normalizeUnitCode(entry.inputUnitCode)) ??
@@ -190,6 +210,8 @@ function resolveEntryUnit(product: Product, entry: CountEntry) {
 
 const CountRow = memo(function CountRow({
   product,
+  capture,
+  unitOptions,
   compactMode,
   entries,
   qtyPositive,
@@ -204,8 +226,6 @@ const CountRow = memo(function CountRow({
   onQtyKeyDown,
   registerInputRef,
 }: CountRowProps) {
-  const capture = getCaptureConfig(product);
-  const unitOptions = getUnitOptions(product);
   const entryGridClass =
     internalPositions.length > 0
       ? "grid min-w-0 gap-2 xl:grid-cols-[minmax(110px,0.7fr)_minmax(150px,0.75fr)_minmax(190px,1fr)_auto_auto] xl:items-center"
@@ -236,7 +256,7 @@ const CountRow = memo(function CountRow({
       <TableCell>
         <div className="space-y-2">
           {entries.map((entry, index) => {
-            const selectedUnit = resolveEntryUnit(product, entry);
+            const selectedUnit = resolveEntryUnit(capture, unitOptions, entry);
 
             return (
               <div key={entry.id} className={entryGridClass}>
@@ -266,18 +286,18 @@ const CountRow = memo(function CountRow({
                   ))}
                 </select>
                 {internalPositions.length > 0 ? (
-                <select
-                  value={entry.positionId}
-                  onChange={(event) => onEntryPositionChange(product.id, entry.id, event.target.value)}
-                  className="ui-input min-w-0"
-                >
-                  <option value="">Sin ubicacion interna</option>
-                  {internalPositions.map((position) => (
-                    <option key={position.id} value={position.id}>
-                      {position.label}
-                    </option>
-                  ))}
-                </select>
+                  <select
+                    value={entry.positionId}
+                    onChange={(event) => onEntryPositionChange(product.id, entry.id, event.target.value)}
+                    className="ui-input min-w-0"
+                  >
+                    <option value="">Sin ubicacion interna</option>
+                    {internalPositions.map((position) => (
+                      <option key={position.id} value={position.id}>
+                        {position.label}
+                      </option>
+                    ))}
+                  </select>
                 ) : null}
                 <button
                   type="button"
@@ -287,13 +307,13 @@ const CountRow = memo(function CountRow({
                   0
                 </button>
                 {entries.length > 1 ? (
-                <button
-                  type="button"
-                  onClick={() => onRemoveEntry(product.id, entry.id)}
-                  className="ui-btn ui-btn--ghost h-9 px-3 text-xs"
-                >
-                  Quitar
-                </button>
+                  <button
+                    type="button"
+                    onClick={() => onRemoveEntry(product.id, entry.id)}
+                    className="ui-btn ui-btn--ghost h-9 px-3 text-xs"
+                  >
+                    Quitar
+                  </button>
                 ) : null}
               </div>
             );
@@ -326,6 +346,7 @@ export function CountInitialForm({
   const router = useRouter();
   const [entriesByProductId, setEntriesByProductId] = useState<Record<string, CountEntry[]>>({});
   const [search, setSearch] = useState("");
+  const [visibleLimit, setVisibleLimit] = useState(80);
   const [onlyWithQty, setOnlyWithQty] = useState(false);
   const [compactMode, setCompactMode] = useState(true);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -333,13 +354,36 @@ export function CountInitialForm({
   const [error, setError] = useState("");
   const [savedMessage, setSavedMessage] = useState("");
   const qtyInputRefs = useRef<Record<string, HTMLInputElement | null>>({});
+  const productRuntimeById = useMemo(() => {
+    const next: Record<string, ProductRuntime> = {};
+
+    for (const product of products) {
+      const capture = getCaptureConfig(product);
+      next[product.id] = {
+        capture,
+        unitOptions: getUnitOptions(product, capture),
+      };
+    }
+
+    return next;
+  }, [products]);
+
+  const defaultEntriesByProductId = useMemo(() => {
+    const next: Record<string, CountEntry[]> = {};
+
+    for (const product of products) {
+      next[product.id] = [makeDefaultEntry(product.id)];
+    }
+
+    return next;
+  }, [products]);
 
   const getProductEntries = useCallback(
     (productId: string) => {
       const entries = entriesByProductId[productId];
-      return entries?.length ? entries : [makeDefaultEntry(productId)];
+      return entries?.length ? entries : defaultEntriesByProductId[productId] ?? [makeDefaultEntry(productId)];
     },
-    [entriesByProductId]
+    [defaultEntriesByProductId, entriesByProductId]
   );
 
   const qtyByProductId = useMemo(() => {
@@ -352,14 +396,19 @@ export function CountInitialForm({
 
   const lines = useMemo(() => {
     const next: CountLine[] = [];
+
     for (const product of products) {
-      const capture = getCaptureConfig(product);
+      const runtime = productRuntimeById[product.id];
+      if (!runtime) continue;
+
+      const { capture, unitOptions } = runtime;
       const entries = getProductEntries(product.id);
 
       for (const entry of entries) {
         const inputQty = parseQty(entry.rawQuantity);
         if (inputQty <= 0) continue;
-        const selectedUnit = resolveEntryUnit(product, entry);
+
+        const selectedUnit = resolveEntryUnit(capture, unitOptions, entry);
 
         const converted = convertByProductProfile({
           quantityInInput: inputQty,
@@ -379,25 +428,34 @@ export function CountInitialForm({
         });
       }
     }
+
     return next;
-  }, [getProductEntries, products]);
+  }, [getProductEntries, productRuntimeById, products]);
 
   const filteredProducts = useMemo(() => {
     const query = search.trim().toLowerCase();
     let result = products;
+
     if (query) {
       result = result.filter((product) => {
-        const capture = getCaptureConfig(product);
+        const capture = productRuntimeById[product.id]?.capture;
+        if (!capture) return false;
+
         const haystack = `${product.name ?? ""} ${product.sku ?? ""} ${capture.label} ${capture.stockUnitCode}`.toLowerCase();
         return haystack.includes(query);
       });
     }
-    if (onlyWithQty) result = result.filter((product) => (qtyByProductId[product.id] ?? 0) > 0);
+
+    if (onlyWithQty) {
+      result = result.filter((product) => (qtyByProductId[product.id] ?? 0) > 0);
+    }
+
     return result;
-  }, [onlyWithQty, products, qtyByProductId, search]);
+  }, [onlyWithQty, productRuntimeById, products, qtyByProductId, search]);
 
   const totalBaseQty = useMemo(() => lines.reduce((acc, line) => acc + line.quantity, 0), [lines]);
   const filledLineCount = lines.length;
+
   const filledProductCount = useMemo(
     () => products.filter((product) => (qtyByProductId[product.id] ?? 0) > 0).length,
     [products, qtyByProductId]
@@ -418,13 +476,20 @@ export function CountInitialForm({
     [filteredProducts]
   );
 
+  const visibleProducts = useMemo(
+    () => sortedProducts.slice(0, visibleLimit),
+    [sortedProducts, visibleLimit]
+  );
+
+  const hasMoreProducts = visibleProducts.length < sortedProducts.length;
+
   const productIndexMap = useMemo(() => {
     const map: Record<string, number> = {};
-    sortedProducts.forEach((product, index) => {
+    visibleProducts.forEach((product, index) => {
       map[product.id] = index;
     });
     return map;
-  }, [sortedProducts]);
+  }, [visibleProducts]);
 
   const handleEntryQtyChange = useCallback((productId: string, entryId: string, rawValue: string) => {
     setEntriesByProductId((state) => {
@@ -438,9 +503,7 @@ export function CountInitialForm({
 
   const handleEntryUnitChange = useCallback(
     (productId: string, entryId: string, rawValue: string) => {
-      const product = products.find((item) => item.id === productId);
-      if (!product) return;
-      const option = getUnitOptions(product).find((item) => item.value === rawValue);
+      const option = productRuntimeById[productId]?.unitOptions.find((item) => item.value === rawValue);
       if (!option) return;
 
       setEntriesByProductId((state) => {
@@ -450,16 +513,16 @@ export function CountInitialForm({
           [productId]: entries.map((entry) =>
             entry.id === entryId
               ? {
-                  ...entry,
-                  inputUnitCode: option.inputUnitCode,
-                  uomProfileId: option.value,
-                }
+                ...entry,
+                inputUnitCode: option.inputUnitCode,
+                uomProfileId: option.value,
+              }
               : entry
           ),
         };
       });
     },
-    [products]
+    [productRuntimeById]
   );
 
   const handleEntryPositionChange = useCallback((productId: string, entryId: string, positionId: string) => {
@@ -515,12 +578,14 @@ export function CountInitialForm({
     (productId: string, offset: number) => {
       const currentIndex = productIndexMap[productId];
       if (typeof currentIndex !== "number") return;
-      const nextId = sortedProducts[currentIndex + offset]?.id;
+
+      const nextId = visibleProducts[currentIndex + offset]?.id;
       if (!nextId) return;
+
       qtyInputRefs.current[nextId]?.focus();
       qtyInputRefs.current[nextId]?.select();
     },
-    [productIndexMap, sortedProducts]
+    [productIndexMap, visibleProducts]
   );
 
   const handleQtyKeyDown = useCallback(
@@ -530,6 +595,7 @@ export function CountInitialForm({
         focusQtyByOffset(productId, 1);
         return;
       }
+
       if (event.key === "ArrowUp") {
         event.preventDefault();
         focusQtyByOffset(productId, -1);
@@ -547,6 +613,7 @@ export function CountInitialForm({
       setError("Ingresa al menos una cantidad mayor a 0.");
       return;
     }
+
     setError("");
     setSavedMessage("");
     setShowConfirm(true);
@@ -557,11 +624,14 @@ export function CountInitialForm({
       setError("Ingresa al menos una cantidad mayor a 0.");
       return;
     }
+
     setError("");
     setSavedMessage("");
     setLoading(true);
+
     const controller = new AbortController();
     const timeoutId = window.setTimeout(() => controller.abort(), SAVE_TIMEOUT_MS);
+
     try {
       const res = await fetch("/api/inventory/count-initial", {
         method: "POST",
@@ -573,12 +643,15 @@ export function CountInitialForm({
           scope_note: zoneOrLocNote ?? undefined,
         }),
       });
+
       const data = await res.json().catch(() => ({}));
+
       if (!res.ok) {
         setError(data?.error ?? "Error al guardar el conteo.");
         setLoading(false);
         return;
       }
+
       if (data?.countSessionId && !data?.applied) {
         router.push(`/inventory/count-initial/session/${encodeURIComponent(data.countSessionId)}`);
         return;
@@ -588,6 +661,7 @@ export function CountInitialForm({
         site_id: siteId,
         count_initial: "1",
       });
+
       const [scopeKey, scopeValue] = String(zoneOrLocNote ?? "").split(":", 2);
       if (scopeKey === "zone" && scopeValue) params.set("zone", scopeValue);
       if (scopeKey === "loc_id" && scopeValue) params.set("location_id", scopeValue);
@@ -684,32 +758,51 @@ export function CountInitialForm({
                 </tr>
               </thead>
               <tbody>
-                {sortedProducts.map((product) => (
-                  <CountRow
-                    key={product.id}
-                    product={product}
-                    compactMode={compactMode}
-                    entries={getProductEntries(product.id)}
-                    qtyPositive={(qtyByProductId[product.id] ?? 0) > 0}
-                    internalPositions={internalPositions}
-                    onEntryQtyChange={handleEntryQtyChange}
-                    onEntryUnitChange={handleEntryUnitChange}
-                    onEntryPositionChange={handleEntryPositionChange}
-                    onAddEntry={addProductEntry}
-                    onRemoveEntry={removeProductEntry}
-                    onSetEntryZero={setProductEntryQtyToZero}
-                    onClear={clearProductQty}
-                    onQtyKeyDown={handleQtyKeyDown}
-                    registerInputRef={registerInputRef}
-                  />
-                ))}
-                {sortedProducts.length === 0 ? (
+                {visibleProducts.map((product) => {
+                  const runtime = productRuntimeById[product.id];
+                  if (!runtime) return null;
+
+                  return (
+                    <CountRow
+                      key={product.id}
+                      product={product}
+                      capture={runtime.capture}
+                      unitOptions={runtime.unitOptions}
+                      compactMode={compactMode}
+                      entries={getProductEntries(product.id)}
+                      qtyPositive={(qtyByProductId[product.id] ?? 0) > 0}
+                      internalPositions={internalPositions}
+                      onEntryQtyChange={handleEntryQtyChange}
+                      onEntryUnitChange={handleEntryUnitChange}
+                      onEntryPositionChange={handleEntryPositionChange}
+                      onAddEntry={addProductEntry}
+                      onRemoveEntry={removeProductEntry}
+                      onSetEntryZero={setProductEntryQtyToZero}
+                      onClear={clearProductQty}
+                      onQtyKeyDown={handleQtyKeyDown}
+                      registerInputRef={registerInputRef}
+                    />
+                  );
+                })}
+                {visibleProducts.length === 0 ? (
                   <tr>
                     <TableCell colSpan={compactMode ? 2 : 4}>No hay productos para esa busqueda.</TableCell>
                   </tr>
                 ) : null}
               </tbody>
             </Table>
+
+            {hasMoreProducts ? (
+              <div className="mt-3 flex justify-center">
+                <button
+                  type="button"
+                  className="ui-btn ui-btn--ghost h-11 px-4 text-sm"
+                  onClick={() => setVisibleLimit((current) => current + 80)}
+                >
+                  Mostrar más productos ({visibleProducts.length} de {sortedProducts.length})
+                </button>
+              </div>
+            ) : null}
           </div>
           {error ? <div className="ui-alert ui-alert--error">{error}</div> : null}
           {savedMessage ? <div className="ui-alert ui-alert--success">{savedMessage}</div> : null}
