@@ -69,11 +69,26 @@ function unitLabel(value: string) {
   return clean.toLowerCase() === "un" ? "Unidad" : clean;
 }
 
+function profileStockFactor(profile: ProductUomProfile) {
+  const inputQty = Number(profile.qty_in_input_unit);
+  const stockQty = Number(profile.qty_in_stock_unit);
+
+  if (!Number.isFinite(inputQty) || !Number.isFinite(stockQty) || inputQty <= 0 || stockQty <= 0) {
+    return Number.POSITIVE_INFINITY;
+  }
+
+  return stockQty / inputQty;
+}
+
 function profileOptionLabel(profile: ProductUomProfile, stockUnitCode: string) {
-  const label = String(profile.label ?? "").trim() || normalizeUnitCode(profile.input_unit_code);
-  return `${label} (${formatQty(Number(profile.qty_in_input_unit))} ${normalizeUnitCode(
-    profile.input_unit_code
-  )} = ${formatQty(Number(profile.qty_in_stock_unit))} ${stockUnitCode || "un"})`;
+  const label = String(profile.label ?? "").trim() || normalizeUnitCode(profile.input_unit_code) || "Presentacion";
+  const factor = profileStockFactor(profile);
+
+  if (!Number.isFinite(factor) || factor <= 0) {
+    return label;
+  }
+
+  return `1 ${label} = ${formatQty(factor)} ${stockUnitCode || "un"}`;
 }
 
 function activeProfilesForProduct(profiles: ProductUomProfile[], productId: string) {
@@ -151,13 +166,17 @@ export function KioskWithdrawForm({
     () => {
       if (!product) return null;
       if (!hasPhysicalBreakdown) return null;
-      const physicalProfiles = profiles.filter((profile) => physicalPresentationIds.has(profile.id));
-      if (physicalProfiles.length === 1) return physicalProfiles[0] ?? null;
-      if (physicalProfiles.length > 1) {
-        const defaultPhysical = physicalProfiles.find((profile) => profile.is_default);
-        return defaultPhysical ?? physicalProfiles[0] ?? null;
-      }
-      return null;
+
+      const physicalProfiles = profiles
+        .filter((profile) => physicalPresentationIds.has(profile.id))
+        .sort((a, b) => {
+          const factorDiff = profileStockFactor(a) - profileStockFactor(b);
+          if (factorDiff !== 0) return factorDiff;
+
+          return String(a.label ?? "").localeCompare(String(b.label ?? ""), "es", { sensitivity: "base" });
+        });
+
+      return physicalProfiles[0] ?? null;
     },
     [hasPhysicalBreakdown, product, profiles, physicalPresentationIds]
   );
@@ -170,7 +189,7 @@ export function KioskWithdrawForm({
   const [quantity, setQuantity] = useState(initialQuantity);
   const [inputUnitCode, setInputUnitCode] = useState(
     normalizeUnitCode((initialProfileId ? initialInputUnitCode : "") || defaultProfile?.input_unit_code || "") ||
-      stockUnitCode
+    stockUnitCode
   );
   const [inputUomProfileId, setInputUomProfileId] = useState(initialProfileId || defaultProfile?.id || "");
   const [notes, setNotes] = useState(initialNotes);
@@ -213,8 +232,18 @@ export function KioskWithdrawForm({
       add({ value: `unit:${stockUnitCode}`, label: unitLabel(stockUnitCode), inputUnitCode: stockUnitCode, profileId: "" });
     }
 
-    for (const profile of profiles) {
-      if (hasPhysicalBreakdown && !physicalPresentationIds.has(profile.id)) continue;
+    const orderedProfiles = hasPhysicalBreakdown
+      ? profiles
+        .filter((profile) => physicalPresentationIds.has(profile.id))
+        .sort((a, b) => {
+          const factorDiff = profileStockFactor(a) - profileStockFactor(b);
+          if (factorDiff !== 0) return factorDiff;
+
+          return String(a.label ?? "").localeCompare(String(b.label ?? ""), "es", { sensitivity: "base" });
+        })
+      : profiles;
+
+    for (const profile of orderedProfiles) {
       add({
         value: `profile:${profile.id}`,
         label: profileOptionLabel(profile, stockUnitCode),
@@ -306,7 +335,7 @@ export function KioskWithdrawForm({
               <div className="mt-3 flex flex-wrap gap-2">
                 {product.presentationParts.map((part) => (
                   <span key={part.uomProfileId} className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-bold text-emerald-950">
-                    {formatQty(part.qty)} {part.label}
+                    {part.label}
                   </span>
                 ))}
               </div>

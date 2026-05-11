@@ -130,6 +130,23 @@ function isWholeCompatibleMultiple(largerFactor: number, smallerFactor: number) 
   return Math.abs(units - Math.round(units)) < PRESENTATION_EPSILON;
 }
 
+function selectPresentationRowsForDisplay(rows: PresentationStockRow[], availableBaseQty: number) {
+  const validRows = rows.filter((row) => {
+    const qty = Number(row.presentation_qty ?? 0);
+    const baseQty = Number(row.base_qty ?? 0);
+    return qty > 0 && baseQty > 0;
+  });
+
+  const totalPhysicalBaseQty = validRows.reduce((sum, row) => sum + Number(row.base_qty ?? 0), 0);
+  const hasPositionRows = validRows.some((row) => Boolean(row.location_position_id));
+
+  if (hasPositionRows && totalPhysicalBaseQty > availableBaseQty + PRESENTATION_EPSILON) {
+    return validRows.filter((row) => Boolean(row.location_position_id));
+  }
+
+  return validRows;
+}
+
 function locLabel(loc: Pick<LocationRow, "id" | "code" | "description" | "zone"> | null | undefined) {
   if (!loc) return "LOC";
   return String(loc.description ?? "").trim() || String(loc.zone ?? "").trim() || String(loc.code ?? "").trim() || loc.id;
@@ -923,6 +940,11 @@ export default async function KioskWithdrawPage({
       p_source_location_id: id,
     }),
   ]);
+  const presentationRowsForDisplay = selectPresentationRowsForDisplay(
+    (presentationStockData ?? []) as unknown as PresentationStockRow[],
+    selectedProduct.available_qty
+  );
+
   const presentationPartsByProfile = new Map<
     string,
     {
@@ -934,7 +956,7 @@ export default async function KioskWithdrawPage({
     }
   >();
 
-  for (const row of (presentationStockData ?? []) as unknown as PresentationStockRow[]) {
+  for (const row of presentationRowsForDisplay) {
     const profile = normalizeUomProfileRelation(row.product_uom_profiles);
     const qty = Number(row.presentation_qty ?? 0);
     const baseQty = Number(row.base_qty ?? 0);
@@ -954,13 +976,15 @@ export default async function KioskWithdrawPage({
     presentationPartsByProfile.set(row.uom_profile_id, current);
   }
 
-  selectedProduct.presentationParts = Array.from(presentationPartsByProfile.values()).map((part) => ({
-    uomProfileId: part.uomProfileId,
-    label: formatOperationalPartLabel(part.baseLabel, part.qty),
-    qty: part.qty,
-    baseQty: part.baseQty,
-    imageUrl: part.imageUrl,
-  }));
+  selectedProduct.presentationParts = Array.from(presentationPartsByProfile.values())
+    .map((part) => ({
+      uomProfileId: part.uomProfileId,
+      label: formatOperationalPartLabel(part.baseLabel, part.qty),
+      qty: part.qty,
+      baseQty: part.baseQty,
+      imageUrl: part.imageUrl,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label, "es", { sensitivity: "base" }));
 
   const products = [selectedProduct];
   const workers = ((workersData ?? []) as Array<{
