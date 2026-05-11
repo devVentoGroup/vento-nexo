@@ -44,15 +44,20 @@ type PresentationStockRow = {
   base_qty: number | null;
   location_position_id: string | null;
   product_uom_profiles:
-    | (ProductUomProfile & { image_url?: string | null; catalog_image_url?: string | null })
-    | Array<ProductUomProfile & { image_url?: string | null; catalog_image_url?: string | null }>
-    | null;
+  | (ProductUomProfile & { image_url?: string | null; catalog_image_url?: string | null })
+  | Array<ProductUomProfile & { image_url?: string | null; catalog_image_url?: string | null }>
+  | null;
 };
 
 function formatQty(value: number | null | undefined) {
   const n = Number(value ?? 0);
   if (!Number.isFinite(n)) return "-";
   return new Intl.NumberFormat("es-CO", { maximumFractionDigits: 3 }).format(n);
+}
+
+function roundBoardQty(value: number) {
+  if (!Number.isFinite(value)) return 0;
+  return Math.round((value + Number.EPSILON) * 1000) / 1000;
 }
 
 function buildLocTitle(loc: {
@@ -388,28 +393,80 @@ export default async function LocationBoardPage({
         .gt("presentation_qty", 0)
     : { data: [] as PresentationStockRow[] };
   const presentationRows = (presentationStockData ?? []) as unknown as PresentationStockRow[];
-  const presentationPartsByProduct = new Map<string, PresentationStockPart[]>();
-  for (const row of presentationRows) {
-    const profile = normalizeUomProfileRelation(row.product_uom_profiles);
-    const qty = Number(row.presentation_qty ?? 0);
-    const baseQty = Number(row.base_qty ?? 0);
-    if (!profile || qty <= 0 || baseQty <= 0) continue;
-    const current = presentationPartsByProduct.get(row.product_id) ?? [];
-    current.push({
-      uomProfileId: row.uom_profile_id,
-      label: formatOperationalPartLabel(
-        String(profile.label || profile.input_unit_code || "presentacion").trim(),
-        qty
-      ),
-      qty,
-      baseQty,
-      imageUrl: profile.image_url || profile.catalog_image_url || "",
-    });
-    presentationPartsByProduct.set(row.product_id, current);
+
+  const stockQtyByProduct = new Map<string, number>();
+  for (const row of stockRows) {
+    stockQtyByProduct.set(row.product_id, Number(row.current_qty ?? 0));
   }
 
-  for (const parts of presentationPartsByProduct.values()) {
-    parts.sort((a, b) => a.label.localeCompare(b.label, "es", { sensitivity: "base" }));
+  const presentationRowsByProduct = new Map<string, PresentationStockRow[]>();
+  for (const row of presentationRows) {
+    const qty = Number(row.presentation_qty ?? 0);
+    const baseQty = Number(row.base_qty ?? 0);
+    if (qty <= 0 || baseQty <= 0) continue;
+
+    const current = presentationRowsByProduct.get(row.product_id) ?? [];
+    current.push(row);
+    presentationRowsByProduct.set(row.product_id, current);
+  }
+
+  const presentationPartsByProduct = new Map<string, PresentationStockPart[]>();
+
+  for (const [productId, productRows] of presentationRowsByProduct.entries()) {
+    const availableBaseQty = Number(stockQtyByProduct.get(productId) ?? 0);
+    const totalPhysicalBaseQty = productRows.reduce(
+      (sum, row) => sum + Number(row.base_qty ?? 0),
+      0
+    );
+    const hasPositionRows = productRows.some((row) => Boolean(row.location_position_id));
+
+    const rowsForDisplay =
+      !selectedPosition && hasPositionRows && totalPhysicalBaseQty > availableBaseQty + 0.000001
+        ? productRows.filter((row) => Boolean(row.location_position_id))
+        : productRows;
+
+    const partsByProfile = new Map<
+      string,
+      {
+        uomProfileId: string;
+        baseLabel: string;
+        qty: number;
+        baseQty: number;
+        imageUrl: string;
+      }
+    >();
+
+    for (const row of rowsForDisplay) {
+      const profile = normalizeUomProfileRelation(row.product_uom_profiles);
+      const qty = Number(row.presentation_qty ?? 0);
+      const baseQty = Number(row.base_qty ?? 0);
+
+      if (!profile || qty <= 0 || baseQty <= 0) continue;
+
+      const current = partsByProfile.get(row.uom_profile_id) ?? {
+        uomProfileId: row.uom_profile_id,
+        baseLabel: String(profile.label || profile.input_unit_code || "presentacion").trim(),
+        qty: 0,
+        baseQty: 0,
+        imageUrl: profile.image_url || profile.catalog_image_url || "",
+      };
+
+      current.qty = roundBoardQty(current.qty + qty);
+      current.baseQty = roundBoardQty(current.baseQty + baseQty);
+      partsByProfile.set(row.uom_profile_id, current);
+    }
+
+    const parts = Array.from(partsByProfile.values())
+      .map((part) => ({
+        uomProfileId: part.uomProfileId,
+        label: formatOperationalPartLabel(part.baseLabel, part.qty),
+        qty: part.qty,
+        baseQty: part.baseQty,
+        imageUrl: part.imageUrl,
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, "es", { sensitivity: "base" }));
+
+    presentationPartsByProduct.set(productId, parts);
   }
   const categoryIds = Array.from(
     new Set(
