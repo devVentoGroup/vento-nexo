@@ -69,6 +69,22 @@ function unitLabel(value: string) {
   return clean.toLowerCase() === "un" ? "Unidad" : clean;
 }
 
+function presentationChipLabel(part: PresentationPart) {
+  const label = String(part.label ?? "").trim();
+  const qtyLabel = formatQty(Number(part.qty ?? 0));
+
+  if (!label) return qtyLabel;
+
+  const normalizedLabel = label.toLowerCase();
+  const normalizedQty = qtyLabel.toLowerCase();
+
+  if (normalizedLabel === normalizedQty || normalizedLabel.startsWith(`${normalizedQty} `)) {
+    return label;
+  }
+
+  return `${qtyLabel} ${label}`;
+}
+
 function profileStockFactor(profile: ProductUomProfile) {
   const inputQty = Number(profile.qty_in_input_unit);
   const stockQty = Number(profile.qty_in_stock_unit);
@@ -335,7 +351,7 @@ export function KioskWithdrawForm({
               <div className="mt-3 flex flex-wrap gap-2">
                 {product.presentationParts.map((part) => (
                   <span key={part.uomProfileId} className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-bold text-emerald-950">
-                    {part.label}
+                    {presentationChipLabel(part)}
                   </span>
                 ))}
               </div>
