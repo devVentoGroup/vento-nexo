@@ -626,8 +626,11 @@ export default async function KioskWithdrawPage({
       <section className="ui-remission-hero ui-fade-up">
         <div className="ui-remission-hero-grid lg:grid-cols-[1.35fr_0.9fr] lg:items-start">
           <div className="space-y-4">
-            <Link href={returnTo} className="ui-caption underline">
-              Volver al kiosco
+            <Link
+              href={returnTo}
+              className="inline-flex min-h-12 w-fit items-center justify-center rounded-2xl border-2 border-slate-300 bg-white px-4 py-3 text-base font-bold text-slate-950 shadow-sm transition hover:border-amber-300 hover:bg-amber-50"
+            >
+              ← Volver al quiosco / cambiar producto
             </Link>
             <div className="space-y-2">
               <div className="ui-caption">Quiosco operativo</div>
