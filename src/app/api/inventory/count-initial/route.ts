@@ -176,33 +176,45 @@ export async function POST(req: Request) {
           {
             product_id: string;
             uom_profile_id: string;
+            location_position_id: string | null;
             presentation_qty: number;
             base_qty: number;
           }
         >();
+
         for (const line of lines) {
           if (!line.uom_profile_id || line.input_quantity <= 0) continue;
-          const key = `${line.product_id}:${line.uom_profile_id}`;
+
+          const locationPositionId = line.position_id || null;
+          const key = `${line.product_id}:${line.uom_profile_id}:${locationPositionId ?? "sin-posicion"}`;
+
           const current = physicalLinesByProfile.get(key) ?? {
             product_id: line.product_id,
             uom_profile_id: line.uom_profile_id,
+            location_position_id: locationPositionId,
             presentation_qty: 0,
             base_qty: 0,
           };
+
           current.presentation_qty += line.input_quantity;
           current.base_qty += line.quantity;
           physicalLinesByProfile.set(key, current);
         }
 
         for (const physicalLine of physicalLinesByProfile.values()) {
-          const { data: existingPhysicalStock, error: existingPhysicalErr } = await supabase
+          let existingPhysicalQuery = supabase
             .from("inventory_stock_by_uom_profile")
             .select("presentation_qty,base_qty")
             .eq("location_id", scopeLocationId)
-            .is("location_position_id", null)
             .eq("product_id", physicalLine.product_id)
-            .eq("uom_profile_id", physicalLine.uom_profile_id)
-            .maybeSingle();
+            .eq("uom_profile_id", physicalLine.uom_profile_id);
+
+          existingPhysicalQuery = physicalLine.location_position_id
+            ? existingPhysicalQuery.eq("location_position_id", physicalLine.location_position_id)
+            : existingPhysicalQuery.is("location_position_id", null);
+
+          const { data: existingPhysicalStock, error: existingPhysicalErr } =
+            await existingPhysicalQuery.maybeSingle();
 
           if (existingPhysicalErr) {
             return NextResponse.json(
@@ -224,7 +236,7 @@ export async function POST(req: Request) {
             p_uom_profile_id: physicalLine.uom_profile_id,
             p_presentation_delta: physicalLine.presentation_qty - currentPresentationQty,
             p_base_delta: physicalLine.base_qty - currentBaseQty,
-            p_location_position_id: null,
+            p_location_position_id: physicalLine.location_position_id,
           });
 
           if (physicalErr) {
