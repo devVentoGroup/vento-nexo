@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
 
 type Props = {
   message: string;
@@ -9,9 +8,6 @@ type Props = {
 };
 
 export function KioskInlineSuccessAlert({ message, durationMs = 8000 }: Props) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
   const [visible, setVisible] = useState(Boolean(message));
 
   useEffect(() => {
@@ -19,19 +15,22 @@ export function KioskInlineSuccessAlert({ message, durationMs = 8000 }: Props) {
 
     setVisible(true);
 
+    const url = new URL(window.location.href);
+    url.searchParams.delete("ok");
+    url.searchParams.delete("success_message");
+
+    window.history.replaceState(
+      window.history.state,
+      "",
+      `${url.pathname}${url.search}${url.hash}`
+    );
+
     const timer = window.setTimeout(() => {
       setVisible(false);
-
-      const params = new URLSearchParams(searchParams.toString());
-      params.delete("ok");
-      params.delete("success_message");
-
-      const qs = params.toString();
-      router.replace(qs ? `${pathname}?${qs}` : pathname, { scroll: false });
     }, durationMs);
 
     return () => window.clearTimeout(timer);
-  }, [durationMs, message, pathname, router, searchParams]);
+  }, [durationMs, message]);
 
   if (!visible || !message) return null;
 
