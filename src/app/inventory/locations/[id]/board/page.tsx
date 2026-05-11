@@ -204,23 +204,24 @@ export default async function LocationBoardPage({
 
   if (!location) notFound();
 
-  const { data: siteData } = location.site_id
-    ? await supabase
-      .from("sites")
-      .select("id,name")
-      .eq("id", location.site_id)
-      .maybeSingle()
-    : { data: null };
+  const [{ data: siteData }, { data: positionsData }] = await Promise.all([
+    location.site_id
+      ? supabase
+        .from("sites")
+        .select("id,name")
+        .eq("id", location.site_id)
+        .maybeSingle()
+      : Promise.resolve({ data: null }),
+    supabase
+      .from("inventory_location_positions")
+      .select("id,parent_position_id,code,name,kind,sort_order")
+      .eq("location_id", id)
+      .eq("is_active", true)
+      .order("sort_order", { ascending: true })
+      .order("code", { ascending: true }),
+  ]);
 
   const site = (siteData ?? null) as { id: string; name: string | null } | null;
-
-  const { data: positionsData } = await supabase
-    .from("inventory_location_positions")
-    .select("id,parent_position_id,code,name,kind,sort_order")
-    .eq("location_id", id)
-    .eq("is_active", true)
-    .order("sort_order", { ascending: true })
-    .order("code", { ascending: true });
   const positions = (positionsData ?? []) as PositionRow[];
   const positionsById = new Map(positions.map((position) => [position.id, position]));
   const childrenByParentId = buildChildrenByParent(positions);
@@ -231,21 +232,35 @@ export default async function LocationBoardPage({
     ? collectDescendantIds(selectedPosition.id, childrenByParentId)
     : [];
 
-  const { data: stockRowsData } = selectedPosition
-    ? await supabase
-      .from("inventory_stock_by_position")
-      .select("product_id,position_id,current_qty,updated_at")
-      .in("position_id", selectedPositionIds)
-      .gt("current_qty", 0)
-      .order("current_qty", { ascending: false })
-    : await supabase
-      .from("inventory_stock_by_location")
-      .select(
-        "product_id,current_qty,updated_at,products(id,name,stock_unit_code,unit,category_id,image_url,catalog_image_url)"
-      )
-      .eq("location_id", id)
-      .gt("current_qty", 0)
-      .order("current_qty", { ascending: false });
+  const [stockRowsQuery, allPositionStockQuery] = await Promise.all([
+    selectedPosition
+      ? supabase
+        .from("inventory_stock_by_position")
+        .select("product_id,position_id,current_qty,updated_at")
+        .in("position_id", selectedPositionIds)
+        .gt("current_qty", 0)
+        .order("current_qty", { ascending: false })
+      : supabase
+        .from("inventory_stock_by_location")
+        .select(
+          "product_id,current_qty,updated_at,products(id,name,stock_unit_code,unit,category_id,image_url,catalog_image_url)"
+        )
+        .eq("location_id", id)
+        .gt("current_qty", 0)
+        .order("current_qty", { ascending: false }),
+    !selectedPosition && positions.length > 0
+      ? supabase
+        .from("inventory_stock_by_position")
+        .select("product_id,position_id,current_qty")
+        .in("position_id", positions.map((position) => position.id))
+        .gt("current_qty", 0)
+      : Promise.resolve({
+        data: [] as Array<{ product_id: string; position_id: string | null; current_qty: number | null }>,
+      }),
+  ]);
+
+  const stockRowsData = stockRowsQuery.data ?? [];
+  const allPositionStockData = allPositionStockQuery.data ?? [];
 
   const stockRowsRaw = (stockRowsData ?? []) as unknown as Array<{
     product_id: string;
@@ -270,14 +285,7 @@ export default async function LocationBoardPage({
       catalog_image_url?: string | null;
     }> | null;
   }>;
-  const { data: allPositionStockData } =
-    !selectedPosition && positions.length > 0
-      ? await supabase
-        .from("inventory_stock_by_position")
-        .select("product_id,position_id,current_qty")
-        .in("position_id", positions.map((position) => position.id))
-        .gt("current_qty", 0)
-      : { data: [] as Array<{ product_id: string; position_id: string | null; current_qty: number | null }> };
+
   const positionStockRows = selectedPosition
     ? stockRowsRaw.map((row) => ({
       product_id: row.product_id,

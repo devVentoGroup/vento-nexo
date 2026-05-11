@@ -560,51 +560,49 @@ export default async function KioskWithdrawPage({
     permissionCode: ["inventory.transfers", "inventory.withdraw"],
   });
 
-  const { data: locationData } = await supabase
-    .from("inventory_locations")
-    .select("id,code,description,zone,site_id")
-    .eq("id", id)
-    .eq("is_active", true)
-    .maybeSingle();
+  const [{ data: locationData }, { data: selectedStockData }] = await Promise.all([
+    supabase
+      .from("inventory_locations")
+      .select("id,code,description,zone,site_id")
+      .eq("id", id)
+      .eq("is_active", true)
+      .maybeSingle(),
+    supabase
+      .from("inventory_stock_by_location")
+      .select("product_id,current_qty,products(id,name,unit,stock_unit_code)")
+      .eq("location_id", id)
+      .eq("product_id", initialProductId)
+      .gt("current_qty", 0)
+      .maybeSingle(),
+  ]);
+
   const location = (locationData ?? null) as LocationRow | null;
   if (!location?.site_id) notFound();
 
-  const { data: stockData } = await supabase
-    .from("inventory_stock_by_location")
-    .select("product_id,current_qty,products(id,name,unit,stock_unit_code)")
-    .eq("location_id", id)
-    .gt("current_qty", 0)
-    .order("current_qty", { ascending: false });
-  const stockRows = (stockData ?? []) as unknown as StockRow[];
-  const products = stockRows
-    .map((row) => {
-      const product = normalizeProduct(row.products);
-      if (!product) return null;
-      return {
-        ...product,
-        available_qty: Number(row.current_qty ?? 0),
-      };
-    })
-    .filter((row): row is ProductRow & { available_qty: number } => Boolean(row))
-    .sort((a, b) => String(a.name ?? a.id).localeCompare(String(b.name ?? b.id), "es", { sensitivity: "base" }));
-  const selectedProduct = products.find((product) => product.id === initialProductId) ?? null;
+  const selectedStockRow = (selectedStockData ?? null) as unknown as StockRow | null;
+  const selectedProductBase = normalizeProduct(selectedStockRow?.products ?? null);
 
-  if (!selectedProduct) {
+  if (!selectedStockRow || !selectedProductBase) {
     redirect(returnTo);
   }
 
-  const productIds = [selectedProduct.id];
-  const { data: uomProfilesData } = productIds.length
-    ? await supabase
+  const selectedProduct = {
+    ...selectedProductBase,
+    available_qty: Number(selectedStockRow.current_qty ?? 0),
+  };
+
+  const products = [selectedProduct];
+
+  const [{ data: uomProfilesData }, { data: workersData, error: workersError }] = await Promise.all([
+    supabase
       .from("product_uom_profiles")
       .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context")
-      .in("product_id", productIds)
-      .eq("is_active", true)
-    : { data: [] as ProductUomProfile[] };
-
-  const { data: workersData, error: workersError } = await supabase.rpc("nexo_kiosk_withdraw_workers", {
-    p_source_location_id: id,
-  });
+      .eq("product_id", selectedProduct.id)
+      .eq("is_active", true),
+    supabase.rpc("nexo_kiosk_withdraw_workers", {
+      p_source_location_id: id,
+    }),
+  ]);
   const workers = ((workersData ?? []) as Array<{
     employee_id: string;
     label: string | null;
@@ -644,7 +642,7 @@ export default async function KioskWithdrawPage({
                 Origen {title}
               </span>
               <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
-                {products.length} productos
+                Producto seleccionado
               </span>
               <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
                 {workers.length} trabajadores disponibles

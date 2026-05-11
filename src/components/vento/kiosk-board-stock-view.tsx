@@ -136,6 +136,7 @@ export function KioskBoardStockView({
   const totalCount = typeof totalItemsCount === "number" ? totalItemsCount : items.length;
   const [viewMode, setViewMode] = useState<ViewMode>(() => normalizeViewMode(initialViewMode, isKiosk));
   const [visibleLimit, setVisibleLimit] = useState(() => (isKiosk ? 48 : Number.MAX_SAFE_INTEGER));
+  const [openingProductId, setOpeningProductId] = useState("");
   const filteredItems = items;
   const visibleItems = filteredItems.slice(0, visibleLimit);
   const hasMoreItems = visibleItems.length < filteredItems.length;
@@ -259,12 +260,15 @@ export function KioskBoardStockView({
                       Base: {formatQty(item.qty)} {item.unit}
                     </div>
                     {isKiosk ? (
-                      <a
+                      <Link
                         href={buildKioskWithdrawHref(locationId, item.productId)}
-                        className="ui-btn ui-btn--brand mt-3 h-14 px-4 text-base"
+                        onClick={() => setOpeningProductId(item.productId)}
+                        className={`ui-btn ui-btn--brand mt-3 h-14 px-4 text-base ${openingProductId === item.productId ? "pointer-events-none opacity-80" : ""
+                          }`}
+                        aria-disabled={openingProductId === item.productId}
                       >
-                        Retirar
-                      </a>
+                        {openingProductId === item.productId ? "Abriendo..." : "Retirar"}
+                      </Link>
                     ) : null}
                   </div>
                 </article>
@@ -299,12 +303,15 @@ export function KioskBoardStockView({
                     Base: {formatQty(item.qty)} {item.unit}
                   </div>
                   {isKiosk ? (
-                    <a
+                    <Link
                       href={buildKioskWithdrawHref(locationId, item.productId)}
-                      className="ui-btn ui-btn--brand h-14 w-full px-4 text-base"
+                      onClick={() => setOpeningProductId(item.productId)}
+                      className={`ui-btn ui-btn--brand h-14 w-full px-4 text-base ${openingProductId === item.productId ? "pointer-events-none opacity-80" : ""
+                        }`}
+                      aria-disabled={openingProductId === item.productId}
                     >
-                      Retirar
-                    </a>
+                      {openingProductId === item.productId ? "Abriendo..." : "Retirar"}
+                    </Link>
                   ) : null}
                 </div>
               </article>
