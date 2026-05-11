@@ -39,6 +39,7 @@ type CountLine = {
   quantity: number;
   input_quantity: number;
   input_unit_code: string;
+  uom_profile_id?: string;
   stock_unit_code: string;
   position_id?: string;
 };
@@ -372,6 +373,7 @@ export function CountInitialForm({
           quantity: converted.quantityInStock,
           input_quantity: inputQty,
           input_unit_code: selectedUnit.inputUnitCode,
+          uom_profile_id: selectedUnit.profile?.id,
           stock_unit_code: capture.stockUnitCode,
           position_id: entry.positionId || undefined,
         });

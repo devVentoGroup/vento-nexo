@@ -699,17 +699,21 @@ export async function submitTransitChecklist(formData: FormData) {
     locationId: string;
     productId: string;
     qty: number;
+    uomProfileId?: string | null;
+    presentationQty?: number;
   }> = [];
 
   const { data: itemsData } = await supabase
     .from("restock_request_items")
-    .select("id,product_id,quantity,prepared_quantity,shipped_quantity,source_location_id")
+    .select("id,product_id,quantity,input_qty,input_uom_profile_id,prepared_quantity,shipped_quantity,source_location_id")
     .eq("request_id", requestId);
 
   const itemRows = (itemsData ?? []) as Array<{
     id: string;
     product_id: string;
     quantity: number | null;
+    input_qty: number | null;
+    input_uom_profile_id: string | null;
     prepared_quantity: number | null;
     shipped_quantity: number | null;
     source_location_id: string | null;
@@ -843,6 +847,11 @@ export async function submitTransitChecklist(formData: FormData) {
         locationId: sourceLocId,
         productId: row.product_id,
         qty,
+        uomProfileId: row.input_uom_profile_id,
+        presentationQty:
+          row.input_uom_profile_id && requestedQty > 0
+            ? roundQuantity((qty / requestedQty) * Number(row.input_qty ?? 0))
+            : 0,
       });
     }
 
@@ -873,6 +882,28 @@ export async function submitTransitChecklist(formData: FormData) {
   }
 
   for (const deduction of sourceLocDeductions) {
+    if (deduction.uomProfileId && Number(deduction.presentationQty ?? 0) > 0) {
+      const { error: presentationErr } = await supabase.rpc("consume_inventory_stock_by_uom_profile", {
+        p_location_id: deduction.locationId,
+        p_product_id: deduction.productId,
+        p_uom_profile_id: deduction.uomProfileId,
+        p_presentation_qty: deduction.presentationQty,
+        p_base_qty: deduction.qty,
+        p_location_position_id: null,
+      });
+
+      if (presentationErr) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            siteId: activeSiteId,
+            error: `No se pudo descontar presentacion fisica: ${presentationErr.message}`,
+          })
+        );
+      }
+    }
+
     const { error: locErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
       p_location_id: deduction.locationId,
       p_product_id: deduction.productId,
@@ -1412,16 +1443,20 @@ export async function updateStatus(formData: FormData) {
     productId: string;
     qty: number;
     unitCode: string;
+    uomProfileId?: string | null;
+    presentationQty?: number;
   }> = [];
   if (action === "transit") {
     const { data: itemsData } = await supabase
       .from("restock_request_items")
-      .select("id,product_id,quantity,prepared_quantity,shipped_quantity,source_location_id,stock_unit_code,unit")
+      .select("id,product_id,quantity,input_qty,input_uom_profile_id,prepared_quantity,shipped_quantity,source_location_id,stock_unit_code,unit")
       .eq("request_id", requestId);
     const itemRows = (itemsData ?? []) as Array<{
       id: string;
       product_id: string;
       quantity: number | null;
+      input_qty: number | null;
+      input_uom_profile_id: string | null;
       prepared_quantity: number | null;
       shipped_quantity: number | null;
       source_location_id: string | null;
@@ -1525,6 +1560,11 @@ export async function updateStatus(formData: FormData) {
           productId: row.product_id,
           qty,
           unitCode: normalizeUnitCode(row.stock_unit_code || row.unit || "un"),
+          uomProfileId: row.input_uom_profile_id,
+          presentationQty:
+            row.input_uom_profile_id && requestedQty > 0
+              ? roundQuantity((qty / requestedQty) * Number(row.input_qty ?? 0))
+              : 0,
         });
       }
       if (!anyTransitQty) {
@@ -1735,6 +1775,20 @@ export async function updateStatus(formData: FormData) {
     }
 
     for (const deduction of sourceLocDeductions) {
+      if (deduction.uomProfileId && Number(deduction.presentationQty ?? 0) > 0) {
+        const { error: presentationErr } = await supabase.rpc("consume_inventory_stock_by_uom_profile", {
+          p_location_id: deduction.locationId,
+          p_product_id: deduction.productId,
+          p_uom_profile_id: deduction.uomProfileId,
+          p_presentation_qty: deduction.presentationQty,
+          p_base_qty: deduction.qty,
+          p_location_position_id: null,
+        });
+        if (presentationErr) {
+          redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: `No se pudo descontar presentacion fisica: ${presentationErr.message}` }));
+        }
+      }
+
       const { error: locErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
         p_location_id: deduction.locationId,
         p_product_id: deduction.productId,

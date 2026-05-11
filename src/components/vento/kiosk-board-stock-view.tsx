@@ -6,7 +6,9 @@ import { useState } from "react";
 type StockPart = {
   qty: number;
   label: string;
-  stockQty: number;
+  baseQty: number;
+  uomProfileId: string;
+  imageUrl?: string;
 };
 
 export type KioskBoardStockItem = {
@@ -19,7 +21,7 @@ export type KioskBoardStockItem = {
   categoryLabel: string;
   categoryPath: string;
   internalLocationLabel: string;
-  stockParts: StockPart[];
+  presentationParts: StockPart[];
 };
 
 type Props = {
@@ -47,25 +49,32 @@ function toneForQty(value: number) {
 }
 
 function StockAmount({ item, size = "lg" }: { item: KioskBoardStockItem; size?: "lg" | "sm" }) {
-  const primaryPart = item.stockParts[0];
-  const secondaryParts = item.stockParts.slice(1);
+  const presentationParts = item.presentationParts;
 
   return (
     <div className={size === "lg" ? "space-y-1" : "space-y-1"}>
-      <div className={size === "lg" ? "text-3xl font-semibold text-[var(--ui-text)]" : "text-xl font-semibold text-[var(--ui-text)]"}>
-        {formatQty(primaryPart?.qty ?? item.qty)} {primaryPart?.label ?? item.unit}
-      </div>
-      {secondaryParts.length > 0 ? (
+      {presentationParts.length > 0 ? (
         <div className="flex flex-wrap gap-1.5 text-sm font-medium text-[var(--ui-text)]">
-          {secondaryParts.map((part) => (
+          {presentationParts.map((part) => (
             <span
-              key={`${item.productId}-${part.label}-${part.stockQty}`}
-              className="rounded-full border border-slate-200 bg-slate-50 px-2.5 py-1"
+              key={`${item.productId}-${part.uomProfileId}`}
+              className="inline-flex items-center gap-2 rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-950"
             >
-              + {formatQty(part.qty)} {part.label}
+              {part.imageUrl ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={part.imageUrl} alt="" className="h-6 w-6 rounded-full object-cover" loading="lazy" />
+              ) : null}
+              {formatQty(part.qty)} {part.label}
             </span>
           ))}
         </div>
+      ) : (
+        <div className={size === "lg" ? "text-2xl font-semibold text-[var(--ui-text)]" : "text-lg font-semibold text-[var(--ui-text)]"}>
+          {formatQty(item.qty)} {item.unit}
+        </div>
+      )}
+      {presentationParts.length === 0 ? (
+        <div className="text-xs font-semibold text-[var(--ui-muted)]">Sin desglose por presentacion</div>
       ) : null}
     </div>
   );

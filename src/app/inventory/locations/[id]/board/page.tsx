@@ -6,10 +6,7 @@ import { KioskInlineSuccessAlert } from "@/components/vento/kiosk-inline-success
 import { LocationBoardAutoRefresh } from "@/features/inventory/locations/location-board-auto-refresh";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { getCategoryPath, type InventoryCategoryRow } from "@/lib/inventory/categories";
-import {
-  formatOperationalStockParts,
-  type ProductUomProfile,
-} from "@/lib/inventory/uom";
+import { formatOperationalPartLabel, type ProductUomProfile } from "@/lib/inventory/uom";
 
 export const dynamic = "force-dynamic";
 
@@ -30,6 +27,26 @@ type PositionRow = {
   name: string;
   kind: string;
   sort_order: number | null;
+};
+
+type PresentationStockPart = {
+  uomProfileId: string;
+  label: string;
+  qty: number;
+  baseQty: number;
+  imageUrl?: string;
+};
+
+type PresentationStockRow = {
+  product_id: string;
+  uom_profile_id: string;
+  presentation_qty: number | null;
+  base_qty: number | null;
+  location_position_id: string | null;
+  product_uom_profiles:
+    | (ProductUomProfile & { image_url?: string | null; catalog_image_url?: string | null })
+    | Array<ProductUomProfile & { image_url?: string | null; catalog_image_url?: string | null }>
+    | null;
 };
 
 function formatQty(value: number | null | undefined) {
@@ -152,6 +169,11 @@ function normalizeBoardSearch(value: string | null | undefined) {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim();
+}
+
+function normalizeUomProfileRelation(value: PresentationStockRow["product_uom_profiles"]) {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
 }
 
 function safeDecodeBoardParam(value: string | null | undefined) {
@@ -345,16 +367,50 @@ export default async function LocationBoardPage({
       products: normalizeProductRelation(row.products),
     }));
   const productIds = stockRows.map((row) => row.product_id);
-  const { data: uomProfilesData } = productIds.length
-    ? await supabase
-      .from("product_uom_profiles")
-      .select(
-        "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
-      )
-      .in("product_id", productIds)
-      .eq("is_active", true)
-    : { data: [] as ProductUomProfile[] };
-  const uomProfiles = (uomProfilesData ?? []) as ProductUomProfile[];
+  const { data: presentationStockData } = productIds.length
+    ? selectedPosition
+      ? await supabase
+        .from("inventory_stock_by_uom_profile")
+        .select(
+          "product_id,uom_profile_id,presentation_qty,base_qty,location_position_id,product_uom_profiles(id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context,image_url,catalog_image_url)"
+        )
+        .eq("location_id", id)
+        .in("location_position_id", selectedPositionIds)
+        .in("product_id", productIds)
+        .gt("presentation_qty", 0)
+      : await supabase
+        .from("inventory_stock_by_uom_profile")
+        .select(
+          "product_id,uom_profile_id,presentation_qty,base_qty,location_position_id,product_uom_profiles(id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context,image_url,catalog_image_url)"
+        )
+        .eq("location_id", id)
+        .in("product_id", productIds)
+        .gt("presentation_qty", 0)
+    : { data: [] as PresentationStockRow[] };
+  const presentationRows = (presentationStockData ?? []) as unknown as PresentationStockRow[];
+  const presentationPartsByProduct = new Map<string, PresentationStockPart[]>();
+  for (const row of presentationRows) {
+    const profile = normalizeUomProfileRelation(row.product_uom_profiles);
+    const qty = Number(row.presentation_qty ?? 0);
+    const baseQty = Number(row.base_qty ?? 0);
+    if (!profile || qty <= 0 || baseQty <= 0) continue;
+    const current = presentationPartsByProduct.get(row.product_id) ?? [];
+    current.push({
+      uomProfileId: row.uom_profile_id,
+      label: formatOperationalPartLabel(
+        String(profile.label || profile.input_unit_code || "presentacion").trim(),
+        qty
+      ),
+      qty,
+      baseQty,
+      imageUrl: profile.image_url || profile.catalog_image_url || "",
+    });
+    presentationPartsByProduct.set(row.product_id, current);
+  }
+
+  for (const parts of presentationPartsByProduct.values()) {
+    parts.sort((a, b) => a.label.localeCompare(b.label, "es", { sensitivity: "base" }));
+  }
   const categoryIds = Array.from(
     new Set(
       stockRows
@@ -388,12 +444,7 @@ export default async function LocationBoardPage({
       categoryLabel,
       categoryPath,
       internalLocationLabel: compactLocationLabel(internalLocationLabelsByProduct.get(row.product_id) ?? []),
-      stockParts: formatOperationalStockParts({
-        qty,
-        profiles: uomProfiles,
-        productId: row.product_id,
-        fallbackUnit: unit,
-      }),
+      presentationParts: presentationPartsByProduct.get(row.product_id) ?? [],
     };
   });
 
@@ -405,7 +456,7 @@ export default async function LocationBoardPage({
           item.unit,
           item.productId,
           item.internalLocationLabel,
-          ...item.stockParts.map((part) => part.label),
+          ...item.presentationParts.map((part) => part.label),
         ].join(" ")
       );
 

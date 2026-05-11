@@ -5,6 +5,7 @@ import { KioskWithdrawForm } from "@/components/vento/kiosk-withdraw-form";
 import { requireAppAccess } from "@/lib/auth/guard";
 import {
   convertByProductProfile,
+  formatOperationalPartLabel,
   normalizeUnitCode,
   roundQuantity,
   type ProductUomProfile,
@@ -62,6 +63,25 @@ type ParsedKioskWithdrawItem = {
   note: string | null;
 };
 
+type PresentationStockPart = {
+  uomProfileId: string;
+  label: string;
+  qty: number;
+  baseQty: number;
+  imageUrl?: string;
+};
+
+type PresentationStockRow = {
+  product_id: string;
+  uom_profile_id: string;
+  presentation_qty: number | null;
+  base_qty: number | null;
+  product_uom_profiles:
+    | (ProductUomProfile & { image_url?: string | null; catalog_image_url?: string | null })
+    | Array<ProductUomProfile & { image_url?: string | null; catalog_image_url?: string | null }>
+    | null;
+};
+
 function asText(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -72,6 +92,11 @@ function parseNumber(value: string) {
 }
 
 function normalizeProduct(value: StockRow["products"]): ProductRow | null {
+  if (Array.isArray(value)) return value[0] ?? null;
+  return value ?? null;
+}
+
+function normalizeUomProfileRelation(value: PresentationStockRow["product_uom_profiles"]) {
   if (Array.isArray(value)) return value[0] ?? null;
   return value ?? null;
 }
@@ -321,6 +346,16 @@ async function submitKioskWithdraw(formData: FormData) {
       input_summary: string;
     }
   >();
+  const requestedByPresentation = new Map<
+    string,
+    {
+      product_id: string;
+      uom_profile_id: string;
+      presentation_qty: number;
+      base_qty: number;
+      label: string;
+    }
+  >();
 
   for (const item of items) {
     const current = requestedByProduct.get(item.product_id) ?? {
@@ -336,6 +371,20 @@ async function submitKioskWithdraw(formData: FormData) {
       : `${item.input_qty} ${item.input_unit_code}`;
 
     requestedByProduct.set(item.product_id, current);
+
+    if (item.input_uom_profile_id) {
+      const key = `${item.product_id}:${item.input_uom_profile_id}`;
+      const currentPresentation = requestedByPresentation.get(key) ?? {
+        product_id: item.product_id,
+        uom_profile_id: item.input_uom_profile_id,
+        presentation_qty: 0,
+        base_qty: 0,
+        label: item.input_unit_code,
+      };
+      currentPresentation.presentation_qty = roundQuantity(currentPresentation.presentation_qty + item.input_qty);
+      currentPresentation.base_qty = roundQuantity(currentPresentation.base_qty + item.quantity);
+      requestedByPresentation.set(key, currentPresentation);
+    }
   }
 
   for (const requested of requestedByProduct.values()) {
@@ -352,6 +401,30 @@ async function submitKioskWithdraw(formData: FormData) {
         errorUrl(
           sourceLocationId,
           `No alcanza stock: solicitaste ${requested.input_summary}, disponibles ${availableAtLoc} ${requested.stock_unit_code}.`,
+          requested.product_id
+        )
+      );
+    }
+  }
+
+  for (const requested of requestedByPresentation.values()) {
+    const { data: presentationStock } = await supabase
+      .from("inventory_stock_by_uom_profile")
+      .select("presentation_qty,base_qty")
+      .eq("location_id", sourceLocationId)
+      .is("location_position_id", null)
+      .eq("product_id", requested.product_id)
+      .eq("uom_profile_id", requested.uom_profile_id)
+      .maybeSingle();
+
+    const availablePresentation = Number(
+      (presentationStock as { presentation_qty?: number | null } | null)?.presentation_qty ?? 0
+    );
+    if (availablePresentation + 0.000001 < requested.presentation_qty) {
+      redirect(
+        errorUrl(
+          sourceLocationId,
+          `No alcanza stock fisico: solicitaste ${requested.presentation_qty} ${requested.label}, disponibles ${availablePresentation}.`,
           requested.product_id
         )
       );
@@ -399,6 +472,7 @@ async function submitKioskWithdraw(formData: FormData) {
         unit: item.stock_unit_code,
         input_qty: item.input_qty,
         input_unit_code: item.input_unit_code,
+        input_uom_profile_id: item.input_uom_profile_id || null,
         conversion_factor_to_stock: item.conversion_factor_to_stock,
         stock_unit_code: item.stock_unit_code,
         notes: item.note,
@@ -411,6 +485,21 @@ async function submitKioskWithdraw(formData: FormData) {
   }
 
   for (const item of items) {
+    if (item.input_uom_profile_id) {
+      const { error: presentationErr } = await supabase.rpc("consume_inventory_stock_by_uom_profile", {
+        p_location_id: sourceLocationId,
+        p_product_id: item.product_id,
+        p_uom_profile_id: item.input_uom_profile_id,
+        p_presentation_qty: item.input_qty,
+        p_base_qty: item.quantity,
+        p_location_position_id: null,
+      });
+
+      if (presentationErr) {
+        redirect(errorUrl(sourceLocationId, presentationErr.message, item.product_id));
+      }
+    }
+
     const { error: positionErr } = await supabase.rpc("consume_inventory_stock_from_positions", {
       p_location_id: sourceLocationId,
       p_product_id: item.product_id,
@@ -443,6 +532,7 @@ async function submitKioskWithdraw(formData: FormData) {
         quantity: item.quantity,
         input_qty: item.input_qty,
         input_unit_code: item.input_unit_code,
+        input_uom_profile_id: item.input_uom_profile_id || null,
         conversion_factor_to_stock: item.conversion_factor_to_stock,
         stock_unit_code: item.stock_unit_code,
         note: item.note
@@ -472,6 +562,7 @@ async function submitKioskWithdraw(formData: FormData) {
         quantity: -item.quantity,
         input_qty: item.input_qty,
         input_unit_code: item.input_unit_code,
+        input_uom_profile_id: item.input_uom_profile_id || null,
         conversion_factor_to_stock: item.conversion_factor_to_stock,
         stock_unit_code: item.stock_unit_code,
         note: item.note
@@ -589,20 +680,43 @@ export default async function KioskWithdrawPage({
   const selectedProduct = {
     ...selectedProductBase,
     available_qty: Number(selectedStockRow.current_qty ?? 0),
+    presentationParts: [] as PresentationStockPart[],
   };
 
-  const products = [selectedProduct];
-
-  const [{ data: uomProfilesData }, { data: workersData, error: workersError }] = await Promise.all([
+  const [{ data: uomProfilesData }, { data: presentationStockData }, { data: workersData, error: workersError }] = await Promise.all([
     supabase
       .from("product_uom_profiles")
-      .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context")
+      .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context,image_url,catalog_image_url")
       .eq("product_id", selectedProduct.id)
       .eq("is_active", true),
+    supabase
+      .from("inventory_stock_by_uom_profile")
+      .select("product_id,uom_profile_id,presentation_qty,base_qty,product_uom_profiles(id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context,image_url,catalog_image_url)")
+      .eq("location_id", id)
+      .is("location_position_id", null)
+      .eq("product_id", selectedProduct.id)
+      .gt("presentation_qty", 0),
     supabase.rpc("nexo_kiosk_withdraw_workers", {
       p_source_location_id: id,
     }),
   ]);
+  selectedProduct.presentationParts = ((presentationStockData ?? []) as unknown as PresentationStockRow[])
+    .map((row): PresentationStockPart | null => {
+      const profile = normalizeUomProfileRelation(row.product_uom_profiles);
+      const qty = Number(row.presentation_qty ?? 0);
+      const baseQty = Number(row.base_qty ?? 0);
+      if (!profile || qty <= 0 || baseQty <= 0) return null;
+      return {
+        uomProfileId: row.uom_profile_id,
+        label: formatOperationalPartLabel(String(profile.label || profile.input_unit_code || "presentacion").trim(), qty),
+        qty,
+        baseQty,
+        imageUrl: profile.image_url || profile.catalog_image_url || "",
+      };
+    })
+    .filter((part): part is PresentationStockPart => Boolean(part));
+
+  const products = [selectedProduct];
   const workers = ((workersData ?? []) as Array<{
     employee_id: string;
     label: string | null;

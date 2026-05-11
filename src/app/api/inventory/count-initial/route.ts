@@ -11,6 +11,15 @@ import { createServerClient } from "@supabase/ssr";
 
 const SESSION_PREFIX = "count:";
 
+type CountInputLine = {
+  product_id: string;
+  quantity: number;
+  input_quantity: number;
+  input_unit_code: string;
+  uom_profile_id: string;
+  position_id: string;
+};
+
 export async function POST(req: Request) {
   const cookieStore = await cookies();
   const supabase = createServerClient(
@@ -36,6 +45,9 @@ export async function POST(req: Request) {
     lines?: Array<{
       product_id?: string;
       quantity?: number;
+      input_quantity?: number;
+      input_unit_code?: string;
+      uom_profile_id?: string;
       position_id?: string;
     }>;
     scope_note?: string;
@@ -54,10 +66,13 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "site_id requerido" }, { status: 400 });
   }
 
-  const lines = rawLines
+  const lines: CountInputLine[] = rawLines
     .map((l) => ({
       product_id: typeof l?.product_id === "string" ? l.product_id.trim() : "",
       quantity: typeof l?.quantity === "number" && l.quantity >= 0 ? l.quantity : -1,
+      input_quantity: typeof l?.input_quantity === "number" && l.input_quantity >= 0 ? l.input_quantity : 0,
+      input_unit_code: typeof l?.input_unit_code === "string" ? l.input_unit_code.trim().toLowerCase() : "",
+      uom_profile_id: typeof l?.uom_profile_id === "string" ? l.uom_profile_id.trim() : "",
       position_id: typeof l?.position_id === "string" ? l.position_id.trim() : "",
     }))
     .filter((l) => l.product_id && l.quantity > 0);
@@ -154,6 +169,70 @@ export async function POST(req: Request) {
             { error: "reconcile_inventory_stock_positions_for_count: " + positionErr.message },
             { status: 500 }
           );
+        }
+
+        const physicalLinesByProfile = new Map<
+          string,
+          {
+            product_id: string;
+            uom_profile_id: string;
+            presentation_qty: number;
+            base_qty: number;
+          }
+        >();
+        for (const line of lines) {
+          if (!line.uom_profile_id || line.input_quantity <= 0) continue;
+          const key = `${line.product_id}:${line.uom_profile_id}`;
+          const current = physicalLinesByProfile.get(key) ?? {
+            product_id: line.product_id,
+            uom_profile_id: line.uom_profile_id,
+            presentation_qty: 0,
+            base_qty: 0,
+          };
+          current.presentation_qty += line.input_quantity;
+          current.base_qty += line.quantity;
+          physicalLinesByProfile.set(key, current);
+        }
+
+        for (const physicalLine of physicalLinesByProfile.values()) {
+          const { data: existingPhysicalStock, error: existingPhysicalErr } = await supabase
+            .from("inventory_stock_by_uom_profile")
+            .select("presentation_qty,base_qty")
+            .eq("location_id", scopeLocationId)
+            .is("location_position_id", null)
+            .eq("product_id", physicalLine.product_id)
+            .eq("uom_profile_id", physicalLine.uom_profile_id)
+            .maybeSingle();
+
+          if (existingPhysicalErr) {
+            return NextResponse.json(
+              { error: "inventory_stock_by_uom_profile: " + existingPhysicalErr.message },
+              { status: 500 }
+            );
+          }
+
+          const currentPresentationQty = Number(
+            (existingPhysicalStock as { presentation_qty?: number | null } | null)?.presentation_qty ?? 0
+          );
+          const currentBaseQty = Number(
+            (existingPhysicalStock as { base_qty?: number | null } | null)?.base_qty ?? 0
+          );
+
+          const { error: physicalErr } = await supabase.rpc("upsert_inventory_stock_by_uom_profile", {
+            p_location_id: scopeLocationId,
+            p_product_id: physicalLine.product_id,
+            p_uom_profile_id: physicalLine.uom_profile_id,
+            p_presentation_delta: physicalLine.presentation_qty - currentPresentationQty,
+            p_base_delta: physicalLine.base_qty - currentBaseQty,
+            p_location_position_id: null,
+          });
+
+          if (physicalErr) {
+            return NextResponse.json(
+              { error: "upsert_inventory_stock_by_uom_profile: " + physicalErr.message },
+              { status: 500 }
+            );
+          }
         }
 
         revalidatePath(`/inventory/locations/${encodeURIComponent(scopeLocationId)}/board`);

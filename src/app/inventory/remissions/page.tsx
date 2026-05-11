@@ -657,6 +657,7 @@ async function createRemission(formData: FormData) {
     input_qty: number;
     unit: string;
     input_unit_code: string;
+    input_uom_profile_id: string | null;
     conversion_factor_to_stock: number;
     stock_unit_code: string;
     production_area_kind: string | null;
@@ -685,6 +686,7 @@ async function createRemission(formData: FormData) {
           input_qty: quantityInInput,
           unit: stockUnitCode,
           input_unit_code: normalizeUnitCode(inputUnits[idx] || stockUnitCode),
+          input_uom_profile_id: inputUomProfileIds[idx] || null,
           conversion_factor_to_stock: conversion.factorToStock,
           stock_unit_code: stockUnitCode,
           production_area_kind: areaKinds[idx] || null,
@@ -842,6 +844,7 @@ async function createRemission(formData: FormData) {
     unit: item.unit,
     input_qty: item.input_qty,
     input_unit_code: item.input_unit_code,
+    input_uom_profile_id: item.input_uom_profile_id,
     conversion_factor_to_stock: item.conversion_factor_to_stock,
     stock_unit_code: item.stock_unit_code,
     production_area_kind: item.production_area_kind,

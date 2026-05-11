@@ -5,7 +5,6 @@ import { useMemo, useRef, useState, type FormEvent } from "react";
 import {
   normalizeProductUomUsageContext,
   normalizeUnitCode,
-  selectProductUomProfileForContext,
   type ProductUomProfile,
 } from "@/lib/inventory/uom";
 
@@ -15,6 +14,15 @@ type ProductOption = {
   unit: string | null;
   stock_unit_code: string | null;
   available_qty: number;
+  presentationParts: PresentationPart[];
+};
+
+type PresentationPart = {
+  uomProfileId: string;
+  label: string;
+  qty: number;
+  baseQty: number;
+  imageUrl?: string;
 };
 
 type WorkerOption = {
@@ -134,24 +142,37 @@ export function KioskWithdrawForm({
     () => activeProfilesForProduct(uomProfiles, product?.id ?? ""),
     [product?.id, uomProfiles]
   );
-  const defaultProfile = useMemo(
-    () =>
-      product
-        ? selectProductUomProfileForContext({
-          profiles,
-          productId: product.id,
-          context: "remission",
-        })
-        : null,
-    [product, profiles]
+  const physicalPresentationIds = useMemo(
+    () => new Set((product?.presentationParts ?? []).map((part) => part.uomProfileId)),
+    [product?.presentationParts]
   );
+  const hasPhysicalBreakdown = Boolean(product && product.presentationParts.length > 0);
+  const defaultProfile = useMemo(
+    () => {
+      if (!product) return null;
+      if (!hasPhysicalBreakdown) return null;
+      const physicalProfiles = profiles.filter((profile) => physicalPresentationIds.has(profile.id));
+      if (physicalProfiles.length === 1) return physicalProfiles[0] ?? null;
+      if (physicalProfiles.length > 1) {
+        const defaultPhysical = physicalProfiles.find((profile) => profile.is_default);
+        return defaultPhysical ?? physicalProfiles[0] ?? null;
+      }
+      return null;
+    },
+    [hasPhysicalBreakdown, product, profiles, physicalPresentationIds]
+  );
+  const initialProfileId =
+    initialInputUomProfileId && physicalPresentationIds.has(initialInputUomProfileId)
+      ? initialInputUomProfileId
+      : "";
 
   const [workerId, setWorkerId] = useState(initialEmployeeId);
   const [quantity, setQuantity] = useState(initialQuantity);
   const [inputUnitCode, setInputUnitCode] = useState(
-    normalizeUnitCode(initialInputUnitCode || defaultProfile?.input_unit_code || "") || stockUnitCode
+    normalizeUnitCode((initialProfileId ? initialInputUnitCode : "") || defaultProfile?.input_unit_code || "") ||
+      stockUnitCode
   );
-  const [inputUomProfileId, setInputUomProfileId] = useState(initialInputUomProfileId || defaultProfile?.id || "");
+  const [inputUomProfileId, setInputUomProfileId] = useState(initialProfileId || defaultProfile?.id || "");
   const [notes, setNotes] = useState(initialNotes);
   const initialWorkerError = errorField === "worker" && errorMessage ? "Trabajador" : "";
   const initialProductError = errorField !== "worker" && errorMessage && !errorProductId ? errorMessage : "";
@@ -164,11 +185,15 @@ export function KioskWithdrawForm({
   const selectedProfile = inputUomProfileId
     ? profiles.find((profile) => profile.id === inputUomProfileId) ?? null
     : null;
+  const selectedPresentation = selectedProfile
+    ? product?.presentationParts.find((part) => part.uomProfileId === selectedProfile.id) ?? null
+    : null;
   const factor = selectedProfile
     ? Number(selectedProfile.qty_in_stock_unit) / Number(selectedProfile.qty_in_input_unit)
     : 1;
-  const available =
-    selectedProfile && Number.isFinite(factor) && factor > 0
+  const available = selectedPresentation
+    ? selectedPresentation.qty
+    : selectedProfile && !hasPhysicalBreakdown && Number.isFinite(factor) && factor > 0
       ? Number(product?.available_qty ?? 0) / factor
       : Number(product?.available_qty ?? 0);
 
@@ -184,9 +209,12 @@ export function KioskWithdrawForm({
       options.push(option);
     }
 
-    add({ value: `unit:${stockUnitCode}`, label: unitLabel(stockUnitCode), inputUnitCode: stockUnitCode, profileId: "" });
+    if (!hasPhysicalBreakdown) {
+      add({ value: `unit:${stockUnitCode}`, label: unitLabel(stockUnitCode), inputUnitCode: stockUnitCode, profileId: "" });
+    }
 
     for (const profile of profiles) {
+      if (hasPhysicalBreakdown && !physicalPresentationIds.has(profile.id)) continue;
       add({
         value: `profile:${profile.id}`,
         label: profileOptionLabel(profile, stockUnitCode),
@@ -196,7 +224,7 @@ export function KioskWithdrawForm({
     }
 
     return options;
-  }, [profiles, stockUnitCode]);
+  }, [hasPhysicalBreakdown, physicalPresentationIds, profiles, stockUnitCode]);
 
   const unitValue = selectedProfile ? `profile:${selectedProfile.id}` : inputUnitCode ? `unit:${inputUnitCode}` : "";
   const selectedUnitLabel = selectedProfile
@@ -272,8 +300,19 @@ export function KioskWithdrawForm({
             <div className="text-xs font-semibold uppercase tracking-[0.08em] text-amber-900">Producto seleccionado</div>
             <div className="mt-1 text-xl font-semibold text-[var(--ui-text)]">{product.name ?? product.id}</div>
             <div className="mt-1 text-sm text-[var(--ui-muted)]">
-              Disponible: {formatQty(product.available_qty)} {product.stock_unit_code ?? product.unit ?? "un"}
+              Base: {formatQty(product.available_qty)} {product.stock_unit_code ?? product.unit ?? "un"}
             </div>
+            {product.presentationParts.length > 0 ? (
+              <div className="mt-3 flex flex-wrap gap-2">
+                {product.presentationParts.map((part) => (
+                  <span key={part.uomProfileId} className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-bold text-emerald-950">
+                    {formatQty(part.qty)} {part.label}
+                  </span>
+                ))}
+              </div>
+            ) : (
+              <div className="mt-2 text-xs font-semibold text-amber-900">Sin desglose por presentacion</div>
+            )}
           </div>
         ) : (
           <div className="rounded-2xl border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">

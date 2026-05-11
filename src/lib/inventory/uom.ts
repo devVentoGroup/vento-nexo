@@ -23,6 +23,8 @@ export type ProductUomProfile = {
   is_active: boolean;
   source: "manual" | "supplier_primary" | "recipe_portion";
   usage_context?: "general" | "purchase" | "remission" | null;
+  image_url?: string | null;
+  catalog_image_url?: string | null;
 };
 
 export type ProductUomUsageContext = "general" | "purchase" | "remission";

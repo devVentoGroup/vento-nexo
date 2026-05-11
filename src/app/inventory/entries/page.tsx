@@ -8,6 +8,7 @@ import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { formatHistoryDateParts } from "@/lib/formatters";
 import { safeDecodeURIComponent } from "@/lib/url";
 import {
+  convertByProductProfile,
   convertQuantity,
   createUnitMap,
   normalizeUnitCode,
@@ -186,6 +187,9 @@ async function createEntry(formData: FormData) {
   const inputUnits = formData
     .getAll("item_input_unit_code")
     .map((v) => normalizeUnitCode(String(v).trim()));
+  const inputUomProfileIds = formData
+    .getAll("item_input_uom_profile_id")
+    .map((v) => String(v).trim());
   const inputUnitCosts = formData.getAll("item_input_unit_cost").map((v) => String(v).trim());
   const purchaseOrderItemIds = formData
     .getAll("item_purchase_order_item_id")
@@ -212,6 +216,16 @@ async function createEntry(formData: FormData) {
   const productProfileMap = new Map(
     ((profileData ?? []) as ProductProfileRow[]).map((row) => [row.product_id, row])
   );
+
+  const requestedUomProfileIds = Array.from(new Set(inputUomProfileIds.filter(Boolean)));
+  const { data: uomProfilesData } = requestedUomProfileIds.length
+    ? await supabase
+        .from("product_uom_profiles")
+        .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context")
+        .in("id", requestedUomProfileIds)
+        .eq("is_active", true)
+    : { data: [] as ProductUomProfile[] };
+  const uomProfileById = new Map(((uomProfilesData ?? []) as ProductUomProfile[]).map((profile) => [profile.id, profile]));
 
   const purchaseOrderId = asText(formData.get("purchase_order_id")) || null;
   const normalizedSupplierId =
@@ -301,6 +315,14 @@ async function createEntry(formData: FormData) {
         product?.stock_unit_code || product?.unit || inputUnits[idx] || "un"
       );
       const inputUnitCode = normalizeUnitCode(inputUnits[idx] || stockUnitCode);
+      const inputUomProfileId = inputUomProfileIds[idx] || "";
+      const selectedUomProfile = inputUomProfileId ? uomProfileById.get(inputUomProfileId) ?? null : null;
+      if (inputUomProfileId && (!selectedUomProfile || selectedUomProfile.product_id !== productId)) {
+        redirect(
+          "/inventory/entries?error=" +
+            encodeURIComponent(`Perfil de presentacion invalido para producto ${productId}.`)
+        );
+      }
       const rawInputUnitCost = parseNumber(inputUnitCosts[idx] ?? "");
       const suggestedSupplierStockCost = resolveSupplierStockUnitCost(productId, stockUnitCode);
       const fallbackCost =
@@ -314,15 +336,33 @@ async function createEntry(formData: FormData) {
       let quantityReceived = inputReceived;
       let conversionFactorToStock = 1;
       try {
-        const factorRes = convertQuantity({
-          quantity: 1,
-          fromUnitCode: inputUnitCode,
-          toUnitCode: stockUnitCode,
-          unitMap,
-        });
-        conversionFactorToStock = factorRes.quantity;
-        quantityDeclared = roundQuantity(inputDeclared * conversionFactorToStock);
-        quantityReceived = roundQuantity(inputReceived * conversionFactorToStock);
+        if (selectedUomProfile) {
+          const declaredConversion = convertByProductProfile({
+            quantityInInput: inputDeclared,
+            inputUnitCode,
+            stockUnitCode,
+            profile: selectedUomProfile,
+          });
+          const receivedConversion = convertByProductProfile({
+            quantityInInput: inputReceived,
+            inputUnitCode,
+            stockUnitCode,
+            profile: selectedUomProfile,
+          });
+          conversionFactorToStock = receivedConversion.factorToStock;
+          quantityDeclared = declaredConversion.quantityInStock;
+          quantityReceived = receivedConversion.quantityInStock;
+        } else {
+          const factorRes = convertQuantity({
+            quantity: 1,
+            fromUnitCode: inputUnitCode,
+            toUnitCode: stockUnitCode,
+            unitMap,
+          });
+          conversionFactorToStock = factorRes.quantity;
+          quantityDeclared = roundQuantity(inputDeclared * conversionFactorToStock);
+          quantityReceived = roundQuantity(inputReceived * conversionFactorToStock);
+        }
         const autoInputUnitCost = roundQuantity(fallbackCost * conversionFactorToStock, 6);
         const effectiveInputUnitCost = hasManualCost ? rawInputUnitCost : autoInputUnitCost;
         const convertedCost = computeStockUnitCostFromInput({
@@ -335,6 +375,7 @@ async function createEntry(formData: FormData) {
           input_qty_declared: inputDeclared,
           input_qty_received: inputReceived,
           input_unit_code: inputUnitCode,
+          input_uom_profile_id: inputUomProfileId || null,
           input_unit_cost: hasManualCost
             ? rawInputUnitCost
             : suggestedSupplierStockCost != null
@@ -372,6 +413,7 @@ async function createEntry(formData: FormData) {
         input_qty_declared: inputDeclared,
         input_qty_received: inputReceived,
         input_unit_code: inputUnitCode,
+        input_uom_profile_id: inputUomProfileId || null,
         input_unit_cost: hasManualCost
           ? rawInputUnitCost
           : suggestedSupplierStockCost != null
@@ -485,6 +527,7 @@ async function createEntry(formData: FormData) {
     unit: item.stock_unit_code,
     input_qty: item.input_qty_received > 0 ? item.input_qty_received : item.input_qty_declared,
     input_unit_code: item.input_unit_code,
+    input_uom_profile_id: item.input_uom_profile_id,
     conversion_factor_to_stock: item.conversion_factor_to_stock,
     stock_unit_code: item.stock_unit_code,
     input_unit_cost: item.input_unit_cost,
@@ -513,6 +556,7 @@ async function createEntry(formData: FormData) {
       quantity: item.quantity_received,
       input_qty: item.input_qty_received,
       input_unit_code: item.input_unit_code,
+      input_uom_profile_id: item.input_uom_profile_id,
       conversion_factor_to_stock: item.conversion_factor_to_stock,
       stock_unit_code: item.stock_unit_code,
       stock_unit_cost: item.stock_unit_cost,
@@ -579,6 +623,20 @@ async function createEntry(formData: FormData) {
       });
       if (locErr) {
         redirect("/inventory/entries?error=" + encodeURIComponent(locErr.message));
+      }
+
+      if (item.input_uom_profile_id) {
+        const { error: presentationErr } = await supabase.rpc("upsert_inventory_stock_by_uom_profile", {
+          p_location_id: item.location_id,
+          p_product_id: item.product_id,
+          p_uom_profile_id: item.input_uom_profile_id,
+          p_presentation_delta: item.input_qty_received,
+          p_base_delta: item.quantity_received,
+          p_location_position_id: null,
+        });
+        if (presentationErr) {
+          redirect("/inventory/entries?error=" + encodeURIComponent(presentationErr.message));
+        }
       }
     }
 
