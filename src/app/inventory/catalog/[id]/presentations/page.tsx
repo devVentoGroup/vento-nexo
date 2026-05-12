@@ -78,13 +78,6 @@ function appendQueryParam(path: string, key: string, value: string): string {
   return `${path}${path.includes("?") ? "&" : "?"}${key}=${encodeURIComponent(value)}`;
 }
 
-function normalizeUsageContext(value: string): "general" | "purchase" | "remission" {
-  const normalized = value.trim().toLowerCase();
-  if (normalized === "purchase") return "purchase";
-  if (normalized === "remission") return "remission";
-  return "general";
-}
-
 async function saveProductPresentations(formData: FormData) {
   "use server";
 
@@ -148,9 +141,7 @@ async function saveProductPresentations(formData: FormData) {
     const id = asText(formData.get(`${prefix}_id`));
     const label = asText(formData.get(`${prefix}_label`));
     const inputUnitCode = normalizeUnitCode(asText(formData.get(`${prefix}_input_unit_code`)));
-    const qtyInInputUnit = asPositiveNumber(formData.get(`${prefix}_qty_in_input_unit`));
     const qtyInStockUnit = asPositiveNumber(formData.get(`${prefix}_qty_in_stock_unit`));
-    const usageContext = normalizeUsageContext(asText(formData.get(`${prefix}_usage_context`)));
     const imageUrl = asText(formData.get(`${prefix}_image_url`));
     const isDefault = formData.has(`${prefix}_is_default`);
     const isActive = formData.has(`${prefix}_is_active`);
@@ -159,9 +150,9 @@ async function saveProductPresentations(formData: FormData) {
       id,
       label,
       inputUnitCode,
-      qtyInInputUnit,
+      qtyInInputUnit: 1,
       qtyInStockUnit,
-      usageContext,
+      usageContext: "general" as const,
       imageUrl,
       isDefault,
       isActive,
@@ -175,16 +166,14 @@ async function saveProductPresentations(formData: FormData) {
     if (!row.inputUnitCode) {
       redirectWithError(`La presentación "${row.label}" no tiene unidad de entrada.`);
     }
-    if (row.qtyInInputUnit <= 0 || row.qtyInStockUnit <= 0) {
-      redirectWithError(`La presentación "${row.label}" debe tener cantidades mayores a cero.`);
+    if (row.qtyInStockUnit <= 0) {
+      redirectWithError(`La presentación "${row.label}" debe tener contenido mayor a cero.`);
     }
   }
 
-  const defaultContexts = Array.from(
-    new Set(rows.filter((row) => row.isDefault && row.isActive).map((row) => row.usageContext))
-  );
+  const hasDefaultPhysicalPresentation = rows.some((row) => row.isDefault && row.isActive);
 
-  for (const context of defaultContexts) {
+  if (hasDefaultPhysicalPresentation) {
     const { error } = await supabase
       .from("product_uom_profiles")
       .update({
@@ -192,7 +181,7 @@ async function saveProductPresentations(formData: FormData) {
         updated_at: new Date().toISOString(),
       })
       .eq("product_id", productId)
-      .eq("usage_context", context)
+      .eq("usage_context", "general")
       .eq("is_default", true);
 
     if (error) redirectWithError(error.message);
@@ -203,9 +192,9 @@ async function saveProductPresentations(formData: FormData) {
       product_id: productId,
       label: row.label,
       input_unit_code: row.inputUnitCode,
-      qty_in_input_unit: row.qtyInInputUnit,
+      qty_in_input_unit: 1,
       qty_in_stock_unit: row.qtyInStockUnit,
-      usage_context: row.usageContext,
+      usage_context: "general",
       is_default: row.isDefault,
       is_active: row.isActive,
       source: "manual",
@@ -298,11 +287,16 @@ export default async function ProductPresentationsPage({
     product.stock_unit_code || product.unit || profile?.default_unit || "un"
   );
 
-  const presentationRows = ((uomProfileData ?? []) as UomProfileRow[]).map((row) => ({
-    ...row,
-    image_url: row.image_url ?? "",
-    catalog_image_url: row.catalog_image_url ?? "",
-  }));
+  const presentationRows = ((uomProfileData ?? []) as UomProfileRow[])
+    .filter((row) => row.source === "manual")
+    .map((row) => ({
+      ...row,
+      qty_in_input_unit: 1,
+      usage_context: "general" as const,
+      source: "manual" as const,
+      image_url: row.image_url ?? "",
+      catalog_image_url: row.catalog_image_url ?? "",
+    }));
 
   const existingImageUrls = Array.from(
     new Set(

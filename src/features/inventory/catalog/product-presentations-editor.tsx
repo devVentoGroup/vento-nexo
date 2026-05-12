@@ -57,13 +57,6 @@ function createEmptyRow(stockUnitCode: string, key: string): EditableRow {
   };
 }
 
-function usageContextLabel(value: string | null | undefined) {
-  const context = String(value ?? "general").trim().toLowerCase();
-  if (context === "purchase") return "Compra";
-  if (context === "remission") return "Operación / remisión";
-  return "General";
-}
-
 export function ProductPresentationsEditor({
   productId,
   productName,
@@ -112,8 +105,8 @@ export function ProductPresentationsEditor({
             <div className="ui-caption">Presentaciones físicas</div>
             <h2 className="ui-h2">{productName}</h2>
             <p className="mt-2 ui-body-muted">
-              Administra empaque, equivalencia e imagen propia por presentación. Esto alimenta el quiosco,
-              el board de inventario y los conteos por presentación física.
+              Administra las formas físicas en las que existe este producto en bodega. La unidad mínima para
+              solicitud/remisión define cómo se pide; bodega puede preparar con cualquier presentación activa equivalente.
             </p>
           </div>
 
@@ -137,6 +130,8 @@ export function ProductPresentationsEditor({
             >
               <input type="hidden" name={`${fieldPrefix}_id`} value={row.id} readOnly />
               <input type="hidden" name={`${fieldPrefix}_source`} value="manual" readOnly />
+              <input type="hidden" name={`${fieldPrefix}_usage_context`} value="general" readOnly />
+              <input type="hidden" name={`${fieldPrefix}_qty_in_input_unit`} value="1" readOnly />
 
               <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                 <div>
@@ -144,7 +139,7 @@ export function ProductPresentationsEditor({
                     Presentación {index + 1}
                   </div>
                   <div className="text-xs text-[var(--ui-muted)]">
-                    {row.id ? "Existente" : "Nueva"} · {usageContextLabel(row.usage_context)}
+                    {row.id ? "Existente" : "Nueva"} · Presentación física de bodega
                   </div>
                 </div>
 
@@ -170,89 +165,67 @@ export function ProductPresentationsEditor({
                     />
                   </label>
 
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="flex flex-col gap-1">
-                      <span className="ui-label">Contexto</span>
-                      <select
-                        name={`${fieldPrefix}_usage_context`}
-                        className="ui-input"
-                        defaultValue={row.usage_context ?? "general"}
-                      >
-                        <option value="general">General</option>
-                        <option value="purchase">Compra</option>
-                        <option value="remission">Operación / remisión</option>
-                      </select>
-                    </label>
+                  <label className="flex flex-col gap-1">
+                    <span className="ui-label">Unidad base del contenido</span>
+                    <select
+                      name={`${fieldPrefix}_input_unit_code`}
+                      className="ui-input"
+                      defaultValue={row.input_unit_code || stockUnitCode}
+                      required
+                    >
+                      {units.map((unit) => (
+                        <option key={unit.code} value={unit.code}>
+                          {unit.code} - {unit.name ?? unit.code}
+                        </option>
+                      ))}
+                    </select>
+                    <span className="text-xs text-[var(--ui-muted)]">
+                      Unidad en la que se mide el contenido de esta presentación. Ej. un, ml, g.
+                    </span>
+                  </label>
 
-                    <label className="flex flex-col gap-1">
-                      <span className="ui-label">Unidad de entrada</span>
-                      <select
-                        name={`${fieldPrefix}_input_unit_code`}
-                        className="ui-input"
-                        defaultValue={row.input_unit_code || stockUnitCode}
-                        required
-                      >
-                        {units.map((unit) => (
-                          <option key={unit.code} value={unit.code}>
-                            {unit.code} - {unit.name ?? unit.code}
-                          </option>
-                        ))}
-                      </select>
-                    </label>
-                  </div>
+                  <label className="flex flex-col gap-1">
+                    <span className="ui-label">Contenido por presentación</span>
+                    <input
+                      name={`${fieldPrefix}_qty_in_stock_unit`}
+                      type="number"
+                      step="0.001"
+                      min="0.001"
+                      className="ui-input"
+                      defaultValue={row.qty_in_stock_unit || 1}
+                      required
+                    />
+                    <span className="text-xs text-[var(--ui-muted)]">
+                      Cuánto contiene 1 presentación. Ej. Bolsa 100 unidades = 100 {stockUnitCode};
+                      paquete de 6 bolsas = 6 {stockUnitCode}.
+                    </span>
+                  </label>
 
-                  <div className="grid gap-4 sm:grid-cols-2">
-                    <label className="flex flex-col gap-1">
-                      <span className="ui-label">Cantidad en unidad de entrada</span>
-                      <input
-                        name={`${fieldPrefix}_qty_in_input_unit`}
-                        type="number"
-                        step="0.001"
-                        min="0.001"
-                        className="ui-input"
-                        defaultValue={row.qty_in_input_unit || 1}
-                        required
-                      />
-                      <span className="text-xs text-[var(--ui-muted)]">
-                        Normalmente 1. Ej. 1 bolsa.
-                      </span>
-                    </label>
+                  <div className="space-y-2">
+                    <div className="flex flex-wrap gap-5">
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          name={`${fieldPrefix}_is_default`}
+                          defaultChecked={Boolean(row.is_default)}
+                        />
+                        <span className="ui-label">Unidad mínima para solicitud/remisión</span>
+                      </label>
 
-                    <label className="flex flex-col gap-1">
-                      <span className="ui-label">Equivalencia en unidad base</span>
-                      <input
-                        name={`${fieldPrefix}_qty_in_stock_unit`}
-                        type="number"
-                        step="0.001"
-                        min="0.001"
-                        className="ui-input"
-                        defaultValue={row.qty_in_stock_unit || 1}
-                        required
-                      />
-                      <span className="text-xs text-[var(--ui-muted)]">
-                        Ej. 100 {stockUnitCode}, 200 {stockUnitCode}, 6.000 ml.
-                      </span>
-                    </label>
-                  </div>
+                      <label className="flex items-center gap-2">
+                        <input
+                          type="checkbox"
+                          name={`${fieldPrefix}_is_active`}
+                          defaultChecked={row.is_active !== false}
+                        />
+                        <span className="ui-label">Presentación física activa</span>
+                      </label>
+                    </div>
 
-                  <div className="flex flex-wrap gap-5">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        name={`${fieldPrefix}_is_default`}
-                        defaultChecked={Boolean(row.is_default)}
-                      />
-                      <span className="ui-label">Predeterminada</span>
-                    </label>
-
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        name={`${fieldPrefix}_is_active`}
-                        defaultChecked={row.is_active !== false}
-                      />
-                      <span className="ui-label">Activa</span>
-                    </label>
+                    <p className="text-xs text-[var(--ui-muted)]">
+                      En remisiones se pide por la unidad mínima. En bodega/retiro se puede preparar o retirar con
+                      cualquier presentación física activa equivalente.
+                    </p>
                   </div>
                 </div>
 
