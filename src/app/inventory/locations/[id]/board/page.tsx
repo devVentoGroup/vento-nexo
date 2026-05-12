@@ -265,7 +265,7 @@ export default async function LocationBoardPage({
         .from("inventory_stock_by_position")
         .select("product_id,position_id,current_qty,updated_at")
         .in("position_id", selectedPositionIds)
-        .gt("current_qty", 0)
+        .gte("current_qty", 0)
         .order("current_qty", { ascending: false })
       : supabase
         .from("inventory_stock_by_location")
@@ -273,14 +273,14 @@ export default async function LocationBoardPage({
           "product_id,current_qty,updated_at,products(id,name,stock_unit_code,unit,category_id,image_url,catalog_image_url)"
         )
         .eq("location_id", id)
-        .gt("current_qty", 0)
+        .gte("current_qty", 0)
         .order("current_qty", { ascending: false }),
     !selectedPosition && positions.length > 0
       ? supabase
         .from("inventory_stock_by_position")
         .select("product_id,position_id,current_qty")
         .in("position_id", positions.map((position) => position.id))
-        .gt("current_qty", 0)
+        .gte("current_qty", 0)
       : Promise.resolve({
         data: [] as Array<{ product_id: string; position_id: string | null; current_qty: number | null }>,
       }),

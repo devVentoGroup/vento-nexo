@@ -35,6 +35,8 @@ type Props = {
 };
 
 type ViewMode = "cards" | "compact" | "list";
+type StockTab = "available" | "out";
+
 
 function formatQty(value: number | null | undefined) {
   const n = Number(value ?? 0);
@@ -46,6 +48,12 @@ function toneForQty(value: number) {
   if (value <= 0) return "border-slate-200 bg-slate-100 text-slate-700";
   if (value <= 3) return "border-amber-200 bg-amber-50 text-amber-900";
   return "border-emerald-200 bg-emerald-50 text-emerald-900";
+}
+
+function stockStatusLabel(value: number) {
+  if (value <= 0) return "Sin stock";
+  if (value <= 3) return "Bajo";
+  return "Disponible";
 }
 
 function StockAmount({ item, size = "lg" }: { item: KioskBoardStockItem; size?: "lg" | "sm" }) {
@@ -144,9 +152,13 @@ export function KioskBoardStockView({
   const searchQuery = String(initialSearchQuery ?? "").trim();
   const totalCount = typeof totalItemsCount === "number" ? totalItemsCount : items.length;
   const [viewMode, setViewMode] = useState<ViewMode>(() => normalizeViewMode(initialViewMode, isKiosk));
+  const [stockTab, setStockTab] = useState<StockTab>("available");
   const [visibleLimit, setVisibleLimit] = useState(() => (isKiosk ? 48 : Number.MAX_SAFE_INTEGER));
   const [openingProductId, setOpeningProductId] = useState("");
-  const filteredItems = items;
+
+  const availableItems = items.filter((item) => Number(item.qty ?? 0) > 0);
+  const outOfStockItems = items.filter((item) => Number(item.qty ?? 0) <= 0);
+  const filteredItems = stockTab === "out" ? outOfStockItems : availableItems;
   const visibleItems = filteredItems.slice(0, visibleLimit);
   const hasMoreItems = visibleItems.length < filteredItems.length;
 
@@ -239,10 +251,36 @@ export function KioskBoardStockView({
           </div>
 
 
-          <div className="text-sm text-[var(--ui-muted)]">
-            {searchQuery
-              ? `Mostrando ${visibleItems.length} de ${filteredItems.length} resultados.`
-              : `Mostrando ${visibleItems.length} de ${totalCount} productos.`}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex rounded-2xl border border-[var(--ui-border)] bg-white p-1 shadow-sm">
+              {[
+                ["available", `Disponible (${availableItems.length})`],
+                ["out", `Sin stock (${outOfStockItems.length})`],
+              ].map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => {
+                    setStockTab(value as StockTab);
+                    setVisibleLimit(isKiosk ? 48 : Number.MAX_SAFE_INTEGER);
+                  }}
+                  className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${stockTab === value
+                    ? "bg-amber-100 text-amber-950"
+                    : "text-[var(--ui-muted)] hover:bg-slate-50 hover:text-[var(--ui-text)]"
+                    }`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+
+            <div className="text-sm text-[var(--ui-muted)]">
+              {searchQuery
+                ? `Mostrando ${visibleItems.length} de ${filteredItems.length} resultados.`
+                : stockTab === "out"
+                  ? `Mostrando ${visibleItems.length} producto(s) sin stock.`
+                  : `Mostrando ${visibleItems.length} de ${availableItems.length} producto(s) disponibles.`}
+            </div>
           </div>
         </div>
       ) : null}
@@ -269,15 +307,21 @@ export function KioskBoardStockView({
                       Base: {formatQty(item.qty)} {item.unit}
                     </div>
                     {isKiosk ? (
-                      <Link
-                        href={buildKioskWithdrawHref(locationId, item.productId)}
-                        onClick={() => setOpeningProductId(item.productId)}
-                        className={`ui-btn ui-btn--brand mt-3 h-14 px-4 text-base ${openingProductId === item.productId ? "pointer-events-none opacity-80" : ""
-                          }`}
-                        aria-disabled={openingProductId === item.productId}
-                      >
-                        {openingProductId === item.productId ? "Abriendo..." : "Retirar"}
-                      </Link>
+                      item.qty > 0 ? (
+                        <Link
+                          href={buildKioskWithdrawHref(locationId, item.productId)}
+                          onClick={() => setOpeningProductId(item.productId)}
+                          className={`ui-btn ui-btn--brand mt-3 h-14 px-4 text-base ${openingProductId === item.productId ? "pointer-events-none opacity-80" : ""
+                            }`}
+                          aria-disabled={openingProductId === item.productId}
+                        >
+                          {openingProductId === item.productId ? "Abriendo..." : "Retirar"}
+                        </Link>
+                      ) : (
+                        <div className="mt-3 inline-flex h-14 items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 px-4 text-base font-bold text-slate-500">
+                          Sin stock
+                        </div>
+                      )
                     ) : null}
                   </div>
                 </article>
@@ -301,7 +345,7 @@ export function KioskBoardStockView({
                   <div className="flex items-center justify-between gap-3">
                     <div className="truncate text-sm text-[var(--ui-muted)]">{item.categoryLabel}</div>
                     <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${toneForQty(item.qty)}`}>
-                      {item.qty <= 3 ? "Bajo" : "Disponible"}
+                      {stockStatusLabel(item.qty)}
                     </span>
                   </div>
                   {item.internalLocationLabel ? (
@@ -312,15 +356,21 @@ export function KioskBoardStockView({
                     Base: {formatQty(item.qty)} {item.unit}
                   </div>
                   {isKiosk ? (
-                    <Link
-                      href={buildKioskWithdrawHref(locationId, item.productId)}
-                      onClick={() => setOpeningProductId(item.productId)}
-                      className={`ui-btn ui-btn--brand h-14 w-full px-4 text-base ${openingProductId === item.productId ? "pointer-events-none opacity-80" : ""
-                        }`}
-                      aria-disabled={openingProductId === item.productId}
-                    >
-                      {openingProductId === item.productId ? "Abriendo..." : "Retirar"}
-                    </Link>
+                    item.qty > 0 ? (
+                      <Link
+                        href={buildKioskWithdrawHref(locationId, item.productId)}
+                        onClick={() => setOpeningProductId(item.productId)}
+                        className={`ui-btn ui-btn--brand h-14 w-full px-4 text-base ${openingProductId === item.productId ? "pointer-events-none opacity-80" : ""
+                          }`}
+                        aria-disabled={openingProductId === item.productId}
+                      >
+                        {openingProductId === item.productId ? "Abriendo..." : "Retirar"}
+                      </Link>
+                    ) : (
+                      <div className="flex h-14 w-full items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 px-4 text-base font-bold text-slate-500">
+                        Sin stock
+                      </div>
+                    )
                   ) : null}
                 </div>
               </article>
@@ -343,11 +393,15 @@ export function KioskBoardStockView({
 
       {filteredItems.length === 0 ? (
         <div className={`ui-panel ui-remission-section text-center ${isKiosk ? "flex min-h-[35vh] flex-col items-center justify-center" : ""}`}>
-          <div className="ui-h3">Sin productos visibles</div>
+          <div className="ui-h3">
+            {stockTab === "out" ? "No hay productos sin stock" : "Sin productos visibles"}
+          </div>
           <p className="mt-2 ui-body-muted">
             {searchQuery
               ? `No encontramos productos para "${searchQuery}". Limpia la búsqueda o intenta con otra palabra.`
-              : "Ajusta la búsqueda."}
+              : stockTab === "out"
+                ? "Cuando un producto del LOC quede en cero, aparecerá aquí si la fila de stock se conserva."
+                : "Ajusta la búsqueda o revisa la pestaña Sin stock."}
           </p>
           {searchQuery ? (
             <Link
