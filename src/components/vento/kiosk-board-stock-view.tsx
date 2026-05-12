@@ -205,6 +205,11 @@ export function KioskBoardStockView({
     searchQuery,
   });
 
+  function activateStockTab(nextTab: StockTab) {
+    setStockTab(nextTab);
+    setVisibleLimit(isKiosk ? 48 : Number.MAX_SAFE_INTEGER);
+  }
+
   const showTools = isKiosk && totalCount > 0;
 
   return (
@@ -296,25 +301,28 @@ export function KioskBoardStockView({
 
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex rounded-2xl border border-[var(--ui-border)] bg-white p-1 shadow-sm">
-              {[
+              {([
                 ["available", `Disponible (${availableItems.length})`],
                 ["out", `Sin stock (${outOfStockItems.length})`],
-              ].map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  onClick={() => {
-                    setStockTab(value as StockTab);
-                    setVisibleLimit(isKiosk ? 48 : Number.MAX_SAFE_INTEGER);
-                  }}
-                  className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${stockTab === value
-                    ? "bg-amber-100 text-amber-950"
-                    : "text-[var(--ui-muted)] hover:bg-slate-50 hover:text-[var(--ui-text)]"
-                    }`}
-                >
-                  {label}
-                </button>
-              ))}
+              ] as Array<[StockTab, string]>).map(([value, label]) => {
+                const isActive = stockTab === value;
+
+                return (
+                  <button
+                    key={value}
+                    type="button"
+                    aria-pressed={isActive}
+                    onPointerDown={() => activateStockTab(value)}
+                    onClick={() => activateStockTab(value)}
+                    className={`min-h-12 rounded-xl px-4 py-2 text-sm font-semibold transition ${isActive
+                      ? "bg-amber-100 text-amber-950"
+                      : "text-[var(--ui-muted)] hover:bg-slate-50 hover:text-[var(--ui-text)]"
+                      }`}
+                  >
+                    {label}
+                  </button>
+                );
+              })}
             </div>
 
             <div className="text-sm text-[var(--ui-muted)]">
@@ -363,7 +371,7 @@ export function KioskBoardStockView({
                       ) : (
                         <div className="mt-3">
                           <div className="inline-flex h-14 items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 px-4 text-base font-bold text-slate-500">
-                            Sin stock
+                            Producto agotado
                           </div>
                           <HideZeroStockButton
                             action={hideZeroStockAction}
