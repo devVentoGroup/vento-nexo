@@ -4,13 +4,19 @@ import { notFound, redirect } from "next/navigation";
 import {
   ProductPresentationsEditor,
   type ProductPresentationEditorRow,
+  type ProductPresentationSuggestion,
 } from "@/features/inventory/catalog/product-presentations-editor";
 import { RequiredFieldsGuardForm } from "@/components/inventory/forms/RequiredFieldsGuardForm";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { createClient } from "@/lib/supabase/server";
 import { safeDecodeURIComponent } from "@/lib/url";
-import { normalizeUnitCode, type InventoryUnit } from "@/lib/inventory/uom";
+import {
+  convertQuantity,
+  createUnitMap,
+  normalizeUnitCode,
+  type InventoryUnit,
+} from "@/lib/inventory/uom";
 
 export const dynamic = "force-dynamic";
 
@@ -38,6 +44,15 @@ type InventoryProfileRow = {
 };
 
 type UomProfileRow = ProductPresentationEditorRow;
+
+type SupplierPresentationRow = {
+  id: string;
+  purchase_unit: string | null;
+  purchase_unit_size: number | null;
+  purchase_pack_qty: number | null;
+  purchase_pack_unit_code: string | null;
+  is_primary: boolean | null;
+};
 
 function asText(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
@@ -76,6 +91,79 @@ function decodeCatalogReturnParam(value: string | undefined): string {
 
 function appendQueryParam(path: string, key: string, value: string): string {
   return `${path}${path.includes("?") ? "&" : "?"}${key}=${encodeURIComponent(value)}`;
+}
+
+function formatSuggestionNumber(value: number): string {
+  return new Intl.NumberFormat("es-CO", { maximumFractionDigits: 3 }).format(value);
+}
+
+function normalizeSuggestionText(value: string | null | undefined): string {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function buildSupplierPresentationSuggestions(params: {
+  supplierRows: SupplierPresentationRow[];
+  stockUnitCode: string;
+  unitMap: ReturnType<typeof createUnitMap>;
+}): ProductPresentationSuggestion[] {
+  const suggestions: ProductPresentationSuggestion[] = [];
+  const seen = new Set<string>();
+
+  for (const row of params.supplierRows) {
+    const packQty = Number(row.purchase_pack_qty ?? row.purchase_unit_size ?? 0);
+    const packUnitCode = normalizeUnitCode(row.purchase_pack_unit_code || params.stockUnitCode);
+
+    if (!Number.isFinite(packQty) || packQty <= 0 || !packUnitCode) continue;
+
+    let qtyInStockUnit = 0;
+
+    try {
+      qtyInStockUnit = convertQuantity({
+        quantity: packQty,
+        fromUnitCode: packUnitCode,
+        toUnitCode: params.stockUnitCode,
+        unitMap: params.unitMap,
+      }).quantity;
+    } catch {
+      if (packUnitCode === params.stockUnitCode) {
+        qtyInStockUnit = packQty;
+      }
+    }
+
+    if (!Number.isFinite(qtyInStockUnit) || qtyInStockUnit <= 0) continue;
+
+    const purchaseUnitLabel = String(row.purchase_unit ?? "").trim();
+    const formattedPackQty = formatSuggestionNumber(packQty);
+    const normalizedLabel = normalizeSuggestionText(purchaseUnitLabel);
+    const label = purchaseUnitLabel
+      ? normalizedLabel.includes(normalizeSuggestionText(formattedPackQty))
+        ? purchaseUnitLabel
+        : `${purchaseUnitLabel} ${formattedPackQty} ${packUnitCode}`
+      : `Presentación ${formattedPackQty} ${packUnitCode}`;
+
+    const signature = [
+      normalizeSuggestionText(label),
+      normalizeSuggestionText(params.stockUnitCode),
+      Number(qtyInStockUnit).toFixed(3),
+    ].join("::");
+
+    if (seen.has(signature)) continue;
+    seen.add(signature);
+
+    suggestions.push({
+      key: `supplier-${row.id}`,
+      label,
+      input_unit_code: params.stockUnitCode,
+      qty_in_stock_unit: qtyInStockUnit,
+      sourceLabel: row.is_primary ? "Proveedor principal" : "Proveedor secundario",
+    });
+  }
+
+  return suggestions;
 }
 
 async function saveProductPresentations(formData: FormData) {
@@ -248,44 +336,61 @@ export default async function ProductPresentationsPage({
 
   const product = productData as ProductRow;
 
-  const [{ data: profileData }, { data: unitsData }, { data: uomProfileData }, { data: galleryProductsData }, { data: galleryProfileData }] =
-    await Promise.all([
-      supabase
-        .from("product_inventory_profiles")
-        .select("product_id,default_unit")
-        .eq("product_id", id)
-        .maybeSingle(),
-      supabase
-        .from("inventory_units")
-        .select("code,name,family,factor_to_base,symbol,display_decimals,is_active")
-        .eq("is_active", true)
-        .order("family", { ascending: true })
-        .order("factor_to_base", { ascending: true })
-        .limit(500),
-      supabase
-        .from("product_uom_profiles")
-        .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context,image_url,catalog_image_url")
-        .eq("product_id", id)
-        .order("usage_context", { ascending: true })
-        .order("is_default", { ascending: false })
-        .order("label", { ascending: true }),
-      supabase
-        .from("products")
-        .select("image_url,catalog_image_url")
-        .or("image_url.not.is.null,catalog_image_url.not.is.null")
-        .limit(300),
-      supabase
-        .from("product_uom_profiles")
-        .select("image_url,catalog_image_url")
-        .or("image_url.not.is.null,catalog_image_url.not.is.null")
-        .limit(300),
-    ]);
+  const [
+    { data: profileData },
+    { data: unitsData },
+    { data: uomProfileData },
+    { data: supplierLinksData },
+    { data: galleryProductsData },
+    { data: galleryProfileData },
+  ] = await Promise.all([
+    supabase
+      .from("product_inventory_profiles")
+      .select("product_id,default_unit")
+      .eq("product_id", id)
+      .maybeSingle(),
+    supabase
+      .from("inventory_units")
+      .select("code,name,family,factor_to_base,symbol,display_decimals,is_active")
+      .eq("is_active", true)
+      .order("family", { ascending: true })
+      .order("factor_to_base", { ascending: true })
+      .limit(500),
+    supabase
+      .from("product_uom_profiles")
+      .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context,image_url,catalog_image_url")
+      .eq("product_id", id)
+      .order("usage_context", { ascending: true })
+      .order("is_default", { ascending: false })
+      .order("label", { ascending: true }),
+    supabase
+      .from("product_suppliers")
+      .select("id,purchase_unit,purchase_unit_size,purchase_pack_qty,purchase_pack_unit_code,is_primary")
+      .eq("product_id", id)
+      .order("is_primary", { ascending: false }),
+    supabase
+      .from("products")
+      .select("image_url,catalog_image_url")
+      .or("image_url.not.is.null,catalog_image_url.not.is.null")
+      .limit(300),
+    supabase
+      .from("product_uom_profiles")
+      .select("image_url,catalog_image_url")
+      .or("image_url.not.is.null,catalog_image_url.not.is.null")
+      .limit(300),
+  ]);
 
   const profile = (profileData ?? null) as InventoryProfileRow | null;
   const units = (unitsData ?? []) as InventoryUnit[];
   const stockUnitCode = normalizeUnitCode(
     product.stock_unit_code || product.unit || profile?.default_unit || "un"
   );
+  const unitMap = createUnitMap(units);
+  const supplierPresentationSuggestions = buildSupplierPresentationSuggestions({
+    supplierRows: (supplierLinksData ?? []) as SupplierPresentationRow[],
+    stockUnitCode,
+    unitMap,
+  });
 
   const presentationRows = ((uomProfileData ?? []) as UomProfileRow[])
     .filter((row) => row.source === "manual")
@@ -332,6 +437,7 @@ export default async function ProductPresentationsPage({
           stockUnitCode={stockUnitCode}
           units={units.map((unit) => ({ code: unit.code, name: unit.name }))}
           initialRows={presentationRows}
+          suggestedRows={supplierPresentationSuggestions}
           existingImageUrls={existingImageUrls}
           returnHref={returnHref}
         />

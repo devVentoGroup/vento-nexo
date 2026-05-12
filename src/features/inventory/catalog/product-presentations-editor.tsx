@@ -24,6 +24,14 @@ export type ProductPresentationEditorRow = {
   catalog_image_url?: string | null;
 };
 
+export type ProductPresentationSuggestion = {
+  key: string;
+  label: string;
+  input_unit_code: string;
+  qty_in_stock_unit: number;
+  sourceLabel: string;
+};
+
 type EditableRow = ProductPresentationEditorRow & {
   key: string;
   isNew?: boolean;
@@ -35,6 +43,7 @@ type Props = {
   stockUnitCode: string;
   units: UnitOption[];
   initialRows: ProductPresentationEditorRow[];
+  suggestedRows?: ProductPresentationSuggestion[];
   existingImageUrls?: string[];
   returnHref: string;
 };
@@ -57,12 +66,51 @@ function createEmptyRow(stockUnitCode: string, key: string): EditableRow {
   };
 }
 
+function createRowFromSuggestion(suggestion: ProductPresentationSuggestion): EditableRow {
+  return {
+    key: `suggestion-${suggestion.key}`,
+    id: "",
+    label: suggestion.label,
+    input_unit_code: suggestion.input_unit_code || "un",
+    qty_in_input_unit: 1,
+    qty_in_stock_unit: suggestion.qty_in_stock_unit,
+    is_default: false,
+    is_active: true,
+    source: "manual",
+    usage_context: "general",
+    image_url: "",
+    catalog_image_url: "",
+    isNew: true,
+  };
+}
+
+function normalizeComparableText(value: string | null | undefined) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function presentationSignature(params: {
+  label: string;
+  inputUnitCode: string;
+  qtyInStockUnit: number;
+}) {
+  return [
+    normalizeComparableText(params.label),
+    normalizeComparableText(params.inputUnitCode),
+    Number(params.qtyInStockUnit || 0).toFixed(3),
+  ].join("::");
+}
+
 export function ProductPresentationsEditor({
   productId,
   productName,
   stockUnitCode,
   units,
   initialRows,
+  suggestedRows = [],
   existingImageUrls = [],
   returnHref,
 }: Props) {
@@ -80,6 +128,35 @@ export function ProductPresentationsEditor({
 
   const rowKeys = useMemo(() => rows.map((row) => row.key), [rows]);
 
+  const currentPresentationSignatures = useMemo(
+    () =>
+      new Set(
+        rows.map((row) =>
+          presentationSignature({
+            label: row.label,
+            inputUnitCode: row.input_unit_code,
+            qtyInStockUnit: row.qty_in_stock_unit,
+          })
+        )
+      ),
+    [rows]
+  );
+
+  const availableSuggestedRows = useMemo(
+    () =>
+      suggestedRows.filter(
+        (suggestion) =>
+          !currentPresentationSignatures.has(
+            presentationSignature({
+              label: suggestion.label,
+              inputUnitCode: suggestion.input_unit_code,
+              qtyInStockUnit: suggestion.qty_in_stock_unit,
+            })
+          )
+      ),
+    [currentPresentationSignatures, suggestedRows]
+  );
+
   function addRow() {
     setRows((current) => [
       ...current,
@@ -88,6 +165,10 @@ export function ProductPresentationsEditor({
         `new-${Date.now()}-${Math.random().toString(36).slice(2)}`
       ),
     ]);
+  }
+
+  function addSuggestedRow(suggestion: ProductPresentationSuggestion) {
+    setRows((current) => [...current, createRowFromSuggestion(suggestion)]);
   }
 
   function removeRow(row: EditableRow) {
@@ -118,6 +199,46 @@ export function ProductPresentationsEditor({
 
       <input type="hidden" name="presentation_keys" value={JSON.stringify(rowKeys)} readOnly />
       <input type="hidden" name="deleted_presentation_ids" value={JSON.stringify(deletedIds)} readOnly />
+
+      {availableSuggestedRows.length > 0 ? (
+        <div className="rounded-[28px] border border-amber-200 bg-amber-50 p-4">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <div className="text-sm font-bold text-amber-950">Sugeridas desde proveedores / compra</div>
+              <p className="mt-1 text-sm text-amber-900">
+                Estas presentaciones vienen del empaque configurado en proveedores. Puedes agregarlas como
+                presentaciones físicas para adjuntar foto y usarlas en bodega.
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-2">
+            {availableSuggestedRows.map((suggestion) => (
+              <div
+                key={suggestion.key}
+                className="rounded-2xl border border-amber-200 bg-white p-3 shadow-sm"
+              >
+                <div className="text-sm font-bold text-[var(--ui-text)]">{suggestion.label}</div>
+                <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                  {suggestion.sourceLabel} · 1 presentación ={" "}
+                  {Number(suggestion.qty_in_stock_unit || 0).toLocaleString("es-CO", {
+                    maximumFractionDigits: 3,
+                  })}{" "}
+                  {suggestion.input_unit_code || stockUnitCode}
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => addSuggestedRow(suggestion)}
+                  className="ui-btn ui-btn--ghost mt-3 h-10 px-4 text-sm"
+                >
+                  Agregar a presentaciones físicas
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       <div className="space-y-4">
         {rows.map((row, index) => {
