@@ -147,6 +147,23 @@ function selectPresentationRowsForDisplay(rows: PresentationStockRow[], availabl
   return validRows;
 }
 
+function selectPresentationLedgerRowsForOperation(rows: PresentationStockLedgerRow[], availableBaseQty: number) {
+  const validRows = rows.filter((row) => {
+    const qty = Number(row.presentation_qty ?? 0);
+    const baseQty = Number(row.base_qty ?? 0);
+    return qty > 0 && baseQty > 0;
+  });
+
+  const totalPhysicalBaseQty = validRows.reduce((sum, row) => sum + Number(row.base_qty ?? 0), 0);
+  const hasPositionRows = validRows.some((row) => Boolean(row.location_position_id));
+
+  if (hasPositionRows && totalPhysicalBaseQty > availableBaseQty + PRESENTATION_EPSILON) {
+    return validRows.filter((row) => Boolean(row.location_position_id));
+  }
+
+  return validRows;
+}
+
 function locLabel(loc: Pick<LocationRow, "id" | "code" | "description" | "zone"> | null | undefined) {
   if (!loc) return "LOC";
   return String(loc.description ?? "").trim() || String(loc.zone ?? "").trim() || String(loc.code ?? "").trim() || loc.id;
@@ -429,6 +446,8 @@ async function submitKioskWithdraw(formData: FormData) {
     }
   }
 
+  const availableBaseQtyByProduct = new Map<string, number>();
+
   for (const requested of requestedByProduct.values()) {
     const { data: stockLoc } = await supabase
       .from("inventory_stock_by_location")
@@ -438,7 +457,9 @@ async function submitKioskWithdraw(formData: FormData) {
       .maybeSingle();
 
     const availableAtLoc = Number((stockLoc as { current_qty?: number } | null)?.current_qty ?? 0);
-    if (availableAtLoc < requested.quantity) {
+    availableBaseQtyByProduct.set(requested.product_id, availableAtLoc);
+
+    if (availableAtLoc + PRESENTATION_EPSILON < requested.quantity) {
       redirect(
         errorUrl(
           sourceLocationId,
@@ -474,9 +495,12 @@ async function submitKioskWithdraw(formData: FormData) {
 
     let availableAsRequestedUnits = 0;
 
-    for (const row of presentationRows) {
-      if (row.product_id !== requested.product_id) continue;
+    const rowsForRequestedProduct = selectPresentationLedgerRowsForOperation(
+      presentationRows.filter((row) => row.product_id === requested.product_id),
+      availableBaseQtyByProduct.get(requested.product_id) ?? 0
+    );
 
+    for (const row of rowsForRequestedProduct) {
       const rowQty = Number(row.presentation_qty ?? 0);
       if (rowQty <= 0) continue;
 
@@ -570,26 +594,87 @@ async function submitKioskWithdraw(formData: FormData) {
       redirect(errorUrl(sourceLocationId, "Perfil de unidad invalido para retiro fisico.", item.product_id));
     }
 
+    const availableBaseQty = availableBaseQtyByProduct.get(item.product_id) ?? 0;
     let remainingPresentationQty = item.input_qty;
 
-    const { data: exactRowsData, error: exactRowsErr } = await supabase
-      .from("inventory_stock_by_uom_profile")
-      .select("product_id,uom_profile_id,location_position_id,presentation_qty,base_qty")
-      .eq("location_id", sourceLocationId)
-      .eq("product_id", item.product_id)
-      .eq("uom_profile_id", item.input_uom_profile_id)
-      .gt("presentation_qty", 0);
+    const fetchPhysicalRowsForProduct = async () => {
+      const { data, error } = await supabase
+        .from("inventory_stock_by_uom_profile")
+        .select("product_id,uom_profile_id,location_position_id,presentation_qty,base_qty")
+        .eq("location_id", sourceLocationId)
+        .eq("product_id", item.product_id)
+        .gt("presentation_qty", 0);
 
-    if (exactRowsErr) {
-      redirect(errorUrl(sourceLocationId, exactRowsErr.message, item.product_id));
-    }
+      if (error) {
+        redirect(errorUrl(sourceLocationId, error.message, item.product_id));
+      }
 
-    const exactRows = ((exactRowsData ?? []) as PresentationStockLedgerRow[]).sort((a, b) => {
-      const aPositionRank = a.location_position_id ? 0 : 1;
-      const bPositionRank = b.location_position_id ? 0 : 1;
-      if (aPositionRank !== bPositionRank) return aPositionRank - bPositionRank;
-      return Number(a.presentation_qty ?? 0) - Number(b.presentation_qty ?? 0);
-    });
+      return selectPresentationLedgerRowsForOperation(
+        (data ?? []) as PresentationStockLedgerRow[],
+        availableBaseQty
+      );
+    };
+
+    const deletePhysicalRow = async (row: PresentationStockLedgerRow) => {
+      let deleteQuery = supabase
+        .from("inventory_stock_by_uom_profile")
+        .delete()
+        .eq("location_id", sourceLocationId)
+        .eq("product_id", row.product_id)
+        .eq("uom_profile_id", row.uom_profile_id);
+
+      deleteQuery = row.location_position_id
+        ? deleteQuery.eq("location_position_id", row.location_position_id)
+        : deleteQuery.is("location_position_id", null);
+
+      const { error } = await deleteQuery;
+
+      if (error) {
+        redirect(errorUrl(sourceLocationId, error.message, item.product_id));
+      }
+    };
+
+    const decrementPhysicalRow = async (
+      row: PresentationStockLedgerRow,
+      presentationQty: number,
+      baseQty: number
+    ) => {
+      const availablePresentationQty = Number(row.presentation_qty ?? 0);
+      const availableBaseQtyForRow = Number(row.base_qty ?? 0);
+
+      if (availablePresentationQty <= 0 || availableBaseQtyForRow <= 0) return;
+
+      const consumesEntireRow =
+        presentationQty + PRESENTATION_EPSILON >= availablePresentationQty ||
+        baseQty + PRESENTATION_EPSILON >= availableBaseQtyForRow;
+
+      if (consumesEntireRow) {
+        await deletePhysicalRow(row);
+        return;
+      }
+
+      const { error } = await supabase.rpc("upsert_inventory_stock_by_uom_profile", {
+        p_location_id: sourceLocationId,
+        p_product_id: item.product_id,
+        p_uom_profile_id: row.uom_profile_id,
+        p_presentation_delta: -presentationQty,
+        p_base_delta: -baseQty,
+        p_location_position_id: row.location_position_id ?? null,
+      });
+
+      if (error) {
+        redirect(errorUrl(sourceLocationId, error.message, item.product_id));
+      }
+    };
+
+    const exactRows = (await fetchPhysicalRowsForProduct())
+      .filter((row) => row.uom_profile_id === item.input_uom_profile_id)
+      .sort((a, b) => {
+        const aPositionRank = a.location_position_id ? 0 : 1;
+        const bPositionRank = b.location_position_id ? 0 : 1;
+        if (aPositionRank !== bPositionRank) return aPositionRank - bPositionRank;
+        return Number(a.presentation_qty ?? 0) - Number(b.presentation_qty ?? 0);
+      });
 
     for (const row of exactRows) {
       if (remainingPresentationQty <= PRESENTATION_EPSILON) break;
@@ -600,36 +685,14 @@ async function submitKioskWithdraw(formData: FormData) {
       const consumedQty = Math.min(availableQty, remainingPresentationQty);
       const consumedBaseQty = roundQuantity(consumedQty * requestedFactor);
 
-      const { error: consumeExactErr } = await supabase.rpc("upsert_inventory_stock_by_uom_profile", {
-        p_location_id: sourceLocationId,
-        p_product_id: item.product_id,
-        p_uom_profile_id: item.input_uom_profile_id,
-        p_presentation_delta: -consumedQty,
-        p_base_delta: -consumedBaseQty,
-        p_location_position_id: row.location_position_id ?? null,
-      });
-
-      if (consumeExactErr) {
-        redirect(errorUrl(sourceLocationId, consumeExactErr.message, item.product_id));
-      }
+      await decrementPhysicalRow(row, consumedQty, consumedBaseQty);
 
       remainingPresentationQty = roundQuantity(remainingPresentationQty - consumedQty);
     }
 
     if (remainingPresentationQty <= PRESENTATION_EPSILON) return;
 
-    const { data: candidateRowsData, error: candidateRowsErr } = await supabase
-      .from("inventory_stock_by_uom_profile")
-      .select("product_id,uom_profile_id,location_position_id,presentation_qty,base_qty")
-      .eq("location_id", sourceLocationId)
-      .eq("product_id", item.product_id)
-      .gt("presentation_qty", 0);
-
-    if (candidateRowsErr) {
-      redirect(errorUrl(sourceLocationId, candidateRowsErr.message, item.product_id));
-    }
-
-    const candidates = ((candidateRowsData ?? []) as PresentationStockLedgerRow[])
+    const candidates = (await fetchPhysicalRowsForProduct())
       .map((row) => {
         const profile = uomProfileById.get(row.uom_profile_id) ?? null;
         const factor = profileBaseFactor(profile);
@@ -682,18 +745,7 @@ async function submitKioskWithdraw(formData: FormData) {
       const consumedFromOpenedQty = Math.min(createdRequestedQty, remainingPresentationQty);
       const leftoverRequestedQty = roundQuantity(createdRequestedQty - consumedFromOpenedQty);
 
-      const { error: openErr } = await supabase.rpc("upsert_inventory_stock_by_uom_profile", {
-        p_location_id: sourceLocationId,
-        p_product_id: item.product_id,
-        p_uom_profile_id: candidate.row.uom_profile_id,
-        p_presentation_delta: -presentationsToOpen,
-        p_base_delta: -openedBaseQty,
-        p_location_position_id: candidate.row.location_position_id ?? null,
-      });
-
-      if (openErr) {
-        redirect(errorUrl(sourceLocationId, openErr.message, item.product_id));
-      }
+      await decrementPhysicalRow(candidate.row, presentationsToOpen, openedBaseQty);
 
       if (leftoverRequestedQty > PRESENTATION_EPSILON) {
         const { error: leftoverErr } = await supabase.rpc("upsert_inventory_stock_by_uom_profile", {
