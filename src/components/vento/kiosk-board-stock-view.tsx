@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useSearchParams } from "next/navigation";
+import { useEffect, useState } from "react";
 
 type StockPart = {
   qty: number;
@@ -117,6 +118,7 @@ function buildBoardHref(params: {
   isKiosk: boolean;
   positionId?: string;
   viewMode: ViewMode;
+  stockTab?: StockTab;
   searchQuery?: string;
 }) {
   const search = new URLSearchParams();
@@ -125,6 +127,7 @@ function buildBoardHref(params: {
   if (params.isKiosk) search.set("kiosk", "1");
   if (params.positionId) search.set("position_id", params.positionId);
   if (params.viewMode) search.set("view", params.viewMode);
+  if (params.stockTab) search.set("stock_tab", params.stockTab);
   if (searchQuery) search.set("search", searchQuery);
 
   const qs = search.toString();
@@ -184,13 +187,18 @@ export function KioskBoardStockView({
   totalItemsCount,
   hideZeroStockAction,
 }: Props) {
+  const searchParams = useSearchParams();
   const searchQuery = String(initialSearchQuery ?? "").trim();
   const totalCount = typeof totalItemsCount === "number" ? totalItemsCount : items.length;
+  const stockTab: StockTab = searchParams.get("stock_tab") === "out" ? "out" : "available";
   const [viewMode, setViewMode] = useState<ViewMode>(() => normalizeViewMode(initialViewMode, isKiosk));
-  const [stockTab, setStockTab] = useState<StockTab>("available");
   const [visibleLimit, setVisibleLimit] = useState(() => (isKiosk ? 48 : Number.MAX_SAFE_INTEGER));
   const [openingProductId, setOpeningProductId] = useState("");
   const [hidingProductId, setHidingProductId] = useState("");
+
+  useEffect(() => {
+    setVisibleLimit(isKiosk ? 48 : Number.MAX_SAFE_INTEGER);
+  }, [isKiosk, stockTab, searchQuery]);
 
   const availableItems = items.filter((item) => Number(item.qty ?? 0) > 0);
   const outOfStockItems = items.filter((item) => Number(item.qty ?? 0) <= 0);
@@ -202,13 +210,9 @@ export function KioskBoardStockView({
     isKiosk,
     positionId,
     viewMode,
+    stockTab,
     searchQuery,
   });
-
-  function activateStockTab(nextTab: StockTab) {
-    setStockTab(nextTab);
-    setVisibleLimit(isKiosk ? 48 : Number.MAX_SAFE_INTEGER);
-  }
 
   const showTools = isKiosk && totalCount > 0;
 
@@ -225,6 +229,7 @@ export function KioskBoardStockView({
               {isKiosk ? <input type="hidden" name="kiosk" value="1" /> : null}
               {positionId ? <input type="hidden" name="position_id" value={positionId} /> : null}
               {viewMode ? <input type="hidden" name="view" value={viewMode} /> : null}
+              <input type="hidden" name="stock_tab" value={stockTab} />
 
               <div className="flex items-center justify-between gap-3">
                 <label htmlFor="kiosk-board-search" className="ui-label">
@@ -238,6 +243,7 @@ export function KioskBoardStockView({
                       isKiosk,
                       positionId,
                       viewMode,
+                      stockTab,
                       searchQuery: "",
                     })}
                     className="text-xs font-semibold text-[var(--ui-muted)] underline underline-offset-4"
@@ -285,6 +291,7 @@ export function KioskBoardStockView({
                     isKiosk,
                     positionId,
                     viewMode: value as ViewMode,
+                    stockTab,
                     searchQuery,
                   })}
                   className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${viewMode === value
@@ -308,19 +315,24 @@ export function KioskBoardStockView({
                 const isActive = stockTab === value;
 
                 return (
-                  <button
+                  <Link
                     key={value}
-                    type="button"
-                    aria-pressed={isActive}
-                    onPointerDown={() => activateStockTab(value)}
-                    onClick={() => activateStockTab(value)}
+                    href={buildBoardHref({
+                      locationId,
+                      isKiosk,
+                      positionId,
+                      viewMode,
+                      stockTab: value,
+                      searchQuery,
+                    })}
+                    aria-current={isActive ? "page" : undefined}
                     className={`min-h-12 rounded-xl px-4 py-2 text-sm font-semibold transition ${isActive
                       ? "bg-amber-100 text-amber-950"
                       : "text-[var(--ui-muted)] hover:bg-slate-50 hover:text-[var(--ui-text)]"
                       }`}
                   >
                     {label}
-                  </button>
+                  </Link>
                 );
               })}
             </div>
@@ -481,6 +493,7 @@ export function KioskBoardStockView({
                 isKiosk,
                 positionId,
                 viewMode,
+                stockTab,
                 searchQuery: "",
               })}
               className="ui-btn ui-btn--brand mt-4"
