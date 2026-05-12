@@ -39,9 +39,7 @@ type Props = {
   returnHref: string;
 };
 
-function createEmptyRow(stockUnitCode: string): EditableRow {
-  const key = `new-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-
+function createEmptyRow(stockUnitCode: string, key: string): EditableRow {
   return {
     key,
     id: "",
@@ -78,19 +76,25 @@ export function ProductPresentationsEditor({
   const [rows, setRows] = useState<EditableRow[]>(() =>
     initialRows.length > 0
       ? initialRows.map((row) => ({
-          ...row,
-          key: row.id,
-          image_url: row.image_url ?? "",
-          catalog_image_url: row.catalog_image_url ?? "",
-        }))
-      : [createEmptyRow(stockUnitCode)]
+        ...row,
+        key: row.id,
+        image_url: row.image_url ?? "",
+        catalog_image_url: row.catalog_image_url ?? "",
+      }))
+      : [createEmptyRow(stockUnitCode, "new-0")]
   );
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
 
   const rowKeys = useMemo(() => rows.map((row) => row.key), [rows]);
 
   function addRow() {
-    setRows((current) => [...current, createEmptyRow(stockUnitCode)]);
+    setRows((current) => [
+      ...current,
+      createEmptyRow(
+        stockUnitCode,
+        `new-${Date.now()}-${Math.random().toString(36).slice(2)}`
+      ),
+    ]);
   }
 
   function removeRow(row: EditableRow) {
