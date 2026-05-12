@@ -8,7 +8,7 @@ type Props = {
   currentUrl: string | null;
   existingImageUrls?: string[];
   productId: string;
-  kind: "product" | "catalog";
+  kind: "product" | "catalog" | "presentation";
 };
 
 export function ProductImageUpload({

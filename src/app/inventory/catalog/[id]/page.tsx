@@ -4,11 +4,9 @@ import { notFound, redirect } from "next/navigation";
 import { ProductCostStatusPanel } from "@/features/inventory/catalog/product-cost-status-panel";
 import { ProductFormFooter } from "@/features/inventory/catalog/product-form-footer";
 import { ProductIdentityFields } from "@/features/inventory/catalog/product-identity-fields";
-import { ProductInternalBreakdownFields } from "@/features/inventory/catalog/product-internal-breakdown-fields";
 import { ProductAssetTechnicalSection } from "@/features/inventory/catalog/product-asset-technical-section";
 import { ProductPhotoSection } from "@/features/inventory/catalog/product-photo-section";
 import { ProductPurchaseSection } from "@/features/inventory/catalog/product-purchase-section";
-import { ProductRemissionUomFields } from "@/features/inventory/catalog/product-remission-uom-fields";
 import { ProductSiteAvailabilitySection } from "@/features/inventory/catalog/product-site-availability-section";
 import { ProductStorageFields } from "@/features/inventory/catalog/product-storage-fields";
 import { RequiredFieldsGuardForm } from "@/components/inventory/forms/RequiredFieldsGuardForm";
@@ -88,81 +86,6 @@ function buildOperationUnitHintFromUnits(params: {
       inputUnitCode,
       qtyInInputUnit: 1,
       qtyInStockUnit: quantity,
-    };
-  } catch {
-    return null;
-  }
-}
-
-function buildRemissionFromDefaultUnit(params: {
-  defaultUnitCode: string;
-  stockUnitCode: string;
-  unitMap: ReturnType<typeof createUnitMap>;
-}):
-  | {
-      label: string;
-      inputUnitCode: string;
-      qtyInInputUnit: number;
-      qtyInStockUnit: number;
-      source: "manual";
-    }
-  | null {
-  const inputUnitCode = normalizeUnitCode(params.defaultUnitCode || "");
-  const stockUnitCode = normalizeUnitCode(params.stockUnitCode || "");
-  if (!inputUnitCode || !stockUnitCode) return null;
-  try {
-    const { quantity } = convertQuantity({
-      quantity: 1,
-      fromUnitCode: inputUnitCode,
-      toUnitCode: stockUnitCode,
-      unitMap: params.unitMap,
-    });
-    if (!Number.isFinite(quantity) || quantity <= 0) return null;
-    return {
-      label: "Unidad operativa",
-      inputUnitCode,
-      qtyInInputUnit: 1,
-      qtyInStockUnit: quantity,
-      source: "manual",
-    };
-  } catch {
-    return null;
-  }
-}
-
-function buildRemissionFromRecipePortion(params: {
-  portionSize: number;
-  portionUnitCode: string;
-  stockUnitCode: string;
-  unitMap: ReturnType<typeof createUnitMap>;
-}):
-  | {
-      label: string;
-      inputUnitCode: string;
-      qtyInInputUnit: number;
-      qtyInStockUnit: number;
-      source: "recipe_portion";
-    }
-  | null {
-  const portionSize = Number(params.portionSize ?? 0);
-  const portionUnitCode = normalizeUnitCode(params.portionUnitCode || "");
-  const stockUnitCode = normalizeUnitCode(params.stockUnitCode || "");
-  if (!Number.isFinite(portionSize) || portionSize <= 0) return null;
-  if (!portionUnitCode || !stockUnitCode) return null;
-  try {
-    const { quantity } = convertQuantity({
-      quantity: portionSize,
-      fromUnitCode: portionUnitCode,
-      toUnitCode: stockUnitCode,
-      unitMap: params.unitMap,
-    });
-    if (!Number.isFinite(quantity) || quantity <= 0) return null;
-    return {
-      label: "Porción receta",
-      inputUnitCode: "un",
-      qtyInInputUnit: 1,
-      qtyInStockUnit: quantity,
-      source: "recipe_portion",
     };
   } catch {
     return null;
@@ -414,6 +337,13 @@ function inventoryKindLabel(kindRaw: string): string {
   if (kind === "packaging") return "Empaque";
   if (kind === "asset") return "Activo";
   return "Sin clasificar";
+}
+
+function uomUsageContextLabel(value: string | null | undefined): string {
+  const context = String(value ?? "general").trim().toLowerCase();
+  if (context === "purchase") return "Compra";
+  if (context === "remission") return "Operación";
+  return "General";
 }
 
 function siteSettingRowRank(row: SiteSettingRow): number {
@@ -762,20 +692,11 @@ async function updateProduct(formData: FormData) {
   let autoCostFromPrimary: number | null = null;
   let purchaseUomFromSupplier:
     | {
-        label: string;
-        inputUnitCode: string;
-        qtyInInputUnit: number;
-        qtyInStockUnit: number;
-      }
-    | null = null;
-  let remissionUomFromSupplier:
-    | {
-        label: string;
-        inputUnitCode: string;
-        qtyInInputUnit: number;
-        qtyInStockUnit: number;
-        source: "manual" | "supplier_primary" | "recipe_portion";
-      }
+      label: string;
+      inputUnitCode: string;
+      qtyInInputUnit: number;
+      qtyInStockUnit: number;
+    }
     | null = null;
   const supplierLinesRaw = formData.get("supplier_lines");
   let hasAnySupplierLine = false;
@@ -967,128 +888,8 @@ async function updateProduct(formData: FormData) {
     }
   }
 
-  const remissionInputUnitCodeRaw = asText(formData.get("remission_uom_code"));
-  const remissionQtyInStockText = asText(formData.get("remission_uom_qty_in_stock"));
-  const remissionLabelText = asText(formData.get("remission_uom_label"));
-  const internalBreakdownEnabled = asText(formData.get("internal_breakdown_enabled")) === "on";
-  const internalBreakdownLabel = asText(formData.get("internal_breakdown_label"));
-  const internalBreakdownUnitCode = normalizeUnitCode(asText(formData.get("internal_breakdown_unit_code")));
-  const internalBreakdownQtyRaw = Number(asText(formData.get("internal_breakdown_qty_in_stock")) || 0);
-  let internalBreakdownQtyInStock = 0;
-  if (Number.isFinite(internalBreakdownQtyRaw) && internalBreakdownQtyRaw > 0 && internalBreakdownUnitCode) {
-    try {
-      internalBreakdownQtyInStock = convertQuantity({
-        quantity: internalBreakdownQtyRaw,
-        fromUnitCode: internalBreakdownUnitCode,
-        toUnitCode: stockUnitCode,
-        unitMap,
-      }).quantity;
-    } catch {
-      internalBreakdownQtyInStock = 0;
-    }
-  }
-  const remissionSourceModeRaw = asText(formData.get("remission_source_mode")).toLowerCase();
-  const remissionSourceMode =
-    remissionSourceModeRaw === "disabled" ||
-    remissionSourceModeRaw === "purchase_primary" ||
-    remissionSourceModeRaw === "remission_profile" ||
-    remissionSourceModeRaw === "recipe_portion" ||
-    remissionSourceModeRaw === "operation_unit"
-      ? remissionSourceModeRaw
-      : "disabled";
-  const remissionInputUnitCode = normalizeUnitCode(remissionInputUnitCodeRaw);
-  const remissionQtyInStockRaw = Number(remissionQtyInStockText || 0);
-  const remissionQtyInStock =
-    Number.isFinite(remissionQtyInStockRaw) && remissionQtyInStockRaw > 0
-      ? remissionQtyInStockRaw
-      : 0;
-  if (remissionSourceMode === "disabled") {
-    remissionUomFromSupplier = null;
-  } else if (remissionSourceMode === "remission_profile") {
-    if (!remissionInputUnitCode || remissionQtyInStock <= 0) {
-      redirectWithError(
-        "Completa la presentación de remisión: unidad y equivalencia a unidad base."
-      );
-    }
-    remissionUomFromSupplier = {
-      label: remissionLabelText || "Presentación remisión",
-      inputUnitCode: remissionInputUnitCode,
-      qtyInInputUnit: 1,
-      qtyInStockUnit: remissionQtyInStock,
-      source: "manual",
-    };
-  } else if (remissionSourceMode === "purchase_primary") {
-    const purchaseProfile = purchaseUomFromSupplier;
-    if (!purchaseProfile) {
-      redirectWithError(
-        "No se pudo usar la presentación de compra en operación. Completa el proveedor primario."
-      );
-      return;
-    }
-    remissionUomFromSupplier = {
-      label: purchaseProfile.label || "Presentación compra",
-      inputUnitCode: purchaseProfile.inputUnitCode,
-      qtyInInputUnit: purchaseProfile.qtyInInputUnit,
-      qtyInStockUnit: purchaseProfile.qtyInStockUnit,
-      source: "supplier_primary",
-    };
-  } else if (remissionSourceMode === "operation_unit") {
-    remissionUomFromSupplier = buildRemissionFromDefaultUnit({
-      defaultUnitCode: resolvedDefaultUnit,
-      stockUnitCode,
-      unitMap,
-    });
-    if (!remissionUomFromSupplier) {
-      redirectWithError(
-        "No se pudo definir la presentacion de remision desde unidad operativa. Revisa unidad base y unidad operativa."
-      );
-    }
-  } else if (remissionSourceMode === "recipe_portion") {
-    const normalizedProductType = String(existingProductType ?? "").trim().toLowerCase();
-    if (!["preparacion", "venta"].includes(normalizedProductType)) {
-      redirectWithError("La opción de receta solo aplica a preparaciones o productos con receta.");
-    }
-    const { data: publishedRecipes, error: recipeError } = await supabase
-      .from("recipe_cards")
-      .select("portion_size,portion_unit,status,is_active,updated_at")
-      .eq("product_id", productId)
-      .eq("is_active", true)
-      .eq("status", "published")
-      .order("updated_at", { ascending: false })
-      .limit(1);
-    if (recipeError) {
-      redirectWithError(recipeError.message);
-    }
-    const recipePortion = (publishedRecipes ?? [])[0] as
-      | {
-          portion_size?: number | null;
-          portion_unit?: string | null;
-        }
-      | undefined;
-    if (!recipePortion) {
-      redirectWithError(
-        "No hay receta publicada activa para este producto. Publica la receta para usar esta opción."
-      );
-    }
-    remissionUomFromSupplier = buildRemissionFromRecipePortion({
-      portionSize: Number(recipePortion?.portion_size ?? 0),
-      portionUnitCode: String(recipePortion?.portion_unit ?? ""),
-      stockUnitCode,
-      unitMap,
-    });
-    if (!remissionUomFromSupplier) {
-      redirectWithError(
-        "La porción de la receta no es válida para remisión. Revisa porción, unidad y conversión contra unidad base."
-      );
-    }
-  }
-
-  if (internalBreakdownEnabled && (!internalBreakdownLabel || !internalBreakdownUnitCode || internalBreakdownQtyInStock <= 0)) {
-    redirectWithError("Completa el desglose visual interno: nombre, unidad y equivalencia a base.");
-  }
-
   async function upsertContextProfile(params: {
-    usageContext: "purchase" | "remission";
+    usageContext: "purchase";
     label: string;
     inputUnitCode: string;
     qtyInInputUnit: number;
@@ -1137,61 +938,6 @@ async function updateProduct(formData: FormData) {
     });
   }
 
-  async function deactivateRemissionProfile() {
-    const { error } = await supabase
-      .from("product_uom_profiles")
-      .update({ is_active: false, updated_at: new Date().toISOString() })
-      .eq("product_id", productId)
-      .eq("usage_context", "remission")
-      .eq("is_default", true)
-      .eq("is_active", true);
-    if (error) redirectWithError(error.message);
-  }
-
-  async function syncInternalBreakdownProfile() {
-    const now = new Date().toISOString();
-    const { data: existingRows } = await supabase
-      .from("product_uom_profiles")
-      .select("id")
-      .eq("product_id", productId)
-      .eq("usage_context", "general")
-      .eq("is_default", false)
-      .eq("source", "manual")
-      .order("updated_at", { ascending: false })
-      .limit(1);
-    const existing = existingRows?.[0] ?? null;
-
-    if (!internalBreakdownEnabled) {
-      if (existing?.id) {
-        await supabase
-          .from("product_uom_profiles")
-          .update({ is_active: false, updated_at: now })
-          .eq("id", existing.id);
-      }
-      return;
-    }
-
-    const payload = {
-      product_id: productId,
-      label: internalBreakdownLabel,
-      input_unit_code: internalBreakdownUnitCode,
-      qty_in_input_unit: 1,
-      qty_in_stock_unit: internalBreakdownQtyInStock,
-      usage_context: "general",
-      is_default: false,
-      is_active: true,
-      source: "manual",
-      updated_at: now,
-    };
-
-    if (existing?.id) {
-      await supabase.from("product_uom_profiles").update(payload).eq("id", existing.id);
-      return;
-    }
-
-    await supabase.from("product_uom_profiles").insert(payload);
-  }
-
   if (purchaseUomFromSupplier) {
     await upsertContextProfile({
       usageContext: "purchase",
@@ -1202,21 +948,6 @@ async function updateProduct(formData: FormData) {
       source: "supplier_primary",
     });
   }
-
-  if (remissionUomFromSupplier) {
-    await upsertContextProfile({
-      usageContext: "remission",
-      label: remissionUomFromSupplier.label,
-      inputUnitCode: remissionUomFromSupplier.inputUnitCode,
-      qtyInInputUnit: remissionUomFromSupplier.qtyInInputUnit,
-      qtyInStockUnit: remissionUomFromSupplier.qtyInStockUnit,
-      source: remissionUomFromSupplier.source,
-    });
-  } else {
-    await deactivateRemissionProfile();
-  }
-
-  await syncInternalBreakdownProfile();
 
   if (costingMode === "auto_primary_supplier" && manualCost == null && autoCostFromPrimary != null) {
     const { error: costErr } = await supabase
@@ -1285,13 +1016,13 @@ async function updateProduct(formData: FormData) {
           : null;
       const parsedMinPurchaseFactorRaw =
         line.min_stock_purchase_to_base_factor == null ||
-        String(line.min_stock_purchase_to_base_factor).trim() === ""
+          String(line.min_stock_purchase_to_base_factor).trim() === ""
           ? null
           : Number(line.min_stock_purchase_to_base_factor);
       const parsedMinPurchaseFactor =
         parsedMinPurchaseFactorRaw != null &&
-        Number.isFinite(parsedMinPurchaseFactorRaw) &&
-        parsedMinPurchaseFactorRaw > 0
+          Number.isFinite(parsedMinPurchaseFactorRaw) &&
+          parsedMinPurchaseFactorRaw > 0
           ? parsedMinPurchaseFactorRaw
           : null;
       const normalizedAreaKinds = Array.from(
@@ -1356,8 +1087,8 @@ async function updateProduct(formData: FormData) {
     const rawStatus = String(asText(formData.get("asset_equipment_status")) || "operativo").toLowerCase();
     const equipmentStatus =
       rawStatus === "en_mantenimiento" ||
-      rawStatus === "fuera_servicio" ||
-      rawStatus === "baja"
+        rawStatus === "fuera_servicio" ||
+        rawStatus === "baja"
         ? rawStatus
         : "operativo";
 
@@ -1385,11 +1116,11 @@ async function updateProduct(formData: FormData) {
       maintenance_cycle_months:
         assetProfileTemplate === "industrial"
           ? (() => {
-              const value = asNullableNumber(formData.get("asset_maintenance_cycle_months"));
-              return value != null && Number.isFinite(value) && value >= 1 && value <= 60
-                ? Math.trunc(value)
-                : null;
-            })()
+            const value = asNullableNumber(formData.get("asset_maintenance_cycle_months"));
+            return value != null && Number.isFinite(value) && value >= 1 && value <= 60
+              ? Math.trunc(value)
+              : null;
+          })()
           : null,
       maintenance_cycle_anchor_date:
         assetProfileTemplate === "industrial"
@@ -1633,26 +1364,26 @@ export default async function ProductCatalogDetailPage({
   const allCategoryRows = await loadCategoryRows(supabase);
 
   const { data: siteSettingsWithAudience, error: siteSettingsAudienceError } = await supabase
-      .from("product_site_settings")
-      .select(
+    .from("product_site_settings")
+    .select(
       "id,site_id,is_active,default_area_kind,area_kinds,production_location_id,min_stock_qty,min_stock_input_mode,min_stock_purchase_qty,min_stock_purchase_unit_code,min_stock_purchase_to_base_factor,audience,updated_at,created_at,sites(id,name)"
-      )
+    )
     .eq("product_id", id);
   const siteSettings =
     !siteSettingsAudienceError
       ? siteSettingsWithAudience
       : (
-          await supabase
-            .from("product_site_settings")
-            .select("id,site_id,is_active,default_area_kind,area_kinds,min_stock_qty,audience,updated_at,created_at,sites(id,name)")
-            .eq("product_id", id)
-        ).data ??
-        (
-          await supabase
-            .from("product_site_settings")
-            .select("id,site_id,is_active,default_area_kind,updated_at,created_at,sites(id,name)")
-            .eq("product_id", id)
-        ).data;
+        await supabase
+          .from("product_site_settings")
+          .select("id,site_id,is_active,default_area_kind,area_kinds,min_stock_qty,audience,updated_at,created_at,sites(id,name)")
+          .eq("product_id", id)
+      ).data ??
+      (
+        await supabase
+          .from("product_site_settings")
+          .select("id,site_id,is_active,default_area_kind,updated_at,created_at,sites(id,name)")
+          .eq("product_id", id)
+      ).data;
   const siteRowsRaw = ((siteSettings ?? []) as unknown as SiteSettingRow[]).map((row) => ({
     ...row,
     audience: row.audience ?? "BOTH",
@@ -1689,7 +1420,7 @@ export default async function ProductCatalogDetailPage({
   const areaKindsList = !areaKindsWithPurposeError
     ? ((areaKindsWithPurpose ?? []) as AreaKindRow[])
     : (((await supabase.from("area_kinds").select("code,name").order("name", { ascending: true })).data ??
-        []) as AreaKindRow[]).map((row) => ({
+      []) as AreaKindRow[]).map((row) => ({
         ...row,
         use_for_remission: ["mostrador", "bar", "cocina", "general"].includes(
           String(row.code ?? "").trim().toLowerCase()
@@ -1726,11 +1457,11 @@ export default async function ProductCatalogDetailPage({
   const { data: remissionAreaRulesData } =
     satelliteSiteIds.length > 0
       ? await supabase
-          .from("site_area_purpose_rules")
-          .select("site_id,area_kind,purpose,is_enabled")
-          .eq("purpose", "remission")
-          .eq("is_enabled", true)
-          .in("site_id", satelliteSiteIds)
+        .from("site_area_purpose_rules")
+        .select("site_id,area_kind,purpose,is_enabled")
+        .eq("purpose", "remission")
+        .eq("is_enabled", true)
+        .in("site_id", satelliteSiteIds)
       : { data: [] as SiteAreaPurposeRuleRow[] };
   const remissionAreaKindsBySite = ((remissionAreaRulesData ?? []) as SiteAreaPurposeRuleRow[]).reduce(
     (acc, row) => {
@@ -1767,13 +1498,7 @@ export default async function ProductCatalogDetailPage({
     .eq("is_active", true);
   const activeUomProfiles = (uomProfileData ?? []) as ProductUomProfileRow[];
   const defaultUomProfiles = activeUomProfiles.filter((profile) => profile.is_default);
-  const internalBreakdownProfile =
-    activeUomProfiles.find(
-      (profile) =>
-        String(profile.usage_context ?? "general").trim().toLowerCase() === "general" &&
-        !profile.is_default &&
-        profile.source === "manual"
-    ) ?? null;
+
   const profileByContext = new Map(
     defaultUomProfiles.map((profile) => [
       String(profile.usage_context ?? "general").trim().toLowerCase() || "general",
@@ -1782,8 +1507,6 @@ export default async function ProductCatalogDetailPage({
   );
   const purchaseUomProfile =
     profileByContext.get("purchase") ?? profileByContext.get("general") ?? null;
-  const remissionUomProfile =
-    profileByContext.get("remission") ?? profileByContext.get("general") ?? null;
 
   const { data: suppliersData } = await supabase.from("suppliers").select("id,name").eq("is_active", true).order("name");
   const suppliersList = (suppliersData ?? []) as { id: string; name: string | null }[];
@@ -1848,9 +1571,9 @@ export default async function ProductCatalogDetailPage({
   });
   const categorySiteId = String(
     sp.category_site_id ??
-      (settings as { selected_site_id?: string | null } | null)?.selected_site_id ??
-      (employee as { site_id?: string | null } | null)?.site_id ??
-      ""
+    (settings as { selected_site_id?: string | null } | null)?.selected_site_id ??
+    (employee as { site_id?: string | null } | null)?.site_id ??
+    ""
   ).trim();
   const defaultCategoryScope = categorySiteId ? "site" : "all";
   const requestedCategoryScope = normalizeCategoryScope(sp.category_scope ?? defaultCategoryScope);
@@ -1876,6 +1599,14 @@ export default async function ProductCatalogDetailPage({
       (normalizedCategoryPath.includes("equipo") || normalizedCategoryPath.includes("equipos")));
 
   const stockUnitCode = normalizeUnitCode(productRow.stock_unit_code || productRow.unit || "un");
+  const presentationProfiles = activeUomProfiles
+    .filter((profile) => profile.is_active)
+    .sort((a, b) => {
+      const aContext = String(a.usage_context ?? "general");
+      const bContext = String(b.usage_context ?? "general");
+      if (aContext !== bContext) return aContext.localeCompare(bContext, "es", { sensitivity: "base" });
+      return String(a.label ?? "").localeCompare(String(b.label ?? ""), "es", { sensitivity: "base" });
+    });
   const inventoryUnitMap = createUnitMap(unitsList);
   const requestedDefaultUnit = normalizeUnitCode(profileRow?.default_unit || stockUnitCode);
   const resolvedDefaultUnit = resolveCompatibleDefaultUnit({
@@ -1888,76 +1619,20 @@ export default async function ProductCatalogDetailPage({
   const primarySupplier = supplierRows.find((row) => Boolean(row.is_primary)) ?? null;
   const autoCostReadinessReason = hasSuppliers
     ? getAutoCostReadinessReason({
-        costingMode: profileRow?.costing_mode ?? "manual",
-        stockUnitCode,
-        primarySupplier,
-        unitMap: inventoryUnitMap,
-      })
+      costingMode: profileRow?.costing_mode ?? "manual",
+      stockUnitCode,
+      primarySupplier,
+      unitMap: inventoryUnitMap,
+    })
     : null;
   const autoCostReady = hasSuppliers
     ? isAutoCostReady({
-        costingMode: profileRow?.costing_mode ?? "manual",
-        stockUnitCode,
-        primarySupplier,
-        unitMap: inventoryUnitMap,
-      })
+      costingMode: profileRow?.costing_mode ?? "manual",
+      stockUnitCode,
+      primarySupplier,
+      unitMap: inventoryUnitMap,
+    })
     : true;
-  const operationUnitFromDefault = buildOperationUnitHintFromUnits({
-    units: unitsList,
-    inputUnitCode: resolvedDefaultUnit || stockUnitCode,
-    stockUnitCode,
-  });
-  const { data: publishedRecipeRows } = await supabase
-    .from("recipe_cards")
-    .select("id")
-    .eq("product_id", id)
-    .eq("is_active", true)
-    .eq("status", "published")
-    .limit(1);
-  const hasPublishedRecipePortion = (publishedRecipeRows ?? []).length > 0;
-
-  const remissionSourceModeDefault:
-    | "operation_unit"
-    | "purchase_primary"
-    | "remission_profile"
-    | "recipe_portion" =
-    remissionUomProfile?.source === "recipe_portion"
-      ? "recipe_portion"
-      : remissionUomProfile?.source === "supplier_primary"
-      ? "purchase_primary"
-      : remissionUomProfile &&
-          operationUnitFromDefault &&
-          normalizeUnitCode(remissionUomProfile.input_unit_code) ===
-            normalizeUnitCode(operationUnitFromDefault.inputUnitCode) &&
-          Math.abs(
-            Number(remissionUomProfile.qty_in_stock_unit ?? 0) -
-              Number(operationUnitFromDefault.qtyInStockUnit ?? 0)
-          ) <= 0.0001
-        ? "operation_unit"
-        : remissionUomProfile
-          ? "remission_profile"
-          : "operation_unit";
-  const siteTypeById = new Map(
-    sitesList.map((site) => [String(site.id), String(site.site_type ?? "").trim().toLowerCase()])
-  );
-  const remissionEnabledDefault = siteRows.some((row) => {
-    if (!row || !row.is_active) return false;
-    const siteType = siteTypeById.get(String(row.site_id ?? "")) ?? "";
-    return siteType === "satellite";
-  });
-  let internalBreakdownQtyInInputUnit: number | null = null;
-  if (internalBreakdownProfile?.input_unit_code && internalBreakdownProfile?.qty_in_stock_unit) {
-    try {
-      internalBreakdownQtyInInputUnit = convertQuantity({
-        quantity: Number(internalBreakdownProfile.qty_in_stock_unit),
-        fromUnitCode: stockUnitCode,
-        toUnitCode: internalBreakdownProfile.input_unit_code,
-        unitMap: inventoryUnitMap,
-      }).quantity;
-    } catch {
-      internalBreakdownQtyInInputUnit = Number(internalBreakdownProfile.qty_in_stock_unit);
-    }
-  }
 
   const supplierInitialRows = supplierRows.map((r) => ({
     id: r.id,
@@ -2011,12 +1686,18 @@ export default async function ProductCatalogDetailPage({
                 </span>
               ) : null}
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Link
                 href={`/inventory/catalog/${productRow.id}/ficha?from=${encodeURIComponent(from || "/inventory/catalog")}`}
                 className="ui-btn ui-btn--ghost"
               >
                 Ver ficha técnica
+              </Link>
+              <Link
+                href={`/inventory/catalog/${productRow.id}/presentations?from=${encodeURIComponent(from || `/inventory/catalog/${productRow.id}`)}`}
+                className="ui-btn ui-btn--brand"
+              >
+                Administrar presentaciones
               </Link>
             </div>
           </div>
@@ -2053,281 +1734,300 @@ export default async function ProductCatalogDetailPage({
         </div>
       ) : null}
 
+      <CatalogSection
+        title="Presentaciones operativas"
+        description="Las presentaciones físicas se administran en una pantalla separada para no mezclar identidad del producto con empaque, equivalencias y fotos por presentación."
+      >
+        <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-start">
+          <div className="space-y-3">
+            {presentationProfiles.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {presentationProfiles.slice(0, 8).map((profile) => (
+                  <span
+                    key={profile.id}
+                    className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
+                  >
+                    {profile.label || "Presentación"} · {uomUsageContextLabel(profile.usage_context)} · 1{" "}
+                    {profile.input_unit_code} ={" "}
+                    {Number(profile.qty_in_stock_unit ?? 0).toLocaleString("es-CO", {
+                      maximumFractionDigits: 3,
+                    })}{" "}
+                    {stockUnitCode}
+                  </span>
+                ))}
+                {presentationProfiles.length > 8 ? (
+                  <span className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-500">
+                    +{presentationProfiles.length - 8} más
+                  </span>
+                ) : null}
+              </div>
+            ) : (
+              <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
+                Este producto todavía no tiene presentaciones operativas activas.
+              </div>
+            )}
+            <p className="text-sm text-[var(--ui-muted)]">
+              La ficha mantiene datos maestros. Las presentaciones controlan empaque físico, equivalencia operativa e imagen propia para quiosco e inventario.
+            </p>
+          </div>
+
+          <Link
+            href={`/inventory/catalog/${productRow.id}/presentations?from=${encodeURIComponent(from || `/inventory/catalog/${productRow.id}`)}`}
+            className="ui-btn ui-btn--brand h-12 px-5 text-base"
+          >
+            Administrar presentaciones
+          </Link>
+        </div>
+      </CatalogSection>
+
       {canEdit ? (
         <>
-        <RequiredFieldsGuardForm
-          action={updateProduct}
-          className="space-y-8"
-          persistKey={`catalog-edit-${productRow.id}`}
-        >
-          <input type="hidden" name="product_id" value={productRow.id} />
-          <input type="hidden" name="return_to" value={from} />
-
-          <CatalogSection
-            title="Datos basicos"
-            description="Identidad del item: nombre, SKU, tipo fijo, categoria operativa y descripcion."
+          <RequiredFieldsGuardForm
+            action={updateProduct}
+            className="space-y-8"
+            persistKey={`catalog-edit-${productRow.id}`}
           >
-            <ProductIdentityFields
-              nameLabel="Nombre del producto / insumo"
-              namePlaceholder="Ej. Harina 000"
-              nameDefaultValue={productRow.name ?? ""}
-              categories={categoryRows}
-              selectedCategoryId={productRow.category_id ?? ""}
-              siteNamesById={siteNamesById}
-              categoryEmptyOptionLabel="Sin categoria"
-              descriptionDefaultValue={productRow.description ?? ""}
-              skuField={{
-                mode: "edit",
-                currentSku: productRow.sku,
-                initialProductType: productRow.product_type,
-                initialInventoryKind: profileRow?.inventory_kind ?? "",
-              }}
-              lockedTypeField={{
-                label: "Tipo",
-                value:
-                  String(productRow.product_type ?? "").trim().toLowerCase() === "venta"
-                    ? "Venta"
-                    : String(productRow.product_type ?? "").trim().toLowerCase() === "preparacion"
-                      ? "Preparacion"
-                      : "Insumo",
-                hiddenName: "product_type",
-                hiddenValue: productRow.product_type ?? "insumo",
-              }}
-            />
-          </CatalogSection>
+            <input type="hidden" name="product_id" value={productRow.id} />
+            <input type="hidden" name="return_to" value={from} />
 
-          {/* Receta y produccion ahora viven en FOGO */}
-          {hasRecipe && (
-          <CatalogOptionalDetails
-            title="Receta y produccion"
-            summary="Esta configuracion queda fuera del flujo operativo actual."
-          >
-              <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)] space-y-2">
-                <p>
-                  NEXO mantiene inventario, sedes y logistica. Si luego activas produccion externa, la configuracion de receta se completa fuera de NEXO.
-                </p>
-                <a
-                  href={buildFogoRecipeUrl(productRow.id)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="inline-flex ui-btn ui-btn--ghost"
-                >
-                  Abrir continuidad externa
-                </a>
-              </div>
-            </CatalogOptionalDetails>
-          )}
+            <CatalogSection
+              title="Datos basicos"
+              description="Identidad del item: nombre, SKU, tipo fijo, categoria operativa y descripcion."
+            >
+              <ProductIdentityFields
+                nameLabel="Nombre del producto / insumo"
+                namePlaceholder="Ej. Harina 000"
+                nameDefaultValue={productRow.name ?? ""}
+                categories={categoryRows}
+                selectedCategoryId={productRow.category_id ?? ""}
+                siteNamesById={siteNamesById}
+                categoryEmptyOptionLabel="Sin categoria"
+                descriptionDefaultValue={productRow.description ?? ""}
+                skuField={{
+                  mode: "edit",
+                  currentSku: productRow.sku,
+                  initialProductType: productRow.product_type,
+                  initialInventoryKind: profileRow?.inventory_kind ?? "",
+                }}
+                lockedTypeField={{
+                  label: "Tipo",
+                  value:
+                    String(productRow.product_type ?? "").trim().toLowerCase() === "venta"
+                      ? "Venta"
+                      : String(productRow.product_type ?? "").trim().toLowerCase() === "preparacion"
+                        ? "Preparacion"
+                        : "Insumo",
+                  hiddenName: "product_type",
+                  hiddenValue: productRow.product_type ?? "insumo",
+                }}
+              />
+            </CatalogSection>
 
-          <CatalogSection
-            title="Unidades del producto"
-            description="Configura unidad base, unidad de remision y unidad de vista interna para este producto."
-          >
-            <ProductStorageFields
-              stockUnitFieldId={STOCK_UNIT_FIELD_ID}
-              units={defaultUnitOptions}
-              stockUnitCode={stockUnitCode}
-              defaultUnitCode={resolvedDefaultUnit}
-              defaultRemissionMode={remissionEnabledDefault ? remissionSourceModeDefault : "disabled"}
-              defaultUnitHint="Si no coincide con la familia de la unidad base, se guardara automaticamente la unidad base."
-              preCostingFields={
-                <>
-                  <label className="flex flex-col gap-1">
-                    <span className="ui-label">Tipo de inventario</span>
-                    <input type="hidden" name="inventory_kind" value={lockedInventoryKind} />
-                    <div className="ui-input flex items-center">{lockedInventoryKindText}</div>
-                    <span className="text-xs text-[var(--ui-muted)]">
-                      Se define por el flujo de creacion y se mantiene bloqueado en edicion.
-                    </span>
-                  </label>
-                  {String(productRow.product_type ?? "").trim().toLowerCase() === "venta" ? (
+            {/* Receta y produccion ahora viven en FOGO */}
+            {hasRecipe && (
+              <CatalogOptionalDetails
+                title="Receta y produccion"
+                summary="Esta configuracion queda fuera del flujo operativo actual."
+              >
+                <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)] space-y-2">
+                  <p>
+                    NEXO mantiene inventario, sedes y logistica. Si luego activas produccion externa, la configuracion de receta se completa fuera de NEXO.
+                  </p>
+                  <a
+                    href={buildFogoRecipeUrl(productRow.id)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex ui-btn ui-btn--ghost"
+                  >
+                    Abrir continuidad externa
+                  </a>
+                </div>
+              </CatalogOptionalDetails>
+            )}
+
+            <CatalogSection
+              title="Unidad base e inventario"
+              description="Configura la unidad técnica de stock, trazabilidad y costo. Las presentaciones físicas se administran aparte."
+            >
+              <ProductStorageFields
+                stockUnitFieldId={STOCK_UNIT_FIELD_ID}
+                units={defaultUnitOptions}
+                stockUnitCode={stockUnitCode}
+                defaultUnitCode={resolvedDefaultUnit}
+                defaultUnitHint="Si no coincide con la familia de la unidad base, se guardara automaticamente la unidad base."
+                preCostingFields={
+                  <>
                     <label className="flex flex-col gap-1">
-                      <span className="ui-label">Precio base referencial</span>
-                      <input
-                        name="price"
-                        type="number"
-                        step="0.01"
-                        defaultValue={productRow.price ?? ""}
-                        className="ui-input"
-                        placeholder="Opcional"
-                      />
+                      <span className="ui-label">Tipo de inventario</span>
+                      <input type="hidden" name="inventory_kind" value={lockedInventoryKind} />
+                      <div className="ui-input flex items-center">{lockedInventoryKindText}</div>
                       <span className="text-xs text-[var(--ui-muted)]">
-                        El precio final se configura por sede/canal en la capa comercial.
+                        Se define por el flujo de creacion y se mantiene bloqueado en edicion.
                       </span>
                     </label>
-                  ) : (
-                    <input type="hidden" name="price" value={productRow.price ?? ""} />
-                  )}
-                </>
-              }
-              postCostingFields={
-                <>
-                  <input type="hidden" name="cost" value="" />
-                  <ProductCostStatusPanel
-                    hasSuppliers={hasSuppliers}
-                    hasRecipe={hasRecipe}
-                    hasComputedCost={hasComputedCost}
-                    costingMode={profileRow?.costing_mode}
-                    autoCostReady={autoCostReady}
-                    autoCostReadinessReason={autoCostReadinessReason}
-                    currentCost={productRow.cost}
-                  />
-                </>
-              }
-              costingModeField={{
-                hasSuppliers,
-                defaultValue: profileRow?.costing_mode ?? "auto_primary_supplier",
-                autoOptionLabel: "Auto proveedor primario",
-              }}
-              trackingOptions={{
-                trackInventoryDefaultChecked: Boolean(profileRow?.track_inventory),
-                lotTrackingDefaultChecked: Boolean(profileRow?.lot_tracking),
-                expiryTrackingDefaultChecked: Boolean(profileRow?.expiry_tracking),
-              }}
-            />
-            <div className="grid gap-4 lg:grid-cols-2">
-              <ProductRemissionUomFields
-                units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
-                stockUnitCode={stockUnitCode}
-                defaultLabel={remissionUomProfile?.label ?? "Unidad operativa"}
-                defaultInputUnitCode={remissionUomProfile?.input_unit_code ?? resolvedDefaultUnit}
-                defaultQtyInStockUnit={remissionUomProfile?.qty_in_stock_unit ?? 1}
-                defaultSourceMode={remissionEnabledDefault ? remissionSourceModeDefault : "disabled"}
-                allowPurchasePrimaryOption={hasSuppliers}
-                allowRecipePortionOption={hasPublishedRecipePortion}
+                    {String(productRow.product_type ?? "").trim().toLowerCase() === "venta" ? (
+                      <label className="flex flex-col gap-1">
+                        <span className="ui-label">Precio base referencial</span>
+                        <input
+                          name="price"
+                          type="number"
+                          step="0.01"
+                          defaultValue={productRow.price ?? ""}
+                          className="ui-input"
+                          placeholder="Opcional"
+                        />
+                        <span className="text-xs text-[var(--ui-muted)]">
+                          El precio final se configura por sede/canal en la capa comercial.
+                        </span>
+                      </label>
+                    ) : (
+                      <input type="hidden" name="price" value={productRow.price ?? ""} />
+                    )}
+                  </>
+                }
+                postCostingFields={
+                  <>
+                    <input type="hidden" name="cost" value="" />
+                    <ProductCostStatusPanel
+                      hasSuppliers={hasSuppliers}
+                      hasRecipe={hasRecipe}
+                      hasComputedCost={hasComputedCost}
+                      costingMode={profileRow?.costing_mode}
+                      autoCostReady={autoCostReady}
+                      autoCostReadinessReason={autoCostReadinessReason}
+                      currentCost={productRow.cost}
+                    />
+                  </>
+                }
+                costingModeField={{
+                  hasSuppliers,
+                  defaultValue: profileRow?.costing_mode ?? "auto_primary_supplier",
+                  autoOptionLabel: "Auto proveedor primario",
+                }}
+                trackingOptions={{
+                  trackInventoryDefaultChecked: Boolean(profileRow?.track_inventory),
+                  lotTrackingDefaultChecked: Boolean(profileRow?.lot_tracking),
+                  expiryTrackingDefaultChecked: Boolean(profileRow?.expiry_tracking),
+                }}
               />
-              <ProductInternalBreakdownFields
-                units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
-                stockUnitCode={stockUnitCode}
-                defaultEnabled={Boolean(internalBreakdownProfile)}
-                defaultLabel={internalBreakdownProfile?.label ?? ""}
-                defaultInputUnitCode={internalBreakdownProfile?.input_unit_code ?? resolvedDefaultUnit}
-                defaultQtyInStockUnit={internalBreakdownQtyInInputUnit}
-              />
-            </div>
-          </CatalogSection>
+              <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
+                Las presentaciones físicas, equivalencias operativas y fotos por presentación ahora se administran desde la pantalla dedicada de presentaciones.
+              </div>
+            </CatalogSection>
 
-          <ProductPurchaseSection
-            enabled={hasSuppliers}
-            initialRows={supplierInitialRows}
-            suppliers={suppliersList.map((s) => ({ id: s.id, name: s.name }))}
-            units={unitsList}
-            stockUnitCode={stockUnitCode}
-            stockUnitFieldId={STOCK_UNIT_FIELD_ID}
-          />
-
-          <ProductPhotoSection
-            description={
-              isAssetItem
-                ? "Imagen principal para identificar rapidamente el equipo o activo en catálogo y ficha técnica."
-                : "Imagen principal para identificar rapidamente el item en catalogo y listados."
-            }
-            currentUrl={productRow.image_url}
-            existingImageUrls={existingImageUrls}
-            productId={productRow.id}
-            sectionTitle={isAssetItem ? "Foto del equipo / activo" : "Foto del producto"}
-            uploadLabel={isAssetItem ? "Foto del equipo" : "Foto del producto"}
-            collapsible
-          />
-
-          {isAssetItem ? (
-            <ProductAssetTechnicalSection
-              defaultTemplate={isMachineryAssetCategory ? "industrial" : "general"}
-              initialProfile={{
-                brand: assetProfileRow?.brand ?? "",
-                model: assetProfileRow?.model ?? "",
-                serial_number: assetProfileRow?.serial_number ?? "",
-                physical_location: assetProfileRow?.physical_location ?? "",
-                purchase_invoice_url: assetProfileRow?.purchase_invoice_url ?? "",
-                commercial_value: assetProfileRow?.commercial_value ?? null,
-                purchase_date: assetProfileRow?.purchase_date ?? "",
-                started_use_date: assetProfileRow?.started_use_date ?? "",
-                equipment_status: assetProfileRow?.equipment_status ?? "operativo",
-                maintenance_service_provider:
-                  assetProfileRow?.maintenance_service_provider ?? "",
-                technical_description: assetProfileRow?.technical_description ?? "",
-                maintenance_cycle_enabled: assetProfileRow?.maintenance_cycle_enabled ?? false,
-                maintenance_cycle_months: assetProfileRow?.maintenance_cycle_months ?? null,
-                maintenance_cycle_anchor_date:
-                  assetProfileRow?.maintenance_cycle_anchor_date ?? "",
-              }}
-              initialMaintenance={assetMaintenanceRows}
-              initialTransfers={assetTransferRows}
-              siteOptions={siteRows.map((site) => ({
-                id: site.site_id,
-                name: siteNamesById[site.site_id] || "Sede",
-              }))}
-            />
-          ) : null}
-
-          {!isAssetItem ? (
-            <ProductSiteAvailabilitySection
-              initialRows={siteRows.map((r) => ({
-                id: r.id,
-                site_id: r.site_id,
-                is_active: Boolean(r.is_active),
-                default_area_kind: r.default_area_kind ?? "",
-                area_kinds:
-                  Array.isArray(r.area_kinds) && r.area_kinds.length
-                    ? r.area_kinds
-                    : r.default_area_kind
-                      ? [r.default_area_kind]
-                      : [],
-                production_location_id: r.production_location_id ?? "",
-                min_stock_qty: r.min_stock_qty ?? undefined,
-                min_stock_input_mode: r.min_stock_input_mode === "purchase" ? "purchase" : "base",
-                min_stock_purchase_qty: r.min_stock_purchase_qty ?? undefined,
-                min_stock_purchase_unit_code: r.min_stock_purchase_unit_code ?? undefined,
-                min_stock_purchase_to_base_factor: r.min_stock_purchase_to_base_factor ?? undefined,
-                audience: r.audience ?? "BOTH",
-              }))}
-              sites={sitesList.map((s) => ({ id: s.id, name: s.name, site_type: s.site_type }))}
-              areaKinds={areaKindsList.map((a) => ({
-                code: a.code,
-                name: a.name ?? a.code,
-                use_for_remission: Boolean(a.use_for_remission),
-              }))}
-              siteAreaKinds={siteAreaKindsList}
-              productionLocations={productionLocationsList.map((location) => ({
-                id: location.id,
-                site_id: location.site_id,
-                code: location.code,
-                zone: location.zone,
-              }))}
-              remissionAreaKindsBySite={remissionAreaKindsBySite}
+            <ProductPurchaseSection
+              enabled={hasSuppliers}
+              initialRows={supplierInitialRows}
+              suppliers={suppliersList.map((s) => ({ id: s.id, name: s.name }))}
+              units={unitsList}
               stockUnitCode={stockUnitCode}
-              purchaseUnitHint={
-                purchaseUomProfile
-                  ? {
+              stockUnitFieldId={STOCK_UNIT_FIELD_ID}
+            />
+
+            <ProductPhotoSection
+              description={
+                isAssetItem
+                  ? "Imagen principal para identificar rapidamente el equipo o activo en catálogo y ficha técnica."
+                  : "Imagen principal para identificar rapidamente el item en catalogo y listados."
+              }
+              currentUrl={productRow.image_url}
+              existingImageUrls={existingImageUrls}
+              productId={productRow.id}
+              sectionTitle={isAssetItem ? "Foto del equipo / activo" : "Foto del producto"}
+              uploadLabel={isAssetItem ? "Foto del equipo" : "Foto del producto"}
+              collapsible
+            />
+
+            {isAssetItem ? (
+              <ProductAssetTechnicalSection
+                defaultTemplate={isMachineryAssetCategory ? "industrial" : "general"}
+                initialProfile={{
+                  brand: assetProfileRow?.brand ?? "",
+                  model: assetProfileRow?.model ?? "",
+                  serial_number: assetProfileRow?.serial_number ?? "",
+                  physical_location: assetProfileRow?.physical_location ?? "",
+                  purchase_invoice_url: assetProfileRow?.purchase_invoice_url ?? "",
+                  commercial_value: assetProfileRow?.commercial_value ?? null,
+                  purchase_date: assetProfileRow?.purchase_date ?? "",
+                  started_use_date: assetProfileRow?.started_use_date ?? "",
+                  equipment_status: assetProfileRow?.equipment_status ?? "operativo",
+                  maintenance_service_provider:
+                    assetProfileRow?.maintenance_service_provider ?? "",
+                  technical_description: assetProfileRow?.technical_description ?? "",
+                  maintenance_cycle_enabled: assetProfileRow?.maintenance_cycle_enabled ?? false,
+                  maintenance_cycle_months: assetProfileRow?.maintenance_cycle_months ?? null,
+                  maintenance_cycle_anchor_date:
+                    assetProfileRow?.maintenance_cycle_anchor_date ?? "",
+                }}
+                initialMaintenance={assetMaintenanceRows}
+                initialTransfers={assetTransferRows}
+                siteOptions={siteRows.map((site) => ({
+                  id: site.site_id,
+                  name: siteNamesById[site.site_id] || "Sede",
+                }))}
+              />
+            ) : null}
+
+            {!isAssetItem ? (
+              <ProductSiteAvailabilitySection
+                initialRows={siteRows.map((r) => ({
+                  id: r.id,
+                  site_id: r.site_id,
+                  is_active: Boolean(r.is_active),
+                  default_area_kind: r.default_area_kind ?? "",
+                  area_kinds:
+                    Array.isArray(r.area_kinds) && r.area_kinds.length
+                      ? r.area_kinds
+                      : r.default_area_kind
+                        ? [r.default_area_kind]
+                        : [],
+                  production_location_id: r.production_location_id ?? "",
+                  min_stock_qty: r.min_stock_qty ?? undefined,
+                  min_stock_input_mode: r.min_stock_input_mode === "purchase" ? "purchase" : "base",
+                  min_stock_purchase_qty: r.min_stock_purchase_qty ?? undefined,
+                  min_stock_purchase_unit_code: r.min_stock_purchase_unit_code ?? undefined,
+                  min_stock_purchase_to_base_factor: r.min_stock_purchase_to_base_factor ?? undefined,
+                  audience: r.audience ?? "BOTH",
+                }))}
+                sites={sitesList.map((s) => ({ id: s.id, name: s.name, site_type: s.site_type }))}
+                areaKinds={areaKindsList.map((a) => ({
+                  code: a.code,
+                  name: a.name ?? a.code,
+                  use_for_remission: Boolean(a.use_for_remission),
+                }))}
+                siteAreaKinds={siteAreaKindsList}
+                productionLocations={productionLocationsList.map((location) => ({
+                  id: location.id,
+                  site_id: location.site_id,
+                  code: location.code,
+                  zone: location.zone,
+                }))}
+                remissionAreaKindsBySite={remissionAreaKindsBySite}
+                stockUnitCode={stockUnitCode}
+                purchaseUnitHint={
+                  purchaseUomProfile
+                    ? {
                       label: purchaseUomProfile.label,
                       inputUnitCode: purchaseUomProfile.input_unit_code,
                       qtyInInputUnit: purchaseUomProfile.qty_in_input_unit,
                       qtyInStockUnit: purchaseUomProfile.qty_in_stock_unit,
                     }
-                  : null
-              }
-              operationUnitHint={
-                remissionUomProfile
-                  ? {
-                      label: remissionUomProfile.label,
-                      inputUnitCode: remissionUomProfile.input_unit_code,
-                      qtyInInputUnit: remissionUomProfile.qty_in_input_unit,
-                      qtyInStockUnit: remissionUomProfile.qty_in_stock_unit,
-                    }
-                  : buildOperationUnitHintFromUnits({
-                      units: unitsList,
-                      inputUnitCode: resolvedDefaultUnit || stockUnitCode,
-                      stockUnitCode,
-                    })
-              }
-            />
-          ) : null}
+                    : null
+                }
+                operationUnitHint={buildOperationUnitHintFromUnits({
+                  units: unitsList,
+                  inputUnitCode: resolvedDefaultUnit || stockUnitCode,
+                  stockUnitCode,
+                })}
+              />
+            ) : null}
 
-          <ProductFormFooter
-            submitLabel="Guardar cambios"
-            showActiveToggle
-            activeDefaultChecked={Boolean(productRow.is_active)}
-          />
-        </RequiredFieldsGuardForm>
+            <ProductFormFooter
+              submitLabel="Guardar cambios"
+              showActiveToggle
+              activeDefaultChecked={Boolean(productRow.is_active)}
+            />
+          </RequiredFieldsGuardForm>
         </>
       ) : (
         <div className="ui-alert ui-alert--warn">
