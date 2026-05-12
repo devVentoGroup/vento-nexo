@@ -801,7 +801,7 @@ export default async function LocationBoardPage({
                   {(childrenByParentId.get(selectedRootPosition.id) ?? []).map((position) => (
                     <Link
                       key={position.id}
-                      href={`/inventory/locations/${encodeURIComponent(location.id)}/board?position_id=${encodeURIComponent(position.id)}${isKiosk ? "&kiosk=1" : ""}`}
+                      href={`/inventory/locations/${encodeURIComponent(location.id)}/board?position_id=${encodeURIComponent(position.id)}${isKiosk ? `&kiosk=1&stock_tab=${stockTab}` : ""}`}
                       className={selectedPosition?.id === position.id ? "ui-chip ui-chip--brand" : "ui-chip"}
                     >
                       {position.name}
