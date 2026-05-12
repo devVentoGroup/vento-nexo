@@ -430,7 +430,7 @@ export function KioskBoardStockView({
                     ) : (
                       <div>
                         <div className="flex h-14 w-full items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 px-4 text-base font-bold text-slate-500">
-                          Sin stock
+                          Producto agotado
                         </div>
                         <HideZeroStockButton
                           action={hideZeroStockAction}
