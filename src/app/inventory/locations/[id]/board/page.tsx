@@ -20,6 +20,7 @@ type SearchParams = {
   success_message?: string;
   view?: string;
   search?: string;
+  stock_tab?: string;
 };
 
 type PositionRow = {
@@ -271,9 +272,7 @@ async function hideZeroStockProductFromBoard(formData: FormData) {
     .from("inventory_stock_by_uom_profile")
     .delete()
     .eq("location_id", locationId)
-    .eq("product_id", productId)
-    .lte("presentation_qty", 0)
-    .lte("base_qty", 0);
+    .eq("product_id", productId);
 
   if (physicalDeleteErr) {
     redirectBoardMessage(returnTo, physicalDeleteErr.message);
@@ -309,6 +308,7 @@ export default async function LocationBoardPage({
   const positionId = String(sp.position_id ?? "").trim();
   const viewMode = String(sp.view ?? "").trim();
   const searchQuery = String(sp.search ?? "").trim();
+  const stockTab = String(sp.stock_tab ?? "").trim() === "out" ? "out" : "available";
   const normalizedSearchQuery = normalizeBoardSearch(searchQuery);
   const successMessage =
     String(sp.ok ?? "").trim() === "kiosk_withdraw"
@@ -520,6 +520,12 @@ export default async function LocationBoardPage({
 
   for (const [productId, productRows] of presentationRowsByProduct.entries()) {
     const availableBaseQty = Number(stockQtyByProduct.get(productId) ?? 0);
+
+    if (availableBaseQty <= 0.000001) {
+      presentationPartsByProduct.set(productId, []);
+      continue;
+    }
+
     const totalPhysicalBaseQty = productRows.reduce(
       (sum, row) => sum + Number(row.base_qty ?? 0),
       0
@@ -760,7 +766,7 @@ export default async function LocationBoardPage({
               </div>
               <div className="flex flex-wrap gap-2">
                 <Link
-                  href={`/inventory/locations/${encodeURIComponent(location.id)}/board${isKiosk ? "?kiosk=1" : ""}`}
+                  href={`/inventory/locations/${encodeURIComponent(location.id)}/board${isKiosk ? `?kiosk=1&stock_tab=${stockTab}` : ""}`}
                   className={!selectedPosition ? "ui-chip ui-chip--brand" : "ui-chip"}
                 >
                   Todo el LOC
@@ -768,7 +774,7 @@ export default async function LocationBoardPage({
                 {topLevelPositions.map((position) => (
                   <Link
                     key={position.id}
-                    href={`/inventory/locations/${encodeURIComponent(location.id)}/board?position_id=${encodeURIComponent(position.id)}${isKiosk ? "&kiosk=1" : ""}`}
+                    href={`/inventory/locations/${encodeURIComponent(location.id)}/board?position_id=${encodeURIComponent(position.id)}${isKiosk ? `&kiosk=1&stock_tab=${stockTab}` : ""}`}
                     className={selectedRootPosition?.id === position.id ? "ui-chip ui-chip--brand" : "ui-chip"}
                   >
                     {position.name}
@@ -787,7 +793,7 @@ export default async function LocationBoardPage({
                 </div>
                 <div className="flex flex-wrap gap-2">
                   <Link
-                    href={`/inventory/locations/${encodeURIComponent(location.id)}/board?position_id=${encodeURIComponent(selectedRootPosition.id)}${isKiosk ? "&kiosk=1" : ""}`}
+                    href={`/inventory/locations/${encodeURIComponent(location.id)}/board?position_id=${encodeURIComponent(selectedRootPosition.id)}${isKiosk ? `&kiosk=1&stock_tab=${stockTab}` : ""}`}
                     className={selectedPosition?.id === selectedRootPosition.id ? "ui-chip ui-chip--brand" : "ui-chip"}
                   >
                     Todo {selectedRootPosition.name}
@@ -810,7 +816,7 @@ export default async function LocationBoardPage({
 
       {allStockItems.length > 0 ? (
         <KioskBoardStockView
-          key={`${isKiosk ? "kiosk" : "board"}:${positionId}:${viewMode}:${searchQuery}`}
+          key={`${isKiosk ? "kiosk" : "board"}:${positionId}:${viewMode}:${stockTab}:${searchQuery}`}
           items={stockItems}
           isKiosk={isKiosk}
           locationId={location.id}

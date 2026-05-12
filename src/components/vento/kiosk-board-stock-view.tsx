@@ -59,10 +59,10 @@ function stockStatusLabel(value: number) {
 }
 
 function StockAmount({ item, size = "lg" }: { item: KioskBoardStockItem; size?: "lg" | "sm" }) {
-  const presentationParts = item.presentationParts;
+  const presentationParts = Number(item.qty ?? 0) > 0 ? item.presentationParts : [];
 
   return (
-    <div className={size === "lg" ? "space-y-1" : "space-y-1"}>
+    <div className={size === "lg" ? "min-h-[3.75rem] space-y-1" : "min-h-[3.25rem] space-y-1"}>
       {presentationParts.length > 0 ? (
         <div className="flex flex-wrap gap-1.5 text-sm font-medium text-[var(--ui-text)]">
           {presentationParts.map((part) => (
@@ -306,8 +306,8 @@ export function KioskBoardStockView({
           </div>
 
 
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex rounded-2xl border border-[var(--ui-border)] bg-white p-1 shadow-sm">
+          <div className="flex flex-col items-center justify-center gap-2 sm:flex-row sm:justify-between">
+            <div className="inline-flex rounded-full border border-[var(--ui-border)] bg-white p-0.5 shadow-sm">
               {([
                 ["available", `Disponible (${availableItems.length})`],
                 ["out", `Sin stock (${outOfStockItems.length})`],
@@ -326,7 +326,7 @@ export function KioskBoardStockView({
                       searchQuery,
                     })}
                     aria-current={isActive ? "page" : undefined}
-                    className={`min-h-12 rounded-xl px-4 py-2 text-sm font-semibold transition ${isActive
+                    className={`inline-flex min-h-9 items-center justify-center rounded-full px-3.5 py-1.5 text-xs font-bold leading-none transition ${isActive
                       ? "bg-amber-100 text-amber-950"
                       : "text-[var(--ui-muted)] hover:bg-slate-50 hover:text-[var(--ui-text)]"
                       }`}
@@ -337,7 +337,7 @@ export function KioskBoardStockView({
               })}
             </div>
 
-            <div className="text-sm text-[var(--ui-muted)]">
+            <div className="text-center text-sm text-[var(--ui-muted)] sm:text-right">
               {searchQuery
                 ? `Mostrando ${visibleItems.length} de ${filteredItems.length} resultados.`
                 : stockTab === "out"
@@ -402,59 +402,61 @@ export function KioskBoardStockView({
             </div>
           </div>
         ) : (
-          <div className={viewMode === "compact" ? "grid gap-3 sm:grid-cols-2 xl:grid-cols-3" : "grid gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"}>
+          <div className={viewMode === "compact" ? "grid auto-rows-fr gap-3 sm:grid-cols-2 xl:grid-cols-3" : "grid auto-rows-fr gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"}>
             {visibleItems.map((item) => (
               <article
                 key={item.productId}
                 className={
                   viewMode === "compact"
-                    ? "grid grid-cols-[72px_1fr] gap-3 overflow-hidden rounded-3xl border border-[var(--ui-border)] bg-white p-3 shadow-sm"
-                    : "overflow-hidden rounded-[28px] border border-[var(--ui-border)] bg-white shadow-sm"
+                    ? "grid h-full grid-cols-[72px_1fr] gap-3 overflow-hidden rounded-3xl border border-[var(--ui-border)] bg-white p-3 shadow-sm"
+                    : "flex h-full flex-col overflow-hidden rounded-[28px] border border-[var(--ui-border)] bg-white shadow-sm"
                 }
               >
                 {viewMode === "compact" ? <ProductImage item={item} compact /> : <ProductImage item={item} />}
-                <div className={viewMode === "compact" ? "min-w-0 space-y-2" : "space-y-3 p-4"}>
-                  <div className="line-clamp-2 text-base font-semibold text-[var(--ui-text)]">{item.name}</div>
-                  <div className="flex items-center justify-between gap-3">
-                    <div className="truncate text-sm text-[var(--ui-muted)]">{item.categoryLabel}</div>
-                    <span className={`rounded-full border px-3 py-1 text-xs font-semibold ${toneForQty(item.qty)}`}>
+                <div className={viewMode === "compact" ? "flex h-full min-w-0 flex-col gap-2" : "flex flex-1 flex-col gap-3 p-4"}>
+                  <div className="line-clamp-2 min-h-10 text-base font-semibold leading-5 text-[var(--ui-text)]">{item.name}</div>
+                  <div className="grid min-h-7 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
+                    <div className="line-clamp-1 text-sm leading-5 text-[var(--ui-muted)]">{item.categoryLabel}</div>
+                    <span className={`inline-flex h-7 items-center rounded-full border px-2.5 text-[11px] font-bold ${toneForQty(item.qty)}`}>
                       {stockStatusLabel(item.qty)}
                     </span>
                   </div>
-                  {item.internalLocationLabel ? (
-                    <div className="text-xs font-semibold text-amber-900">{item.internalLocationLabel}</div>
-                  ) : null}
+                  <div className="min-h-4 text-xs font-semibold leading-4 text-amber-900">
+                    {item.internalLocationLabel || ""}
+                  </div>
                   <StockAmount item={item} size={viewMode === "compact" ? "sm" : "lg"} />
                   <div className="text-sm text-[var(--ui-muted)]">
                     Base: {formatQty(item.qty)} {item.unit}
                   </div>
-                  {isKiosk ? (
-                    item.qty > 0 ? (
-                      <Link
-                        href={buildKioskWithdrawHref(locationId, item.productId)}
-                        onClick={() => setOpeningProductId(item.productId)}
-                        className={`ui-btn ui-btn--brand h-14 w-full px-4 text-base ${openingProductId === item.productId ? "pointer-events-none opacity-80" : ""
-                          }`}
-                        aria-disabled={openingProductId === item.productId}
-                      >
-                        {openingProductId === item.productId ? "Abriendo..." : "Retirar"}
-                      </Link>
-                    ) : (
-                      <div>
-                        <div className="flex h-14 w-full items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 px-4 text-base font-bold text-slate-500">
-                          Producto agotado
+                  <div className="mt-auto">
+                    {isKiosk ? (
+                      item.qty > 0 ? (
+                        <Link
+                          href={buildKioskWithdrawHref(locationId, item.productId)}
+                          onClick={() => setOpeningProductId(item.productId)}
+                          className={`ui-btn ui-btn--brand h-14 w-full px-4 text-base ${openingProductId === item.productId ? "pointer-events-none opacity-80" : ""
+                            }`}
+                          aria-disabled={openingProductId === item.productId}
+                        >
+                          {openingProductId === item.productId ? "Abriendo..." : "Retirar"}
+                        </Link>
+                      ) : (
+                        <div>
+                          <div className="flex h-14 w-full items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 px-4 text-base font-bold text-slate-500">
+                            Producto agotado
+                          </div>
+                          <HideZeroStockButton
+                            action={hideZeroStockAction}
+                            item={item}
+                            locationId={locationId}
+                            returnTo={currentBoardHref}
+                            isSubmitting={hidingProductId === item.productId}
+                            onSubmit={() => setHidingProductId(item.productId)}
+                          />
                         </div>
-                        <HideZeroStockButton
-                          action={hideZeroStockAction}
-                          item={item}
-                          locationId={locationId}
-                          returnTo={currentBoardHref}
-                          isSubmitting={hidingProductId === item.productId}
-                          onSubmit={() => setHidingProductId(item.productId)}
-                        />
-                      </div>
-                    )
-                  ) : null}
+                      )
+                    ) : null}
+                  </div>
                 </div>
               </article>
             ))}
