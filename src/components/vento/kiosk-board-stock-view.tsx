@@ -32,6 +32,7 @@ type Props = {
   initialViewMode?: string;
   initialSearchQuery?: string;
   totalItemsCount?: number;
+  hideZeroStockAction?: (formData: FormData) => void | Promise<void>;
 };
 
 type ViewMode = "cards" | "compact" | "list";
@@ -140,6 +141,39 @@ function normalizeViewMode(value: string | undefined, isKiosk: boolean): ViewMod
   return isKiosk ? "compact" : "cards";
 }
 
+function HideZeroStockButton({
+  action,
+  item,
+  locationId,
+  returnTo,
+  isSubmitting,
+  onSubmit,
+}: {
+  action?: (formData: FormData) => void | Promise<void>;
+  item: KioskBoardStockItem;
+  locationId: string;
+  returnTo: string;
+  isSubmitting: boolean;
+  onSubmit: () => void;
+}) {
+  if (!action || item.qty > 0) return null;
+
+  return (
+    <form action={action} onSubmit={onSubmit} className="mt-2">
+      <input type="hidden" name="location_id" value={locationId} />
+      <input type="hidden" name="product_id" value={item.productId} />
+      <input type="hidden" name="return_to" value={returnTo} />
+      <button
+        type="submit"
+        disabled={isSubmitting}
+        className="inline-flex min-h-11 w-full items-center justify-center rounded-2xl border border-rose-200 bg-white px-4 py-2 text-sm font-bold text-rose-700 transition hover:bg-rose-50 disabled:opacity-60"
+      >
+        {isSubmitting ? "Ocultando..." : "Ocultar de este quiosco"}
+      </button>
+    </form>
+  );
+}
+
 export function KioskBoardStockView({
   items,
   isKiosk,
@@ -148,6 +182,7 @@ export function KioskBoardStockView({
   initialViewMode,
   initialSearchQuery = "",
   totalItemsCount,
+  hideZeroStockAction,
 }: Props) {
   const searchQuery = String(initialSearchQuery ?? "").trim();
   const totalCount = typeof totalItemsCount === "number" ? totalItemsCount : items.length;
@@ -155,12 +190,20 @@ export function KioskBoardStockView({
   const [stockTab, setStockTab] = useState<StockTab>("available");
   const [visibleLimit, setVisibleLimit] = useState(() => (isKiosk ? 48 : Number.MAX_SAFE_INTEGER));
   const [openingProductId, setOpeningProductId] = useState("");
+  const [hidingProductId, setHidingProductId] = useState("");
 
   const availableItems = items.filter((item) => Number(item.qty ?? 0) > 0);
   const outOfStockItems = items.filter((item) => Number(item.qty ?? 0) <= 0);
   const filteredItems = stockTab === "out" ? outOfStockItems : availableItems;
   const visibleItems = filteredItems.slice(0, visibleLimit);
   const hasMoreItems = visibleItems.length < filteredItems.length;
+  const currentBoardHref = buildBoardHref({
+    locationId,
+    isKiosk,
+    positionId,
+    viewMode,
+    searchQuery,
+  });
 
   const showTools = isKiosk && totalCount > 0;
 
@@ -318,8 +361,18 @@ export function KioskBoardStockView({
                           {openingProductId === item.productId ? "Abriendo..." : "Retirar"}
                         </Link>
                       ) : (
-                        <div className="mt-3 inline-flex h-14 items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 px-4 text-base font-bold text-slate-500">
-                          Sin stock
+                        <div className="mt-3">
+                          <div className="inline-flex h-14 items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 px-4 text-base font-bold text-slate-500">
+                            Sin stock
+                          </div>
+                          <HideZeroStockButton
+                            action={hideZeroStockAction}
+                            item={item}
+                            locationId={locationId}
+                            returnTo={currentBoardHref}
+                            isSubmitting={hidingProductId === item.productId}
+                            onSubmit={() => setHidingProductId(item.productId)}
+                          />
                         </div>
                       )
                     ) : null}
@@ -367,8 +420,18 @@ export function KioskBoardStockView({
                         {openingProductId === item.productId ? "Abriendo..." : "Retirar"}
                       </Link>
                     ) : (
-                      <div className="flex h-14 w-full items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 px-4 text-base font-bold text-slate-500">
-                        Sin stock
+                      <div>
+                        <div className="flex h-14 w-full items-center justify-center rounded-2xl border border-slate-200 bg-slate-100 px-4 text-base font-bold text-slate-500">
+                          Sin stock
+                        </div>
+                        <HideZeroStockButton
+                          action={hideZeroStockAction}
+                          item={item}
+                          locationId={locationId}
+                          returnTo={currentBoardHref}
+                          isSubmitting={hidingProductId === item.productId}
+                          onSubmit={() => setHidingProductId(item.productId)}
+                        />
                       </div>
                     )
                   ) : null}

@@ -1,10 +1,12 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { revalidatePath } from "next/cache";
+import { notFound, redirect } from "next/navigation";
 
 import { KioskBoardStockView, type KioskBoardStockItem } from "@/components/vento/kiosk-board-stock-view";
 import { KioskInlineSuccessAlert } from "@/components/vento/kiosk-inline-success-alert";
 import { LocationBoardAutoRefresh } from "@/features/inventory/locations/location-board-auto-refresh";
 import { requireAppAccess } from "@/lib/auth/guard";
+import { createClient } from "@/lib/supabase/server";
 import { getCategoryPath, type InventoryCategoryRow } from "@/lib/inventory/categories";
 import { formatOperationalPartLabel, type ProductUomProfile } from "@/lib/inventory/uom";
 
@@ -188,6 +190,110 @@ function safeDecodeBoardParam(value: string | null | undefined) {
   } catch {
     return value;
   }
+}
+
+function formText(value: FormDataEntryValue | null) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function redirectBoardMessage(returnTo: string, message: string) {
+  const fallback = "/inventory/stock";
+  const target = returnTo || fallback;
+  const joiner = target.includes("?") ? "&" : "?";
+
+  redirect(`${target}${joiner}ok=kiosk_withdraw&success_message=${encodeURIComponent(message)}`);
+}
+
+async function hideZeroStockProductFromBoard(formData: FormData) {
+  "use server";
+
+  const locationId = formText(formData.get("location_id"));
+  const productId = formText(formData.get("product_id"));
+  const returnTo =
+    formText(formData.get("return_to")) ||
+    (locationId ? `/inventory/locations/${encodeURIComponent(locationId)}/board?kiosk=1` : "/inventory/stock");
+
+  if (!locationId || !productId) {
+    redirectBoardMessage(returnTo, "No se pudo ocultar el producto: faltan datos.");
+  }
+
+  const supabase = await createClient();
+  const { data: userRes, error: userErr } = await supabase.auth.getUser();
+
+  if (userErr || !userRes.user) {
+    redirectBoardMessage(returnTo, "Debes iniciar sesion para ocultar productos del quiosco.");
+  }
+
+  const { data: stockRow, error: stockErr } = await supabase
+    .from("inventory_stock_by_location")
+    .select("current_qty")
+    .eq("location_id", locationId)
+    .eq("product_id", productId)
+    .maybeSingle();
+
+  if (stockErr) {
+    redirectBoardMessage(returnTo, stockErr.message);
+  }
+
+  const currentQty = Number((stockRow as { current_qty?: number | null } | null)?.current_qty ?? 0);
+
+  if (currentQty > 0.000001) {
+    redirectBoardMessage(returnTo, "No se puede ocultar un producto que todavia tiene stock.");
+  }
+
+  const { data: positionRows, error: positionsErr } = await supabase
+    .from("inventory_location_positions")
+    .select("id")
+    .eq("location_id", locationId);
+
+  if (positionsErr) {
+    redirectBoardMessage(returnTo, positionsErr.message);
+  }
+
+  const positionIds = ((positionRows ?? []) as Array<{ id: string }>)
+    .map((position) => String(position.id ?? "").trim())
+    .filter(Boolean);
+
+  if (positionIds.length > 0) {
+    const { error: positionDeleteErr } = await supabase
+      .from("inventory_stock_by_position")
+      .delete()
+      .eq("product_id", productId)
+      .in("position_id", positionIds)
+      .lte("current_qty", 0);
+
+    if (positionDeleteErr) {
+      redirectBoardMessage(returnTo, positionDeleteErr.message);
+    }
+  }
+
+  const { error: physicalDeleteErr } = await supabase
+    .from("inventory_stock_by_uom_profile")
+    .delete()
+    .eq("location_id", locationId)
+    .eq("product_id", productId)
+    .lte("presentation_qty", 0)
+    .lte("base_qty", 0);
+
+  if (physicalDeleteErr) {
+    redirectBoardMessage(returnTo, physicalDeleteErr.message);
+  }
+
+  const { error: locDeleteErr } = await supabase
+    .from("inventory_stock_by_location")
+    .delete()
+    .eq("location_id", locationId)
+    .eq("product_id", productId)
+    .lte("current_qty", 0);
+
+  if (locDeleteErr) {
+    redirectBoardMessage(returnTo, locDeleteErr.message);
+  }
+
+  revalidatePath(`/inventory/locations/${encodeURIComponent(locationId)}/board`);
+  revalidatePath(`/inventory/locations/${encodeURIComponent(locationId)}/kiosk-withdraw`);
+
+  redirectBoardMessage(returnTo, "Producto ocultado de la pestaña Sin stock.");
 }
 
 export default async function LocationBoardPage({
@@ -712,6 +818,7 @@ export default async function LocationBoardPage({
           initialViewMode={viewMode}
           initialSearchQuery={searchQuery}
           totalItemsCount={allStockItems.length}
+          hideZeroStockAction={hideZeroStockProductFromBoard}
         />
       ) : (
         <div className={`ui-panel ui-remission-section text-center ${isKiosk ? "min-h-[45vh] flex flex-col items-center justify-center" : ""}`}>
