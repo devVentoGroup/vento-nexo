@@ -48,6 +48,7 @@ const MOVEMENT_TYPE_LABELS: Record<string, string> = {
   transfer_internal: "Traslado interno",
   transfer_in: "Traslado recibido",
   transfer_out: "Traslado enviado",
+  stock_consume_position: "Descuento técnico de ubicación",
 };
 
 const INCREASE_TYPES = new Set([
@@ -71,6 +72,8 @@ const DECREASE_TYPES = new Set([
 ]);
 
 const NEUTRAL_STOCK_TYPES = new Set(["transfer_internal"]);
+const TECHNICAL_MOVEMENT_TYPES = new Set(["stock_consume_position"]);
+
 type SiteRow = {
   site_id: string;
   is_primary: boolean | null;
@@ -147,6 +150,134 @@ function displayEmployeeName(employee?: EmployeeNameRow | null) {
   return String(employee.alias ?? employee.full_name ?? employee.id).trim() || employee.id;
 }
 
+type MovementDisplayRow = {
+  site_id?: string | null;
+  product_id?: string | null;
+  movement_type?: string | null;
+  quantity?: number | null;
+  input_qty?: number | null;
+  input_unit_code?: string | null;
+  conversion_factor_to_stock?: number | null;
+  stock_unit_code?: string | null;
+  note?: string | null;
+  product?: ProductRow | null;
+};
+
+const quantityFormatter = new Intl.NumberFormat("es-CO", {
+  maximumFractionDigits: 3,
+});
+
+function formatQuantity(value: number | null | undefined) {
+  const qty = Number(value ?? 0);
+  if (!Number.isFinite(qty)) return "0";
+  return quantityFormatter.format(qty);
+}
+
+function isTechnicalMovementType(value: string) {
+  return TECHNICAL_MOVEMENT_TYPES.has(value);
+}
+
+function escapeRegExp(value: string) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function sanitizeMovementNote(value: string | null | undefined) {
+  return String(value ?? "")
+    .replace(/\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b/gi, "")
+    .replace(/\s*->\s*/g, " → ")
+    .replace(/\s*:\s*/g, ": ")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([,.;:])/g, "$1")
+    .replace(/^[:\-\s]+/, "")
+    .trim();
+}
+
+function removeProductPrefix(value: string, productName: string) {
+  if (!value || !productName) return value;
+
+  return value
+    .replace(new RegExp(`^${escapeRegExp(productName)}\\s*:?\\s*`, "i"), "")
+    .trim();
+}
+
+function capitalizeFirst(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  return trimmed.charAt(0).toUpperCase() + trimmed.slice(1);
+}
+
+function withFinalPeriod(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  return /[.!?]$/.test(trimmed) ? trimmed : `${trimmed}.`;
+}
+
+function buildCaptureLabel(row: MovementDisplayRow, stockUnit: string) {
+  const inputQty = row.input_qty;
+  const inputUnit = String(row.input_unit_code ?? "").trim();
+  const factor = Number(row.conversion_factor_to_stock ?? 0);
+
+  if (inputQty != null && inputUnit) {
+    const base = `${formatQuantity(Number(inputQty))} ${inputUnit}`;
+
+    if (Number.isFinite(factor) && factor > 0 && factor !== 1 && stockUnit) {
+      return `${base} = ${formatQuantity(Number(inputQty) * factor)} ${stockUnit}`;
+    }
+
+    return base;
+  }
+
+  return stockUnit ? `Registro en ${stockUnit}` : "-";
+}
+
+function buildMovementDetail(row: MovementDisplayRow, siteNameMap: Map<string, string>) {
+  const type = String(row.movement_type ?? "");
+  const site = siteNameMap.get(String(row.site_id ?? "")) ?? String(row.site_id ?? "");
+  const productName = String(row.product?.name ?? "").trim();
+  const cleanNote = removeProductPrefix(sanitizeMovementNote(row.note), productName);
+  const productLabel = productName || "este producto";
+
+  if (type === "transfer_internal") {
+    const detail = cleanNote.replace(/^traslado\s*/i, "").trim();
+
+    return detail
+      ? withFinalPeriod(`Traslado interno: ${detail}`)
+      : `Traslado interno de ${productLabel} en ${site}.`;
+  }
+
+  if (type === "consumption") {
+    return cleanNote
+      ? withFinalPeriod(`Retiro: ${capitalizeFirst(cleanNote)}`)
+      : `Retiro de ${productLabel}.`;
+  }
+
+  if (type === "issue_internal") {
+    return cleanNote
+      ? withFinalPeriod(`Consumo interno: ${capitalizeFirst(cleanNote)}`)
+      : `Consumo interno de ${productLabel}.`;
+  }
+
+  if (type === "receipt" || type === "receipt_in" || type === "purchase_in") {
+    return cleanNote
+      ? withFinalPeriod(`Entrada: ${capitalizeFirst(cleanNote)}`)
+      : `Entrada de ${productLabel} registrada en ${site}.`;
+  }
+
+  if (type === "adjustment" || type === "initial_count" || type === "count") {
+    return cleanNote
+      ? withFinalPeriod(`Ajuste: ${capitalizeFirst(cleanNote)}`)
+      : `Ajuste de inventario para ${productLabel}.`;
+  }
+
+  if (isTechnicalMovementType(type)) {
+    return cleanNote
+      ? withFinalPeriod(`Movimiento técnico de ubicación interna: ${capitalizeFirst(cleanNote)}`)
+      : "Movimiento técnico de ubicación interna.";
+  }
+
+  return cleanNote ? withFinalPeriod(capitalizeFirst(cleanNote)) : "Movimiento registrado sin nota adicional.";
+}
+
 export default async function InventoryMovementsPage({
   searchParams,
 }: {
@@ -193,9 +324,9 @@ export default async function InventoryMovementsPage({
 
   const { data: sites } = siteIds.length
     ? await supabase
-        .from("sites")
-        .select("id,name")
-        .in("id", siteIds)
+      .from("sites")
+      .select("id,name")
+      .in("id", siteIds)
     : { data: [] as SiteNameRow[] };
 
   const siteNameMap = new Map(
@@ -247,36 +378,41 @@ export default async function InventoryMovementsPage({
   const { data: rows, error } = await q;
 
   const movements = (rows ?? []) as unknown as MovementRow[];
+  const visibleMovements = movements.filter(
+    (row) => !isTechnicalMovementType(String(row.movement_type ?? ""))
+  );
+  const hiddenTechnicalCount = movements.length - visibleMovements.length;
+
   const siteLabel = siteId ? siteNameMap.get(siteId) ?? siteId : "Todas las sedes";
-  const positiveCount = movements.filter(
+  const positiveCount = visibleMovements.filter(
     (row) => normalizeSignedMovementQty(String(row.movement_type ?? ""), row.quantity) > 0
   ).length;
-  const negativeCount = movements.filter(
+  const negativeCount = visibleMovements.filter(
     (row) => normalizeSignedMovementQty(String(row.movement_type ?? ""), row.quantity) < 0
   ).length;
   const activeFilterCount = [siteId, movementType, productId, fromDate, toDate].filter(Boolean).length;
 
-  const movementSiteIds = Array.from(new Set(movements.map((row) => String(row.site_id ?? "")).filter(Boolean)));
-  const movementProductIds = Array.from(new Set(movements.map((row) => String(row.product_id ?? "")).filter(Boolean)));
+  const movementSiteIds = Array.from(new Set(visibleMovements.map((row) => String(row.site_id ?? "")).filter(Boolean)));
+  const movementProductIds = Array.from(new Set(visibleMovements.map((row) => String(row.product_id ?? "")).filter(Boolean)));
   const movementEmployeeIds = Array.from(
-    new Set(movements.map((row) => String(row.created_by ?? "")).filter(Boolean))
+    new Set(visibleMovements.map((row) => String(row.created_by ?? "")).filter(Boolean))
   );
 
   const { data: stockRowsData } =
     movementSiteIds.length && movementProductIds.length
       ? await supabase
-          .from("inventory_stock_by_site")
-          .select("site_id,product_id,current_qty")
-          .in("site_id", movementSiteIds)
-          .in("product_id", movementProductIds)
+        .from("inventory_stock_by_site")
+        .select("site_id,product_id,current_qty")
+        .in("site_id", movementSiteIds)
+        .in("product_id", movementProductIds)
       : { data: [] as StockBySiteRow[] };
 
   const stockRows = (stockRowsData ?? []) as StockBySiteRow[];
   const { data: movementEmployeesData } = movementEmployeeIds.length
     ? await supabase
-        .from("employees")
-        .select("id,full_name,alias")
-        .in("id", movementEmployeeIds)
+      .from("employees")
+      .select("id,full_name,alias")
+      .in("id", movementEmployeeIds)
     : { data: [] as EmployeeNameRow[] };
   const employeeNameMap = new Map(
     ((movementEmployeesData ?? []) as EmployeeNameRow[]).map((employee) => [
@@ -291,7 +427,7 @@ export default async function InventoryMovementsPage({
 
   const runningBalanceMap = new Map(currentBalanceMap);
   const movementBalances = new Map<string, { opening: number; closing: number; movement: number }>();
-  for (const row of movements) {
+  for (const row of visibleMovements) {
     const key = `${String(row.site_id ?? "")}::${String(row.product_id ?? "")}`;
     const closing = Number(runningBalanceMap.get(key) ?? 0);
     const movement = normalizeSignedMovementQty(String(row.movement_type ?? ""), row.quantity);
@@ -316,8 +452,12 @@ export default async function InventoryMovementsPage({
           <div className="ui-remission-kpis">
             <div className="ui-remission-kpi">
               <div className="ui-remission-kpi-label">Registros</div>
-              <div className="ui-remission-kpi-value">{movements.length}</div>
-              <div className="ui-remission-kpi-note">Ultimos 200 movimientos visibles</div>
+              <div className="ui-remission-kpi-value">{visibleMovements.length}</div>
+              <div className="ui-remission-kpi-note">
+                {hiddenTechnicalCount > 0
+                  ? `${hiddenTechnicalCount} movimiento(s) técnico(s) ocultos`
+                  : "Ultimos 200 movimientos visibles"}
+              </div>
             </div>
             <div className="ui-remission-kpi" data-tone="success">
               <div className="ui-remission-kpi-label">Entradas</div>
@@ -476,14 +616,14 @@ export default async function InventoryMovementsPage({
             <div className="mt-1 ui-caption">Lectura rapida de lo que se movio en inventario.</div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <span className="ui-chip">{movements.length} visibles</span>
+            <span className="ui-chip">{visibleMovements.length} visibles</span>
             <span className="ui-chip ui-chip--success">{positiveCount} +</span>
             <span className="ui-chip ui-chip--warn">{negativeCount} -</span>
           </div>
         </div>
 
         <div className="mt-4 space-y-3 lg:hidden">
-          {movements.map((row) => {
+          {visibleMovements.map((row) => {
             const createdAt = String(row.created_at ?? "");
             const type = String(row.movement_type ?? "");
             const site = String(row.site_id ?? "");
@@ -492,15 +632,9 @@ export default async function InventoryMovementsPage({
             const productSku = product?.sku ?? "";
             const signedQty = normalizeSignedMovementQty(type, Number(row.quantity ?? 0));
             const unit = String(row.stock_unit_code ?? product?.stock_unit_code ?? product?.unit ?? "");
-            const inputQty = row.input_qty;
-            const inputUnit = row.input_unit_code ?? "";
-            const factor = row.conversion_factor_to_stock;
-            const ref = String((row as { note?: string | null }).note ?? "");
+            const ref = buildMovementDetail(row, siteNameMap);
             const responsible = employeeNameMap.get(String(row.created_by ?? "")) ?? "-";
-            const captureLabel =
-              inputQty != null && inputUnit
-                ? `${inputQty} ${inputUnit}${factor && factor !== 1 ? ` (x${factor})` : ""}`
-                : "Sin detalle";
+            const captureLabel = buildCaptureLabel(row, unit);
 
             return (
               <div key={String(row.id ?? `${createdAt}-${productLabel}-${signedQty}`)} className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
@@ -510,13 +644,12 @@ export default async function InventoryMovementsPage({
                     {productSku ? <div className="mt-1 text-xs text-[var(--ui-muted)]">{productSku}</div> : null}
                   </div>
                   <span
-                    className={`rounded-full px-3 py-1 text-xs font-semibold ${
-                      movementTone(type) === "success"
-                        ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
-                        : movementTone(type) === "warn"
-                          ? "border border-amber-200 bg-amber-50 text-amber-800"
-                          : "border border-slate-200 bg-slate-100 text-slate-700"
-                    }`}
+                    className={`rounded-full px-3 py-1 text-xs font-semibold ${movementTone(type) === "success"
+                      ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
+                      : movementTone(type) === "warn"
+                        ? "border border-amber-200 bg-amber-50 text-amber-800"
+                        : "border border-slate-200 bg-slate-100 text-slate-700"
+                      }`}
                   >
                     {formatMovementType(type)}
                   </span>
@@ -532,7 +665,7 @@ export default async function InventoryMovementsPage({
                   <div className="rounded-xl bg-[var(--ui-bg-soft)] p-3">
                     <div className="text-xs text-[var(--ui-muted)]">Cantidad</div>
                     <div className={`mt-1 text-base font-semibold ${signedQty < 0 ? "text-amber-700" : signedQty > 0 ? "text-emerald-700" : "text-[var(--ui-text)]"}`}>
-                      {signedQty > 0 ? `+${signedQty}` : signedQty} {unit}
+                      {signedQty > 0 ? `+${formatQuantity(signedQty)}` : formatQuantity(signedQty)} {unit}
                     </div>
                   </div>
                   <div className="rounded-xl bg-[var(--ui-bg-soft)] p-3">
@@ -559,7 +692,7 @@ export default async function InventoryMovementsPage({
             );
           })}
 
-          {!error && movements.length === 0 ? (
+          {!error && visibleMovements.length === 0 ? (
             <div className="ui-empty rounded-2xl border border-[var(--ui-border)] bg-white p-6 text-center">
               No hay movimientos para mostrar.
             </div>
@@ -571,20 +704,16 @@ export default async function InventoryMovementsPage({
             <thead>
               <tr>
                 <TableHeaderCell>Fecha</TableHeaderCell>
-                <TableHeaderCell>Tipo</TableHeaderCell>
-                <TableHeaderCell>Sede</TableHeaderCell>
-                <TableHeaderCell>Producto</TableHeaderCell>
-                <TableHeaderCell>Saldo inicial</TableHeaderCell>
                 <TableHeaderCell>Movimiento</TableHeaderCell>
-                <TableHeaderCell>Saldo final</TableHeaderCell>
-                <TableHeaderCell>Unidad</TableHeaderCell>
-                <TableHeaderCell>Como se registro</TableHeaderCell>
-                <TableHeaderCell>Hecho por</TableHeaderCell>
+                <TableHeaderCell>Producto</TableHeaderCell>
+                <TableHeaderCell>Cantidad</TableHeaderCell>
+                <TableHeaderCell>Saldo</TableHeaderCell>
+                <TableHeaderCell>Registro</TableHeaderCell>
                 <TableHeaderCell>Detalle</TableHeaderCell>
               </tr>
             </thead>
             <tbody>
-              {movements.map((row) => {
+              {visibleMovements.map((row) => {
                 const createdAt = String(row.created_at ?? "");
                 const type = String(row.movement_type ?? "");
                 const site = String(row.site_id ?? "");
@@ -597,62 +726,88 @@ export default async function InventoryMovementsPage({
                   movement: normalizeSignedMovementQty(type, row.quantity),
                 };
                 const unit = String(row.stock_unit_code ?? product?.stock_unit_code ?? product?.unit ?? "");
-                const inputQty = row.input_qty;
-                const inputUnit = row.input_unit_code ?? "";
-                const factor = row.conversion_factor_to_stock;
-                const ref = String((row as { note?: string | null }).note ?? "");
                 const responsible = employeeNameMap.get(String(row.created_by ?? "")) ?? "-";
-                const captureLabel =
-                  inputQty != null && inputUnit
-                    ? `${inputQty} ${inputUnit}${factor && factor !== 1 ? ` (x${factor})` : ""}`
-                    : "-";
+                const captureLabel = buildCaptureLabel(row, unit);
+                const detail = buildMovementDetail(row, siteNameMap);
+                const tone = movementTone(type);
 
                 return (
-                  <tr key={String(row.id ?? `${createdAt}-${productLabel}-${balances.movement}`)} className="ui-body">
-                    <TableCell><HistoryDate value={createdAt} /></TableCell>
+                  <tr key={String(row.id ?? `${createdAt}-${productLabel}-${balances.movement}`)} className="ui-body align-top">
                     <TableCell>
-                      <span
-                        className={`inline-flex rounded-full px-2.5 py-1 text-xs font-semibold ${
-                          movementTone(type) === "success"
-                            ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
-                            : movementTone(type) === "warn"
-                              ? "border border-amber-200 bg-amber-50 text-amber-800"
-                              : "border border-slate-200 bg-slate-100 text-slate-700"
-                        }`}
-                      >
-                        {formatMovementType(type)}
-                      </span>
+                      <HistoryDate value={createdAt} />
                     </TableCell>
-                    <TableCell>{siteNameMap.get(site) ?? site}</TableCell>
+
                     <TableCell>
-                      <div className="font-semibold text-[var(--ui-text)]">{productLabel}</div>
-                      {productSku ? <div className="ui-caption">{productSku}</div> : null}
+                      <div className="flex min-w-[170px] flex-col gap-1.5">
+                        <span
+                          className={`inline-flex w-fit rounded-full px-2.5 py-1 text-xs font-semibold ${tone === "success"
+                              ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
+                              : tone === "warn"
+                                ? "border border-amber-200 bg-amber-50 text-amber-800"
+                                : "border border-slate-200 bg-slate-100 text-slate-700"
+                            }`}
+                        >
+                          {formatMovementType(type)}
+                        </span>
+                        <span className="ui-caption">{siteNameMap.get(site) ?? site}</span>
+                        <span className="ui-caption">Por: {responsible}</span>
+                      </div>
                     </TableCell>
-                    <TableCell>{balances.opening}</TableCell>
+
+                    <TableCell>
+                      <div className="min-w-[190px]">
+                        <div className="font-semibold text-[var(--ui-text)]">{productLabel}</div>
+                        {productSku ? <div className="ui-caption">{productSku}</div> : null}
+                      </div>
+                    </TableCell>
+
                     <TableCell
                       className={
                         balances.movement < 0
                           ? "font-semibold text-amber-700"
                           : balances.movement > 0
                             ? "font-semibold text-emerald-700"
-                            : ""
+                            : "font-semibold text-[var(--ui-text)]"
                       }
                     >
-                      {balances.movement > 0 ? `+${balances.movement}` : balances.movement}
+                      <div className="min-w-[110px]">
+                        {balances.movement > 0 ? `+${formatQuantity(balances.movement)}` : formatQuantity(balances.movement)}
+                        {unit ? ` ${unit}` : ""}
+                      </div>
                     </TableCell>
-                    <TableCell>{balances.closing}</TableCell>
-                    <TableCell>{unit}</TableCell>
-                    <TableCell>{captureLabel}</TableCell>
-                    <TableCell>{responsible}</TableCell>
-                    <TableCell>{ref || "-"}</TableCell>
+
+                    <TableCell>
+                      <div className="min-w-[130px]">
+                        <div className="font-semibold text-[var(--ui-text)]">
+                          {formatQuantity(balances.closing)}
+                          {unit ? ` ${unit}` : ""}
+                        </div>
+                        <div className="ui-caption">
+                          Inicial: {formatQuantity(balances.opening)}
+                          {unit ? ` ${unit}` : ""}
+                        </div>
+                      </div>
+                    </TableCell>
+
+                    <TableCell>
+                      <div className="min-w-[150px] text-sm text-[var(--ui-text)]">
+                        {captureLabel}
+                      </div>
+                    </TableCell>
+
+                    <TableCell>
+                      <div className="max-w-[420px] whitespace-normal text-sm leading-5 text-[var(--ui-text)]">
+                        {detail}
+                      </div>
+                    </TableCell>
                   </tr>
                 );
               })}
 
-              {!error && movements.length === 0 ? (
+              {!error && visibleMovements.length === 0 ? (
                 <tr>
-                  <TableCell colSpan={11} className="ui-empty">
-                    No hay movimientos para mostrar (o RLS no te permite verlos).
+                  <TableCell colSpan={7} className="ui-empty">
+                    No hay movimientos para mostrar.
                   </TableCell>
                 </tr>
               ) : null}
