@@ -224,7 +224,7 @@ export function ProductPresentationsEditor({
                   {Number(suggestion.qty_in_stock_unit || 0).toLocaleString("es-CO", {
                     maximumFractionDigits: 3,
                   })}{" "}
-                  {suggestion.input_unit_code || stockUnitCode}
+                  {stockUnitCode}
                 </div>
 
                 <button

@@ -259,9 +259,23 @@ async function saveProductPresentations(formData: FormData) {
     }
   }
 
-  const hasDefaultPhysicalPresentation = rows.some((row) => row.isDefault && row.isActive);
+  const defaultPhysicalPresentations = rows.filter((row) => row.isDefault && row.isActive);
 
-  if (hasDefaultPhysicalPresentation) {
+  if (defaultPhysicalPresentations.length === 0) {
+    redirectWithError("Selecciona una unidad mínima activa para solicitud/remisión.");
+  }
+
+  if (defaultPhysicalPresentations.length > 1) {
+    redirectWithError("Solo puede haber una unidad mínima activa para solicitud/remisión.");
+  }
+
+  for (const row of rows) {
+    if (row.isDefault && !row.isActive) {
+      redirectWithError(`La presentación "${row.label}" no puede ser unidad mínima si está inactiva.`);
+    }
+  }
+
+  if (defaultPhysicalPresentations.length === 1) {
     const { error } = await supabase
       .from("product_uom_profiles")
       .update({
@@ -360,7 +374,8 @@ export default async function ProductPresentationsPage({
       .from("product_uom_profiles")
       .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context,image_url,catalog_image_url")
       .eq("product_id", id)
-      .order("usage_context", { ascending: true })
+      .eq("source", "manual")
+      .eq("usage_context", "general")
       .order("is_default", { ascending: false })
       .order("label", { ascending: true }),
     supabase
@@ -392,16 +407,14 @@ export default async function ProductPresentationsPage({
     unitMap,
   });
 
-  const presentationRows = ((uomProfileData ?? []) as UomProfileRow[])
-    .filter((row) => row.source === "manual")
-    .map((row) => ({
-      ...row,
-      qty_in_input_unit: 1,
-      usage_context: "general" as const,
-      source: "manual" as const,
-      image_url: row.image_url ?? "",
-      catalog_image_url: row.catalog_image_url ?? "",
-    }));
+  const presentationRows = ((uomProfileData ?? []) as UomProfileRow[]).map((row) => ({
+    ...row,
+    qty_in_input_unit: 1,
+    usage_context: "general" as const,
+    source: "manual" as const,
+    image_url: row.image_url ?? "",
+    catalog_image_url: row.catalog_image_url ?? "",
+  }));
 
   const existingImageUrls = Array.from(
     new Set(

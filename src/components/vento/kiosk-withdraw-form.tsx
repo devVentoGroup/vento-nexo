@@ -85,6 +85,10 @@ function presentationChipLabel(part: PresentationPart) {
   return `${qtyLabel} ${label}`;
 }
 
+function presentationDisplayLabel(part: PresentationPart) {
+  return String(part.label ?? "").trim() || "Presentación";
+}
+
 function profileStockFactor(profile: ProductUomProfile) {
   const inputQty = Number(profile.qty_in_input_unit);
   const stockQty = Number(profile.qty_in_stock_unit);
@@ -303,6 +307,21 @@ export function KioskWithdrawForm({
     setIsSubmitting(true);
   }
 
+  function selectPhysicalPresentation(part: PresentationPart) {
+    const profile = profiles.find((item) => item.id === part.uomProfileId) ?? null;
+
+    setInputUomProfileId(part.uomProfileId);
+    setInputUnitCode(
+      profile
+        ? normalizeUnitCode(profile.input_unit_code)
+        : stockUnitCode
+    );
+
+    if (!quantity) {
+      setQuantity("1");
+    }
+  }
+
   return (
     <form action={action} noValidate onSubmit={handleSubmit} className="space-y-5 pb-24 lg:pb-0">
       <input type="hidden" name="source_location_id" value={sourceLocationId} />
@@ -348,12 +367,56 @@ export function KioskWithdrawForm({
               Base: {formatQty(product.available_qty)} {product.stock_unit_code ?? product.unit ?? "un"}
             </div>
             {product.presentationParts.length > 0 ? (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {product.presentationParts.map((part) => (
-                  <span key={part.uomProfileId} className="rounded-full border border-emerald-200 bg-white px-3 py-1 text-xs font-bold text-emerald-950">
-                    {presentationChipLabel(part)}
-                  </span>
-                ))}
+              <div className="mt-4 space-y-2">
+                <div className="text-xs font-bold uppercase tracking-[0.08em] text-amber-900">
+                  Presentaciones disponibles
+                </div>
+
+                <div className="grid gap-3 sm:grid-cols-2">
+                  {product.presentationParts.map((part) => {
+                    const isSelected = inputUomProfileId === part.uomProfileId;
+
+                    return (
+                      <button
+                        key={part.uomProfileId}
+                        type="button"
+                        onClick={() => selectPhysicalPresentation(part)}
+                        className={`grid grid-cols-[56px_1fr] items-center gap-3 rounded-2xl border bg-white p-2 text-left shadow-sm transition ${
+                          isSelected
+                            ? "border-amber-500 ring-2 ring-amber-200"
+                            : "border-emerald-200 hover:border-amber-300"
+                        }`}
+                      >
+                        <div className="flex h-14 w-14 items-center justify-center overflow-hidden rounded-xl border border-slate-200 bg-slate-50">
+                          {part.imageUrl ? (
+                            // eslint-disable-next-line @next/next/no-img-element
+                            <img
+                              src={part.imageUrl}
+                              alt=""
+                              className="h-full w-full object-cover"
+                            />
+                          ) : (
+                            <span className="px-1 text-center text-[10px] font-bold text-slate-400">
+                              Sin foto
+                            </span>
+                          )}
+                        </div>
+
+                        <div className="min-w-0">
+                          <div className="line-clamp-2 text-sm font-bold text-[var(--ui-text)]">
+                            {presentationDisplayLabel(part)}
+                          </div>
+                          <div className="mt-0.5 text-xs font-semibold text-emerald-900">
+                            Disponible: {formatQty(Number(part.qty ?? 0))}
+                          </div>
+                          <div className="mt-0.5 text-[11px] text-[var(--ui-muted)]">
+                            Base: {formatQty(Number(part.baseQty ?? 0))} {stockUnitCode}
+                          </div>
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
             ) : (
               <div className="mt-2 text-xs font-semibold text-amber-900">Sin desglose por presentacion</div>
@@ -399,7 +462,9 @@ export function KioskWithdrawForm({
           </label>
 
           <label className="flex flex-col gap-1">
-            <span className="ui-label">Unidad</span>
+            <span className="ui-label">
+              {hasPhysicalBreakdown ? "Unidad seleccionada" : "Unidad"}
+            </span>
             <select
               className="ui-input h-14 text-base"
               value={unitValue}
@@ -420,6 +485,11 @@ export function KioskWithdrawForm({
                 </option>
               ))}
             </select>
+            {hasPhysicalBreakdown ? (
+              <span className="text-xs text-[var(--ui-muted)]">
+                También puedes tocar una tarjeta de presentación disponible para seleccionarla.
+              </span>
+            ) : null}
           </label>
         </div>
 
