@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState } from "react";
 
@@ -60,6 +60,7 @@ type SatelliteState = {
   isActive: boolean;
   areaKinds: string[];
   minStockQty?: number;
+  productionLocationId?: string;
 };
 
 function normalizeText(value: string | null | undefined): string {
@@ -166,7 +167,7 @@ export function ProductSiteSettingsEditor({
     const selected = String(selectedCode ?? "").trim();
     if (selected && !baseOptions.some((area) => area.code === selected)) {
       const label = areaKinds.find((area) => area.code === selected)?.name ?? selected;
-      return [{ code: selected, name: `${label} (fuera de catálogo de la sede)` }, ...baseOptions];
+      return [{ code: selected, name: `${label} (fuera de catÃ¡logo de la sede)` }, ...baseOptions];
     }
     return baseOptions;
   };
@@ -217,6 +218,7 @@ export function ProductSiteSettingsEditor({
           existing?.default_area_kind,
         ]),
         minStockQty: existing?.min_stock_qty,
+        productionLocationId: existing?.production_location_id ?? "",
       });
     }
     return state;
@@ -321,6 +323,9 @@ export function ProductSiteSettingsEditor({
         is_active: state.enabled ? state.isActive : false,
         default_area_kind: normalizedDefaultAreaKind || undefined,
         area_kinds: normalizedAreaKinds.length ? normalizedAreaKinds : undefined,
+        production_location_id: getProductionLocationsForSite(site.id).some((location) => location.id === state.productionLocationId)
+          ? state.productionLocationId
+          : undefined,
         min_stock_qty: state.minStockQty,
         min_stock_input_mode: "base",
         audience: inferSatelliteAudience(site),
@@ -360,7 +365,7 @@ export function ProductSiteSettingsEditor({
 
       <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
         <div className="mb-2 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-amber-800">
-          Fase 1 · Centro
+          Fase 1 Â· Centro
         </div>
         <div className="mb-3 border-b border-[var(--ui-border)] pb-3">
           <div className="text-sm font-semibold text-[var(--ui-text)]">Centro de produccion (stock real)</div>
@@ -526,7 +531,7 @@ export function ProductSiteSettingsEditor({
 
       <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
         <div className="mb-2 inline-flex rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-cyan-800">
-          Fase 2 · Sedes satelite
+          Fase 2 Â· Sedes satelite
         </div>
         <div className="mb-3 border-b border-[var(--ui-border)] pb-3">
           <div className="text-sm font-semibold text-[var(--ui-text)]">
@@ -544,7 +549,14 @@ export function ProductSiteSettingsEditor({
               isActive: true,
               areaKinds: [],
               minStockQty: undefined,
+              productionLocationId: "",
             };
+            const satelliteProductionLocationOptions = getProductionLocationsForSite(site.id);
+            const validSatelliteProductionLocationId = satelliteProductionLocationOptions.some(
+              (location) => location.id === state.productionLocationId
+            )
+              ? state.productionLocationId
+              : "";
             return (
               <div key={site.id} className="rounded-xl border border-[var(--ui-border)] p-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -610,6 +622,26 @@ export function ProductSiteSettingsEditor({
                       </p>
                     </div>
 
+                    <label className="flex flex-col gap-1 md:col-span-4">
+                      <span className="ui-label">LOC para producir</span>
+                      <select
+                        value={validSatelliteProductionLocationId}
+                        onChange={(event) => updateSatellite(site.id, { productionLocationId: event.target.value })}
+                        className="ui-input"
+                      >
+                        <option value="">Sin definir</option>
+                        {satelliteProductionLocationOptions.map((location) => (
+                          <option key={location.id} value={location.id}>
+                            {location.code}
+                            {location.zone ? ` (${location.zone})` : ""}
+                          </option>
+                        ))}
+                      </select>
+                      <p className="text-xs text-[var(--ui-muted)]">
+                        Debe ser el LOC real del area que recibe insumos y consume receta.
+                      </p>
+                    </label>
+
                     <label className="flex flex-col gap-1 md:col-span-5">
                       <span className="ui-label">Stock minimo (referencia)</span>
                       <input
@@ -642,3 +674,6 @@ export function ProductSiteSettingsEditor({
     </div>
   );
 }
+
+
+

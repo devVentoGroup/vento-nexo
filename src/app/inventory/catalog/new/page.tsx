@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
@@ -1007,12 +1007,12 @@ async function createProduct(formData: FormData) {
     if (!remissionInputUnitCode || remissionQtyInStock <= 0) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
-          "Completa la presentación de remisión: unidad y equivalencia a unidad base."
+          "Completa la presentaciÃ³n de remisiÃ³n: unidad y equivalencia a unidad base."
         )}`
       );
     }
     remissionUomFromSupplier = {
-      label: remissionLabelText || "Presentación remisión",
+      label: remissionLabelText || "PresentaciÃ³n remisiÃ³n",
       inputUnitCode: remissionInputUnitCode,
       qtyInInputUnit: 1,
       qtyInStockUnit: remissionQtyInStock,
@@ -1022,12 +1022,12 @@ async function createProduct(formData: FormData) {
     if (!purchaseUomFromSupplier) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
-          "No se pudo usar la presentación de compra en operación. Completa el proveedor primario."
+          "No se pudo usar la presentaciÃ³n de compra en operaciÃ³n. Completa el proveedor primario."
         )}`
       );
     }
     remissionUomFromSupplier = {
-      label: purchaseUomFromSupplier.label || "Presentación compra",
+      label: purchaseUomFromSupplier.label || "PresentaciÃ³n compra",
       inputUnitCode: purchaseUomFromSupplier.inputUnitCode,
       qtyInInputUnit: purchaseUomFromSupplier.qtyInInputUnit,
       qtyInStockUnit: purchaseUomFromSupplier.qtyInStockUnit,
@@ -1049,7 +1049,7 @@ async function createProduct(formData: FormData) {
   } else if (remissionSourceMode === "recipe_portion") {
     redirect(
       `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
-        "Primero crea y publica la receta. Luego en edición podrás usar remisión desde porción de receta."
+        "Primero crea y publica la receta. Luego en ediciÃ³n podrÃ¡s usar remisiÃ³n desde porciÃ³n de receta."
       )}`
     );
   }
@@ -1349,16 +1349,40 @@ export default async function NewProductPage({
     .eq("is_active", true);
   const { data: productionLocationsData } = await supabase
     .from("inventory_locations")
-    .select("id,site_id,code,zone,location_type,is_active")
+    .select("id,site_id,code,zone,location_type,is_active,area:areas(kind)")
     .eq("is_active", true)
-    .eq("location_type", "production")
     .order("code", { ascending: true });
-  const productionLocationsList = (productionLocationsData ?? []) as Array<{
+  const { data: productionAreaRulesData } = await supabase
+    .from("site_area_purpose_rules")
+    .select("site_id,area_kind,purpose,is_enabled")
+    .eq("purpose", "production_recipe")
+    .eq("is_enabled", true);
+  const productionAreaKindsBySite = ((productionAreaRulesData ?? []) as Array<{ site_id: string | null; area_kind: string | null }>).reduce(
+    (acc, row) => {
+      const siteId = String(row.site_id ?? "").trim();
+      const areaKind = String(row.area_kind ?? "").trim();
+      if (!siteId || !areaKind) return acc;
+      const current = acc[siteId] ?? [];
+      if (!current.includes(areaKind)) current.push(areaKind);
+      acc[siteId] = current;
+      return acc;
+    },
+    {} as Record<string, string[]>
+  );
+  const productionLocationsList = ((productionLocationsData ?? []) as Array<{
     id: string;
     site_id: string;
     code: string;
     zone: string | null;
-  }>;
+    location_type: string | null;
+    area?: { kind: string | null } | { kind: string | null }[] | null;
+  }>).filter((location) => {
+    const locationType = String(location.location_type ?? "").trim();
+    const siteId = String(location.site_id ?? "").trim();
+    const areaValue = Array.isArray(location.area) ? location.area[0] : location.area;
+    const areaKind = String(areaValue?.kind ?? "").trim();
+    return locationType === "production" || Boolean(siteId && areaKind && productionAreaKindsBySite[siteId]?.includes(areaKind));
+  });
   const siteAreaKindsList = Array.from(
     new Set(
       ((siteAreasData ?? []) as Array<{ site_id: string | null; kind: string | null }>)
@@ -1457,7 +1481,7 @@ export default async function NewProductPage({
                 href="/inventory/catalog"
                 className="ui-btn ui-btn--ghost inline-flex h-12 items-center px-5 text-base font-semibold"
               >
-                ← Volver al catálogo
+                â† Volver al catÃ¡logo
               </Link>
               <h1 className="ui-h1">{config.title}</h1>
               <p className="ui-body-muted">{config.subtitle}</p>
@@ -1664,7 +1688,7 @@ export default async function NewProductPage({
         <ProductPhotoSection
           description={
             typeKey === "asset"
-              ? "Imagen visual para identificar rapido el equipo o activo en listados y ficha técnica."
+              ? "Imagen visual para identificar rapido el equipo o activo en listados y ficha tÃ©cnica."
               : "Imagen visual para identificar rapido el producto o insumo en listados y ficha."
           }
           currentUrl={null}
@@ -1727,3 +1751,5 @@ export default async function NewProductPage({
     </div>
   );
 }
+
+

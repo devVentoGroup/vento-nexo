@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { ProductCostStatusPanel } from "@/features/inventory/catalog/product-cost-status-panel";
@@ -147,6 +147,8 @@ type ProductionLocationRow = {
   site_id: string;
   code: string;
   zone: string | null;
+  location_type: string | null;
+  area?: { kind: string | null } | { kind: string | null }[] | null;
 };
 type SiteAreaPurposeRuleRow = {
   site_id: string | null;
@@ -342,7 +344,7 @@ function inventoryKindLabel(kindRaw: string): string {
 function uomUsageContextLabel(value: string | null | undefined): string {
   const context = String(value ?? "general").trim().toLowerCase();
   if (context === "purchase") return "Compra";
-  if (context === "remission") return "Operación";
+  if (context === "remission") return "OperaciÃ³n";
   return "General";
 }
 
@@ -519,7 +521,7 @@ async function updateProduct(formData: FormData) {
   }
 
   const productId = asText(formData.get("product_id"));
-  if (!productId) redirect("/inventory/catalog?error=" + encodeURIComponent("Producto inválido."));
+  if (!productId) redirect("/inventory/catalog?error=" + encodeURIComponent("Producto invÃ¡lido."));
 
   const returnTo = sanitizeCatalogReturnPath(asText(formData.get("return_to")));
   const detailBase = returnTo
@@ -607,7 +609,7 @@ async function updateProduct(formData: FormData) {
       redirectWithError("Los productos de venta solo pueden usar categorias maestras globales.");
     }
     if (categoryKind !== "venta" && normalizeCategoryDomain(category.domain)) {
-      redirectWithError("Las categorías con dominio solo se permiten para productos de venta.");
+      redirectWithError("Las categorÃ­as con dominio solo se permiten para productos de venta.");
     }
   }
   if (categoryId) {
@@ -824,7 +826,7 @@ async function updateProduct(formData: FormData) {
       );
     }
 
-    // Solo después de validar todo, aplicamos cambios para evitar perder vínculos si hay error de datos.
+    // Solo despuÃ©s de validar todo, aplicamos cambios para evitar perder vÃ­nculos si hay error de datos.
     await supabase.from("product_suppliers").delete().eq("product_id", productId);
     for (const line of nextSupplierLines) {
       const packQty = Number(line.purchase_pack_qty ?? line.purchase_unit_size ?? 0) || 0;
@@ -1432,11 +1434,33 @@ export default async function ProductCatalogDetailPage({
     .eq("is_active", true);
   const { data: productionLocationsData } = await supabase
     .from("inventory_locations")
-    .select("id,site_id,code,zone,location_type,is_active")
+    .select("id,site_id,code,zone,location_type,is_active,area:areas(kind)")
     .eq("is_active", true)
-    .eq("location_type", "production")
     .order("code", { ascending: true });
-  const productionLocationsList = (productionLocationsData ?? []) as ProductionLocationRow[];
+  const { data: productionAreaRulesData } = await supabase
+    .from("site_area_purpose_rules")
+    .select("site_id,area_kind,purpose,is_enabled")
+    .eq("purpose", "production_recipe")
+    .eq("is_enabled", true);
+  const productionAreaKindsBySite = ((productionAreaRulesData ?? []) as Array<{ site_id: string | null; area_kind: string | null }>).reduce(
+    (acc, row) => {
+      const siteId = String(row.site_id ?? "").trim();
+      const areaKind = String(row.area_kind ?? "").trim();
+      if (!siteId || !areaKind) return acc;
+      const current = acc[siteId] ?? [];
+      if (!current.includes(areaKind)) current.push(areaKind);
+      acc[siteId] = current;
+      return acc;
+    },
+    {} as Record<string, string[]>
+  );
+  const productionLocationsList = ((productionLocationsData ?? []) as ProductionLocationRow[]).filter((location) => {
+    const locationType = String(location.location_type ?? "").trim();
+    const siteId = String(location.site_id ?? "").trim();
+    const areaValue = Array.isArray(location.area) ? location.area[0] : location.area;
+    const areaKind = String(areaValue?.kind ?? "").trim();
+    return locationType === "production" || Boolean(siteId && areaKind && productionAreaKindsBySite[siteId]?.includes(areaKind));
+  });
   const siteAreaKindsList = Array.from(
     new Set(
       ((siteAreasData ?? []) as SiteAreaKindRow[])
@@ -1664,7 +1688,7 @@ export default async function ProductCatalogDetailPage({
                 href={from || "/inventory/catalog"}
                 className="ui-btn ui-btn--ghost inline-flex h-12 items-center px-5 text-base font-semibold"
               >
-                ← Volver al catálogo
+                â† Volver al catÃ¡logo
               </Link>
               <h1 className="ui-h1">{productRow.name ?? "Ficha maestra"}</h1>
               <p className="ui-body-muted">
@@ -1691,7 +1715,7 @@ export default async function ProductCatalogDetailPage({
                 href={`/inventory/catalog/${productRow.id}/ficha?from=${encodeURIComponent(from || "/inventory/catalog")}`}
                 className="ui-btn ui-btn--ghost"
               >
-                Ver ficha técnica
+                Ver ficha tÃ©cnica
               </Link>
               <Link
                 href={`/inventory/catalog/${productRow.id}/presentations?from=${encodeURIComponent(from || `/inventory/catalog/${productRow.id}`)}`}
@@ -1736,7 +1760,7 @@ export default async function ProductCatalogDetailPage({
 
       <CatalogSection
         title="Presentaciones operativas"
-        description="Las presentaciones físicas se administran en una pantalla separada para no mezclar identidad del producto con empaque, equivalencias y fotos por presentación."
+        description="Las presentaciones fÃ­sicas se administran en una pantalla separada para no mezclar identidad del producto con empaque, equivalencias y fotos por presentaciÃ³n."
       >
         <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-start">
           <div className="space-y-3">
@@ -1747,7 +1771,7 @@ export default async function ProductCatalogDetailPage({
                     key={profile.id}
                     className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
                   >
-                    {profile.label || "Presentación"} · {uomUsageContextLabel(profile.usage_context)} · 1{" "}
+                    {profile.label || "PresentaciÃ³n"} Â· {uomUsageContextLabel(profile.usage_context)} Â· 1{" "}
                     {profile.input_unit_code} ={" "}
                     {Number(profile.qty_in_stock_unit ?? 0).toLocaleString("es-CO", {
                       maximumFractionDigits: 3,
@@ -1757,17 +1781,17 @@ export default async function ProductCatalogDetailPage({
                 ))}
                 {presentationProfiles.length > 8 ? (
                   <span className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-500">
-                    +{presentationProfiles.length - 8} más
+                    +{presentationProfiles.length - 8} mÃ¡s
                   </span>
                 ) : null}
               </div>
             ) : (
               <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
-                Este producto todavía no tiene presentaciones operativas activas.
+                Este producto todavÃ­a no tiene presentaciones operativas activas.
               </div>
             )}
             <p className="text-sm text-[var(--ui-muted)]">
-              La ficha mantiene datos maestros. Las presentaciones controlan empaque físico, equivalencia operativa e imagen propia para quiosco e inventario.
+              La ficha mantiene datos maestros. Las presentaciones controlan empaque fÃ­sico, equivalencia operativa e imagen propia para quiosco e inventario.
             </p>
           </div>
 
@@ -1847,7 +1871,7 @@ export default async function ProductCatalogDetailPage({
 
             <CatalogSection
               title="Unidad base e inventario"
-              description="Configura la unidad técnica de stock, trazabilidad y costo. Las presentaciones físicas se administran aparte."
+              description="Configura la unidad tÃ©cnica de stock, trazabilidad y costo. Las presentaciones fÃ­sicas se administran aparte."
             >
               <ProductStorageFields
                 stockUnitFieldId={STOCK_UNIT_FIELD_ID}
@@ -1911,7 +1935,7 @@ export default async function ProductCatalogDetailPage({
                 }}
               />
               <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
-                Las presentaciones físicas, equivalencias operativas y fotos por presentación ahora se administran desde la pantalla dedicada de presentaciones.
+                Las presentaciones fÃ­sicas, equivalencias operativas y fotos por presentaciÃ³n ahora se administran desde la pantalla dedicada de presentaciones.
               </div>
             </CatalogSection>
 
@@ -1927,7 +1951,7 @@ export default async function ProductCatalogDetailPage({
             <ProductPhotoSection
               description={
                 isAssetItem
-                  ? "Imagen principal para identificar rapidamente el equipo o activo en catálogo y ficha técnica."
+                  ? "Imagen principal para identificar rapidamente el equipo o activo en catÃ¡logo y ficha tÃ©cnica."
                   : "Imagen principal para identificar rapidamente el item en catalogo y listados."
               }
               currentUrl={productRow.image_url}
@@ -2037,3 +2061,6 @@ export default async function ProductCatalogDetailPage({
     </div>
   );
 }
+
+
+
