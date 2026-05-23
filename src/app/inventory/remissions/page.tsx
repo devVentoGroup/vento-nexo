@@ -145,46 +145,12 @@ type EmployeeNameRow = {
   alias: string | null;
 };
 
-type ProductAudience = "SAUDO" | "VCF" | "BOTH" | "INTERNAL";
-
-function normalizeAudience(value: string | null | undefined): ProductAudience | null {
-  const normalized = String(value ?? "").trim().toUpperCase();
-  if (normalized === "SAUDO") return "SAUDO";
-  if (normalized === "VCF") return "VCF";
-  if (normalized === "INTERNAL") return "INTERNAL";
-  if (normalized === "BOTH") return "BOTH";
-  return null;
-}
-
 function normalizeText(value: string | null | undefined): string {
   return String(value ?? "")
     .normalize("NFD")
     .replace(/[\u0300-\u036f]/g, "")
     .trim()
     .toLowerCase();
-}
-
-function inferAudienceFromSiteName(siteName: string | null | undefined): ProductAudience {
-  const normalized = normalizeText(siteName);
-  if (normalized.includes("saudo")) return "SAUDO";
-  if (normalized.includes("vento cafe")) return "VCF";
-  return "BOTH";
-}
-
-function supportsAudience(
-  configuredAudience: string | null | undefined,
-  requestedAudience: ProductAudience
-): boolean {
-  const normalized = normalizeAudience(configuredAudience);
-  // Compatibilidad: filas antiguas sin audience deben seguir operando como BOTH.
-  if (!normalized) return requestedAudience !== "INTERNAL";
-  if (normalized === "INTERNAL") {
-    return requestedAudience === "INTERNAL";
-  }
-  if (requestedAudience === "INTERNAL") {
-    return false;
-  }
-  return normalized === "BOTH" || requestedAudience === "BOTH" || normalized === requestedAudience;
 }
 
 function getDefaultRemissionAreaForRole(role: string | null | undefined): string {
@@ -764,7 +730,6 @@ async function createRemission(formData: FormData) {
     );
   }
 
-  const requestedAudience = inferAudienceFromSiteName(toSite?.name ?? "");
   const requestedRoleAreaKind = getDefaultRemissionAreaForRole(effectiveRole);
   const configuredRows = await loadProductSiteRows(supabase, toSiteId);
   if (configuredRows.length === 0) {
@@ -781,7 +746,6 @@ async function createRemission(formData: FormData) {
       .filter(
         (row) =>
           supportsRemission(row) &&
-          supportsAudience(row.audience, requestedAudience) &&
           supportsRequestedArea(row, requestedRoleAreaKind)
       )
       .map((row) => row.product_id)
@@ -1235,7 +1199,6 @@ export default async function RemissionsPage({
   // Insumos por satélite: filtrar por sede DESTINO (Saudo), no por sede origen (Centro).
   // Cuando el satélite solicita, solo debe ver productos configurados para su sede.
   const productFilterSiteId = canCreate ? activeSiteId : selectedFromSiteId;
-  const requestedAudience = inferAudienceFromSiteName(activeSite?.name ?? "");
   const productSiteRows = productFilterSiteId
     ? await loadProductSiteRows(supabase, productFilterSiteId)
     : [];
@@ -1244,7 +1207,6 @@ export default async function RemissionsPage({
     .filter(
       (row) =>
         supportsRemission(row) &&
-        supportsAudience(row.audience, requestedAudience) &&
         supportsRequestedArea(row, requestedAreaKind)
     )
     .map((row) => row.product_id);

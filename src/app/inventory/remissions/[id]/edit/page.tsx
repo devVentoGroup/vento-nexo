@@ -55,7 +55,8 @@ type ProductSiteRow = {
   product_id: string;
   is_active: boolean | null;
   default_area_kind: string | null;
-  audience?: string | null;
+  area_kinds?: string[] | null;
+  remission_enabled?: boolean | null;
   updated_at?: string | null;
   created_at?: string | null;
 };
@@ -82,8 +83,6 @@ type RestockRequestItemRow = {
   production_area_kind: string | null;
 };
 
-type ProductAudience = "SAUDO" | "VCF" | "BOTH" | "INTERNAL";
-
 function asText(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -93,44 +92,28 @@ function parseNumber(value: string) {
   return Number.isFinite(n) ? n : 0;
 }
 
-function normalizeAudience(value: string | null | undefined): ProductAudience | null {
-  const normalized = String(value ?? "").trim().toUpperCase();
-  if (normalized === "SAUDO") return "SAUDO";
-  if (normalized === "VCF") return "VCF";
-  if (normalized === "INTERNAL") return "INTERNAL";
-  if (normalized === "BOTH") return "BOTH";
-  return null;
+function normalizeProductSiteAreaKinds(row: ProductSiteRow): string[] {
+  const values = [
+    ...(Array.isArray(row.area_kinds) ? row.area_kinds : []),
+    row.default_area_kind,
+  ]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+
+  return Array.from(new Set(values));
 }
 
-function normalizeText(value: string | null | undefined): string {
-  return String(value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .trim()
-    .toLowerCase();
+function supportsRemission(row: ProductSiteRow): boolean {
+  // null/undefined conserva comportamiento legacy para no romper productos actuales.
+  return row.remission_enabled !== false;
 }
 
-function inferAudienceFromSiteName(siteName: string | null | undefined): ProductAudience {
-  const normalized = normalizeText(siteName);
-  if (normalized.includes("saudo")) return "SAUDO";
-  if (normalized.includes("vento cafe")) return "VCF";
-  return "BOTH";
-}
+function supportsRequestedArea(row: ProductSiteRow, requestedAreaKind: string): boolean {
+  const areaKind = String(requestedAreaKind ?? "").trim();
+  if (!areaKind) return true;
 
-function supportsAudience(
-  configuredAudience: string | null | undefined,
-  requestedAudience: ProductAudience
-): boolean {
-  const normalized = normalizeAudience(configuredAudience);
-  // Compatibilidad: filas antiguas sin audience deben seguir operando como BOTH.
-  if (!normalized) return requestedAudience !== "INTERNAL";
-  if (normalized === "INTERNAL") {
-    return requestedAudience === "INTERNAL";
-  }
-  if (requestedAudience === "INTERNAL") {
-    return false;
-  }
-  return normalized === "BOTH" || requestedAudience === "BOTH" || normalized === requestedAudience;
+  const configuredKinds = normalizeProductSiteAreaKinds(row);
+  return configuredKinds.includes(areaKind) || configuredKinds.includes("general");
 }
 
 async function loadProductSiteRows(
@@ -139,7 +122,7 @@ async function loadProductSiteRows(
 ): Promise<ProductSiteRow[]> {
   const withAudience = await supabase
     .from("product_site_settings")
-    .select("product_id,is_active,default_area_kind,audience,updated_at,created_at")
+    .select("product_id,is_active,default_area_kind,area_kinds,remission_enabled,updated_at,created_at")
     .eq("site_id", siteId)
     .eq("is_active", true);
 
@@ -162,7 +145,7 @@ async function loadProductSiteRows(
 
   const fallback = await supabase
     .from("product_site_settings")
-    .select("product_id,is_active,default_area_kind,updated_at,created_at")
+    .select("product_id,is_active,default_area_kind,area_kinds,updated_at,created_at")
     .eq("site_id", siteId)
     .eq("is_active", true);
 
@@ -179,7 +162,7 @@ async function loadProductSiteRows(
     if (!row.product_id || byProduct.has(row.product_id)) continue;
     byProduct.set(row.product_id, {
       ...row,
-      audience: null,
+      remission_enabled: null,
     });
   }
   return Array.from(byProduct.values());
@@ -238,7 +221,7 @@ async function updateOwnPendingRemission(formData: FormData) {
   if (!canEditOwnPending) {
     redirect(
       "/inventory/remissions?error=" +
-        encodeURIComponent("No tienes permiso para editar esta remisión.")
+      encodeURIComponent("No tienes permiso para editar esta remisión.")
     );
   }
 
@@ -263,9 +246,9 @@ async function updateOwnPendingRemission(formData: FormData) {
   const productIdsForLookup = Array.from(new Set(productIds.filter(Boolean)));
   const { data: productsData } = productIdsForLookup.length
     ? await supabase
-        .from("products")
-        .select("id,unit,stock_unit_code")
-        .in("id", productIdsForLookup)
+      .from("products")
+      .select("id,unit,stock_unit_code")
+      .in("id", productIdsForLookup)
     : { data: [] as ProductRow[] };
   const productMap = new Map(
     ((productsData ?? []) as ProductRow[]).map((product) => [product.id, product])
@@ -274,11 +257,11 @@ async function updateOwnPendingRemission(formData: FormData) {
   const requestedUomProfileIds = Array.from(new Set(inputUomProfileIds.filter(Boolean)));
   const { data: uomProfilesData } = requestedUomProfileIds.length
     ? await supabase
-        .from("product_uom_profiles")
-        .select(
-          "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
-        )
-        .in("id", requestedUomProfileIds)
+      .from("product_uom_profiles")
+      .select(
+        "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
+      )
+      .in("id", requestedUomProfileIds)
     : { data: [] as ProductUomProfile[] };
   const uomProfileById = new Map(
     ((uomProfilesData ?? []) as ProductUomProfile[]).map((profile) => [profile.id, profile])
@@ -330,26 +313,26 @@ async function updateOwnPendingRemission(formData: FormData) {
   } catch (error) {
     redirect(
       `/inventory/remissions/${requestId}/edit?error=` +
-        encodeURIComponent(
-          error instanceof Error ? error.message : "Error en conversión de unidades."
-        ) +
-        (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
+      encodeURIComponent(
+        error instanceof Error ? error.message : "Error en conversión de unidades."
+      ) +
+      (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
     );
   }
 
   if (!toSiteId || !fromSiteId) {
     redirect(
       `/inventory/remissions/${requestId}/edit?error=` +
-        encodeURIComponent("Debes definir origen y destino.") +
-        (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
+      encodeURIComponent("Debes definir origen y destino.") +
+      (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
     );
   }
 
   if (toSiteId !== String(request.to_site_id ?? "")) {
     redirect(
       `/inventory/remissions/${requestId}/edit?error=` +
-        encodeURIComponent("No puedes cambiar la sede destino de la remisión.") +
-        (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
+      encodeURIComponent("No puedes cambiar la sede destino de la remisión.") +
+      (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
     );
   }
 
@@ -362,45 +345,44 @@ async function updateOwnPendingRemission(formData: FormData) {
   if (String(toSite?.site_type ?? "") !== "satellite") {
     redirect(
       `/inventory/remissions/${requestId}/edit?error=` +
-        encodeURIComponent("Solo sedes satélite pueden solicitar remisiones.") +
-        (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
+      encodeURIComponent("Solo sedes satélite pueden solicitar remisiones.") +
+      (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
     );
   }
 
   if (items.length === 0) {
     redirect(
       `/inventory/remissions/${requestId}/edit?error=` +
-        encodeURIComponent("Agrega al menos un producto con cantidad mayor a 0.") +
-        (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
+      encodeURIComponent("Agrega al menos un producto con cantidad mayor a 0.") +
+      (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
     );
   }
 
-  const requestedAudience = inferAudienceFromSiteName(toSite?.name ?? "");
   const configuredRows = await loadProductSiteRows(supabase, toSiteId);
 
   if (configuredRows.length === 0) {
     redirect(
       `/inventory/remissions/${requestId}/edit?error=` +
-        encodeURIComponent(
-          "Esta sede no tiene productos habilitados. Configura disponibilidad por sede en catálogo."
-        ) +
-        (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
+      encodeURIComponent(
+        "Esta sede no tiene productos habilitados. Configura disponibilidad por sede en catálogo."
+      ) +
+      (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
     );
   }
 
   const allowedProductIds = new Set(
     configuredRows
-      .filter((row) => supportsAudience(row.audience, requestedAudience))
+      .filter((row) => supportsRemission(row))
       .map((row) => row.product_id)
   );
 
   if (allowedProductIds.size === 0) {
     redirect(
       `/inventory/remissions/${requestId}/edit?error=` +
-        encodeURIComponent(
-          "Esta sede no tiene productos habilitados para su uso operativo. Ajusta Uso en sede en catálogo."
-        ) +
-        (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
+      encodeURIComponent(
+        "Esta sede no tiene productos habilitados para su uso operativo. Ajusta Uso en sede en catálogo."
+      ) +
+      (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
     );
   }
 
@@ -408,10 +390,29 @@ async function updateOwnPendingRemission(formData: FormData) {
   if (invalidItems.length > 0) {
     redirect(
       `/inventory/remissions/${requestId}/edit?error=` +
-        encodeURIComponent(
-          "Algunos productos no están habilitados para esta sede o flujo operativo."
-        ) +
-        (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
+      encodeURIComponent(
+        "Algunos productos no están habilitados para esta sede o flujo operativo."
+      ) +
+      (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
+    );
+  }
+
+  const configuredByProductId = new Map(configuredRows.map((row) => [row.product_id, row]));
+  const invalidAreaItems = items.filter((item) => {
+    const row = configuredByProductId.get(item.product_id);
+    if (!row) return true;
+
+    const itemAreaKind = String(item.production_area_kind ?? "").trim();
+    return itemAreaKind ? !supportsRequestedArea(row, itemAreaKind) : false;
+  });
+
+  if (invalidAreaItems.length > 0) {
+    redirect(
+      `/inventory/remissions/${requestId}/edit?error=` +
+      encodeURIComponent(
+        "Algunos productos no corresponden al área de solicitud configurada para esta sede."
+      ) +
+      (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
     );
   }
 
@@ -429,8 +430,8 @@ async function updateOwnPendingRemission(formData: FormData) {
   if (updateRequestError) {
     redirect(
       `/inventory/remissions/${requestId}/edit?error=` +
-        encodeURIComponent(updateRequestError.message ?? "No se pudo actualizar la remisión.") +
-        (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
+      encodeURIComponent(updateRequestError.message ?? "No se pudo actualizar la remisión.") +
+      (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
     );
   }
 
@@ -442,8 +443,8 @@ async function updateOwnPendingRemission(formData: FormData) {
   if (deleteItemsError) {
     redirect(
       `/inventory/remissions/${requestId}/edit?error=` +
-        encodeURIComponent(deleteItemsError.message ?? "No se pudieron reemplazar los ítems.") +
-        (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
+      encodeURIComponent(deleteItemsError.message ?? "No se pudieron reemplazar los ítems.") +
+      (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
     );
   }
 
@@ -467,8 +468,8 @@ async function updateOwnPendingRemission(formData: FormData) {
   if (insertItemsError) {
     redirect(
       `/inventory/remissions/${requestId}/edit?error=` +
-        encodeURIComponent(insertItemsError.message ?? "No se pudieron guardar los ítems.") +
-        (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
+      encodeURIComponent(insertItemsError.message ?? "No se pudieron guardar los ítems.") +
+      (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
     );
   }
 
@@ -535,7 +536,7 @@ export default async function EditOwnPendingRemissionPage({
   if (!canEditOwnPending) {
     redirect(
       "/inventory/remissions?error=" +
-        encodeURIComponent("No tienes permiso para editar esta remisión.")
+      encodeURIComponent("No tienes permiso para editar esta remisión.")
     );
   }
 
@@ -557,10 +558,10 @@ export default async function EditOwnPendingRemissionPage({
   const siteIds = Array.from(new Set([...employeeSiteIds, targetSiteId, fromSiteId].filter(Boolean)));
   const { data: sites } = siteIds.length
     ? await supabase
-        .from("sites")
-        .select("id,name,site_type")
-        .in("id", siteIds)
-        .order("name", { ascending: true })
+      .from("sites")
+      .select("id,name,site_type")
+      .in("id", siteIds)
+      .order("name", { ascending: true })
     : { data: [] as SiteRow[] };
 
   const siteRows = (sites ?? []) as SiteRow[];
@@ -580,10 +581,10 @@ export default async function EditOwnPendingRemissionPage({
 
   const { data: fulfillmentSites } = fulfillmentSiteIds.length
     ? await supabase
-        .from("sites")
-        .select("id,name,site_type")
-        .in("id", fulfillmentSiteIds)
-        .order("name", { ascending: true })
+      .from("sites")
+      .select("id,name,site_type")
+      .in("id", fulfillmentSiteIds)
+      .order("name", { ascending: true })
     : { data: [] as SiteRow[] };
 
   let fulfillmentSiteRows = (fulfillmentSites ?? []) as SiteRow[];
@@ -599,10 +600,10 @@ export default async function EditOwnPendingRemissionPage({
 
   const { data: areas } = targetSiteId
     ? await supabase
-        .from("areas")
-        .select("id,name,kind,site_id")
-        .eq("site_id", targetSiteId)
-        .order("name", { ascending: true })
+      .from("areas")
+      .select("id,name,kind,site_id")
+      .eq("site_id", targetSiteId)
+      .order("name", { ascending: true })
     : { data: [] as AreaRow[] };
 
   const areaRows = (areas ?? []) as AreaRow[];
@@ -623,9 +624,9 @@ export default async function EditOwnPendingRemissionPage({
   const productSiteRows = targetSiteId
     ? await loadProductSiteRows(supabase, targetSiteId)
     : [];
-  const requestedAudience = inferAudienceFromSiteName(toSiteName);
+
   const productSiteIds = productSiteRows
-    .filter((row) => supportsAudience(row.audience, requestedAudience))
+    .filter((row) => supportsRemission(row))
     .map((row) => row.product_id);
 
   let productRows: ProductRow[] = [];
@@ -661,9 +662,9 @@ export default async function EditOwnPendingRemissionPage({
   );
   const { data: categoryData } = categoryIds.length
     ? await supabase
-        .from("product_categories")
-        .select("id,name,parent_id")
-        .in("id", categoryIds)
+      .from("product_categories")
+      .select("id,name,parent_id")
+      .in("id", categoryIds)
     : { data: [] as Array<{ id: string; name: string | null; parent_id: string | null }> };
 
   const categoryNameById = new Map(
@@ -675,12 +676,12 @@ export default async function EditOwnPendingRemissionPage({
 
   const { data: uomProfilesData } = productIds.length
     ? await supabase
-        .from("product_uom_profiles")
-        .select(
-          "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
-        )
-        .in("product_id", productIds)
-        .eq("is_active", true)
+      .from("product_uom_profiles")
+      .select(
+        "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
+      )
+      .in("product_id", productIds)
+      .eq("is_active", true)
     : { data: [] as ProductUomProfile[] };
   const defaultUomProfiles = (uomProfilesData ?? []) as ProductUomProfile[];
 
@@ -690,10 +691,10 @@ export default async function EditOwnPendingRemissionPage({
   const { data: stockReferenceData } =
     fulfillmentSiteIdsForStock.length > 0 && productIds.length > 0
       ? await supabase
-          .from("inventory_stock_by_site")
-          .select("site_id,product_id,current_qty,updated_at")
-          .in("site_id", fulfillmentSiteIdsForStock)
-          .in("product_id", productIds)
+        .from("inventory_stock_by_site")
+        .select("site_id,product_id,current_qty,updated_at")
+        .in("site_id", fulfillmentSiteIdsForStock)
+        .in("product_id", productIds)
       : { data: [] as StockReferenceRow[] };
 
   const originStockRows = ((stockReferenceData ?? []) as StockReferenceRow[]).map((row) => ({
