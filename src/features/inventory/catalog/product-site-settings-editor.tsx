@@ -16,7 +16,8 @@ export type SiteSettingLine = {
   min_stock_purchase_qty?: number;
   min_stock_purchase_unit_code?: string;
   min_stock_purchase_to_base_factor?: number;
-  audience?: "SAUDO" | "VCF" | "BOTH" | "INTERNAL";
+  audience?: string | null;
+  remission_enabled?: boolean | null;
   _delete?: boolean;
 };
 
@@ -59,6 +60,7 @@ type SatelliteState = {
   enabled: boolean;
   isActive: boolean;
   areaKinds: string[];
+  remissionEnabled?: boolean | null;
   minStockQty?: number;
   productionLocationId?: string;
 };
@@ -73,19 +75,18 @@ function normalizeText(value: string | null | undefined): string {
 
 function inferSiteKind(site: SiteOption): SiteKind {
   const explicit = String(site.site_type ?? "").trim().toLowerCase();
+
   if (explicit === "production_center") return "production_center";
   if (explicit === "satellite") return "satellite";
-  const normalizedName = normalizeText(site.name);
-  if (normalizedName.includes("centro de produccion")) return "production_center";
-  if (normalizedName.includes("saudo") || normalizedName.includes("vento cafe")) return "satellite";
-  return "other";
-}
+  if (explicit === "other") return "other";
 
-function inferSatelliteAudience(site: SiteOption): "SAUDO" | "VCF" | "BOTH" {
   const normalizedName = normalizeText(site.name);
-  if (normalizedName.includes("saudo")) return "SAUDO";
-  if (normalizedName.includes("vento cafe") || normalizedName.includes("vcf")) return "VCF";
-  return "BOTH";
+
+  if (normalizedName.includes("centro de produccion")) {
+    return "production_center";
+  }
+
+  return "satellite";
 }
 
 export function ProductSiteSettingsEditor({
@@ -167,7 +168,7 @@ export function ProductSiteSettingsEditor({
     const selected = String(selectedCode ?? "").trim();
     if (selected && !baseOptions.some((area) => area.code === selected)) {
       const label = areaKinds.find((area) => area.code === selected)?.name ?? selected;
-      return [{ code: selected, name: `${label} (fuera de catÃ¡logo de la sede)` }, ...baseOptions];
+      return [{ code: selected, name: `${label} (fuera de catálogo de la sede)` }, ...baseOptions];
     }
     return baseOptions;
   };
@@ -217,6 +218,12 @@ export function ProductSiteSettingsEditor({
           ...(Array.isArray(existing?.area_kinds) ? existing.area_kinds : []),
           existing?.default_area_kind,
         ]),
+        remissionEnabled:
+          typeof existing?.remission_enabled === "boolean"
+            ? existing.remission_enabled
+            : existing
+              ? null
+              : false,
         minStockQty: existing?.min_stock_qty,
         productionLocationId: existing?.production_location_id ?? "",
       });
@@ -240,33 +247,33 @@ export function ProductSiteSettingsEditor({
 
   const operationFactorToStock =
     operationUnitHint &&
-    Number.isFinite(operationUnitHint.qtyInInputUnit) &&
-    Number.isFinite(operationUnitHint.qtyInStockUnit) &&
-    operationUnitHint.qtyInInputUnit > 0 &&
-    operationUnitHint.qtyInStockUnit > 0
+      Number.isFinite(operationUnitHint.qtyInInputUnit) &&
+      Number.isFinite(operationUnitHint.qtyInStockUnit) &&
+      operationUnitHint.qtyInInputUnit > 0 &&
+      operationUnitHint.qtyInStockUnit > 0
       ? operationUnitHint.qtyInStockUnit / operationUnitHint.qtyInInputUnit
       : null;
   const purchaseFactorToStock =
     purchaseUnitHint &&
-    Number.isFinite(purchaseUnitHint.qtyInInputUnit) &&
-    Number.isFinite(purchaseUnitHint.qtyInStockUnit) &&
-    purchaseUnitHint.qtyInInputUnit > 0 &&
-    purchaseUnitHint.qtyInStockUnit > 0
+      Number.isFinite(purchaseUnitHint.qtyInInputUnit) &&
+      Number.isFinite(purchaseUnitHint.qtyInStockUnit) &&
+      purchaseUnitHint.qtyInInputUnit > 0 &&
+      purchaseUnitHint.qtyInStockUnit > 0
       ? purchaseUnitHint.qtyInStockUnit / purchaseUnitHint.qtyInInputUnit
       : null;
   const centerMinStockQtyInPurchase =
     purchaseFactorToStock &&
-    centerMinStockQty != null &&
-    Number.isFinite(centerMinStockQty) &&
-    centerMinStockQty >= 0
+      centerMinStockQty != null &&
+      Number.isFinite(centerMinStockQty) &&
+      centerMinStockQty >= 0
       ? Math.round((centerMinStockQty / purchaseFactorToStock) * 1_000_000) / 1_000_000
       : null;
   const centerPurchaseQtyForSave =
     centerMinStockInputMode === "purchase" &&
-    purchaseFactorToStock &&
-    centerMinStockQty != null &&
-    Number.isFinite(centerMinStockQty) &&
-    centerMinStockQty >= 0
+      purchaseFactorToStock &&
+      centerMinStockQty != null &&
+      Number.isFinite(centerMinStockQty) &&
+      centerMinStockQty >= 0
       ? Math.round((centerMinStockQty / purchaseFactorToStock) * 1_000_000) / 1_000_000
       : undefined;
 
@@ -328,7 +335,8 @@ export function ProductSiteSettingsEditor({
           : undefined,
         min_stock_qty: state.minStockQty,
         min_stock_input_mode: "base",
-        audience: inferSatelliteAudience(site),
+        audience: current?.audience ?? "BOTH",
+        remission_enabled: state.remissionEnabled ?? null,
       });
     }
 
@@ -342,6 +350,7 @@ export function ProductSiteSettingsEditor({
         enabled: false,
         isActive: true,
         areaKinds: [],
+        remissionEnabled: false,
         minStockQty: undefined,
       };
       next.set(siteId, { ...current, ...patch });
@@ -354,23 +363,23 @@ export function ProductSiteSettingsEditor({
       <input type="hidden" name={name} value={JSON.stringify(lines)} />
 
       <div className="space-y-1">
-        <span className="ui-label">Disponibilidad operativa por sede</span>
+        <span className="ui-label">Disponibilidad por sede</span>
         <p className="text-xs text-[var(--ui-muted)]">
-          Stock real solo en Centro (LOC). En satelites defines disponibilidad para abastecimiento interno.
+          Define si el producto existe operativamente en cada sede y, aparte, si puede solicitarse por remisión.
         </p>
         <p className="text-xs text-[var(--ui-muted)]">
-          La marca `audience` define el destino operativo de cada sede.
+          El precio comercial y la visibilidad en Vento Pass se configuran después en VISO.
         </p>
       </div>
 
       <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
         <div className="mb-2 inline-flex rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-amber-800">
-          Fase 1 Â· Centro
+          Fase 1 · Centro
         </div>
         <div className="mb-3 border-b border-[var(--ui-border)] pb-3">
-          <div className="text-sm font-semibold text-[var(--ui-text)]">Centro de produccion (stock real)</div>
+          <div className="text-sm font-semibold text-[var(--ui-text)]">Centro de producción</div>
           <p className="text-xs text-[var(--ui-muted)]">
-            Este bloque define la configuracion interna del Centro. Aqui vive el stock real (por LOC).
+            Este bloque define la configuración interna del Centro. Aquí vive el stock real por LOC.
           </p>
         </div>
         <div className="grid gap-3 md:grid-cols-12">
@@ -395,7 +404,7 @@ export function ProductSiteSettingsEditor({
           </label>
 
           <label className="flex flex-col gap-1 md:col-span-3">
-            <span className="ui-label">Area por defecto</span>
+            <span className="ui-label">Área por defecto</span>
             <select
               value={centerDefaultAreaKind}
               onChange={(event) => setCenterDefaultAreaKind(event.target.value)}
@@ -409,12 +418,12 @@ export function ProductSiteSettingsEditor({
               ))}
             </select>
             <p className="text-xs text-[var(--ui-muted)]">
-              Area sugerida para alistar y despachar en Centro.
+              Área sugerida para alistar y despachar en Centro.
             </p>
           </label>
 
           <label className="flex flex-col gap-1 md:col-span-3">
-            <span className="ui-label">LOC de produccion</span>
+            <span className="ui-label">LOC de producción</span>
             <select
               value={validCenterProductionLocationId}
               onChange={(event) => setCenterProductionLocationId(event.target.value)}
@@ -531,14 +540,14 @@ export function ProductSiteSettingsEditor({
 
       <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
         <div className="mb-2 inline-flex rounded-full border border-cyan-200 bg-cyan-50 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] text-cyan-800">
-          Fase 2 Â· Sedes satelite
+          Fase 2 · Sedes satélite
         </div>
         <div className="mb-3 border-b border-[var(--ui-border)] pb-3">
           <div className="text-sm font-semibold text-[var(--ui-text)]">
-            Sedes satelite (abastecimiento interno)
+            Sedes satélite
           </div>
           <p className="text-xs text-[var(--ui-muted)]">
-            Activa solo las sedes que pueden pedir este producto al centro o sede origen.
+            Activa la sede si el producto puede existir, venderse o producirse allí. La remisión se controla aparte.
           </p>
         </div>
 
@@ -568,12 +577,11 @@ export function ProductSiteSettingsEditor({
                       onChange={(event) =>
                         updateSatellite(site.id, {
                           enabled: event.target.checked,
-                          // Al habilitar la sede para solicitar, se marca disponible por defecto.
                           isActive: event.target.checked ? true : state.isActive,
                         })
                       }
                     />
-                    <span className="ui-label">Habilitar para solicitar</span>
+                    <span className="ui-label">Configurar esta sede</span>
                   </label>
                 </div>
 
@@ -586,44 +594,78 @@ export function ProductSiteSettingsEditor({
                           checked={state.isActive}
                           onChange={(event) => updateSatellite(site.id, { isActive: event.target.checked })}
                         />
-                        <span className="ui-label">Disponible</span>
+                        <span className="ui-label">Disponible en esta sede</span>
                       </label>
                     </div>
 
                     <div className="flex flex-col gap-1 md:col-span-4">
-                      <span className="ui-label">Areas que pueden solicitar</span>
-                      <div className="max-h-40 overflow-auto rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-2">
-                        <div className="grid gap-2">
-                          {getSatelliteRemissionAreaOptionsForSite(site.id, state.areaKinds).map((area) => {
-                            const checked = state.areaKinds.includes(area.code);
-                            return (
-                              <label
-                                key={`${site.id}-${area.code}`}
-                                className="flex items-center gap-2 rounded-lg px-2 py-1 text-sm hover:bg-[var(--ui-surface-2)]"
-                              >
-                                <input
-                                  type="checkbox"
-                                  checked={checked}
-                                  onChange={(event) => {
-                                    const nextKinds = event.target.checked
-                                      ? [...state.areaKinds, area.code]
-                                      : state.areaKinds.filter((code) => code !== area.code);
-                                    updateSatellite(site.id, { areaKinds: normalizeAreaKinds(nextKinds) });
-                                  }}
-                                />
-                                <span>{area.code === "general" ? "Todos" : area.name}</span>
-                              </label>
-                            );
-                          })}
-                        </div>
-                      </div>
+                      <span className="ui-label">Remisión hacia esta sede</span>
+                      <select
+                        value={
+                          state.remissionEnabled == null
+                            ? "legacy"
+                            : state.remissionEnabled
+                              ? "enabled"
+                              : "disabled"
+                        }
+                        onChange={(event) => {
+                          const value = event.target.value;
+                          updateSatellite(site.id, {
+                            remissionEnabled:
+                              value === "legacy" ? null : value === "enabled",
+                          });
+                        }}
+                        className="ui-input"
+                      >
+                        <option value="disabled">No permitir remisión</option>
+                        <option value="enabled">Permitir solicitud por remisión</option>
+                        <option value="legacy">Legacy: conservar comportamiento actual</option>
+                      </select>
                       <p className="text-xs text-[var(--ui-muted)]">
-                        Puedes marcar varias areas de remision. La primera queda como sugerida por defecto.
+                        Usa remisión solo cuando esta sede deba pedir el producto a Centro u otra sede origen.
                       </p>
+
+                      {state.remissionEnabled !== false ? (
+                        <div className="mt-2 space-y-1">
+                          <span className="ui-label">Áreas que pueden solicitar</span>
+                          <div className="max-h-40 overflow-auto rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-2">
+                            <div className="grid gap-2">
+                              {getSatelliteRemissionAreaOptionsForSite(site.id, state.areaKinds).map((area) => {
+                                const checked = state.areaKinds.includes(area.code);
+                                return (
+                                  <label
+                                    key={`${site.id}-${area.code}`}
+                                    className="flex items-center gap-2 rounded-lg px-2 py-1 text-sm hover:bg-[var(--ui-surface-2)]"
+                                  >
+                                    <input
+                                      type="checkbox"
+                                      checked={checked}
+                                      onChange={(event) => {
+                                        const nextKinds = event.target.checked
+                                          ? [...state.areaKinds, area.code]
+                                          : state.areaKinds.filter((code) => code !== area.code);
+                                        updateSatellite(site.id, { areaKinds: normalizeAreaKinds(nextKinds) });
+                                      }}
+                                    />
+                                    <span>{area.code === "general" ? "Todos" : area.name}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          </div>
+                          <p className="text-xs text-[var(--ui-muted)]">
+                            Puedes marcar varias áreas de remisión. La primera queda como sugerida por defecto.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-[var(--ui-muted)]">
+                          Este producto podrá estar disponible en la sede y en VISO, pero no aparecerá en el formulario de remisiones.
+                        </div>
+                      )}
                     </div>
 
                     <label className="flex flex-col gap-1 md:col-span-4">
-                      <span className="ui-label">LOC para producir</span>
+                      <span className="ui-label">LOC de producción local</span>
                       <select
                         value={validSatelliteProductionLocationId}
                         onChange={(event) => updateSatellite(site.id, { productionLocationId: event.target.value })}
@@ -638,12 +680,12 @@ export function ProductSiteSettingsEditor({
                         ))}
                       </select>
                       <p className="text-xs text-[var(--ui-muted)]">
-                        Debe ser el LOC real del area que recibe insumos y consume receta.
+                        Debe ser el LOC real del área que recibe insumos y consume receta cuando el producto se prepara en esta sede.
                       </p>
                     </label>
 
                     <label className="flex flex-col gap-1 md:col-span-5">
-                      <span className="ui-label">Stock minimo (referencia)</span>
+                      <span className="ui-label">Stock mínimo (referencia)</span>
                       <input
                         type="number"
                         min={0}

@@ -170,6 +170,8 @@ function buildProductSiteSettingPayloadVariants(
     [],
     [
       "production_location_id",
+      "area_kinds",
+      "remission_enabled",
       "min_stock_input_mode",
       "min_stock_purchase_qty",
       "min_stock_purchase_unit_code",
@@ -177,6 +179,8 @@ function buildProductSiteSettingPayloadVariants(
     ],
     [
       "production_location_id",
+      "area_kinds",
+      "remission_enabled",
       "min_stock_input_mode",
       "min_stock_purchase_qty",
       "min_stock_purchase_unit_code",
@@ -185,6 +189,8 @@ function buildProductSiteSettingPayloadVariants(
     ],
     [
       "production_location_id",
+      "area_kinds",
+      "remission_enabled",
       "min_stock_input_mode",
       "min_stock_purchase_qty",
       "min_stock_purchase_unit_code",
@@ -353,12 +359,12 @@ function buildRemissionFromDefaultUnit(params: {
   unitMap: ReturnType<typeof createUnitMap>;
 }):
   | {
-      label: string;
-      inputUnitCode: string;
-      qtyInInputUnit: number;
-      qtyInStockUnit: number;
-      source: "manual";
-    }
+    label: string;
+    inputUnitCode: string;
+    qtyInInputUnit: number;
+    qtyInStockUnit: number;
+    source: "manual";
+  }
   | null {
   const inputUnitCode = normalizeUnitCode(params.defaultUnitCode || "");
   const stockUnitCode = normalizeUnitCode(params.stockUnitCode || "");
@@ -407,7 +413,7 @@ async function createProduct(formData: FormData) {
   if (!name) {
     redirect(
       `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
-        encodeURIComponent("El nombre es obligatorio.")
+      encodeURIComponent("El nombre es obligatorio.")
     );
   }
 
@@ -424,11 +430,11 @@ async function createProduct(formData: FormData) {
     const skuText = String(existingByName.sku ?? "").trim();
     redirect(
       `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
-        encodeURIComponent(
-          skuText
-            ? `Ya existe un producto con ese nombre (SKU ${skuText}). Revisa si debes editar el existente.`
-            : "Ya existe un producto con ese nombre. Revisa si debes editar el existente."
-        )
+      encodeURIComponent(
+        skuText
+          ? `Ya existe un producto con ese nombre (SKU ${skuText}). Revisa si debes editar el existente.`
+          : "Ya existe un producto con ese nombre. Revisa si debes editar el existente."
+      )
     );
   }
 
@@ -444,7 +450,7 @@ async function createProduct(formData: FormData) {
   if (!categoryId) {
     redirect(
       `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
-        encodeURIComponent("Selecciona una categoria antes de crear el producto.")
+      encodeURIComponent("Selecciona una categoria antes de crear el producto.")
     );
   }
   const categoryKind = resolveTypeCategoryKind(typeKey);
@@ -457,20 +463,20 @@ async function createProduct(formData: FormData) {
     if (categoryError || !categoryRow) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
-          encodeURIComponent("La categoria seleccionada no existe.")
+        encodeURIComponent("La categoria seleccionada no existe.")
       );
     }
     const category = categoryRow as CategoryRow;
     if (category.is_active === false) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
-          encodeURIComponent("La categoria seleccionada esta inactiva.")
+        encodeURIComponent("La categoria seleccionada esta inactiva.")
       );
     }
     if (!categorySupportsKind(category, categoryKind)) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
-          encodeURIComponent("La categoria no aplica al tipo de item seleccionado.")
+        encodeURIComponent("La categoria no aplica al tipo de item seleccionado.")
       );
     }
     if (
@@ -479,13 +485,13 @@ async function createProduct(formData: FormData) {
     ) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
-          encodeURIComponent("Los productos de venta solo pueden usar categorias maestras globales.")
+        encodeURIComponent("Los productos de venta solo pueden usar categorias maestras globales.")
       );
     }
     if (categoryKind !== "venta" && normalizeCategoryDomain(category.domain)) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
-          encodeURIComponent("Las categorias con dominio solo se permiten para productos de venta.")
+        encodeURIComponent("Las categorias con dominio solo se permiten para productos de venta.")
       );
     }
   }
@@ -499,13 +505,13 @@ async function createProduct(formData: FormData) {
     if (activeChildrenError) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
-          encodeURIComponent(activeChildrenError.message)
+        encodeURIComponent(activeChildrenError.message)
       );
     }
     if ((activeChildrenCount ?? 0) > 0) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
-          encodeURIComponent("Selecciona una categoria del ultimo nivel (categoria hoja).")
+        encodeURIComponent("Selecciona una categoria del ultimo nivel (categoria hoja).")
       );
     }
   }
@@ -606,9 +612,9 @@ async function createProduct(formData: FormData) {
   if (!createdProductId) {
     redirect(
       `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
-        encodeURIComponent(
-          lastInsertErrorMessage || "No se pudo asignar un SKU automatico. Intenta de nuevo."
-        )
+      encodeURIComponent(
+        lastInsertErrorMessage || "No se pudo asignar un SKU automatico. Intenta de nuevo."
+      )
     );
   }
 
@@ -655,8 +661,8 @@ async function createProduct(formData: FormData) {
     const rawStatus = String(asText(formData.get("asset_equipment_status")) || "operativo").toLowerCase();
     const equipmentStatus =
       rawStatus === "en_mantenimiento" ||
-      rawStatus === "fuera_servicio" ||
-      rawStatus === "baja"
+        rawStatus === "fuera_servicio" ||
+        rawStatus === "baja"
         ? rawStatus
         : "operativo";
 
@@ -684,11 +690,11 @@ async function createProduct(formData: FormData) {
       maintenance_cycle_months:
         assetProfileTemplate === "industrial"
           ? (() => {
-              const value = asNullableNumber(formData.get("asset_maintenance_cycle_months"));
-              return value != null && Number.isFinite(value) && value >= 1 && value <= 60
-                ? Math.trunc(value)
-                : null;
-            })()
+            const value = asNullableNumber(formData.get("asset_maintenance_cycle_months"));
+            return value != null && Number.isFinite(value) && value >= 1 && value <= 60
+              ? Math.trunc(value)
+              : null;
+          })()
           : null,
       maintenance_cycle_anchor_date:
         assetProfileTemplate === "industrial"
@@ -701,7 +707,7 @@ async function createProduct(formData: FormData) {
     if (assetProfileErr) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
-          encodeURIComponent(assetProfileErr.message)
+        encodeURIComponent(assetProfileErr.message)
       );
     }
 
@@ -751,7 +757,7 @@ async function createProduct(formData: FormData) {
       if (maintenanceErr) {
         redirect(
           `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
-            encodeURIComponent(maintenanceErr.message)
+          encodeURIComponent(maintenanceErr.message)
         );
       }
     }
@@ -780,7 +786,7 @@ async function createProduct(formData: FormData) {
       if (transferErr) {
         redirect(
           `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
-            encodeURIComponent(transferErr.message)
+          encodeURIComponent(transferErr.message)
         );
       }
     }
@@ -790,20 +796,20 @@ async function createProduct(formData: FormData) {
   let autoCostFromPrimary: number | null = null;
   let purchaseUomFromSupplier:
     | {
-        label: string;
-        inputUnitCode: string;
-        qtyInInputUnit: number;
-        qtyInStockUnit: number;
-      }
+      label: string;
+      inputUnitCode: string;
+      qtyInInputUnit: number;
+      qtyInStockUnit: number;
+    }
     | null = null;
   let remissionUomFromSupplier:
     | {
-        label: string;
-        inputUnitCode: string;
-        qtyInInputUnit: number;
-        qtyInStockUnit: number;
-        source: "manual" | "supplier_primary" | "recipe_portion";
-      }
+      label: string;
+      inputUnitCode: string;
+      qtyInInputUnit: number;
+      qtyInStockUnit: number;
+      source: "manual" | "supplier_primary" | "recipe_portion";
+    }
     | null = null;
   if (config.hasSuppliers) {
     const supplierRaw = formData.get("supplier_lines");
@@ -989,10 +995,10 @@ async function createProduct(formData: FormData) {
   const remissionSourceModeRaw = asText(formData.get("remission_source_mode")).toLowerCase();
   const remissionSourceMode =
     remissionSourceModeRaw === "disabled" ||
-    remissionSourceModeRaw === "purchase_primary" ||
-    remissionSourceModeRaw === "remission_profile" ||
-    remissionSourceModeRaw === "recipe_portion" ||
-    remissionSourceModeRaw === "operation_unit"
+      remissionSourceModeRaw === "purchase_primary" ||
+      remissionSourceModeRaw === "remission_profile" ||
+      remissionSourceModeRaw === "recipe_portion" ||
+      remissionSourceModeRaw === "operation_unit"
       ? remissionSourceModeRaw
       : "disabled";
   const remissionInputUnitCode = normalizeUnitCode(remissionInputUnitCodeRaw);
@@ -1172,12 +1178,37 @@ async function createProduct(formData: FormData) {
     for (const line of siteLines) {
       if (line._delete as boolean) continue;
       const siteIdFromLine = String(line.site_id ?? "").trim();
+
+      const normalizedAreaKinds = Array.from(
+        new Set(
+          (Array.isArray(line.area_kinds) ? line.area_kinds : [])
+            .map((kind) => String(kind ?? "").trim())
+            .filter(Boolean)
+        )
+      );
+
+      const normalizedDefaultAreaKind =
+        normalizedAreaKinds[0] ?? String(line.default_area_kind ?? "").trim() ?? "";
+
+      const rawRemissionEnabled = line.remission_enabled;
+      const parsedRemissionEnabled =
+        typeof rawRemissionEnabled === "boolean"
+          ? rawRemissionEnabled
+          : rawRemissionEnabled === "true"
+            ? true
+            : rawRemissionEnabled === "false"
+              ? false
+              : null;
+
       const hasMeaningfulData =
         Boolean(siteIdFromLine) ||
-        Boolean(String(line.default_area_kind ?? "").trim()) ||
+        Boolean(normalizedDefaultAreaKind) ||
+        normalizedAreaKinds.length > 0 ||
         Boolean(String(line.production_location_id ?? "").trim()) ||
         Boolean(String(line.audience ?? "").trim()) ||
+        rawRemissionEnabled !== undefined ||
         String(line.min_stock_qty ?? "").trim() !== "";
+
       if (!siteIdFromLine && hasMeaningfulData) {
         redirect(
           `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
@@ -1185,33 +1216,41 @@ async function createProduct(formData: FormData) {
           )}`
         );
       }
+
       if (!siteIdFromLine) continue;
+
       const normalizedAudience = String(line.audience ?? "BOTH").trim().toUpperCase();
       const minStockInputMode = String(line.min_stock_input_mode ?? "base").trim().toLowerCase() === "purchase"
         ? "purchase"
         : "base";
+
       const parsedMinStockQtyRaw =
         line.min_stock_qty == null || line.min_stock_qty === ""
           ? null
           : Number(line.min_stock_qty);
+
       const parsedMinStockQty =
         parsedMinStockQtyRaw != null && Number.isFinite(parsedMinStockQtyRaw)
           ? parsedMinStockQtyRaw
           : null;
+
       const parsedMinPurchaseQty =
         line.min_stock_purchase_qty == null || String(line.min_stock_purchase_qty).trim() === ""
           ? null
           : Number(line.min_stock_purchase_qty);
+
       const parsedMinPurchaseFactor =
         line.min_stock_purchase_to_base_factor == null ||
-        String(line.min_stock_purchase_to_base_factor).trim() === ""
+          String(line.min_stock_purchase_to_base_factor).trim() === ""
           ? null
           : Number(line.min_stock_purchase_to_base_factor);
+
       const siteRowPayload = {
         product_id: productId,
         site_id: siteIdFromLine,
         is_active: Boolean(line.is_active),
-        default_area_kind: (line.default_area_kind as string) || null,
+        default_area_kind: normalizedDefaultAreaKind || null,
+        area_kinds: normalizedAreaKinds.length ? normalizedAreaKinds : null,
         production_location_id: String(line.production_location_id ?? "").trim() || null,
         min_stock_qty: parsedMinStockQty,
         min_stock_input_mode: minStockInputMode,
@@ -1225,9 +1264,9 @@ async function createProduct(formData: FormData) {
             : null,
         min_stock_purchase_to_base_factor:
           minStockInputMode === "purchase" &&
-          parsedMinPurchaseFactor != null &&
-          Number.isFinite(parsedMinPurchaseFactor) &&
-          parsedMinPurchaseFactor > 0
+            parsedMinPurchaseFactor != null &&
+            Number.isFinite(parsedMinPurchaseFactor) &&
+            parsedMinPurchaseFactor > 0
             ? parsedMinPurchaseFactor
             : null,
         audience:
@@ -1235,9 +1274,10 @@ async function createProduct(formData: FormData) {
             ? "SAUDO"
             : normalizedAudience === "VCF"
               ? "VCF"
-            : normalizedAudience === "INTERNAL"
+              : normalizedAudience === "INTERNAL"
                 ? "INTERNAL"
                 : "BOTH",
+        remission_enabled: parsedRemissionEnabled,
       };
       const siteInsertError = await insertProductSiteSettingCompat(supabase, siteRowPayload);
       if (siteInsertError) {
@@ -1305,9 +1345,9 @@ export default async function NewProductPage({
   const categoryKind = resolveTypeCategoryKind(typeKey);
   const categorySiteId = String(
     sp.category_site_id ??
-      (settings as { selected_site_id?: string | null } | null)?.selected_site_id ??
-      (emp as { site_id?: string | null } | null)?.site_id ??
-      ""
+    (settings as { selected_site_id?: string | null } | null)?.selected_site_id ??
+    (emp as { site_id?: string | null } | null)?.site_id ??
+    ""
   ).trim();
   const defaultCategoryScope = categorySiteId ? "site" : "all";
   const requestedCategoryScope = normalizeCategoryScope(sp.category_scope ?? defaultCategoryScope);
@@ -1332,12 +1372,12 @@ export default async function NewProductPage({
     .order("name", { ascending: true });
   const areaKindsList = !areaKindsWithPurposeError
     ? ((areaKindsWithPurpose ?? []) as Array<{
-        code: string;
-        name: string | null;
-        use_for_remission?: boolean | null;
-      }>)
+      code: string;
+      name: string | null;
+      use_for_remission?: boolean | null;
+    }>)
     : (((await supabase.from("area_kinds").select("code,name").order("name", { ascending: true })).data ??
-        []) as Array<{ code: string; name: string | null }>).map((row) => ({
+      []) as Array<{ code: string; name: string | null }>).map((row) => ({
         ...row,
         use_for_remission: ["mostrador", "bar", "cocina", "general"].includes(
           String(row.code ?? "").trim().toLowerCase()
@@ -1403,11 +1443,11 @@ export default async function NewProductPage({
   const { data: remissionAreaRulesData } =
     satelliteSiteIds.length > 0
       ? await supabase
-          .from("site_area_purpose_rules")
-          .select("site_id,area_kind,purpose,is_enabled")
-          .eq("purpose", "remission")
-          .eq("is_enabled", true)
-          .in("site_id", satelliteSiteIds)
+        .from("site_area_purpose_rules")
+        .select("site_id,area_kind,purpose,is_enabled")
+        .eq("purpose", "remission")
+        .eq("is_enabled", true)
+        .in("site_id", satelliteSiteIds)
       : { data: [] as Array<{ site_id: string | null; area_kind: string | null }> };
   const remissionAreaKindsBySite = (
     (remissionAreaRulesData ?? []) as Array<{ site_id: string | null; area_kind: string | null }>
@@ -1547,10 +1587,10 @@ export default async function NewProductPage({
             priceField={
               config.hasPrice
                 ? {
-                    label: "Precio base referencial",
-                    placeholder: "Opcional",
-                    hint: "El precio final se define por sede/canal en la capa comercial.",
-                  }
+                  label: "Precio base referencial",
+                  placeholder: "Opcional",
+                  hint: "El precio final se define por sede/canal en la capa comercial.",
+                }
                 : undefined
             }
             trailingContent={
@@ -1737,15 +1777,14 @@ export default async function NewProductPage({
         ) : null}
 
         <ProductFormFooter
-          submitLabel={`Crear ${
-            typeKey === "asset"
-              ? "equipo"
-              : typeKey === "venta"
-                ? "producto"
-                : typeKey === "reventa"
-                  ? "producto de reventa"
-                  : typeKey
-          }`}
+          submitLabel={`Crear ${typeKey === "asset"
+            ? "equipo"
+            : typeKey === "venta"
+              ? "producto"
+              : typeKey === "reventa"
+                ? "producto de reventa"
+                : typeKey
+            }`}
         />
       </RequiredFieldsGuardForm>
     </div>

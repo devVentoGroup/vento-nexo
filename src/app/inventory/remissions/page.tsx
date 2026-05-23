@@ -94,6 +94,7 @@ type ProductSiteRow = {
   default_area_kind: string | null;
   area_kinds?: string[] | null;
   audience?: string | null;
+  remission_enabled?: boolean | null;
   updated_at?: string | null;
   created_at?: string | null;
 };
@@ -204,6 +205,11 @@ function normalizeProductSiteAreaKinds(row: ProductSiteRow): string[] {
   return Array.from(new Set(values));
 }
 
+function supportsRemission(row: ProductSiteRow): boolean {
+  // null/undefined conserva comportamiento legacy para no romper productos actuales.
+  return row.remission_enabled !== false;
+}
+
 function supportsRequestedArea(row: ProductSiteRow, requestedAreaKind: string): boolean {
   const areaKind = String(requestedAreaKind ?? "").trim();
   if (!areaKind) return true;
@@ -217,7 +223,7 @@ async function loadProductSiteRows(
 ): Promise<ProductSiteRow[]> {
   const withAudience = await supabase
     .from("product_site_settings")
-    .select("product_id,is_active,default_area_kind,area_kinds,audience,updated_at,created_at")
+    .select("product_id,is_active,default_area_kind,area_kinds,audience,remission_enabled,updated_at,created_at")
     .eq("site_id", siteId)
     .eq("is_active", true);
 
@@ -258,6 +264,7 @@ async function loadProductSiteRows(
     byProduct.set(row.product_id, {
       ...row,
       audience: null,
+      remission_enabled: null,
     });
   }
   return Array.from(byProduct.values());
@@ -773,6 +780,7 @@ async function createRemission(formData: FormData) {
     configuredRows
       .filter(
         (row) =>
+          supportsRemission(row) &&
           supportsAudience(row.audience, requestedAudience) &&
           supportsRequestedArea(row, requestedRoleAreaKind)
       )
@@ -1085,9 +1093,9 @@ export default async function RemissionsPage({
   const remissionIds = remissionRows.map((row) => row.id).filter(Boolean);
   const { data: operationalSummaryData } = remissionIds.length
     ? await supabase
-        .from("restock_operational_summary")
-        .select("request_id,can_transit")
-        .in("request_id", remissionIds)
+      .from("restock_operational_summary")
+      .select("request_id,can_transit")
+      .in("request_id", remissionIds)
     : { data: [] as RemissionOperationalSummaryRow[] };
   const canTransitByRequestId = new Map<string, boolean>();
   for (const row of (operationalSummaryData ?? []) as RemissionOperationalSummaryRow[]) {
@@ -1144,9 +1152,9 @@ export default async function RemissionsPage({
   );
   const { data: remissionEmployeesData } = remissionActorIds.length
     ? await supabase
-        .from("employees")
-        .select("id,full_name,alias")
-        .in("id", remissionActorIds)
+      .from("employees")
+      .select("id,full_name,alias")
+      .in("id", remissionActorIds)
     : { data: [] as EmployeeNameRow[] };
   const remissionEmployeeMap = new Map(
     ((remissionEmployeesData ?? []) as EmployeeNameRow[]).map((employee) => [
@@ -1170,10 +1178,10 @@ export default async function RemissionsPage({
     .select("code,use_for_remission");
   const { data: siteAreaPurposeRulesData } = areaFilterSiteId
     ? await supabase
-        .from("site_area_purpose_rules")
-        .select("site_id,area_kind,purpose,is_enabled")
-        .eq("site_id", areaFilterSiteId)
-        .eq("purpose", "remission")
+      .from("site_area_purpose_rules")
+      .select("site_id,area_kind,purpose,is_enabled")
+      .eq("site_id", areaFilterSiteId)
+      .eq("purpose", "remission")
     : { data: [] as SiteAreaPurposeRuleRow[] };
   const siteOverrideKinds = new Set(
     ((siteAreaPurposeRulesData ?? []) as SiteAreaPurposeRuleRow[])
@@ -1184,11 +1192,11 @@ export default async function RemissionsPage({
   const hasSiteOverride = siteOverrideKinds.size > 0;
   const remissionAreaKindCodes = !areaKindsPurposeError
     ? new Set(
-        ((areaKindsPurposeData ?? []) as AreaKindPurposeRow[])
-          .filter((row) => Boolean(row.use_for_remission))
-          .map((row) => String(row.code ?? "").trim())
-          .filter(Boolean)
-      )
+      ((areaKindsPurposeData ?? []) as AreaKindPurposeRow[])
+        .filter((row) => Boolean(row.use_for_remission))
+        .map((row) => String(row.code ?? "").trim())
+        .filter(Boolean)
+    )
     : new Set(["mostrador", "bar", "cocina", "general"]);
   remissionAreaKindCodes.add("general");
   const areaOptionsMap = Array.from(
@@ -1235,6 +1243,7 @@ export default async function RemissionsPage({
   const productSiteIds = productSiteRows
     .filter(
       (row) =>
+        supportsRemission(row) &&
         supportsAudience(row.audience, requestedAudience) &&
         supportsRequestedArea(row, requestedAreaKind)
     )

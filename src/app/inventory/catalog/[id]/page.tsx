@@ -134,6 +134,7 @@ type SiteSettingRow = {
   min_stock_purchase_unit_code?: string | null;
   min_stock_purchase_to_base_factor?: number | null;
   audience: "SAUDO" | "VCF" | "BOTH" | "INTERNAL" | null;
+  remission_enabled?: boolean | null;
   sites?: { id: string; name: string | null } | null;
   updated_at?: string | null;
   created_at?: string | null;
@@ -396,6 +397,7 @@ function buildProductSiteSettingPayloadVariants(
     [
       "production_location_id",
       "area_kinds",
+      "remission_enabled",
       "min_stock_input_mode",
       "min_stock_purchase_qty",
       "min_stock_purchase_unit_code",
@@ -404,6 +406,7 @@ function buildProductSiteSettingPayloadVariants(
     [
       "production_location_id",
       "area_kinds",
+      "remission_enabled",
       "min_stock_input_mode",
       "min_stock_purchase_qty",
       "min_stock_purchase_unit_code",
@@ -413,6 +416,7 @@ function buildProductSiteSettingPayloadVariants(
     [
       "production_location_id",
       "area_kinds",
+      "remission_enabled",
       "min_stock_input_mode",
       "min_stock_purchase_qty",
       "min_stock_purchase_unit_code",
@@ -974,6 +978,7 @@ async function updateProduct(formData: FormData) {
       min_stock_purchase_unit_code?: string;
       min_stock_purchase_to_base_factor?: number | string;
       audience?: string;
+      remission_enabled?: boolean | string | null;
       _delete?: boolean;
     }> = [];
     try {
@@ -985,12 +990,23 @@ async function updateProduct(formData: FormData) {
     for (const id of toDelete) await supabase.from("product_site_settings").delete().eq("id", id);
     for (const line of siteLines) {
       if (line._delete) continue;
+      const rawRemissionEnabled = line.remission_enabled;
+      const parsedRemissionEnabled =
+        typeof rawRemissionEnabled === "boolean"
+          ? rawRemissionEnabled
+          : rawRemissionEnabled === "true"
+            ? true
+            : rawRemissionEnabled === "false"
+              ? false
+              : null;
+
       const hasMeaningfulData =
         Boolean(String(line.site_id ?? "").trim()) ||
         Boolean(String(line.default_area_kind ?? "").trim()) ||
         (Array.isArray(line.area_kinds) && line.area_kinds.some((kind) => String(kind ?? "").trim())) ||
         Boolean(String(line.production_location_id ?? "").trim()) ||
         Boolean(String(line.audience ?? "").trim()) ||
+        rawRemissionEnabled !== undefined ||
         String(line.min_stock_qty ?? "").trim() !== "";
       if (!line.site_id && hasMeaningfulData) {
         redirectWithError("En disponibilidad por sede debes seleccionar una sede.");
@@ -1061,6 +1077,7 @@ async function updateProduct(formData: FormData) {
               : normalizedAudience === "INTERNAL"
                 ? "INTERNAL"
                 : "BOTH",
+        remission_enabled: parsedRemissionEnabled,
       };
       if (line.id) {
         const upErr = await updateProductSiteSettingCompat(
@@ -1368,7 +1385,7 @@ export default async function ProductCatalogDetailPage({
   const { data: siteSettingsWithAudience, error: siteSettingsAudienceError } = await supabase
     .from("product_site_settings")
     .select(
-      "id,site_id,is_active,default_area_kind,area_kinds,production_location_id,min_stock_qty,min_stock_input_mode,min_stock_purchase_qty,min_stock_purchase_unit_code,min_stock_purchase_to_base_factor,audience,updated_at,created_at,sites(id,name)"
+      "id,site_id,is_active,default_area_kind,area_kinds,production_location_id,min_stock_qty,min_stock_input_mode,min_stock_purchase_qty,min_stock_purchase_unit_code,min_stock_purchase_to_base_factor,audience,remission_enabled,updated_at,created_at,sites(id,name)"
     )
     .eq("product_id", id);
   const siteSettings =
@@ -2012,6 +2029,8 @@ export default async function ProductCatalogDetailPage({
                   min_stock_purchase_unit_code: r.min_stock_purchase_unit_code ?? undefined,
                   min_stock_purchase_to_base_factor: r.min_stock_purchase_to_base_factor ?? undefined,
                   audience: r.audience ?? "BOTH",
+                  remission_enabled:
+                    typeof r.remission_enabled === "boolean" ? r.remission_enabled : null,
                 }))}
                 sites={sitesList.map((s) => ({ id: s.id, name: s.name, site_type: s.site_type }))}
                 areaKinds={areaKindsList.map((a) => ({
