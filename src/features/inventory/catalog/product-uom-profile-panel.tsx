@@ -37,14 +37,14 @@ export function ProductUomProfilePanel({
       </p>
       {purchaseUomProfile ? (
         <p>
-          <strong className="text-[var(--ui-text)]">Presentacion compra:</strong> {purchaseUomProfile.label} (
+          <strong className="text-[var(--ui-text)]">Presentación compra:</strong> {purchaseUomProfile.label} (
           {purchaseUomProfile.qty_in_input_unit} {purchaseUomProfile.input_unit_code} ={" "}
           {purchaseUomProfile.qty_in_stock_unit} {stockUnitCode})
         </p>
       ) : null}
       {remissionUomProfile ? (
         <p>
-          <strong className="text-[var(--ui-text)]">Presentacion remision:</strong> {remissionUomProfile.label} (
+          <strong className="text-[var(--ui-text)]">Presentación remisión:</strong> {remissionUomProfile.label} (
           {remissionUomProfile.qty_in_input_unit} {remissionUomProfile.input_unit_code} ={" "}
           {remissionUomProfile.qty_in_stock_unit} {stockUnitCode})
         </p>

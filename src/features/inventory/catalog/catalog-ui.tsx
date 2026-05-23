@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+﻿import type { ReactNode } from "react";
 
 type CatalogSectionProps = {
   title: string;
@@ -102,7 +102,7 @@ export function CatalogCategoryContextForm({
   showDomain = false,
   categoryDomainOptions,
   sites,
-  submitLabel = "Actualizar categorias",
+  submitLabel = "Actualizar categorías",
 }: CatalogCategoryContextFormProps) {
   return (
     <form method="get" className="ui-panel ui-remission-section grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -115,7 +115,7 @@ export function CatalogCategoryContextForm({
       </div>
 
       <label className="flex flex-col gap-1">
-        <span className="ui-label">Alcance de categoria operativa</span>
+        <span className="ui-label">Alcance de categoría operativa</span>
         <select name="category_scope" defaultValue={categoryScope} className="ui-input">
           <option value="all">Todas</option>
           <option value="global">Globales</option>
@@ -124,7 +124,7 @@ export function CatalogCategoryContextForm({
       </label>
 
       <label className="flex flex-col gap-1">
-        <span className="ui-label">Sede para categoria operativa</span>
+        <span className="ui-label">Sede para categoría operativa</span>
         <select name="category_site_id" defaultValue={categorySiteId} className="ui-input">
           <option value="">Seleccionar sede</option>
           {sites.map((site) => (

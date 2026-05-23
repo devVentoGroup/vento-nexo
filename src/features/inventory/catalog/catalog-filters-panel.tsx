@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 
 import { CategoryTreeFilter } from "@/components/inventory/CategoryTreeFilter";
 import type { InventoryCategoryRow } from "@/lib/inventory/categories";
@@ -93,7 +93,7 @@ export function CatalogFiltersPanel({
 
           <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <label className="flex flex-col gap-1">
-              <span className="ui-label">Alcance de categoria operativa</span>
+              <span className="ui-label">Alcance de categoría operativa</span>
               <select name="category_scope" defaultValue={categoryScope} className="ui-input">
                 <option value="all">Todas</option>
                 <option value="global">Globales</option>
@@ -105,17 +105,17 @@ export function CatalogFiltersPanel({
               <span className="ui-label">Alerta de stock (sede activa)</span>
               <select name="stock_alert" defaultValue={stockAlert} className="ui-input">
                 <option value="all">Todos</option>
-                <option value="low">Solo bajo minimo</option>
+                <option value="low">Solo bajo mínimo</option>
               </select>
               <span className="ui-caption">
-                Usa el stock de la sede activa para compras del centro de produccion.
+                Usa el stock de la sede activa para compras del centro de producción.
               </span>
             </label>
 
             <label className="flex flex-col gap-1">
               <span className="ui-label">Vista</span>
               <select name="view_mode" defaultValue={viewMode} className="ui-input">
-                <option value="catalogo">Catalogo</option>
+                <option value="catalogo">Catálogo</option>
                 <option value="compras">Compras (ORIGO)</option>
               </select>
             </label>
@@ -134,7 +134,7 @@ export function CatalogFiltersPanel({
 
             {categoryScope === "site" ? (
               <label className="flex flex-col gap-1">
-                <span className="ui-label">Sede para categoria operativa</span>
+                <span className="ui-label">Sede para categoría operativa</span>
                 <select name="category_site_id" defaultValue={categorySiteId} className="ui-input">
                   <option value="">Seleccionar sede</option>
                   {sites.map((site) => (
@@ -170,7 +170,7 @@ export function CatalogFiltersPanel({
               selectedCategoryId={effectiveCategoryId}
               siteNamesById={siteNamesById}
               className="sm:col-span-2 lg:col-span-4"
-              label="Categoria operativa"
+              label="Categoría operativa"
               emptyOptionLabel="Todas"
               maxVisibleOptions={10}
             />

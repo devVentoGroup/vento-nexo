@@ -1,4 +1,4 @@
-import { CatalogOptionalDetails } from "@/features/inventory/catalog/catalog-ui";
+﻿import { CatalogOptionalDetails } from "@/features/inventory/catalog/catalog-ui";
 
 type ProductChecklistPanelProps = {
   items: string[];
@@ -7,7 +7,7 @@ type ProductChecklistPanelProps = {
 
 export function ProductChecklistPanel({
   items,
-  title = "Checklist rapido antes de guardar",
+  title = "Checklist rápido antes de guardar",
 }: ProductChecklistPanelProps) {
   return (
     <CatalogOptionalDetails

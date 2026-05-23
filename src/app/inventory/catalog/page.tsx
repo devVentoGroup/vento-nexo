@@ -220,7 +220,7 @@ async function toggleProductActiveFromListAction(formData: FormData) {
   const returnTo = sanitizeCatalogListReturnPath(String(formData.get("return_to") ?? ""));
 
   if (!productId) {
-    redirect(buildCatalogListReturnUrl(returnTo, { error: "Producto invalido." }));
+    redirect(buildCatalogListReturnUrl(returnTo, { error: "Producto inválido." }));
   }
 
   const { error } = await supabase
@@ -248,7 +248,7 @@ async function deleteProductFromListAction(formData: FormData) {
   const returnTo = sanitizeCatalogListReturnPath(String(formData.get("return_to") ?? ""));
 
   if (!productId) {
-    redirect(buildCatalogListReturnUrl(returnTo, { error: "Producto invalido." }));
+    redirect(buildCatalogListReturnUrl(returnTo, { error: "Producto inválido." }));
   }
 
   const { count: ingredientUsageCount } = await supabase
@@ -725,7 +725,7 @@ export default async function InventoryCatalogPage({
       const prefill = toBase64UrlJson({
         supplier_id: group.supplierId,
         site_id: siteId || "",
-        notes: "Borrador generado desde Nexo por productos bajo stock minimo.",
+        notes: "Borrador generado desde Nexo por productos bajo stock mínimo.",
         lines: group.prefillLines.slice(0, 30),
       });
       return {
@@ -833,7 +833,7 @@ export default async function InventoryCatalogPage({
         ? toBase64UrlJson({
             supplier_id: primarySupplier.supplier_id,
             site_id: siteId,
-            notes: "Borrador generado desde Nexo por bajo stock minimo.",
+            notes: "Borrador generado desde Nexo por bajo stock mínimo.",
             lines: [
               {
                 product_id: product.id,
@@ -883,7 +883,7 @@ export default async function InventoryCatalogPage({
       shortageLabel = "Sede inactiva";
       shortageTone = "muted";
     } else if (stockMetrics.minStock == null) {
-      shortageLabel = "Sin minimo";
+      shortageLabel = "Sin mínimo";
       shortageTone = "muted";
     }
 
@@ -924,9 +924,9 @@ export default async function InventoryCatalogPage({
               >
                 ← Volver a stock
               </Link>
-              <h1 className="ui-h1">Catalogo maestro</h1>
+              <h1 className="ui-h1">Catálogo maestro</h1>
               <p className="ui-body-muted">
-                Productos maestros, salud operativa por sede y continuidad de compra sin mezclar logica comercial.
+                Productos maestros, salud operativa por sede y continuidad de compra sin mezclar lógica comercial.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -974,7 +974,7 @@ export default async function InventoryCatalogPage({
 
       <CatalogOptionalDetails
         title="Refinar vista"
-        summary="Busqueda y tab ya cubren lo principal. Abre esto solo si necesitas filtros adicionales."
+        summary="Búsqueda y tab ya cubren lo principal. Abre esto solo si necesitas filtros adicionales."
         badge={hasAdvancedFilters ? "Activos" : "Opcional"}
         defaultOpen={hasAdvancedFilters}
       >

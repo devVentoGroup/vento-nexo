@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { type CSSProperties, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -134,7 +134,7 @@ export function SearchableSingleSelect({
     const groups: Array<{ label: string; options: SelectOption[] }> = [];
     const groupMap = new Map<string, SelectOption[]>();
     for (const option of filteredOptions) {
-      const label = String(option.groupLabel ?? "").trim() || "Sin categoria";
+      const label = String(option.groupLabel ?? "").trim() || "Sin categoría";
       const current = groupMap.get(label) ?? [];
       current.push(option);
       groupMap.set(label, current);

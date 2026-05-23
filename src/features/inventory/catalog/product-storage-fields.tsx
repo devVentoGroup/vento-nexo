@@ -85,7 +85,7 @@ function TrackingOptionsPanel({
       </div>
       <p className="text-xs text-[var(--ui-muted)]">
         Controlar stock activa el item en entradas/salidas, remisiones, ajustes y stock. Lotes y vencimiento se
-        guardan como configuracion del item y quedan listos para trazabilidad cuando ese flujo este activo.
+        guardan como configuración del item y quedan listos para trazabilidad cuando ese flujo este activo.
       </p>
     </div>
   );
@@ -97,7 +97,7 @@ export function ProductStorageFields({
   stockUnitCode,
   defaultUnitCode,
   stockUnitLabel = "Unidad base de stock",
-  stockUnitHint = "Esta unidad es la referencia canonica para entradas, salidas y conteos.",
+  stockUnitHint = "Esta unidad es la referencia canónica para entradas, salidas y conteos.",
   defaultUnitLabel = "Unidad operativa fallback",
   defaultUnitHint = "Referencia simple para formularios. No reemplaza las presentaciones físicas del producto.",
   rulePanel = <DefaultRulePanel />,

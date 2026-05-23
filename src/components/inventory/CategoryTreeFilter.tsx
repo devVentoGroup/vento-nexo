@@ -138,9 +138,9 @@ export function CategoryTreeFilter({
   selectedCategoryId,
   siteNamesById,
   name = "category_id",
-  label = "Categoria",
+  label = "Categoría",
   required = false,
-  searchPlaceholder = "Buscar categoria por nombre o ruta",
+  searchPlaceholder = "Buscar categoría por nombre o ruta",
   emptyOptionLabel = "Todas",
   className = "",
   maxVisibleOptions = 12,
@@ -429,7 +429,7 @@ export function CategoryTreeFilter({
       ) : null}
 
       <span className="ui-caption">
-        {visibleOptions.length} categoria(s) visibles
+        {visibleOptions.length} categoría(s) visibles
       </span>
     </div>
   );

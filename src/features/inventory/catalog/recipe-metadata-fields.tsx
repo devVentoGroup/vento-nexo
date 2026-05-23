@@ -60,7 +60,7 @@ export function RecipeMetadataFields({
           />
         </label>
         <label className="flex flex-col gap-1">
-          <span className="ui-caption font-semibold">Porcion (tamaño)</span>
+          <span className="ui-caption font-semibold">Porción (tamaño)</span>
           <input
             type="number"
             step="0.01"
@@ -108,13 +108,13 @@ export function RecipeMetadataFields({
       </div>
 
       <label className="flex flex-col gap-1">
-        <span className="ui-caption font-semibold">Descripcion de la receta</span>
+        <span className="ui-caption font-semibold">Descripción de la receta</span>
         <textarea
           name="recipe_description"
           rows={3}
           defaultValue={recipeDescription ?? ""}
           className="ui-input min-h-0 py-2"
-          placeholder="Descripcion general: tecnica, presentacion, notas..."
+          placeholder="Descripción general: técnica, presentación, notas..."
         />
       </label>
     </div>

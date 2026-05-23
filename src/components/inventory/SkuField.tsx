@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -81,10 +81,10 @@ export function SkuField(props: SkuFieldProps) {
   if (props.mode === "create") {
     return (
       <label className={`flex flex-col gap-1 ${className ?? ""}`.trim()}>
-        <span className="ui-label">SKU (automatico)</span>
+        <span className="ui-label">SKU (automático)</span>
         <input value={preview} readOnly className="ui-input font-mono bg-zinc-50" />
         <span className="text-xs text-[var(--ui-muted)]">
-          Se genera automaticamente al guardar. El numero final se asigna con secuencia global.
+          Se genera automáticamente al guardar. El numero final se asigna con secuencia global.
         </span>
       </label>
     );
@@ -95,7 +95,7 @@ export function SkuField(props: SkuFieldProps) {
 
   return (
     <div className={`flex flex-col gap-2 ${className ?? ""}`.trim()}>
-      <span className="ui-label">SKU (codigo interno)</span>
+      <span className="ui-label">SKU (código interno)</span>
       {!allowOverride ? (
         <input
           value={hasCurrentSku ? currentSku : "Sin SKU (legacy)"}
@@ -108,7 +108,7 @@ export function SkuField(props: SkuFieldProps) {
             name="sku"
             defaultValue={hasCurrentSku ? currentSku : ""}
             className="ui-input font-mono"
-            placeholder={hasCurrentSku ? "Ej. VEN-BEBIDA-000123" : "Deja vacio para SKU automatico"}
+            placeholder={hasCurrentSku ? "Ej. VEN-BEBIDA-000123" : "Deja vacío para SKU automático"}
           />
           {!hasCurrentSku ? (
             <label className="inline-flex items-center gap-2 text-xs text-[var(--ui-muted)]">
@@ -119,7 +119,7 @@ export function SkuField(props: SkuFieldProps) {
                 checked={assignAutoSku}
                 onChange={(event) => setAssignAutoSku(event.target.checked)}
               />
-              Asignar SKU automatico si el campo queda vacio.
+              Asignar SKU automático si el campo queda vacío.
             </label>
           ) : null}
         </>

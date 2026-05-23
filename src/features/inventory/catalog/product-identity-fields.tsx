@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+﻿import type { ReactNode } from "react";
 
 import { CategoryTreeFilter } from "@/components/inventory/CategoryTreeFilter";
 import { SkuField } from "@/components/inventory/SkuField";
@@ -62,9 +62,9 @@ export function ProductIdentityFields({
   categories,
   selectedCategoryId,
   siteNamesById,
-  categoryLabel = "Categoria operativa",
+  categoryLabel = "Categoría operativa",
   categoryRequired = false,
-  categoryEmptyOptionLabel = "Selecciona categoria",
+  categoryEmptyOptionLabel = "Selecciona categoría",
   descriptionDefaultValue,
   descriptionPlaceholder = "Opcional",
   skuField,
@@ -137,11 +137,11 @@ export function ProductIdentityFields({
         emptyOptionLabel={categoryEmptyOptionLabel}
         maxVisibleOptions={8}
         selectionMode="leaf_only"
-        nonSelectableHint="Categoria padre"
+        nonSelectableHint="Categoría padre"
       />
 
       <label className="flex flex-col gap-1 sm:col-span-2">
-        <span className="ui-label">Descripcion</span>
+        <span className="ui-label">Descripción</span>
         <input
           name="description"
           defaultValue={descriptionDefaultValue ?? ""}

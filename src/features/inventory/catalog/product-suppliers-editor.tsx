@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -683,7 +683,7 @@ export function ProductSuppliersEditor({
                     </label>
 
                     <label className="flex flex-col gap-1">
-                      <span className="ui-label">Minimo de orden</span>
+                      <span className="ui-label">Mínimo de orden</span>
                       <input
                         type="number"
                         step="0.01"
@@ -708,7 +708,7 @@ export function ProductSuppliersEditor({
                   </p>
                   {!stockUnit ? (
                     <p className="mt-1 text-[var(--ui-muted)]">
-                      Selecciona primero la unidad base en la seccion de almacenamiento.
+                      Selecciona primero la unidad base en la sección de almacenamiento.
                     </p>
                   ) : !packUnit || packQty <= 0 ? (
                     <p className="mt-1 text-[var(--ui-muted)]">

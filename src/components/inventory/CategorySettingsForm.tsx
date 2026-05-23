@@ -65,17 +65,17 @@ const WIZARD_STEPS: GuidedStep[] = [
   {
     id: "uso",
     title: "Uso",
-    objective: "Define para que tipo de items aplica la categoria.",
+    objective: "Define para que tipo de items aplica la categoría.",
   },
   {
     id: "alcance",
     title: "Alcance",
-    objective: "Define si la categoria es global o exclusiva de una sede.",
+    objective: "Define si la categoría es global o exclusiva de una sede.",
   },
   {
     id: "identidad",
     title: "Identidad",
-    objective: "Define nombre, slug y categoria padre.",
+    objective: "Define nombre, slug y categoría padre.",
   },
   {
     id: "canal",
@@ -154,8 +154,8 @@ export function CategorySettingsForm({
   );
 
   const scopeDescription = selectedSiteId
-    ? `Sede: esta categoria solo se vera en ${selectedSiteName}.`
-    : "Global: esta categoria se vera en todas las sedes.";
+    ? `Sede: esta categoría solo se vera en ${selectedSiteName}.`
+    : "Global: esta categoría se vera en todas las sedes.";
 
   const rootParentOptions = parentOptions.filter((row) => row.isRoot);
   const filteredRootParentOptions = useMemo(() => {
@@ -294,10 +294,10 @@ export function CategorySettingsForm({
             ))}
           </div>
           <StepHelp
-            meaning="Define para que tipo de item se permite usar esta categoria."
+            meaning="Define para que tipo de item se permite usar esta categoría."
             whenToUse="Marca uno o varios usos segun el contexto operativo real."
-            example="Categoria para equipos: solo Equipo. Categoria transversal: Insumo y Preparacion."
-            impact="Evita que una categoria aparezca donde no corresponde."
+            example="Categoría para equipos: solo Equipo. Categoría transversal: Insumo y Preparacion."
+            impact="Evita que una categoría aparezca donde no corresponde."
           />
         </section>
 
@@ -321,7 +321,7 @@ export function CategorySettingsForm({
           </label>
           <StepHelp
             meaning="Alcance define visibilidad por sede."
-            whenToUse="Global para categorias comunes. Sede para categorias locales o excepciones."
+            whenToUse="Global para categorías comunes. Sede para categorías locales o excepciones."
             example="Global: Insumos secos. Sede Saudo: Menaje de salon."
             impact="Controla que cada sede vea solo lo que aplica."
           />
@@ -350,7 +350,7 @@ export function CategorySettingsForm({
               />
             </label>
             <label className="flex flex-col gap-1 sm:col-span-2">
-              <span className="ui-label">Categoria padre</span>
+              <span className="ui-label">Categoría padre</span>
               <select
                 value={effectiveParentId}
                 onChange={(event) => setSelectedParentId(event.target.value)}
@@ -381,18 +381,18 @@ export function CategorySettingsForm({
                 ) : null}
               </select>
               <span className="ui-caption">
-                Solo se muestran categorias padre (raiz), filtradas por alcance y uso.
+                Solo se muestran categorías padre (raiz), filtradas por alcance y uso.
               </span>
             </label>
             {showDescriptionEditor ? (
               <label className="flex flex-col gap-1 sm:col-span-2">
-                <span className="ui-label">Descripcion operativa</span>
+                <span className="ui-label">Descripción operativa</span>
                 <textarea
                   value={description}
                   onChange={(event) => setDescription(event.target.value)}
                   className="ui-input min-h-[96px]"
                   placeholder={buildCategorySuggestedDescription({
-                    name: name || "esta categoria",
+                    name: name || "esta categoría",
                     kinds: selectedKinds,
                   })}
                 />
@@ -402,18 +402,18 @@ export function CategorySettingsForm({
               </label>
             ) : (
               <div className="ui-panel-soft p-3 sm:col-span-2">
-                <div className="ui-caption font-semibold">Descripcion</div>
+                <div className="ui-caption font-semibold">Descripción</div>
                 <div className="ui-caption mt-1">
-                  No aplica para categorias solo de venta.
+                  No aplica para categorías solo de venta.
                 </div>
               </div>
             )}
           </div>
           <StepHelp
-            meaning="El nombre identifica la categoria, el padre define su jerarquia y la descripcion orienta al equipo."
-            whenToUse="Usa categoria padre cuando quieras agrupar subcategorias bajo un nodo principal."
+            meaning="El nombre identifica la categoría, el padre define su jerarquia y la descripción orienta al equipo."
+            whenToUse="Usa categoría padre cuando quieras agrupar subcategorías bajo un nodo principal."
             example="Padre: Bebidas. Hija: Bebidas frias."
-            impact="Mejora busqueda, filtros y orden del catalogo."
+            impact="Mejora búsqueda, filtros y orden del catálogo."
           />
         </section>
 
@@ -477,11 +477,11 @@ export function CategorySettingsForm({
               </div>
             </div>
             <div className="ui-panel-soft p-3 sm:col-span-2">
-              <div className="ui-caption">Descripcion</div>
+              <div className="ui-caption">Descripción</div>
               <div className="font-semibold">
                 {showDescriptionEditor
-                  ? description || "Se completara automaticamente al guardar."
-                  : "No aplica para categorias solo de venta"}
+                  ? description || "Se completara automáticamente al guardar."
+                  : "No aplica para categorías solo de venta"}
               </div>
             </div>
             <label className="ui-panel-soft flex items-center gap-2 p-3">
@@ -490,7 +490,7 @@ export function CategorySettingsForm({
                 checked={isActive}
                 onChange={(event) => setIsActive(event.target.checked)}
               />
-              <span className="ui-label">Categoria activa</span>
+              <span className="ui-label">Categoría activa</span>
             </label>
           </div>
           {!isFormComplete ? (
@@ -513,7 +513,7 @@ export function CategorySettingsForm({
                 </button>
               ) : null}
               <button type="submit" className="ui-btn ui-btn--brand" disabled={!canSubmitFromCurrentStep}>
-                {editingCategoryId ? "Guardar cambios" : "Crear categoria"}
+                {editingCategoryId ? "Guardar cambios" : "Crear categoría"}
               </button>
             </>
           }

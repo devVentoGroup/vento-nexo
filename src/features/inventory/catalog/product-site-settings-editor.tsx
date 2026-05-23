@@ -82,7 +82,7 @@ function inferSiteKind(site: SiteOption): SiteKind {
 
   const normalizedName = normalizeText(site.name);
 
-  if (normalizedName.includes("centro de produccion")) {
+  if (normalizedName.includes("centro de producción")) {
     return "production_center";
   }
 
@@ -456,7 +456,7 @@ export function ProductSiteSettingsEditor({
           <label className="flex flex-col gap-1 md:col-span-4">
             {purchaseUnitHint && purchaseFactorToStock ? (
               <div className="flex items-center justify-between gap-2">
-                <span className="ui-label">Modo de minimo</span>
+                <span className="ui-label">Modo de mínimo</span>
                 <select
                   value={centerMinStockInputMode}
                   onChange={(event) =>
@@ -470,7 +470,7 @@ export function ProductSiteSettingsEditor({
               </div>
             ) : null}
             <span className="ui-label">
-              Stock minimo{" "}
+              Stock mínimo{" "}
               {purchaseUnitHint && purchaseFactorToStock && centerMinStockInputMode === "purchase"
                 ? `en compra (${purchaseUnitHint.inputUnitCode})`
                 : stockUnitCode
@@ -532,7 +532,7 @@ export function ProductSiteSettingsEditor({
               </p>
             ) : null}
             <p className="text-xs text-[var(--ui-muted)]">
-              Si baja de aqui, se marca como bajo minimo para reabastecer LOC.
+              Si baja de aqui, se marca como bajo mínimo para reabastecer LOC.
             </p>
           </label>
         </div>
@@ -659,7 +659,7 @@ export function ProductSiteSettingsEditor({
                         </div>
                       ) : (
                         <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-[var(--ui-muted)]">
-                          Este producto podrá estar disponible en la sede y en VISO, pero no aparecerá en el formulario de remisiones.
+                          Este producto podrá estar disponible en la sede y en VISO, pero no aparecerá en el formulario de remisiónes.
                         </div>
                       )}
                     </div>

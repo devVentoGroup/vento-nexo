@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
@@ -450,7 +450,7 @@ async function createProduct(formData: FormData) {
   if (!categoryId) {
     redirect(
       `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
-      encodeURIComponent("Selecciona una categoria antes de crear el producto.")
+      encodeURIComponent("Selecciona una categoría antes de crear el producto.")
     );
   }
   const categoryKind = resolveTypeCategoryKind(typeKey);
@@ -463,20 +463,20 @@ async function createProduct(formData: FormData) {
     if (categoryError || !categoryRow) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
-        encodeURIComponent("La categoria seleccionada no existe.")
+        encodeURIComponent("La categoría seleccionada no existe.")
       );
     }
     const category = categoryRow as CategoryRow;
     if (category.is_active === false) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
-        encodeURIComponent("La categoria seleccionada esta inactiva.")
+        encodeURIComponent("La categoría seleccionada está inactiva.")
       );
     }
     if (!categorySupportsKind(category, categoryKind)) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
-        encodeURIComponent("La categoria no aplica al tipo de item seleccionado.")
+        encodeURIComponent("La categoría no aplica al tipo de item seleccionado.")
       );
     }
     if (
@@ -485,13 +485,13 @@ async function createProduct(formData: FormData) {
     ) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
-        encodeURIComponent("Los productos de venta solo pueden usar categorias maestras globales.")
+        encodeURIComponent("Los productos de venta solo pueden usar categorías maestras globales.")
       );
     }
     if (categoryKind !== "venta" && normalizeCategoryDomain(category.domain)) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
-        encodeURIComponent("Las categorias con dominio solo se permiten para productos de venta.")
+        encodeURIComponent("Las categorías con dominio solo se permiten para productos de venta.")
       );
     }
   }
@@ -511,7 +511,7 @@ async function createProduct(formData: FormData) {
     if ((activeChildrenCount ?? 0) > 0) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
-        encodeURIComponent("Selecciona una categoria del ultimo nivel (categoria hoja).")
+        encodeURIComponent("Selecciona una categoría del último nivel (categoría hoja).")
       );
     }
   }
@@ -613,7 +613,7 @@ async function createProduct(formData: FormData) {
     redirect(
       `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=` +
       encodeURIComponent(
-        lastInsertErrorMessage || "No se pudo asignar un SKU automatico. Intenta de nuevo."
+        lastInsertErrorMessage || "No se pudo asignar un SKU automático. Intenta de nuevo."
       )
     );
   }
@@ -1013,12 +1013,12 @@ async function createProduct(formData: FormData) {
     if (!remissionInputUnitCode || remissionQtyInStock <= 0) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
-          "Completa la presentaciÃ³n de remisiÃ³n: unidad y equivalencia a unidad base."
+          "Completa la presentación de remisión: unidad y equivalencia a unidad base."
         )}`
       );
     }
     remissionUomFromSupplier = {
-      label: remissionLabelText || "PresentaciÃ³n remisiÃ³n",
+      label: remissionLabelText || "Presentación remisión",
       inputUnitCode: remissionInputUnitCode,
       qtyInInputUnit: 1,
       qtyInStockUnit: remissionQtyInStock,
@@ -1028,12 +1028,12 @@ async function createProduct(formData: FormData) {
     if (!purchaseUomFromSupplier) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
-          "No se pudo usar la presentaciÃ³n de compra en operaciÃ³n. Completa el proveedor primario."
+          "No se pudo usar la presentación de compra en operación. Completa el proveedor primario."
         )}`
       );
     }
     remissionUomFromSupplier = {
-      label: purchaseUomFromSupplier.label || "PresentaciÃ³n compra",
+      label: purchaseUomFromSupplier.label || "Presentación compra",
       inputUnitCode: purchaseUomFromSupplier.inputUnitCode,
       qtyInInputUnit: purchaseUomFromSupplier.qtyInInputUnit,
       qtyInStockUnit: purchaseUomFromSupplier.qtyInStockUnit,
@@ -1048,14 +1048,14 @@ async function createProduct(formData: FormData) {
     if (!remissionUomFromSupplier) {
       redirect(
         `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
-          "No se pudo definir la presentacion de remision desde unidad operativa. Revisa unidad base y unidad operativa."
+          "No se pudo definir la presentación de remisión desde unidad operativa. Revisa unidad base y unidad operativa."
         )}`
       );
     }
   } else if (remissionSourceMode === "recipe_portion") {
     redirect(
       `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
-        "Primero crea y publica la receta. Luego en ediciÃ³n podrÃ¡s usar remisiÃ³n desde porciÃ³n de receta."
+        "Primero crea y publica la receta. Luego en edición podrás usar remisión desde porción de receta."
       )}`
     );
   }
@@ -1521,7 +1521,7 @@ export default async function NewProductPage({
                 href="/inventory/catalog"
                 className="ui-btn ui-btn--ghost inline-flex h-12 items-center px-5 text-base font-semibold"
               >
-                â† Volver al catÃ¡logo
+                ← Volver al catálogo
               </Link>
               <h1 className="ui-h1">{config.title}</h1>
               <p className="ui-body-muted">{config.subtitle}</p>
@@ -1566,7 +1566,7 @@ export default async function NewProductPage({
 
         <CatalogSection
           title="Datos basicos"
-          description="Nombre, codigo y categoria operativa. Las unidades se definen en la seccion de almacenamiento."
+          description="Nombre, código y categoría operativa. Las unidades se definen en la sección de almacenamiento."
         >
           <ProductIdentityFields
             namePlaceholder={typeKey === "asset" ? "Ej. Horno industrial" : "Ej. Harina 000"}
@@ -1581,7 +1581,7 @@ export default async function NewProductPage({
             }}
             aside={
               <div className="ui-panel-soft p-3 text-sm text-[var(--ui-muted)]">
-                Configura unidad base y unidad operativa en la seccion de almacenamiento.
+                Configura unidad base y unidad operativa en la sección de almacenamiento.
               </div>
             }
             priceField={
@@ -1599,13 +1599,13 @@ export default async function NewProductPage({
                   <>
                     <input type="hidden" name="cost" value="" />
                     <div className="ui-panel-soft p-3 text-sm text-[var(--ui-muted)] sm:col-span-2">
-                      <p className="font-medium text-[var(--ui-text)]">Costo automatico</p>
+                      <p className="font-medium text-[var(--ui-text)]">Costo automático</p>
                       <p className="mt-1">
-                        El costo unitario se calcula automaticamente desde proveedor primario y entradas.
+                        El costo unitario se calcula automáticamente desde proveedor primario y entradas.
                       </p>
                       <p>
                         Si faltan datos de proveedor, el producto se guarda y quedara marcado como
-                        incompleto para terminar configuracion.
+                        incompleto para terminar configuración.
                       </p>
                     </div>
                   </>
@@ -1619,7 +1619,7 @@ export default async function NewProductPage({
         {config.hasStorage && (
           <CatalogSection
             title="Unidades del producto"
-            description="Configura unidad base, unidad de remision y unidad de vista interna para este producto."
+            description="Configura unidad base, unidad de remisión y unidad de vista interna para este producto."
           >
             <ProductStorageFields
               stockUnitFieldId={STOCK_UNIT_FIELD_ID}
@@ -1673,9 +1673,9 @@ export default async function NewProductPage({
                 <strong className="text-[var(--ui-text)]">Jugo de naranja:</strong> base = ml, compra = 1 botella de 1 l, receta = ml.
               </p>
               <p>
-                <strong className="text-[var(--ui-text)]">Cloro:</strong> base = ml, compra = galon, remision = botella 1 l, uso final = taza (convertida a ml).
+                <strong className="text-[var(--ui-text)]">Cloro:</strong> base = ml, compra = galon, remisión = botella 1 l, uso final = taza (convertida a ml).
               </p>
-              <p>Regla: el sistema guarda stock y costo en unidad base; compra/remision se convierten automaticamente.</p>
+              <p>Regla: el sistema guarda stock y costo en unidad base; compra/remisión se convierten automáticamente.</p>
             </div>
           </CatalogOptionalDetails>
         ) : null}
@@ -1683,7 +1683,7 @@ export default async function NewProductPage({
         {config.hasSuppliers && (
           <CatalogSection
             title="Compra principal (proveedor)"
-            description="Aqui defines como compra o factura el proveedor. El sistema convierte automaticamente a la unidad base."
+            description="Aquí defines como compra o factura el proveedor. El sistema convierte automáticamente a la unidad base."
           >
             <ProductSuppliersEditor
               name="supplier_lines"
@@ -1705,8 +1705,8 @@ export default async function NewProductPage({
         {/* Receta se gestiona fuera del flujo actual */}
         {config.hasRecipe && (
           <CatalogOptionalDetails
-            title="Receta y produccion"
-            summary="Esta configuracion queda fuera del flujo operativo actual."
+            title="Receta y producción"
+            summary="Esta configuración queda fuera del flujo operativo actual."
           >
             <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
               <p>
@@ -1728,15 +1728,15 @@ export default async function NewProductPage({
         <ProductPhotoSection
           description={
             typeKey === "asset"
-              ? "Imagen visual para identificar rapido el equipo o activo en listados y ficha tÃ©cnica."
-              : "Imagen visual para identificar rapido el producto o insumo en listados y ficha."
+              ? "Imagen visual para identificar rápido el equipo o activo en listados y ficha técnica."
+              : "Imagen visual para identificar rápido el producto o insumo en listados y ficha."
           }
           currentUrl={null}
           existingImageUrls={existingImageUrls}
           productId={`draft-${typeKey}`}
           sectionTitle={typeKey === "asset" ? "Foto del equipo / activo" : "Foto del producto"}
           uploadLabel={typeKey === "asset" ? "Foto del equipo" : "Foto del producto"}
-          footerText="Si no subes fotos ahora, puedes cargarlas despues desde la ficha de edicion."
+          footerText="Si no subes fotos ahora, puedes cargarlas después desde la ficha de edición."
           collapsible
         />
 

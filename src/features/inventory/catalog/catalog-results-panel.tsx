@@ -125,7 +125,7 @@ export function CatalogResultsPanel({
           <div className="mt-1 ui-body-muted">Mostrando hasta 1200 items.</div>
           {siteId ? (
             <div className="mt-1 text-xs text-[var(--ui-muted)]">
-              Sede activa: {siteLabel}. Bajo minimo: {lowStockCount}.
+              Sede activa: {siteLabel}. Bajo mínimo: {lowStockCount}.
             </div>
           ) : null}
         </div>
@@ -144,7 +144,7 @@ export function CatalogResultsPanel({
                   Ordenes sugeridas por proveedor (ORIGO)
                 </div>
                 <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                  Genera borradores de orden en ORIGO con productos bajo minimo de la sede activa.
+                  Genera borradores de orden en ORIGO con productos bajo mínimo de la sede activa.
                 </div>
               </div>
               <span className="ui-chip">{purchaseSuggestions.length} proveedor(es)</span>
@@ -165,7 +165,7 @@ export function CatalogResultsPanel({
                         <div className="min-w-0">
                           <div className="text-sm font-semibold text-[var(--ui-text)]">{group.supplierName}</div>
                           <div className="text-xs text-[var(--ui-muted)]">
-                            {group.itemsCount} producto(s) bajo minimo
+                            {group.itemsCount} producto(s) bajo mínimo
                           </div>
                         </div>
                         <Link href={group.href} className="ui-btn ui-btn--brand ui-btn--sm">
@@ -214,12 +214,12 @@ export function CatalogResultsPanel({
               <th className="py-2 pr-4 whitespace-nowrap">Producto</th>
               {viewMode === "catalogo" ? (
                 <>
-                  <th className="py-2 pr-4 whitespace-nowrap">Categoria</th>
+                  <th className="py-2 pr-4 whitespace-nowrap">Categoría</th>
                   <th className="py-2 pr-4 whitespace-nowrap">Unidad</th>
                 </>
               ) : null}
               <th className="py-2 pr-4 whitespace-nowrap">Stock sede</th>
-              <th className="py-2 pr-4 whitespace-nowrap">Minimo</th>
+              <th className="py-2 pr-4 whitespace-nowrap">Mínimo</th>
               <th className="py-2 pr-4 whitespace-nowrap">Faltante</th>
               {viewMode === "catalogo" ? (
                 <>

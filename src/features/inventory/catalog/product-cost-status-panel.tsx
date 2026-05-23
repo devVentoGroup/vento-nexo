@@ -1,4 +1,4 @@
-type ProductCostStatusPanelProps = {
+﻿type ProductCostStatusPanelProps = {
   hasSuppliers: boolean;
   hasRecipe: boolean;
   hasComputedCost: boolean;
@@ -42,12 +42,12 @@ export function ProductCostStatusPanel({
         <p className="mt-1">
           {autoCostReadinessReason
             ? `Falta completar: ${autoCostReadinessReason}`
-            : "Se actualiza automaticamente con proveedor primario y entradas."}
+            : "Se actualiza automáticamente con proveedor primario y entradas."}
         </p>
       ) : hasRecipe ? (
         <p className="mt-1">Se actualiza desde receta y lotes en FOGO (ingredientes / rendimiento).</p>
       ) : (
-        <p className="mt-1">Modo manual activo. Puedes volver a automatico cuando quieras.</p>
+        <p className="mt-1">Modo manual activo. Puedes volver a automático cuando quieras.</p>
       )}
     </div>
   );
