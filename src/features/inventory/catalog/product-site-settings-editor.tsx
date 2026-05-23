@@ -89,6 +89,62 @@ function inferSiteKind(site: SiteOption): SiteKind {
   return "satellite";
 }
 
+function getKnownProductionLocationLabel(value: string | null | undefined): string | null {
+  const normalized = normalizeText(value).replace(/[_\s]+/g, "-");
+  if (!normalized) return null;
+
+  const tokens = normalized
+    .split(/[-/\\]+/)
+    .map((token) => token.trim())
+    .filter(Boolean);
+
+  if (
+    tokens.includes("coc") ||
+    tokens.includes("cocina") ||
+    tokens.includes("kitchen")
+  ) {
+    return "Cocina";
+  }
+
+  if (
+    tokens.includes("bar") ||
+    tokens.includes("barra")
+  ) {
+    return "Barra";
+  }
+
+  if (
+    tokens.includes("mos") ||
+    tokens.includes("mostrador") ||
+    tokens.includes("counter")
+  ) {
+    return "Mostrador";
+  }
+
+  return null;
+}
+
+function humanizeProductionLocationLabel(value: string | null | undefined): string {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "LOC sin nombre";
+
+  return raw
+    .replace(/^LOC[-_\s]*/i, "")
+    .replace(/[-_]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase()
+    .replace(/\b\w/g, (letter) => letter.toUpperCase());
+}
+
+function formatProductionLocationLabel(location: ProductionLocationOption): string {
+  return (
+    getKnownProductionLocationLabel(location.zone) ??
+    getKnownProductionLocationLabel(location.code) ??
+    humanizeProductionLocationLabel(location.zone || location.code || location.id)
+  );
+}
+
 export function ProductSiteSettingsEditor({
   name = "site_settings_lines",
   initialRows,
@@ -432,8 +488,7 @@ export function ProductSiteSettingsEditor({
               <option value="">Sin definir</option>
               {centerProductionLocationOptions.map((location) => (
                 <option key={location.id} value={location.id}>
-                  {location.code}
-                  {location.zone ? ` (${location.zone})` : ""}
+                  {formatProductionLocationLabel(location)}
                 </option>
               ))}
             </select>
@@ -659,7 +714,7 @@ export function ProductSiteSettingsEditor({
                         </div>
                       ) : (
                         <div className="mt-2 rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-[var(--ui-muted)]">
-                          Este producto podrá estar disponible en la sede y en VISO, pero no aparecerá en el formulario de remisiónes.
+                          Este producto podrá estar disponible en la sede y en VISO, pero no aparecerá en el formulario de remisiones.
                         </div>
                       )}
                     </div>
@@ -674,8 +729,7 @@ export function ProductSiteSettingsEditor({
                         <option value="">Sin definir</option>
                         {satelliteProductionLocationOptions.map((location) => (
                           <option key={location.id} value={location.id}>
-                            {location.code}
-                            {location.zone ? ` (${location.zone})` : ""}
+                            {formatProductionLocationLabel(location)}
                           </option>
                         ))}
                       </select>
