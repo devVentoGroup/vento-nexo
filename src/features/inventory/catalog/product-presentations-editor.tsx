@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useMemo, useState } from "react";
+import { useMemo, useState, type MouseEvent } from "react";
 
 import { ProductImageUpload } from "@/features/inventory/catalog/product-image-upload";
 
@@ -46,6 +46,7 @@ type Props = {
   suggestedRows?: ProductPresentationSuggestion[];
   existingImageUrls?: string[];
   returnHref: string;
+  requiresRemissionDefault?: boolean;
 };
 
 function createEmptyRow(stockUnitCode: string, key: string): EditableRow {
@@ -113,6 +114,7 @@ export function ProductPresentationsEditor({
   suggestedRows = [],
   existingImageUrls = [],
   returnHref,
+  requiresRemissionDefault = false,
 }: Props) {
   const [rows, setRows] = useState<EditableRow[]>(() =>
     initialRows.length > 0
@@ -125,6 +127,8 @@ export function ProductPresentationsEditor({
       : [createEmptyRow(stockUnitCode, "new-0")]
   );
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
+
+  const [clientError, setClientError] = useState("");
 
   const rowKeys = useMemo(() => rows.map((row) => row.key), [rows]);
 
@@ -178,6 +182,50 @@ export function ProductPresentationsEditor({
     setRows((current) => current.filter((item) => item.key !== row.key));
   }
 
+  function handleSaveClick(event: MouseEvent<HTMLButtonElement>) {
+    setClientError("");
+
+    const form = event.currentTarget.closest("form");
+    if (!form) return;
+
+    if (!form.reportValidity()) return;
+
+    const formData = new FormData(form);
+    let activeDefaultCount = 0;
+
+    for (const row of rows) {
+      const prefix = `presentation_${row.key}`;
+      const label =
+        String(formData.get(`${prefix}_label`) ?? "").trim() ||
+        `Presentación ${rows.indexOf(row) + 1}`;
+      const isDefault = formData.has(`${prefix}_is_default`);
+      const isActive = formData.has(`${prefix}_is_active`);
+
+      if (isDefault && !isActive) {
+        setClientError(`La presentación "${label}" no puede ser mínima si está inactiva.`);
+        return;
+      }
+
+      if (isDefault && isActive) {
+        activeDefaultCount += 1;
+      }
+    }
+
+    if (requiresRemissionDefault && activeDefaultCount === 0) {
+      setClientError(
+        "Este producto está activo para remisión en al menos un satélite. Marca una presentación activa como unidad mínima para solicitud/remisión antes de guardar."
+      );
+      return;
+    }
+
+    if (activeDefaultCount > 1) {
+      setClientError("Solo puede haber una presentación mínima activa para solicitud/remisión.");
+      return;
+    }
+
+    form.requestSubmit();
+  }
+
   return (
     <div className="space-y-6">
       <div className="ui-panel ui-remission-section">
@@ -186,8 +234,8 @@ export function ProductPresentationsEditor({
             <div className="ui-caption">Presentaciones físicas</div>
             <h2 className="ui-h2">{productName}</h2>
             <p className="mt-2 ui-body-muted">
-              Administra las formas físicas en las que existe este producto en bodega. La unidad mínima para
-              solicitud/remisión define cómo se pide; bodega puede preparar con cualquier presentación activa equivalente.
+              Administra las formas físicas en las que existe este producto en bodega, inventario por LOC y quiosco.
+              La unidad mínima para solicitud/remisión solo es obligatoria cuando el producto está activo para remisiones.
             </p>
           </div>
 
@@ -199,6 +247,12 @@ export function ProductPresentationsEditor({
 
       <input type="hidden" name="presentation_keys" value={JSON.stringify(rowKeys)} readOnly />
       <input type="hidden" name="deleted_presentation_ids" value={JSON.stringify(deletedIds)} readOnly />
+
+      {clientError ? (
+        <div className="ui-alert ui-alert--error" role="alert">
+          {clientError}
+        </div>
+      ) : null}
 
       {availableSuggestedRows.length > 0 ? (
         <div className="rounded-[28px] border border-amber-200 bg-amber-50 p-4">
@@ -330,7 +384,11 @@ export function ProductPresentationsEditor({
                           name={`${fieldPrefix}_is_default`}
                           defaultChecked={Boolean(row.is_default)}
                         />
-                        <span className="ui-label">Unidad mínima para solicitud/remisión</span>
+                        <span className="ui-label">
+                          {requiresRemissionDefault
+                            ? "Unidad mínima para solicitud/remisión"
+                            : "Presentación predeterminada opcional"}
+                        </span>
                       </label>
 
                       <label className="flex items-center gap-2">
@@ -344,8 +402,9 @@ export function ProductPresentationsEditor({
                     </div>
 
                     <p className="text-xs text-[var(--ui-muted)]">
-                      En remisiones se pide por la unidad mínima. En bodega/retiro se puede preparar o retirar con
-                      cualquier presentación física activa equivalente.
+                      {requiresRemissionDefault
+                        ? "Este producto está activo para remisión en al menos un satélite. Debe tener una unidad mínima activa para solicitud/remisión."
+                        : "Opcional. Esta presentación puede usarse como referencia visual o predeterminada para bodega, inventario por LOC y quiosco."}
                     </p>
                   </div>
                 </div>
@@ -378,7 +437,7 @@ export function ProductPresentationsEditor({
           Agregar presentación
         </button>
 
-        <button type="submit" className="ui-btn ui-btn--brand">
+        <button type="button" onClick={handleSaveClick} className="ui-btn ui-btn--brand">
           Guardar presentaciones
         </button>
       </div>

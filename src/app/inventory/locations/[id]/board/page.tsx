@@ -602,18 +602,21 @@ export default async function LocationBoardPage({
     const categoryId = String(product?.category_id ?? "").trim();
     const categoryPath = getCategoryPath(categoryId, categoryMap);
     const categoryLabel = categoryPath.split(" / ").at(-1) || "Sin categoria";
+    const presentationParts = presentationPartsByProduct.get(row.product_id) ?? [];
+    const presentationImageUrl =
+      presentationParts.find((part) => String(part.imageUrl ?? "").trim())?.imageUrl ?? "";
 
     return {
       productId: row.product_id,
       name: product?.name ?? row.product_id,
-      imageUrl: product?.image_url || product?.catalog_image_url || "",
+      imageUrl: presentationImageUrl || product?.image_url || product?.catalog_image_url || "",
       qty,
       unit,
       categoryId,
       categoryLabel,
       categoryPath,
       internalLocationLabel: compactLocationLabel(internalLocationLabelsByProduct.get(row.product_id) ?? []),
-      presentationParts: presentationPartsByProduct.get(row.product_id) ?? [],
+      presentationParts,
     };
   });
 

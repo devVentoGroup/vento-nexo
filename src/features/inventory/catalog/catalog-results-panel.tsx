@@ -13,6 +13,7 @@ export type PurchaseSuggestionRow = {
 export type CatalogResultRow = {
   id: string;
   name: string;
+  imageUrl?: string;
   sku: string;
   categoryPath: string;
   categoryLabel: string;
@@ -63,6 +64,28 @@ const TABLE_ACTION_BUTTON_CLASS =
   "ui-btn ui-btn--ghost ui-btn--sm min-w-[104px] justify-center shrink-0";
 const TABLE_DELETE_BUTTON_CLASS =
   "ui-btn ui-btn--ghost ui-btn--sm min-w-[104px] justify-center shrink-0 text-red-600 border-red-200 hover:bg-red-50 hover:text-red-700";
+function CatalogProductImage({ src, name }: { src?: string; name: string }) {
+  const imageUrl = String(src ?? "").trim();
+
+  return (
+    <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)]">
+      {imageUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img
+          src={imageUrl}
+          alt={name}
+          className="h-full w-full object-cover"
+          loading="lazy"
+          decoding="async"
+        />
+      ) : (
+        <span className="px-1 text-center text-[10px] font-bold text-[var(--ui-muted)]">
+          Sin foto
+        </span>
+      )}
+    </div>
+  );
+}
 
 export function CatalogResultsPanel({
   activeTab: _activeTab,
@@ -236,8 +259,16 @@ export function CatalogResultsPanel({
             {filteredRows.map((row) => (
               <tr key={row.id} className="border-t border-zinc-200/60">
                 <td className="py-2.5 pr-4">
-                  <div className="max-w-[220px] truncate" title={row.name}>
-                    {row.name}
+                  <div className="flex max-w-[280px] items-center gap-3">
+                    <CatalogProductImage src={row.imageUrl} name={row.name} />
+                    <div className="min-w-0">
+                      <div className="truncate font-semibold text-[var(--ui-text)]" title={row.name}>
+                        {row.name}
+                      </div>
+                      <div className="mt-0.5 truncate text-xs text-[var(--ui-muted)]" title={row.sku}>
+                        SKU {row.sku}
+                      </div>
+                    </div>
                   </div>
                 </td>
                 {viewMode === "catalogo" ? (

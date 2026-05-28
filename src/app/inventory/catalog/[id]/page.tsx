@@ -5,7 +5,6 @@ import { ProductCostStatusPanel } from "@/features/inventory/catalog/product-cos
 import { ProductFormFooter } from "@/features/inventory/catalog/product-form-footer";
 import { ProductIdentityFields } from "@/features/inventory/catalog/product-identity-fields";
 import { ProductAssetTechnicalSection } from "@/features/inventory/catalog/product-asset-technical-section";
-import { ProductPhotoSection } from "@/features/inventory/catalog/product-photo-section";
 import { ProductPurchaseSection } from "@/features/inventory/catalog/product-purchase-section";
 import { ProductSiteAvailabilitySection } from "@/features/inventory/catalog/product-site-availability-section";
 import { ProductStorageFields } from "@/features/inventory/catalog/product-storage-fields";
@@ -104,8 +103,6 @@ type ProductRow = {
   price: number | null;
   cost: number | null;
   is_active: boolean | null;
-  image_url: string | null;
-  catalog_image_url: string | null;
 };
 
 type InventoryProfileRow = {
@@ -638,11 +635,7 @@ async function updateProduct(formData: FormData) {
     product_type: productTypeValue,
     price: asNullableNumber(formData.get("price")),
     is_active: Boolean(formData.get("is_active")),
-    image_url: asText(formData.get("image_url")) || null,
   };
-  if (formData.has("catalog_image_url")) {
-    payload.catalog_image_url = asText(formData.get("catalog_image_url")) || null;
-  }
   if (manualCost != null) {
     payload.cost = manualCost;
   }
@@ -1346,7 +1339,7 @@ export default async function ProductCatalogDetailPage({
 
   const { data: product } = await supabase
     .from("products")
-    .select("id,name,description,sku,unit,stock_unit_code,product_type,category_id,price,cost,is_active,image_url,catalog_image_url")
+    .select("id,name,description,sku,unit,stock_unit_code,product_type,category_id,price,cost,is_active")
     .eq("id", id)
     .maybeSingle();
 
@@ -1554,20 +1547,6 @@ export default async function ProductCatalogDetailPage({
 
   const { data: suppliersData } = await supabase.from("suppliers").select("id,name").eq("is_active", true).order("name");
   const suppliersList = (suppliersData ?? []) as { id: string; name: string | null }[];
-
-  const { data: galleryProductsData } = await supabase
-    .from("products")
-    .select("image_url,catalog_image_url")
-    .or("image_url.not.is.null,catalog_image_url.not.is.null")
-    .limit(300);
-  const existingImageUrls = Array.from(
-    new Set(
-      ((galleryProductsData ?? []) as Array<{ image_url: string | null; catalog_image_url: string | null }>)
-        .flatMap((row) => [row.image_url, row.catalog_image_url])
-        .map((value) => String(value ?? "").trim())
-        .filter(Boolean)
-    )
-  );
 
   // Recipe data (for preparacion and venta)
   const productType = (product as ProductRow).product_type;
@@ -1966,20 +1945,6 @@ export default async function ProductCatalogDetailPage({
               units={unitsList}
               stockUnitCode={stockUnitCode}
               stockUnitFieldId={STOCK_UNIT_FIELD_ID}
-            />
-
-            <ProductPhotoSection
-              description={
-                isAssetItem
-                  ? "Imagen principal para identificar rápidamente el equipo o activo en catálogo y ficha técnica."
-                  : "Imagen principal para identificar rápidamente el item en catálogo y listados."
-              }
-              currentUrl={productRow.image_url}
-              existingImageUrls={existingImageUrls}
-              productId={productRow.id}
-              sectionTitle={isAssetItem ? "Foto del equipo / activo" : "Foto del producto"}
-              uploadLabel={isAssetItem ? "Foto del equipo" : "Foto del producto"}
-              collapsible
             />
 
             {isAssetItem ? (

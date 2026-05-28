@@ -71,6 +71,8 @@ type ProductRow = {
   product_type: string;
   category_id: string | null;
   is_active: boolean | null;
+  image_url: string | null;
+  catalog_image_url: string | null;
   product_inventory_profiles?: {
     track_inventory: boolean;
     inventory_kind: string;
@@ -100,6 +102,17 @@ type ProductSiteSettingRow = {
   product_id: string;
   is_active: boolean | null;
   min_stock_qty: number | null;
+};
+
+type ProductPresentationImageRow = {
+  product_id: string;
+  image_url: string | null;
+  catalog_image_url: string | null;
+  is_default: boolean | null;
+  is_active: boolean | null;
+  usage_context: string | null;
+  source: string | null;
+  updated_at: string | null;
 };
 
 type StockBySiteRow = {
@@ -163,6 +176,25 @@ function getLastCategorySegment(path: string): string {
   if (!normalized) return "-";
   const segments = normalized.split("/").map((segment) => segment.trim()).filter(Boolean);
   return segments[segments.length - 1] ?? normalized;
+}
+
+function profileImageUrl(row: ProductPresentationImageRow): string {
+  return String(row.image_url ?? row.catalog_image_url ?? "").trim();
+}
+
+function profileImageRank(row: ProductPresentationImageRow): number {
+  const usageContext = String(row.usage_context ?? "").trim().toLowerCase();
+  const source = String(row.source ?? "").trim().toLowerCase();
+
+  let rank = 0;
+
+  if (row.is_active !== false) rank += 100;
+  if (row.is_default === true) rank += 50;
+  if (usageContext === "general") rank += 20;
+  if (source === "manual") rank += 10;
+  if (profileImageUrl(row)) rank += 5;
+
+  return rank;
 }
 
 function toBase64UrlJson(value: unknown): string {
@@ -387,9 +419,9 @@ export default async function InventoryCatalogPage({
 
   const siteId = String(
     sp.site_id ??
-      (settings as { selected_site_id?: string | null } | null)?.selected_site_id ??
-      (employee as { site_id?: string | null } | null)?.site_id ??
-      ""
+    (settings as { selected_site_id?: string | null } | null)?.selected_site_id ??
+    (employee as { site_id?: string | null } | null)?.site_id ??
+    ""
   ).trim();
   const requestedCategorySiteId = String(sp.category_site_id ?? siteId).trim();
   const defaultScope = requestedCategorySiteId ? "site" : "all";
@@ -469,7 +501,7 @@ export default async function InventoryCatalogPage({
     let productsQuery = supabase
       .from("products")
       .select(
-        "id,name,sku,cost,unit,stock_unit_code,product_type,category_id,is_active,product_inventory_profiles(track_inventory,inventory_kind,costing_mode)"
+        "id,name,sku,cost,unit,stock_unit_code,product_type,category_id,is_active,image_url,catalog_image_url,product_inventory_profiles(track_inventory,inventory_kind,costing_mode)"
       )
       .order("name", { ascending: true })
       .limit(1200);
@@ -510,7 +542,13 @@ export default async function InventoryCatalogPage({
   }
 
   const productIds = productRows.map((product) => product.id);
-  const [{ data: unitsData }, { data: supplierCostData }, siteSettingsRes, { data: stockBySiteData }] = await Promise.all([
+  const [
+    { data: unitsData },
+    { data: supplierCostData },
+    siteSettingsRes,
+    { data: stockBySiteData },
+    { data: presentationImagesData },
+  ] = await Promise.all([
     supabase
       .from("inventory_units")
       .select("code,name,family,factor_to_base,symbol,display_decimals,is_active")
@@ -518,26 +556,34 @@ export default async function InventoryCatalogPage({
       .limit(500),
     productIds.length
       ? supabase
-          .from("product_suppliers")
-          .select(
-            "product_id,supplier_id,is_primary,purchase_pack_qty,purchase_pack_unit_code,purchase_unit,purchase_price,purchase_price_net,purchase_price_includes_tax,purchase_tax_rate"
-          )
-          .in("product_id", productIds)
+        .from("product_suppliers")
+        .select(
+          "product_id,supplier_id,is_primary,purchase_pack_qty,purchase_pack_unit_code,purchase_unit,purchase_price,purchase_price_net,purchase_price_includes_tax,purchase_tax_rate"
+        )
+        .in("product_id", productIds)
       : Promise.resolve({ data: [] as ProductSupplierCostRow[] }),
     siteId && productIds.length
       ? supabase
-          .from("product_site_settings")
-          .select("product_id,is_active,min_stock_qty")
-          .eq("site_id", siteId)
-          .in("product_id", productIds)
+        .from("product_site_settings")
+        .select("product_id,is_active,min_stock_qty")
+        .eq("site_id", siteId)
+        .in("product_id", productIds)
       : Promise.resolve({ data: [] as ProductSiteSettingRow[], error: null }),
     siteId && productIds.length
       ? supabase
-          .from("inventory_stock_by_site")
-          .select("product_id,current_qty")
-          .eq("site_id", siteId)
-          .in("product_id", productIds)
+        .from("inventory_stock_by_site")
+        .select("product_id,current_qty")
+        .eq("site_id", siteId)
+        .in("product_id", productIds)
       : Promise.resolve({ data: [] as StockBySiteRow[] }),
+    productIds.length
+      ? supabase
+        .from("product_uom_profiles")
+        .select("product_id,image_url,catalog_image_url,is_default,is_active,usage_context,source,updated_at")
+        .in("product_id", productIds)
+        .eq("is_active", true)
+        .or("image_url.not.is.null,catalog_image_url.not.is.null")
+      : Promise.resolve({ data: [] as ProductPresentationImageRow[] }),
   ]);
   const unitMap = createUnitMap((unitsData ?? []) as UnitRow[]);
   let siteSettingsData = (siteSettingsRes.data ?? []) as ProductSiteSettingRow[];
@@ -571,11 +617,11 @@ export default async function InventoryCatalogPage({
       (normalizedType === "venta" && normalizedInventoryKind === "resale");
     const reason = hasSuppliers
       ? getAutoCostReadinessReason({
-          costingMode: profile?.costing_mode ?? "manual",
-          stockUnitCode: normalizeUnitCode(product.stock_unit_code || product.unit || ""),
-          primarySupplier: primarySupplierByProduct.get(product.id) ?? null,
-          unitMap,
-        })
+        costingMode: profile?.costing_mode ?? "manual",
+        stockUnitCode: normalizeUnitCode(product.stock_unit_code || product.unit || ""),
+        primarySupplier: primarySupplierByProduct.get(product.id) ?? null,
+        unitMap,
+      })
       : null;
     autoCostReasonByProduct.set(product.id, reason);
   }
@@ -593,6 +639,24 @@ export default async function InventoryCatalogPage({
   for (const row of (stockBySiteData ?? []) as StockBySiteRow[]) {
     if (!row.product_id || stockByProduct.has(row.product_id)) continue;
     stockByProduct.set(row.product_id, row);
+  }
+
+  const presentationImageByProduct = new Map<string, string>();
+  const sortedPresentationImages = [...((presentationImagesData ?? []) as ProductPresentationImageRow[])]
+    .filter((row) => row.product_id && profileImageUrl(row))
+    .sort((a, b) => {
+      const rankDiff = profileImageRank(b) - profileImageRank(a);
+      if (rankDiff !== 0) return rankDiff;
+
+      const bTime = new Date(String(b.updated_at ?? "")).getTime();
+      const aTime = new Date(String(a.updated_at ?? "")).getTime();
+
+      return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+    });
+
+  for (const row of sortedPresentationImages) {
+    if (presentationImageByProduct.has(row.product_id)) continue;
+    presentationImageByProduct.set(row.product_id, profileImageUrl(row));
   }
 
   const stockMetricsByProduct = new Map<
@@ -776,31 +840,29 @@ export default async function InventoryCatalogPage({
   const toolbarActions = canCreateProducts
     ? activeTab === "productos"
       ? [
-          { href: "/inventory/catalog/new?type=venta", label: "+ Producto de venta", tone: "brand" as const },
-          { href: "/inventory/catalog/new?type=reventa", label: "+ Producto de reventa", tone: "ghost" as const },
-        ]
+        { href: "/inventory/catalog/new?type=venta", label: "+ Producto de venta", tone: "brand" as const },
+        { href: "/inventory/catalog/new?type=reventa", label: "+ Producto de reventa", tone: "ghost" as const },
+      ]
       : [
-          {
-            href: `/inventory/catalog/new?type=${
-              activeTab === "insumos"
-                ? "insumo"
-                : activeTab === "preparaciones"
-                  ? "preparacion"
-                  : "asset"
+        {
+          href: `/inventory/catalog/new?type=${activeTab === "insumos"
+            ? "insumo"
+            : activeTab === "preparaciones"
+              ? "preparacion"
+              : "asset"
             }`,
-            label: `+ Crear ${
-              activeTab === "insumos"
-                ? "insumo"
-                : activeTab === "preparaciones"
-                  ? "preparacion"
-                  : "equipo"
+          label: `+ Crear ${activeTab === "insumos"
+            ? "insumo"
+            : activeTab === "preparaciones"
+              ? "preparacion"
+              : "equipo"
             }`,
-            tone: "brand" as const,
-          },
-          ...(activeTab === "insumos"
-            ? [{ href: "/api/inventory/catalog/export-suppliers", label: "Descargar Excel de insumos", tone: "ghost" as const }]
-            : []),
-        ]
+          tone: "brand" as const,
+        },
+        ...(activeTab === "insumos"
+          ? [{ href: "/api/inventory/catalog/export-suppliers", label: "Descargar Excel de insumos", tone: "ghost" as const }]
+          : []),
+      ]
     : [];
 
   const catalogResultRows: CatalogResultRow[] = visibleProducts.map((product) => {
@@ -831,20 +893,20 @@ export default async function InventoryCatalogPage({
     const rowPrefill =
       siteId && primarySupplier?.supplier_id && stockMetrics.missingQty && stockMetrics.missingQty > 0
         ? toBase64UrlJson({
-            supplier_id: primarySupplier.supplier_id,
-            site_id: siteId,
-            notes: "Borrador generado desde Nexo por bajo stock mínimo.",
-            lines: [
-              {
-                product_id: product.id,
-                quantity: Math.max(0.001, Math.round(stockMetrics.missingQty * 1000) / 1000),
-                unit_cost: asFiniteNumber(primarySupplier.purchase_price) ?? 0,
-                unit: normalizeUnitCode(
-                  primarySupplier.purchase_pack_unit_code || product.stock_unit_code || product.unit || "un"
-                ) || null,
-              },
-            ],
-          })
+          supplier_id: primarySupplier.supplier_id,
+          site_id: siteId,
+          notes: "Borrador generado desde Nexo por bajo stock mínimo.",
+          lines: [
+            {
+              product_id: product.id,
+              quantity: Math.max(0.001, Math.round(stockMetrics.missingQty * 1000) / 1000),
+              unit_cost: asFiniteNumber(primarySupplier.purchase_price) ?? 0,
+              unit: normalizeUnitCode(
+                primarySupplier.purchase_pack_unit_code || product.stock_unit_code || product.unit || "un"
+              ) || null,
+            },
+          ],
+        })
         : "";
     const rowOrigoHref = rowPrefill
       ? `https://origo.ventogroup.co/purchase-orders/new?prefill=${encodeURIComponent(rowPrefill)}`
@@ -890,6 +952,9 @@ export default async function InventoryCatalogPage({
     return {
       id: product.id,
       name: product.name ?? "-",
+      imageUrl:
+        presentationImageByProduct.get(product.id) ||
+        String(product.image_url ?? product.catalog_image_url ?? "").trim(),
       sku: product.sku ?? "-",
       categoryPath,
       categoryLabel,

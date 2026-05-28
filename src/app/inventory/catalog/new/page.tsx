@@ -13,7 +13,6 @@ import { ProductFormFooter } from "@/features/inventory/catalog/product-form-foo
 import { ProductIdentityFields } from "@/features/inventory/catalog/product-identity-fields";
 import { ProductInternalBreakdownFields } from "@/features/inventory/catalog/product-internal-breakdown-fields";
 import { ProductAssetTechnicalSection } from "@/features/inventory/catalog/product-asset-technical-section";
-import { ProductPhotoSection } from "@/features/inventory/catalog/product-photo-section";
 import { ProductRemissionUomFields } from "@/features/inventory/catalog/product-remission-uom-fields";
 import { ProductSiteAvailabilitySection } from "@/features/inventory/catalog/product-site-availability-section";
 import { ProductStorageFields } from "@/features/inventory/catalog/product-storage-fields";
@@ -548,12 +547,8 @@ async function createProduct(formData: FormData) {
     category_id: categoryId || null,
     price: formData.get("price") ? Number(formData.get("price")) : null,
     cost: explicitCost,
-    image_url: asText(formData.get("image_url")) || null,
     is_active: true,
   };
-  if (formData.has("catalog_image_url")) {
-    productPayload.catalog_image_url = asText(formData.get("catalog_image_url")) || null;
-  }
 
   let createdProductId = "";
   let dedupedByRequestKey = false;
@@ -1478,20 +1473,6 @@ export default async function NewProductPage({
     .limit(500);
   const unitsList = (unitsData ?? []) as UnitRow[];
 
-  const { data: galleryProductsData } = await supabase
-    .from("products")
-    .select("image_url,catalog_image_url")
-    .or("image_url.not.is.null,catalog_image_url.not.is.null")
-    .limit(300);
-  const existingImageUrls = Array.from(
-    new Set(
-      ((galleryProductsData ?? []) as Array<{ image_url: string | null; catalog_image_url: string | null }>)
-        .flatMap((row) => [row.image_url, row.catalog_image_url])
-        .map((value) => String(value ?? "").trim())
-        .filter(Boolean)
-    )
-  );
-
   const defaultStockUnitCode = unitsList[0]?.code ?? "un";
   const defaultUnitOptions = unitsList;
 
@@ -1724,21 +1705,6 @@ export default async function NewProductPage({
             </div>
           </CatalogOptionalDetails>
         )}
-
-        <ProductPhotoSection
-          description={
-            typeKey === "asset"
-              ? "Imagen visual para identificar rápido el equipo o activo en listados y ficha técnica."
-              : "Imagen visual para identificar rápido el producto o insumo en listados y ficha."
-          }
-          currentUrl={null}
-          existingImageUrls={existingImageUrls}
-          productId={`draft-${typeKey}`}
-          sectionTitle={typeKey === "asset" ? "Foto del equipo / activo" : "Foto del producto"}
-          uploadLabel={typeKey === "asset" ? "Foto del equipo" : "Foto del producto"}
-          footerText="Si no subes fotos ahora, puedes cargarlas después desde la ficha de edición."
-          collapsible
-        />
 
         {typeKey === "asset" ? (
           <ProductAssetTechnicalSection

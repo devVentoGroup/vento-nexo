@@ -54,6 +54,17 @@ type SupplierPresentationRow = {
   is_primary: boolean | null;
 };
 
+type ProductRemissionSiteSettingRow = {
+  is_active: boolean | null;
+  remission_enabled: boolean | null;
+  sites?: { site_type: string | null } | { site_type: string | null }[] | null;
+};
+
+function settingBelongsToSatellite(row: ProductRemissionSiteSettingRow): boolean {
+  const site = Array.isArray(row.sites) ? row.sites[0] : row.sites;
+  return String(site?.site_type ?? "").trim().toLowerCase() === "satellite";
+}
+
 function asText(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -208,6 +219,20 @@ async function saveProductPresentations(formData: FormData) {
     redirectWithError("No se encontró el producto.");
   }
 
+  const { data: remissionSettingsData, error: remissionSettingsError } = await supabase
+    .from("product_site_settings")
+    .select("is_active,remission_enabled,sites(site_type)")
+    .eq("product_id", productId)
+    .eq("is_active", true)
+    .eq("remission_enabled", true);
+
+  if (remissionSettingsError) {
+    redirectWithError(remissionSettingsError.message);
+  }
+
+  const requiresRemissionDefault = ((remissionSettingsData ?? []) as ProductRemissionSiteSettingRow[])
+    .some(settingBelongsToSatellite);
+
   const keys = parseJsonArray(asText(formData.get("presentation_keys")));
   const deletedIds = parseJsonArray(asText(formData.get("deleted_presentation_ids")));
 
@@ -261,17 +286,19 @@ async function saveProductPresentations(formData: FormData) {
 
   const defaultPhysicalPresentations = rows.filter((row) => row.isDefault && row.isActive);
 
-  if (defaultPhysicalPresentations.length === 0) {
-    redirectWithError("Selecciona una unidad mínima activa para solicitud/remisión.");
+  if (requiresRemissionDefault && defaultPhysicalPresentations.length === 0) {
+    redirectWithError(
+      "Este producto está activo para remisión en al menos un satélite. Selecciona una presentación mínima activa para solicitud/remisión."
+    );
   }
 
   if (defaultPhysicalPresentations.length > 1) {
-    redirectWithError("Solo puede haber una unidad mínima activa para solicitud/remisión.");
+    redirectWithError("Solo puede haber una presentación mínima activa para solicitud/remisión.");
   }
 
   for (const row of rows) {
     if (row.isDefault && !row.isActive) {
-      redirectWithError(`La presentación "${row.label}" no puede ser unidad mínima si está inactiva.`);
+      redirectWithError(`La presentación "${row.label}" no puede ser mínima si está inactiva.`);
     }
   }
 
@@ -355,8 +382,7 @@ export default async function ProductPresentationsPage({
     { data: unitsData },
     { data: uomProfileData },
     { data: supplierLinksData },
-    { data: galleryProductsData },
-    { data: galleryProfileData },
+    { data: remissionSettingsData },
   ] = await Promise.all([
     supabase
       .from("product_inventory_profiles")
@@ -384,15 +410,11 @@ export default async function ProductPresentationsPage({
       .eq("product_id", id)
       .order("is_primary", { ascending: false }),
     supabase
-      .from("products")
-      .select("image_url,catalog_image_url")
-      .or("image_url.not.is.null,catalog_image_url.not.is.null")
-      .limit(300),
-    supabase
-      .from("product_uom_profiles")
-      .select("image_url,catalog_image_url")
-      .or("image_url.not.is.null,catalog_image_url.not.is.null")
-      .limit(300),
+      .from("product_site_settings")
+      .select("is_active,remission_enabled,sites(site_type)")
+      .eq("product_id", id)
+      .eq("is_active", true)
+      .eq("remission_enabled", true),
   ]);
 
   const profile = (profileData ?? null) as InventoryProfileRow | null;
@@ -416,15 +438,15 @@ export default async function ProductPresentationsPage({
     catalog_image_url: row.catalog_image_url ?? "",
   }));
 
+  const requiresRemissionDefault = ((remissionSettingsData ?? []) as ProductRemissionSiteSettingRow[])
+    .some(settingBelongsToSatellite);
+
   const existingImageUrls = Array.from(
     new Set(
       [
         product.image_url,
         product.catalog_image_url,
-        ...((galleryProductsData ?? []) as Array<{ image_url: string | null; catalog_image_url: string | null }>)
-          .flatMap((row) => [row.image_url, row.catalog_image_url]),
-        ...((galleryProfileData ?? []) as Array<{ image_url: string | null; catalog_image_url: string | null }>)
-          .flatMap((row) => [row.image_url, row.catalog_image_url]),
+        ...presentationRows.flatMap((row) => [row.image_url, row.catalog_image_url]),
       ]
         .map((value) => String(value ?? "").trim())
         .filter(Boolean)
@@ -453,6 +475,7 @@ export default async function ProductPresentationsPage({
           suggestedRows={supplierPresentationSuggestions}
           existingImageUrls={existingImageUrls}
           returnHref={returnHref}
+          requiresRemissionDefault={requiresRemissionDefault}
         />
       </RequiredFieldsGuardForm>
 
