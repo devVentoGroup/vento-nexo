@@ -201,13 +201,6 @@ async function readBooleanAppSetting(
   return typeof data?.bool_value === "boolean" ? data.bool_value : fallback;
 }
 
-function sanitizeRemissionsReturnPath(value: string): string {
-  const decoded = safeDecodeURIComponent(value);
-  return decoded.startsWith("/inventory/remissions")
-    ? decoded
-    : "/inventory/remissions";
-}
-
 async function loadProductSiteRows(
   supabase: Awaited<ReturnType<typeof createClient>>,
   siteId: string
@@ -396,72 +389,6 @@ function toFriendlyRemissionActionError(rawMessage: string): string {
     return "No tienes permisos para ejecutar esta acción sobre la remisión.";
   }
   return "No se pudo completar la acción sobre la remisión. Intenta nuevamente.";
-}
-
-async function toggleRemissionInventoryPosting(formData: FormData) {
-  "use server";
-
-  const supabase = await createClient();
-  const { data: userRes } = await supabase.auth.getUser();
-  const user = userRes.user ?? null;
-
-  if (!user) {
-    redirect(await buildShellLoginUrl("/inventory/remissions"));
-  }
-
-  const { data: employee } = await supabase
-    .from("employees")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  const actualRole = String(employee?.role ?? "");
-
-  const canManage = await checkPermissionWithRoleOverride({
-    supabase,
-    appId: APP_ID,
-    code: PERMISSIONS.remissionsCancel,
-    actualRole,
-  });
-
-  if (!canManage) {
-    redirect(
-      "/inventory/remissions?error=" +
-      encodeURIComponent("No tienes permisos para cambiar la conexión con inventario.")
-    );
-  }
-
-  const nextEnabled = asText(formData.get("enabled")) === "true";
-  const returnTo = sanitizeRemissionsReturnPath(asText(formData.get("return_to")));
-
-  const { error } = await supabase.from("app_runtime_settings").upsert(
-    {
-      app_id: APP_ID,
-      setting_key: REMISSIONS_INVENTORY_POSTING_SETTING_KEY,
-      bool_value: nextEnabled,
-      updated_at: new Date().toISOString(),
-      updated_by: user.id,
-    },
-    {
-      onConflict: "app_id,setting_key",
-    }
-  );
-
-  if (error) {
-    redirect(
-      `${returnTo}${returnTo.includes("?") ? "&" : "?"}error=${encodeURIComponent(
-        "No se pudo actualizar el switch de inventario."
-      )}`
-    );
-  }
-
-  redirect(
-    `${returnTo}${returnTo.includes("?") ? "&" : "?"}ok=${encodeURIComponent(
-      nextEnabled
-        ? "Remisiones conectadas a inventario real."
-        : "Remisiones operando sin afectar inventario real."
-    )}`
-  );
 }
 
 async function runRemissionListAction(formData: FormData) {
@@ -1150,10 +1077,6 @@ export default async function RemissionsPage({
     const hash = opts?.hash ? `#${opts.hash}` : "";
     return `/inventory/remissions${qs ? `?${qs}` : ""}${hash}`;
   };
-  const currentHubHref = buildHubHref({
-    showCreate: showCreatePanel,
-    hash: showCreatePanel ? "nueva-remision" : undefined,
-  });
   let remissionsQuery = supabase
     .from("restock_requests")
     .select(
@@ -1620,8 +1543,8 @@ export default async function RemissionsPage({
               </div>
               <div className="mt-1 text-sm text-[var(--ui-muted)]">
                 {inventoryPostingEnabled
-                  ? "Las remisiones pueden validar stock, mostrar faltantes y usar reversas de inventario."
-                  : "Las remisiones operan como solicitudes/alistamientos. No validan disponibilidad ni afectan inventario real."}
+                  ? "Inventario conectado desde configuración. Las remisiones pueden validar stock, mostrar faltantes y usar reversas."
+                  : "Inventario desconectado desde configuración. Las remisiones operan como solicitudes/alistamientos sin afectar inventario real."}
               </div>
             </div>
 
@@ -1637,26 +1560,12 @@ export default async function RemissionsPage({
               </span>
 
               {canManageRemissionActions ? (
-                <form action={toggleRemissionInventoryPosting}>
-                  <input
-                    type="hidden"
-                    name="enabled"
-                    value={inventoryPostingEnabled ? "false" : "true"}
-                  />
-                  <input type="hidden" name="return_to" value={currentHubHref} />
-                  <button
-                    type="submit"
-                    className={
-                      inventoryPostingEnabled
-                        ? "ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
-                        : "ui-btn ui-btn--brand h-11 px-4 text-sm font-semibold"
-                    }
-                  >
-                    {inventoryPostingEnabled
-                      ? "Desconectar inventario"
-                      : "Conectar inventario"}
-                  </button>
-                </form>
+                <Link
+                  href="/inventory/settings/remissions"
+                  className="ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
+                >
+                  Cambiar en configuración
+                </Link>
               ) : null}
             </div>
           </div>

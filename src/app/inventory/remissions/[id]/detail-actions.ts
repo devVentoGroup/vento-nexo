@@ -50,7 +50,35 @@ async function isRemissionInventoryPostingEnabled(
     false
   );
 }
+async function ensureOperationalTransitReady(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  requestId: string;
+}): Promise<boolean> {
+  const { supabase, requestId } = params;
 
+  const { data: itemsData, error } = await supabase
+    .from("restock_request_items")
+    .select("quantity,prepared_quantity,shipped_quantity")
+    .eq("request_id", requestId);
+
+  if (error) return false;
+
+  const rows = (itemsData ?? []) as Array<{
+    quantity: number | null;
+    prepared_quantity: number | null;
+    shipped_quantity: number | null;
+  }>;
+
+  if (rows.length === 0) return false;
+
+  return rows.every((row) => {
+    const requestedQty = roundQuantity(Number(row.quantity ?? 0));
+    const preparedQty = roundQuantity(Number(row.prepared_quantity ?? 0));
+    const shippedQty = roundQuantity(Number(row.shipped_quantity ?? 0));
+
+    return requestedQty <= 0 || Math.max(preparedQty, shippedQty) > 0;
+  });
+}
 async function ensureReceiveSignature(params: {
   supabase: Awaited<ReturnType<typeof createClient>>;
   requestId: string;
@@ -198,6 +226,57 @@ export async function updateItems(formData: FormData) {
     inventoryPostingEnabled &&
     allowPrepared &&
     access.fromSiteType === "production_center";
+  if (allowPrepared) {
+    for (let i = 0; i < itemIds.length; i += 1) {
+      const itemId = itemIds[i];
+      const itemState = itemStateById.get(itemId);
+      if (!itemState) continue;
+
+      const prepQty = parseNumber(prepared[i] ?? "0");
+      const shipQty = parseNumber(shipped[i] ?? "0");
+      const requestedQty = roundQuantity(Number(itemState.quantity ?? 0));
+
+      if (prepQty < 0 || shipQty < 0) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: "Preparado y enviado no pueden ser negativos.",
+          })
+        );
+      }
+
+      if (requestedQty > 0 && prepQty > requestedQty) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: `Cantidad preparada (${prepQty}) mayor que solicitada (${requestedQty}).`,
+          })
+        );
+      }
+
+      if (requestedQty > 0 && shipQty > requestedQty) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: `Cantidad enviada (${shipQty}) mayor que solicitada (${requestedQty}).`,
+          })
+        );
+      }
+
+      if (shipQty > prepQty) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: `Cantidad enviada (${shipQty}) no puede superar la preparada (${prepQty}).`,
+          })
+        );
+      }
+    }
+  }
 
   if (inventoryPostingEnabled && allowPrepared && fromSiteId) {
     const { data: stockRows } = await supabase
@@ -240,42 +319,6 @@ export async function updateItems(formData: FormData) {
       const prepQty = parseNumber(prepared[i] ?? "0");
       const shipQty = parseNumber(shipped[i] ?? "0");
       const requestedQty = roundQuantity(Number(itemState?.quantity ?? 0));
-      if (prepQty < 0 || shipQty < 0) {
-        redirect(
-          buildRemissionDetailHref({
-            requestId,
-            from: returnOrigin,
-            error: "Preparado y enviado no pueden ser negativos.",
-          })
-        );
-      }
-      if (requestedQty > 0 && prepQty > requestedQty) {
-        redirect(
-          buildRemissionDetailHref({
-            requestId,
-            from: returnOrigin,
-            error: `Cantidad preparada (${prepQty}) mayor que solicitada (${requestedQty}).`,
-          })
-        );
-      }
-      if (requestedQty > 0 && shipQty > requestedQty) {
-        redirect(
-          buildRemissionDetailHref({
-            requestId,
-            from: returnOrigin,
-            error: `Cantidad enviada (${shipQty}) mayor que solicitada (${requestedQty}).`,
-          })
-        );
-      }
-      if (shipQty > prepQty) {
-        redirect(
-          buildRemissionDetailHref({
-            requestId,
-            from: returnOrigin,
-            error: `Cantidad enviada (${shipQty}) no puede superar la preparada (${prepQty}).`,
-          })
-        );
-      }
       const maxQty = Math.max(prepQty, shipQty);
       if (maxQty > available) {
         redirect(
@@ -664,13 +707,17 @@ export async function submitTransitChecklist(formData: FormData) {
   }
   const summary = operationalSummary as RemissionOperationalSummary;
 
-  if (inventoryPostingEnabled && !summary.can_transit) {
+  const canTransitNow = inventoryPostingEnabled
+    ? Boolean(summary.can_transit)
+    : await ensureOperationalTransitReady({ supabase, requestId });
+
+  if (!canTransitNow) {
     redirect(
       buildRemissionDetailHref({
         requestId,
         from: returnOrigin,
         siteId: activeSiteId,
-        error: "La remisión aún no está lista para pasar a tránsito.",
+        error: "Completa la preparación de todas las líneas antes de despachar.",
       })
     );
   }
@@ -1268,30 +1315,6 @@ export async function updateStatus(formData: FormData) {
   }
 
   const summary = operationalSummary as RemissionOperationalSummary;
-  const operationalTransitReady = async () => {
-    const { data: itemsData, error } = await supabase
-      .from("restock_request_items")
-      .select("quantity,prepared_quantity,shipped_quantity")
-      .eq("request_id", requestId);
-
-    if (error) return false;
-
-    const rows = (itemsData ?? []) as Array<{
-      quantity: number | null;
-      prepared_quantity: number | null;
-      shipped_quantity: number | null;
-    }>;
-
-    if (rows.length === 0) return false;
-
-    return rows.every((row) => {
-      const requestedQty = roundQuantity(Number(row.quantity ?? 0));
-      const preparedQty = roundQuantity(Number(row.prepared_quantity ?? 0));
-      const shippedQty = roundQuantity(Number(row.shipped_quantity ?? 0));
-      return requestedQty <= 0 || Math.max(preparedQty, shippedQty) > 0;
-    });
-  };
-
   if (action === "prepare" && !access.canPrepare) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "No puedes preparar." }));
   }
@@ -1397,8 +1420,8 @@ export async function updateStatus(formData: FormData) {
   }
   if (action === "transit") {
     const canTransitNow = inventoryPostingEnabled
-      ? summary.can_transit
-      : await operationalTransitReady();
+      ? Boolean(summary.can_transit)
+      : await ensureOperationalTransitReady({ supabase, requestId });
 
     if (!canTransitNow) {
       redirect(
