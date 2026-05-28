@@ -574,6 +574,12 @@ export default async function ProductTechnicalSheetPage({
       (normalizedCategoryPath.includes("equipo") || normalizedCategoryPath.includes("equipos")));
 
   const presentationRows = [...uomProfiles]
+    .filter((row) => {
+      const source = String(row.source ?? "").trim().toLowerCase();
+      const usageContext = String(row.usage_context ?? "").trim().toLowerCase();
+
+      return source === "manual" && usageContext !== "purchase";
+    })
     .sort((a, b) => {
       const rankDiff = uomProfileDisplayRank(b) - uomProfileDisplayRank(a);
       if (rankDiff !== 0) return rankDiff;
@@ -606,6 +612,7 @@ export default async function ProductTechnicalSheetPage({
     "";
 
   const imageUrl = presentationImageUrl || product.catalog_image_url || product.image_url || null;
+  const hasPresentationGallery = presentationRows.length >= 2;
   const primarySupplier = supplierRows.find((row) => Boolean(row.is_primary)) ?? null;
   const secondarySuppliers = supplierRows.filter((row) => !Boolean(row.is_primary));
 
@@ -950,7 +957,7 @@ export default async function ProductTechnicalSheetPage({
         </div>
       </section>
 
-      <section className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+      <section className={hasPresentationGallery ? "grid gap-4" : "grid gap-4 lg:grid-cols-[1.2fr_0.8fr]"}>
         <article className="ui-panel">
           <div className="text-sm font-semibold text-[var(--ui-text)]">Identidad del producto</div>
           <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -979,37 +986,35 @@ export default async function ProductTechnicalSheetPage({
           </div>
         </article>
 
-        <article className="ui-panel">
-          <div className="text-sm font-semibold text-[var(--ui-text)]">
-            {isAsset ? "Foto del equipo / activo" : "Foto"}
-          </div>
-          <div className="mt-3 overflow-hidden rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)]">
-            {imageUrl ? (
-              <img
-                src={imageUrl}
-                alt={product.name ?? "Producto"}
-                className="h-[260px] w-full object-cover"
-              />
-            ) : (
-              <div className="flex h-[260px] items-center justify-center text-sm text-[var(--ui-muted)]">
-                Sin imagen
-              </div>
-            )}
-          </div>
-        </article>
+        {!hasPresentationGallery ? (
+          <article className="ui-panel">
+            <div className="text-sm font-semibold text-[var(--ui-text)]">
+              {isAsset ? "Foto del equipo / activo" : "Foto"}
+            </div>
+            <div className="mt-3 overflow-hidden rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)]">
+              {imageUrl ? (
+                <img
+                  src={imageUrl}
+                  alt={product.name ?? "Producto"}
+                  className="h-[260px] w-full object-cover"
+                />
+              ) : (
+                <div className="flex h-[260px] items-center justify-center text-sm text-[var(--ui-muted)]">
+                  Sin imagen
+                </div>
+              )}
+            </div>
+          </article>
+        ) : null}
       </section>
 
-      <article className="ui-panel">
-        <div className="flex items-center justify-between gap-2">
-          <div className="text-sm font-semibold text-[var(--ui-text)]">Presentaciones del producto</div>
-          <div className="ui-caption">{presentationRows.length} presentación(es)</div>
-        </div>
+      {hasPresentationGallery ? (
+        <article className="ui-panel">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-sm font-semibold text-[var(--ui-text)]">Presentaciones del producto</div>
+            <div className="ui-caption">{presentationRows.length} presentación(es)</div>
+          </div>
 
-        {presentationRows.length === 0 ? (
-          <p className="mt-3 text-sm text-[var(--ui-muted)]">
-            Este producto todavía no tiene presentaciones físicas registradas.
-          </p>
-        ) : (
           <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {presentationRows.map((row) => (
               <div
@@ -1065,8 +1070,8 @@ export default async function ProductTechnicalSheetPage({
               </div>
             ))}
           </div>
-        )}
-      </article>
+        </article>
+      ) : null}
 
       {isAsset ? (
         <section className="space-y-4">
