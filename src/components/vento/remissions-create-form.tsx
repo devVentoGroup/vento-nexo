@@ -47,6 +47,7 @@ type Props = {
   areaOptions: AreaOption[];
   defaultAreaKind?: string;
   originStockRows?: OriginStockReference[];
+  inventoryPostingEnabled?: boolean;
   initialExpectedDate?: string;
   initialNotes?: string;
   initialRows?: RemissionDraftRow[];
@@ -68,6 +69,7 @@ export function RemissionsCreateForm({
   areaOptions,
   defaultAreaKind: defaultAreaKindProp = "",
   originStockRows = [],
+  inventoryPostingEnabled = true,
   initialExpectedDate = "",
   initialNotes = "",
   initialRows,
@@ -197,14 +199,21 @@ export function RemissionsCreateForm({
           } catch {
             quantityInStock = Number.isFinite(qty) ? qty : 0;
           }
-          const referenceMeta = selectedOriginStockByProduct[row.productId] ?? null;
+          const referenceMeta = inventoryPostingEnabled
+            ? selectedOriginStockByProduct[row.productId] ?? null
+            : null;
           const availableReference = Number(referenceMeta?.currentQty ?? 0);
-          const hasReferenceShortage = quantityInStock > availableReference;
-          if (hasReferenceShortage) {
-            acc.referenceShortageRows += 1;
-          } else {
-            acc.referenceCoveredRows += 1;
+          const hasReferenceShortage =
+            inventoryPostingEnabled && quantityInStock > availableReference;
+
+          if (inventoryPostingEnabled) {
+            if (hasReferenceShortage) {
+              acc.referenceShortageRows += 1;
+            } else {
+              acc.referenceCoveredRows += 1;
+            }
           }
+
           acc.items.push({
             id: row.id,
             name: product?.name ?? "",
@@ -249,7 +258,15 @@ export function RemissionsCreateForm({
       referenceCoveredRows: summary.referenceCoveredRows,
       totalQuantity: summary.items.reduce((sum, item) => sum + item.quantity, 0),
     };
-  }, [areaOptions, draftRows, products, selectedOriginStockByProduct, siteMode, uomProfileById]);
+  }, [
+    areaOptions,
+    draftRows,
+    inventoryPostingEnabled,
+    products,
+    selectedOriginStockByProduct,
+    siteMode,
+    uomProfileById,
+  ]);
 
   const selectedItems = draftSummary.items;
   const canSubmit =
@@ -388,10 +405,18 @@ export function RemissionsCreateForm({
           </div>
           <div className="flex flex-wrap gap-2">
             <span className="ui-chip">{selectedItems.length} item(s)</span>
-            {draftSummary.referenceShortageRows > 0 ? (
-              <span className="ui-chip ui-chip--warn">{draftSummary.referenceShortageRows} con faltante</span>
+            {inventoryPostingEnabled ? (
+              draftSummary.referenceShortageRows > 0 ? (
+                <span className="ui-chip ui-chip--warn">
+                  {draftSummary.referenceShortageRows} con faltante
+                </span>
+              ) : (
+                <span className="ui-chip ui-chip--success">
+                  {draftSummary.referenceCoveredRows} cubiertos
+                </span>
+              )
             ) : (
-              <span className="ui-chip ui-chip--success">{draftSummary.referenceCoveredRows} cubiertos</span>
+              <span className="ui-chip">Sin impacto en inventario</span>
             )}
           </div>
         </div>
@@ -406,8 +431,8 @@ export function RemissionsCreateForm({
             lockAreaKind={Boolean(defaultAreaKindProp)}
             defaultUomProfiles={defaultUomProfiles}
             onRowsChange={setDraftRows}
-            referenceStockByProduct={selectedOriginStockByProduct}
-            referenceSiteName={selectedFromSite?.name ?? ""}
+            referenceStockByProduct={inventoryPostingEnabled ? selectedOriginStockByProduct : {}}
+            referenceSiteName={inventoryPostingEnabled ? selectedFromSite?.name ?? "" : ""}
             initialRows={normalizedInitialRows}
           />
         </div>
@@ -424,9 +449,15 @@ export function RemissionsCreateForm({
           </div>
         ) : null}
 
-        {selectedFromSite && draftSummary.referenceShortageRows > 0 ? (
+        {inventoryPostingEnabled && selectedFromSite && draftSummary.referenceShortageRows > 0 ? (
           <div className="ui-alert ui-alert--warn mt-4">
             {draftSummary.referenceShortageRows} item(s) superan el stock referencial de {selectedFromSite.name}.
+          </div>
+        ) : null}
+
+        {!inventoryPostingEnabled ? (
+          <div className="ui-alert ui-alert--neutral mt-4">
+            Esta remisión funciona como solicitud operativa. No valida disponibilidad ni afecta inventario real.
           </div>
         ) : null}
       </section>

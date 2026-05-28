@@ -41,6 +41,8 @@ import { buildPrepareFingerprintHash } from "./prepare-fingerprint";
 
 export const dynamic = "force-dynamic";
 const APP_ID = "nexo";
+const REMISSIONS_INVENTORY_POSTING_SETTING_KEY =
+  "remissions.inventory_posting_enabled";
 
 type TraceEmployeeRow = {
   id: string;
@@ -51,6 +53,22 @@ type TraceEmployeeRow = {
 function displayTraceEmployee(employee?: TraceEmployeeRow | null): string {
   if (!employee) return "-";
   return String(employee.alias ?? employee.full_name ?? employee.id).trim() || employee.id;
+}
+
+async function readBooleanAppSetting(
+  supabase: Awaited<ReturnType<typeof requireAppAccess>>["supabase"],
+  settingKey: string,
+  fallback: boolean
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("app_runtime_settings")
+    .select("bool_value")
+    .eq("app_id", APP_ID)
+    .eq("setting_key", settingKey)
+    .maybeSingle();
+
+  if (error) return fallback;
+  return typeof data?.bool_value === "boolean" ? data.bool_value : fallback;
 }
 
 export default async function RemissionDetailPage({
@@ -122,6 +140,12 @@ export default async function RemissionDetailPage({
       : `/inventory/remissions/${id}`,
   });
 
+  const inventoryPostingEnabled = await readBooleanAppSetting(
+    supabase,
+    REMISSIONS_INVENTORY_POSTING_SETTING_KEY,
+    false
+  );
+
   const { data: request } = await supabase
     .from("restock_requests")
     .select("*")
@@ -140,7 +164,9 @@ export default async function RemissionDetailPage({
 
   const itemRows = (items ?? []) as unknown as RestockItemRow[];
   const showSourceLocSelector =
-    access.canPrepare && access.fromSiteType === "production_center";
+    inventoryPostingEnabled &&
+    access.canPrepare &&
+    access.fromSiteType === "production_center";
   const { data: operationalSummary, error: operationalSummaryError } =
     await loadRemissionOperationalSummary({
       supabase,
@@ -160,16 +186,27 @@ export default async function RemissionDetailPage({
   const summary = operationalSummary as RemissionOperationalSummary;
 
   const fromSiteId = request?.from_site_id ?? "";
+
+  const originStockContext = inventoryPostingEnabled
+    ? await loadOriginStockContext({
+      supabase,
+      fromSiteId,
+    })
+    : ({
+      stockBySiteMap: new Map<string, number>(),
+      stockByLocValueMap: new Map<string, number>(),
+      stockByLocCandidates: new Map<string, never[]>(),
+      originLocRows: [] as LocRow[],
+      originLocById: new Map<string, LocRow>(),
+    } as Awaited<ReturnType<typeof loadOriginStockContext>>);
+
   const {
     stockBySiteMap,
     stockByLocValueMap,
     stockByLocCandidates,
     originLocRows,
     originLocById,
-  } = await loadOriginStockContext({
-    supabase,
-    fromSiteId,
-  });
+  } = originStockContext;
   const lineIdsByProduct = new Map<string, string[]>();
   for (const item of itemRows) {
     if (!lineIdsByProduct.has(item.product_id)) lineIdsByProduct.set(item.product_id, []);
@@ -199,9 +236,9 @@ export default async function RemissionDetailPage({
   );
   const { data: traceEmployeesData } = traceEmployeeIds.length
     ? await supabase
-        .from("employees")
-        .select("id,full_name,alias")
-        .in("id", traceEmployeeIds)
+      .from("employees")
+      .select("id,full_name,alias")
+      .in("id", traceEmployeeIds)
     : { data: [] as TraceEmployeeRow[] };
   const traceEmployeeMap = new Map(
     ((traceEmployeesData ?? []) as TraceEmployeeRow[]).map((employee) => [
@@ -245,14 +282,46 @@ export default async function RemissionDetailPage({
     const targetQty = plannedQty > 0 ? plannedQty : requestedQty;
     const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
     const bestLocQty = stockByLocCandidates.get(item.product_id)?.[0]?.qty ?? 0;
-    return canEditPrepareItems && targetQty > 0 && targetQty <= availableSite && bestLocQty < targetQty;
+
+    return (
+      inventoryPostingEnabled &&
+      canEditPrepareItems &&
+      targetQty > 0 &&
+      targetQty <= availableSite &&
+      bestLocQty < targetQty
+    );
   }).length;
-  const dispatchReadyLines = summary.dispatch_ready_lines;
-  const dispatchBlockedLines = summary.dispatch_blocked_lines;
-  const pendingLocSelectionLines = summary.pending_loc_selection_lines;
+  const operationalPreparedLines = itemRows.filter((item) => {
+    const preparedQty = roundQuantity(Number(item.prepared_quantity ?? 0));
+    const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
+    return Math.max(preparedQty, shippedQty) > 0;
+  }).length;
+
+  const operationalBlockedLines = itemRows.filter((item) => {
+    const requestedQty = roundQuantity(Number(item.quantity ?? 0));
+    const preparedQty = roundQuantity(Number(item.prepared_quantity ?? 0));
+    const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
+    return requestedQty > 0 && Math.max(preparedQty, shippedQty) <= 0;
+  }).length;
+
+  const dispatchReadyLines = inventoryPostingEnabled
+    ? summary.dispatch_ready_lines
+    : operationalPreparedLines;
+
+  const dispatchBlockedLines = inventoryPostingEnabled
+    ? summary.dispatch_blocked_lines
+    : operationalBlockedLines;
+
+  const pendingLocSelectionLines = inventoryPostingEnabled
+    ? summary.pending_loc_selection_lines
+    : 0;
+
+  const canTransitByCurrentInventoryMode = inventoryPostingEnabled
+    ? summary.can_transit
+    : operationalPreparedLines > 0 && operationalBlockedLines === 0;
   const canStartPreparationNow =
     access.canPrepare && currentStatus === "pending" && summary.can_start_prepare;
-  const canTransitNow = canTransitAction && summary.can_transit;
+  const canTransitNow = canTransitAction && canTransitByCurrentInventoryMode;
   const isConductorTransitReview = !canEditPrepareItems && canTransitAction;
   const isReceiveDestinationFlow = canEditReceiveItems && !canEditPrepareItems;
   const isReceiveFirstPass = isReceiveDestinationFlow && currentStatus === "in_transit";
@@ -587,9 +656,16 @@ export default async function RemissionDetailPage({
         </div>
       ) : null}
 
-      {lowStockWarning ? (
+      {inventoryPostingEnabled && lowStockWarning ? (
         <div className="ui-alert ui-alert--warn ui-fade-up ui-delay-1">
           Algunos productos pueden no tener stock suficiente en Centro. Bodega verificara al preparar.
+        </div>
+      ) : null}
+
+      {!inventoryPostingEnabled ? (
+        <div className="ui-alert ui-alert--neutral ui-fade-up ui-delay-1">
+          Inventario desconectado: esta remisión opera como solicitud, alistamiento, despacho y recepción.
+          No valida disponibilidad, no exige LOC de origen y no afecta inventario real.
         </div>
       ) : null}
 

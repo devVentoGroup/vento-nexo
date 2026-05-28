@@ -7,6 +7,9 @@ import { createClient } from "@/lib/supabase/server";
 import { safeDecodeURIComponent } from "@/lib/url";
 
 export const dynamic = "force-dynamic";
+const APP_ID = "nexo";
+const REMISSIONS_INVENTORY_POSTING_SETTING_KEY =
+  "remissions.inventory_posting_enabled";
 
 type SiteRow = {
   id: string;
@@ -25,6 +28,10 @@ type SiteRuleRow = {
   area_kind: string | null;
   purpose: string | null;
   is_enabled: boolean | null;
+};
+
+type RuntimeSettingRow = {
+  bool_value: boolean | null;
 };
 
 function asText(value: FormDataEntryValue | null) {
@@ -147,6 +154,42 @@ async function clearSiteOverride(formData: FormData) {
   );
 }
 
+async function saveInventoryPostingSetting(formData: FormData) {
+  "use server";
+
+  const returnTo = "/inventory/settings/remissions";
+  const { supabase } = await requireRemissionSettingsManager(returnTo);
+
+  const enabled = asText(formData.get("inventory_posting_enabled")) === "true";
+
+  const { data: authRes } = await supabase.auth.getUser();
+  const user = authRes.user ?? null;
+
+  const { error } = await supabase.from("app_runtime_settings").upsert(
+    {
+      app_id: APP_ID,
+      setting_key: REMISSIONS_INVENTORY_POSTING_SETTING_KEY,
+      bool_value: enabled,
+      updated_at: new Date().toISOString(),
+      updated_by: user?.id ?? null,
+    },
+    {
+      onConflict: "app_id,setting_key",
+    }
+  );
+
+  if (error) {
+    redirect("/inventory/settings/remissions?error=" + encodeURIComponent(error.message));
+  }
+
+  revalidatePath("/inventory/settings/remissions");
+  revalidatePath("/inventory/remissions");
+  revalidatePath("/inventory/remissions/prepare");
+  revalidatePath("/inventory/remissions/transit");
+
+  redirect("/inventory/settings/remissions?ok=inventory_saved");
+}
+
 export default async function RemissionsSettingsPage({
   searchParams,
 }: {
@@ -154,17 +197,19 @@ export default async function RemissionsSettingsPage({
 }) {
   const sp = (await searchParams) ?? {};
   const okMsg =
-    sp.ok === "global_saved"
-      ? "Propósito global de remisiones actualizado."
-      : sp.ok === "site_saved"
-        ? "Override por sede guardado."
-        : sp.ok === "site_reset"
-          ? "Override eliminado. La sede usa configuración global."
-          : "";
+    sp.ok === "inventory_saved"
+      ? "Conexión de remisiones con inventario actualizada."
+      : sp.ok === "global_saved"
+        ? "Áreas globales de remisión actualizadas."
+        : sp.ok === "site_saved"
+          ? "Excepción por sede guardada."
+          : sp.ok === "site_reset"
+            ? "Excepción eliminada. La sede usa configuración global."
+            : "";
   const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
 
   const { supabase, user } = await requireAppAccess({
-    appId: "nexo",
+    appId: APP_ID,
     returnTo: "/inventory/settings/remissions",
   });
 
@@ -182,7 +227,12 @@ export default async function RemissionsSettingsPage({
     );
   }
 
-  const [{ data: sitesData }, { data: areaKindsData }, { data: rulesData }] = await Promise.all([
+  const [
+    { data: sitesData },
+    { data: areaKindsData },
+    { data: rulesData },
+    { data: inventoryPostingSettingData },
+  ] = await Promise.all([
     supabase
       .from("sites")
       .select("id,name,site_type")
@@ -197,11 +247,24 @@ export default async function RemissionsSettingsPage({
       .from("site_area_purpose_rules")
       .select("site_id,area_kind,purpose,is_enabled")
       .eq("purpose", "remission"),
+    supabase
+      .from("app_runtime_settings")
+      .select("bool_value")
+      .eq("app_id", APP_ID)
+      .eq("setting_key", REMISSIONS_INVENTORY_POSTING_SETTING_KEY)
+      .maybeSingle(),
   ]);
 
   const sites = (sitesData ?? []) as SiteRow[];
   const areaKinds = (areaKindsData ?? []) as AreaKindRow[];
   const siteRules = (rulesData ?? []) as SiteRuleRow[];
+  const inventoryPostingSetting =
+    inventoryPostingSettingData as RuntimeSettingRow | null;
+
+  const inventoryPostingEnabled =
+    typeof inventoryPostingSetting?.bool_value === "boolean"
+      ? inventoryPostingSetting.bool_value
+      : false;
   const globalEnabledSet = new Set(
     areaKinds
       .filter((kind) => Boolean(kind.use_for_remission))
@@ -225,14 +288,30 @@ export default async function RemissionsSettingsPage({
   const siteEnabledKinds = hasOverride
     ? new Set(rulesBySite[selectedSiteId] ?? [])
     : globalEnabledSet;
+  const globalEnabledAreaLabels = areaKinds
+    .filter((kind) => globalEnabledSet.has(String(kind.code ?? "").trim()))
+    .map((kind) => kind.name ?? kind.code)
+    .filter(Boolean);
+
+  const siteEnabledAreaLabels = areaKinds
+    .filter((kind) => siteEnabledKinds.has(String(kind.code ?? "").trim()))
+    .map((kind) => kind.name ?? kind.code)
+    .filter(Boolean);
+
+  const selectedSiteTypeLabel =
+    selectedSite?.site_type === "production_center"
+      ? "Centro de producción"
+      : selectedSite?.site_type === "satellite"
+        ? "Satélite"
+        : selectedSite?.site_type || "Sin tipo";
 
   return (
     <div className="w-full">
       <div className="flex items-start justify-between gap-4">
         <div>
-          <h1 className="ui-h1">Configuración maestra de remisiones</h1>
+          <h1 className="ui-h1">Configuración de remisiones</h1>
           <p className="mt-2 ui-body-muted">
-            Define áreas por propósito y overrides por sede. Esta vista reemplaza reglas hardcodeadas.
+            Controla cómo operan las remisiones: si afectan inventario real y qué áreas puede usar cada sede.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -249,9 +328,103 @@ export default async function RemissionsSettingsPage({
       {okMsg ? <div className="mt-6 ui-alert ui-alert--success">{okMsg}</div> : null}
 
       <div className="mt-6 ui-panel">
-        <div className="ui-h3">Propósito global · Remisiones</div>
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="ui-h3">Estado operativo</div>
+            <p className="mt-1 text-sm text-[var(--ui-muted)]">
+              Este es el control principal. Afecta creación, preparación, despacho, recepción y reversas.
+            </p>
+          </div>
+
+          <span
+            className={
+              inventoryPostingEnabled
+                ? "ui-chip ui-chip--success"
+                : "ui-chip ui-chip--warn"
+            }
+          >
+            {inventoryPostingEnabled ? "Inventario conectado" : "Inventario desconectado"}
+          </span>
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <div className="text-sm font-semibold text-[var(--ui-text)]">
+                Remisiones afectan inventario real
+              </div>
+              <p className="mt-1 max-w-3xl text-sm text-[var(--ui-muted)]">
+                {inventoryPostingEnabled
+                  ? "Las remisiones pueden validar stock, exigir LOC, descontar al despachar, sumar al recibir y permitir reversas."
+                  : "Las remisiones funcionan como solicitudes operativas. No validan disponibilidad, no exigen LOC y no descuentan ni suman inventario."}
+              </p>
+            </div>
+
+            <form action={saveInventoryPostingSetting}>
+              <input
+                type="hidden"
+                name="inventory_posting_enabled"
+                value={inventoryPostingEnabled ? "false" : "true"}
+              />
+              <button
+                type="submit"
+                className={
+                  inventoryPostingEnabled
+                    ? "ui-btn ui-btn--ghost"
+                    : "ui-btn ui-btn--brand"
+                }
+              >
+                {inventoryPostingEnabled ? "Desconectar inventario" : "Conectar inventario"}
+              </button>
+            </form>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 ui-panel">
+        <div className="ui-h3">Configuración actual</div>
         <p className="mt-1 text-sm text-[var(--ui-muted)]">
-          Si una sede no tiene override, usa esta lista global.
+          Resumen de lo que está activo ahora. Esta sección es solo lectura.
+        </p>
+
+        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
+            <div className="ui-caption">Áreas globales activas</div>
+            <div className="mt-2 text-sm font-semibold text-[var(--ui-text)]">
+              {globalEnabledAreaLabels.length
+                ? globalEnabledAreaLabels.join(", ")
+                : "Ninguna área global activa"}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
+            <div className="ui-caption">Sede seleccionada</div>
+            <div className="mt-2 text-sm font-semibold text-[var(--ui-text)]">
+              {selectedSite?.name ?? "Sin sede seleccionada"}
+            </div>
+            <div className="mt-1 text-xs text-[var(--ui-muted)]">
+              {selectedSiteTypeLabel}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
+            <div className="ui-caption">Áreas efectivas para la sede</div>
+            <div className="mt-2 text-sm font-semibold text-[var(--ui-text)]">
+              {siteEnabledAreaLabels.length
+                ? siteEnabledAreaLabels.join(", ")
+                : "Ninguna área activa para esta sede"}
+            </div>
+            <div className="mt-1 text-xs text-[var(--ui-muted)]">
+              {hasOverride ? "Usa excepción propia" : "Usa configuración global"}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-6 ui-panel">
+        <div className="ui-h3">Configuración avanzada · Áreas globales</div>
+        <p className="mt-1 text-sm text-[var(--ui-muted)]">
+          Estas áreas aplican a todas las sedes que no tengan una excepción propia.
         </p>
         <form action={saveGlobalPurpose} className="mt-4 space-y-3">
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
@@ -268,15 +441,15 @@ export default async function RemissionsSettingsPage({
             ))}
           </div>
           <button type="submit" className="ui-btn ui-btn--brand">
-            Guardar global
+            Guardar áreas globales
           </button>
         </form>
       </div>
 
       <div className="mt-6 ui-panel">
-        <div className="ui-h3">Override por sede · Remisiones</div>
+        <div className="ui-h3">Configuración avanzada · Excepción por sede</div>
         <p className="mt-1 text-sm text-[var(--ui-muted)]">
-          Configura excepciones por sede. Si limpias override, la sede vuelve a usar el global.
+          Usa esto solo cuando una sede necesite áreas distintas a la configuración global.
         </p>
 
         <form method="get" className="mt-4 flex flex-wrap items-end gap-3">
@@ -299,7 +472,7 @@ export default async function RemissionsSettingsPage({
               {selectedSite.name ?? selectedSite.id}
             </div>
             <div className="mt-1 text-xs text-[var(--ui-muted)]">
-              Estado: {hasOverride ? "Override activo" : "Usando configuración global"}
+              Estado: {hasOverride ? "Excepción activa" : "Usando configuración global"}
             </div>
           </div>
         ) : null}
@@ -322,7 +495,7 @@ export default async function RemissionsSettingsPage({
             </div>
             <div className="flex flex-wrap gap-2">
               <button type="submit" className="ui-btn ui-btn--brand">
-                Guardar override de sede
+                Guardar excepción de sede
               </button>
             </div>
           </form>
@@ -332,7 +505,7 @@ export default async function RemissionsSettingsPage({
           <form action={clearSiteOverride} className="mt-3">
             <input type="hidden" name="site_id" value={selectedSiteId} />
             <button type="submit" className="ui-btn ui-btn--ghost">
-              Limpiar override (usar global)
+              Eliminar excepción y usar global
             </button>
           </form>
         ) : null}

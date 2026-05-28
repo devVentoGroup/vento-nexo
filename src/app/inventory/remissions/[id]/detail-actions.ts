@@ -21,6 +21,35 @@ import {
   toFriendlyRemissionActionError,
 } from "./detail-utils";
 import { buildPrepareFingerprintHash } from "./prepare-fingerprint";
+const APP_ID = "nexo";
+const REMISSIONS_INVENTORY_POSTING_SETTING_KEY =
+  "remissions.inventory_posting_enabled";
+
+async function readBooleanAppSetting(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  settingKey: string,
+  fallback: boolean
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("app_runtime_settings")
+    .select("bool_value")
+    .eq("app_id", APP_ID)
+    .eq("setting_key", settingKey)
+    .maybeSingle();
+
+  if (error) return fallback;
+  return typeof data?.bool_value === "boolean" ? data.bool_value : fallback;
+}
+
+async function isRemissionInventoryPostingEnabled(
+  supabase: Awaited<ReturnType<typeof createClient>>
+): Promise<boolean> {
+  return readBooleanAppSetting(
+    supabase,
+    REMISSIONS_INVENTORY_POSTING_SETTING_KEY,
+    false
+  );
+}
 
 async function ensureReceiveSignature(params: {
   supabase: Awaited<ReturnType<typeof createClient>>;
@@ -61,6 +90,9 @@ async function ensureDestinationReceiptMovements(params: {
   toSiteId?: string | null;
 }) {
   const { supabase, requestId, toSiteId } = params;
+  const inventoryPostingEnabled = await isRemissionInventoryPostingEnabled(supabase);
+  if (!inventoryPostingEnabled) return null;
+
   const siteId = String(toSiteId ?? "").trim();
   if (!siteId) return null;
 
@@ -105,6 +137,7 @@ export async function updateItems(formData: FormData) {
     .single();
 
   const access = await loadAccessContext(supabase, user.id, request);
+  const inventoryPostingEnabled = await isRemissionInventoryPostingEnabled(supabase);
   const currentStatus = String(request?.status ?? "");
   const allowPrepared =
     access.canPrepare && ["pending", "preparing"].includes(currentStatus);
@@ -161,8 +194,12 @@ export async function updateItems(formData: FormData) {
   );
 
   const fromSiteId = request?.from_site_id ?? "";
-  const allowSourceLocation = allowPrepared && access.fromSiteType === "production_center";
-  if (allowPrepared && fromSiteId) {
+  const allowSourceLocation =
+    inventoryPostingEnabled &&
+    allowPrepared &&
+    access.fromSiteType === "production_center";
+
+  if (inventoryPostingEnabled && allowPrepared && fromSiteId) {
     const { data: stockRows } = await supabase
       .from("inventory_stock_by_site")
       .select("product_id,current_qty")
@@ -323,9 +360,10 @@ export async function updateItems(formData: FormData) {
     if (allowPrepared) {
       updates.prepared_quantity = parseNumber(prepared[i] ?? "0");
       updates.shipped_quantity = parseNumber(shipped[i] ?? "0");
-      updates.source_location_id = sourceLocationIds[i] || null;
+      updates.source_location_id = inventoryPostingEnabled
+        ? sourceLocationIds[i] || null
+        : null;
     }
-
     if (allowReceived) {
       updates.received_quantity = parseNumber(received[i] ?? "0");
       updates.shortage_quantity = parseNumber(shortage[i] ?? "0");
@@ -436,6 +474,8 @@ export async function commitPreparationDraft(formData: FormData) {
     .single();
 
   const access = await loadAccessContext(supabase, user.id, request, activeSiteId);
+  const inventoryPostingEnabled = await isRemissionInventoryPostingEnabled(supabase);
+
   if (!access.canPrepare) {
     redirect(
       buildRemissionDetailHref({
@@ -486,13 +526,15 @@ export async function commitPreparationDraft(formData: FormData) {
     const dispatchQty = roundQuantity(Number(line.dispatchQty ?? 0));
     const shortageReason = String(line.shortageReason ?? "").trim();
 
-    if (!lineId || !selectedLocId) {
+    if (!lineId || (inventoryPostingEnabled && !selectedLocId)) {
       redirect(
         buildRemissionDetailHref({
           requestId,
           from: returnOrigin,
           siteId: activeSiteId,
-          error: "Todas las líneas deben tener un área seleccionada.",
+          error: inventoryPostingEnabled
+            ? "Todas las líneas deben tener un área seleccionada."
+            : "No se pudo identificar una línea de preparación.",
         })
       );
     }
@@ -525,7 +567,7 @@ export async function commitPreparationDraft(formData: FormData) {
     const { error: lineErr } = await supabase
       .from("restock_request_items")
       .update({
-        source_location_id: selectedLocId,
+        source_location_id: inventoryPostingEnabled ? selectedLocId : null,
         prepared_quantity: dispatchQty,
         shipped_quantity: dispatchQty,
         notes: noteSuffix,
@@ -592,6 +634,7 @@ export async function submitTransitChecklist(formData: FormData) {
     .eq("id", requestId)
     .single();
   const access = await loadAccessContext(supabase, user.id, request, activeSiteId);
+  const inventoryPostingEnabled = await isRemissionInventoryPostingEnabled(supabase);
   const currentStatus = String(request?.status ?? "");
   if (!access.canTransit || currentStatus !== "preparing") {
     redirect(
@@ -620,7 +663,8 @@ export async function submitTransitChecklist(formData: FormData) {
     );
   }
   const summary = operationalSummary as RemissionOperationalSummary;
-  if (!summary.can_transit) {
+
+  if (inventoryPostingEnabled && !summary.can_transit) {
     redirect(
       buildRemissionDetailHref({
         requestId,
@@ -719,7 +763,7 @@ export async function submitTransitChecklist(formData: FormData) {
     source_location_id: string | null;
   }>;
 
-  if (access.fromSiteType === "production_center") {
+  if (inventoryPostingEnabled && access.fromSiteType === "production_center") {
     const locIds = Array.from(
       new Set(itemRows.map((row) => row.source_location_id).filter(Boolean) as string[])
     );
@@ -867,58 +911,62 @@ export async function submitTransitChecklist(formData: FormData) {
     }
   }
 
-  const { error: moveErr } = await supabase.rpc("apply_restock_shipment", {
-    p_request_id: requestId,
-  });
-  if (moveErr) {
-    redirect(
-      buildRemissionDetailHref({
-        requestId,
-        from: returnOrigin,
-        siteId: activeSiteId,
-        error: moveErr.message,
-      })
-    );
-  }
-
-  for (const deduction of sourceLocDeductions) {
-    if (deduction.uomProfileId && Number(deduction.presentationQty ?? 0) > 0) {
-      const { error: presentationErr } = await supabase.rpc("consume_inventory_stock_by_uom_profile", {
-        p_location_id: deduction.locationId,
-        p_product_id: deduction.productId,
-        p_uom_profile_id: deduction.uomProfileId,
-        p_presentation_qty: deduction.presentationQty,
-        p_base_qty: deduction.qty,
-        p_location_position_id: null,
-      });
-
-      if (presentationErr) {
-        redirect(
-          buildRemissionDetailHref({
-            requestId,
-            from: returnOrigin,
-            siteId: activeSiteId,
-            error: `No se pudo descontar presentacion fisica: ${presentationErr.message}`,
-          })
-        );
-      }
-    }
-
-    const { error: locErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
-      p_location_id: deduction.locationId,
-      p_product_id: deduction.productId,
-      p_delta: -deduction.qty,
+  if (inventoryPostingEnabled) {
+    const { error: moveErr } = await supabase.rpc("apply_restock_shipment", {
+      p_request_id: requestId,
     });
-
-    if (locErr) {
+    if (moveErr) {
       redirect(
         buildRemissionDetailHref({
           requestId,
           from: returnOrigin,
           siteId: activeSiteId,
-          error: `No se pudo actualizar stock del área de origen: ${locErr.message}`,
+          error: moveErr.message,
         })
       );
+    }
+  }
+
+  if (inventoryPostingEnabled) {
+    for (const deduction of sourceLocDeductions) {
+      if (deduction.uomProfileId && Number(deduction.presentationQty ?? 0) > 0) {
+        const { error: presentationErr } = await supabase.rpc("consume_inventory_stock_by_uom_profile", {
+          p_location_id: deduction.locationId,
+          p_product_id: deduction.productId,
+          p_uom_profile_id: deduction.uomProfileId,
+          p_presentation_qty: deduction.presentationQty,
+          p_base_qty: deduction.qty,
+          p_location_position_id: null,
+        });
+
+        if (presentationErr) {
+          redirect(
+            buildRemissionDetailHref({
+              requestId,
+              from: returnOrigin,
+              siteId: activeSiteId,
+              error: `No se pudo descontar presentacion fisica: ${presentationErr.message}`,
+            })
+          );
+        }
+      }
+
+      const { error: locErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
+        p_location_id: deduction.locationId,
+        p_product_id: deduction.productId,
+        p_delta: -deduction.qty,
+      });
+
+      if (locErr) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            siteId: activeSiteId,
+            error: `No se pudo actualizar stock del área de origen: ${locErr.message}`,
+          })
+        );
+      }
     }
   }
 
@@ -1032,6 +1080,18 @@ export async function chooseSourceLoc(formData: FormData) {
   const activeSiteId = asText(formData.get("site_id"));
   if (!user) {
     redirect(await buildShellLoginUrl(buildRemissionDetailHref({ requestId, from: returnOrigin })));
+  }
+
+  const inventoryPostingEnabled = await isRemissionInventoryPostingEnabled(supabase);
+  if (!inventoryPostingEnabled) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        siteId: activeSiteId,
+        ok: "loc_selected",
+      })
+    );
   }
 
   const target = asText(formData.get("choose_loc_target"));
@@ -1195,6 +1255,7 @@ export async function updateStatus(formData: FormData) {
     .single();
 
   const access = await loadAccessContext(supabase, user.id, request, activeSiteId);
+  const inventoryPostingEnabled = await isRemissionInventoryPostingEnabled(supabase);
   const currentStatus = String(request?.status ?? "");
   const { data: operationalSummary, error: operationalSummaryError } =
     await loadRemissionOperationalSummary({
@@ -1207,6 +1268,29 @@ export async function updateStatus(formData: FormData) {
   }
 
   const summary = operationalSummary as RemissionOperationalSummary;
+  const operationalTransitReady = async () => {
+    const { data: itemsData, error } = await supabase
+      .from("restock_request_items")
+      .select("quantity,prepared_quantity,shipped_quantity")
+      .eq("request_id", requestId);
+
+    if (error) return false;
+
+    const rows = (itemsData ?? []) as Array<{
+      quantity: number | null;
+      prepared_quantity: number | null;
+      shipped_quantity: number | null;
+    }>;
+
+    if (rows.length === 0) return false;
+
+    return rows.every((row) => {
+      const requestedQty = roundQuantity(Number(row.quantity ?? 0));
+      const preparedQty = roundQuantity(Number(row.prepared_quantity ?? 0));
+      const shippedQty = roundQuantity(Number(row.shipped_quantity ?? 0));
+      return requestedQty <= 0 || Math.max(preparedQty, shippedQty) > 0;
+    });
+  };
 
   if (action === "prepare" && !access.canPrepare) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "No puedes preparar." }));
@@ -1285,7 +1369,12 @@ export async function updateStatus(formData: FormData) {
   if (action === "prepare" && currentStatus !== "pending") {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "Solo puedes preparar una remision pendiente." }));
   }
-  if (action === "prepare" && access.fromSiteType === "production_center" && !summary.can_start_prepare) {
+  if (
+    inventoryPostingEnabled &&
+    action === "prepare" &&
+    access.fromSiteType === "production_center" &&
+    !summary.can_start_prepare
+  ) {
     if (summary.pending_loc_selection_lines > 0) {
       redirect(
         buildRemissionDetailHref({
@@ -1306,14 +1395,20 @@ export async function updateStatus(formData: FormData) {
   if (action === "transit" && currentStatus !== "preparing") {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "Solo puedes enviar una remision en estado preparando." }));
   }
-  if (action === "transit" && !summary.can_transit) {
-    redirect(
-      buildRemissionDetailHref({
-        requestId,
-        from: returnOrigin,
-        error: "Completa la preparación de todas las líneas antes de despachar.",
-      })
-    );
+  if (action === "transit") {
+    const canTransitNow = inventoryPostingEnabled
+      ? summary.can_transit
+      : await operationalTransitReady();
+
+    if (!canTransitNow) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          error: "Completa la preparación de todas las líneas antes de despachar.",
+        })
+      );
+    }
   }
   if (
     (action === "receive" || action === "receive_partial" || action === "resolve_shortage") &&
@@ -1446,7 +1541,7 @@ export async function updateStatus(formData: FormData) {
     uomProfileId?: string | null;
     presentationQty?: number;
   }> = [];
-  if (action === "transit") {
+  if (inventoryPostingEnabled && action === "transit") {
     const { data: itemsData } = await supabase
       .from("restock_request_items")
       .select("id,product_id,quantity,input_qty,input_uom_profile_id,prepared_quantity,shipped_quantity,source_location_id,stock_unit_code,unit")
@@ -1762,7 +1857,7 @@ export async function updateStatus(formData: FormData) {
     updates.cancelled_at = new Date().toISOString();
   }
 
-  if (action === "transit") {
+  if (inventoryPostingEnabled && action === "transit") {
     const { error: moveErr } = await supabase.rpc("apply_restock_shipment", {
       p_request_id: requestId,
     });
@@ -1816,13 +1911,15 @@ export async function updateStatus(formData: FormData) {
     if (syncError) {
       redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: syncError }));
     }
-    const receiptMoveError = await ensureDestinationReceiptMovements({
-      supabase,
-      requestId,
-      toSiteId: request?.to_site_id,
-    });
-    if (receiptMoveError) {
-      redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: receiptMoveError }));
+    if (inventoryPostingEnabled) {
+      const receiptMoveError = await ensureDestinationReceiptMovements({
+        supabase,
+        requestId,
+        toSiteId: request?.to_site_id,
+      });
+      if (receiptMoveError) {
+        redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: receiptMoveError }));
+      }
     }
   }
 
@@ -1874,6 +1971,7 @@ export async function applyPrepareShortcut(formData: FormData) {
     .single();
 
   const access = await loadAccessContext(supabase, user.id, request, activeSiteId);
+  const inventoryPostingEnabled = await isRemissionInventoryPostingEnabled(supabase);
   const currentStatus = String(request?.status ?? "");
   if (!access.canPrepare || !["pending", "preparing"].includes(currentStatus)) {
     redirect(
@@ -1908,8 +2006,13 @@ export async function applyPrepareShortcut(formData: FormData) {
   const sourceLocId = String(itemRow.source_location_id ?? "").trim();
   const manualPrepareRaw = asText(formData.get("prepare_qty"));
 
-  let availableAtLoc = 0;
-  if (shortcut !== "clear_prepare" && shortcut !== "clear_ship") {
+  let availableAtLoc = Number.MAX_SAFE_INTEGER;
+
+  if (
+    inventoryPostingEnabled &&
+    shortcut !== "clear_prepare" &&
+    shortcut !== "clear_ship"
+  ) {
     if (!sourceLocId) {
       redirect(
         buildRemissionDetailHref({
@@ -2068,7 +2171,11 @@ export async function applyPrepareShortcut(formData: FormData) {
       })
     );
   }
-  if (sourceLocId && Math.max(nextPrepared, nextShipped) > availableAtLoc) {
+  if (
+    inventoryPostingEnabled &&
+    sourceLocId &&
+    Math.max(nextPrepared, nextShipped) > availableAtLoc
+  ) {
     redirect(
       buildRemissionDetailHref({
         requestId,
@@ -2146,6 +2253,7 @@ export async function applyReceiveShortcut(formData: FormData) {
     .single();
 
   const access = await loadAccessContext(supabase, user.id, request, activeSiteId);
+  const inventoryPostingEnabled = await isRemissionInventoryPostingEnabled(supabase);
   const currentStatus = String(request?.status ?? "");
   if (!access.canReceive || !["in_transit", "partial"].includes(currentStatus)) {
     redirect(
@@ -2275,13 +2383,15 @@ export async function applyReceiveShortcut(formData: FormData) {
   if (syncError) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: syncError }));
   }
-  const receiptMoveError = await ensureDestinationReceiptMovements({
-    supabase,
-    requestId,
-    toSiteId: request?.to_site_id,
-  });
-  if (receiptMoveError) {
-    redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: receiptMoveError }));
+  if (inventoryPostingEnabled) {
+    const receiptMoveError = await ensureDestinationReceiptMovements({
+      supabase,
+      requestId,
+      toSiteId: request?.to_site_id,
+    });
+    if (receiptMoveError) {
+      redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: receiptMoveError }));
+    }
   }
   const signatureError = await ensureReceiveSignature({
     supabase,
@@ -2355,6 +2465,7 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
     .single();
 
   const access = await loadAccessContext(supabase, user.id, request, activeSiteId);
+  const inventoryPostingEnabled = await isRemissionInventoryPostingEnabled(supabase);
   const currentStatus = String(request?.status ?? "");
   if (!access.canReceive || !["in_transit", "partial"].includes(currentStatus)) {
     redirect(
@@ -2526,13 +2637,15 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
   if (syncError) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: syncError }));
   }
-  const receiptMoveError = await ensureDestinationReceiptMovements({
-    supabase,
-    requestId,
-    toSiteId: request?.to_site_id,
-  });
-  if (receiptMoveError) {
-    redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: receiptMoveError }));
+  if (inventoryPostingEnabled) {
+    const receiptMoveError = await ensureDestinationReceiptMovements({
+      supabase,
+      requestId,
+      toSiteId: request?.to_site_id,
+    });
+    if (receiptMoveError) {
+      redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: receiptMoveError }));
+    }
   }
   const signatureError = await ensureReceiveSignature({
     supabase,

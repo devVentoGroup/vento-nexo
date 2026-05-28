@@ -25,6 +25,8 @@ export const dynamic = "force-dynamic";
 
 const APP_ID = "nexo";
 const SITE_OVERRIDE_COOKIE = "nexo_site_override_id";
+const REMISSIONS_INVENTORY_POSTING_SETTING_KEY =
+  "remissions.inventory_posting_enabled";
 
 const PERMISSIONS = {
   remissionsRequest: "inventory.remissions.request",
@@ -181,6 +183,29 @@ function supportsRequestedArea(row: ProductSiteRow, requestedAreaKind: string): 
   if (!areaKind) return true;
   const configuredKinds = normalizeProductSiteAreaKinds(row);
   return configuredKinds.includes(areaKind) || configuredKinds.includes("general");
+}
+
+async function readBooleanAppSetting(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  settingKey: string,
+  fallback: boolean
+): Promise<boolean> {
+  const { data, error } = await supabase
+    .from("app_runtime_settings")
+    .select("bool_value")
+    .eq("app_id", APP_ID)
+    .eq("setting_key", settingKey)
+    .maybeSingle();
+
+  if (error) return fallback;
+  return typeof data?.bool_value === "boolean" ? data.bool_value : fallback;
+}
+
+function sanitizeRemissionsReturnPath(value: string): string {
+  const decoded = safeDecodeURIComponent(value);
+  return decoded.startsWith("/inventory/remissions")
+    ? decoded
+    : "/inventory/remissions";
 }
 
 async function loadProductSiteRows(
@@ -373,6 +398,72 @@ function toFriendlyRemissionActionError(rawMessage: string): string {
   return "No se pudo completar la acción sobre la remisión. Intenta nuevamente.";
 }
 
+async function toggleRemissionInventoryPosting(formData: FormData) {
+  "use server";
+
+  const supabase = await createClient();
+  const { data: userRes } = await supabase.auth.getUser();
+  const user = userRes.user ?? null;
+
+  if (!user) {
+    redirect(await buildShellLoginUrl("/inventory/remissions"));
+  }
+
+  const { data: employee } = await supabase
+    .from("employees")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+
+  const actualRole = String(employee?.role ?? "");
+
+  const canManage = await checkPermissionWithRoleOverride({
+    supabase,
+    appId: APP_ID,
+    code: PERMISSIONS.remissionsCancel,
+    actualRole,
+  });
+
+  if (!canManage) {
+    redirect(
+      "/inventory/remissions?error=" +
+      encodeURIComponent("No tienes permisos para cambiar la conexión con inventario.")
+    );
+  }
+
+  const nextEnabled = asText(formData.get("enabled")) === "true";
+  const returnTo = sanitizeRemissionsReturnPath(asText(formData.get("return_to")));
+
+  const { error } = await supabase.from("app_runtime_settings").upsert(
+    {
+      app_id: APP_ID,
+      setting_key: REMISSIONS_INVENTORY_POSTING_SETTING_KEY,
+      bool_value: nextEnabled,
+      updated_at: new Date().toISOString(),
+      updated_by: user.id,
+    },
+    {
+      onConflict: "app_id,setting_key",
+    }
+  );
+
+  if (error) {
+    redirect(
+      `${returnTo}${returnTo.includes("?") ? "&" : "?"}error=${encodeURIComponent(
+        "No se pudo actualizar el switch de inventario."
+      )}`
+    );
+  }
+
+  redirect(
+    `${returnTo}${returnTo.includes("?") ? "&" : "?"}ok=${encodeURIComponent(
+      nextEnabled
+        ? "Remisiones conectadas a inventario real."
+        : "Remisiones operando sin afectar inventario real."
+    )}`
+  );
+}
+
 async function runRemissionListAction(formData: FormData) {
   "use server";
 
@@ -443,7 +534,12 @@ async function runRemissionListAction(formData: FormData) {
       encodeURIComponent("No tienes permisos para esta acción.")
     );
   }
-  const canReverseScope = canGlobal || (canFrom && canTo);
+  const inventoryPostingEnabled = await readBooleanAppSetting(
+    supabase,
+    REMISSIONS_INVENTORY_POSTING_SETTING_KEY,
+    false
+  );
+  const canReverseScope = inventoryPostingEnabled && (canGlobal || (canFrom && canTo));
   const canEditOwnPending =
     String(request.created_by ?? "") === user.id &&
     String(request.status ?? "") === "pending" &&
@@ -582,6 +678,11 @@ async function createRemission(formData: FormData) {
   const canUseRoleOverride =
     Boolean(roleOverride) && PRIVILEGED_ROLE_OVERRIDES.has(actualRole.toLowerCase());
   const effectiveRole = (canUseRoleOverride ? roleOverride : actualRole).toLowerCase();
+  const inventoryPostingEnabled = await readBooleanAppSetting(
+    supabase,
+    REMISSIONS_INVENTORY_POSTING_SETTING_KEY,
+    false
+  );
 
   const fromSiteId = asText(formData.get("from_site_id"));
   const toSiteId = asText(formData.get("to_site_id"));
@@ -831,22 +932,27 @@ async function createRemission(formData: FormData) {
   }
 
   let hasLowStock = false;
-  const { data: stockRows } = await supabase
-    .from("inventory_stock_by_site")
-    .select("product_id,current_qty")
-    .eq("site_id", fromSiteId)
-    .in("product_id", items.map((i) => i.product_id));
-  const stockMap = new Map(
-    (stockRows ?? []).map((r: { product_id: string; current_qty: number | null }) => [
-      r.product_id,
-      Number(r.current_qty ?? 0),
-    ])
-  );
-  for (const item of items) {
-    const available = stockMap.get(item.product_id) ?? 0;
-    if (available < item.quantity) {
-      hasLowStock = true;
-      break;
+
+  if (inventoryPostingEnabled) {
+    const { data: stockRows } = await supabase
+      .from("inventory_stock_by_site")
+      .select("product_id,current_qty")
+      .eq("site_id", fromSiteId)
+      .in("product_id", items.map((i) => i.product_id));
+
+    const stockMap = new Map(
+      (stockRows ?? []).map((r: { product_id: string; current_qty: number | null }) => [
+        r.product_id,
+        Number(r.current_qty ?? 0),
+      ])
+    );
+
+    for (const item of items) {
+      const available = stockMap.get(item.product_id) ?? 0;
+      if (available < item.quantity) {
+        hasLowStock = true;
+        break;
+      }
     }
   }
 
@@ -871,6 +977,12 @@ export default async function RemissionsPage({
     appId: APP_ID,
     returnTo: "/inventory/remissions",
   });
+
+  const inventoryPostingEnabled = await readBooleanAppSetting(
+    supabase,
+    REMISSIONS_INVENTORY_POSTING_SETTING_KEY,
+    false
+  );
 
   const { data: employee } = await supabase
     .from("employees")
@@ -1038,6 +1150,10 @@ export default async function RemissionsPage({
     const hash = opts?.hash ? `#${opts.hash}` : "";
     return `/inventory/remissions${qs ? `?${qs}` : ""}${hash}`;
   };
+  const currentHubHref = buildHubHref({
+    showCreate: showCreatePanel,
+    hash: showCreatePanel ? "nueva-remision" : undefined,
+  });
   let remissionsQuery = supabase
     .from("restock_requests")
     .select(
@@ -1341,7 +1457,10 @@ export default async function RemissionsPage({
     .map((site) => site.id)
     .filter((id): id is string => Boolean(id));
   const { data: stockReferenceData } =
-    canCreateWithConfiguredCatalog && fulfillmentSiteIdsForStock.length > 0 && productIds.length > 0
+    inventoryPostingEnabled &&
+      canCreateWithConfiguredCatalog &&
+      fulfillmentSiteIdsForStock.length > 0 &&
+      productIds.length > 0
       ? await supabase
         .from("inventory_stock_by_site")
         .select("site_id,product_id,current_qty,updated_at")
@@ -1416,7 +1535,7 @@ export default async function RemissionsPage({
         <div className="ui-alert ui-alert--success ui-fade-up ui-delay-1">{okMsg}</div>
       ) : null}
 
-      {sp.warning === "low_stock" ? (
+      {inventoryPostingEnabled && sp.warning === "low_stock" ? (
         <div className="ui-alert ui-alert--warn ui-fade-up ui-delay-1">
           Algunos items podrian no tener stock suficiente en Centro.
         </div>
@@ -1491,6 +1610,56 @@ export default async function RemissionsPage({
               </button>
             </form>
           )}
+        </div>
+
+        <div className="mt-4 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="text-sm font-semibold text-[var(--ui-text)]">
+                Remisiones e inventario real
+              </div>
+              <div className="mt-1 text-sm text-[var(--ui-muted)]">
+                {inventoryPostingEnabled
+                  ? "Las remisiones pueden validar stock, mostrar faltantes y usar reversas de inventario."
+                  : "Las remisiones operan como solicitudes/alistamientos. No validan disponibilidad ni afectan inventario real."}
+              </div>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={
+                  inventoryPostingEnabled
+                    ? "ui-chip ui-chip--success"
+                    : "ui-chip"
+                }
+              >
+                {inventoryPostingEnabled ? "Inventario conectado" : "Inventario desconectado"}
+              </span>
+
+              {canManageRemissionActions ? (
+                <form action={toggleRemissionInventoryPosting}>
+                  <input
+                    type="hidden"
+                    name="enabled"
+                    value={inventoryPostingEnabled ? "false" : "true"}
+                  />
+                  <input type="hidden" name="return_to" value={currentHubHref} />
+                  <button
+                    type="submit"
+                    className={
+                      inventoryPostingEnabled
+                        ? "ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
+                        : "ui-btn ui-btn--brand h-11 px-4 text-sm font-semibold"
+                    }
+                  >
+                    {inventoryPostingEnabled
+                      ? "Desconectar inventario"
+                      : "Conectar inventario"}
+                  </button>
+                </form>
+              ) : null}
+            </div>
+          </div>
         </div>
 
         {!activeSiteId ? (
@@ -1609,7 +1778,10 @@ export default async function RemissionsPage({
                 const rowCanFrom = canCancelPermission && employeeAccessibleSiteIds.has(fromSiteId);
                 const rowCanTo = canCancelPermission && employeeAccessibleSiteIds.has(toSiteId);
                 const rowCanManageBasic = canManageRemissionActions && (canViewAll || rowCanFrom || rowCanTo);
-                const rowCanReverse = canManageRemissionActions && (canViewAll || (rowCanFrom && rowCanTo));
+                const rowCanReverse =
+                  inventoryPostingEnabled &&
+                  canManageRemissionActions &&
+                  (canViewAll || (rowCanFrom && rowCanTo));
                 const rowCanEditOwnPending =
                   canEditOwnPendingPermission &&
                   String(row.created_by ?? "") === user.id &&
@@ -1772,7 +1944,8 @@ export default async function RemissionsPage({
               defaultUomProfiles={defaultUomProfiles}
               areaOptions={areaOptions}
               defaultAreaKind={requestedAreaKind}
-              originStockRows={originStockRows}
+              originStockRows={inventoryPostingEnabled ? originStockRows : []}
+              inventoryPostingEnabled={inventoryPostingEnabled}
             />
           </div>
         </div>
@@ -1811,7 +1984,10 @@ export default async function RemissionsPage({
                 const rowCanFrom = canCancelPermission && employeeAccessibleSiteIds.has(fromSiteId);
                 const rowCanTo = canCancelPermission && employeeAccessibleSiteIds.has(toSiteId);
                 const rowCanManageBasic = canManageRemissionActions && (canViewAll || rowCanFrom || rowCanTo);
-                const rowCanReverse = canManageRemissionActions && (canViewAll || (rowCanFrom && rowCanTo));
+                const rowCanReverse =
+                  inventoryPostingEnabled &&
+                  canManageRemissionActions &&
+                  (canViewAll || (rowCanFrom && rowCanTo));
                 const rowCanEditOwnPending =
                   canEditOwnPendingPermission &&
                   String(row.created_by ?? "") === user.id &&
