@@ -1334,6 +1334,9 @@ export default async function ProductCatalogDetailPage({
   const sp = (await searchParams) ?? {};
   const okMsg = sp.ok ? "Cambios guardados." : "";
   const from = decodeCatalogReturnParam(sp.from);
+  const productDetailHref = from
+    ? `/inventory/catalog/${id}?from=${encodeURIComponent(from)}`
+    : `/inventory/catalog/${id}`;
 
   const { supabase, user } = await requireAppAccess({
     appId: APP_ID,
@@ -1735,7 +1738,7 @@ export default async function ProductCatalogDetailPage({
                 Ver ficha técnica
               </Link>
               <Link
-                href={`/inventory/catalog/${productRow.id}/presentations?from=${encodeURIComponent(from || `/inventory/catalog/${productRow.id}`)}`}
+                href={`/inventory/catalog/${productRow.id}/presentations?from=${encodeURIComponent(productDetailHref)}`}
                 className="ui-btn ui-btn--brand"
               >
                 Administrar presentaciones
@@ -1813,7 +1816,7 @@ export default async function ProductCatalogDetailPage({
           </div>
 
           <Link
-            href={`/inventory/catalog/${productRow.id}/presentations?from=${encodeURIComponent(from || `/inventory/catalog/${productRow.id}`)}`}
+            href={`/inventory/catalog/${productRow.id}/presentations?from=${encodeURIComponent(productDetailHref)}`}
             className="ui-btn ui-btn--brand h-12 px-5 text-base"
           >
             Administrar presentaciones
