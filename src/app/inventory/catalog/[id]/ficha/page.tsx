@@ -96,6 +96,8 @@ type UomProfileRow = {
   usage_context: string | null;
   is_default: boolean | null;
   is_active: boolean | null;
+  image_url: string | null;
+  catalog_image_url: string | null;
   updated_at: string | null;
   source?: "manual" | "supplier_primary" | "recipe_portion" | null;
 };
@@ -160,41 +162,41 @@ type UomDisplay = {
 type PurchaseOrderItemTraceRow = {
   qty: number | null;
   purchase_orders?:
-    | {
-        number: string | null;
-        status: string | null;
-        expected_date: string | null;
-        created_at: string | null;
-        suppliers?: { name: string | null } | { name: string | null }[] | null;
-      }
-    | Array<{
-        number: string | null;
-        status: string | null;
-        expected_date: string | null;
-        created_at: string | null;
-        suppliers?: { name: string | null } | { name: string | null }[] | null;
-      }>
-    | null;
+  | {
+    number: string | null;
+    status: string | null;
+    expected_date: string | null;
+    created_at: string | null;
+    suppliers?: { name: string | null } | { name: string | null }[] | null;
+  }
+  | Array<{
+    number: string | null;
+    status: string | null;
+    expected_date: string | null;
+    created_at: string | null;
+    suppliers?: { name: string | null } | { name: string | null }[] | null;
+  }>
+  | null;
 };
 
 type InventoryReceiptItemTraceRow = {
   qty_base: number | null;
   inventory_entries?:
-    | {
-        entry_no: string | null;
-        status: string | null;
-        entry_date: string | null;
-        created_at: string | null;
-        sites?: { name: string | null } | { name: string | null }[] | null;
-      }
-    | Array<{
-        entry_no: string | null;
-        status: string | null;
-        entry_date: string | null;
-        created_at: string | null;
-        sites?: { name: string | null } | { name: string | null }[] | null;
-      }>
-    | null;
+  | {
+    entry_no: string | null;
+    status: string | null;
+    entry_date: string | null;
+    created_at: string | null;
+    sites?: { name: string | null } | { name: string | null }[] | null;
+  }
+  | Array<{
+    entry_no: string | null;
+    status: string | null;
+    entry_date: string | null;
+    created_at: string | null;
+    sites?: { name: string | null } | { name: string | null }[] | null;
+  }>
+  | null;
 };
 
 function sanitizeCatalogReturnPath(value: string | undefined): string {
@@ -364,6 +366,39 @@ function resolveProfileDisplay(params: {
     };
   }
 }
+function uomProfileImageUrl(row: UomProfileRow): string {
+  return String(row.image_url ?? row.catalog_image_url ?? "").trim();
+}
+
+function uomUsageContextLabel(value: string | null | undefined): string {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (raw === "purchase") return "Compra";
+  if (raw === "remission") return "Remisión";
+  return "General";
+}
+
+function uomSourceLabel(value: UomProfileRow["source"]): string {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (raw === "supplier_primary") return "Proveedor";
+  if (raw === "recipe_portion") return "Receta";
+  return "Manual";
+}
+
+function uomProfileDisplayRank(row: UomProfileRow): number {
+  const usageContext = String(row.usage_context ?? "").trim().toLowerCase();
+  const source = String(row.source ?? "").trim().toLowerCase();
+
+  let rank = 0;
+  if (row.is_active !== false) rank += 100;
+  if (row.is_default === true) rank += 50;
+  if (usageContext === "general") rank += 20;
+  if (usageContext === "remission") rank += 15;
+  if (usageContext === "purchase") rank += 10;
+  if (source === "manual") rank += 5;
+  if (uomProfileImageUrl(row)) rank += 3;
+
+  return rank;
+}
 
 async function loadCategoryRows(
   supabase: Awaited<ReturnType<typeof requireAppAccess>>["supabase"]
@@ -455,7 +490,7 @@ export default async function ProductTechnicalSheetPage({
     supabase
       .from("product_uom_profiles")
       .select(
-        "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,usage_context,is_default,is_active,updated_at,source"
+        "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,usage_context,is_default,is_active,image_url,catalog_image_url,updated_at,source"
       )
       .eq("product_id", id)
       .eq("is_active", true),
@@ -537,7 +572,40 @@ export default async function ProductTechnicalSheetPage({
     normalizedCategoryPath.includes("maquinaria y equipos") ||
     (normalizedCategoryPath.includes("maquinaria") &&
       (normalizedCategoryPath.includes("equipo") || normalizedCategoryPath.includes("equipos")));
-  const imageUrl = product.catalog_image_url || product.image_url || null;
+
+  const presentationRows = [...uomProfiles]
+    .sort((a, b) => {
+      const rankDiff = uomProfileDisplayRank(b) - uomProfileDisplayRank(a);
+      if (rankDiff !== 0) return rankDiff;
+
+      const bTime = new Date(String(b.updated_at ?? "")).getTime();
+      const aTime = new Date(String(a.updated_at ?? "")).getTime();
+
+      if ((Number.isFinite(bTime) ? bTime : 0) !== (Number.isFinite(aTime) ? aTime : 0)) {
+        return (Number.isFinite(bTime) ? bTime : 0) - (Number.isFinite(aTime) ? aTime : 0);
+      }
+
+      return String(a.label ?? "").localeCompare(String(b.label ?? ""), "es", { sensitivity: "base" });
+    })
+    .map((row) => ({
+      id: row.id,
+      label: String(row.label ?? "").trim() || "Presentación",
+      inputUnitCode: normalizeUnitCode(row.input_unit_code || ""),
+      qtyInInputUnit: toPositiveNumber(row.qty_in_input_unit, 1),
+      qtyInStockUnit: toPositiveNumber(row.qty_in_stock_unit, 1),
+      usageContextLabel: uomUsageContextLabel(row.usage_context),
+      sourceLabel: uomSourceLabel(row.source),
+      isDefault: row.is_default === true,
+      isActive: row.is_active !== false,
+      imageUrl: uomProfileImageUrl(row),
+    }));
+
+  const presentationImageUrl =
+    presentationRows.find((row) => row.isDefault && row.imageUrl)?.imageUrl ||
+    presentationRows.find((row) => row.imageUrl)?.imageUrl ||
+    "";
+
+  const imageUrl = presentationImageUrl || product.catalog_image_url || product.image_url || null;
   const primarySupplier = supplierRows.find((row) => Boolean(row.is_primary)) ?? null;
   const secondarySuppliers = supplierRows.filter((row) => !Boolean(row.is_primary));
 
@@ -616,16 +684,16 @@ export default async function ProductTechnicalSheetPage({
   const purchaseQtyInStockUnit = Number(purchaseProfileDisplay?.qtyInStockUnit ?? 0);
   const primarySupplierUnitPrice =
     Number.isFinite(primarySupplierPackPrice) &&
-    primarySupplierPackPrice > 0 &&
-    Number.isFinite(purchaseQtyInStockUnit) &&
-    purchaseQtyInStockUnit > 0
+      primarySupplierPackPrice > 0 &&
+      Number.isFinite(purchaseQtyInStockUnit) &&
+      purchaseQtyInStockUnit > 0
       ? primarySupplierPackPrice / purchaseQtyInStockUnit
       : null;
   const primarySupplierGrossUnitPrice =
     primarySupplierGrossPackPrice != null &&
-    primarySupplierGrossPackPrice > 0 &&
-    Number.isFinite(purchaseQtyInStockUnit) &&
-    purchaseQtyInStockUnit > 0
+      primarySupplierGrossPackPrice > 0 &&
+      Number.isFinite(purchaseQtyInStockUnit) &&
+      purchaseQtyInStockUnit > 0
       ? primarySupplierGrossPackPrice / purchaseQtyInStockUnit
       : null;
   const shouldShowGrossUnitPrice =
@@ -646,22 +714,27 @@ export default async function ProductTechnicalSheetPage({
     settingsBySite.set(siteId, row);
   });
 
-  const sheetRows = sites.map((site) => {
-    const qty = stockBySite.get(site.id) ?? 0;
-    const cfg = settingsBySite.get(site.id) ?? null;
-    const minStock = cfg && cfg.is_active !== false ? Number(cfg.min_stock_qty ?? 0) : null;
-    const shortage =
-      minStock != null && Number.isFinite(minStock) ? Math.max(minStock - qty, 0) : null;
-    return {
-      siteId: site.id,
-      siteName: site.name ?? site.id,
-      qty,
-      minStock,
-      shortage,
-      enabled: cfg ? cfg.is_active !== false : false,
-      configured: Boolean(cfg),
-    };
-  });
+  const sheetRows = sites
+    .map((site) => {
+      const qty = stockBySite.get(site.id) ?? 0;
+      const cfg = settingsBySite.get(site.id) ?? null;
+      const enabled = cfg ? cfg.is_active !== false : false;
+      const minStock = enabled ? Number(cfg?.min_stock_qty ?? 0) : null;
+      const shortage =
+        minStock != null && Number.isFinite(minStock) ? Math.max(minStock - qty, 0) : null;
+
+      return {
+        siteId: site.id,
+        siteName: site.name ?? site.id,
+        qty,
+        minStock,
+        shortage,
+        enabled,
+        configured: Boolean(cfg),
+        hasVisibleRelation: enabled || qty > 0.000001,
+      };
+    })
+    .filter((row) => row.hasVisibleRelation);
 
   const isAsset = String(profile?.inventory_kind ?? "").trim().toLowerCase() === "asset";
   const isPreparation = String(product.product_type ?? "").trim().toLowerCase() === "preparacion";
@@ -926,14 +999,83 @@ export default async function ProductTechnicalSheetPage({
         </article>
       </section>
 
+      <article className="ui-panel">
+        <div className="flex items-center justify-between gap-2">
+          <div className="text-sm font-semibold text-[var(--ui-text)]">Presentaciones del producto</div>
+          <div className="ui-caption">{presentationRows.length} presentación(es)</div>
+        </div>
+
+        {presentationRows.length === 0 ? (
+          <p className="mt-3 text-sm text-[var(--ui-muted)]">
+            Este producto todavía no tiene presentaciones físicas registradas.
+          </p>
+        ) : (
+          <div className="mt-3 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+            {presentationRows.map((row) => (
+              <div
+                key={row.id}
+                className="overflow-hidden rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface)]"
+              >
+                <div className="h-40 border-b border-[var(--ui-border)] bg-[var(--ui-surface-2)]">
+                  {row.imageUrl ? (
+                    // eslint-disable-next-line @next/next/no-img-element
+                    <img
+                      src={row.imageUrl}
+                      alt={row.label}
+                      className="h-full w-full object-cover"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  ) : (
+                    <div className="flex h-full items-center justify-center text-sm text-[var(--ui-muted)]">
+                      Sin imagen
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-2 p-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="line-clamp-2 text-sm font-semibold text-[var(--ui-text)]">
+                        {row.label}
+                      </div>
+                      <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                        {row.usageContextLabel} · {row.sourceLabel}
+                      </div>
+                    </div>
+
+                    {row.isDefault ? (
+                      <span className="ui-chip ui-chip--success shrink-0">Mínima</span>
+                    ) : null}
+                  </div>
+
+                  <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-2 text-xs text-[var(--ui-muted)]">
+                    <strong className="text-[var(--ui-text)]">Contenido:</strong>{" "}
+                    {formatQty(row.qtyInInputUnit)} {row.inputUnitCode || "un"} ={" "}
+                    {formatQty(row.qtyInStockUnit)} {stockUnitCode}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2">
+                    <span className={row.isActive ? "ui-chip ui-chip--success" : "ui-chip"}>
+                      {row.isActive ? "Activa" : "Inactiva"}
+                    </span>
+                    {!row.isDefault ? <span className="ui-chip">No mínima</span> : null}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </article>
+
       {isAsset ? (
         <section className="space-y-4">
           {isMachineryAndEquipmentCategory &&
-          (overdueMaintenance.length > 0 ||
-            next7DaysMaintenance.length > 0 ||
-            next30DaysMaintenance.length > 0 ||
-            recurrenceIn7Days ||
-            recurrenceIn30Days) ? (
+            (overdueMaintenance.length > 0 ||
+              next7DaysMaintenance.length > 0 ||
+              next30DaysMaintenance.length > 0 ||
+              recurrenceIn7Days ||
+              recurrenceIn30Days) ? (
             <article className="ui-panel">
               <div className="text-sm font-semibold text-[var(--ui-text)]">
                 Recordatorio de mantenimiento programado
@@ -1069,8 +1211,8 @@ export default async function ProductTechnicalSheetPage({
                 <div className="mt-1 font-semibold text-[var(--ui-text)]">
                   {recurrenceEnabled
                     ? `Cada ${recurrenceMonths} mes(es), base ${formatDate(
-                        assetProfile?.maintenance_cycle_anchor_date
-                      )}`
+                      assetProfile?.maintenance_cycle_anchor_date
+                    )}`
                     : "Sin ciclo recurrente"}
                 </div>
                 {recurrenceNextDueDate ? (
@@ -1449,7 +1591,7 @@ export default async function ProductTechnicalSheetPage({
                   </td>
                   <td className="py-2.5 pr-4">
                     {!row.configured ? (
-                      <span className="ui-chip">Sin config</span>
+                      <span className="ui-chip">Con stock sin config</span>
                     ) : !row.enabled ? (
                       <span className="ui-chip">Inactiva</span>
                     ) : row.shortage != null && row.shortage > 0 ? (
@@ -1460,6 +1602,14 @@ export default async function ProductTechnicalSheetPage({
                   </td>
                 </tr>
               ))}
+
+              {sheetRows.length === 0 ? (
+                <tr>
+                  <td className="py-4 text-sm text-[var(--ui-muted)]" colSpan={5}>
+                    Este producto no tiene sedes activas, stock visible ni configuración operativa asociada.
+                  </td>
+                </tr>
+              ) : null}
             </tbody>
           </table>
         </div>
