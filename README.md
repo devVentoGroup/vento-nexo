@@ -1,53 +1,32 @@
-# NEXO
+﻿# NEXO
 
-NEXO es la app operativa de inventario y remisiones de Vento.
+NEXO es la app Vento OS para inventario, LOCs, remisiones, conteos, movimientos y abastecimiento interno.
 
-## Enfoque actual
+## Estado actual
 
-El repo queda alineado a una **v1 operativa**:
-- Inventario base.
-- Stock inicial manual.
-- Remisiones entre `Centro` y `Saudo`.
-- LOCs solo en `Centro`.
-- Conteos, ajustes, retiros, traslados y movimientos.
+- Catalogo maestro operativo.
+- Configuracion por sede y presentaciones fisicas.
+- Stock por sede, LOC y presentacion fisica real.
+- Entradas, conteos, ajustes, retiros, traslados y movimientos.
+- Remisiones con solicitud, preparacion, despacho, transito y recepcion.
+- Kiosk/board por LOC, posiciones internas y flujos QR.
+- Printing/Zebra para etiquetas y layouts.
 
-Queda fuera del arranque:
-- Produccion integrada.
-- Consumo por receta.
-- Recepcion normal contra OC.
-- Integraciones reales con `FOGO`, `ORIGO` y `VISO`.
+NEXO no es owner de compras, recetas, POS ni categorias comerciales. Esos dominios pertenecen a Origo, Fogo, Pulso/Pass y Viso/Pass respectivamente.
 
-## Arranque local
+## Documentacion vigente
+
+- `docs/ESTADO-ACTUAL-NEXO-2026-05-28.md`
+- `docs/ROADMAP-NEXO.md` queda como bitacora historica y backlog especifico.
+- `docs/ROADMAP-NEXO.md` y `docs/BACKLOG-TECNICO-V1-NEXO.md` quedan como estado futuro/backlog vivo.
+
+## Desarrollo
 
 ```bash
+npm install
 npm run dev
 ```
 
-## Documentacion v1
+## Regla de base de datos
 
-- [Guia de configuracion inicial](./docs/GUIA-CONFIGURACION-INICIAL.md)
-- [Operacion v1](./docs/OPERACION-V1-NEXO.md)
-- [Roadmap](./docs/ROADMAP-NEXO.md)
-- [Plantilla de productos](./docs/PLANTILLA-PRODUCTOS-V1.csv)
-
-## Flujos principales
-
-- `/inventory/settings/checklist`
-- `/inventory/catalog`
-- `/inventory/entries`
-- `/inventory/remissions`
-- `/inventory/stock`
-- `/inventory/locations`
-
-## Alta asistida con IA
-
-Configura en `.env.local`:
-
-```bash
-OPENAI_API_KEY=...
-OPENAI_INVENTORY_MODEL=gpt-4.1-mini
-```
-
-Rutas:
-- `/inventory/ai-ingestions?flow=catalog_create`
-- `/inventory/ai-ingestions?flow=supplier_entries`
+Todo cambio de schema, RPC, storage o permisos compartidos se hace desde `vento-shell`.
