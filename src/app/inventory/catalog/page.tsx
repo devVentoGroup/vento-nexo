@@ -413,7 +413,9 @@ export default async function InventoryCatalogPage({
   const siteNamesById = Object.fromEntries(siteRows.map((row) => [row.id, row.name ?? row.id]));
   const employeeRole = String((employee as { role?: string | null } | null)?.role ?? "").toLowerCase();
   const canManageProducts = ["propietario", "gerente_general"].includes(employeeRole);
-  const canCreateProducts = await checkPermission(supabase, APP_ID, "catalog.products");
+  const canCreateProducts =
+    ["propietario", "gerente_general", "bodeguero"].includes(employeeRole) ||
+    (await checkPermission(supabase, APP_ID, "catalog.products"));
 
   const siteId = String(
     sp.site_id ??

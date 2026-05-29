@@ -436,7 +436,7 @@ export default async function ProductTechnicalSheetPage({
   const sp = (await searchParams) ?? {};
   const returnTo = sanitizeCatalogReturnPath(sp.from);
 
-  const { supabase } = await requireAppAccess({
+  const { supabase, user } = await requireAppAccess({
     appId: APP_ID,
     returnTo: `/inventory/catalog/${id}/ficha`,
     permissionCode: PERMISSION,
@@ -454,6 +454,7 @@ export default async function ProductTechnicalSheetPage({
     purchaseOrderItemsRes,
     receiptItemsRes,
     allCategories,
+    employeeRes,
     assetProfileRes,
     assetMaintenanceRes,
     assetTransfersRes,
@@ -519,6 +520,7 @@ export default async function ProductTechnicalSheetPage({
       .order("created_at", { foreignTable: "inventory_entries", ascending: false })
       .limit(8),
     loadCategoryRows(supabase),
+    supabase.from("employees").select("role").eq("id", user.id).maybeSingle(),
     supabase
       .from("product_asset_profiles")
       .select(
@@ -559,7 +561,10 @@ export default async function ProductTechnicalSheetPage({
   const assetMaintenanceRows = (assetMaintenanceRes.data ?? []) as AssetMaintenanceRow[];
   const assetTransferRows = (assetTransfersRes.data ?? []) as AssetTransferRow[];
 
-  const canEdit = await checkPermission(supabase, APP_ID, "catalog.products");
+  const role = String(employeeRes.data?.role ?? "").toLowerCase();
+  const canEdit =
+    ["propietario", "gerente_general"].includes(role) ||
+    (await checkPermission(supabase, APP_ID, "catalog.products"));
 
   const stockUnitCode = normalizeUnitCode(
     product.stock_unit_code || product.unit || "un"

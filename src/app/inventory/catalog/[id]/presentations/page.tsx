@@ -190,7 +190,15 @@ async function saveProductPresentations(formData: FormData) {
   const user = userRes.user ?? null;
   if (!user) redirect(await buildShellLoginUrl("/inventory/catalog"));
 
-  if (!(await checkPermission(supabase, APP_ID, "catalog.products"))) {
+  const { data: employee } = await supabase
+    .from("employees")
+    .select("role")
+    .eq("id", user.id)
+    .maybeSingle();
+  const role = String(employee?.role ?? "").toLowerCase();
+  const canEditByRole = ["propietario", "gerente_general"].includes(role);
+  const canEditByPermission = await checkPermission(supabase, APP_ID, "catalog.products");
+  if (!canEditByRole && !canEditByPermission) {
     redirect(`/inventory/catalog?error=${encodeURIComponent("No tienes permisos para editar presentaciones.")}`);
   }
 
