@@ -193,27 +193,38 @@ export default async function InventoryCountInitialPage({
     permissionCode: PERMISSION,
   });
 
-  const { data: employeeSites } = await supabase
-    .from("employee_sites")
-    .select("site_id,is_primary")
-    .eq("employee_id", user.id)
-    .eq("is_active", true)
-    .order("is_primary", { ascending: false })
-    .limit(50);
+  const [{ data: employee }, { data: employeeSites }] = await Promise.all([
+    supabase.from("employees").select("role").eq("id", user.id).maybeSingle(),
+    supabase
+      .from("employee_sites")
+      .select("site_id,is_primary")
+      .eq("employee_id", user.id)
+      .eq("is_active", true)
+      .order("is_primary", { ascending: false })
+      .limit(50),
+  ]);
 
   const employeeSiteRows = (employeeSites ?? []) as EmployeeSiteRow[];
   const siteIds = employeeSiteRows
     .map((r) => r.site_id)
     .filter((id): id is string => Boolean(id));
 
+  const role = String((employee as { role?: string | null } | null)?.role ?? "").toLowerCase();
+  const canUseAllSites = ["propietario", "gerente_general", "contador"].includes(role);
   const { data: sites } =
-    siteIds.length > 0
+    canUseAllSites
       ? await supabase
         .from("sites")
         .select("id,name")
-        .in("id", siteIds)
+        .eq("is_active", true)
         .order("name", { ascending: true })
-      : { data: [] as SiteRow[] };
+      : siteIds.length > 0
+        ? await supabase
+          .from("sites")
+          .select("id,name")
+          .in("id", siteIds)
+          .order("name", { ascending: true })
+        : { data: [] as SiteRow[] };
 
   const siteRows = (sites ?? []) as SiteRow[];
   const siteNameMap = new Map(siteRows.map((r) => [r.id, r.name ?? r.id]));
