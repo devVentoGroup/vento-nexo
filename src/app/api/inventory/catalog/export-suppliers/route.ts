@@ -2,10 +2,34 @@ import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 
+const CSV_SEPARATOR = ";";
+
 function escapeCsv(value: string): string {
   const s = String(value ?? "").replace(/"/g, '""');
-  return s.includes(",") || s.includes("\n") || s.includes('"') ? `"${s}"` : s;
+  return s.includes(CSV_SEPARATOR) || s.includes("\n") || s.includes('"') ? `"${s}"` : s;
 }
+
+function formatCsvNumber(value: unknown, maxDecimals = 2): string {
+  const n = Number(value);
+  if (!Number.isFinite(n)) return "";
+
+  const fixed = n.toFixed(maxDecimals);
+  const normalized = fixed.replace(/\.?0+$/, "");
+
+  return normalized.replace(".", ",");
+}
+
+function formatCsvMoney(value: unknown): string {
+  return formatCsvNumber(value, 2);
+}
+
+function formatCsvQty(value: unknown): string {
+  return formatCsvNumber(value, 3);
+}
+
+type ProductInventoryProfileRow = {
+  inventory_kind: string | null;
+};
 
 type ProductRow = {
   id: string;
@@ -15,6 +39,8 @@ type ProductRow = {
   stock_unit_code: string | null;
   cost: number | null;
   is_active: boolean | null;
+  product_type: string | null;
+  product_inventory_profiles?: ProductInventoryProfileRow | null;
 };
 
 type ProductSupplierRow = {
@@ -42,6 +68,25 @@ type ProductManualPresentationRow = {
   source: string | null;
 };
 
+function resolveItemType(product: ProductRow): string {
+  const productType = String(product.product_type ?? "").trim().toLowerCase();
+  const inventoryKind = String(product.product_inventory_profiles?.inventory_kind ?? "")
+    .trim()
+    .toLowerCase();
+
+  if (productType === "insumo" && inventoryKind === "asset") return "Equipo / maquinaria";
+  if (productType === "insumo") return "Insumo";
+  if (productType === "preparacion") return "Preparacion";
+  if (productType === "venta" && inventoryKind === "resale") return "Producto de reventa";
+  if (productType === "venta") return "Producto terminado / venta";
+
+  if (productType || inventoryKind) {
+    return [productType, inventoryKind].filter(Boolean).join(" / ");
+  }
+
+  return "Sin clasificar";
+}
+
 export async function GET() {
   const cookieStore = await cookies();
   const supabase = createServerClient(
@@ -52,7 +97,7 @@ export async function GET() {
         getAll() {
           return cookieStore.getAll();
         },
-        setAll() { },
+        setAll() {},
       },
     }
   );
@@ -79,8 +124,9 @@ export async function GET() {
 
   const { data: productsData, error: productsErr } = await supabase
     .from("products")
-    .select("id,name,sku,unit,stock_unit_code,cost,is_active,product_type")
-    .eq("product_type", "insumo")
+    .select(
+      "id,name,sku,unit,stock_unit_code,cost,is_active,product_type,product_inventory_profiles(inventory_kind)"
+    )
     .order("name", { ascending: true })
     .limit(5000);
 
@@ -88,20 +134,19 @@ export async function GET() {
     return NextResponse.json({ error: productsErr.message }, { status: 400 });
   }
 
-  const products = (productsData ?? []) as ProductRow[];
+  const products = (productsData ?? []) as unknown as ProductRow[];
   const productIds = products.map((row) => row.id);
 
   const productSuppliersBaseSelect =
     "product_id,supplier_id,is_primary,purchase_pack_qty,purchase_pack_unit_code,purchase_unit,purchase_price,purchase_price_includes_tax,purchase_tax_rate,currency";
-  const productSuppliersWithNetSelect =
-    `${productSuppliersBaseSelect},purchase_price_net`;
+  const productSuppliersWithNetSelect = `${productSuppliersBaseSelect},purchase_price_net`;
 
   const withNet =
     productIds.length > 0
       ? await supabase
-        .from("product_suppliers")
-        .select(productSuppliersWithNetSelect)
-        .in("product_id", productIds)
+          .from("product_suppliers")
+          .select(productSuppliersWithNetSelect)
+          .in("product_id", productIds)
       : { data: [] as ProductSupplierRow[], error: null };
 
   const missingPurchasePriceNet =
@@ -111,13 +156,14 @@ export async function GET() {
   const fallback =
     productIds.length > 0 && missingPurchasePriceNet
       ? await supabase
-        .from("product_suppliers")
-        .select(productSuppliersBaseSelect)
-        .in("product_id", productIds)
+          .from("product_suppliers")
+          .select(productSuppliersBaseSelect)
+          .in("product_id", productIds)
       : null;
 
   const productSuppliersData =
-    (fallback?.data as ProductSupplierRow[] | null) ?? (withNet.data as ProductSupplierRow[] | null);
+    (fallback?.data as ProductSupplierRow[] | null) ??
+    (withNet.data as ProductSupplierRow[] | null);
   const productSuppliersErr = fallback?.error ?? withNet.error;
 
   if (productSuppliersErr) {
@@ -129,11 +175,11 @@ export async function GET() {
   const { data: manualPresentationsData, error: manualPresentationsErr } =
     productIds.length > 0
       ? await supabase
-        .from("product_uom_profiles")
-        .select("product_id,is_active,source")
-        .in("product_id", productIds)
-        .eq("is_active", true)
-        .eq("source", "manual")
+          .from("product_uom_profiles")
+          .select("product_id,is_active,source")
+          .in("product_id", productIds)
+          .eq("is_active", true)
+          .eq("source", "manual")
       : { data: [] as ProductManualPresentationRow[], error: null };
 
   if (manualPresentationsErr) {
@@ -157,6 +203,7 @@ export async function GET() {
   const supplierNameById = new Map(
     ((suppliersData ?? []) as SupplierRow[]).map((row) => [row.id, row.name ?? row.id])
   );
+
   const supplierRowsByProduct = new Map<string, ProductSupplierRow[]>();
   for (const row of productSuppliers) {
     const current = supplierRowsByProduct.get(row.product_id) ?? [];
@@ -165,7 +212,8 @@ export async function GET() {
   }
 
   const header = [
-    "Insumo",
+    "Item",
+    "Tipo de item",
     "SKU",
     "Proveedor",
     "Proveedor primario",
@@ -183,7 +231,7 @@ export async function GET() {
     "Estado",
   ]
     .map(escapeCsv)
-    .join(",");
+    .join(CSV_SEPARATOR);
 
   const rows: string[] = [header];
 
@@ -204,10 +252,13 @@ export async function GET() {
   for (const product of products) {
     const supplierRows = supplierRowsByProduct.get(product.id) ?? [];
     const missingManualPresentation = !productIdsWithManualPresentation.has(product.id);
+    const itemType = resolveItemType(product);
+
     if (!supplierRows.length) {
       rows.push(
         [
           escapeCsv(product.name ?? ""),
+          escapeCsv(itemType),
           escapeCsv(product.sku ?? ""),
           escapeCsv("Sin proveedor"),
           "",
@@ -220,10 +271,10 @@ export async function GET() {
           "",
           "",
           escapeCsv(product.stock_unit_code ?? product.unit ?? ""),
-          String(product.cost ?? ""),
+          formatCsvMoney(product.cost),
           escapeCsv(missingManualPresentation ? "Si" : "No"),
           escapeCsv(product.is_active === false ? "Inactivo" : "Activo"),
-        ].join(",")
+        ].join(CSV_SEPARATOR)
       );
       continue;
     }
@@ -232,8 +283,12 @@ export async function GET() {
       const aPrimary = Boolean(a.is_primary) ? 1 : 0;
       const bPrimary = Boolean(b.is_primary) ? 1 : 0;
       if (aPrimary !== bPrimary) return bPrimary - aPrimary;
-      const aName = supplierNameById.get(String(a.supplier_id ?? "")) ?? String(a.supplier_id ?? "");
-      const bName = supplierNameById.get(String(b.supplier_id ?? "")) ?? String(b.supplier_id ?? "");
+
+      const aName =
+        supplierNameById.get(String(a.supplier_id ?? "")) ?? String(a.supplier_id ?? "");
+      const bName =
+        supplierNameById.get(String(b.supplier_id ?? "")) ?? String(b.supplier_id ?? "");
+
       return aName.localeCompare(bName, "es");
     });
 
@@ -241,25 +296,27 @@ export async function GET() {
       const supplierName =
         supplierNameById.get(String(supplierRow.supplier_id ?? "")) ??
         String(supplierRow.supplier_id ?? "Sin proveedor");
+
       rows.push(
         [
           escapeCsv(product.name ?? ""),
+          escapeCsv(itemType),
           escapeCsv(product.sku ?? ""),
           escapeCsv(supplierName),
           escapeCsv(supplierRow.is_primary ? "Si" : "No"),
-          String(supplierRow.purchase_price ?? ""),
-          String(resolvePurchasePriceNet(supplierRow) ?? ""),
+          formatCsvMoney(supplierRow.purchase_price),
+          formatCsvMoney(resolvePurchasePriceNet(supplierRow)),
           escapeCsv(supplierRow.purchase_price_includes_tax ? "Si" : "No"),
-          String(supplierRow.purchase_tax_rate ?? ""),
+          formatCsvNumber(supplierRow.purchase_tax_rate, 2),
           escapeCsv(supplierRow.currency ?? ""),
-          String(supplierRow.purchase_pack_qty ?? ""),
+          formatCsvQty(supplierRow.purchase_pack_qty),
           escapeCsv(supplierRow.purchase_pack_unit_code ?? ""),
           escapeCsv(supplierRow.purchase_unit ?? ""),
           escapeCsv(product.stock_unit_code ?? product.unit ?? ""),
-          String(product.cost ?? ""),
+          formatCsvMoney(product.cost),
           escapeCsv(missingManualPresentation ? "Si" : "No"),
           escapeCsv(product.is_active === false ? "Inactivo" : "Activo"),
-        ].join(",")
+        ].join(CSV_SEPARATOR)
       );
     }
   }
@@ -271,7 +328,7 @@ export async function GET() {
     status: 200,
     headers: {
       "Content-Type": "text/csv; charset=utf-8",
-      "Content-Disposition": 'attachment; filename="insumos-proveedores-precios.csv"',
+      "Content-Disposition": 'attachment; filename="catalogo-productos-proveedores.csv"',
     },
   });
 }
