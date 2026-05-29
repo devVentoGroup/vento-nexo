@@ -2093,6 +2093,9 @@ export default async function ProductCatalogDetailPage({
                   inputUnitCode: resolvedDefaultUnit || stockUnitCode,
                   stockUnitCode,
                 })}
+                productType={productRow.product_type}
+                inventoryKind={profileRow?.inventory_kind ?? null}
+                hasRecipe={hasRecipe}
               />
             ) : null}
 
