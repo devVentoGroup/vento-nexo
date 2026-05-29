@@ -121,6 +121,65 @@ function storageUploadErrorResponse(message: string) {
   );
 }
 
+function isUuid(value: string): boolean {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value.trim()
+  );
+}
+
+function getProductImageLabel(kind: string): string {
+  const value = kind.trim().toLowerCase();
+
+  if (value === "presentation") return "Imagen de presentación";
+  if (value === "product") return "Imagen principal";
+  if (value === "catalog") return "Imagen de catálogo";
+
+  return "Imagen de producto";
+}
+
+async function registerProductImage(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  productId: string;
+  imageUrl: string;
+  kind: string;
+  source: "upload" | "copy";
+  userId: string;
+}): Promise<string | null> {
+  const productId = params.productId.trim();
+  const imageUrl = params.imageUrl.trim();
+  const kind = sanitizePathToken(params.kind, "product");
+
+  if (!imageUrl) {
+    return "La imagen se subió, pero no se recibió una URL válida para registrarla.";
+  }
+
+  if (!isUuid(productId)) {
+    return null;
+  }
+
+  const { error } = await params.supabase.from("product_images").upsert(
+    {
+      product_id: productId,
+      image_url: imageUrl,
+      kind,
+      label: getProductImageLabel(kind),
+      source: params.source,
+      is_active: true,
+      created_by: params.userId,
+    },
+    {
+      onConflict: "product_id,image_url",
+      ignoreDuplicates: true,
+    }
+  );
+
+  if (error) {
+    return `La imagen se subió, pero no se pudo registrar en la galería del producto: ${error.message}`;
+  }
+
+  return null;
+}
+
 export async function POST(req: Request) {
   const supabase = await createClient();
 
@@ -211,6 +270,19 @@ export async function POST(req: Request) {
 
     const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(targetPath);
 
+    const registerError = await registerProductImage({
+      supabase,
+      productId: rawProductId,
+      imageUrl: urlData.publicUrl,
+      kind,
+      source: "copy",
+      userId: userData.user.id,
+    });
+
+    if (registerError) {
+      return NextResponse.json({ error: registerError }, { status: 500 });
+    }
+
     return NextResponse.json({
       url: urlData.publicUrl,
       sourceUrl: copyFromUrl,
@@ -249,6 +321,19 @@ export async function POST(req: Request) {
   }
 
   const { data: urlData } = supabase.storage.from(BUCKET).getPublicUrl(path);
+
+  const registerError = await registerProductImage({
+    supabase,
+    productId: rawProductId,
+    imageUrl: urlData.publicUrl,
+    kind,
+    source: "upload",
+    userId: userData.user.id,
+  });
+
+  if (registerError) {
+    return NextResponse.json({ error: registerError }, { status: 500 });
+  }
 
   return NextResponse.json({
     url: urlData.publicUrl,

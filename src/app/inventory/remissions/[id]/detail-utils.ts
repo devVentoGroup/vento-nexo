@@ -18,6 +18,8 @@ export type AccessContext = {
   selectedSiteId: string;
   fromSiteType: string;
   toSiteType: string;
+  fromCanFulfillRemissions: boolean;
+  toCanReceiveRemissions: boolean;
   fromSiteName: string;
   toSiteName: string;
   canPrepare: boolean;

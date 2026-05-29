@@ -45,6 +45,10 @@ type InventoryProfileRow = {
 
 type UomProfileRow = ProductPresentationEditorRow;
 
+type ProductImageRow = {
+  image_url: string | null;
+};
+
 type SupplierPresentationRow = {
   id: string;
   purchase_unit: string | null;
@@ -383,6 +387,7 @@ export default async function ProductPresentationsPage({
     { data: uomProfileData },
     { data: supplierLinksData },
     { data: remissionSettingsData },
+    { data: productImagesData },
   ] = await Promise.all([
     supabase
       .from("product_inventory_profiles")
@@ -415,6 +420,12 @@ export default async function ProductPresentationsPage({
       .eq("product_id", id)
       .eq("is_active", true)
       .eq("remission_enabled", true),
+    supabase
+      .from("product_images")
+      .select("image_url")
+      .eq("product_id", id)
+      .eq("is_active", true)
+      .order("created_at", { ascending: false }),
   ]);
 
   const profile = (profileData ?? null) as InventoryProfileRow | null;
@@ -441,12 +452,15 @@ export default async function ProductPresentationsPage({
   const requiresRemissionDefault = ((remissionSettingsData ?? []) as ProductRemissionSiteSettingRow[])
     .some(settingBelongsToSatellite);
 
+  const productImageRows = (productImagesData ?? []) as ProductImageRow[];
+
   const existingImageUrls = Array.from(
     new Set(
       [
         product.image_url,
         product.catalog_image_url,
         ...presentationRows.flatMap((row) => [row.image_url, row.catalog_image_url]),
+        ...productImageRows.map((row) => row.image_url),
       ]
         .map((value) => String(value ?? "").trim())
         .filter(Boolean)

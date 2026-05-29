@@ -10,6 +10,7 @@ import {
   buildOperationalBlockMessage,
   getOperationalContext,
 } from "@/lib/auth/operational-context";
+import type { SiteOperationalCapabilities } from "@/lib/inventory/site-capabilities";
 
 import {
   type AccessContext,
@@ -118,8 +119,32 @@ export async function loadAccessContext(
   const siteMap = new Map<string, SiteRow>(
     (requestSites ?? []).map((site: SiteRow) => [site.id, site])
   );
+
+  const { data: capabilityRows } = siteIds.length
+    ? await supabase
+        .from("site_operational_capabilities")
+        .select("site_id,can_fulfill_remissions,can_receive_remissions")
+        .in("site_id", siteIds)
+    : { data: [] as Partial<SiteOperationalCapabilities>[] };
+  const capabilityMap = new Map<string, Partial<SiteOperationalCapabilities>>(
+    ((capabilityRows ?? []) as Partial<SiteOperationalCapabilities>[]).map((row) => [
+      String(row.site_id ?? ""),
+      row,
+    ])
+  );
+
   const fromSiteType = String(siteMap.get(fromSiteId)?.site_type ?? "");
   const toSiteType = String(siteMap.get(toSiteId)?.site_type ?? "");
+  const fromCapabilities = capabilityMap.get(fromSiteId);
+  const toCapabilities = capabilityMap.get(toSiteId);
+  const fromCanFulfillRemissions =
+    typeof fromCapabilities?.can_fulfill_remissions === "boolean"
+      ? fromCapabilities.can_fulfill_remissions
+      : fromSiteType === "production_center";
+  const toCanReceiveRemissions =
+    typeof toCapabilities?.can_receive_remissions === "boolean"
+      ? toCapabilities.can_receive_remissions
+      : toSiteType === "satellite";
   const fromSiteName = String(siteMap.get(fromSiteId)?.name ?? fromSiteId ?? "");
   const toSiteName = String(siteMap.get(toSiteId)?.name ?? toSiteId ?? "");
 
@@ -148,16 +173,18 @@ export async function loadAccessContext(
     selectedSiteId,
     fromSiteType,
     toSiteType,
+    fromCanFulfillRemissions,
+    toCanReceiveRemissions,
     fromSiteName,
     toSiteName,
     canPrepare:
-      fromSiteType === "production_center" &&
+      fromCanFulfillRemissions &&
       canPreparePermission &&
       actingOnFromSite,
     canTransit:
-      fromSiteType === "production_center" && canTransitPermission,
+      fromCanFulfillRemissions && canTransitPermission,
     canReceive:
-      toSiteType === "satellite" && canReceivePermission && actingOnToSite,
+      toCanReceiveRemissions && canReceivePermission && actingOnToSite,
     canCancel,
   };
 }

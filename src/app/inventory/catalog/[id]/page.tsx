@@ -26,6 +26,10 @@ import {
   isAutoCostReady,
 } from "@/lib/inventory/costing";
 import { requireAppAccess } from "@/lib/auth/guard";
+import {
+  getSiteCapabilitiesMap,
+  type SiteOperationalCapabilities,
+} from "@/lib/inventory/site-capabilities";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { safeDecodeURIComponent } from "@/lib/url";
@@ -125,6 +129,7 @@ type SiteSettingRow = {
   default_area_kind: string | null;
   area_kinds?: string[] | null;
   production_location_id?: string | null;
+  local_production_enabled?: boolean | null;
   min_stock_qty: number | null;
   min_stock_input_mode?: "base" | "purchase" | null;
   min_stock_purchase_qty?: number | null;
@@ -140,6 +145,7 @@ type SiteSettingRow = {
 type AreaKindRow = { code: string; name: string | null; use_for_remission?: boolean | null };
 type SiteAreaKindRow = { site_id: string | null; kind: string | null; is_active?: boolean | null };
 type SiteOptionRow = { id: string; name: string | null; site_type: string | null };
+type SiteCapabilityRow = SiteOperationalCapabilities;
 type ProductionLocationRow = {
   id: string;
   site_id: string;
@@ -393,6 +399,7 @@ function buildProductSiteSettingPayloadVariants(
     [],
     [
       "production_location_id",
+      "local_production_enabled",
       "area_kinds",
       "remission_enabled",
       "min_stock_input_mode",
@@ -402,6 +409,7 @@ function buildProductSiteSettingPayloadVariants(
     ],
     [
       "production_location_id",
+      "local_production_enabled",
       "area_kinds",
       "remission_enabled",
       "min_stock_input_mode",
@@ -412,6 +420,7 @@ function buildProductSiteSettingPayloadVariants(
     ],
     [
       "production_location_id",
+      "local_production_enabled",
       "area_kinds",
       "remission_enabled",
       "min_stock_input_mode",
@@ -965,6 +974,7 @@ async function updateProduct(formData: FormData) {
       default_area_kind?: string;
       area_kinds?: string[];
       production_location_id?: string;
+      local_production_enabled?: boolean | string | null;
       min_stock_qty?: number | string;
       min_stock_input_mode?: "base" | "purchase" | string;
       min_stock_purchase_qty?: number | string;
@@ -984,6 +994,7 @@ async function updateProduct(formData: FormData) {
     for (const line of siteLines) {
       if (line._delete) continue;
       const rawRemissionEnabled = line.remission_enabled;
+      const rawLocalProductionEnabled = line.local_production_enabled;
       const parsedRemissionEnabled =
         typeof rawRemissionEnabled === "boolean"
           ? rawRemissionEnabled
@@ -992,12 +1003,17 @@ async function updateProduct(formData: FormData) {
             : rawRemissionEnabled === "false"
               ? false
               : null;
+      const parsedLocalProductionEnabled =
+        typeof rawLocalProductionEnabled === "boolean"
+          ? rawLocalProductionEnabled
+          : rawLocalProductionEnabled === "true";
 
       const hasMeaningfulData =
         Boolean(String(line.site_id ?? "").trim()) ||
         Boolean(String(line.default_area_kind ?? "").trim()) ||
         (Array.isArray(line.area_kinds) && line.area_kinds.some((kind) => String(kind ?? "").trim())) ||
         Boolean(String(line.production_location_id ?? "").trim()) ||
+        rawLocalProductionEnabled !== undefined ||
         Boolean(String(line.audience ?? "").trim()) ||
         rawRemissionEnabled !== undefined ||
         String(line.min_stock_qty ?? "").trim() !== "";
@@ -1051,7 +1067,10 @@ async function updateProduct(formData: FormData) {
         is_active: Boolean(line.is_active),
         default_area_kind: normalizedDefaultAreaKind || null,
         area_kinds: normalizedAreaKinds.length ? normalizedAreaKinds : null,
-        production_location_id: String(line.production_location_id ?? "").trim() || null,
+        production_location_id: parsedLocalProductionEnabled
+          ? String(line.production_location_id ?? "").trim() || null
+          : null,
+        local_production_enabled: parsedLocalProductionEnabled,
         min_stock_qty: parsedMinStockQty,
         min_stock_input_mode: minStockInputMode,
         min_stock_purchase_qty:
@@ -1381,7 +1400,7 @@ export default async function ProductCatalogDetailPage({
   const { data: siteSettingsWithAudience, error: siteSettingsAudienceError } = await supabase
     .from("product_site_settings")
     .select(
-      "id,site_id,is_active,default_area_kind,area_kinds,production_location_id,min_stock_qty,min_stock_input_mode,min_stock_purchase_qty,min_stock_purchase_unit_code,min_stock_purchase_to_base_factor,audience,remission_enabled,updated_at,created_at,sites(id,name)"
+      "id,site_id,is_active,default_area_kind,area_kinds,production_location_id,local_production_enabled,min_stock_qty,min_stock_input_mode,min_stock_purchase_qty,min_stock_purchase_unit_code,min_stock_purchase_to_base_factor,audience,remission_enabled,updated_at,created_at,sites(id,name)"
     )
     .eq("product_id", id);
   const siteSettings =
@@ -1427,6 +1446,22 @@ export default async function ProductCatalogDetailPage({
     .neq("name", "App Review (Demo)")
     .order("name", { ascending: true });
   const sitesList = (sitesData ?? []) as SiteOptionRow[];
+  const siteIds = sitesList.map((site) => site.id);
+  const { data: capabilityRows } = siteIds.length
+    ? await supabase
+      .from("site_operational_capabilities")
+      .select(
+        "site_id,can_request_remissions,can_fulfill_remissions,can_receive_remissions,can_sell,can_produce,can_hold_inventory,is_commercial_business,show_in_product_setup"
+      )
+      .in("site_id", siteIds)
+    : { data: [] as SiteCapabilityRow[] };
+  const capabilitiesBySite = getSiteCapabilitiesMap(
+    siteIds,
+    (capabilityRows ?? []) as SiteCapabilityRow[]
+  );
+  const capabilitySiteIds = new Set(
+    ((capabilityRows ?? []) as SiteCapabilityRow[]).map((row) => String(row.site_id ?? ""))
+  );
 
   const { data: areaKindsWithPurpose, error: areaKindsWithPurposeError } = await supabase
     .from("area_kinds")
@@ -1489,7 +1524,12 @@ export default async function ProductCatalogDetailPage({
     return { site_id, kind };
   });
   const satelliteSiteIds = sitesList
-    .filter((site) => String(site.site_type ?? "").trim().toLowerCase() === "satellite")
+    .filter((site) => {
+      const capabilities = capabilitiesBySite.get(site.id);
+      return capabilitySiteIds.has(site.id)
+        ? Boolean(capabilities?.can_request_remissions)
+        : String(site.site_type ?? "").trim().toLowerCase() === "satellite";
+    })
     .map((site) => site.id);
   const { data: remissionAreaRulesData } =
     satelliteSiteIds.length > 0
@@ -1991,6 +2031,9 @@ export default async function ProductCatalogDetailPage({
                         ? [r.default_area_kind]
                         : [],
                   production_location_id: r.production_location_id ?? "",
+                  local_production_enabled:
+                    Boolean(r.local_production_enabled) ||
+                    Boolean(r.production_location_id),
                   min_stock_qty: r.min_stock_qty ?? undefined,
                   min_stock_input_mode: r.min_stock_input_mode === "purchase" ? "purchase" : "base",
                   min_stock_purchase_qty: r.min_stock_purchase_qty ?? undefined,
@@ -2001,6 +2044,7 @@ export default async function ProductCatalogDetailPage({
                     typeof r.remission_enabled === "boolean" ? r.remission_enabled : null,
                 }))}
                 sites={sitesList.map((s) => ({ id: s.id, name: s.name, site_type: s.site_type }))}
+                siteCapabilities={Array.from(capabilitiesBySite.values())}
                 areaKinds={areaKindsList.map((a) => ({
                   code: a.code,
                   name: a.name ?? a.code,

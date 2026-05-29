@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
@@ -6,11 +6,16 @@ import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/t
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
 import { DeleteRouteForm } from "@/components/vento/delete-route-form";
+import {
+  getSiteCapabilitiesMap,
+  type SiteOperationalCapabilities,
+} from "@/lib/inventory/site-capabilities";
 import { safeDecodeURIComponent } from "@/lib/url";
 
 export const dynamic = "force-dynamic";
 
 type SiteRow = { id: string; name: string | null; site_type: string | null };
+type SiteCapabilityRow = SiteOperationalCapabilities;
 type RouteRow = {
   id: string;
   requesting_site_id: string;
@@ -116,6 +121,19 @@ export default async function SupplyRoutesPage({
     .order("name", { ascending: true });
   const siteRows = (sites ?? []) as SiteRow[];
   const siteMap = new Map(siteRows.map((s) => [s.id, s]));
+  const siteIds = siteRows.map((site) => site.id);
+  const { data: capabilityRows } = siteIds.length
+    ? await supabase
+      .from("site_operational_capabilities")
+      .select(
+        "site_id,can_request_remissions,can_fulfill_remissions,can_receive_remissions,can_sell,can_produce,can_hold_inventory,is_commercial_business,show_in_product_setup"
+      )
+      .in("site_id", siteIds)
+    : { data: [] as SiteCapabilityRow[] };
+  const capabilitiesBySite = getSiteCapabilitiesMap(
+    siteIds,
+    (capabilityRows ?? []) as SiteCapabilityRow[]
+  );
 
   const { data: routes } = await supabase
     .from("site_supply_routes")
@@ -123,8 +141,14 @@ export default async function SupplyRoutesPage({
     .order("created_at", { ascending: false });
   const routeRows = (routes ?? []) as RouteRow[];
 
-  const satellites = siteRows.filter((s) => s.site_type === "satellite");
-  const centers = siteRows.filter((s) => s.site_type === "production_center");
+  const requestingSites = siteRows.filter((site) => {
+    const capabilities = capabilitiesBySite.get(site.id);
+    return capabilities ? capabilities.can_request_remissions : site.site_type === "satellite";
+  });
+  const fulfillmentSites = siteRows.filter((site) => {
+    const capabilities = capabilitiesBySite.get(site.id);
+    return capabilities ? capabilities.can_fulfill_remissions : site.site_type === "production_center";
+  });
 
   return (
     <div className="w-full">
@@ -132,7 +156,7 @@ export default async function SupplyRoutesPage({
         <div>
           <h1 className="ui-h1">Rutas de abastecimiento</h1>
           <p className="mt-2 ui-body-muted">
-            Define qué sede abastece a cada satélite. Saudo y Vento Café piden al Centro de producción.
+            Define qué sede abastece a cada sede solicitante según capacidades operativas.
           </p>
         </div>
         <Link href="/inventory/remissions" className="ui-btn ui-btn--ghost">
@@ -153,34 +177,34 @@ export default async function SupplyRoutesPage({
       <div className="mt-6 ui-panel">
         <div className="ui-h3">Nueva ruta</div>
         <p className="mt-1 text-sm text-[var(--ui-muted)]">
-          Sede solicitante = satélite que pide (Saudo, Vento). Sede abastecedora = Centro que envía.
+          Sede solicitante = sede con capacidad de solicitar. Sede abastecedora = sede con capacidad de despachar.
         </p>
         <form action={addRoute} className="mt-4 flex flex-wrap gap-4">
           <label className="flex flex-col gap-1">
-            <span className="ui-label">Sede solicitante (satélite)</span>
+            <span className="ui-label">Sede solicitante</span>
             <select name="requesting_site_id" className="ui-input min-w-[200px]" required>
               <option value="">Seleccionar</option>
-              {satellites.map((s) => (
+              {requestingSites.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name ?? s.id}
                 </option>
               ))}
-              {satellites.length === 0 ? (
-                <option value="" disabled>No hay sedes satélite</option>
+              {requestingSites.length === 0 ? (
+                <option value="" disabled>No hay sedes solicitantes</option>
               ) : null}
             </select>
           </label>
           <label className="flex flex-col gap-1">
-            <span className="ui-label">Sede abastecedora (Centro)</span>
+            <span className="ui-label">Sede abastecedora</span>
             <select name="fulfillment_site_id" className="ui-input min-w-[200px]" required>
               <option value="">Seleccionar</option>
-              {centers.map((s) => (
+              {fulfillmentSites.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.name ?? s.id}
                 </option>
               ))}
-              {centers.length === 0 ? (
-                <option value="" disabled>No hay centros de producción</option>
+              {fulfillmentSites.length === 0 ? (
+                <option value="" disabled>No hay sedes abastecedoras</option>
               ) : null}
             </select>
           </label>
@@ -198,8 +222,8 @@ export default async function SupplyRoutesPage({
           <Table>
             <thead>
               <tr>
-                <TableHeaderCell>Solicitante (satélite)</TableHeaderCell>
-                <TableHeaderCell>Abastecedor (Centro)</TableHeaderCell>
+                <TableHeaderCell>Solicitante</TableHeaderCell>
+                <TableHeaderCell>Abastecedor</TableHeaderCell>
                 <TableHeaderCell>Estado</TableHeaderCell>
                 <TableHeaderCell>Acciones</TableHeaderCell>
               </tr>
@@ -245,7 +269,7 @@ export default async function SupplyRoutesPage({
       </div>
 
       <div className="mt-6 ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
-        <strong className="text-[var(--ui-text)]">¿Para qué sirve?</strong> Cuando un satélite (Saudo, Vento Café) solicita una remisión, el sistema usa estas rutas para saber que el Centro de producción es quien abastece. Sin rutas configuradas, las remisiones no funcionan correctamente.
+        <strong className="text-[var(--ui-text)]">¿Para qué sirve?</strong> Cuando una sede solicita una remisión, el sistema usa estas rutas para saber qué sede la abastece. Sin rutas configuradas, las remisiones no funcionan correctamente.
       </div>
     </div>
   );

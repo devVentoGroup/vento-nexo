@@ -166,7 +166,7 @@ export default async function RemissionDetailPage({
   const showSourceLocSelector =
     inventoryPostingEnabled &&
     access.canPrepare &&
-    access.fromSiteType === "production_center";
+    access.fromCanFulfillRemissions;
   const { data: operationalSummary, error: operationalSummaryError } =
     await loadRemissionOperationalSummary({
       supabase,
@@ -259,8 +259,8 @@ export default async function RemissionDetailPage({
     access.canPrepare && ["pending", "preparing"].includes(currentStatus);
   const canEditReceiveItems =
     access.canReceive && ["in_transit", "partial"].includes(currentStatus);
-  const isProductionView = access.fromSiteType === "production_center" && access.canPrepare;
-  const isSatelliteView = access.toSiteType === "satellite" && access.canReceive;
+  const isProductionView = access.fromCanFulfillRemissions && access.canPrepare;
+  const isSatelliteView = access.toCanReceiveRemissions && access.canReceive;
   const linesMissingSourceLoc = itemRows.filter((item) => {
     const preparedQty = roundQuantity(Number(item.prepared_quantity ?? 0));
     const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
@@ -614,7 +614,7 @@ export default async function RemissionDetailPage({
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <p className="mt-1 ui-caption">
-              {roleFlowLabel} Vista: {access.fromSiteType === "production_center" ? "Bodega (Centro)" : "Sede satelite"}.
+              {roleFlowLabel} Vista: {access.fromCanFulfillRemissions ? "Bodega" : "Sede destino"}.
             </p>
             {isConductorTransitReview ? (
               <div className="mt-2 inline-flex items-center rounded-full bg-sky-100 px-3 py-1 text-xs font-semibold text-sky-900">

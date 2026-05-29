@@ -6,6 +6,7 @@ import {
   checkPermissionWithRoleOverride,
   getRoleOverrideFromCookies,
 } from "@/lib/auth/role-override";
+import type { SiteOperationalCapabilities } from "@/lib/inventory/site-capabilities";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +27,9 @@ function formatDateTime(value?: string | null) {
 const PERMISSIONS = {
   remissionsTransit: "inventory.remissions.transit",
 };
+
+type SiteRow = { id: string; name: string | null; site_type: string | null };
+type SiteCapabilityRow = Partial<SiteOperationalCapabilities>;
 
 export default async function RemissionsTransitQueuePage() {
   const { supabase, user } = await requireAppAccess({
@@ -59,27 +63,37 @@ export default async function RemissionsTransitQueuePage() {
     )
   );
 
-  const productionCenterSites =
+  const candidateSites =
     normalizedEffectiveRole === "conductor"
-      ? (
-          (
-            await supabase
+      ? (((await supabase
+          .from("sites")
+          .select("id,name,site_type")
+          .order("name", { ascending: true })).data ?? []) as SiteRow[])
+      : (((candidateSiteIds.length
+          ? await supabase
               .from("sites")
               .select("id,name,site_type")
-              .eq("site_type", "production_center")
-              .order("name", { ascending: true })
-          ).data ?? []
-        ) as Array<{ id: string; name: string | null; site_type: string | null }>
-      : (
-          (
-            candidateSiteIds.length
-              ? await supabase
-                  .from("sites")
-                  .select("id,name,site_type")
-                  .in("id", candidateSiteIds)
-              : { data: [] as Array<{ id: string; name: string | null; site_type: string | null }> }
-          ).data ?? []
-        ).filter((site) => String(site.site_type ?? "") === "production_center");
+              .in("id", candidateSiteIds)
+          : { data: [] as SiteRow[] }).data ?? []) as SiteRow[]);
+  const capabilitySiteIds = candidateSites.map((site) => site.id).filter(Boolean);
+  const { data: capabilityRows } = capabilitySiteIds.length
+    ? await supabase
+        .from("site_operational_capabilities")
+        .select("site_id,can_fulfill_remissions")
+        .in("site_id", capabilitySiteIds)
+    : { data: [] as SiteCapabilityRow[] };
+  const capabilityMap = new Map(
+    ((capabilityRows ?? []) as SiteCapabilityRow[]).map((row) => [
+      String(row.site_id ?? ""),
+      row,
+    ])
+  );
+  const productionCenterSites = candidateSites.filter((site) => {
+    const capabilities = capabilityMap.get(site.id);
+    return typeof capabilities?.can_fulfill_remissions === "boolean"
+      ? capabilities.can_fulfill_remissions
+      : String(site.site_type ?? "") === "production_center";
+  });
 
   const transitSiteIds = (
     await Promise.all(

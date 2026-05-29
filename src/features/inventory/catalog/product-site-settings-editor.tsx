@@ -11,6 +11,7 @@ export type SiteSettingLine = {
   default_area_kind?: string;
   area_kinds?: string[];
   production_location_id?: string;
+  local_production_enabled?: boolean;
   min_stock_qty?: number;
   min_stock_input_mode?: "base" | "purchase";
   min_stock_purchase_qty?: number;
@@ -22,6 +23,17 @@ export type SiteSettingLine = {
 };
 
 type SiteOption = { id: string; name: string | null; site_type?: string | null };
+type SiteCapabilities = {
+  site_id: string;
+  can_request_remissions: boolean;
+  can_fulfill_remissions: boolean;
+  can_receive_remissions: boolean;
+  can_sell: boolean;
+  can_produce: boolean;
+  can_hold_inventory: boolean;
+  is_commercial_business: boolean;
+  show_in_product_setup: boolean;
+};
 type AreaKindOption = { code: string; name: string; use_for_remission?: boolean | null };
 type SiteAreaKindOption = { site_id: string; kind: string };
 type ProductionLocationOption = {
@@ -38,6 +50,7 @@ type Props = {
   areaKinds: AreaKindOption[];
   siteAreaKinds: SiteAreaKindOption[];
   productionLocations?: ProductionLocationOption[];
+  siteCapabilities?: SiteCapabilities[];
   remissionAreaKindsBySite?: Record<string, string[]>;
   stockUnitCode?: string;
   operationUnitHint?: {
@@ -61,6 +74,7 @@ type SatelliteState = {
   isActive: boolean;
   areaKinds: string[];
   remissionEnabled?: boolean | null;
+  localProductionEnabled: boolean;
   minStockQty?: number;
   productionLocationId?: string;
 };
@@ -152,6 +166,7 @@ export function ProductSiteSettingsEditor({
   areaKinds,
   siteAreaKinds,
   productionLocations = [],
+  siteCapabilities = [],
   remissionAreaKindsBySite = {},
   stockUnitCode,
   operationUnitHint,
@@ -167,6 +182,10 @@ export function ProductSiteSettingsEditor({
     );
 
   const siteMap = useMemo(() => new Map(sites.map((site) => [site.id, site])), [sites]);
+  const capabilitiesBySite = useMemo(
+    () => new Map(siteCapabilities.map((row) => [row.site_id, row])),
+    [siteCapabilities]
+  );
   const initialBySite = useMemo(() => {
     const map = new Map<string, SiteSettingLine>();
     for (const row of initialRows) {
@@ -178,12 +197,32 @@ export function ProductSiteSettingsEditor({
   }, [initialRows]);
 
   const productionSites = useMemo(
-    () => sites.filter((site) => inferSiteKind(site) === "production_center"),
-    [sites]
+    () =>
+      sites.filter((site) => {
+        const capabilities = capabilitiesBySite.get(site.id);
+        if (capabilities) return capabilities.can_fulfill_remissions;
+        return inferSiteKind(site) === "production_center";
+      }),
+    [capabilitiesBySite, sites]
   );
   const satelliteSites = useMemo(
-    () => sites.filter((site) => inferSiteKind(site) === "satellite"),
-    [sites]
+    () =>
+      sites.filter((site) => {
+        const capabilities = capabilitiesBySite.get(site.id);
+        if (!capabilities) return inferSiteKind(site) === "satellite";
+        const hasOperationalCapability =
+          capabilities.can_request_remissions ||
+          capabilities.can_receive_remissions ||
+          capabilities.can_sell ||
+          capabilities.can_produce ||
+          capabilities.can_hold_inventory;
+        return (
+          capabilities.show_in_product_setup &&
+          !capabilities.can_fulfill_remissions &&
+          (!capabilities.is_commercial_business || hasOperationalCapability)
+        );
+      }),
+    [capabilitiesBySite, sites]
   );
   const managedSiteIds = useMemo(
     () => new Set([...productionSites, ...satelliteSites].map((site) => site.id)),
@@ -280,6 +319,9 @@ export function ProductSiteSettingsEditor({
             : existing
               ? null
               : false,
+        localProductionEnabled:
+          Boolean(existing?.local_production_enabled) ||
+          Boolean(existing?.production_location_id),
         minStockQty: existing?.min_stock_qty,
         productionLocationId: existing?.production_location_id ?? "",
       });
@@ -352,6 +394,7 @@ export function ProductSiteSettingsEditor({
         is_active: centerIsActive,
         default_area_kind: centerDefaultAreaKind || undefined,
         production_location_id: validCenterProductionLocationId || undefined,
+        local_production_enabled: Boolean(validCenterProductionLocationId),
         min_stock_qty: centerMinStockQty,
         min_stock_input_mode:
           centerMinStockInputMode === "purchase" && purchaseFactorToStock ? "purchase" : "base",
@@ -374,6 +417,7 @@ export function ProductSiteSettingsEditor({
         enabled: false,
         isActive: true,
         areaKinds: [],
+        localProductionEnabled: false,
         minStockQty: undefined,
       };
       if (!state.enabled && !current?.id) continue;
@@ -386,9 +430,10 @@ export function ProductSiteSettingsEditor({
         is_active: state.enabled ? state.isActive : false,
         default_area_kind: normalizedDefaultAreaKind || undefined,
         area_kinds: normalizedAreaKinds.length ? normalizedAreaKinds : undefined,
-        production_location_id: getProductionLocationsForSite(site.id).some((location) => location.id === state.productionLocationId)
+        production_location_id: state.localProductionEnabled && getProductionLocationsForSite(site.id).some((location) => location.id === state.productionLocationId)
           ? state.productionLocationId
           : undefined,
+        local_production_enabled: Boolean(state.localProductionEnabled),
         min_stock_qty: state.minStockQty,
         min_stock_input_mode: "base",
         audience: current?.audience ?? "BOTH",
@@ -407,6 +452,7 @@ export function ProductSiteSettingsEditor({
         isActive: true,
         areaKinds: [],
         remissionEnabled: false,
+        localProductionEnabled: false,
         minStockQty: undefined,
       };
       next.set(siteId, { ...current, ...patch });
@@ -608,6 +654,9 @@ export function ProductSiteSettingsEditor({
 
         <div className="space-y-3">
           {satelliteSites.map((site) => {
+            const capabilities = capabilitiesBySite.get(site.id);
+            const canRequestRemissions = capabilities?.can_request_remissions ?? true;
+            const canProduce = capabilities?.can_produce ?? true;
             const state = satelliteState.get(site.id) ?? {
               enabled: false,
               isActive: true,
@@ -655,32 +704,40 @@ export function ProductSiteSettingsEditor({
 
                     <div className="flex flex-col gap-1 md:col-span-4">
                       <span className="ui-label">Remisión hacia esta sede</span>
-                      <select
-                        value={
-                          state.remissionEnabled == null
-                            ? "legacy"
-                            : state.remissionEnabled
-                              ? "enabled"
-                              : "disabled"
-                        }
-                        onChange={(event) => {
-                          const value = event.target.value;
-                          updateSatellite(site.id, {
-                            remissionEnabled:
-                              value === "legacy" ? null : value === "enabled",
-                          });
-                        }}
-                        className="ui-input"
-                      >
-                        <option value="disabled">No permitir remisión</option>
-                        <option value="enabled">Permitir solicitud por remisión</option>
-                        <option value="legacy">Legacy: conservar comportamiento actual</option>
-                      </select>
-                      <p className="text-xs text-[var(--ui-muted)]">
-                        Usa remisión solo cuando esta sede deba pedir el producto a Centro u otra sede origen.
-                      </p>
+                      {canRequestRemissions ? (
+                        <>
+                          <select
+                            value={
+                              state.remissionEnabled == null
+                                ? "legacy"
+                                : state.remissionEnabled
+                                  ? "enabled"
+                                  : "disabled"
+                            }
+                            onChange={(event) => {
+                              const value = event.target.value;
+                              updateSatellite(site.id, {
+                                remissionEnabled:
+                                  value === "legacy" ? null : value === "enabled",
+                              });
+                            }}
+                            className="ui-input"
+                          >
+                            <option value="disabled">No permitir remisión</option>
+                            <option value="enabled">Permitir solicitud por remisión</option>
+                            <option value="legacy">Legacy: conservar comportamiento actual</option>
+                          </select>
+                          <p className="text-xs text-[var(--ui-muted)]">
+                            Usa remisión solo cuando esta sede deba pedir el producto a Centro u otra sede origen.
+                          </p>
+                        </>
+                      ) : (
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-[var(--ui-muted)]">
+                          Esta sede no solicita remisiones.
+                        </div>
+                      )}
 
-                      {state.remissionEnabled !== false ? (
+                      {canRequestRemissions && state.remissionEnabled !== false ? (
                         <div className="mt-2 space-y-1">
                           <span className="ui-label">Áreas que pueden solicitar</span>
                           <div className="max-h-40 overflow-auto rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-2">
@@ -719,24 +776,57 @@ export function ProductSiteSettingsEditor({
                       )}
                     </div>
 
-                    <label className="flex flex-col gap-1 md:col-span-4">
-                      <span className="ui-label">LOC de producción local</span>
-                      <select
-                        value={validSatelliteProductionLocationId}
-                        onChange={(event) => updateSatellite(site.id, { productionLocationId: event.target.value })}
-                        className="ui-input"
-                      >
-                        <option value="">Sin definir</option>
-                        {satelliteProductionLocationOptions.map((location) => (
-                          <option key={location.id} value={location.id}>
-                            {formatProductionLocationLabel(location)}
-                          </option>
-                        ))}
-                      </select>
-                      <p className="text-xs text-[var(--ui-muted)]">
-                        Debe ser el LOC real del área que recibe insumos y consume receta cuando el producto se prepara en esta sede.
-                      </p>
-                    </label>
+                    <div className="flex flex-col gap-2 md:col-span-4">
+                      <span className="ui-label">Producción local</span>
+                      {canProduce ? (
+                        <>
+                          <label className="flex items-center gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={state.localProductionEnabled}
+                              onChange={(event) =>
+                                updateSatellite(site.id, {
+                                  localProductionEnabled: event.target.checked,
+                                  productionLocationId: event.target.checked
+                                    ? state.productionLocationId
+                                    : "",
+                                })
+                              }
+                            />
+                            <span>Este producto se produce en esta sede</span>
+                          </label>
+                          {state.localProductionEnabled ? (
+                            <label className="flex flex-col gap-1">
+                              <span className="ui-label">LOC de producción local</span>
+                              <select
+                                value={validSatelliteProductionLocationId}
+                                onChange={(event) => updateSatellite(site.id, { productionLocationId: event.target.value })}
+                                className="ui-input"
+                              >
+                                <option value="">Sin definir</option>
+                                {satelliteProductionLocationOptions.map((location) => (
+                                  <option key={location.id} value={location.id}>
+                                    {formatProductionLocationLabel(location)}
+                                  </option>
+                                ))}
+                              </select>
+                              <p className="text-xs text-[var(--ui-muted)]">
+                                Debe ser un LOC de producción o un LOC de un área habilitada para producción.
+                              </p>
+                              {satelliteProductionLocationOptions.length === 0 ? (
+                                <p className="rounded-xl border border-amber-200 bg-amber-50 p-2 text-xs text-amber-800">
+                                  Esta sede produce, pero no tiene LOCs activos habilitados para producción.
+                                </p>
+                              ) : null}
+                            </label>
+                          ) : null}
+                        </>
+                      ) : (
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-[var(--ui-muted)]">
+                          Producción local no aplica para esta sede.
+                        </div>
+                      )}
+                    </div>
 
                     <label className="flex flex-col gap-1 md:col-span-5">
                       <span className="ui-label">Stock mínimo (referencia)</span>

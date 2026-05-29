@@ -11,6 +11,7 @@ import {
   roundQuantity,
   type ProductUomProfile,
 } from "@/lib/inventory/uom";
+import type { SiteOperationalCapabilities } from "@/lib/inventory/site-capabilities";
 import { createClient } from "@/lib/supabase/server";
 import { safeDecodeURIComponent } from "@/lib/url";
 
@@ -35,6 +36,8 @@ type SiteRow = {
   name: string | null;
   site_type: string | null;
 };
+
+type SiteCapabilityRow = Partial<SiteOperationalCapabilities>;
 
 type AreaRow = {
   id: string;
@@ -341,11 +344,20 @@ async function updateOwnPendingRemission(formData: FormData) {
     .select("site_type,name")
     .eq("id", toSiteId)
     .single();
+  const { data: toSiteCapability } = await supabase
+    .from("site_operational_capabilities")
+    .select("site_id,can_request_remissions")
+    .eq("site_id", toSiteId)
+    .maybeSingle();
+  const toSiteCanRequest =
+    typeof toSiteCapability?.can_request_remissions === "boolean"
+      ? toSiteCapability.can_request_remissions
+      : String(toSite?.site_type ?? "") === "satellite";
 
-  if (String(toSite?.site_type ?? "") !== "satellite") {
+  if (!toSiteCanRequest) {
     redirect(
       `/inventory/remissions/${requestId}/edit?error=` +
-      encodeURIComponent("Solo sedes satélite pueden solicitar remisiones.") +
+      encodeURIComponent("Esta sede no solicita remisiones.") +
       (siteId ? `&site_id=${encodeURIComponent(siteId)}` : "")
     );
   }
@@ -587,16 +599,24 @@ export default async function EditOwnPendingRemissionPage({
       .order("name", { ascending: true })
     : { data: [] as SiteRow[] };
 
-  let fulfillmentSiteRows = (fulfillmentSites ?? []) as SiteRow[];
-  if (targetSiteId && fulfillmentSiteRows.length === 0) {
-    const { data: fallbackSites } = await supabase
-      .from("sites")
-      .select("id,name,site_type")
-      .eq("site_type", "production_center")
-      .order("name", { ascending: true })
-      .limit(50);
-    fulfillmentSiteRows = (fallbackSites ?? []) as SiteRow[];
-  }
+  const { data: fulfillmentCapabilities } = fulfillmentSiteIds.length
+    ? await supabase
+      .from("site_operational_capabilities")
+      .select("site_id,can_fulfill_remissions")
+      .in("site_id", fulfillmentSiteIds)
+    : { data: [] as SiteCapabilityRow[] };
+  const fulfillmentCapabilityMap = new Map(
+    ((fulfillmentCapabilities ?? []) as SiteCapabilityRow[]).map((row) => [
+      String(row.site_id ?? ""),
+      row,
+    ])
+  );
+  const fulfillmentSiteRows = ((fulfillmentSites ?? []) as SiteRow[]).filter((site) => {
+    const capabilities = fulfillmentCapabilityMap.get(site.id);
+    return typeof capabilities?.can_fulfill_remissions === "boolean"
+      ? capabilities.can_fulfill_remissions
+      : String(site.site_type ?? "") === "production_center";
+  });
 
   const { data: areas } = targetSiteId
     ? await supabase

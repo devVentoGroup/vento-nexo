@@ -30,6 +30,12 @@ type SiteRuleRow = {
   is_enabled: boolean | null;
 };
 
+type SitePurposeSettingRow = {
+  site_id: string | null;
+  purpose: string | null;
+  mode: "inherit_global" | "custom" | "disabled" | null;
+};
+
 type RuntimeSettingRow = {
   bool_value: boolean | null;
 };
@@ -100,6 +106,9 @@ async function saveSiteOverride(formData: FormData) {
         .filter(Boolean)
     )
   );
+  const rawMode = asText(formData.get("mode"));
+  const mode =
+    rawMode === "disabled" || rawMode === "inherit_global" ? rawMode : "custom";
 
   await supabase
     .from("site_area_purpose_rules")
@@ -107,7 +116,20 @@ async function saveSiteOverride(formData: FormData) {
     .eq("site_id", siteId)
     .eq("purpose", "remission");
 
-  if (selectedKinds.length > 0) {
+  const { error: modeError } = await supabase.from("site_purpose_settings").upsert(
+    {
+      site_id: siteId,
+      purpose: "remission",
+      mode,
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "site_id,purpose" }
+  );
+  if (modeError) {
+    redirect("/inventory/settings/remissions?error=" + encodeURIComponent(modeError.message));
+  }
+
+  if (mode === "custom" && selectedKinds.length > 0) {
     const rows = selectedKinds.map((areaKind) => ({
       site_id: siteId,
       area_kind: areaKind,
@@ -145,6 +167,16 @@ async function clearSiteOverride(formData: FormData) {
     .delete()
     .eq("site_id", siteId)
     .eq("purpose", "remission");
+
+  await supabase.from("site_purpose_settings").upsert(
+    {
+      site_id: siteId,
+      purpose: "remission",
+      mode: "inherit_global",
+      updated_at: new Date().toISOString(),
+    },
+    { onConflict: "site_id,purpose" }
+  );
 
   revalidatePath("/inventory/settings/remissions");
   revalidatePath("/inventory/remissions");
@@ -231,6 +263,7 @@ export default async function RemissionsSettingsPage({
     { data: sitesData },
     { data: areaKindsData },
     { data: rulesData },
+    { data: purposeSettingsData },
     { data: inventoryPostingSettingData },
   ] = await Promise.all([
     supabase
@@ -248,6 +281,10 @@ export default async function RemissionsSettingsPage({
       .select("site_id,area_kind,purpose,is_enabled")
       .eq("purpose", "remission"),
     supabase
+      .from("site_purpose_settings")
+      .select("site_id,purpose,mode")
+      .eq("purpose", "remission"),
+    supabase
       .from("app_runtime_settings")
       .select("bool_value")
       .eq("app_id", APP_ID)
@@ -258,6 +295,7 @@ export default async function RemissionsSettingsPage({
   const sites = (sitesData ?? []) as SiteRow[];
   const areaKinds = (areaKindsData ?? []) as AreaKindRow[];
   const siteRules = (rulesData ?? []) as SiteRuleRow[];
+  const purposeSettings = (purposeSettingsData ?? []) as SitePurposeSettingRow[];
   const inventoryPostingSetting =
     inventoryPostingSettingData as RuntimeSettingRow | null;
 
@@ -281,13 +319,23 @@ export default async function RemissionsSettingsPage({
     acc[siteId] = current;
     return acc;
   }, {} as Record<string, string[]>);
+  const modeBySite = purposeSettings.reduce((acc, row) => {
+    const siteId = String(row.site_id ?? "").trim();
+    const mode = row.mode;
+    if (!siteId || !mode) return acc;
+    acc[siteId] = mode;
+    return acc;
+  }, {} as Record<string, "inherit_global" | "custom" | "disabled">);
 
   const selectedSiteId = String(sp.site_id ?? sites[0]?.id ?? "").trim();
   const selectedSite = sites.find((site) => site.id === selectedSiteId) ?? null;
-  const hasOverride = Boolean(selectedSiteId && rulesBySite[selectedSiteId]?.length);
-  const siteEnabledKinds = hasOverride
-    ? new Set(rulesBySite[selectedSiteId] ?? [])
-    : globalEnabledSet;
+  const selectedMode = modeBySite[selectedSiteId] ?? "inherit_global";
+  const siteEnabledKinds =
+    selectedMode === "disabled"
+      ? new Set<string>()
+      : selectedMode === "custom"
+        ? new Set(rulesBySite[selectedSiteId] ?? [])
+        : globalEnabledSet;
   const globalEnabledAreaLabels = areaKinds
     .filter((kind) => globalEnabledSet.has(String(kind.code ?? "").trim()))
     .map((kind) => kind.name ?? kind.code)
@@ -415,7 +463,11 @@ export default async function RemissionsSettingsPage({
                 : "Ninguna área activa para esta sede"}
             </div>
             <div className="mt-1 text-xs text-[var(--ui-muted)]">
-              {hasOverride ? "Usa excepción propia" : "Usa configuración global"}
+              {selectedMode === "disabled"
+                ? "Deshabilitado para esta sede"
+                : selectedMode === "custom"
+                  ? "Usa configuración propia"
+                  : "Usa configuración global"}
             </div>
           </div>
         </div>
@@ -472,7 +524,12 @@ export default async function RemissionsSettingsPage({
               {selectedSite.name ?? selectedSite.id}
             </div>
             <div className="mt-1 text-xs text-[var(--ui-muted)]">
-              Estado: {hasOverride ? "Excepción activa" : "Usando configuración global"}
+              Estado:{" "}
+              {selectedMode === "disabled"
+                ? "Remisiones deshabilitadas para esta sede"
+                : selectedMode === "custom"
+                  ? "Configuración propia"
+                  : "Usando configuración global"}
             </div>
           </div>
         ) : null}
@@ -480,6 +537,14 @@ export default async function RemissionsSettingsPage({
         {selectedSiteId ? (
           <form action={saveSiteOverride} className="mt-4 space-y-3">
             <input type="hidden" name="site_id" value={selectedSiteId} />
+            <label className="flex max-w-sm flex-col gap-1">
+              <span className="ui-label">Modo para esta sede</span>
+              <select name="mode" defaultValue={selectedMode} className="ui-input">
+                <option value="inherit_global">Usar configuración global</option>
+                <option value="custom">Configurar áreas propias</option>
+                <option value="disabled">Sin áreas habilitadas</option>
+              </select>
+            </label>
             <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
               {areaKinds.map((kind) => (
                 <label key={`${selectedSiteId}-${kind.code}`} className="flex items-center gap-2 rounded-xl border border-[var(--ui-border)] px-3 py-2">
@@ -495,7 +560,7 @@ export default async function RemissionsSettingsPage({
             </div>
             <div className="flex flex-wrap gap-2">
               <button type="submit" className="ui-btn ui-btn--brand">
-                Guardar excepción de sede
+                Guardar configuración de sede
               </button>
             </div>
           </form>

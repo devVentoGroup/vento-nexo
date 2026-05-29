@@ -225,7 +225,7 @@ export async function updateItems(formData: FormData) {
   const allowSourceLocation =
     inventoryPostingEnabled &&
     allowPrepared &&
-    access.fromSiteType === "production_center";
+    access.fromCanFulfillRemissions;
   if (allowPrepared) {
     for (let i = 0; i < itemIds.length; i += 1) {
       const itemId = itemIds[i];
@@ -810,7 +810,7 @@ export async function submitTransitChecklist(formData: FormData) {
     source_location_id: string | null;
   }>;
 
-  if (inventoryPostingEnabled && access.fromSiteType === "production_center") {
+  if (inventoryPostingEnabled && access.fromCanFulfillRemissions) {
     const locIds = Array.from(
       new Set(itemRows.map((row) => row.source_location_id).filter(Boolean) as string[])
     );
@@ -1395,7 +1395,7 @@ export async function updateStatus(formData: FormData) {
   if (
     inventoryPostingEnabled &&
     action === "prepare" &&
-    access.fromSiteType === "production_center" &&
+    access.fromCanFulfillRemissions &&
     !summary.can_start_prepare
   ) {
     if (summary.pending_loc_selection_lines > 0) {
@@ -1582,7 +1582,7 @@ export async function updateStatus(formData: FormData) {
       unit: string | null;
     }>;
 
-    if (access.fromSiteType === "production_center") {
+    if (access.fromCanFulfillRemissions) {
       const locIds = Array.from(
         new Set(itemRows.map((row) => row.source_location_id).filter(Boolean) as string[])
       );

@@ -11,6 +11,10 @@ import {
   getOperationalContext,
 } from "@/lib/auth/operational-context";
 import { createClient } from "@/lib/supabase/server";
+import {
+  getSiteCapabilitiesMap,
+  type SiteOperationalCapabilities,
+} from "@/lib/inventory/site-capabilities";
 import { RemissionsCreateForm } from "@/components/vento/remissions-create-form";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { safeDecodeURIComponent } from "@/lib/url";
@@ -44,6 +48,8 @@ type SearchParams = {
   from_site_id?: string;
   new?: string;
 };
+
+type SiteCapabilityRow = SiteOperationalCapabilities;
 
 function asText(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
@@ -739,16 +745,31 @@ async function createRemission(formData: FormData) {
   }
 
   const { data: toSite } = await supabase
-    .from("sites")
-    .select("site_type,name")
-    .eq("id", toSiteId)
-    .single();
+    .from("site_operational_capabilities")
+    .select("can_request_remissions")
+    .eq("site_id", toSiteId)
+    .maybeSingle();
 
-  if (String(toSite?.site_type ?? "") !== "satellite") {
+  if (toSite?.can_request_remissions === false) {
     redirect(
       "/inventory/remissions?error=" +
-      encodeURIComponent("Solo sedes satélite pueden solicitar remisiones.")
+      encodeURIComponent("Esta sede no solicita remisiones.")
     );
+  }
+
+  if (!toSite) {
+    const { data: legacyToSite } = await supabase
+      .from("sites")
+      .select("site_type,name")
+      .eq("id", toSiteId)
+      .single();
+
+    if (String(legacyToSite?.site_type ?? "") !== "satellite") {
+      redirect(
+        "/inventory/remissions?error=" +
+        encodeURIComponent("Esta sede no solicita remisiones.")
+      );
+    }
   }
 
   if (items.length === 0) {
@@ -968,6 +989,19 @@ export default async function RemissionsPage({
     : { data: [] as SiteRow[] };
 
   const siteRows = (sites ?? []) as SiteRow[];
+  const capabilitySiteIds = Array.from(new Set([...siteIds, activeSiteId].filter(Boolean)));
+  const { data: capabilityRows } = capabilitySiteIds.length
+    ? await supabase
+      .from("site_operational_capabilities")
+      .select(
+        "site_id,can_request_remissions,can_fulfill_remissions,can_receive_remissions,can_sell,can_produce,can_hold_inventory,is_commercial_business,show_in_product_setup"
+      )
+      .in("site_id", capabilitySiteIds)
+    : { data: [] as SiteCapabilityRow[] };
+  const capabilitiesBySite = getSiteCapabilitiesMap(
+    capabilitySiteIds,
+    (capabilityRows ?? []) as SiteCapabilityRow[]
+  );
   const siteMap = new Map(siteRows.map((site) => [site.id, site]));
   if (activeSiteId && !siteMap.has(activeSiteId)) {
     activeSiteId = defaultSiteId;
@@ -976,7 +1010,8 @@ export default async function RemissionsPage({
   const isAllSites = !activeSiteId && canViewAll;
   const activeSiteName = isAllSites ? "Todas las sedes" : activeSite?.name ?? activeSiteId;
   const activeSiteType = String(activeSite?.site_type ?? "");
-  const isProductionCenter = activeSiteType === "production_center";
+  const activeCapabilities = activeSiteId ? capabilitiesBySite.get(activeSiteId) : undefined;
+  const isProductionCenter = activeCapabilities?.can_fulfill_remissions ?? activeSiteType === "production_center";
 
   const canRequestPermission = activeSiteId
     ? await checkPermissionWithRoleOverride({
@@ -998,7 +1033,9 @@ export default async function RemissionsPage({
     : false;
 
   const viewMode = isAllSites ? "all" : isProductionCenter ? "bodega" : "satélite";
-  const canCreate = viewMode === "satélite" && canRequestPermission;
+  const canCreate =
+    Boolean(activeCapabilities?.can_request_remissions ?? activeSiteType === "satellite") &&
+    canRequestPermission;
   const canCancelPermission = await checkPermissionWithRoleOverride({
     supabase,
     appId: APP_ID,
@@ -1047,14 +1084,20 @@ export default async function RemissionsPage({
     : { data: [] as SiteRow[] };
 
   let fulfillmentSiteRows = (fulfillmentSites ?? []) as SiteRow[];
-  if (activeSiteId && fulfillmentSiteRows.length === 0) {
-    const { data: fallbackSites } = await supabase
-      .from("sites")
-      .select("id,name,site_type")
-      .eq("site_type", "production_center")
-      .order("name", { ascending: true })
-      .limit(50);
-    fulfillmentSiteRows = (fallbackSites ?? []) as SiteRow[];
+  if (fulfillmentSiteRows.length > 0) {
+    const fulfillmentCapabilityRows = await supabase
+      .from("site_operational_capabilities")
+      .select("site_id,can_fulfill_remissions")
+      .in("site_id", fulfillmentSiteRows.map((site) => site.id));
+    const fulfillmentCapabilities = new Map(
+      ((fulfillmentCapabilityRows.data ?? []) as Array<{ site_id: string; can_fulfill_remissions: boolean }>)
+        .map((row) => [row.site_id, row.can_fulfill_remissions])
+    );
+    fulfillmentSiteRows = fulfillmentSiteRows.filter((site) =>
+      fulfillmentCapabilities.has(site.id)
+        ? fulfillmentCapabilities.get(site.id) === true
+        : site.site_type === "production_center"
+    );
   }
   const requestedFromSiteId = sp.from_site_id ? String(sp.from_site_id).trim() : "";
   const selectedFromSiteId =

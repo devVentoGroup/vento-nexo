@@ -5,6 +5,10 @@ import { revalidatePath } from "next/cache";
 import { RequiredFieldsGuardForm } from "@/components/inventory/forms/RequiredFieldsGuardForm";
 import { CreateRequestKeyField } from "@/components/inventory/forms/create-request-key-field";
 import { requireAppAccess } from "@/lib/auth/guard";
+import {
+  getSiteCapabilitiesMap,
+  type SiteOperationalCapabilities,
+} from "@/lib/inventory/site-capabilities";
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 
@@ -169,6 +173,7 @@ function buildProductSiteSettingPayloadVariants(
     [],
     [
       "production_location_id",
+      "local_production_enabled",
       "area_kinds",
       "remission_enabled",
       "min_stock_input_mode",
@@ -178,6 +183,7 @@ function buildProductSiteSettingPayloadVariants(
     ],
     [
       "production_location_id",
+      "local_production_enabled",
       "area_kinds",
       "remission_enabled",
       "min_stock_input_mode",
@@ -188,6 +194,7 @@ function buildProductSiteSettingPayloadVariants(
     ],
     [
       "production_location_id",
+      "local_production_enabled",
       "area_kinds",
       "remission_enabled",
       "min_stock_input_mode",
@@ -1186,6 +1193,7 @@ async function createProduct(formData: FormData) {
         normalizedAreaKinds[0] ?? String(line.default_area_kind ?? "").trim() ?? "";
 
       const rawRemissionEnabled = line.remission_enabled;
+      const rawLocalProductionEnabled = line.local_production_enabled;
       const parsedRemissionEnabled =
         typeof rawRemissionEnabled === "boolean"
           ? rawRemissionEnabled
@@ -1194,12 +1202,17 @@ async function createProduct(formData: FormData) {
             : rawRemissionEnabled === "false"
               ? false
               : null;
+      const parsedLocalProductionEnabled =
+        typeof rawLocalProductionEnabled === "boolean"
+          ? rawLocalProductionEnabled
+          : rawLocalProductionEnabled === "true";
 
       const hasMeaningfulData =
         Boolean(siteIdFromLine) ||
         Boolean(normalizedDefaultAreaKind) ||
         normalizedAreaKinds.length > 0 ||
         Boolean(String(line.production_location_id ?? "").trim()) ||
+        rawLocalProductionEnabled !== undefined ||
         Boolean(String(line.audience ?? "").trim()) ||
         rawRemissionEnabled !== undefined ||
         String(line.min_stock_qty ?? "").trim() !== "";
@@ -1246,7 +1259,10 @@ async function createProduct(formData: FormData) {
         is_active: Boolean(line.is_active),
         default_area_kind: normalizedDefaultAreaKind || null,
         area_kinds: normalizedAreaKinds.length ? normalizedAreaKinds : null,
-        production_location_id: String(line.production_location_id ?? "").trim() || null,
+        production_location_id: parsedLocalProductionEnabled
+          ? String(line.production_location_id ?? "").trim() || null
+          : null,
+        local_production_enabled: parsedLocalProductionEnabled,
         min_stock_qty: parsedMinStockQty,
         min_stock_input_mode: minStockInputMode,
         min_stock_purchase_qty:
@@ -1333,6 +1349,24 @@ export default async function NewProductPage({
     name: string | null;
     site_type: string | null;
   }[];
+  const siteIds = sitesList.map((site) => site.id);
+  const { data: capabilityRows } = siteIds.length
+    ? await supabase
+      .from("site_operational_capabilities")
+      .select(
+        "site_id,can_request_remissions,can_fulfill_remissions,can_receive_remissions,can_sell,can_produce,can_hold_inventory,is_commercial_business,show_in_product_setup"
+      )
+      .in("site_id", siteIds)
+    : { data: [] as SiteOperationalCapabilities[] };
+  const capabilitiesBySite = getSiteCapabilitiesMap(
+    siteIds,
+    (capabilityRows ?? []) as SiteOperationalCapabilities[]
+  );
+  const capabilitySiteIds = new Set(
+    ((capabilityRows ?? []) as SiteOperationalCapabilities[]).map((row) =>
+      String(row.site_id ?? "")
+    )
+  );
   const siteNamesById = Object.fromEntries(
     sitesList.map((site) => [site.id, site.name ?? site.id])
   );
@@ -1433,7 +1467,12 @@ export default async function NewProductPage({
     return { site_id, kind };
   });
   const satelliteSiteIds = sitesList
-    .filter((site) => String(site.site_type ?? "").trim().toLowerCase() === "satellite")
+    .filter((site) => {
+      const capabilities = capabilitiesBySite.get(site.id);
+      return capabilitySiteIds.has(site.id)
+        ? Boolean(capabilities?.can_request_remissions)
+        : String(site.site_type ?? "").trim().toLowerCase() === "satellite";
+    })
     .map((site) => site.id);
   const { data: remissionAreaRulesData } =
     satelliteSiteIds.length > 0
@@ -1720,6 +1759,7 @@ export default async function NewProductPage({
           <ProductSiteAvailabilitySection
             initialRows={[]}
             sites={sitesList.map((s) => ({ id: s.id, name: s.name, site_type: s.site_type }))}
+            siteCapabilities={Array.from(capabilitiesBySite.values())}
             areaKinds={areaKindsList.map((a) => ({
               code: a.code,
               name: a.name ?? a.code,

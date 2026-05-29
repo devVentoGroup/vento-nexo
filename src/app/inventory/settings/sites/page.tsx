@@ -3,6 +3,10 @@ import { redirect } from "next/navigation";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 
 import { requireAppAccess } from "@/lib/auth/guard";
+import {
+  getSiteCapabilitiesMap,
+  type SiteOperationalCapabilities,
+} from "@/lib/inventory/site-capabilities";
 import { createClient } from "@/lib/supabase/server";
 import { safeDecodeURIComponent } from "@/lib/url";
 
@@ -15,6 +19,8 @@ type SiteRow = {
   site_type: string | null;
   is_active: boolean | null;
 };
+
+type SiteCapabilityRow = SiteOperationalCapabilities;
 
 function siteTypeLabel(type: string | null) {
   switch (String(type ?? "")) {
@@ -54,13 +60,44 @@ async function createSite(formData: FormData) {
   redirect("/inventory/settings/sites?ok=created");
 }
 
+async function updateSiteCapabilities(formData: FormData) {
+  "use server";
+  const supabase = await createClient();
+  const siteId = asText(formData.get("site_id"));
+  if (!siteId) {
+    redirect("/inventory/settings/sites?error=" + encodeURIComponent("Sede inválida."));
+  }
+
+  const { error } = await supabase.from("site_operational_capabilities").upsert(
+    {
+      site_id: siteId,
+      can_request_remissions: formData.get("can_request_remissions") === "on",
+      can_fulfill_remissions: formData.get("can_fulfill_remissions") === "on",
+      can_receive_remissions: formData.get("can_receive_remissions") === "on",
+      can_sell: formData.get("can_sell") === "on",
+      can_produce: formData.get("can_produce") === "on",
+      can_hold_inventory: formData.get("can_hold_inventory") === "on",
+      is_commercial_business: formData.get("is_commercial_business") === "on",
+      show_in_product_setup: formData.get("show_in_product_setup") === "on",
+    },
+    { onConflict: "site_id" }
+  );
+  if (error) redirect("/inventory/settings/sites?error=" + encodeURIComponent(error.message));
+  redirect("/inventory/settings/sites?ok=capabilities");
+}
+
 export default async function SitesPage({
   searchParams,
 }: {
   searchParams?: Promise<{ ok?: string; error?: string }>;
 }) {
   const sp = (await searchParams) ?? {};
-  const okMsg = sp.ok === "created" ? "Sede creada." : "";
+  const okMsg =
+    sp.ok === "created"
+      ? "Sede creada."
+      : sp.ok === "capabilities"
+        ? "Capacidades actualizadas."
+        : "";
   const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
 
   const { supabase, user } = await requireAppAccess({
@@ -77,6 +114,19 @@ export default async function SitesPage({
     .select("id,code,name,site_type,is_active")
     .order("name", { ascending: true });
   const siteRows = (sites ?? []) as SiteRow[];
+  const siteIds = siteRows.map((site) => site.id);
+  const { data: capabilityRows } = siteIds.length
+    ? await supabase
+      .from("site_operational_capabilities")
+      .select(
+        "site_id,can_request_remissions,can_fulfill_remissions,can_receive_remissions,can_sell,can_produce,can_hold_inventory,is_commercial_business,show_in_product_setup"
+      )
+      .in("site_id", siteIds)
+    : { data: [] as SiteCapabilityRow[] };
+  const capabilitiesBySite = getSiteCapabilitiesMap(
+    siteIds,
+    (capabilityRows ?? []) as SiteCapabilityRow[]
+  );
 
   return (
     <div className="w-full">
@@ -138,24 +188,60 @@ export default async function SitesPage({
                 <TableHeaderCell>Nombre</TableHeaderCell>
                 <TableHeaderCell>Tipo</TableHeaderCell>
                 <TableHeaderCell>Estado</TableHeaderCell>
+                <TableHeaderCell>Capacidades operativas</TableHeaderCell>
               </tr>
             </thead>
             <tbody>
-              {siteRows.map((s) => (
-                <tr key={s.id} className="border-t border-zinc-200/60">
-                  <TableCell className="font-mono text-sm">{s.code ?? "—"}</TableCell>
-                  <TableCell>{s.name ?? "—"}</TableCell>
-                  <TableCell>{siteTypeLabel(s.site_type)}</TableCell>
-                  <TableCell>
-                    <span className={s.is_active ? "ui-chip ui-chip--success" : "ui-chip"}>
-                      {s.is_active ? "Activa" : "Inactiva"}
-                    </span>
-                  </TableCell>
-                </tr>
-              ))}
+              {siteRows.map((s) => {
+                const capabilities = capabilitiesBySite.get(s.id);
+                return (
+                  <tr key={s.id} className="border-t border-zinc-200/60 align-top">
+                    <TableCell className="font-mono text-sm">{s.code ?? "—"}</TableCell>
+                    <TableCell>{s.name ?? "—"}</TableCell>
+                    <TableCell>{siteTypeLabel(s.site_type)}</TableCell>
+                    <TableCell>
+                      <span className={s.is_active ? "ui-chip ui-chip--success" : "ui-chip"}>
+                        {s.is_active ? "Activa" : "Inactiva"}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <form action={updateSiteCapabilities} className="min-w-[520px] space-y-3">
+                        <input type="hidden" name="site_id" value={s.id} />
+                        <div className="grid gap-2 md:grid-cols-2">
+                          {[
+                            ["can_request_remissions", "Solicita remisiones", capabilities?.can_request_remissions],
+                            ["can_fulfill_remissions", "Despacha remisiones", capabilities?.can_fulfill_remissions],
+                            ["can_receive_remissions", "Recibe remisiones", capabilities?.can_receive_remissions],
+                            ["can_sell", "Vende", capabilities?.can_sell],
+                            ["can_produce", "Produce", capabilities?.can_produce],
+                            ["can_hold_inventory", "Almacena inventario", capabilities?.can_hold_inventory],
+                            ["is_commercial_business", "Negocio comercial", capabilities?.is_commercial_business],
+                            ["show_in_product_setup", "Mostrar en productos", capabilities?.show_in_product_setup],
+                          ].map(([name, label, checked]) => (
+                            <label key={String(name)} className="flex items-center gap-2 text-sm">
+                              <input
+                                name={String(name)}
+                                type="checkbox"
+                                defaultChecked={Boolean(checked)}
+                                disabled={!canManage}
+                              />
+                              <span>{label}</span>
+                            </label>
+                          ))}
+                        </div>
+                        {canManage ? (
+                          <button type="submit" className="ui-btn ui-btn--ghost h-9 px-3 text-sm">
+                            Guardar capacidades
+                          </button>
+                        ) : null}
+                      </form>
+                    </TableCell>
+                  </tr>
+                );
+              })}
               {siteRows.length === 0 ? (
                 <tr>
-                  <TableCell colSpan={4} className="ui-empty">
+                  <TableCell colSpan={5} className="ui-empty">
                     No hay sedes.
                   </TableCell>
                 </tr>
