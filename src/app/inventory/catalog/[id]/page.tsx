@@ -26,6 +26,7 @@ import {
   isAutoCostReady,
 } from "@/lib/inventory/costing";
 import { requireAppAccess } from "@/lib/auth/guard";
+import { checkPermission } from "@/lib/auth/permissions";
 import {
   getSiteCapabilitiesMap,
   type SiteOperationalCapabilities,
@@ -524,9 +525,7 @@ async function updateProduct(formData: FormData) {
   const user = userRes.user ?? null;
   if (!user) redirect(await buildShellLoginUrl("/inventory/catalog"));
 
-  const { data: employee } = await supabase.from("employees").select("role").eq("id", user.id).maybeSingle();
-  const role = String(employee?.role ?? "").toLowerCase();
-  if (!["propietario", "gerente_general"].includes(role)) {
+  if (!(await checkPermission(supabase, APP_ID, "catalog.products"))) {
     redirect(`/inventory/catalog?error=${encodeURIComponent("No tienes permisos para editar productos.")}`);
   }
 
@@ -1606,8 +1605,7 @@ export default async function ProductCatalogDetailPage({
       .eq("employee_id", user.id)
       .maybeSingle(),
   ]);
-  const role = String(employee?.role ?? "").toLowerCase();
-  const canEdit = ["propietario", "gerente_general"].includes(role);
+  const canEdit = await checkPermission(supabase, APP_ID, "catalog.products");
 
   const productRow = product as ProductRow;
   const profileRow = (profile ?? null) as InventoryProfileRow | null;

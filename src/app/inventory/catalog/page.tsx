@@ -11,6 +11,7 @@ import {
 import { CatalogToolbar } from "@/features/inventory/catalog/catalog-toolbar";
 import { CatalogOptionalDetails } from "@/features/inventory/catalog/catalog-ui";
 import { requireAppAccess } from "@/lib/auth/guard";
+import { checkPermission } from "@/lib/auth/permissions";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { getCategoryDomainOptions } from "@/lib/constants";
 import { getAutoCostReadinessReason, resolveNetSupplierPackPrice } from "@/lib/inventory/costing";
@@ -410,12 +411,9 @@ export default async function InventoryCatalogPage({
     ? selectedSupplierId
     : "";
   const siteNamesById = Object.fromEntries(siteRows.map((row) => [row.id, row.name ?? row.id]));
-  const canManageProducts = ["propietario", "gerente_general"].includes(
-    String((employee as { role?: string | null } | null)?.role ?? "").toLowerCase()
-  );
-  const canCreateProducts = ["propietario", "gerente_general", "bodeguero"].includes(
-    String((employee as { role?: string | null } | null)?.role ?? "").toLowerCase()
-  );
+  const employeeRole = String((employee as { role?: string | null } | null)?.role ?? "").toLowerCase();
+  const canManageProducts = ["propietario", "gerente_general"].includes(employeeRole);
+  const canCreateProducts = await checkPermission(supabase, APP_ID, "catalog.products");
 
   const siteId = String(
     sp.site_id ??

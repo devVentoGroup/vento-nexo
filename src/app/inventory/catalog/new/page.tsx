@@ -5,6 +5,7 @@ import { revalidatePath } from "next/cache";
 import { RequiredFieldsGuardForm } from "@/components/inventory/forms/RequiredFieldsGuardForm";
 import { CreateRequestKeyField } from "@/components/inventory/forms/create-request-key-field";
 import { requireAppAccess } from "@/lib/auth/guard";
+import { checkPermission } from "@/lib/auth/permissions";
 import {
   getSiteCapabilitiesMap,
   type SiteOperationalCapabilities,
@@ -403,9 +404,7 @@ async function createProduct(formData: FormData) {
   const user = userRes.user ?? null;
   if (!user) redirect(await buildShellLoginUrl("/inventory/catalog"));
 
-  const { data: employee } = await supabase.from("employees").select("role").eq("id", user.id).maybeSingle();
-  const role = String((employee as { role?: string } | null)?.role ?? "").toLowerCase();
-  if (!["propietario", "gerente_general", "bodeguero"].includes(role)) {
+  if (!(await checkPermission(supabase, "nexo", "catalog.products"))) {
     redirect("/inventory/catalog?error=" + encodeURIComponent("No tienes permisos para crear productos."));
   }
 
@@ -1325,6 +1324,7 @@ export default async function NewProductPage({
   const { supabase, user } = await requireAppAccess({
     appId: "nexo",
     returnTo: `/inventory/catalog/new?type=${typeKey}`,
+    permissionCode: "catalog.products",
   });
 
   const [{ data: emp }, { data: settings }, { data: sitesData }] = await Promise.all([
@@ -1341,8 +1341,7 @@ export default async function NewProductPage({
       .neq("name", "App Review (Demo)")
       .order("name"),
   ]);
-  const role = String((emp as { role?: string } | null)?.role ?? "").toLowerCase();
-  const canCreate = ["propietario", "gerente_general", "bodeguero"].includes(role);
+  const canCreate = await checkPermission(supabase, "nexo", "catalog.products");
 
   const sitesList = (sitesData ?? []) as {
     id: string;
@@ -1525,7 +1524,7 @@ export default async function NewProductPage({
           </div>
         </section>
         <div className="ui-alert ui-alert--warn">
-          Solo propietarios, gerentes generales y bodegueros pueden crear productos.
+          No tienes permiso para crear productos.
         </div>
       </div>
     );

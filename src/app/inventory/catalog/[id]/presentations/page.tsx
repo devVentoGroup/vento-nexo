@@ -8,6 +8,7 @@ import {
 } from "@/features/inventory/catalog/product-presentations-editor";
 import { RequiredFieldsGuardForm } from "@/components/inventory/forms/RequiredFieldsGuardForm";
 import { requireAppAccess } from "@/lib/auth/guard";
+import { checkPermission } from "@/lib/auth/permissions";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { createClient } from "@/lib/supabase/server";
 import { safeDecodeURIComponent } from "@/lib/url";
@@ -189,14 +190,7 @@ async function saveProductPresentations(formData: FormData) {
   const user = userRes.user ?? null;
   if (!user) redirect(await buildShellLoginUrl("/inventory/catalog"));
 
-  const { data: employee } = await supabase
-    .from("employees")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-
-  const role = String(employee?.role ?? "").toLowerCase();
-  if (!["propietario", "gerente_general"].includes(role)) {
+  if (!(await checkPermission(supabase, APP_ID, "catalog.products"))) {
     redirect(`/inventory/catalog?error=${encodeURIComponent("No tienes permisos para editar presentaciones.")}`);
   }
 
