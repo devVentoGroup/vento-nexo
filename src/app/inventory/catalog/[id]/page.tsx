@@ -302,7 +302,16 @@ function resolveNetPurchasePrice(params: {
 type CatalogTab = "insumos" | "preparaciones" | "productos" | "equipos";
 
 function sanitizeCatalogReturnPath(value: string): string {
-  return value.startsWith("/inventory/catalog") ? value : "";
+  const trimmed = value.trim();
+  if (!trimmed.startsWith("/inventory/catalog")) return "";
+
+  const [pathname, qs] = trimmed.split("?", 2);
+  const params = new URLSearchParams(qs ?? "");
+  params.delete("ok");
+  params.delete("error");
+
+  const query = params.toString();
+  return query ? `${pathname}?${query}` : pathname;
 }
 
 function decodeCatalogReturnParam(value: string | undefined): string {
@@ -315,7 +324,12 @@ function decodeCatalogReturnParam(value: string | undefined): string {
 }
 
 function appendQueryParam(path: string, key: string, value: string): string {
-  return `${path}${path.includes("?") ? "&" : "?"}${key}=${encodeURIComponent(value)}`;
+  const [pathname, qs] = path.split("?", 2);
+  const params = new URLSearchParams(qs ?? "");
+  params.set(key, value);
+
+  const query = params.toString();
+  return query ? `${pathname}?${query}` : pathname;
 }
 
 function resolveCatalogTab(productTypeRaw: string, inventoryKindRaw: string): CatalogTab {

@@ -206,9 +206,16 @@ type InventoryReceiptItemTraceRow = {
 
 function sanitizeCatalogReturnPath(value: string | undefined): string {
   const decoded = value ? safeDecodeURIComponent(value) : "";
-  return decoded.startsWith("/inventory/catalog")
-    ? decoded
-    : "/inventory/catalog";
+  const trimmed = decoded.trim();
+  if (!trimmed.startsWith("/inventory/catalog")) return "/inventory/catalog";
+
+  const [pathname, qs] = trimmed.split("?", 2);
+  const params = new URLSearchParams(qs ?? "");
+  params.delete("ok");
+  params.delete("error");
+
+  const query = params.toString();
+  return query ? `${pathname}?${query}` : pathname;
 }
 
 function formatQty(value: number | null | undefined): string {
