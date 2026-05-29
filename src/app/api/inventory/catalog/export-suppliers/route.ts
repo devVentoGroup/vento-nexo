@@ -36,6 +36,12 @@ type SupplierRow = {
   name: string | null;
 };
 
+type ProductManualPresentationRow = {
+  product_id: string | null;
+  is_active: boolean | null;
+  source: string | null;
+};
+
 export async function GET() {
   const cookieStore = await cookies();
   const supabase = createServerClient(
@@ -46,7 +52,7 @@ export async function GET() {
         getAll() {
           return cookieStore.getAll();
         },
-        setAll() {},
+        setAll() { },
       },
     }
   );
@@ -93,9 +99,9 @@ export async function GET() {
   const withNet =
     productIds.length > 0
       ? await supabase
-          .from("product_suppliers")
-          .select(productSuppliersWithNetSelect)
-          .in("product_id", productIds)
+        .from("product_suppliers")
+        .select(productSuppliersWithNetSelect)
+        .in("product_id", productIds)
       : { data: [] as ProductSupplierRow[], error: null };
 
   const missingPurchasePriceNet =
@@ -105,9 +111,9 @@ export async function GET() {
   const fallback =
     productIds.length > 0 && missingPurchasePriceNet
       ? await supabase
-          .from("product_suppliers")
-          .select(productSuppliersBaseSelect)
-          .in("product_id", productIds)
+        .from("product_suppliers")
+        .select(productSuppliersBaseSelect)
+        .in("product_id", productIds)
       : null;
 
   const productSuppliersData =
@@ -119,6 +125,27 @@ export async function GET() {
   }
 
   const productSuppliers = (productSuppliersData ?? []) as ProductSupplierRow[];
+
+  const { data: manualPresentationsData, error: manualPresentationsErr } =
+    productIds.length > 0
+      ? await supabase
+        .from("product_uom_profiles")
+        .select("product_id,is_active,source")
+        .in("product_id", productIds)
+        .eq("is_active", true)
+        .eq("source", "manual")
+      : { data: [] as ProductManualPresentationRow[], error: null };
+
+  if (manualPresentationsErr) {
+    return NextResponse.json({ error: manualPresentationsErr.message }, { status: 400 });
+  }
+
+  const productIdsWithManualPresentation = new Set(
+    ((manualPresentationsData ?? []) as ProductManualPresentationRow[])
+      .map((row) => String(row.product_id ?? "").trim())
+      .filter(Boolean)
+  );
+
   const supplierIds = Array.from(
     new Set(productSuppliers.map((row) => String(row.supplier_id ?? "")).filter(Boolean))
   );
@@ -152,6 +179,7 @@ export async function GET() {
     "Unidad operativa compra",
     "Unidad stock",
     "Costo actual (stock)",
+    "Falta presentacion manual",
     "Estado",
   ]
     .map(escapeCsv)
@@ -175,6 +203,7 @@ export async function GET() {
 
   for (const product of products) {
     const supplierRows = supplierRowsByProduct.get(product.id) ?? [];
+    const missingManualPresentation = !productIdsWithManualPresentation.has(product.id);
     if (!supplierRows.length) {
       rows.push(
         [
@@ -192,6 +221,7 @@ export async function GET() {
           "",
           escapeCsv(product.stock_unit_code ?? product.unit ?? ""),
           String(product.cost ?? ""),
+          escapeCsv(missingManualPresentation ? "Si" : "No"),
           escapeCsv(product.is_active === false ? "Inactivo" : "Activo"),
         ].join(",")
       );
@@ -227,6 +257,7 @@ export async function GET() {
           escapeCsv(supplierRow.purchase_unit ?? ""),
           escapeCsv(product.stock_unit_code ?? product.unit ?? ""),
           String(product.cost ?? ""),
+          escapeCsv(missingManualPresentation ? "Si" : "No"),
           escapeCsv(product.is_active === false ? "Inactivo" : "Activo"),
         ].join(",")
       );
