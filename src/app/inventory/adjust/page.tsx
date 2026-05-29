@@ -10,14 +10,18 @@ export const dynamic = "force-dynamic";
 const APP_ID = "nexo";
 const PERMISSION = "inventory.adjustments";
 
-
-type SearchParams = { site_id?: string };
+type SearchParams = {
+  site_id?: string;
+  location_id?: string;
+};
 
 type EmployeeSiteRow = { site_id: string | null; is_primary: boolean | null };
 type SiteRow = { id: string; name: string | null };
 type ProductRow = { id: string; name: string; sku: string | null; unit: string | null };
 type ProductSiteRow = { product_id: string; is_active: boolean | null };
 type StockRow = { product_id: string; current_qty: number | null };
+type LocationRow = { id: string; name: string | null; code: string | null; };
+type LocationStockRow = { product_id: string | null; current_qty: number | null; };
 
 export default async function InventoryAdjustPage({
   searchParams,
@@ -48,16 +52,17 @@ export default async function InventoryAdjustPage({
   const { data: sites } =
     siteIds.length > 0
       ? await supabase
-          .from("sites")
-          .select("id,name")
-          .in("id", siteIds)
-          .order("name", { ascending: true })
+        .from("sites")
+        .select("id,name")
+        .in("id", siteIds)
+        .order("name", { ascending: true })
       : { data: [] as SiteRow[] };
 
   const siteRows = (sites ?? []) as SiteRow[];
   const siteNameMap = new Map(siteRows.map((r) => [r.id, r.name ?? r.id]));
 
   const siteId = String(sp.site_id ?? "").trim();
+  const locationId = String(sp.location_id ?? "").trim();
 
   if (!siteId && siteRows.length === 1) {
     redirect(`/inventory/adjust?site_id=${encodeURIComponent(siteRows[0].id)}`);
@@ -138,7 +143,7 @@ export default async function InventoryAdjustPage({
           <p className="mt-4 ui-body-muted">No tienes sedes asignadas. Contacta al administrador.</p>
         ) : null}
       </div>
-      );
+    );
   }
 
   // Paso 2: productos y formulario
@@ -170,15 +175,48 @@ export default async function InventoryAdjustPage({
   const { data: stockData } =
     productRows.length > 0
       ? await supabase
-          .from("inventory_stock_by_site")
-          .select("product_id,current_qty")
-          .eq("site_id", siteId)
-          .in("product_id", productRows.map((p) => p.id))
+        .from("inventory_stock_by_site")
+        .select("product_id,current_qty")
+        .eq("site_id", siteId)
+        .in("product_id", productRows.map((p) => p.id))
       : { data: [] as StockRow[] };
 
   const stockRows = (stockData ?? []) as StockRow[];
   const currentStock = Object.fromEntries(
     stockRows.map((r) => [r.product_id, r.current_qty ?? 0])
+  );
+
+  const { data: locationsData } = await supabase
+    .from("inventory_locations")
+    .select("id,name,code")
+    .eq("site_id", siteId)
+    .eq("is_active", true)
+    .order("name", { ascending: true });
+
+  const locationRows = (locationsData ?? []) as LocationRow[];
+
+  const safeLocationId = locationRows.some((location) => location.id === locationId)
+    ? locationId
+    : "";
+
+  const { data: locationStockData } =
+    safeLocationId && productRows.length > 0
+      ? await supabase
+        .from("inventory_stock_by_location")
+        .select("product_id,current_qty")
+        .eq("location_id", safeLocationId)
+        .in("product_id", productRows.map((p) => p.id))
+      : { data: [] as LocationStockRow[] };
+
+  const locationStockRows = (locationStockData ?? []) as LocationStockRow[];
+
+  const currentLocationStock = Object.fromEntries(
+    locationStockRows
+      .map((row) => [
+        String(row.product_id ?? "").trim(),
+        Number(row.current_qty ?? 0),
+      ])
+      .filter(([productId]) => Boolean(productId))
   );
 
   const siteName = siteNameMap.get(siteId) ?? siteId;
@@ -234,6 +272,9 @@ export default async function InventoryAdjustPage({
           siteId={siteId}
           siteName={siteName}
           currentStock={currentStock}
+          locations={locationRows.map((location) => ({ id: location.id, name: location.name, code: location.code, }))}
+          selectedLocationId={safeLocationId}
+          currentLocationStock={currentLocationStock}
         />
       )}
     </div>

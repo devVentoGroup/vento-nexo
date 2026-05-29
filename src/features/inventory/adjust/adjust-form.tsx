@@ -11,17 +11,26 @@ type Product = {
   unit: string | null;
 };
 
+type Location = {
+  id: string;
+  name: string | null;
+  code: string | null;
+};
+
 type Props = {
   products: Product[];
   siteId: string;
   siteName: string;
   currentStock: Record<string, number>;
+  locations: Location[];
+  selectedLocationId: string;
+  currentLocationStock: Record<string, number>;
 };
 
-export function AdjustForm({ products, siteId, siteName, currentStock }: Props) {
+export function AdjustForm({ products, siteId, siteName, currentStock, locations, selectedLocationId, currentLocationStock, }: Props) {
   const router = useRouter();
   const [productId, setProductId] = useState<string>("");
-  const [adjustMode, setAdjustMode] = useState<"add" | "remove">("remove");
+  const [adjustMode, setAdjustMode] = useState<"add" | "remove" | "count">("count");
   const [quantityValue, setQuantityValue] = useState<string>("");
   const [reason, setReason] = useState<string>("");
   const [evidence, setEvidence] = useState<string>("");
@@ -35,18 +44,23 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
   }>({});
 
   const selectedProduct = products.find((p) => p.id === productId);
-  const currentQty = productId ? currentStock[productId] ?? 0 : 0;
+  const selectedLocation = locations.find((location) => location.id === selectedLocationId) ?? null;
+  const isLocationMode = Boolean(selectedLocationId);
+  const currentQty = productId ? isLocationMode ? currentLocationStock[productId] ?? 0 : currentStock[productId] ?? 0 : 0;
   const rawQuantityNum = (() => {
-    const v = quantityValue.trim();
-    if (v === "" || v == null) return null;
-    const n = Number(v);
-    return Number.isFinite(n) && n > 0 ? n : null;
+    const value = quantityValue.trim();
+    if (value === "") return null;
+    const parsed = Number(value); if (!Number.isFinite(parsed))
+      return null;
+    if (adjustMode === "count") { return parsed >= 0 ? parsed : null; }
+    return parsed > 0 ? parsed : null;
   })();
-  const deltaNum = rawQuantityNum != null ? (adjustMode === "add" ? rawQuantityNum : rawQuantityNum * -1) : null;
+  const deltaNum = rawQuantityNum != null ? adjustMode === "count" ? rawQuantityNum - currentQty : adjustMode === "add" ? rawQuantityNum : rawQuantityNum * -1 : null;
   const newQty = deltaNum != null ? currentQty + deltaNum : null;
 
   const canSubmit =
     Boolean(productId) &&
+    rawQuantityNum != null &&
     deltaNum != null &&
     deltaNum !== 0 &&
     reason.trim().length > 0 &&
@@ -60,7 +74,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
       reason?: string;
     } = {};
     if (!productId) nextFieldErrors.productId = "Selecciona un producto.";
-    if (deltaNum == null || deltaNum === 0) nextFieldErrors.quantity = "Ingresa una cantidad mayor a 0.";
+    if (rawQuantityNum == null) { nextFieldErrors.quantity = adjustMode === "count" ? "Ingresa la cantidad física real. Puede ser 0." : "Ingresa una cantidad mayor a 0."; } else if (deltaNum == null || deltaNum === 0) { nextFieldErrors.quantity = "No hay diferencia para ajustar."; }
     if (!reason.trim()) nextFieldErrors.reason = "Escribe el motivo del ajuste.";
     if (Object.keys(nextFieldErrors).length > 0) {
       setFieldErrors(nextFieldErrors);
@@ -76,8 +90,10 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           site_id: siteId,
+          location_id: selectedLocationId || undefined,
           product_id: productId,
-          quantity_delta: deltaNum,
+          quantity_delta: adjustMode === "count" ? undefined : deltaNum,
+          counted_quantity: adjustMode === "count" ? rawQuantityNum : undefined,
           unit_cost_for_adjust:
             deltaNum != null && deltaNum > 0 && unitCostForAdjust.trim() !== ""
               ? Number(unitCostForAdjust)
@@ -92,7 +108,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
         setLoading(false);
         return;
       }
-      router.push(`/inventory/stock?site_id=${encodeURIComponent(siteId)}&adjust=1`);
+      router.push(`/inventory/adjust?site_id=${encodeURIComponent(siteId)}${selectedLocationId ? `&location_id=${encodeURIComponent(selectedLocationId)}` : ""}`);
       return;
     } catch {
       setSubmitError("Error de red al guardar.");
@@ -113,6 +129,34 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
               {siteName}
             </div>
           </div>
+
+          {locations.length > 0 ? (
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">LOC / nivel</span>
+              <select
+                value={selectedLocationId}
+                onChange={(event) => {
+                  const nextLocationId = event.target.value;
+                  const params = new URLSearchParams();
+                  params.set("site_id", siteId);
+                  if (nextLocationId) params.set("location_id", nextLocationId);
+                  router.push(`/inventory/adjust?${params.toString()}`);
+                }}
+                className="ui-input"
+              >
+                <option value="">Ajuste general de sede</option>
+                {locations.map((location) => (
+                  <option key={location.id} value={location.id}>
+                    {location.name ?? location.code ?? location.id}
+                    {location.code ? ` · ${location.code}` : ""}
+                  </option>
+                ))}
+              </select>
+              <span className="text-xs text-[var(--ui-muted)]">
+                Para poner cantidades a 0 por nivel, selecciona primero el LOC específico.
+              </span>
+            </label>
+          ) : null}
 
           <label className="flex flex-col gap-1">
             <span className="ui-label">
@@ -144,18 +188,25 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
             <div className="ui-panel-soft p-3">
               <div className="ui-caption">Sede</div>
               <div className="mt-1 font-semibold">{siteName}</div>
+              <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                {selectedLocation
+                  ? `LOC: ${selectedLocation.name ?? selectedLocation.code ?? selectedLocation.id}`
+                  : "Ajuste general de sede"}
+              </div>
             </div>
             <div className="ui-panel-soft p-3">
               <div className="ui-caption">Producto</div>
               <div className="mt-1 font-semibold">{selectedProduct?.name ?? "Sin definir"}</div>
             </div>
             <div className="ui-panel-soft p-3">
-              <div className="ui-caption">Stock actual</div>
+              <div className="ui-caption">
+                {isLocationMode ? "Stock actual en LOC" : "Stock actual en sede"}
+              </div>
               <div className="mt-1 font-semibold">
                 {productId ? `${currentQty.toLocaleString()} ${selectedProduct?.unit ?? "unidades"}` : "Selecciona un producto"}
               </div>
-              </div>
             </div>
+          </div>
 
           <details className="rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3">
             <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
@@ -183,10 +234,31 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
               ) : null}
             </div>
 
-            <div className="grid gap-3 md:grid-cols-2">
+            <div className="grid gap-3 md:grid-cols-3">
               <button
                 type="button"
-                onClick={() => setAdjustMode("remove")}
+                onClick={() => {
+                  setAdjustMode("count");
+                  setQuantityValue("");
+                }}
+                className={`rounded-2xl border px-4 py-4 text-left transition ${
+                  adjustMode === "count"
+                    ? "border-cyan-300 bg-cyan-50 text-cyan-950"
+                    : "border-[var(--ui-border)] bg-white text-[var(--ui-text)]"
+                }`}
+              >
+                <div className="text-sm font-semibold">Conteo físico</div>
+                <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                  Escribes la cantidad real. Sirve para dejar un LOC en 0.
+                </div>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setAdjustMode("remove");
+                  setQuantityValue("");
+                }}
                 className={`rounded-2xl border px-4 py-4 text-left transition ${
                   adjustMode === "remove"
                     ? "border-amber-300 bg-amber-50 text-amber-950"
@@ -196,9 +268,13 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
                 <div className="text-sm font-semibold">Restar stock</div>
                 <div className="mt-1 text-xs text-[var(--ui-muted)]">Merma, daño, corrección o faltante.</div>
               </button>
+
               <button
                 type="button"
-                onClick={() => setAdjustMode("add")}
+                onClick={() => {
+                  setAdjustMode("add");
+                  setQuantityValue("");
+                }}
                 className={`rounded-2xl border px-4 py-4 text-left transition ${
                   adjustMode === "add"
                     ? "border-emerald-300 bg-emerald-50 text-emerald-950"
@@ -212,7 +288,8 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
 
             <label className="flex flex-col gap-1">
               <span className="ui-label">
-                Cantidad <span className="text-[var(--ui-danger)]">*</span>
+                {adjustMode === "count" ? "Cantidad física real" : "Cantidad"}{" "}
+                <span className="text-[var(--ui-danger)]">*</span>
               </span>
               <div className="flex items-center gap-2">
                 <input
@@ -224,7 +301,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
                     setQuantityValue(event.target.value);
                     setFieldErrors((prev) => ({ ...prev, quantity: undefined }));
                   }}
-                  placeholder="Cantidad"
+                  placeholder={adjustMode === "count" ? "Ej: 0" : "Cantidad"}
                   required
                   className="ui-input flex-1"
                 />
@@ -232,7 +309,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
               </div>
               {deltaNum != null && deltaNum !== 0 ? (
                 <div className="mt-2 text-sm font-medium text-zinc-700">
-                  Stock resultante:{" "}
+                  Stock resultante {isLocationMode ? "en LOC" : "en sede"}:{" "}
                   <span className={newQty != null && newQty >= 0 ? "text-green-600" : "text-red-600"}>
                     {newQty?.toLocaleString()} {selectedProduct?.unit ?? "unidades"}
                   </span>
@@ -304,7 +381,7 @@ export function AdjustForm({ products, siteId, siteName, currentStock }: Props) 
               </>
             ) : (
               <div className="ui-alert ui-alert--warn">
-                Elige si sumas o restas y luego marca la cantidad. Enseguida aparece el motivo.
+                Elige conteo físico, sumar o restar. En conteo físico puedes escribir 0 para vaciar el LOC seleccionado.
               </div>
             )}
           </section>

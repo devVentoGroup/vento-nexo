@@ -6,6 +6,17 @@ import { computeWeightedAverageCost } from "@/lib/inventory/costing";
 
 const MOVEMENT_TYPE = "adjustment";
 
+type RequestBody = {
+  site_id?: string;
+  location_id?: string;
+  product_id?: string;
+  quantity_delta?: number;
+  counted_quantity?: number;
+  unit_cost_for_adjust?: number;
+  reason?: string;
+  evidence?: string;
+};
+
 export async function POST(req: Request) {
   const cookieStore = await cookies();
   const supabase = createServerClient(
@@ -25,18 +36,13 @@ export async function POST(req: Request) {
     data: { user },
     error: userErr,
   } = await supabase.auth.getUser();
+
   if (userErr || !user) {
     return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   }
 
-  let body: {
-    site_id?: string;
-    product_id?: string;
-    quantity_delta?: number;
-    unit_cost_for_adjust?: number;
-    reason?: string;
-    evidence?: string;
-  };
+  let body: RequestBody;
+
   try {
     body = await req.json();
   } catch {
@@ -44,81 +50,222 @@ export async function POST(req: Request) {
   }
 
   const siteId = typeof body?.site_id === "string" ? body.site_id.trim() : "";
+  const locationId = typeof body?.location_id === "string" ? body.location_id.trim() : "";
   const productId = typeof body?.product_id === "string" ? body.product_id.trim() : "";
-  const quantityDelta = typeof body?.quantity_delta === "number" ? body.quantity_delta : NaN;
+  const rawQuantityDelta =
+    typeof body?.quantity_delta === "number" ? body.quantity_delta : NaN;
+  const rawCountedQuantity =
+    typeof body?.counted_quantity === "number" ? body.counted_quantity : NaN;
+  const hasCountedQuantity = Number.isFinite(rawCountedQuantity);
   const unitCostForAdjust =
     typeof body?.unit_cost_for_adjust === "number" ? body.unit_cost_for_adjust : NaN;
   const reason = typeof body?.reason === "string" ? body.reason.trim() : "";
   const evidence = typeof body?.evidence === "string" ? body.evidence.trim() : "";
 
-  if (!siteId) return NextResponse.json({ error: "site_id requerido" }, { status: 400 });
-  if (!productId) return NextResponse.json({ error: "product_id requerido" }, { status: 400 });
-  if (!Number.isFinite(quantityDelta) || quantityDelta === 0) {
+  if (!siteId) {
+    return NextResponse.json({ error: "site_id requerido" }, { status: 400 });
+  }
+
+  if (!productId) {
+    return NextResponse.json({ error: "product_id requerido" }, { status: 400 });
+  }
+
+  if (!reason) {
+    return NextResponse.json({ error: "reason es obligatorio" }, { status: 400 });
+  }
+
+  if (hasCountedQuantity && rawCountedQuantity < 0) {
+    return NextResponse.json(
+      { error: "counted_quantity debe ser mayor o igual a 0" },
+      { status: 400 }
+    );
+  }
+
+  if (!hasCountedQuantity && (!Number.isFinite(rawQuantityDelta) || rawQuantityDelta === 0)) {
     return NextResponse.json(
       { error: "quantity_delta debe ser un numero diferente de 0" },
       { status: 400 }
     );
   }
-  if (!reason) return NextResponse.json({ error: "reason es obligatorio" }, { status: 400 });
 
-  const noteParts = [reason];
-  if (evidence) noteParts.push(`Evidencia: ${evidence}`);
-  const note = noteParts.join(". ");
+  if (locationId) {
+    const { data: locationRow, error: locationErr } = await supabase
+      .from("inventory_locations")
+      .select("id,site_id")
+      .eq("id", locationId)
+      .maybeSingle();
 
-  const stockUnitCost =
-    Number.isFinite(unitCostForAdjust) && unitCostForAdjust > 0 ? Number(unitCostForAdjust) : null;
-  const lineTotalCost =
-    stockUnitCost != null ? Number(stockUnitCost) * Number(Math.max(quantityDelta, 0)) : null;
+    if (locationErr) {
+      return NextResponse.json(
+        { error: `inventory_locations: ${locationErr.message}` },
+        { status: 500 }
+      );
+    }
 
-  const { data: insertedMovement, error: movErr } = await supabase
-    .from("inventory_movements")
-    .insert({
-      site_id: siteId,
-      product_id: productId,
-      movement_type: MOVEMENT_TYPE,
-      quantity: quantityDelta,
-      stock_unit_cost: stockUnitCost,
-      line_total_cost: lineTotalCost,
-      note,
-      created_by: user.id,
-    })
-    .select("id")
-    .single();
-  if (movErr) {
-    return NextResponse.json({ error: `inventory_movements: ${movErr.message}` }, { status: 500 });
+    if (!locationRow || String(locationRow.site_id ?? "") !== siteId) {
+      return NextResponse.json(
+        { error: "El LOC seleccionado no pertenece a la sede." },
+        { status: 400 }
+      );
+    }
   }
 
-  const { data: currentStock, error: stockReadErr } = await supabase
+  const { data: currentSiteStock, error: siteStockReadErr } = await supabase
     .from("inventory_stock_by_site")
     .select("current_qty")
     .eq("site_id", siteId)
     .eq("product_id", productId)
-    .single();
-  if (stockReadErr && stockReadErr.code !== "PGRST116") {
+    .maybeSingle();
+
+  if (siteStockReadErr) {
     return NextResponse.json(
-      { error: `inventory_stock_by_site (read): ${stockReadErr.message}` },
+      { error: `inventory_stock_by_site (read): ${siteStockReadErr.message}` },
       { status: 500 }
     );
   }
 
-  const currentQty = Number(currentStock?.current_qty ?? 0);
-  const newQty = currentQty + Number(quantityDelta);
-  const { error: stockUpsertErr } = await supabase
+  const currentSiteQty = Number(currentSiteStock?.current_qty ?? 0);
+
+  let currentQty = currentSiteQty;
+
+  if (locationId) {
+    const { data: currentLocationStock, error: locationStockReadErr } = await supabase
+      .from("inventory_stock_by_location")
+      .select("current_qty")
+      .eq("location_id", locationId)
+      .eq("product_id", productId)
+      .maybeSingle();
+
+    if (locationStockReadErr) {
+      return NextResponse.json(
+        { error: `inventory_stock_by_location (read): ${locationStockReadErr.message}` },
+        { status: 500 }
+      );
+    }
+
+    currentQty = Number(currentLocationStock?.current_qty ?? 0);
+  }
+
+  const quantityDelta = hasCountedQuantity
+    ? Number(rawCountedQuantity) - currentQty
+    : Number(rawQuantityDelta);
+
+  if (!Number.isFinite(quantityDelta) || quantityDelta === 0) {
+    return NextResponse.json(
+      { error: "No hay diferencia para ajustar." },
+      { status: 400 }
+    );
+  }
+
+  const newQty = currentQty + quantityDelta;
+  const newSiteQty = currentSiteQty + quantityDelta;
+
+  if (newQty < 0) {
+    return NextResponse.json(
+      { error: "El ajuste deja el stock del LOC/sede en negativo." },
+      { status: 400 }
+    );
+  }
+
+  if (newSiteQty < 0) {
+    return NextResponse.json(
+      { error: "El ajuste deja el stock total de la sede en negativo." },
+      { status: 400 }
+    );
+  }
+
+  const noteParts = [reason];
+
+  if (hasCountedQuantity) {
+    noteParts.push(`Conteo fisico: ${rawCountedQuantity}`);
+  }
+
+  if (locationId) {
+    noteParts.push(`LOC: ${locationId}`);
+  }
+
+  if (evidence) {
+    noteParts.push(`Evidencia: ${evidence}`);
+  }
+
+  const note = noteParts.join(". ");
+
+  const stockUnitCost =
+    Number.isFinite(unitCostForAdjust) && unitCostForAdjust > 0
+      ? Number(unitCostForAdjust)
+      : null;
+
+  const lineTotalCost =
+    stockUnitCost != null
+      ? Number(stockUnitCost) * Number(Math.max(quantityDelta, 0))
+      : null;
+
+  const movementPayload: Record<string, unknown> = {
+    site_id: siteId,
+    product_id: productId,
+    movement_type: MOVEMENT_TYPE,
+    quantity: quantityDelta,
+    stock_unit_cost: stockUnitCost,
+    line_total_cost: lineTotalCost,
+    note,
+    created_by: user.id,
+  };
+
+  if (locationId) {
+    movementPayload.location_id = locationId;
+  }
+
+  const { data: insertedMovement, error: movErr } = await supabase
+    .from("inventory_movements")
+    .insert(movementPayload)
+    .select("id")
+    .single();
+
+  if (movErr) {
+    return NextResponse.json(
+      { error: `inventory_movements: ${movErr.message}` },
+      { status: 500 }
+    );
+  }
+
+  const { error: siteStockUpsertErr } = await supabase
     .from("inventory_stock_by_site")
     .upsert(
       {
         site_id: siteId,
         product_id: productId,
-        current_qty: newQty,
+        current_qty: newSiteQty,
         updated_at: new Date().toISOString(),
       },
       { onConflict: "site_id,product_id" }
     );
-  if (stockUpsertErr) {
+
+  if (siteStockUpsertErr) {
     return NextResponse.json(
-      { error: `inventory_stock_by_site (upsert): ${stockUpsertErr.message}` },
+      { error: `inventory_stock_by_site (upsert): ${siteStockUpsertErr.message}` },
       { status: 500 }
     );
+  }
+
+  if (locationId) {
+    const { error: locationStockUpsertErr } = await supabase
+      .from("inventory_stock_by_location")
+      .upsert(
+        {
+          location_id: locationId,
+          product_id: productId,
+          current_qty: newQty,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "location_id,product_id" }
+      );
+
+    if (locationStockUpsertErr) {
+      return NextResponse.json(
+        { error: `inventory_stock_by_location (upsert): ${locationStockUpsertErr.message}` },
+        { status: 500 }
+      );
+    }
   }
 
   if (quantityDelta > 0 && stockUnitCost != null) {
@@ -143,6 +290,7 @@ export async function POST(req: Request) {
 
     const trackInventory = Boolean(profileRow?.track_inventory);
     const costingMode = String(profileRow?.costing_mode ?? "");
+
     if (trackInventory && costingMode === "auto_primary_supplier") {
       const qtyAfterGlobal = (globalStockRows ?? []).reduce(
         (sum, row) => sum + Number(row.current_qty ?? 0),
@@ -165,6 +313,7 @@ export async function POST(req: Request) {
         .from("products")
         .update({ cost: costAfter, updated_at: new Date().toISOString() })
         .eq("id", productId);
+
       if (updateCostErr) {
         return NextResponse.json({ error: updateCostErr.message }, { status: 500 });
       }
@@ -182,6 +331,7 @@ export async function POST(req: Request) {
         basis: basis === "gross" ? "gross" : "net",
         created_by: user.id,
       });
+
       if (eventErr) {
         return NextResponse.json({ error: eventErr.message }, { status: 500 });
       }
@@ -191,9 +341,11 @@ export async function POST(req: Request) {
   return NextResponse.json({
     ok: true,
     product_id: productId,
+    location_id: locationId || null,
     quantity_delta: quantityDelta,
     previous_qty: currentQty,
     new_qty: newQty,
+    previous_site_qty: currentSiteQty,
+    new_site_qty: newSiteQty,
   });
 }
-
