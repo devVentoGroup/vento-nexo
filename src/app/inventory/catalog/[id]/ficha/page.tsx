@@ -64,6 +64,10 @@ type SiteSettingRow = {
   site_id: string | null;
   is_active: boolean | null;
   min_stock_qty: number | null;
+  inventory_enabled?: boolean | null;
+  sales_enabled?: boolean | null;
+  local_production_enabled?: boolean | null;
+  remission_enabled?: boolean | null;
 };
 
 type StockRow = {
@@ -474,7 +478,9 @@ export default async function ProductTechnicalSheetPage({
       .order("name", { ascending: true }),
     supabase
       .from("product_site_settings")
-      .select("site_id,is_active,min_stock_qty")
+      .select(
+        "site_id,is_active,min_stock_qty,inventory_enabled,sales_enabled,local_production_enabled,remission_enabled"
+      )
       .eq("product_id", id),
     supabase
       .from("inventory_stock_by_site")
@@ -725,7 +731,24 @@ export default async function ProductTechnicalSheetPage({
     .map((site) => {
       const qty = stockBySite.get(site.id) ?? 0;
       const cfg = settingsBySite.get(site.id) ?? null;
-      const enabled = cfg ? cfg.is_active !== false : false;
+
+      const legacyEnabled = cfg ? cfg.is_active !== false : false;
+      const inventoryEnabled = cfg?.inventory_enabled === true;
+      const salesEnabled = cfg?.sales_enabled === true;
+      const localProductionEnabled = cfg?.local_production_enabled === true;
+      const remissionEnabled = cfg?.remission_enabled === true;
+
+      const hasOperationalConfig =
+        Boolean(cfg) &&
+        (
+          legacyEnabled ||
+          inventoryEnabled ||
+          salesEnabled ||
+          localProductionEnabled ||
+          remissionEnabled
+        );
+
+      const enabled = hasOperationalConfig;
       const minStock = enabled ? Number(cfg?.min_stock_qty ?? 0) : null;
       const shortage =
         minStock != null && Number.isFinite(minStock) ? Math.max(minStock - qty, 0) : null;
@@ -738,7 +761,11 @@ export default async function ProductTechnicalSheetPage({
         shortage,
         enabled,
         configured: Boolean(cfg),
-        hasVisibleRelation: enabled || qty > 0.000001,
+        inventoryEnabled,
+        salesEnabled,
+        localProductionEnabled,
+        remissionEnabled,
+        hasVisibleRelation: hasOperationalConfig || qty > 0.000001,
       };
     })
     .filter((row) => row.hasVisibleRelation);
@@ -1598,11 +1625,17 @@ export default async function ProductTechnicalSheetPage({
                     {!row.configured ? (
                       <span className="ui-chip">Con stock sin config</span>
                     ) : !row.enabled ? (
-                      <span className="ui-chip">Inactiva</span>
+                      <span className="ui-chip">Sin operación activa</span>
                     ) : row.shortage != null && row.shortage > 0 ? (
                       <span className="ui-chip ui-chip--warn">Bajo mínimo</span>
                     ) : (
-                      <span className="ui-chip ui-chip--success">OK</span>
+                      <div className="flex flex-wrap gap-1">
+                        <span className="ui-chip ui-chip--success">OK</span>
+                        {row.inventoryEnabled ? <span className="ui-chip">Inventario</span> : null}
+                        {row.localProductionEnabled ? <span className="ui-chip">Produce</span> : null}
+                        {row.remissionEnabled ? <span className="ui-chip">Remisión</span> : null}
+                        {row.salesEnabled ? <span className="ui-chip">Venta</span> : null}
+                      </div>
                     )}
                   </td>
                 </tr>
