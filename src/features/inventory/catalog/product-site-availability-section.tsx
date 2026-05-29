@@ -42,6 +42,9 @@ type ProductSiteAvailabilitySectionProps = {
   stockUnitCode: string;
   purchaseUnitHint?: UnitHint;
   operationUnitHint?: UnitHint;
+  productType?: string | null;
+  inventoryKind?: string | null;
+  hasRecipe?: boolean;
 };
 
 export function ProductSiteAvailabilitySection({
@@ -55,6 +58,9 @@ export function ProductSiteAvailabilitySection({
   stockUnitCode,
   purchaseUnitHint = null,
   operationUnitHint = null,
+  productType = null,
+  inventoryKind = null,
+  hasRecipe = false,
 }: ProductSiteAvailabilitySectionProps) {
   return (
     <CatalogSection
@@ -73,6 +79,9 @@ export function ProductSiteAvailabilitySection({
         stockUnitCode={stockUnitCode}
         purchaseUnitHint={purchaseUnitHint}
         operationUnitHint={operationUnitHint}
+        productType={productType}
+        inventoryKind={inventoryKind}
+        hasRecipe={hasRecipe}
       />
     </CatalogSection>
   );

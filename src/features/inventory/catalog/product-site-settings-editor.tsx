@@ -53,6 +53,9 @@ type Props = {
   siteCapabilities?: SiteCapabilities[];
   remissionAreaKindsBySite?: Record<string, string[]>;
   stockUnitCode?: string;
+  productType?: string | null;
+  inventoryKind?: string | null;
+  hasRecipe?: boolean;
   operationUnitHint?: {
     label: string;
     inputUnitCode: string;
@@ -169,6 +172,9 @@ export function ProductSiteSettingsEditor({
   siteCapabilities = [],
   remissionAreaKindsBySite = {},
   stockUnitCode,
+  productType = null,
+  inventoryKind = null,
+  hasRecipe = false,
   operationUnitHint,
   purchaseUnitHint,
 }: Props) {
@@ -343,6 +349,17 @@ export function ProductSiteSettingsEditor({
     ? centerProductionLocationId
     : "";
 
+  const normalizedProductType = String(productType ?? "").trim().toLowerCase();
+  const normalizedInventoryKind = String(inventoryKind ?? "").trim().toLowerCase();
+
+  const shouldShowProductionLocationUi =
+    hasRecipe ||
+    normalizedProductType === "preparacion" ||
+    (normalizedProductType === "venta" && normalizedInventoryKind !== "resale");
+
+  const selectedCenterSite = siteMap.get(centerSiteId) ?? null;
+  const hasMultipleProductionSites = productionSites.length > 1;
+
   const operationFactorToStock =
     operationUnitHint &&
       Number.isFinite(operationUnitHint.qtyInInputUnit) &&
@@ -486,45 +503,55 @@ export function ProductSiteSettingsEditor({
                 Centro
               </div>
               <div className="mt-2 text-sm font-semibold text-[var(--ui-text)]">
-                Configuración interna del centro
+                {selectedCenterSite?.name ?? "Centro de producción"}
               </div>
               <p className="mt-1 text-xs text-[var(--ui-muted)]">
-                Stock, mínimo y ubicación operativa principal del producto.
+                Configuración interna de abastecimiento y stock mínimo.
               </p>
             </div>
 
-            <label className="flex items-center gap-2 rounded-xl border border-[var(--ui-border)] bg-white px-3 py-2">
-              <input
-                type="checkbox"
-                checked={centerIsActive}
-                onChange={(event) => setCenterIsActive(event.target.checked)}
-              />
-              <span className="ui-label">Disponible</span>
-            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              {hasMultipleProductionSites ? (
+                <select
+                  value={centerSiteId}
+                  onChange={(event) => {
+                    const nextSiteId = event.target.value;
+                    setCenterSiteId(nextSiteId);
+                    setCenterProductionLocationId("");
+                  }}
+                  className="ui-input h-10 min-w-[220px]"
+                >
+                  <option value="">Seleccionar centro</option>
+                  {productionSites.map((site) => (
+                    <option key={site.id} value={site.id}>
+                      {site.name ?? site.id}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
+
+              <label className="flex items-center gap-2 rounded-xl border border-[var(--ui-border)] bg-white px-3 py-2">
+                <input
+                  type="checkbox"
+                  checked={centerIsActive}
+                  onChange={(event) => setCenterIsActive(event.target.checked)}
+                />
+                <span className="ui-label">Disponible</span>
+              </label>
+            </div>
           </div>
         </div>
 
-        <div className="grid gap-4 p-4 lg:grid-cols-[1.15fr_0.85fr]">
+        <div className="grid gap-4 p-4 lg:grid-cols-[1fr_0.8fr]">
           <div className="grid gap-3 md:grid-cols-2">
-            <label className="flex flex-col gap-1">
-              <span className="ui-label">Sede centro</span>
-              <select
-                value={centerSiteId}
-                onChange={(event) => {
-                  const nextSiteId = event.target.value;
-                  setCenterSiteId(nextSiteId);
-                  setCenterProductionLocationId("");
-                }}
-                className="ui-input"
-              >
-                <option value="">Seleccionar centro</option>
-                {productionSites.map((site) => (
-                  <option key={site.id} value={site.id}>
-                    {site.name ?? site.id}
-                  </option>
-                ))}
-              </select>
-            </label>
+            {!hasMultipleProductionSites ? (
+              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+                <div className="ui-caption">Sede centro</div>
+                <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">
+                  {selectedCenterSite?.name ?? "Centro de producción"}
+                </div>
+              </div>
+            ) : null}
 
             <label className="flex flex-col gap-1">
               <span className="ui-label">Área por defecto</span>
@@ -545,24 +572,36 @@ export function ProductSiteSettingsEditor({
               </p>
             </label>
 
-            <label className="flex flex-col gap-1">
-              <span className="ui-label">LOC de producción</span>
-              <select
-                value={validCenterProductionLocationId}
-                onChange={(event) => setCenterProductionLocationId(event.target.value)}
-                className="ui-input"
-              >
-                <option value="">Sin definir</option>
-                {centerProductionLocationOptions.map((location) => (
-                  <option key={location.id} value={location.id}>
-                    {formatProductionLocationLabel(location)}
-                  </option>
-                ))}
-              </select>
-              <p className="text-xs text-[var(--ui-muted)]">
-                Solo si este producto se produce con receta.
-              </p>
-            </label>
+            {shouldShowProductionLocationUi ? (
+              <label className="flex flex-col gap-1">
+                <span className="ui-label">LOC de producción</span>
+                <select
+                  value={validCenterProductionLocationId}
+                  onChange={(event) => setCenterProductionLocationId(event.target.value)}
+                  className="ui-input"
+                >
+                  <option value="">Sin definir</option>
+                  {centerProductionLocationOptions.map((location) => (
+                    <option key={location.id} value={location.id}>
+                      {formatProductionLocationLabel(location)}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-xs text-[var(--ui-muted)]">
+                  Ubicación para productos producidos con receta.
+                </p>
+              </label>
+            ) : (
+              <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="ui-caption">Producción</div>
+                <div className="mt-1 text-sm font-semibold text-slate-700">
+                  No aplica
+                </div>
+                <p className="mt-1 text-xs text-[var(--ui-muted)]">
+                  Este ítem no requiere LOC de producción.
+                </p>
+              </div>
+            )}
 
             <label className="flex flex-col gap-1">
               {purchaseUnitHint && purchaseFactorToStock ? (
@@ -649,7 +688,7 @@ export function ProductSiteSettingsEditor({
             ) : null}
 
             <p className="text-xs text-[var(--ui-muted)]">
-              Se usa como referencia visual para alertas de bajo stock.
+              Referencia visual para alertas de bajo stock.
             </p>
           </div>
         </div>
@@ -698,8 +737,8 @@ export function ProductSiteSettingsEditor({
               <div
                 key={site.id}
                 className={`overflow-hidden rounded-2xl border shadow-sm transition ${state.enabled
-                    ? "border-cyan-200 bg-white"
-                    : "border-[var(--ui-border)] bg-white/80"
+                  ? "border-cyan-200 bg-white"
+                  : "border-[var(--ui-border)] bg-white/80"
                   }`}
               >
                 <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-3">
@@ -711,8 +750,8 @@ export function ProductSiteSettingsEditor({
 
                       <span
                         className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] ${state.enabled
-                            ? "border-cyan-200 bg-cyan-50 text-cyan-800"
-                            : "border-slate-200 bg-white text-slate-500"
+                          ? "border-cyan-200 bg-cyan-50 text-cyan-800"
+                          : "border-slate-200 bg-white text-slate-500"
                           }`}
                       >
                         {state.enabled ? "Configurada" : "Sin configurar"}
@@ -721,8 +760,8 @@ export function ProductSiteSettingsEditor({
                       {state.enabled ? (
                         <span
                           className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.06em] ${state.isActive
-                              ? "border-emerald-200 bg-emerald-50 text-emerald-800"
-                              : "border-slate-200 bg-white text-slate-500"
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-800"
+                            : "border-slate-200 bg-white text-slate-500"
                             }`}
                         >
                           {state.isActive ? "Disponible" : "Inactiva"}
