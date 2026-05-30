@@ -51,7 +51,12 @@ type IconName =
   | "shoppingCart"
   | "map"
   | "settings"
-  | "alertTriangle";
+  | "alertTriangle"
+  | "scan"
+  | "printer"
+  | "arrows"
+  | "sliders"
+  | "layers";
 
 type NavigationRow = {
   group_label: string | null;
@@ -114,6 +119,11 @@ const ICON_NAMES = new Set<IconName>([
   "map",
   "settings",
   "alertTriangle",
+  "scan",
+  "printer",
+  "arrows",
+  "sliders",
+  "layers",
 ]);
 
 const APP_SWITCHER_ITEMS: Omit<AppSwitcherItem, "access">[] = [
