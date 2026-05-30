@@ -2,13 +2,11 @@
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { AppSwitcher } from "./app-switcher";
 import { ProfileMenu } from "./profile-menu";
 import { VentoLogo } from "./vento-logo";
-import { createClient } from "@/lib/supabase/client";
-import { ROLE_OVERRIDE_COOKIE, PRIVILEGED_ROLE_OVERRIDES } from "@/lib/auth/role-override-config";
 
 type SiteOption = {
   id: string;
@@ -16,14 +14,55 @@ type SiteOption = {
   site_type?: string | null;
 };
 
+type AppStatus = "active" | "soon";
+type AppAccess = "enabled" | "disabled" | "soon";
+
+type AppSwitcherItem = {
+  id: string;
+  name: string;
+  description: string;
+  href: string;
+  logoSrc: string;
+  brandColor: string;
+  status: AppStatus;
+  access: AppAccess;
+  group: "Workspace" | "Operacion" | "Proximamente";
+};
+
+type IconName =
+  | "dashboard"
+  | "accounting"
+  | "users"
+  | "calendar"
+  | "store"
+  | "sparkles"
+  | "package"
+  | "menu"
+  | "fileText"
+  | "briefcase"
+  | "phone"
+  | "book"
+  | "flask"
+  | "truck"
+  | "warehouse"
+  | "clipboard"
+  | "boxes"
+  | "shoppingCart"
+  | "map"
+  | "settings"
+  | "alertTriangle"
+  | "scan"
+  | "printer"
+  | "arrows"
+  | "sliders"
+  | "layers";
+
 type NavItem = {
   href: string;
   label: string;
   description?: string;
-  required?: string[];
-  anyOf?: string[];
   icon?: IconName;
-  allowedRoles?: string[];
+  permissionCode: string;
 };
 
 type NavGroup = {
@@ -38,6 +77,8 @@ type VentoChromeProps = {
   email?: string | null;
   sites: SiteOption[];
   activeSiteId: string;
+  appSwitcherItems: AppSwitcherItem[];
+  navGroups: NavGroup[];
 };
 
 const APP_ENTITY =
@@ -50,188 +91,19 @@ const APP_ENTITY =
     | "origo"
     | "anima"
     | "aura") ?? "nexo";
+
 const APP_NAME = process.env.NEXT_PUBLIC_VENTO_APP_NAME ?? "NEXO";
+
 const APP_TAGLINE_RAW = process.env.NEXT_PUBLIC_VENTO_APP_TAGLINE;
+
 const APP_TAGLINE =
   APP_TAGLINE_RAW && !/[\u00C3\u00C2\u00E2\uFFFD]/.test(APP_TAGLINE_RAW)
     ? APP_TAGLINE_RAW
     : "Logistica e inventario operativo";
-const PERMISSION_RETRY_DELAY_MS = 350;
-
-const NAV_GROUPS: NavGroup[] = [
-  {
-    label: "Inicio",
-    items: [
-      {
-        href: "/",
-        label: "Panel",
-        description: "Cockpit operativo",
-        required: ["access"],
-        icon: "dashboard",
-      },
-    ],
-  },
-  {
-    label: "Operar",
-    items: [
-      {
-        href: "/inventory/entries",
-        label: "Entradas",
-        description: "Recepcion manual y contingencias",
-        anyOf: ["inventory.entries", "inventory.entries_emergency"],
-        allowedRoles: ["propietario", "gerente_general", "gerente", "bodeguero"],
-        icon: "layers",
-      },
-      {
-        href: "/inventory/remissions",
-        label: "Abastecimiento interno",
-        description: "Solicitudes, despacho y recepcion entre sedes",
-        required: ["inventory.remissions"],
-        icon: "package",
-      },
-      {
-        href: "/inventory/count-initial",
-        label: "Conteos",
-        description: "Conteo inicial y saneamiento",
-        required: ["inventory.counts"],
-        icon: "clipboard",
-      },
-      {
-        href: "/inventory/transfers",
-        label: "Traslados",
-        description: "Movimientos entre ubicaciones",
-        required: ["inventory.transfers"],
-        icon: "arrows",
-      },
-      {
-        href: "/inventory/withdraw",
-        label: "Retiros",
-        description: "Consumos y salidas controladas",
-        required: ["inventory.withdraw"],
-        icon: "boxes",
-      },
-      {
-        href: "/inventory/production-batches",
-        label: "Lotes de produccion",
-        description: "Consulta lotes y empaque desde FOGO",
-        required: ["inventory.production_batches"],
-        allowedRoles: ["propietario", "gerente_general", "gerente", "cocinero", "panadero", "repostero", "pastelero"],
-        icon: "package",
-      },
-      {
-        href: "/inventory/adjust",
-        label: "Ajustes",
-        description: "Correcciones controladas",
-        required: ["inventory.adjustments"],
-        icon: "sliders",
-      },
-    ],
-  },
-  {
-    label: "Verificar",
-    items: [
-      {
-        href: "/inventory/stock",
-        label: "Stock",
-        description: "Saldo y quiebres por sede",
-        required: ["inventory.stock"],
-        icon: "boxes",
-      },
-      {
-        href: "/inventory/movements",
-        label: "Movimientos",
-        description: "Ledger y trazabilidad operativa",
-        required: ["inventory.movements"],
-        icon: "arrows",
-      },
-    ],
-  },
-  {
-    label: "Configurar",
-    items: [
-      {
-        href: "/inventory/catalog",
-        label: "Productos",
-        description: "Catalogo maestro y activacion por sede",
-        required: ["inventory.stock"],
-        allowedRoles: ["propietario", "gerente_general", "bodeguero", "contador"],
-        icon: "layers",
-      },
-      {
-        href: "/inventory/locations",
-        label: "Áreas",
-        description: "Ubicaciones y capacidad operativa",
-        required: ["inventory.locations"],
-        allowedRoles: ["propietario", "gerente_general"],
-        icon: "map",
-      },
-      {
-        href: "/inventory/settings/supply-routes",
-        label: "Rutas",
-        description: "Abastecimiento entre sedes",
-        required: ["access"],
-        allowedRoles: ["propietario", "gerente_general"],
-        icon: "arrows",
-      },
-      {
-        href: "/inventory/settings/remissions",
-        label: "Áreas remisión",
-        description: "Áreas por propósito y reglas por sede",
-        required: ["inventory.remissions"],
-        allowedRoles: ["propietario", "gerente_general"],
-        icon: "package",
-      },
-      {
-        href: "/inventory/settings/sites",
-        label: "Sedes",
-        description: "Sedes operativas del sistema",
-        required: ["access"],
-        allowedRoles: ["propietario", "gerente_general"],
-        icon: "map",
-      },
-      {
-        href: "/inventory/settings/units",
-        label: "Unidades",
-        description: "UOM y alias operativos",
-        required: ["inventory.stock"],
-        allowedRoles: ["propietario", "gerente_general"],
-        icon: "sliders",
-      },
-      {
-        href: "/inventory/settings/categories",
-        label: "Categorias",
-        description: "Taxonomia operativa",
-        required: ["inventory.stock"],
-        allowedRoles: ["propietario", "gerente_general"],
-        icon: "layers",
-      },
-      {
-        href: "/printing/jobs",
-        label: "Impresion",
-        description: "QR de áreas y etiquetas operativas",
-        required: ["access"],
-        allowedRoles: ["propietario", "gerente_general", "gerente", "bodeguero"],
-        icon: "printer",
-      },
-    ],
-  },
-];
-
-type IconName =
-  | "dashboard"
-  | "package"
-  | "scan"
-  | "printer"
-  | "boxes"
-  | "arrows"
-  | "clipboard"
-  | "sliders"
-  | "map"
-  | "layers"
-  | "sparkles";
 
 function Icon({ name }: { name?: IconName }) {
   const common = "none";
+
   switch (name) {
     case "dashboard":
       return (
@@ -242,6 +114,65 @@ function Icon({ name }: { name?: IconName }) {
           <path d="M4 13h7v7H4z" />
         </svg>
       );
+
+    case "accounting":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
+          <path d="M4 7h16" />
+          <path d="M6 7v13" />
+          <path d="M18 7v13" />
+          <path d="M4 20h16" />
+          <path d="M8 11h2" />
+          <path d="M8 15h2" />
+          <path d="M14 11h2" />
+          <path d="M14 15h2" />
+          <path d="M8 4h8" />
+        </svg>
+      );
+
+    case "users":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
+          <path d="M16 11a4 4 0 1 0-4-4 4 4 0 0 0 4 4z" />
+          <path d="M4 18c0-3 3-5 6-5" />
+          <path d="M20 18c0-3-3-5-6-5" />
+          <circle cx="8" cy="9" r="3" />
+        </svg>
+      );
+
+    case "calendar":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
+          <rect x="3" y="5" width="18" height="16" rx="2" />
+          <path d="M16 3v4" />
+          <path d="M8 3v4" />
+          <path d="M3 10h18" />
+          <path d="M8 14h.01" />
+          <path d="M12 14h.01" />
+          <path d="M16 14h.01" />
+          <path d="M8 18h.01" />
+          <path d="M12 18h.01" />
+        </svg>
+      );
+
+    case "store":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
+          <path d="M3 9h18l-2-5H5z" />
+          <path d="M5 9v10h14V9" />
+          <path d="M9 19v-6h6v6" />
+        </svg>
+      );
+
+    case "sparkles":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
+          <path d="M12 3l1.5 3.5L17 8l-3.5 1.5L12 13l-1.5-3.5L7 8l3.5-1.5L12 3z" />
+          <path d="M5 16l1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2z" />
+          <path d="M18 14l1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2z" />
+        </svg>
+      );
+
     case "package":
       return (
         <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
@@ -250,6 +181,144 @@ function Icon({ name }: { name?: IconName }) {
           <path d="M12 13v8" />
         </svg>
       );
+
+    case "menu":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
+          <path d="M4 7h16" />
+          <path d="M7 12h13" />
+          <path d="M10 17h10" />
+          <path d="M4 17h2" />
+          <path d="M4 12h2" />
+          <path d="M4 7h2" />
+        </svg>
+      );
+
+    case "fileText":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+          <path d="M14 2v6h6" />
+          <path d="M16 13H8" />
+          <path d="M16 17H8" />
+          <path d="M10 9H8" />
+        </svg>
+      );
+
+    case "briefcase":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
+          <path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+          <rect x="3" y="6" width="18" height="14" rx="2" />
+          <path d="M3 11h18" />
+        </svg>
+      );
+
+    case "phone":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
+          <rect x="7" y="2.5" width="10" height="19" rx="2" />
+          <path d="M11 18.5h2" />
+          <path d="M10 5.5h4" />
+        </svg>
+      );
+
+    case "book":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
+          <path d="M4 5a2 2 0 0 1 2-2h12v16H6a2 2 0 0 0-2 2z" />
+          <path d="M6 3v16" />
+          <path d="M10 7h6" />
+          <path d="M10 11h6" />
+        </svg>
+      );
+
+    case "flask":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
+          <path d="M10 2v5l-5.5 9.5A3 3 0 0 0 7.1 21h9.8a3 3 0 0 0 2.6-4.5L14 7V2" />
+          <path d="M9 11h6" />
+        </svg>
+      );
+
+    case "truck":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
+          <path d="M3 6h11v10H3z" />
+          <path d="M14 10h4l3 3v3h-7z" />
+          <circle cx="7" cy="18" r="2" />
+          <circle cx="18" cy="18" r="2" />
+        </svg>
+      );
+
+    case "warehouse":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
+          <path d="M3 10l9-6 9 6" />
+          <path d="M5 10v10h14V10" />
+          <path d="M8 20v-6h8v6" />
+          <path d="M8 10h8" />
+        </svg>
+      );
+
+    case "clipboard":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
+          <path d="M9 3h6a2 2 0 0 1 2 2v2H7V5a2 2 0 0 1 2-2z" />
+          <path d="M7 7h10v14H7z" />
+          <path d="M10 11h4" />
+          <path d="M10 15h4" />
+        </svg>
+      );
+
+    case "boxes":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
+          <path d="M3 7h7v7H3z" />
+          <path d="M14 7h7v7h-7z" />
+          <path d="M7 14v7" />
+          <path d="M17 14v7" />
+        </svg>
+      );
+
+    case "shoppingCart":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
+          <path d="M4 4h2l2 11h10l2-8H7" />
+          <circle cx="10" cy="20" r="1.5" />
+          <circle cx="18" cy="20" r="1.5" />
+        </svg>
+      );
+
+    case "map":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
+          <path d="M9 18l-6 3V6l6-3 6 3 6-3v15l-6 3-6-3z" />
+          <path d="M9 3v15" />
+          <path d="M15 6v15" />
+        </svg>
+      );
+
+    case "settings":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
+          <circle cx="12" cy="12" r="3" />
+          <path d="M19.4 15a8 8 0 0 0 .1-6" />
+          <path d="M4.5 9a8 8 0 0 0 .1 6" />
+          <path d="M8 4.7a8 8 0 0 1 8 0" />
+          <path d="M8 19.3a8 8 0 0 0 8 0" />
+        </svg>
+      );
+
+    case "alertTriangle":
+      return (
+        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
+          <path d="M12 3l10 18H2z" />
+          <path d="M12 9v5" />
+          <path d="M12 17h.01" />
+        </svg>
+      );
+
     case "scan":
       return (
         <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
@@ -260,6 +329,7 @@ function Icon({ name }: { name?: IconName }) {
           <path d="M7 12h10" />
         </svg>
       );
+
     case "printer":
       return (
         <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
@@ -268,15 +338,7 @@ function Icon({ name }: { name?: IconName }) {
           <path d="M5 8h14a2 2 0 0 1 2 2v5H3v-5a2 2 0 0 1 2-2z" />
         </svg>
       );
-    case "boxes":
-      return (
-        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
-          <path d="M3 7h7v7H3z" />
-          <path d="M14 7h7v7h-7z" />
-          <path d="M7 14v7" />
-          <path d="M17 14v7" />
-        </svg>
-      );
+
     case "arrows":
       return (
         <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
@@ -284,15 +346,7 @@ function Icon({ name }: { name?: IconName }) {
           <path d="M17 17H6l3 3" />
         </svg>
       );
-    case "clipboard":
-      return (
-        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
-          <path d="M9 3h6a2 2 0 0 1 2 2v2H7V5a2 2 0 0 1 2-2z" />
-          <path d="M7 7h10v14H7z" />
-          <path d="M10 11h4" />
-          <path d="M10 15h4" />
-        </svg>
-      );
+
     case "sliders":
       return (
         <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
@@ -304,14 +358,7 @@ function Icon({ name }: { name?: IconName }) {
           <circle cx="7" cy="18" r="2" />
         </svg>
       );
-    case "map":
-      return (
-        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
-          <path d="M9 18l-6 3V6l6-3 6 3 6-3v15l-6 3-6-3z" />
-          <path d="M9 3v15" />
-          <path d="M15 6v15" />
-        </svg>
-      );
+
     case "layers":
       return (
         <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
@@ -320,14 +367,7 @@ function Icon({ name }: { name?: IconName }) {
           <path d="M2 16l10 5 10-5" />
         </svg>
       );
-    case "sparkles":
-      return (
-        <svg viewBox="0 0 24 24" fill={common} stroke="currentColor" strokeWidth="1.6">
-          <path d="M12 3l1.5 3.5L17 8l-3.5 1.5L12 13l-1.5-3.5L7 8l3.5-1.5L12 3z" />
-          <path d="M5 16l1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2z" />
-          <path d="M18 14l1 2 2 1-2 1-1 2-1-2-2-1 2-1 1-2z" />
-        </svg>
-      );
+
     default:
       return null;
   }
@@ -359,38 +399,24 @@ function SidebarLink({
       onClick={onNavigate}
       title={collapsed ? item.label : undefined}
       className={`ui-sidebar-item ${active ? "active" : ""} ${
-        collapsed ? "xl:h-10 xl:w-10 xl:items-center xl:justify-center xl:gap-0 xl:overflow-hidden xl:p-0" : ""
+        collapsed
+          ? "lg:h-10 lg:w-10 lg:items-center lg:justify-center lg:gap-0 lg:overflow-hidden lg:p-0"
+          : ""
       }`}
     >
       <span className="ui-sidebar-item-icon">
         <Icon name={item.icon} />
       </span>
-      <span className={`ui-sidebar-item-content ${collapsed ? "xl:!hidden" : ""}`}>
+
+      <span className={`ui-sidebar-item-content ${collapsed ? "lg:!hidden" : ""}`}>
         <span className="ui-sidebar-item-title">{item.label}</span>
+
         {item.description ? (
           <span className="ui-sidebar-item-desc">{item.description}</span>
         ) : null}
       </span>
     </Link>
   );
-}
-
-function isRefreshSessionError(error: unknown) {
-  const message =
-    error instanceof Error ? error.message : String(error ?? "");
-  const normalized = message.toLowerCase();
-
-  return (
-    normalized.includes("invalid refresh token") ||
-    normalized.includes("refresh token") ||
-    normalized.includes("already used") ||
-    normalized.includes("authapierror") ||
-    normalized.includes("status of 429")
-  );
-}
-
-function delay(ms: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 export function VentoChrome({
@@ -400,24 +426,23 @@ export function VentoChrome({
   email,
   sites,
   activeSiteId,
+  appSwitcherItems,
+  navGroups,
 }: VentoChromeProps) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const isKioskMode = searchParams.get("kiosk") === "1";
   const [menuOpen, setMenuOpen] = useState(false);
+
   const [sidebarCollapsed, setSidebarCollapsed] = useState(() => {
     if (typeof window === "undefined") return false;
+
     try {
       return window.localStorage.getItem("vento:sidebar-collapsed") === "1";
     } catch {
       return false;
     }
   });
-  const [overrideRole, setOverrideRole] = useState<string | null>(null);
-  const [permMap, setPermMap] = useState<Record<string, boolean>>({});
-  const [permissionsReady, setPermissionsReady] = useState(false);
-  const permMapRef = useRef<Record<string, boolean>>({});
-  const authRecoveryRef = useRef(false);
-  const isKioskMode = searchParams.get("kiosk") === "1";
 
   useEffect(() => {
     try {
@@ -427,250 +452,14 @@ export function VentoChrome({
     }
   }, [sidebarCollapsed]);
 
-  const currentSiteId = searchParams.get("site_id") ?? activeSiteId ?? "";
-  const currentSite = useMemo(
-    () => sites.find((site) => site.id === currentSiteId),
-    [sites, currentSiteId]
-  );
+  const currentSiteId = activeSiteId ?? "";
+  const currentSite = sites.find((site) => site.id === currentSiteId);
   const currentSiteLabel = currentSite?.name ?? currentSiteId ?? "Sin sede";
 
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
     return pathname === href || pathname.startsWith(`${href}/`);
   };
-
-  const permissionCodes = useMemo(
-    () => [
-      "access",
-      "inventory.remissions",
-      "inventory.remissions.request",
-      "inventory.remissions.prepare",
-      "inventory.remissions.receive",
-      "inventory.entries",
-      "inventory.entries_emergency",
-      "inventory.transfers",
-      "inventory.withdraw",
-      "inventory.stock",
-      "catalog.products",
-      "inventory.movements",
-      "inventory.counts",
-      "inventory.adjustments",
-      "inventory.locations",
-      "inventory.validation",
-    ],
-    []
-  );
-
-  useEffect(() => {
-    if (typeof document === "undefined") return;
-
-    const syncOverrideRole = () => {
-      const entry = document.cookie
-        .split("; ")
-        .find((cookie) => cookie.startsWith(`${ROLE_OVERRIDE_COOKIE}=`));
-      if (!entry) {
-        setOverrideRole(null);
-        return;
-      }
-      const value = entry.split("=")[1] ?? "";
-      setOverrideRole(value || null);
-    };
-
-    const onOverrideChanged = (event: Event) => {
-      const detail = (event as CustomEvent<{ role?: string | null }>).detail;
-      setOverrideRole(detail?.role ? String(detail.role) : null);
-    };
-
-    syncOverrideRole();
-    window.addEventListener("nexo-role-override-changed", onOverrideChanged);
-    window.addEventListener("focus", syncOverrideRole);
-
-    return () => {
-      window.removeEventListener("nexo-role-override-changed", onOverrideChanged);
-      window.removeEventListener("focus", syncOverrideRole);
-    };
-  }, [pathname, searchParams]);
-
-  useEffect(() => {
-    let isActiveRequest = true;
-    const supabase = createClient();
-    const siteId = currentSiteId || activeSiteId || null;
-
-    if (Object.keys(permMapRef.current).length === 0) {
-      // eslint-disable-next-line react-hooks/set-state-in-effect
-      setPermissionsReady(false);
-    }
-
-    const loadPermissionMap = async () => {
-      const fetchPermission = (code: string) =>
-        supabase.rpc("has_permission", {
-          p_permission_code: `nexo.${code}`,
-          p_site_id: siteId,
-          p_area_id: null,
-        });
-
-      const firstResults = await Promise.all(permissionCodes.map(fetchPermission));
-      const retryCodes = permissionCodes.filter((_, idx) => firstResults[idx]?.error);
-      if (retryCodes.length === 0) return firstResults;
-
-      await delay(PERMISSION_RETRY_DELAY_MS);
-      const retryResults = await Promise.all(retryCodes.map(fetchPermission));
-      const retryByCode = new Map(retryCodes.map((code, idx) => [code, retryResults[idx]]));
-
-      return firstResults.map((result, idx) => {
-        const retryResult = retryByCode.get(permissionCodes[idx]);
-        return result.error && retryResult ? retryResult : result;
-      });
-    };
-
-    loadPermissionMap()
-      .then((results) => {
-        if (!isActiveRequest) return;
-        const nextMap: Record<string, boolean> = {};
-        results.forEach((res, idx) => {
-          nextMap[permissionCodes[idx]] = !res.error && Boolean(res.data);
-        });
-        permMapRef.current = nextMap;
-        setPermMap(nextMap);
-        setPermissionsReady(true);
-      })
-      .catch((error) => {
-        if (!isActiveRequest) return;
-        if (!authRecoveryRef.current && isRefreshSessionError(error)) {
-          authRecoveryRef.current = true;
-          Promise.resolve()
-            .then(async () => {
-              try {
-                await supabase.auth.signOut({ scope: "local" });
-              } catch {
-                // Ignore sign-out errors and force a clean login.
-              }
-            })
-            .finally(() => {
-              const shellLoginUrl =
-                process.env.NEXT_PUBLIC_SHELL_LOGIN_URL ||
-                "https://os.ventogroup.co/login";
-              const returnTo = encodeURIComponent(window.location.href);
-              window.location.assign(`${shellLoginUrl}?returnTo=${returnTo}`);
-            });
-          return;
-        }
-        if (Object.keys(permMapRef.current).length > 0) {
-          setPermMap(permMapRef.current);
-        } else {
-          setPermMap({});
-          setPermissionsReady(true);
-        }
-      });
-
-    return () => {
-      isActiveRequest = false;
-    };
-  }, [currentSiteId, activeSiteId, permissionCodes]);
-
-  const can = (code?: string) => (code ? Boolean(permMap[code]) : false);
-  const actualRole = String(role ?? "").toLowerCase();
-  const canUseRoleOverride = Boolean(actualRole) && PRIVILEGED_ROLE_OVERRIDES.has(actualRole) && Boolean(overrideRole);
-  const effectiveRole = canUseRoleOverride ? String(overrideRole ?? "").toLowerCase() : actualRole;
-  const normalizedRole = effectiveRole;
-  const isManagementRole = ["propietario", "gerente_general", "admin", "manager", "gerente"].includes(
-    normalizedRole
-  );
-  const currentSiteType = String(currentSite?.site_type ?? "").toLowerCase();
-  const isSatelliteFocusMode = currentSiteType === "satellite" && !isManagementRole;
-  const isProductionFocusMode = currentSiteType === "production_center" && !isManagementRole;
-  const focusAllowedHrefs = (() => {
-    if (isManagementRole) return null;
-    if (normalizedRole === "bodeguero") {
-      return new Set([
-        "/",
-        "/inventory/entries",
-        "/inventory/remissions",
-        "/inventory/count-initial",
-        "/inventory/transfers",
-        "/inventory/withdraw",
-        "/inventory/adjust",
-        "/inventory/catalog",
-        "/inventory/stock",
-        "/inventory/movements",
-        "/printing/jobs",
-      ]);
-    }
-    if (normalizedRole === "conductor") {
-      return new Set(["/", "/inventory/remissions"]);
-    }
-    if (["cajero", "barista"].includes(normalizedRole)) {
-      return new Set(["/", "/inventory/remissions", "/inventory/withdraw"]);
-    }
-    if (normalizedRole === "cocinero") {
-      return currentSiteType === "satellite"
-        ? new Set(["/", "/inventory/remissions", "/inventory/withdraw"])
-        : new Set(["/", "/inventory/withdraw", "/inventory/production-batches"]);
-    }
-    if (["panadero", "repostero", "pastelero"].includes(normalizedRole)) {
-      return new Set(["/", "/inventory/withdraw", "/inventory/production-batches"]);
-    }
-    return isSatelliteFocusMode
-      ? new Set(["/", "/inventory/remissions", "/inventory/withdraw"])
-      : isProductionFocusMode
-        ? new Set(["/", "/inventory/remissions", "/inventory/withdraw"])
-        : null;
-  })();
-
-  const adaptNavItem = (item: NavItem): NavItem => {
-    if (item.href === "/inventory/remissions" && normalizedRole === "conductor") {
-      return {
-        ...item,
-        label: "Remisiones en transito",
-        description: "Entrega, traslado y recepcion en ruta.",
-      };
-    }
-    if (item.href === "/inventory/remissions" && isSatelliteFocusMode) {
-      return {
-        ...item,
-        label: "Pedir y recibir",
-        description: "Tu sede solo solicita y confirma.",
-      };
-    }
-    if (item.href === "/inventory/remissions" && isProductionFocusMode) {
-      return {
-        ...item,
-        label: "Preparar remisiones",
-        description: "Centro prepara y despacha solicitudes.",
-      };
-    }
-    if (item.href === "/inventory/entries" && isProductionFocusMode) {
-      return {
-        ...item,
-        label: "Entradas de Centro",
-        description: "Recibe y registra entradas de contingencia.",
-      };
-    }
-    return item;
-  };
-
-  const isItemVisible = (item: NavItem) => {
-    if (!permissionsReady) return false;
-    if (item.allowedRoles?.length) {
-      const currentRole = String(role ?? "").toLowerCase();
-      if (!item.allowedRoles.some((r) => r.toLowerCase() === currentRole)) {
-        return false;
-      }
-    }
-    if (item.required?.length) return item.required.every((code) => can(code));
-    if (item.anyOf?.length) return item.anyOf.some((code) => can(code));
-    return true;
-  };
-
-  const visibleGroups = !permissionsReady
-    ? []
-    : NAV_GROUPS.map((group) => ({
-        label: group.label,
-        items: group.items
-          .map((item) => adaptNavItem(item))
-          .filter((item) => isItemVisible(item))
-          .filter((item) => (focusAllowedHrefs ? focusAllowedHrefs.has(item.href) : true)),
-      })).filter((group) => group.items.length > 0);
 
   if (isKioskMode) {
     return (
@@ -684,7 +473,7 @@ export function VentoChrome({
     <div className="min-h-screen bg-[var(--ui-bg)] text-[var(--ui-text)]">
       <div className="flex min-h-screen">
         <div
-          className={`fixed inset-0 z-40 bg-black/30 transition xl:hidden ${
+          className={`fixed inset-0 z-40 bg-black/30 transition lg:hidden ${
             menuOpen ? "opacity-100" : "pointer-events-none opacity-0"
           }`}
           onClick={() => setMenuOpen(false)}
@@ -692,22 +481,27 @@ export function VentoChrome({
         />
 
         <aside
-          className={`ui-sidebar fixed left-0 top-0 z-50 flex h-full w-72 flex-col gap-4 overflow-hidden px-4 py-5 transition-[width,padding,transform] duration-200 ease-out xl:static xl:translate-x-0 xl:shadow-none ${
+          className={`ui-sidebar fixed left-0 top-0 z-50 flex h-full w-72 flex-col gap-4 overflow-hidden px-4 py-5 transition-[width,padding,transform] duration-200 ease-out lg:static lg:translate-x-0 lg:shadow-none ${
             menuOpen ? "translate-x-0" : "-translate-x-full"
-          } ${sidebarCollapsed ? "xl:w-16 xl:items-center xl:px-2" : "xl:w-72 xl:items-stretch xl:px-4"}`}
+          } ${
+            sidebarCollapsed
+              ? "lg:w-16 lg:items-center lg:px-2"
+              : "lg:w-72 lg:items-stretch lg:px-4"
+          }`}
         >
-          <div className={`flex items-center ${sidebarCollapsed ? "xl:justify-center" : "justify-between"}`}>
-            <div className={sidebarCollapsed ? "xl:hidden" : ""}>
+          <div className={`flex items-center ${sidebarCollapsed ? "lg:justify-center" : "justify-between"}`}>
+            <div className={sidebarCollapsed ? "lg:hidden" : ""}>
               <VentoLogo
                 entity={APP_ENTITY}
                 title="Vento OS"
-                subtitle={`${APP_NAME} - Inventario`}
+                subtitle={APP_TAGLINE}
               />
             </div>
+
             <button
               type="button"
               onClick={() => setSidebarCollapsed((value) => !value)}
-              className={`hidden h-10 w-10 items-center justify-center text-[var(--ui-muted)] transition hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)] xl:inline-flex ${
+              className={`hidden h-10 w-10 items-center justify-center text-[var(--ui-muted)] transition hover:bg-[var(--ui-surface-2)] hover:text-[var(--ui-text)] lg:inline-flex ${
                 sidebarCollapsed ? "group rounded-xl" : ""
               }`}
               aria-label={sidebarCollapsed ? "Expandir menu lateral" : "Contraer menu lateral"}
@@ -718,6 +512,7 @@ export function VentoChrome({
                   <span className="block group-hover:hidden">
                     <VentoLogo entity={APP_ENTITY} showText={false} />
                   </span>
+
                   <span className="hidden group-hover:block">
                     <SidebarToggleIcon />
                   </span>
@@ -726,94 +521,92 @@ export function VentoChrome({
                 <SidebarToggleIcon />
               )}
             </button>
+
             <button
               type="button"
               onClick={() => setMenuOpen(false)}
-              className="h-10 rounded-lg px-3 text-sm font-semibold text-[var(--ui-muted)] hover:bg-[var(--ui-surface-2)] xl:hidden"
+              className="h-10 rounded-lg px-3 text-sm font-semibold text-[var(--ui-muted)] hover:bg-[var(--ui-surface-2)] lg:hidden"
             >
               Cerrar
             </button>
           </div>
 
-          <div className={`rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-4 py-3 ${sidebarCollapsed ? "xl:!hidden" : ""}`}>
+          <div className={`rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-3 shadow-[var(--ui-shadow-soft)] ${sidebarCollapsed ? "lg:!hidden" : ""}`}>
             <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
               Sede activa
             </div>
-            <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">{currentSiteLabel}</div>
-            {isSatelliteFocusMode || isProductionFocusMode ? (
-              <div className="mt-2 text-xs text-[var(--ui-muted)]">
-                {isSatelliteFocusMode
-                  ? "Modo satélite: pedir, recibir y seguir."
-                  : "Modo Centro: preparar, despachar y seguir."}
-              </div>
-            ) : null}
+
+            <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">
+              {currentSiteLabel}
+            </div>
           </div>
 
-          <nav className={`flex flex-1 flex-col gap-4 overflow-y-auto pr-1 ${sidebarCollapsed ? "xl:items-center xl:pr-0" : ""}`}>
-            {!permissionsReady ? (
-              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-3 py-2 text-xs text-[var(--ui-muted)]">
-                Cargando permisos...
+          <nav className={`flex flex-1 flex-col gap-4 overflow-y-auto pr-1 ${sidebarCollapsed ? "lg:items-center lg:pr-0" : ""}`}>
+            {navGroups.length === 0 ? (
+              <div className={`px-2 text-sm text-[var(--ui-muted)] ${sidebarCollapsed ? "lg:!hidden" : ""}`}>
+                No hay pantallas disponibles.
               </div>
-            ) : visibleGroups.length === 0 ? (
-              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-3 py-2 text-xs text-[var(--ui-muted)]">
-                No tienes permisos visibles en esta sede.
-              </div>
-            ) : (
-              visibleGroups.map((group) => (
-                <div key={group.label} className="space-y-2">
-                  <div className={`px-2 text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)] ${sidebarCollapsed ? "xl:!hidden" : ""}`}>
-                    {group.label}
-                  </div>
-                  <div className="space-y-1">
-                    {group.items.map((item) => (
-                      <SidebarLink
-                        key={item.href}
-                        item={item}
-                        active={isActive(item.href)}
-                        collapsed={sidebarCollapsed}
-                        onNavigate={() => setMenuOpen(false)}
-                      />
-                    ))}
-                  </div>
+            ) : null}
+
+            {navGroups.map((group) => (
+              <div key={group.label} className="space-y-2">
+                <div className={`px-2 text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)] ${sidebarCollapsed ? "lg:!hidden" : ""}`}>
+                  {group.label}
                 </div>
-              ))
-            )}
+
+                <div className="space-y-1">
+                  {group.items.map((item) => (
+                    <SidebarLink
+                      key={item.href}
+                      item={item}
+                      active={isActive(item.href)}
+                      collapsed={sidebarCollapsed}
+                      onNavigate={() => setMenuOpen(false)}
+                    />
+                  ))}
+                </div>
+              </div>
+            ))}
           </nav>
         </aside>
 
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="ui-header sticky top-0 z-30">
-            <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-3 sm:gap-3 sm:px-5 sm:py-4 lg:px-6 xl:px-8">
-              <div className="flex min-w-0 items-center gap-2 sm:gap-3">
+            <div className="flex flex-wrap items-center justify-between gap-2 px-3 py-3 sm:gap-3 sm:px-6 sm:py-5">
+              <div className="flex items-center gap-2 sm:gap-3">
                 <button
                   type="button"
                   onClick={() => setMenuOpen(true)}
-                  className="inline-flex items-center gap-2 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] h-10 px-3 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)] sm:h-11 sm:px-4 xl:hidden"
-                  aria-label="Abrir menu lateral"
+                  className="inline-flex h-10 items-center rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 text-sm font-semibold text-[var(--ui-text)] hover:bg-[var(--ui-surface-2)] sm:h-12 sm:px-4 sm:text-base lg:hidden"
                 >
-                  <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-                    <path d="M4 7h16" />
-                    <path d="M4 12h16" />
-                    <path d="M4 17h16" />
-                  </svg>
                   Menu
                 </button>
-                <div className="hidden min-w-0 sm:flex items-center gap-3">
+
+                <div className="hidden items-center gap-3 sm:flex">
                   <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-[var(--ui-surface-2)] ring-1 ring-inset ring-[var(--ui-border)]">
                     {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={
-                      "/logos/" + APP_ENTITY + ".svg"
-                    } alt={APP_NAME} className="h-6 w-6" />
+                    <img src={`/logos/${APP_ENTITY}.svg`} alt={APP_NAME} className="h-6 w-6" />
                   </div>
-                  <div className="min-w-0 flex flex-col leading-tight">
-                    <span className="truncate text-sm font-semibold text-[var(--ui-text)]">{APP_NAME}</span>
-                    <span className="text-xs text-[var(--ui-muted)]">{APP_TAGLINE}</span>
+
+                  <div className="flex flex-col leading-tight">
+                    <span className="text-sm font-semibold text-[var(--ui-text)]">
+                      {APP_NAME}
+                    </span>
+
+                    <span className="text-xs text-[var(--ui-muted)]">
+                      {APP_TAGLINE}
+                    </span>
                   </div>
                 </div>
               </div>
 
-              <div className="flex max-w-full items-center gap-1.5 sm:gap-2">
-                <AppSwitcher sites={sites} activeSiteId={activeSiteId} role={role} />
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <AppSwitcher
+                  sites={sites}
+                  activeSiteId={currentSiteId}
+                  appSwitcherItems={appSwitcherItems}
+                />
+
                 <ProfileMenu
                   name={displayName}
                   role={role ?? undefined}
@@ -825,11 +618,11 @@ export function VentoChrome({
             </div>
           </header>
 
-          <main className="min-w-0 flex-1 px-4 py-5 sm:px-5 sm:py-6 lg:px-6 lg:py-8 xl:px-8">{children}</main>
+          <main className="ui-main min-w-0 flex-1 px-6 py-8 sm:px-8 sm:py-10">
+            {children}
+          </main>
         </div>
       </div>
     </div>
   );
 }
-
-

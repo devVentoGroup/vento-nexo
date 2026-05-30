@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 
 const CSV_SEPARATOR = ";";
+const QUERY_CHUNK_SIZE = 250;
 
 function escapeCsv(value: string): string {
   const s = String(value ?? "").replace(/"/g, '""');
@@ -27,6 +28,33 @@ function formatCsvQty(value: unknown): string {
   return formatCsvNumber(value, 3);
 }
 
+function chunkArray<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+
+  for (let index = 0; index < items.length; index += size) {
+    chunks.push(items.slice(index, index + size));
+  }
+
+  return chunks;
+}
+
+function isMissingColumnError(error: unknown, columnName: string): boolean {
+  const message =
+    typeof error === "object" && error && "message" in error
+      ? String((error as { message?: unknown }).message ?? "")
+      : String(error ?? "");
+
+  const normalized = message.toLowerCase();
+  const column = columnName.toLowerCase();
+
+  return (
+    normalized.includes(column) &&
+    (normalized.includes("does not exist") ||
+      normalized.includes("could not find") ||
+      normalized.includes("schema cache"))
+  );
+}
+
 type ProductInventoryProfileRow = {
   inventory_kind: string | null;
 };
@@ -40,7 +68,7 @@ type ProductRow = {
   cost: number | null;
   is_active: boolean | null;
   product_type: string | null;
-  product_inventory_profiles?: ProductInventoryProfileRow | null;
+  product_inventory_profiles?: ProductInventoryProfileRow | ProductInventoryProfileRow[] | null;
 };
 
 type ProductSupplierRow = {
@@ -54,7 +82,7 @@ type ProductSupplierRow = {
   purchase_price_net?: number | null;
   purchase_price_includes_tax: boolean | null;
   purchase_tax_rate: number | null;
-  currency: string | null;
+  currency?: string | null;
 };
 
 type SupplierRow = {
@@ -68,11 +96,19 @@ type ProductManualPresentationRow = {
   source: string | null;
 };
 
+type SupabaseClient = ReturnType<typeof createServerClient>;
+
+function getInventoryKind(product: ProductRow): string {
+  const profile = Array.isArray(product.product_inventory_profiles)
+    ? product.product_inventory_profiles[0] ?? null
+    : product.product_inventory_profiles ?? null;
+
+  return String(profile?.inventory_kind ?? "").trim().toLowerCase();
+}
+
 function resolveItemType(product: ProductRow): string {
   const productType = String(product.product_type ?? "").trim().toLowerCase();
-  const inventoryKind = String(product.product_inventory_profiles?.inventory_kind ?? "")
-    .trim()
-    .toLowerCase();
+  const inventoryKind = getInventoryKind(product);
 
   if (productType === "insumo" && inventoryKind === "asset") return "Equipo / maquinaria";
   if (productType === "insumo") return "Insumo";
@@ -87,8 +123,158 @@ function resolveItemType(product: ProductRow): string {
   return "Sin clasificar";
 }
 
+async function loadProductSuppliersForChunk({
+  supabase,
+  productIds,
+}: {
+  supabase: SupabaseClient;
+  productIds: string[];
+}): Promise<{ data: ProductSupplierRow[]; error: string | null }> {
+  if (!productIds.length) {
+    return { data: [], error: null };
+  }
+
+  const baseSelect =
+    "product_id,supplier_id,is_primary,purchase_pack_qty,purchase_pack_unit_code,purchase_unit,purchase_price,purchase_price_includes_tax,purchase_tax_rate,currency";
+
+  const withNetSelect = `${baseSelect},purchase_price_net`;
+
+  const withNet = await supabase
+    .from("product_suppliers")
+    .select(withNetSelect)
+    .in("product_id", productIds);
+
+  if (!withNet.error) {
+    return {
+      data: (withNet.data ?? []) as ProductSupplierRow[],
+      error: null,
+    };
+  }
+
+  const missingPurchasePriceNet = isMissingColumnError(withNet.error, "purchase_price_net");
+  const missingCurrency = isMissingColumnError(withNet.error, "currency");
+
+  if (!missingPurchasePriceNet && !missingCurrency) {
+    return {
+      data: [],
+      error: withNet.error.message,
+    };
+  }
+
+  const fallbackSelect = [
+    "product_id",
+    "supplier_id",
+    "is_primary",
+    "purchase_pack_qty",
+    "purchase_pack_unit_code",
+    "purchase_unit",
+    "purchase_price",
+    missingPurchasePriceNet ? null : "purchase_price_net",
+    "purchase_price_includes_tax",
+    "purchase_tax_rate",
+    missingCurrency ? null : "currency",
+  ]
+    .filter(Boolean)
+    .join(",");
+
+  const fallback = await supabase
+    .from("product_suppliers")
+    .select(fallbackSelect)
+    .in("product_id", productIds);
+
+  if (fallback.error) {
+    return {
+      data: [],
+      error: fallback.error.message,
+    };
+  }
+
+  return {
+    data: (fallback.data ?? []) as ProductSupplierRow[],
+    error: null,
+  };
+}
+
+async function loadProductSuppliers({
+  supabase,
+  productIds,
+}: {
+  supabase: SupabaseClient;
+  productIds: string[];
+}): Promise<{ data: ProductSupplierRow[]; error: string | null }> {
+  const rows: ProductSupplierRow[] = [];
+
+  for (const chunk of chunkArray(productIds, QUERY_CHUNK_SIZE)) {
+    const result = await loadProductSuppliersForChunk({
+      supabase,
+      productIds: chunk,
+    });
+
+    if (result.error) {
+      return { data: [], error: result.error };
+    }
+
+    rows.push(...result.data);
+  }
+
+  return { data: rows, error: null };
+}
+
+async function loadManualPresentations({
+  supabase,
+  productIds,
+}: {
+  supabase: SupabaseClient;
+  productIds: string[];
+}): Promise<{ data: ProductManualPresentationRow[]; error: string | null }> {
+  const rows: ProductManualPresentationRow[] = [];
+
+  for (const chunk of chunkArray(productIds, QUERY_CHUNK_SIZE)) {
+    const { data, error } = await supabase
+      .from("product_uom_profiles")
+      .select("product_id,is_active,source")
+      .in("product_id", chunk)
+      .eq("is_active", true)
+      .eq("source", "manual");
+
+    if (error) {
+      return { data: [], error: error.message };
+    }
+
+    rows.push(...((data ?? []) as ProductManualPresentationRow[]));
+  }
+
+  return { data: rows, error: null };
+}
+
+async function loadSuppliers({
+  supabase,
+  supplierIds,
+}: {
+  supabase: SupabaseClient;
+  supplierIds: string[];
+}): Promise<{ data: SupplierRow[]; error: string | null }> {
+  const rows: SupplierRow[] = [];
+
+  for (const chunk of chunkArray(supplierIds, QUERY_CHUNK_SIZE)) {
+    const { data, error } = await supabase
+      .from("suppliers")
+      .select("id,name")
+      .in("id", chunk);
+
+    if (error) {
+      return { data: [], error: error.message };
+    }
+
+    rows.push(...((data ?? []) as SupplierRow[]));
+  }
+
+  return { data: rows, error: null };
+}
+
 export async function GET() {
   const cookieStore = await cookies();
+
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
@@ -103,18 +289,27 @@ export async function GET() {
   );
 
   const { data: userData, error: userErr } = await supabase.auth.getUser();
+
   if (userErr || !userData?.user) {
     return NextResponse.json({ error: "UNAUTHORIZED" }, { status: 401 });
   }
 
-  const { data: employee } = await supabase
+  const { data: employee, error: employeeErr } = await supabase
     .from("employees")
     .select("role")
     .eq("id", userData.user.id)
     .maybeSingle();
 
+  if (employeeErr) {
+    return NextResponse.json(
+      { error: "No se pudo validar el rol del usuario.", detail: employeeErr.message },
+      { status: 400 }
+    );
+  }
+
   const role = String((employee as { role?: string } | null)?.role ?? "");
   const canExport = ["gerente_general", "propietario"].includes(role);
+
   if (!canExport) {
     return NextResponse.json(
       { error: "Solo gerentes y propietarios pueden exportar." },
@@ -131,80 +326,78 @@ export async function GET() {
     .limit(5000);
 
   if (productsErr) {
-    return NextResponse.json({ error: productsErr.message }, { status: 400 });
+    return NextResponse.json(
+      { error: "No se pudieron cargar los productos.", detail: productsErr.message },
+      { status: 400 }
+    );
   }
 
   const products = (productsData ?? []) as unknown as ProductRow[];
-  const productIds = products.map((row) => row.id);
+  const productIds = products.map((row) => row.id).filter(Boolean);
 
-  const productSuppliersBaseSelect =
-    "product_id,supplier_id,is_primary,purchase_pack_qty,purchase_pack_unit_code,purchase_unit,purchase_price,purchase_price_includes_tax,purchase_tax_rate,currency";
-  const productSuppliersWithNetSelect = `${productSuppliersBaseSelect},purchase_price_net`;
+  const productSuppliersResult = await loadProductSuppliers({
+    supabase,
+    productIds,
+  });
 
-  const withNet =
-    productIds.length > 0
-      ? await supabase
-          .from("product_suppliers")
-          .select(productSuppliersWithNetSelect)
-          .in("product_id", productIds)
-      : { data: [] as ProductSupplierRow[], error: null };
-
-  const missingPurchasePriceNet =
-    withNet.error?.message?.toLowerCase().includes("purchase_price_net") &&
-    withNet.error?.message?.toLowerCase().includes("does not exist");
-
-  const fallback =
-    productIds.length > 0 && missingPurchasePriceNet
-      ? await supabase
-          .from("product_suppliers")
-          .select(productSuppliersBaseSelect)
-          .in("product_id", productIds)
-      : null;
-
-  const productSuppliersData =
-    (fallback?.data as ProductSupplierRow[] | null) ??
-    (withNet.data as ProductSupplierRow[] | null);
-  const productSuppliersErr = fallback?.error ?? withNet.error;
-
-  if (productSuppliersErr) {
-    return NextResponse.json({ error: productSuppliersErr.message }, { status: 400 });
+  if (productSuppliersResult.error) {
+    return NextResponse.json(
+      {
+        error: "No se pudieron cargar los proveedores por producto.",
+        detail: productSuppliersResult.error,
+      },
+      { status: 400 }
+    );
   }
 
-  const productSuppliers = (productSuppliersData ?? []) as ProductSupplierRow[];
+  const productSuppliers = productSuppliersResult.data;
 
-  const { data: manualPresentationsData, error: manualPresentationsErr } =
-    productIds.length > 0
-      ? await supabase
-          .from("product_uom_profiles")
-          .select("product_id,is_active,source")
-          .in("product_id", productIds)
-          .eq("is_active", true)
-          .eq("source", "manual")
-      : { data: [] as ProductManualPresentationRow[], error: null };
+  const manualPresentationsResult = await loadManualPresentations({
+    supabase,
+    productIds,
+  });
 
-  if (manualPresentationsErr) {
-    return NextResponse.json({ error: manualPresentationsErr.message }, { status: 400 });
+  if (manualPresentationsResult.error) {
+    return NextResponse.json(
+      {
+        error: "No se pudieron cargar las presentaciones manuales.",
+        detail: manualPresentationsResult.error,
+      },
+      { status: 400 }
+    );
   }
 
   const productIdsWithManualPresentation = new Set(
-    ((manualPresentationsData ?? []) as ProductManualPresentationRow[])
+    manualPresentationsResult.data
       .map((row) => String(row.product_id ?? "").trim())
       .filter(Boolean)
   );
 
   const supplierIds = Array.from(
-    new Set(productSuppliers.map((row) => String(row.supplier_id ?? "")).filter(Boolean))
+    new Set(productSuppliers.map((row) => String(row.supplier_id ?? "").trim()).filter(Boolean))
   );
-  const { data: suppliersData } =
-    supplierIds.length > 0
-      ? await supabase.from("suppliers").select("id,name").in("id", supplierIds)
-      : { data: [] as SupplierRow[] };
+
+  const suppliersResult = await loadSuppliers({
+    supabase,
+    supplierIds,
+  });
+
+  if (suppliersResult.error) {
+    return NextResponse.json(
+      {
+        error: "No se pudieron cargar los proveedores.",
+        detail: suppliersResult.error,
+      },
+      { status: 400 }
+    );
+  }
 
   const supplierNameById = new Map(
-    ((suppliersData ?? []) as SupplierRow[]).map((row) => [row.id, row.name ?? row.id])
+    suppliersResult.data.map((row) => [row.id, row.name ?? row.id])
   );
 
   const supplierRowsByProduct = new Map<string, ProductSupplierRow[]>();
+
   for (const row of productSuppliers) {
     const current = supplierRowsByProduct.get(row.product_id) ?? [];
     current.push(row);
@@ -237,14 +430,23 @@ export async function GET() {
 
   const resolvePurchasePriceNet = (supplierRow: ProductSupplierRow): number | null => {
     const explicitNet = Number(supplierRow.purchase_price_net ?? NaN);
-    if (Number.isFinite(explicitNet)) return explicitNet;
+
+    if (Number.isFinite(explicitNet)) {
+      return explicitNet;
+    }
 
     const gross = Number(supplierRow.purchase_price ?? NaN);
-    if (!Number.isFinite(gross)) return null;
+
+    if (!Number.isFinite(gross)) {
+      return null;
+    }
 
     const includesTax = Boolean(supplierRow.purchase_price_includes_tax);
     const taxRate = Number(supplierRow.purchase_tax_rate ?? 0);
-    if (!includesTax || !Number.isFinite(taxRate) || taxRate <= 0) return gross;
+
+    if (!includesTax || !Number.isFinite(taxRate) || taxRate <= 0) {
+      return gross;
+    }
 
     return gross / (1 + taxRate / 100);
   };
@@ -276,16 +478,21 @@ export async function GET() {
           escapeCsv(product.is_active === false ? "Inactivo" : "Activo"),
         ].join(CSV_SEPARATOR)
       );
+
       continue;
     }
 
     const orderedSuppliers = [...supplierRows].sort((a, b) => {
       const aPrimary = Boolean(a.is_primary) ? 1 : 0;
       const bPrimary = Boolean(b.is_primary) ? 1 : 0;
-      if (aPrimary !== bPrimary) return bPrimary - aPrimary;
+
+      if (aPrimary !== bPrimary) {
+        return bPrimary - aPrimary;
+      }
 
       const aName =
         supplierNameById.get(String(a.supplier_id ?? "")) ?? String(a.supplier_id ?? "");
+
       const bName =
         supplierNameById.get(String(b.supplier_id ?? "")) ?? String(b.supplier_id ?? "");
 
