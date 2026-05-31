@@ -58,6 +58,13 @@ type ProductUomProfileRow = {
   usage_context: string | null;
 };
 
+type ProductSiteSettingRow = {
+  product_id: string | null;
+  site_id: string | null;
+  is_active: boolean | null;
+  remission_enabled: boolean | null;
+};
+
 type InternalPriceListRow = {
   id: string;
   name: string;
@@ -204,6 +211,50 @@ function presentationShortLabel(params: {
   }
 
   return label || inputUnitCode || "Sin presentación";
+}
+
+function isPresentationUnitCode(value: string | null | undefined) {
+  const normalized = normalizeUnitCodeLocal(value).toLowerCase();
+
+  return ["un", "und", "unidad", "unid", "u"].includes(normalized);
+}
+
+function isManualPhysicalPresentation(profile: ProductUomProfileRow) {
+  const source = String(profile.source ?? "").trim().toLowerCase();
+  const label = normalizeLabel(profile.label);
+  const inputUnitCode = String(profile.input_unit_code ?? "").trim();
+  const qtyInInputUnit = Number(profile.qty_in_input_unit ?? 0);
+  const qtyInStockUnit = Number(profile.qty_in_stock_unit ?? 0);
+  const usageContext = String(profile.usage_context ?? "").trim().toLowerCase();
+
+  if (profile.is_active === false) return false;
+  if (source !== "manual") return false;
+  if (!label) return false;
+  if (label.includes("unidad operativa")) return false;
+  if (label.includes("costo")) return false;
+  if (["purchase", "compra", "operation", "operacion", "operational", "stock", "base"].includes(usageContext)) {
+    return false;
+  }
+  if (!isPresentationUnitCode(inputUnitCode)) return false;
+  if (!Number.isFinite(qtyInInputUnit) || qtyInInputUnit <= 0) return false;
+  if (!Number.isFinite(qtyInStockUnit) || qtyInStockUnit <= 0) return false;
+
+  return true;
+}
+
+function resolveBuyerSiteId(params: {
+  priceList: InternalPriceListRow | null;
+  costCentersById: Map<string, CostCenterRow>;
+}) {
+  const directSiteId = String(params.priceList?.buyer_site_id ?? "").trim();
+  if (directSiteId) return directSiteId;
+
+  const buyerCostCenterId = String(params.priceList?.buyer_cost_center_id ?? "").trim();
+  const buyerCostCenter = buyerCostCenterId
+    ? params.costCentersById.get(buyerCostCenterId)
+    : null;
+
+  return String(buyerCostCenter?.site_id ?? "").trim();
 }
 
 function normalizeLabel(value: string | null | undefined) {
@@ -576,6 +627,7 @@ export default async function InternalPricesSettingsPage({
     { data: priceListsData },
     { data: productsData },
     { data: productUomProfilesData },
+    { data: productSiteSettingsData },
   ] = await Promise.all([
     supabase
       .from("cost_centers")
@@ -605,8 +657,15 @@ export default async function InternalPricesSettingsPage({
         "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
       )
       .eq("is_active", true)
+      .eq("source", "manual")
       .order("label", { ascending: true })
       .limit(5000),
+    supabase
+      .from("product_site_settings")
+      .select("product_id,site_id,is_active,remission_enabled")
+      .eq("is_active", true)
+      .eq("remission_enabled", true)
+      .limit(10000),
   ]);
 
   const costCenters = (costCentersData ?? []) as CostCenterRow[];
@@ -614,6 +673,7 @@ export default async function InternalPricesSettingsPage({
   const priceLists = (priceListsData ?? []) as InternalPriceListRow[];
   const products = (productsData ?? []) as ProductRow[];
   const productUomProfiles = (productUomProfilesData ?? []) as ProductUomProfileRow[];
+  const productSiteSettings = (productSiteSettingsData ?? []) as ProductSiteSettingRow[];
 
   const costCentersById = new Map(costCenters.map((row) => [row.id, row]));
   const sitesById = new Map(sites.map((row) => [row.id, row]));
@@ -624,6 +684,7 @@ export default async function InternalPricesSettingsPage({
   for (const profile of productUomProfiles) {
     const productId = String(profile.product_id ?? "").trim();
     if (!productId || !productsById.has(productId)) continue;
+    if (!isManualPhysicalPresentation(profile)) continue;
 
     const current = profilesByProductId.get(productId) ?? [];
     current.push(profile);
@@ -640,34 +701,6 @@ export default async function InternalPricesSettingsPage({
       })
     );
   }
-
-  const productPriceOptions = products.flatMap((product) => {
-    const profiles = profilesByProductId.get(product.id) ?? [];
-
-    if (profiles.length) {
-      return profiles.map((profile) => ({
-        key: `${product.id}:${profile.id}`,
-        value: buildProductPriceOptionValue(product.id, profile.id),
-        label: `${product.name ?? product.id} — ${buildPresentationEquivalenceLabel({
-          label: profile.label,
-          inputUnitCode: profile.input_unit_code,
-          qtyInInputUnit: profile.qty_in_input_unit,
-          qtyInStockUnit: profile.qty_in_stock_unit,
-          stockUnitCode: product.stock_unit_code ?? product.unit,
-        })}`,
-      }));
-    }
-
-    const unitCode = normalizeUnitCodeLocal(product.stock_unit_code ?? product.unit);
-
-    return [
-      {
-        key: `${product.id}:legacy`,
-        value: buildProductPriceOptionValue(product.id, null),
-        label: `${product.name ?? product.id} — ${unitCode} (legacy sin presentación)`,
-      },
-    ];
-  });
 
   const operationalSites = sites.filter((site) => !isDemoSite(site));
   const operationalCostCenters = costCenters.filter(
@@ -692,6 +725,46 @@ export default async function InternalPricesSettingsPage({
   const activeItems = priceItems.filter((row) => row.is_active);
   const inactiveItems = priceItems.filter((row) => !row.is_active);
 
+  const selectedBuyerSiteId = resolveBuyerSiteId({
+    priceList: selectedPriceList,
+    costCentersById,
+  });
+  const remissionProductIdsForBuyerSite = new Set(
+    productSiteSettings
+      .filter((row) => String(row.site_id ?? "").trim() === selectedBuyerSiteId)
+      .map((row) => String(row.product_id ?? "").trim())
+      .filter(Boolean)
+  );
+  const existingActiveProductProfileKeys = new Set(
+    activeItems.map((item) => `${item.product_id}|${item.uom_profile_id ?? ""}`)
+  );
+  const productsMissingManualPresentation = selectedBuyerSiteId
+    ? products
+        .filter((product) => remissionProductIdsForBuyerSite.has(product.id))
+        .filter((product) => (profilesByProductId.get(product.id) ?? []).length === 0)
+    : [];
+  const productPriceOptions = selectedBuyerSiteId
+    ? products
+        .filter((product) => remissionProductIdsForBuyerSite.has(product.id))
+        .flatMap((product) => {
+          const profiles = profilesByProductId.get(product.id) ?? [];
+
+          return profiles
+            .map((profile) => ({
+              key: `${product.id}:${profile.id}`,
+              value: buildProductPriceOptionValue(product.id, profile.id),
+              label: `${product.name ?? product.id} — ${buildPresentationEquivalenceLabel({
+                label: profile.label,
+                inputUnitCode: profile.input_unit_code,
+                qtyInInputUnit: profile.qty_in_input_unit,
+                qtyInStockUnit: profile.qty_in_stock_unit,
+                stockUnitCode: product.stock_unit_code ?? product.unit,
+              })}`,
+            }))
+            .filter((option) => !existingActiveProductProfileKeys.has(option.value));
+        })
+    : [];
+
   const productionCostCenters = operationalCostCenters.filter((row) =>
     isProductionCostCenter(row, sitesById)
   );
@@ -711,11 +784,8 @@ export default async function InternalPricesSettingsPage({
 
   return (
     <div className="w-full">
-      <section className="relative overflow-hidden rounded-[2rem] border border-amber-200/80 bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.20),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(226,0,106,0.12),transparent_32%),linear-gradient(135deg,#fffaf0_0%,#ffffff_48%,#f7fbff_100%)] p-6 shadow-[0_24px_70px_rgba(15,23,42,0.10)]">
-        <div className="pointer-events-none absolute -right-16 -top-16 h-44 w-44 rounded-full bg-amber-300/20 blur-3xl" />
-        <div className="pointer-events-none absolute -bottom-20 left-1/3 h-44 w-44 rounded-full bg-pink-400/10 blur-3xl" />
-
-        <div className="relative flex flex-wrap items-start justify-between gap-5">
+      <section className="rounded-[2rem] border border-[var(--ui-border)] bg-[linear-gradient(135deg,#ffffff_0%,#fbfdff_58%,#fffaf0_100%)] p-6 shadow-sm">
+        <div className="flex flex-wrap items-start justify-between gap-5">
           <div className="max-w-3xl">
             <div className="mb-3 flex flex-wrap gap-2">
               <span className="rounded-full border border-amber-300 bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
@@ -729,7 +799,7 @@ export default async function InternalPricesSettingsPage({
               </span>
             </div>
 
-            <h1 className="text-3xl font-bold tracking-tight text-[var(--ui-text)]">
+            <h1 className="text-2xl font-bold tracking-tight text-[var(--ui-text)]">
               Precios internos
             </h1>
             <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--ui-muted)]">
@@ -748,14 +818,14 @@ export default async function InternalPricesSettingsPage({
           </div>
         </div>
 
-        <div className="relative mt-6 grid gap-3 md:grid-cols-3">
-          <div className="rounded-2xl border border-amber-200 bg-white/85 p-4 shadow-sm">
+        <div className="mt-6 grid gap-3 md:grid-cols-3">
+          <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
             <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Listas activas</div>
             <div className="mt-2 text-3xl font-bold text-[var(--ui-text)]">{activePriceLists.length}</div>
             <div className="mt-1 text-xs text-[var(--ui-muted)]">{priceLists.length} listas totales</div>
           </div>
 
-          <div className="rounded-2xl border border-sky-200 bg-white/85 p-4 shadow-sm">
+          <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
             <div className="text-xs font-semibold uppercase tracking-wide text-sky-700">Lista seleccionada</div>
             <div className="mt-2 line-clamp-2 text-sm font-bold text-[var(--ui-text)]">
               {selectedPriceList?.name ?? "Sin lista seleccionada"}
@@ -765,7 +835,7 @@ export default async function InternalPricesSettingsPage({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-emerald-200 bg-white/85 p-4 shadow-sm">
+          <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
             <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Productos activos</div>
             <div className="mt-2 text-3xl font-bold text-[var(--ui-text)]">{activeItems.length}</div>
             <div className="mt-1 text-xs text-[var(--ui-muted)]">{inactiveItems.length} desactivados</div>
@@ -797,7 +867,7 @@ export default async function InternalPricesSettingsPage({
         </div>
 
         <div className="mt-4 grid gap-3 lg:grid-cols-3">
-          <div className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
             <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">1. Vendedor</div>
             <div className="mt-2 text-sm font-bold text-[var(--ui-text)]">
               Centro de Producción
@@ -807,7 +877,7 @@ export default async function InternalPricesSettingsPage({
             </p>
           </div>
 
-          <div className="rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50 to-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
             <div className="text-xs font-semibold uppercase tracking-wide text-sky-700">2. Comprador</div>
             <div className="mt-2 text-sm font-bold text-[var(--ui-text)]">
               Molka, Saudo o Vento Café
@@ -817,7 +887,7 @@ export default async function InternalPricesSettingsPage({
             </p>
           </div>
 
-          <div className="rounded-2xl border border-pink-200 bg-gradient-to-br from-pink-50 to-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
             <div className="text-xs font-semibold uppercase tracking-wide text-pink-700">3. Sede compradora</div>
             <div className="mt-2 text-sm font-bold text-[var(--ui-text)]">
               Usa la misma sede del comprador
@@ -830,7 +900,7 @@ export default async function InternalPricesSettingsPage({
       </div>
 
       <div className="mt-6 grid gap-3 lg:grid-cols-3">
-        <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4">
+        <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
           <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Modelo</div>
           <div className="mt-2 text-sm font-bold text-[var(--ui-text)]">
             Precio por presentación
@@ -840,7 +910,7 @@ export default async function InternalPricesSettingsPage({
           </div>
         </div>
 
-        <div className="rounded-2xl border border-sky-200 bg-sky-50/80 p-4">
+        <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
           <div className="text-xs font-semibold uppercase tracking-wide text-sky-700">Valorización</div>
           <div className="mt-2 text-sm font-bold text-[var(--ui-text)]">
             Remisiones cerradas
@@ -850,7 +920,7 @@ export default async function InternalPricesSettingsPage({
           </div>
         </div>
 
-        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4">
+        <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
           <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Compatibilidad</div>
           <div className="mt-2 text-sm font-bold text-[var(--ui-text)]">
             Legacy controlado
@@ -862,7 +932,7 @@ export default async function InternalPricesSettingsPage({
       </div>
 
       {canManage ? (
-        <div className="mt-6 rounded-[1.75rem] border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-white p-5 shadow-sm">
+        <div className="mt-6 rounded-[1.75rem] border border-[var(--ui-border)] bg-white p-5 shadow-sm">
           <div className="text-lg font-bold text-[var(--ui-text)]">Crear lista de precios internos</div>
           <p className="mt-1 text-sm text-[var(--ui-muted)]">
             Crea una lista por relación interna, por ejemplo Centro de Producción → Molka.
@@ -946,7 +1016,7 @@ export default async function InternalPricesSettingsPage({
       ) : null}
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[420px_1fr]">
-        <div className="rounded-[1.75rem] border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-white p-5 shadow-sm">
+        <div className="rounded-[1.75rem] border border-[var(--ui-border)] bg-white p-5 shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="ui-h3">Listas creadas</div>
@@ -971,7 +1041,7 @@ export default async function InternalPricesSettingsPage({
                     key={list.id}
                     className={
                       isSelected
-                        ? "rounded-2xl border border-amber-300 bg-gradient-to-br from-amber-50 to-white p-4 shadow-sm"
+                        ? "rounded-2xl border border-[var(--ui-brand)] bg-[var(--ui-surface-2)] p-4 shadow-sm"
                         : "rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm"
                     }
                   >
@@ -1029,7 +1099,7 @@ export default async function InternalPricesSettingsPage({
           </div>
         </div>
 
-        <div className="rounded-[1.75rem] border border-amber-200 bg-white p-5 shadow-sm">
+        <div className="rounded-[1.75rem] border border-[var(--ui-border)] bg-white p-5 shadow-sm">
           {selectedPriceList ? (
             <>
               <div className="flex flex-wrap items-start justify-between gap-4">
@@ -1052,7 +1122,7 @@ export default async function InternalPricesSettingsPage({
               </div>
 
               <div className="mt-4 grid gap-3 lg:grid-cols-3">
-                <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
+                <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
                   <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Vendedor</div>
                   <div className="mt-2 text-sm font-semibold text-[var(--ui-text)]">
                     {costCenterLabel(
@@ -1062,7 +1132,7 @@ export default async function InternalPricesSettingsPage({
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-sky-200 bg-sky-50/70 p-4">
+                <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
                   <div className="text-xs font-semibold uppercase tracking-wide text-sky-700">Comprador</div>
                   <div className="mt-2 text-sm font-semibold text-[var(--ui-text)]">
                     {selectedPriceList.buyer_cost_center_id
@@ -1073,10 +1143,15 @@ export default async function InternalPricesSettingsPage({
                       : selectedPriceList.buyer_site_id
                         ? sitesById.get(selectedPriceList.buyer_site_id)?.name ?? "Sede sin nombre"
                         : "General"}
+                    {selectedBuyerSiteId ? (
+                      <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                        Sede filtro: {sitesById.get(selectedBuyerSiteId)?.name ?? selectedBuyerSiteId}
+                      </div>
+                    ) : null}
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
+                <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
                   <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Vigencia</div>
                   <div className="mt-2 text-sm font-semibold text-[var(--ui-text)]">
                     {formatDate(selectedPriceList.valid_from)}
@@ -1092,15 +1167,38 @@ export default async function InternalPricesSettingsPage({
               {canManage ? (
                 <form
                   action={addInternalPriceListItem}
-                  className="mt-6 rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-white p-4 shadow-sm"
+                  className="mt-6 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4"
                 >
                   <input type="hidden" name="price_list_id" value={selectedPriceList.id} />
                   <div className="ui-h3">Agregar producto</div>
 
+                  {!selectedBuyerSiteId ? (
+                    <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                      Para listar productos, esta lista necesita sede compradora o un centro comprador asociado a sede.
+                    </div>
+                  ) : null}
+
+                  {selectedBuyerSiteId && productPriceOptions.length === 0 ? (
+                    <div className="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                      No hay productos disponibles para agregar. Revisa que estén habilitados para remisión en la sede compradora y que tengan presentación física manual activa.
+                    </div>
+                  ) : null}
+
+                  {productsMissingManualPresentation.length ? (
+                    <div className="mt-4 rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3 text-xs text-[var(--ui-muted)]">
+                      {productsMissingManualPresentation.length} producto(s) remisionables no aparecen porque les falta presentación física manual.
+                    </div>
+                  ) : null}
+
                   <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_170px_auto]">
                     <label className="flex flex-col gap-1">
                       <span className="ui-label">Producto y presentación</span>
-                      <select name="product_option" className="ui-input" required>
+                      <select
+                        name="product_option"
+                        className="ui-input"
+                        required
+                        disabled={!selectedBuyerSiteId || productPriceOptions.length === 0}
+                      >
                         <option value="">Seleccionar producto y presentación</option>
                         {productPriceOptions.map((option) => (
                           <option key={option.key} value={option.value}>
@@ -1109,7 +1207,7 @@ export default async function InternalPricesSettingsPage({
                         ))}
                       </select>
                       <span className="text-xs text-[var(--ui-muted)]">
-                        La presentación se toma de la ficha del producto. No se edita como texto libre.
+                        Solo aparecen productos habilitados para remisión en la sede compradora y presentaciones físicas manuales activas.
                       </span>
                     </label>
 
@@ -1127,7 +1225,11 @@ export default async function InternalPricesSettingsPage({
                     </label>
 
                     <div className="flex items-end">
-                      <button type="submit" className="ui-btn ui-btn--brand">
+                      <button
+                        type="submit"
+                        className="ui-btn ui-btn--brand"
+                        disabled={!selectedBuyerSiteId || productPriceOptions.length === 0}
+                      >
                         Agregar
                       </button>
                     </div>
@@ -1143,14 +1245,14 @@ export default async function InternalPricesSettingsPage({
                       Revisa presentación, equivalencia y precio interno por cada producto.
                     </p>
                   </div>
-                  <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
+                  <span className="rounded-full border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-3 py-1 text-xs font-semibold text-[var(--ui-muted)]">
                     {priceItems.length} item(s)
                   </span>
                 </div>
 
-                <div className="mt-4 overflow-hidden rounded-2xl border border-amber-200 shadow-sm">
-                  <table className="min-w-full divide-y divide-amber-100 text-sm">
-                    <thead className="bg-gradient-to-r from-amber-100 via-white to-sky-50">
+                <div className="mt-4 overflow-hidden rounded-2xl border border-[var(--ui-border)] shadow-sm">
+                  <table className="min-w-full divide-y divide-[var(--ui-border)] text-sm">
+                    <thead className="bg-[var(--ui-surface-2)]">
                       <tr>
                         <th className="px-4 py-3 text-left font-semibold text-[var(--ui-text)]">
                           Producto
@@ -1172,7 +1274,7 @@ export default async function InternalPricesSettingsPage({
                       </tr>
                     </thead>
 
-                    <tbody className="divide-y divide-amber-100 bg-white">
+                    <tbody className="divide-y divide-[var(--ui-border)] bg-white">
                       {priceItems.length ? (
                         priceItems.map((item) => {
                           const product = productsById.get(item.product_id);
