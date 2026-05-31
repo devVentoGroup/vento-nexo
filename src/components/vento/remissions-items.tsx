@@ -86,6 +86,34 @@ const saleCategoryPriorityMap = new Map(
   SALE_CATEGORY_PRIORITY.map((label, index) => [label.toLowerCase(), index])
 );
 
+function formatQuantity(value: number | null | undefined) {
+  const numericValue = Number(value ?? 0);
+  if (!Number.isFinite(numericValue)) return "0";
+  return new Intl.NumberFormat("es-CO", {
+    maximumFractionDigits: 3,
+  }).format(numericValue);
+}
+
+function getStockUnitCode(product: Option | null | undefined) {
+  return normalizeUnitCode(product?.stock_unit_code ?? product?.unit ?? "un");
+}
+
+function getRemissionPresentationLabel(
+  profile: ProductUomProfile | null | undefined,
+  stockUnitCode: string
+) {
+  const label = String(profile?.label ?? "").trim();
+  if (label) return label;
+  return stockUnitCode || "Sin presentación definida";
+}
+
+function getRemissionInputUnitCode(
+  profile: ProductUomProfile | null | undefined,
+  stockUnitCode: string
+) {
+  return normalizeUnitCode(profile?.input_unit_code ?? "") || stockUnitCode || "un";
+}
+
 export function RemissionsItems({
   products,
   categoryNameById = {},
@@ -99,21 +127,6 @@ export function RemissionsItems({
   referenceSiteName = "",
   initialRows,
 }: Props) {
-  const initialRowsSource = useMemo(() => initialRows ?? [], [initialRows]);
-  const normalizedInitialRows = useMemo<RemissionDraftRow[]>(() => {
-    if (!initialRowsSource.length) return [{ ...EMPTY_ROW, areaKind: defaultAreaKind }];
-    return initialRowsSource.map((row, index) => ({
-      id: Number.isFinite(row.id) ? row.id : index,
-      productId: String(row.productId ?? "").trim(),
-      quantity: String(row.quantity ?? "").trim(),
-      inputUnitCode: normalizeUnitCode(String(row.inputUnitCode ?? "").trim()),
-      inputUomProfileId: String(row.inputUomProfileId ?? "").trim(),
-      areaKind: String(row.areaKind ?? "").trim() || defaultAreaKind,
-    }));
-  }, [defaultAreaKind, initialRowsSource]);
-
-  const [rows, setRows] = useState<Row[]>(normalizedInitialRows);
-
   const defaultProfileByProduct = useMemo(() => {
     const profilesByProduct = new Map<string, ProductUomProfile[]>();
     for (const profile of defaultUomProfiles) {
@@ -135,6 +148,38 @@ export function RemissionsItems({
     return selected;
   }, [defaultUomProfiles]);
 
+  const productsById = useMemo(
+    () => new Map(products.map((product) => [product.id, product])),
+    [products]
+  );
+
+  const initialRowsSource = useMemo(() => initialRows ?? [], [initialRows]);
+  const normalizedInitialRows = useMemo<RemissionDraftRow[]>(() => {
+    if (!initialRowsSource.length) return [{ ...EMPTY_ROW, areaKind: defaultAreaKind }];
+
+    return initialRowsSource.map((row, index) => {
+      const productId = String(row.productId ?? "").trim();
+      const product = productsById.get(productId) ?? null;
+      const stockUnitCode = getStockUnitCode(product);
+      const profile = productId ? defaultProfileByProduct.get(productId) ?? null : null;
+      const inputUnitCode = getRemissionInputUnitCode(profile, stockUnitCode);
+      return {
+        id: Number.isFinite(row.id) ? row.id : index,
+        productId,
+        quantity: String(row.quantity ?? "").trim(),
+        inputUnitCode,
+        inputUomProfileId: profile?.id ?? "",
+        areaKind: String(row.areaKind ?? "").trim() || defaultAreaKind,
+      };
+    });
+  }, [defaultAreaKind, defaultProfileByProduct, initialRowsSource, productsById]);
+
+  const [rows, setRows] = useState<Row[]>(normalizedInitialRows);
+
+  useEffect(() => {
+    setRows(normalizedInitialRows);
+  }, [normalizedInitialRows]);
+
   useEffect(() => {
     onRowsChange?.(rows);
   }, [rows, onRowsChange]);
@@ -143,10 +188,10 @@ export function RemissionsItems({
     setRows((prev) => [
       ...prev,
       {
-          ...EMPTY_ROW,
-          areaKind: defaultAreaKind,
-          id: prev.length ? Math.max(...prev.map((row) => row.id)) + 1 : 0,
-        },
+        ...EMPTY_ROW,
+        areaKind: defaultAreaKind,
+        id: prev.length ? Math.max(...prev.map((row) => row.id)) + 1 : 0,
+      },
     ]);
   };
 
@@ -157,12 +202,15 @@ export function RemissionsItems({
   const productOptions = useMemo(() => {
     const options = products.map((item) => {
       const groupLabel = categoryNameById[String(item.category_id ?? "").trim()] ?? "Sin categoria";
+      const stockUnitCode = getStockUnitCode(item);
+      const profile = defaultProfileByProduct.get(item.id) ?? null;
+      const presentationLabel = getRemissionPresentationLabel(profile, stockUnitCode);
+      const hasPresentation = Boolean(profile?.id);
       return {
         value: item.id,
-        label: `${item.name ?? item.id}${item.stock_unit_code ? ` (${item.stock_unit_code})` : item.unit ? ` (${item.unit})` : ""
-          }`,
-        searchText: `${item.name ?? ""} ${item.unit ?? ""} ${item.stock_unit_code ?? ""} ${groupLabel}`,
-        groupLabel,
+        label: `${item.name ?? item.id} — ${presentationLabel}`,
+        searchText: `${item.name ?? ""} ${item.unit ?? ""} ${item.stock_unit_code ?? ""} ${presentationLabel} ${groupLabel}`,
+        groupLabel: hasPresentation ? groupLabel : `${groupLabel} · Sin presentación mínima`,
       };
     });
 
@@ -180,29 +228,28 @@ export function RemissionsItems({
     });
 
     return options;
-  }, [products, categoryNameById]);
+  }, [products, categoryNameById, defaultProfileByProduct]);
 
   return (
     <div className="space-y-3">
       {rows.map((row, idx) => {
         const isLast = idx === rows.length - 1;
-        const product = products.find((item) => item.id === row.productId);
-        const stockUnitCode = normalizeUnitCode(product?.stock_unit_code ?? product?.unit ?? "");
+        const product = productsById.get(row.productId) ?? null;
+        const stockUnitCode = getStockUnitCode(product);
         const defaultProfile = row.productId ? defaultProfileByProduct.get(row.productId) ?? null : null;
+        const effectiveInputUnitCode = getRemissionInputUnitCode(defaultProfile, stockUnitCode);
+        const effectiveInputUomProfileId = defaultProfile?.id ?? "";
+        const remissionPresentationLabel = getRemissionPresentationLabel(defaultProfile, stockUnitCode);
         const quantityValue = Number(row.quantity);
-        const rowReady = Boolean(row.productId && Number.isFinite(quantityValue) && quantityValue > 0);
-        const conversionInputLabel = String(defaultProfile?.label ?? "").trim();
-        const conversionInputUnit = conversionInputLabel || defaultProfile?.input_unit_code || "";
-        const stockUnitWithContextLabel =
-          stockUnitCode &&
-            defaultProfile &&
-            normalizeUnitCode(defaultProfile.input_unit_code) === normalizeUnitCode(stockUnitCode) &&
-            String(defaultProfile.label ?? "").trim()
-            ? `${stockUnitCode} (${String(defaultProfile.label ?? "").trim()})`
-            : stockUnitCode;
+        const rowReady = Boolean(
+          row.productId && Number.isFinite(quantityValue) && quantityValue > 0 && effectiveInputUnitCode
+        );
+        const missingPresentation = Boolean(row.productId && !defaultProfile);
         const conversionLabel = defaultProfile
-          ? `${defaultProfile.qty_in_input_unit} ${conversionInputUnit} = ${defaultProfile.qty_in_stock_unit} ${stockUnitCode || "un"}`
-          : "";
+          ? `1 ${remissionPresentationLabel} = ${formatQuantity(defaultProfile.qty_in_stock_unit)} ${stockUnitCode || "un"}`
+          : stockUnitCode
+            ? `Solicitud en unidad base: ${stockUnitCode}`
+            : "";
         const referenceMeta = row.productId ? referenceStockByProduct[row.productId] ?? null : null;
         const selectedAreaLabel =
           areaOptions.find((option) => option.value === (row.areaKind || defaultAreaKind))?.label ??
@@ -215,12 +262,9 @@ export function RemissionsItems({
                 const requestedInStock = rowReady
                   ? convertByProductProfile({
                     quantityInInput: Number.isFinite(quantityValue) ? quantityValue : 0,
-                    inputUnitCode: normalizeUnitCode(row.inputUnitCode || stockUnitCode),
+                    inputUnitCode: effectiveInputUnitCode,
                     stockUnitCode,
-                    profile:
-                      row.inputUomProfileId && defaultProfile?.id === row.inputUomProfileId
-                        ? defaultProfile
-                        : null,
+                    profile: defaultProfile,
                   }).quantityInStock
                   : null;
                 const shortage =
@@ -242,7 +286,7 @@ export function RemissionsItems({
                     {product?.name ?? `Item ${idx + 1}`}
                   </div>
                   <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                    {rowReady ? "Linea lista para solicitud" : "Completa producto, cantidad y unidad"}
+                    {rowReady ? "Línea lista para solicitud" : "Completa producto y cantidad"}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -268,10 +312,8 @@ export function RemissionsItems({
                     name="item_product_id"
                     value={row.productId}
                     onValueChange={(nextProductId) => {
-                      const nextProduct = products.find((item) => item.id === nextProductId);
-                      const nextStockUnitCode = normalizeUnitCode(
-                        nextProduct?.stock_unit_code ?? nextProduct?.unit ?? ""
-                      );
+                      const nextProduct = productsById.get(nextProductId) ?? null;
+                      const nextStockUnitCode = getStockUnitCode(nextProduct);
                       const nextProfile = defaultProfileByProduct.get(nextProductId) ?? null;
                       setRows((prev) =>
                         prev.map((current) =>
@@ -279,10 +321,7 @@ export function RemissionsItems({
                             ? {
                               ...current,
                               productId: nextProductId,
-                              inputUnitCode:
-                                normalizeUnitCode(nextProfile?.input_unit_code ?? "") ||
-                                nextStockUnitCode ||
-                                current.inputUnitCode,
+                              inputUnitCode: getRemissionInputUnitCode(nextProfile, nextStockUnitCode),
                               inputUomProfileId: nextProfile?.id ?? "",
                             }
                             : current
@@ -323,42 +362,15 @@ export function RemissionsItems({
                 </label>
 
                 <label className="flex flex-col gap-1 md:col-span-2">
-                  <span className="ui-label">Unidad de captura</span>
-                  <select
-                    name="item_input_unit_code"
-                    className="ui-input h-10"
-                    value={row.inputUnitCode}
-                    onChange={(event) =>
-                      setRows((prev) =>
-                        prev.map((current) =>
-                          current.id === row.id
-                            ? {
-                              ...current,
-                              inputUnitCode: normalizeUnitCode(event.target.value),
-                              inputUomProfileId:
-                                defaultProfile &&
-                                  normalizeUnitCode(defaultProfile.input_unit_code) ===
-                                  normalizeUnitCode(event.target.value)
-                                  ? defaultProfile.id
-                                  : "",
-                            }
-                            : current
-                        )
-                      )
-                    }
-                    required
-                  >
-                    <option value="">Unidad</option>
-                    {stockUnitCode ? (
-                      <option value={stockUnitCode}>{stockUnitWithContextLabel}</option>
-                    ) : null}
-                    {defaultProfile &&
-                      normalizeUnitCode(defaultProfile.input_unit_code) !== normalizeUnitCode(stockUnitCode) ? (
-                      <option value={normalizeUnitCode(defaultProfile.input_unit_code)}>
-                        {normalizeUnitCode(defaultProfile.input_unit_code)} ({defaultProfile.label})
-                      </option>
-                    ) : null}
-                  </select>
+                  <span className="ui-label">Presentación de solicitud</span>
+                  <div className="ui-input flex h-10 items-center bg-[linear-gradient(180deg,rgba(255,251,235,0.9)_0%,rgba(255,255,255,0.92)_100%)] font-semibold text-[var(--ui-text)]">
+                    {row.productId ? remissionPresentationLabel : "Selecciona producto"}
+                  </div>
+                  <input type="hidden" name="item_input_unit_code" value={effectiveInputUnitCode} />
+                  <input type="hidden" name="item_input_uom_profile_id" value={effectiveInputUomProfileId} />
+                  <span className="text-xs text-[var(--ui-muted)]">
+                    El satélite pide en la presentación mínima. Centro podrá despachar una combinación equivalente.
+                  </span>
                 </label>
 
                 <label className="flex flex-col gap-1 md:col-span-3">
@@ -395,12 +407,17 @@ export function RemissionsItems({
                   )}
                 </label>
 
-                <input type="hidden" name="item_input_uom_profile_id" value={row.inputUomProfileId} />
                 <input type="hidden" name="item_quantity_in_input" value={row.quantity} />
+
+                {missingPresentation ? (
+                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 md:col-span-12">
+                    Este producto no tiene presentación mínima para solicitud/remisión. Configúrala en la ficha del producto antes de usarlo en operación real.
+                  </div>
+                ) : null}
 
                 {conversionLabel ? (
                   <div className="rounded-2xl border border-[rgba(14,116,144,0.14)] bg-[linear-gradient(180deg,rgba(240,249,255,0.88)_0%,rgba(255,255,255,0.92)_100%)] px-3 py-2 text-xs text-sky-900 md:col-span-12">
-                    Conversion aplicada: {conversionLabel}
+                    Equivalencia operativa: {conversionLabel}
                   </div>
                 ) : null}
 
