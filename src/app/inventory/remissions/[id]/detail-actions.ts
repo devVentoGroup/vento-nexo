@@ -162,6 +162,32 @@ async function ensureDestinationReceiptMovements(params: {
   return receiptErr?.message ?? null;
 }
 
+async function ensureInternalTransferPricing(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  requestId: string;
+}) {
+  const { supabase, requestId } = params;
+  if (!requestId) return null;
+
+  const { data: reqRow, error: reqErr } = await supabase
+    .from("restock_requests")
+    .select("status")
+    .eq("id", requestId)
+    .maybeSingle();
+
+  if (reqErr || !reqRow) return reqErr?.message ?? null;
+  if (String(reqRow.status ?? "") !== "received") return null;
+
+  const { error: pricingErr } = await supabase.rpc(
+    "price_restock_request_internal_transfer",
+    {
+      p_request_id: requestId,
+    }
+  );
+
+  return pricingErr?.message ?? null;
+}
+
 export async function updateItems(formData: FormData) {
   const supabase = await createClient();
   const { data: userRes } = await supabase.auth.getUser();
@@ -2360,6 +2386,22 @@ export async function updateStatus(formData: FormData) {
         redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: receiptMoveError }));
       }
     }
+
+    if (action === "receive") {
+      const pricingError = await ensureInternalTransferPricing({
+        supabase,
+        requestId,
+      });
+      if (pricingError) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: `Remisión recibida, pero no se pudo valorizar internamente: ${pricingError}`,
+          })
+        );
+      }
+    }
   }
 
   const okCodeByAction: Record<string, string> = {
@@ -2841,6 +2883,20 @@ export async function applyReceiveShortcut(formData: FormData) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: signatureError }));
   }
 
+  const pricingError = await ensureInternalTransferPricing({
+    supabase,
+    requestId,
+  });
+  if (pricingError) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: `Recepción registrada, pero no se pudo valorizar internamente: ${pricingError}`,
+      })
+    );
+  }
+
   redirect(
     buildRemissionDetailHref({
       requestId,
@@ -3095,6 +3151,20 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: signatureError }));
   }
 
+  const pricingError = await ensureInternalTransferPricing({
+    supabase,
+    requestId,
+  });
+  if (pricingError) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: `Recepción registrada, pero no se pudo valorizar internamente: ${pricingError}`,
+      })
+    );
+  }
+
   redirect(
     buildRemissionDetailHref({
       requestId,
@@ -3110,3 +3180,4 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
     })
   );
 }
+ 

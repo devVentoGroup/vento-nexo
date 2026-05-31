@@ -4,10 +4,12 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "prebuild": "node scripts/sync-navigation.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "audit:i18n": "node scripts/audit-i18n.mjs"
+    "audit:i18n": "node scripts/audit-i18n.mjs",
+    "sync:navigation": "node scripts/sync-navigation.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",
