@@ -115,15 +115,57 @@ function formatMoney(value: number | null | undefined) {
   }).format(Number.isFinite(numericValue) ? numericValue : 0);
 }
 
+function normalizeLabel(value: string | null | undefined) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function isSameLabel(a: string | null | undefined, b: string | null | undefined) {
+  const normalizedA = normalizeLabel(a);
+  const normalizedB = normalizeLabel(b);
+  return Boolean(normalizedA && normalizedB && normalizedA === normalizedB);
+}
+
+function isDemoLabel(value: string | null | undefined) {
+  const normalized = normalizeLabel(value);
+  return normalized.includes("app review") || normalized.includes("demo");
+}
+
+function isDemoSite(row: SiteRow | null | undefined) {
+  return isDemoLabel(row?.name);
+}
+
+function isDemoCostCenter(row: CostCenterRow, sitesById: Map<string, SiteRow>) {
+  const site = row.site_id ? sitesById.get(row.site_id) : null;
+  return isDemoLabel(row.name) || isDemoLabel(row.code) || isDemoSite(site);
+}
+
+function isProductionCostCenter(row: CostCenterRow, sitesById: Map<string, SiteRow>) {
+  const site = row.site_id ? sitesById.get(row.site_id) : null;
+  return row.type === "production_center" || site?.site_type === "production_center";
+}
+
+function isSatelliteCostCenter(row: CostCenterRow, sitesById: Map<string, SiteRow>) {
+  const site = row.site_id ? sitesById.get(row.site_id) : null;
+  return row.type === "satellite" || site?.site_type === "satellite";
+}
+
 function costCenterLabel(row: CostCenterRow | null | undefined, sitesById: Map<string, SiteRow>) {
   if (!row) return "Sin centro de costo";
   const siteName = row.site_id ? sitesById.get(row.site_id)?.name : "";
-  const pieces = [
-    row.code ? `[${row.code}]` : "",
-    row.name ?? "Sin nombre",
-    siteName ? `· ${siteName}` : "",
-  ];
-  return pieces.filter(Boolean).join(" ");
+  const centerName = String(row.name ?? "").trim();
+  const fallbackName = String(siteName ?? "").trim();
+  const mainName = centerName || fallbackName || "Centro de costo sin nombre";
+
+  if (siteName && !isSameLabel(mainName, siteName)) {
+    return `${mainName} · ${siteName}`;
+  }
+
+  return mainName;
 }
 
 function productLabel(row: ProductRow | null | undefined) {
@@ -419,6 +461,11 @@ export default async function InternalPricesSettingsPage({
   const sitesById = new Map(sites.map((row) => [row.id, row]));
   const productsById = new Map(products.map((row) => [row.id, row]));
 
+  const operationalSites = sites.filter((site) => !isDemoSite(site));
+  const operationalCostCenters = costCenters.filter(
+    (row) => !isDemoCostCenter(row, sitesById)
+  );
+
   const activePriceLists = priceLists.filter((row) => row.is_active);
   const selectedListId = String(sp.list_id ?? priceLists[0]?.id ?? "").trim();
   const selectedPriceList =
@@ -437,18 +484,21 @@ export default async function InternalPricesSettingsPage({
   const activeItems = priceItems.filter((row) => row.is_active);
   const inactiveItems = priceItems.filter((row) => !row.is_active);
 
-  const productionCostCenters = costCenters.filter(
-    (row) => row.type === "production_center"
+  const productionCostCenters = operationalCostCenters.filter((row) =>
+    isProductionCostCenter(row, sitesById)
   );
-  const buyerCostCenters = costCenters.filter((row) =>
-    ["satellite", "admin", "logistics", "other", null, ""].includes(String(row.type ?? ""))
+  const satelliteBuyerCostCenters = operationalCostCenters.filter((row) =>
+    isSatelliteCostCenter(row, sitesById)
   );
+  const buyerCostCenters = satelliteBuyerCostCenters.length
+    ? satelliteBuyerCostCenters
+    : operationalCostCenters.filter((row) => !isProductionCostCenter(row, sitesById));
 
   const defaultSellerCostCenterId =
-    productionCostCenters[0]?.id ?? costCenters[0]?.id ?? "";
+    productionCostCenters[0]?.id ?? operationalCostCenters[0]?.id ?? "";
   const defaultBuyerCostCenterId =
     buyerCostCenters.find((row) => row.id !== defaultSellerCostCenterId)?.id ??
-    costCenters.find((row) => row.id !== defaultSellerCostCenterId)?.id ??
+    operationalCostCenters.find((row) => row.id !== defaultSellerCostCenterId)?.id ??
     "";
 
   return (
@@ -480,6 +530,51 @@ export default async function InternalPricesSettingsPage({
           Puedes ver precios internos, pero no tienes permiso para gestionarlos.
         </div>
       ) : null}
+
+      <div className="mt-6 ui-panel">
+        <div className="flex flex-wrap items-start justify-between gap-4">
+          <div>
+            <div className="ui-h3">Cómo configurarlo</div>
+            <p className="mt-1 text-sm text-[var(--ui-muted)]">
+              Crea una lista por cada satélite que compra al centro de producción. No uses App Review
+              para operación real.
+            </p>
+          </div>
+          <span className="ui-chip ui-chip--success">Centro de Producción → Satélite</span>
+        </div>
+
+        <div className="mt-4 grid gap-3 lg:grid-cols-3">
+          <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
+            <div className="ui-caption">1. Vendedor</div>
+            <div className="mt-2 text-sm font-semibold text-[var(--ui-text)]">
+              Centro de Producción
+            </div>
+            <p className="mt-1 text-xs text-[var(--ui-muted)]">
+              Es quien produce o despacha internamente.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
+            <div className="ui-caption">2. Comprador</div>
+            <div className="mt-2 text-sm font-semibold text-[var(--ui-text)]">
+              Molka, Saudo o Vento Café
+            </div>
+            <p className="mt-1 text-xs text-[var(--ui-muted)]">
+              Es el centro de costo que recibirá y pagará la remisión interna.
+            </p>
+          </div>
+
+          <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
+            <div className="ui-caption">3. Sede compradora</div>
+            <div className="mt-2 text-sm font-semibold text-[var(--ui-text)]">
+              Usa la misma sede del comprador
+            </div>
+            <p className="mt-1 text-xs text-[var(--ui-muted)]">
+              Esto ayuda a que NEXO encuentre la lista correcta al valorizar remisiones.
+            </p>
+          </div>
+        </div>
+      </div>
 
       <div className="mt-6 grid gap-3 lg:grid-cols-3">
         <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
@@ -526,7 +621,7 @@ export default async function InternalPricesSettingsPage({
               <input
                 name="name"
                 className="ui-input"
-                placeholder="Centro de Producción → Molka"
+                placeholder="Ej. Centro de Producción → Molka"
                 required
               />
             </label>
@@ -540,7 +635,7 @@ export default async function InternalPricesSettingsPage({
                 required
               >
                 <option value="">Seleccionar vendedor</option>
-                {(productionCostCenters.length ? productionCostCenters : costCenters).map((row) => (
+                {(productionCostCenters.length ? productionCostCenters : operationalCostCenters).map((row) => (
                   <option key={row.id} value={row.id}>
                     {costCenterLabel(row, sitesById)}
                   </option>
@@ -568,7 +663,7 @@ export default async function InternalPricesSettingsPage({
               <span className="ui-label">Sede compradora opcional</span>
               <select name="buyer_site_id" className="ui-input" defaultValue="">
                 <option value="">Sin sede específica</option>
-                {sites.map((site) => (
+                {operationalSites.map((site) => (
                   <option key={site.id} value={site.id}>
                     {site.name ?? site.id}
                   </option>
