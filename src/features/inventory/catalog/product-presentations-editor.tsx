@@ -192,18 +192,31 @@ export function ProductPresentationsEditor({
 
     const formData = new FormData(form);
     let activeDefaultCount = 0;
+    const activePresentationRows: Array<{
+      label: string;
+      qtyInStockUnit: number;
+      isDefault: boolean;
+    }> = [];
 
     for (const row of rows) {
       const prefix = `presentation_${row.key}`;
       const label =
         String(formData.get(`${prefix}_label`) ?? "").trim() ||
         `Presentación ${rows.indexOf(row) + 1}`;
+      const rawQty = String(formData.get(`${prefix}_qty_in_stock_unit`) ?? "")
+        .trim()
+        .replace(",", ".");
+      const qtyInStockUnit = Number(rawQty);
       const isDefault = formData.has(`${prefix}_is_default`);
       const isActive = formData.has(`${prefix}_is_active`);
 
       if (isDefault && !isActive) {
         setClientError(`La presentación "${label}" no puede ser mínima si está inactiva.`);
         return;
+      }
+
+      if (isActive && Number.isFinite(qtyInStockUnit) && qtyInStockUnit > 0) {
+        activePresentationRows.push({ label, qtyInStockUnit, isDefault });
       }
 
       if (isDefault && isActive) {
@@ -213,7 +226,7 @@ export function ProductPresentationsEditor({
 
     if (requiresRemissionDefault && activeDefaultCount === 0) {
       setClientError(
-        "Este producto está activo para remisión en al menos un satélite. Marca una presentación activa como unidad mínima para solicitud/remisión antes de guardar."
+        "Este producto está activo para remisión en al menos un satélite. Marca la presentación activa de menor contenido como mínima para solicitud/remisión antes de guardar."
       );
       return;
     }
@@ -221,6 +234,25 @@ export function ProductPresentationsEditor({
     if (activeDefaultCount > 1) {
       setClientError("Solo puede haber una presentación mínima activa para solicitud/remisión.");
       return;
+    }
+
+    if (requiresRemissionDefault && activeDefaultCount === 1) {
+      const defaultPresentation = activePresentationRows.find((row) => row.isDefault);
+      const smallestQty = Math.min(...activePresentationRows.map((row) => row.qtyInStockUnit));
+      const smallestPresentation = activePresentationRows.find(
+        (row) => Math.abs(row.qtyInStockUnit - smallestQty) < 0.000001
+      );
+
+      if (
+        defaultPresentation &&
+        Number.isFinite(smallestQty) &&
+        defaultPresentation.qtyInStockUnit > smallestQty + 0.000001
+      ) {
+        setClientError(
+          `La presentación mínima para remisión debe ser la de menor contenido activo. Marca "${smallestPresentation?.label ?? "la presentación más pequeña"}" como mínima.`
+        );
+        return;
+      }
     }
 
     form.requestSubmit();
@@ -234,8 +266,9 @@ export function ProductPresentationsEditor({
             <div className="ui-caption">Presentaciones físicas</div>
             <h2 className="ui-h2">{productName}</h2>
             <p className="mt-2 ui-body-muted">
-              Administra las formas físicas en las que existe este producto en bodega, inventario por LOC y quiosco.
-              La unidad mínima para solicitud/remisión solo es obligatoria cuando el producto está activo para remisiones.
+              Administra las formas físicas en las que existe este producto. Si el producto se remisiona,
+              marca como mínima la presentación activa de menor contenido: el satélite pedirá en esa unidad
+              y Centro podrá despachar combinaciones equivalentes de presentaciones mayores.
             </p>
           </div>
 
@@ -244,6 +277,17 @@ export function ProductPresentationsEditor({
           </Link>
         </div>
       </div>
+
+      {requiresRemissionDefault ? (
+        <div className="rounded-[28px] border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">
+          <div className="font-bold">Regla de remisión</div>
+          <p className="mt-1">
+            El satélite solicita usando la presentación mínima activa. Si existen presentaciones mayores,
+            Centro puede despachar una combinación física equivalente. Ejemplo: 5 potes de 1 L pueden
+            cumplirse con 2 potes de 2 L y 1 pote de 1 L.
+          </p>
+        </div>
+      ) : null}
 
       <input type="hidden" name="presentation_keys" value={JSON.stringify(rowKeys)} readOnly />
       <input type="hidden" name="deleted_presentation_ids" value={JSON.stringify(deletedIds)} readOnly />
@@ -314,7 +358,7 @@ export function ProductPresentationsEditor({
                     Presentación {index + 1}
                   </div>
                   <div className="text-xs text-[var(--ui-muted)]">
-                    {row.id ? "Existente" : "Nueva"} · Presentación física de bodega
+                    {row.id ? "Existente" : "Nueva"} · Presentación física convertible a {stockUnitCode}
                   </div>
                 </div>
 
@@ -355,12 +399,12 @@ export function ProductPresentationsEditor({
                       ))}
                     </select>
                     <span className="text-xs text-[var(--ui-muted)]">
-                      Unidad en la que se mide el contenido de esta presentación. Ej. un, ml, g.
+                      Unidad base en la que se mide el contenido interno. Ej. ml, g, un.
                     </span>
                   </label>
 
                   <label className="flex flex-col gap-1">
-                    <span className="ui-label">Contenido por presentación</span>
+                    <span className="ui-label">Contenido equivalente por presentación</span>
                     <input
                       name={`${fieldPrefix}_qty_in_stock_unit`}
                       type="number"
@@ -371,8 +415,8 @@ export function ProductPresentationsEditor({
                       required
                     />
                     <span className="text-xs text-[var(--ui-muted)]">
-                      Cuánto contiene 1 presentación. Ej. Bolsa 100 unidades = 100 {stockUnitCode};
-                      paquete de 6 bolsas = 6 {stockUnitCode}.
+                      Cuánto descuenta o suma 1 presentación en inventario base. Ej. Pote 2 L = 2000 {stockUnitCode};
+                      bolsa 100 unidades = 100 {stockUnitCode}.
                     </span>
                   </label>
 
@@ -386,7 +430,7 @@ export function ProductPresentationsEditor({
                         />
                         <span className="ui-label">
                           {requiresRemissionDefault
-                            ? "Unidad mínima para solicitud/remisión"
+                            ? "Presentación mínima para solicitud/remisión"
                             : "Presentación predeterminada opcional"}
                         </span>
                       </label>
@@ -403,7 +447,7 @@ export function ProductPresentationsEditor({
 
                     <p className="text-xs text-[var(--ui-muted)]">
                       {requiresRemissionDefault
-                        ? "Este producto está activo para remisión en al menos un satélite. Debe tener una unidad mínima activa para solicitud/remisión."
+                        ? "Debe ser la presentación activa de menor contenido. El satélite pedirá esta unidad; Centro podrá despachar combinaciones equivalentes de presentaciones activas mayores."
                         : "Opcional. Esta presentación puede usarse como referencia visual o predeterminada para bodega, inventario por LOC y quiosco."}
                     </p>
                   </div>
