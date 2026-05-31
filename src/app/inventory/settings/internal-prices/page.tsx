@@ -784,8 +784,10 @@ export default async function InternalPricesSettingsPage({
 
   return (
     <div className="w-full">
-      <section className="rounded-[2rem] border border-[var(--ui-border)] bg-[linear-gradient(135deg,#ffffff_0%,#fbfdff_58%,#fffaf0_100%)] p-6 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-5">
+      <section className="relative overflow-hidden rounded-[2rem] border border-[var(--ui-border)] bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.14),transparent_30%),radial-gradient(circle_at_top_right,rgba(14,165,233,0.10),transparent_28%),linear-gradient(135deg,#ffffff_0%,#fbfdff_60%,#fffaf0_100%)] p-6 shadow-[0_20px_60px_rgba(15,23,42,0.08)]">
+        <div className="pointer-events-none absolute -right-20 -top-20 h-48 w-48 rounded-full bg-amber-200/30 blur-3xl" />
+        <div className="pointer-events-none absolute left-1/3 -bottom-24 h-48 w-48 rounded-full bg-sky-200/25 blur-3xl" />
+        <div className="relative flex flex-wrap items-start justify-between gap-5">
           <div className="max-w-3xl">
             <div className="mb-3 flex flex-wrap gap-2">
               <span className="rounded-full border border-amber-300 bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
@@ -818,14 +820,14 @@ export default async function InternalPricesSettingsPage({
           </div>
         </div>
 
-        <div className="mt-6 grid gap-3 md:grid-cols-3">
-          <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
+        <div className="relative mt-6 grid gap-3 md:grid-cols-3">
+          <div className="rounded-2xl border border-[var(--ui-border)] border-l-4 border-l-amber-400 bg-white/90 p-4 shadow-sm">
             <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Listas activas</div>
             <div className="mt-2 text-3xl font-bold text-[var(--ui-text)]">{activePriceLists.length}</div>
             <div className="mt-1 text-xs text-[var(--ui-muted)]">{priceLists.length} listas totales</div>
           </div>
 
-          <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-[var(--ui-border)] border-l-4 border-l-sky-500 bg-white/90 p-4 shadow-sm">
             <div className="text-xs font-semibold uppercase tracking-wide text-sky-700">Lista seleccionada</div>
             <div className="mt-2 line-clamp-2 text-sm font-bold text-[var(--ui-text)]">
               {selectedPriceList?.name ?? "Sin lista seleccionada"}
@@ -835,7 +837,7 @@ export default async function InternalPricesSettingsPage({
             </div>
           </div>
 
-          <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
+          <div className="rounded-2xl border border-[var(--ui-border)] border-l-4 border-l-emerald-500 bg-white/90 p-4 shadow-sm">
             <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Productos activos</div>
             <div className="mt-2 text-3xl font-bold text-[var(--ui-text)]">{activeItems.length}</div>
             <div className="mt-1 text-xs text-[var(--ui-muted)]">{inactiveItems.length} desactivados</div>
@@ -852,7 +854,7 @@ export default async function InternalPricesSettingsPage({
         </div>
       ) : null}
 
-      <div className="mt-6 rounded-[1.75rem] border border-[var(--ui-border)] bg-white p-5 shadow-sm">
+      <div className="mt-6 rounded-[1.75rem] border border-[var(--ui-border)] bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.09),transparent_28%),linear-gradient(135deg,#ffffff_0%,#fbfdff_72%,#fffaf0_100%)] p-5 shadow-[0_16px_40px_rgba(15,23,42,0.06)]">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <div className="text-lg font-bold text-[var(--ui-text)]">Cómo configurarlo</div>
@@ -867,7 +869,7 @@ export default async function InternalPricesSettingsPage({
         </div>
 
         <div className="mt-4 grid gap-3 lg:grid-cols-3">
-          <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
+          <div className="rounded-2xl border border-[var(--ui-border)] border-l-4 border-l-amber-400 bg-white/95 p-4 shadow-sm">
             <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">1. Vendedor</div>
             <div className="mt-2 text-sm font-bold text-[var(--ui-text)]">
               Centro de Producción
@@ -877,7 +879,7 @@ export default async function InternalPricesSettingsPage({
             </p>
           </div>
 
-          <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
+          <div className="rounded-2xl border border-[var(--ui-border)] border-l-4 border-l-sky-500 bg-white/95 p-4 shadow-sm">
             <div className="text-xs font-semibold uppercase tracking-wide text-sky-700">2. Comprador</div>
             <div className="mt-2 text-sm font-bold text-[var(--ui-text)]">
               Molka, Saudo o Vento Café
@@ -887,8 +889,8 @@ export default async function InternalPricesSettingsPage({
             </p>
           </div>
 
-          <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
-            <div className="text-xs font-semibold uppercase tracking-wide text-pink-700">3. Sede compradora</div>
+          <div className="rounded-2xl border border-[var(--ui-border)] border-l-4 border-l-emerald-500 bg-white/95 p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">3. Sede compradora</div>
             <div className="mt-2 text-sm font-bold text-[var(--ui-text)]">
               Usa la misma sede del comprador
             </div>
@@ -900,7 +902,7 @@ export default async function InternalPricesSettingsPage({
       </div>
 
       <div className="mt-6 grid gap-3 lg:grid-cols-3">
-        <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
+        <div className="rounded-2xl border border-amber-200/80 bg-gradient-to-br from-amber-50/70 to-white p-4 shadow-sm">
           <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Modelo</div>
           <div className="mt-2 text-sm font-bold text-[var(--ui-text)]">
             Precio por presentación
@@ -910,7 +912,7 @@ export default async function InternalPricesSettingsPage({
           </div>
         </div>
 
-        <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
+        <div className="rounded-2xl border border-sky-200/80 bg-gradient-to-br from-sky-50/70 to-white p-4 shadow-sm">
           <div className="text-xs font-semibold uppercase tracking-wide text-sky-700">Valorización</div>
           <div className="mt-2 text-sm font-bold text-[var(--ui-text)]">
             Remisiones cerradas
@@ -920,7 +922,7 @@ export default async function InternalPricesSettingsPage({
           </div>
         </div>
 
-        <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4">
+        <div className="rounded-2xl border border-emerald-200/80 bg-gradient-to-br from-emerald-50/70 to-white p-4 shadow-sm">
           <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Compatibilidad</div>
           <div className="mt-2 text-sm font-bold text-[var(--ui-text)]">
             Legacy controlado
@@ -932,7 +934,7 @@ export default async function InternalPricesSettingsPage({
       </div>
 
       {canManage ? (
-        <div className="mt-6 rounded-[1.75rem] border border-[var(--ui-border)] bg-white p-5 shadow-sm">
+        <div className="mt-6 rounded-[1.75rem] border border-amber-200/80 bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.10),transparent_24%),linear-gradient(135deg,#ffffff_0%,#ffffff_68%,#fffaf0_100%)] p-5 shadow-sm">
           <div className="text-lg font-bold text-[var(--ui-text)]">Crear lista de precios internos</div>
           <p className="mt-1 text-sm text-[var(--ui-muted)]">
             Crea una lista por relación interna, por ejemplo Centro de Producción → Molka.
@@ -1016,7 +1018,7 @@ export default async function InternalPricesSettingsPage({
       ) : null}
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[420px_1fr]">
-        <div className="rounded-[1.75rem] border border-[var(--ui-border)] bg-white p-5 shadow-sm">
+        <div className="rounded-[1.75rem] border border-sky-200/70 bg-[linear-gradient(135deg,#ffffff_0%,#f8fcff_100%)] p-5 shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="ui-h3">Listas creadas</div>
@@ -1041,7 +1043,7 @@ export default async function InternalPricesSettingsPage({
                     key={list.id}
                     className={
                       isSelected
-                        ? "rounded-2xl border border-[var(--ui-brand)] bg-[var(--ui-surface-2)] p-4 shadow-sm"
+                        ? "rounded-2xl border border-amber-300 bg-[linear-gradient(135deg,#fffaf0_0%,#ffffff_100%)] p-4 shadow-sm"
                         : "rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm"
                     }
                   >
@@ -1099,7 +1101,7 @@ export default async function InternalPricesSettingsPage({
           </div>
         </div>
 
-        <div className="rounded-[1.75rem] border border-[var(--ui-border)] bg-white p-5 shadow-sm">
+        <div className="rounded-[1.75rem] border border-amber-200/80 bg-white p-5 shadow-sm">
           {selectedPriceList ? (
             <>
               <div className="flex flex-wrap items-start justify-between gap-4">
@@ -1122,7 +1124,7 @@ export default async function InternalPricesSettingsPage({
               </div>
 
               <div className="mt-4 grid gap-3 lg:grid-cols-3">
-                <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
+                <div className="rounded-2xl border border-[var(--ui-border)] border-l-4 border-l-amber-400 bg-white p-4 shadow-sm">
                   <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Vendedor</div>
                   <div className="mt-2 text-sm font-semibold text-[var(--ui-text)]">
                     {costCenterLabel(
@@ -1132,7 +1134,7 @@ export default async function InternalPricesSettingsPage({
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
+                <div className="rounded-2xl border border-[var(--ui-border)] border-l-4 border-l-sky-500 bg-white p-4 shadow-sm">
                   <div className="text-xs font-semibold uppercase tracking-wide text-sky-700">Comprador</div>
                   <div className="mt-2 text-sm font-semibold text-[var(--ui-text)]">
                     {selectedPriceList.buyer_cost_center_id
@@ -1151,7 +1153,7 @@ export default async function InternalPricesSettingsPage({
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
+                <div className="rounded-2xl border border-[var(--ui-border)] border-l-4 border-l-emerald-500 bg-white p-4 shadow-sm">
                   <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Vigencia</div>
                   <div className="mt-2 text-sm font-semibold text-[var(--ui-text)]">
                     {formatDate(selectedPriceList.valid_from)}
@@ -1167,7 +1169,7 @@ export default async function InternalPricesSettingsPage({
               {canManage ? (
                 <form
                   action={addInternalPriceListItem}
-                  className="mt-6 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4"
+                  className="mt-6 rounded-2xl border border-amber-200/80 bg-[linear-gradient(135deg,#fffaf0_0%,#ffffff_72%,#f8fcff_100%)] p-4 shadow-sm"
                 >
                   <input type="hidden" name="price_list_id" value={selectedPriceList.id} />
                   <div className="ui-h3">Agregar producto</div>
@@ -1252,7 +1254,7 @@ export default async function InternalPricesSettingsPage({
 
                 <div className="mt-4 overflow-hidden rounded-2xl border border-[var(--ui-border)] shadow-sm">
                   <table className="min-w-full divide-y divide-[var(--ui-border)] text-sm">
-                    <thead className="bg-[var(--ui-surface-2)]">
+                    <thead className="bg-[linear-gradient(90deg,#fff7e6_0%,#f8fcff_100%)]">
                       <tr>
                         <th className="px-4 py-3 text-left font-semibold text-[var(--ui-text)]">
                           Producto
