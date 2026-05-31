@@ -45,41 +45,6 @@ type ProductRow = {
   is_active: boolean | null;
 };
 
-type ProductSiteRow = {
-  product_id: string;
-  is_active: boolean | null;
-  default_area_kind: string | null;
-  area_kinds?: string[] | null;
-  audience?: string | null;
-  remission_enabled?: boolean | null;
-  updated_at?: string | null;
-  created_at?: string | null;
-};
-
-type ProductProfileWithProduct = {
-  product_id: string;
-  inventory_kind: string | null;
-  products: ProductRow | null;
-};
-
-type ProductUomProfileRow = {
-  id: string;
-  product_id: string;
-  label: string | null;
-  input_unit_code: string | null;
-  qty_in_input_unit: number | null;
-  qty_in_stock_unit: number | null;
-  is_default: boolean | null;
-  is_active: boolean | null;
-  source: string | null;
-  usage_context: string | null;
-};
-
-type RemissionPriceProductRow = ProductRow & {
-  inventory_kind: string;
-  suggested_unit_code: string;
-  suggested_unit_label: string;
-};
 type InternalPriceListRow = {
   id: string;
   name: string;
@@ -203,234 +168,11 @@ function costCenterLabel(row: CostCenterRow | null | undefined, sitesById: Map<s
   return mainName;
 }
 
-
-function normalizeUnitCodeLocal(value: string | null | undefined) {
-  const normalized = String(value ?? "").trim().toLowerCase();
-  return normalized || "un";
-}
-
-function supportsRemission(row: ProductSiteRow): boolean {
-  return row.remission_enabled !== false;
-}
-
-function isAssetOrEquipmentProduct(row: ProductRow | null | undefined) {
-  const normalizedType = normalizeLabel(row?.product_type);
-  return (
-    normalizedType.includes("asset") ||
-    normalizedType.includes("activo") ||
-    normalizedType.includes("equipment") ||
-    normalizedType.includes("equipo")
-  );
-}
-
-function operationalKindLabel(kind: string | null | undefined) {
-  const value = String(kind ?? "").trim();
-  switch (value) {
-    case "ingredient":
-      return "Insumos";
-    case "finished":
-      return "Preparaciones";
-    case "resale":
-      return "Productos";
-    case "packaging":
-      return "Empaques";
-    default:
-      return "Otros remisionables";
-  }
-}
-
-function operationalKindRank(kind: string | null | undefined) {
-  const value = String(kind ?? "").trim();
-  if (value === "finished") return 1;
-  if (value === "resale") return 2;
-  if (value === "ingredient") return 3;
-  if (value === "packaging") return 4;
-  return 9;
-}
-
-function rankUomProfile(row: ProductUomProfileRow): number {
-  const usageContext = normalizeLabel(row.usage_context);
-  const label = normalizeLabel(row.label);
-  let rank = 0;
-
-  if (row.is_active !== false) rank += 100;
-  if (row.is_default === true) rank += 50;
-  if (usageContext === "remission" || usageContext === "remisiones") rank += 30;
-  if (usageContext === "general") rank += 10;
-  if (label.includes("remision")) rank += 10;
-  if (row.input_unit_code) rank += 5;
-
-  return rank;
-}
-
-function pickSuggestedUnit(product: ProductRow, profiles: ProductUomProfileRow[]) {
-  const sortedProfiles = [...profiles]
-    .filter((profile) => profile.is_active !== false)
-    .sort((a, b) => rankUomProfile(b) - rankUomProfile(a));
-
-  const selectedProfile = sortedProfiles[0] ?? null;
-  const unitCode = normalizeUnitCodeLocal(
-    selectedProfile?.input_unit_code ?? product.stock_unit_code ?? product.unit ?? "un"
-  );
-  const label = String(selectedProfile?.label ?? unitCode).trim() || unitCode;
-
-  return {
-    unitCode,
-    label,
-  };
-}
-
-async function loadProductSiteRows(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  siteId: string
-): Promise<ProductSiteRow[]> {
-  const withAudience = await supabase
-    .from("product_site_settings")
-    .select("product_id,is_active,default_area_kind,area_kinds,audience,remission_enabled,updated_at,created_at")
-    .eq("site_id", siteId)
-    .eq("is_active", true);
-
-  if (!withAudience.error) {
-    const rows = (withAudience.data ?? []) as ProductSiteRow[];
-    const ordered = [...rows].sort((a, b) => {
-      const aTs = new Date(String(a.updated_at ?? a.created_at ?? "")).getTime();
-      const bTs = new Date(String(b.updated_at ?? b.created_at ?? "")).getTime();
-      const safeA = Number.isFinite(aTs) ? aTs : 0;
-      const safeB = Number.isFinite(bTs) ? bTs : 0;
-      return safeB - safeA;
-    });
-    const byProduct = new Map<string, ProductSiteRow>();
-    for (const row of ordered) {
-      if (!row.product_id || byProduct.has(row.product_id)) continue;
-      byProduct.set(row.product_id, row);
-    }
-    return Array.from(byProduct.values());
-  }
-
-  const fallback = await supabase
-    .from("product_site_settings")
-    .select("product_id,is_active,default_area_kind,area_kinds,updated_at,created_at")
-    .eq("site_id", siteId)
-    .eq("is_active", true);
-
-  const legacyRows = (fallback.data ?? []) as ProductSiteRow[];
-  const orderedLegacy = [...legacyRows].sort((a, b) => {
-    const aTs = new Date(String(a.updated_at ?? a.created_at ?? "")).getTime();
-    const bTs = new Date(String(b.updated_at ?? b.created_at ?? "")).getTime();
-    const safeA = Number.isFinite(aTs) ? aTs : 0;
-    const safeB = Number.isFinite(bTs) ? bTs : 0;
-    return safeB - safeA;
-  });
-  const byProduct = new Map<string, ProductSiteRow>();
-  for (const row of orderedLegacy) {
-    if (!row.product_id || byProduct.has(row.product_id)) continue;
-    byProduct.set(row.product_id, {
-      ...row,
-      audience: null,
-      remission_enabled: null,
-    });
-  }
-  return Array.from(byProduct.values());
-}
-
-async function loadRemittableProductsForSite(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  siteId: string
-): Promise<{ products: RemissionPriceProductRow[]; hasConfig: boolean }> {
-  const productSiteRows = await loadProductSiteRows(supabase, siteId);
-  const productSiteIds = productSiteRows
-    .filter((row) => supportsRemission(row))
-    .map((row) => row.product_id)
-    .filter(Boolean);
-
-  if (productSiteRows.length === 0 || productSiteIds.length === 0) {
-    return { products: [], hasConfig: productSiteRows.length > 0 };
-  }
-
-  const profilesQuery = await supabase
-    .from("product_inventory_profiles")
-    .select("product_id,inventory_kind,products(id,name,sku,unit,stock_unit_code,product_type,is_active)")
-    .eq("track_inventory", true)
-    .in("inventory_kind", ["ingredient", "finished", "resale", "packaging"])
-    .in("product_id", productSiteIds)
-    .order("name", { foreignTable: "products", ascending: true })
-    .limit(1500);
-
-  let productRows = ((profilesQuery.data ?? []) as unknown as ProductProfileWithProduct[])
-    .map((row) => ({
-      product: row.products,
-      inventoryKind: String(row.inventory_kind ?? "").trim() || "other",
-    }))
-    .filter((row): row is { product: ProductRow; inventoryKind: string } => Boolean(row.product));
-
-  if (productRows.length === 0) {
-    const { data: fallbackProducts } = await supabase
-      .from("products")
-      .select("id,name,sku,unit,stock_unit_code,product_type,is_active")
-      .eq("is_active", true)
-      .in("id", productSiteIds)
-      .order("name", { ascending: true })
-      .limit(1500);
-
-    productRows = ((fallbackProducts ?? []) as ProductRow[])
-      .filter((product) => !isAssetOrEquipmentProduct(product))
-      .map((product) => ({
-        product,
-        inventoryKind: "other",
-      }));
-  }
-
-  const productIds = productRows.map((row) => row.product.id);
-  const { data: uomProfilesData } = productIds.length
-    ? await supabase
-        .from("product_uom_profiles")
-        .select(
-          "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
-        )
-        .in("product_id", productIds)
-        .eq("is_active", true)
-    : { data: [] as ProductUomProfileRow[] };
-
-  const profilesByProductId = ((uomProfilesData ?? []) as ProductUomProfileRow[]).reduce(
-    (acc, row) => {
-      const list = acc.get(row.product_id) ?? [];
-      list.push(row);
-      acc.set(row.product_id, list);
-      return acc;
-    },
-    new Map<string, ProductUomProfileRow[]>()
-  );
-
-  const deduped = new Map<string, RemissionPriceProductRow>();
-  for (const row of productRows) {
-    const product = row.product;
-    if (deduped.has(product.id)) continue;
-    const suggestedUnit = pickSuggestedUnit(product, profilesByProductId.get(product.id) ?? []);
-    deduped.set(product.id, {
-      ...product,
-      inventory_kind: row.inventoryKind,
-      suggested_unit_code: suggestedUnit.unitCode,
-      suggested_unit_label: suggestedUnit.label,
-    });
-  }
-
-  const products = Array.from(deduped.values()).sort((a, b) => {
-    const rankDiff = operationalKindRank(a.inventory_kind) - operationalKindRank(b.inventory_kind);
-    if (rankDiff !== 0) return rankDiff;
-    return String(a.name ?? "").localeCompare(String(b.name ?? ""), "es", { sensitivity: "base" });
-  });
-
-  return { products, hasConfig: true };
-}
-
-function groupProductsByKind(products: RemissionPriceProductRow[]) {
-  return products.reduce((acc, product) => {
-    const key = String(product.inventory_kind ?? "other").trim() || "other";
-    const list = acc.get(key) ?? [];
-    list.push(product);
-    acc.set(key, list);
-    return acc;
-  }, new Map<string, RemissionPriceProductRow[]>());
+function productLabel(row: ProductRow | null | undefined) {
+  if (!row) return "Producto no encontrado";
+  const sku = row.sku ? ` · ${row.sku}` : "";
+  const unit = row.stock_unit_code || row.unit ? ` · ${row.stock_unit_code ?? row.unit}` : "";
+  return `${row.name ?? row.id}${sku}${unit}`;
 }
 
 async function requireInternalPricesManager() {
@@ -550,8 +292,8 @@ async function addInternalPriceListItem(formData: FormData) {
     redirect(buildReturnUrl({ error: "Escribe la unidad del precio interno.", listId: priceListId }));
   }
 
-  if (unitPrice === null || unitPrice <= 0) {
-    redirect(buildReturnUrl({ error: "El precio interno debe ser mayor a 0.", listId: priceListId }));
+  if (unitPrice === null) {
+    redirect(buildReturnUrl({ error: "El precio interno debe ser mayor o igual a 0.", listId: priceListId }));
   }
 
   const { error } = await supabase.from("internal_price_list_items").insert({
@@ -589,8 +331,8 @@ async function updateInternalPriceListItem(formData: FormData) {
     redirect(buildReturnUrl({ error: "La unidad no puede estar vacía.", listId: priceListId }));
   }
 
-  if (unitPrice === null || unitPrice <= 0) {
-    redirect(buildReturnUrl({ error: "El precio interno debe ser mayor a 0.", listId: priceListId }));
+  if (unitPrice === null) {
+    redirect(buildReturnUrl({ error: "El precio interno debe ser mayor o igual a 0.", listId: priceListId }));
   }
 
   const { error } = await supabase
@@ -624,26 +366,6 @@ async function updateInternalPriceListItemStatus(formData: FormData) {
     redirect(buildReturnUrl({ error: "Ítem inválido.", listId: priceListId }));
   }
 
-  if (nextIsActive) {
-    const { data: itemToActivate } = await supabase
-      .from("internal_price_list_items")
-      .select("unit_price,unit_code")
-      .eq("id", itemId)
-      .maybeSingle();
-
-    const unitPrice = Number(itemToActivate?.unit_price ?? 0);
-    const unitCode = String(itemToActivate?.unit_code ?? "").trim();
-
-    if (!unitCode || !Number.isFinite(unitPrice) || unitPrice <= 0) {
-      redirect(
-        buildReturnUrl({
-          error: "Antes de activar el producto, define una unidad y un precio interno mayor a 0.",
-          listId: priceListId,
-        })
-      );
-    }
-  }
-
   const { error } = await supabase
     .from("internal_price_list_items")
     .update({
@@ -664,99 +386,6 @@ async function updateInternalPriceListItemStatus(formData: FormData) {
       listId: priceListId,
     })
   );
-}
-
-
-async function importMissingRemissionPriceItems(formData: FormData) {
-  "use server";
-
-  const { supabase } = await requireInternalPricesManager();
-
-  const priceListId = asText(formData.get("price_list_id"));
-  if (!priceListId) {
-    redirect(buildReturnUrl({ error: "Selecciona una lista." }));
-  }
-
-  const { data: priceList, error: priceListError } = await supabase
-    .from("internal_price_lists")
-    .select("id,buyer_cost_center_id,buyer_site_id")
-    .eq("id", priceListId)
-    .maybeSingle();
-
-  if (priceListError || !priceList) {
-    redirect(
-      buildReturnUrl({
-        error: priceListError?.message ?? "La lista no existe.",
-        listId: priceListId,
-      })
-    );
-  }
-
-  let buyerSiteId = String(priceList.buyer_site_id ?? "").trim();
-
-  if (!buyerSiteId && priceList.buyer_cost_center_id) {
-    const { data: buyerCostCenter } = await supabase
-      .from("cost_centers")
-      .select("site_id")
-      .eq("id", priceList.buyer_cost_center_id)
-      .maybeSingle();
-
-    buyerSiteId = String(buyerCostCenter?.site_id ?? "").trim();
-  }
-
-  if (!buyerSiteId) {
-    redirect(
-      buildReturnUrl({
-        error: "La lista no tiene sede compradora. Selecciona una sede para poder cargar productos de remisión.",
-        listId: priceListId,
-      })
-    );
-  }
-
-  const remittableResult = await loadRemittableProductsForSite(supabase, buyerSiteId);
-  if (!remittableResult.products.length) {
-    redirect(
-      buildReturnUrl({
-        error: "No hay productos remisionables configurados para la sede compradora.",
-        listId: priceListId,
-      })
-    );
-  }
-
-  const { data: existingItems } = await supabase
-    .from("internal_price_list_items")
-    .select("product_id")
-    .eq("price_list_id", priceListId);
-
-  const existingProductIds = new Set(
-    ((existingItems ?? []) as Array<{ product_id: string | null }>)
-      .map((row) => String(row.product_id ?? "").trim())
-      .filter(Boolean)
-  );
-
-  const rows = remittableResult.products
-    .filter((product) => !existingProductIds.has(product.id))
-    .map((product) => ({
-      price_list_id: priceListId,
-      product_id: product.id,
-      unit_price: 0,
-      unit_code: product.suggested_unit_code,
-      is_active: false,
-    }));
-
-  if (rows.length === 0) {
-    redirect(buildReturnUrl({ ok: "import_empty", listId: priceListId }));
-  }
-
-  const { error } = await supabase.from("internal_price_list_items").insert(rows);
-
-  if (error) {
-    redirect(buildReturnUrl({ error: error.message, listId: priceListId }));
-  }
-
-  revalidatePath(PAGE_PATH);
-  revalidatePath("/inventory/remissions");
-  redirect(buildReturnUrl({ ok: "import_added", listId: priceListId }));
 }
 
 export default async function InternalPricesSettingsPage({
@@ -781,11 +410,7 @@ export default async function InternalPricesSettingsPage({
                 ? "Producto activado en la lista."
                 : sp.ok === "item_disabled"
                   ? "Producto desactivado en la lista."
-                  : sp.ok === "import_added"
-                    ? "Productos remisionables cargados como pendientes de precio."
-                    : sp.ok === "import_empty"
-                      ? "No había productos remisionables nuevos por cargar."
-                      : "";
+                  : "";
 
   const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
 
@@ -801,6 +426,7 @@ export default async function InternalPricesSettingsPage({
     { data: costCentersData },
     { data: sitesData },
     { data: priceListsData },
+    { data: productsData },
   ] = await Promise.all([
     supabase
       .from("cost_centers")
@@ -818,14 +444,22 @@ export default async function InternalPricesSettingsPage({
         "id,name,seller_cost_center_id,buyer_cost_center_id,buyer_site_id,valid_from,valid_to,is_active,created_by,created_at,updated_at"
       )
       .order("updated_at", { ascending: false }),
+    supabase
+      .from("products")
+      .select("id,name,sku,unit,stock_unit_code,product_type,is_active")
+      .eq("is_active", true)
+      .order("name", { ascending: true })
+      .limit(1500),
   ]);
 
   const costCenters = (costCentersData ?? []) as CostCenterRow[];
   const sites = (sitesData ?? []) as SiteRow[];
   const priceLists = (priceListsData ?? []) as InternalPriceListRow[];
+  const products = (productsData ?? []) as ProductRow[];
 
   const costCentersById = new Map(costCenters.map((row) => [row.id, row]));
   const sitesById = new Map(sites.map((row) => [row.id, row]));
+  const productsById = new Map(products.map((row) => [row.id, row]));
 
   const operationalSites = sites.filter((site) => !isDemoSite(site));
   const operationalCostCenters = costCenters.filter(
@@ -836,18 +470,6 @@ export default async function InternalPricesSettingsPage({
   const selectedListId = String(sp.list_id ?? priceLists[0]?.id ?? "").trim();
   const selectedPriceList =
     priceLists.find((row) => row.id === selectedListId) ?? priceLists[0] ?? null;
-  const selectedBuyerCostCenter = selectedPriceList?.buyer_cost_center_id
-    ? costCentersById.get(selectedPriceList.buyer_cost_center_id) ?? null
-    : null;
-  const selectedBuyerSiteId = String(
-    selectedPriceList?.buyer_site_id ?? selectedBuyerCostCenter?.site_id ?? ""
-  ).trim();
-  const selectedBuyerSite = selectedBuyerSiteId ? sitesById.get(selectedBuyerSiteId) ?? null : null;
-  const remittableResult = selectedBuyerSiteId
-    ? await loadRemittableProductsForSite(supabase, selectedBuyerSiteId)
-    : { products: [] as RemissionPriceProductRow[], hasConfig: false };
-  const remittableProducts = remittableResult.products;
-  const remittableProductsById = new Map(remittableProducts.map((product) => [product.id, product]));
 
   const { data: priceItemsData } = selectedPriceList
     ? await supabase
@@ -861,32 +483,6 @@ export default async function InternalPricesSettingsPage({
   const priceItems = (priceItemsData ?? []) as InternalPriceListItemRow[];
   const activeItems = priceItems.filter((row) => row.is_active);
   const inactiveItems = priceItems.filter((row) => !row.is_active);
-  const pricedProductIds = new Set(
-    priceItems.map((row) => String(row.product_id ?? "").trim()).filter(Boolean)
-  );
-  const extraProductIds = Array.from(pricedProductIds).filter(
-    (productId) => !remittableProductsById.has(productId)
-  );
-  const { data: extraProductsData } = extraProductIds.length
-    ? await supabase
-        .from("products")
-        .select("id,name,sku,unit,stock_unit_code,product_type,is_active")
-        .in("id", extraProductIds)
-    : { data: [] as ProductRow[] };
-  const productsById = new Map<string, ProductRow>();
-  for (const product of remittableProducts) {
-    productsById.set(product.id, product);
-  }
-  for (const product of (extraProductsData ?? []) as ProductRow[]) {
-    productsById.set(product.id, product);
-  }
-  const pendingRemissionProducts = remittableProducts.filter(
-    (product) => !pricedProductIds.has(product.id)
-  );
-  const pendingProductsByKind = groupProductsByKind(pendingRemissionProducts);
-  const pendingKindEntries = Array.from(pendingProductsByKind.entries()).sort(
-    ([a], [b]) => operationalKindRank(a) - operationalKindRank(b)
-  );
 
   const productionCostCenters = operationalCostCenters.filter((row) =>
     isProductionCostCenter(row, sitesById)
@@ -1240,127 +836,58 @@ export default async function InternalPricesSettingsPage({
                 </div>
               </div>
 
-              {selectedBuyerSiteId ? (
-                <div className="mt-4 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <div className="ui-caption">Catálogo remisionable usado para esta lista</div>
-                      <div className="mt-2 text-sm font-semibold text-[var(--ui-text)]">
-                        {selectedBuyerSite?.name ?? "Sede compradora sin nombre"}
-                      </div>
-                      <p className="mt-1 text-xs text-[var(--ui-muted)]">
-                        Solo se muestran productos habilitados para remisiones en esta sede. Equipos y activos quedan fuera por defecto.
-                      </p>
+              {canManage ? (
+                <form
+                  action={addInternalPriceListItem}
+                  className="mt-6 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4"
+                >
+                  <input type="hidden" name="price_list_id" value={selectedPriceList.id} />
+                  <div className="ui-h3">Agregar producto</div>
+
+                  <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_160px_160px_auto]">
+                    <label className="flex flex-col gap-1">
+                      <span className="ui-label">Producto</span>
+                      <select name="product_id" className="ui-input" required>
+                        <option value="">Seleccionar producto</option>
+                        {products.map((product) => (
+                          <option key={product.id} value={product.id}>
+                            {productLabel(product)}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+
+                    <label className="flex flex-col gap-1">
+                      <span className="ui-label">Unidad</span>
+                      <input
+                        name="unit_code"
+                        className="ui-input"
+                        placeholder="unidad"
+                        defaultValue="unidad"
+                        required
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-1">
+                      <span className="ui-label">Precio interno</span>
+                      <input
+                        name="unit_price"
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        className="ui-input"
+                        placeholder="0"
+                        required
+                      />
+                    </label>
+
+                    <div className="flex items-end">
+                      <button type="submit" className="ui-btn ui-btn--brand">
+                        Agregar
+                      </button>
                     </div>
-                    <span className="ui-chip">
-                      {remittableProducts.length} remisionables · {pendingRemissionProducts.length} pendientes
-                    </span>
                   </div>
-                </div>
-              ) : (
-                <div className="mt-4 ui-alert ui-alert--warn">
-                  Esta lista no tiene sede compradora asociada. Para cargar productos desde remisiones, crea la lista indicando sede compradora.
-                </div>
-              )}
-
-              {canManage && selectedBuyerSiteId ? (
-                <div className="mt-6 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
-                  <div className="flex flex-wrap items-start justify-between gap-4">
-                    <div>
-                      <div className="ui-h3">Productos remisionables pendientes de precio</div>
-                      <p className="mt-1 text-sm text-[var(--ui-muted)]">
-                        Esta lista sale de la configuración real de remisiones de la sede compradora.
-                        La unidad sugerida viene de las unidades operativas del producto.
-                      </p>
-                    </div>
-
-                    {pendingRemissionProducts.length ? (
-                      <form action={importMissingRemissionPriceItems}>
-                        <input type="hidden" name="price_list_id" value={selectedPriceList.id} />
-                        <button type="submit" className="ui-btn ui-btn--ghost">
-                          Cargar todos como pendientes
-                        </button>
-                      </form>
-                    ) : null}
-                  </div>
-
-                  {!remittableResult.hasConfig ? (
-                    <div className="mt-4 ui-alert ui-alert--warn">
-                      La sede compradora todavía no tiene productos configurados para remisiones.
-                    </div>
-                  ) : pendingRemissionProducts.length ? (
-                    <div className="mt-4 space-y-5">
-                      {pendingKindEntries.map(([kind, rows]) => (
-                        <div key={kind}>
-                          <div className="mb-2 flex items-center justify-between gap-3">
-                            <div className="text-sm font-semibold text-[var(--ui-text)]">
-                              {operationalKindLabel(kind)}
-                            </div>
-                            <span className="text-xs text-[var(--ui-muted)]">
-                              {rows.length} pendientes
-                            </span>
-                          </div>
-
-                          <div className="space-y-2">
-                            {rows.map((product) => (
-                              <form
-                                key={product.id}
-                                action={addInternalPriceListItem}
-                                className="grid gap-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 lg:grid-cols-[1fr_150px_160px_auto]"
-                              >
-                                <input type="hidden" name="price_list_id" value={selectedPriceList.id} />
-                                <input type="hidden" name="product_id" value={product.id} />
-
-                                <div>
-                                  <div className="text-sm font-medium text-[var(--ui-text)]">
-                                    {product.name ?? product.id}
-                                  </div>
-                                  <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                                    {product.sku ? `SKU ${product.sku}` : "Sin SKU"} · {operationalKindLabel(product.inventory_kind)}
-                                  </div>
-                                </div>
-
-                                <label className="flex flex-col gap-1">
-                                  <span className="ui-label">Unidad</span>
-                                  <input
-                                    name="unit_code"
-                                    className="ui-input"
-                                    defaultValue={product.suggested_unit_code}
-                                    title={product.suggested_unit_label}
-                                    required
-                                  />
-                                </label>
-
-                                <label className="flex flex-col gap-1">
-                                  <span className="ui-label">Precio interno</span>
-                                  <input
-                                    name="unit_price"
-                                    type="number"
-                                    min="0"
-                                    step="0.01"
-                                    className="ui-input"
-                                    placeholder="0"
-                                    required
-                                  />
-                                </label>
-
-                                <div className="flex items-end">
-                                  <button type="submit" className="ui-btn ui-btn--brand">
-                                    Agregar
-                                  </button>
-                                </div>
-                              </form>
-                            ))}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="mt-4 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4 text-sm text-[var(--ui-muted)]">
-                      Todos los productos remisionables de esta sede ya están en la lista.
-                    </div>
-                  )}
-                </div>
+                </form>
               ) : null}
 
               <div className="mt-6">
