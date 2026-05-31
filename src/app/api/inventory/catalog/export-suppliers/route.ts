@@ -1,9 +1,52 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
+import ExcelJS from "exceljs";
+import { promises as fs } from "node:fs";
+import path from "node:path";
+
+export const runtime = "nodejs";
 
 const QUERY_CHUNK_SIZE = 250;
 const MAX_EXPORT_ROWS = 20000;
+
+const BRAND = {
+  black: "FF1B1A1F",
+  magenta: "FFE2006A",
+  rose: "FFB76E79",
+  porcelain: "FFF7F5F8",
+  soft: "FFF2EEF2",
+  line: "FFE6E1EA",
+  muted: "FF6B6574",
+  white: "FFFFFFFF",
+  goodText: "FF14532D",
+  goodFill: "FFDCFCE7",
+  warnText: "FF7C2D12",
+  warnFill: "FFFEF3C7",
+  badText: "FF7F1D1D",
+  badFill: "FFFEE2E2",
+  skyFill: "FFEFF6FF",
+};
+
+type ExportValue = string | number | boolean | Date | null | undefined;
+
+type ExportCell = {
+  value: ExportValue;
+  tone?: "good" | "warn" | "bad" | "muted" | "brand" | "section";
+  numFmt?: string;
+};
+
+type ExportRow = Array<ExportValue | ExportCell>;
+
+type ExportSheet = {
+  name: string;
+  title: string;
+  subtitle: string;
+  columns: Array<{ header: string; width: number; key?: string; numFmt?: string }>;
+  rows: ExportRow[];
+  tabColor?: string;
+  freezeRows?: number;
+};
 
 function chunkArray<T>(items: T[], size: number): T[][] {
   const chunks: T[][] = [];
@@ -32,260 +75,18 @@ function isMissingColumnError(error: unknown, columnName: string): boolean {
   );
 }
 
-function escapeXml(value: unknown): string {
-  return String(value ?? "")
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;");
+function asPlainCell(cell: ExportValue | ExportCell): ExportCell {
+  if (typeof cell === "object" && cell !== null && "value" in cell) return cell;
+  return { value: cell };
 }
 
-function escapeXmlAttr(value: unknown): string {
-  return escapeXml(value).replace(/"/g, "&quot;");
-}
-
-type ExcelValue = string | number | boolean | null | undefined;
-
-type ExcelCell = {
-  value: ExcelValue;
-  type?: "String" | "Number" | "Boolean";
-  styleId?: string;
-  mergeAcross?: number;
-};
-
-type SheetDefinition = {
-  name: string;
-  title?: string;
-  subtitle?: string;
-  columns?: number[];
-  rows: Array<Array<ExcelValue | ExcelCell>>;
-  freezeRows?: number;
-};
-
-function excelCell(value: ExcelValue | ExcelCell, fallbackStyleId?: string): string {
-  const cell: ExcelCell =
-    typeof value === "object" && value !== null && "value" in value
-      ? value
-      : { value, styleId: fallbackStyleId };
-
-  const rawValue = cell.value;
-  const styleAttr = cell.styleId
-    ? ` ss:StyleID="${escapeXmlAttr(cell.styleId)}"`
-    : fallbackStyleId
-      ? ` ss:StyleID="${escapeXmlAttr(fallbackStyleId)}"`
-      : "";
-  const mergeAttr =
-    Number(cell.mergeAcross ?? 0) > 0 ? ` ss:MergeAcross="${Number(cell.mergeAcross)}"` : "";
-
-  if (rawValue === null || rawValue === undefined || rawValue === "") {
-    return `<Cell${styleAttr}${mergeAttr}><Data ss:Type="String"></Data></Cell>`;
-  }
-
-  const type =
-    cell.type ??
-    (typeof rawValue === "number"
-      ? "Number"
-      : typeof rawValue === "boolean"
-        ? "Boolean"
-        : "String");
-
-  const valueText =
-    type === "Boolean"
-      ? rawValue
-        ? "1"
-        : "0"
-      : type === "Number"
-        ? Number(rawValue).toString()
-        : escapeXml(rawValue);
-
-  return `<Cell${styleAttr}${mergeAttr}><Data ss:Type="${type}">${valueText}</Data></Cell>`;
-}
-
-function excelRow(cells: Array<ExcelValue | ExcelCell>, styleId?: string, height?: number): string {
-  const heightAttr = height ? ` ss:Height="${height}"` : "";
-  return `<Row${heightAttr}>${cells.map((cell) => excelCell(cell, styleId)).join("")}</Row>`;
-}
-
-function buildSheetRows(params: {
-  title?: string;
-  subtitle?: string;
-  rows: Array<Array<ExcelValue | ExcelCell>>;
-  columnCount: number;
-}) {
-  const { title, subtitle, rows, columnCount } = params;
-  const output: Array<{ cells: Array<ExcelValue | ExcelCell>; height?: number }> = [];
-
-  if (title) {
-    output.push({
-      cells: [
-        {
-          value: title,
-          styleId: "Brand",
-          mergeAcross: Math.max(columnCount - 1, 0),
-        },
-      ],
-      height: 28,
-    });
-  }
-
-  if (subtitle) {
-    output.push({
-      cells: [
-        {
-          value: subtitle,
-          styleId: "Subtitle",
-          mergeAcross: Math.max(columnCount - 1, 0),
-        },
-      ],
-      height: 22,
-    });
-  }
-
-  if (title || subtitle) {
-    output.push({
-      cells: [
-        {
-          value: "",
-          mergeAcross: Math.max(columnCount - 1, 0),
-        },
-      ],
-      height: 8,
-    });
-  }
-
-  rows.forEach((row, index) => {
-    output.push({
-      cells: row.map((cell) => {
-        if (index === 0) {
-          return typeof cell === "object" && cell !== null && "value" in cell
-            ? { ...cell, styleId: cell.styleId ?? "Header" }
-            : { value: cell, styleId: "Header" };
-        }
-
-        return cell;
-      }),
-    });
-  });
-
-  return output;
-}
-
-function excelWorksheet(sheet: SheetDefinition): string {
-  const safeName = String(sheet.name || "Hoja").slice(0, 31);
-  const columnCount = Math.max(
-    sheet.columns?.length ?? 0,
-    ...sheet.rows.map((row) => row.length),
-    1
-  );
-  const rows = buildSheetRows({
-    title: sheet.title,
-    subtitle: sheet.subtitle,
-    rows: sheet.rows,
-    columnCount,
-  });
-  const freezeRows = sheet.freezeRows ?? (sheet.title || sheet.subtitle ? 4 : 1);
-
-  return [
-    `<Worksheet ss:Name="${escapeXmlAttr(safeName)}">`,
-    "<Table>",
-    ...(sheet.columns ?? []).map((width) => `<Column ss:Width="${Number(width)}"/>`),
-    ...rows.map((row) => excelRow(row.cells, undefined, row.height)),
-    "</Table>",
-    '<WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">',
-    "<PageSetup>",
-    '<Layout x:Orientation="Landscape"/>',
-    '<Header x:Margin="0.3"/>',
-    '<Footer x:Margin="0.3"/>',
-    '<PageMargins x:Bottom="0.5" x:Left="0.35" x:Right="0.35" x:Top="0.5"/>',
-    "</PageSetup>",
-    "<FreezePanes/>",
-    "<FrozenNoSplit/>",
-    `<SplitHorizontal>${freezeRows}</SplitHorizontal>`,
-    `<TopRowBottomPane>${freezeRows}</TopRowBottomPane>`,
-    "<ActivePane>2</ActivePane>",
-    "</WorksheetOptions>",
-    "</Worksheet>",
-  ].join("");
-}
-
-function excelWorkbook(sheets: SheetDefinition[]): string {
-  return [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    '<?mso-application progid="Excel.Sheet"?>',
-    '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"',
-    ' xmlns:o="urn:schemas-microsoft-com:office:office"',
-    ' xmlns:x="urn:schemas-microsoft-com:office:excel"',
-    ' xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet"',
-    ' xmlns:html="http://www.w3.org/TR/REC-html40">',
-    "<DocumentProperties xmlns=\"urn:schemas-microsoft-com:office:office\">",
-    "<Author>VENTO GROUP</Author>",
-    "<Company>VENTO GROUP</Company>",
-    "<Title>NEXO · Libro maestro operativo</Title>",
-    "</DocumentProperties>",
-    "<ExcelWorkbook xmlns=\"urn:schemas-microsoft-com:office:excel\">",
-    "<WindowHeight>9000</WindowHeight>",
-    "<WindowWidth>16000</WindowWidth>",
-    "<ProtectStructure>False</ProtectStructure>",
-    "<ProtectWindows>False</ProtectWindows>",
-    "</ExcelWorkbook>",
-    "<Styles>",
-    '<Style ss:ID="Default" ss:Name="Normal">',
-    '<Font ss:FontName="Aptos" ss:Size="10" ss:Color="#1B1A1F"/>',
-    '<Alignment ss:Vertical="Center" ss:WrapText="1"/>',
-    "</Style>",
-    '<Style ss:ID="Brand">',
-    '<Font ss:FontName="Aptos Display" ss:Size="17" ss:Bold="1" ss:Color="#FFFFFF"/>',
-    '<Interior ss:Color="#1B1A1F" ss:Pattern="Solid"/>',
-    '<Alignment ss:Vertical="Center"/>',
-    "</Style>",
-    '<Style ss:ID="Subtitle">',
-    '<Font ss:FontName="Aptos" ss:Size="10" ss:Color="#5E5966"/>',
-    '<Interior ss:Color="#F7F5F8" ss:Pattern="Solid"/>',
-    '<Alignment ss:Vertical="Center" ss:WrapText="1"/>',
-    "</Style>",
-    '<Style ss:ID="Header">',
-    '<Font ss:FontName="Aptos" ss:Size="9" ss:Bold="1" ss:Color="#FFFFFF"/>',
-    '<Interior ss:Color="#E2006A" ss:Pattern="Solid"/>',
-    '<Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>',
-    '<Borders><Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1" ss:Color="#B76E79"/></Borders>',
-    "</Style>",
-    '<Style ss:ID="Section">',
-    '<Font ss:FontName="Aptos" ss:Size="11" ss:Bold="1" ss:Color="#1B1A1F"/>',
-    '<Interior ss:Color="#F2EEF2" ss:Pattern="Solid"/>',
-    "</Style>",
-    '<Style ss:ID="Good">',
-    '<Font ss:FontName="Aptos" ss:Size="10" ss:Color="#14532D"/>',
-    '<Interior ss:Color="#DCFCE7" ss:Pattern="Solid"/>',
-    "</Style>",
-    '<Style ss:ID="Warn">',
-    '<Font ss:FontName="Aptos" ss:Size="10" ss:Color="#7C2D12"/>',
-    '<Interior ss:Color="#FEF3C7" ss:Pattern="Solid"/>',
-    "</Style>",
-    '<Style ss:ID="Bad">',
-    '<Font ss:FontName="Aptos" ss:Size="10" ss:Color="#7F1D1D"/>',
-    '<Interior ss:Color="#FEE2E2" ss:Pattern="Solid"/>',
-    "</Style>",
-    '<Style ss:ID="Muted">',
-    '<Font ss:FontName="Aptos" ss:Size="10" ss:Color="#5E5966"/>',
-    '<Interior ss:Color="#F7F5F8" ss:Pattern="Solid"/>',
-    "</Style>",
-    '<Style ss:ID="Number">',
-    '<NumberFormat ss:Format="#,##0.###"/>',
-    "</Style>",
-    '<Style ss:ID="Money">',
-    '<NumberFormat ss:Format="$ #,##0.00"/>',
-    "</Style>",
-    "</Styles>",
-    ...sheets.map((sheet) => excelWorksheet(sheet)),
-    "</Workbook>",
-  ].join("");
+function normalizeExcelValue(value: ExportValue): ExcelJS.CellValue {
+  if (value === undefined || value === null) return null;
+  return value as ExcelJS.CellValue;
 }
 
 function yesNo(value: unknown): string {
   return value ? "Si" : "No";
-}
-
-function boolStatus(value: unknown, positive = "Si", negative = "No"): string {
-  return value ? positive : negative;
 }
 
 function nowBogotaLabel(): string {
@@ -296,28 +97,343 @@ function nowBogotaLabel(): string {
   }).format(new Date());
 }
 
-function asNumberCell(value: unknown): ExcelCell {
+function asNumberCell(value: unknown): ExportCell {
   const n = Number(value);
-  return Number.isFinite(n) ? { value: n, type: "Number", styleId: "Number" } : { value: "" };
+  return Number.isFinite(n)
+    ? { value: n, numFmt: "#,##0.###" }
+    : { value: null };
 }
 
-function asMoneyCell(value: unknown): ExcelCell {
+function asMoneyCell(value: unknown): ExportCell {
   const n = Number(value);
-  return Number.isFinite(n) ? { value: n, type: "Number", styleId: "Money" } : { value: "" };
+  return Number.isFinite(n)
+    ? { value: n, numFmt: '"$" #,##0.00' }
+    : { value: null };
 }
 
-function diagnosticStyle(value: string): ExcelCell {
+function diagnosticStyle(value: string): ExportCell {
   const normalized = String(value ?? "").toLowerCase();
   if (normalized.includes("deberia") || normalized.includes("ok")) {
-    return { value, styleId: "Good" };
+    return { value, tone: "good" };
   }
   if (normalized.includes("revisar") || normalized.includes("advertencia")) {
-    return { value, styleId: "Warn" };
+    return { value, tone: "warn" };
   }
   if (normalized.includes("no aparece") || normalized.includes("error") || normalized.includes("falta")) {
-    return { value, styleId: "Bad" };
+    return { value, tone: "bad" };
   }
   return { value };
+}
+
+function applyBaseSheetSetup(worksheet: ExcelJS.Worksheet) {
+  worksheet.properties.defaultRowHeight = 18;
+  worksheet.pageSetup = {
+    orientation: "landscape",
+    fitToPage: true,
+    fitToWidth: 1,
+    fitToHeight: 0,
+    margins: {
+      left: 0.25,
+      right: 0.25,
+      top: 0.45,
+      bottom: 0.45,
+      header: 0.2,
+      footer: 0.2,
+    },
+  };
+}
+
+function styleCell(cell: ExcelJS.Cell, source: ExportCell) {
+  cell.alignment = {
+    vertical: "middle",
+    horizontal: typeof source.value === "number" ? "right" : "left",
+    wrapText: true,
+  };
+
+  cell.border = {
+    top: { style: "thin", color: { argb: BRAND.line } },
+    left: { style: "thin", color: { argb: BRAND.line } },
+    bottom: { style: "thin", color: { argb: BRAND.line } },
+    right: { style: "thin", color: { argb: BRAND.line } },
+  };
+
+  if (source.numFmt) cell.numFmt = source.numFmt;
+
+  if (source.tone === "good") {
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.goodFill } };
+    cell.font = { color: { argb: BRAND.goodText } };
+  } else if (source.tone === "warn") {
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.warnFill } };
+    cell.font = { color: { argb: BRAND.warnText } };
+  } else if (source.tone === "bad") {
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.badFill } };
+    cell.font = { color: { argb: BRAND.badText } };
+  } else if (source.tone === "muted") {
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.porcelain } };
+    cell.font = { color: { argb: BRAND.muted } };
+  } else if (source.tone === "section") {
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.soft } };
+    cell.font = { bold: true, color: { argb: BRAND.black } };
+  }
+}
+
+function paintHeader(row: ExcelJS.Row) {
+  row.height = 30;
+  row.eachCell((cell) => {
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.magenta } };
+    cell.font = { bold: true, color: { argb: BRAND.white }, size: 9 };
+    cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
+    cell.border = {
+      top: { style: "thin", color: { argb: BRAND.rose } },
+      left: { style: "thin", color: { argb: BRAND.rose } },
+      bottom: { style: "medium", color: { argb: BRAND.rose } },
+      right: { style: "thin", color: { argb: BRAND.rose } },
+    };
+  });
+}
+
+function addDataWorksheet(workbook: ExcelJS.Workbook, sheet: ExportSheet) {
+  const worksheet = workbook.addWorksheet(sheet.name.slice(0, 31), {
+    properties: {
+      tabColor: { argb: sheet.tabColor ?? BRAND.magenta },
+    },
+    views: [
+      {
+        state: "frozen",
+        ySplit: sheet.freezeRows ?? 4,
+        showGridLines: false,
+      },
+    ],
+  });
+
+  applyBaseSheetSetup(worksheet);
+
+  worksheet.columns = sheet.columns.map((column, index) => ({
+    key: column.key ?? `c${index + 1}`,
+    width: column.width,
+  }));
+
+  const lastColumn = Math.max(sheet.columns.length, 1);
+  const lastColumnLetter = worksheet.getColumn(lastColumn).letter;
+
+  worksheet.mergeCells(`A1:${lastColumnLetter}1`);
+  const titleCell = worksheet.getCell("A1");
+  titleCell.value = sheet.title;
+  titleCell.font = { name: "Aptos Display", bold: true, size: 18, color: { argb: BRAND.white } };
+  titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.black } };
+  titleCell.alignment = { vertical: "middle", horizontal: "left" };
+  worksheet.getRow(1).height = 32;
+
+  worksheet.mergeCells(`A2:${lastColumnLetter}2`);
+  const subtitleCell = worksheet.getCell("A2");
+  subtitleCell.value = sheet.subtitle;
+  subtitleCell.font = { name: "Aptos", size: 10, color: { argb: BRAND.muted } };
+  subtitleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.porcelain } };
+  subtitleCell.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+  worksheet.getRow(2).height = 24;
+
+  worksheet.getRow(3).height = 8;
+
+  const headerRow = worksheet.getRow(4);
+  headerRow.values = [undefined, ...sheet.columns.map((column) => column.header)];
+  paintHeader(headerRow);
+
+  sheet.rows.forEach((sourceRow, rowIndex) => {
+    const row = worksheet.getRow(rowIndex + 5);
+    sourceRow.forEach((sourceCell, columnIndex) => {
+      const parsed = asPlainCell(sourceCell);
+      const cell = row.getCell(columnIndex + 1);
+      const column = sheet.columns[columnIndex];
+
+      cell.value = normalizeExcelValue(parsed.value);
+      styleCell(cell, {
+        ...parsed,
+        numFmt: parsed.numFmt ?? column?.numFmt,
+      });
+    });
+
+    row.height = 22;
+  });
+
+  const finalRow = Math.max(4 + sheet.rows.length, 4);
+  worksheet.autoFilter = {
+    from: { row: 4, column: 1 },
+    to: { row: finalRow, column: lastColumn },
+  };
+
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber <= 4) return;
+    if (rowNumber % 2 === 0) {
+      row.eachCell((cell) => {
+        if (!cell.fill) {
+          cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFFCFBFD" } };
+        }
+      });
+    }
+  });
+
+  return worksheet;
+}
+
+function addSummaryWorksheet(params: {
+  workbook: ExcelJS.Workbook;
+  generatedBy: string;
+  metrics: Array<{ label: string; value: string | number; detail: string; tone?: ExportCell["tone"] }>;
+  indexRows: Array<[string, string]>;
+  alertCount: number;
+}) {
+  const { workbook, generatedBy, metrics, indexRows, alertCount } = params;
+  const worksheet = workbook.addWorksheet("Resumen", {
+    properties: { tabColor: { argb: BRAND.black } },
+    views: [{ state: "frozen", ySplit: 8, showGridLines: false }],
+  });
+
+  applyBaseSheetSetup(worksheet);
+
+  worksheet.columns = [
+    { width: 4 },
+    { width: 26 },
+    { width: 18 },
+    { width: 42 },
+    { width: 4 },
+    { width: 26 },
+    { width: 18 },
+    { width: 42 },
+  ];
+
+  worksheet.mergeCells("B2:H2");
+  const title = worksheet.getCell("B2");
+  title.value = "VENTO GROUP · NEXO";
+  title.font = { name: "Aptos Display", bold: true, size: 24, color: { argb: BRAND.white } };
+  title.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.black } };
+  title.alignment = { vertical: "middle", horizontal: "left" };
+  worksheet.getRow(2).height = 38;
+
+  worksheet.mergeCells("B3:H3");
+  const subtitle = worksheet.getCell("B3");
+  subtitle.value = "Libro maestro operativo · Catálogo, remisiones, sedes, áreas, LOCs, posiciones internas y stock";
+  subtitle.font = { name: "Aptos", size: 11, color: { argb: BRAND.muted } };
+  subtitle.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.porcelain } };
+  subtitle.alignment = { vertical: "middle", horizontal: "left", wrapText: true };
+  worksheet.getRow(3).height = 25;
+
+  worksheet.mergeCells("B5:D5");
+  worksheet.getCell("B5").value = `Generado por ${generatedBy}`;
+  worksheet.getCell("B5").font = { bold: true, color: { argb: BRAND.black } };
+  worksheet.getCell("B5").fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.soft } };
+
+  worksheet.mergeCells("F5:H5");
+  worksheet.getCell("F5").value = `Fecha ${nowBogotaLabel()}`;
+  worksheet.getCell("F5").font = { bold: true, color: { argb: BRAND.black } };
+  worksheet.getCell("F5").fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.soft } };
+
+  const metricStartRow = 7;
+  metrics.forEach((metric, index) => {
+    const block = index % 2 === 0 ? 2 : 6;
+    const rowNumber = metricStartRow + Math.floor(index / 2) * 4;
+
+    worksheet.mergeCells(rowNumber, block, rowNumber, block + 2);
+    const label = worksheet.getCell(rowNumber, block);
+    label.value = metric.label;
+    label.font = { bold: true, color: { argb: BRAND.muted }, size: 9 };
+    label.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.porcelain } };
+
+    worksheet.mergeCells(rowNumber + 1, block, rowNumber + 1, block + 2);
+    const value = worksheet.getCell(rowNumber + 1, block);
+    value.value = metric.value;
+    value.font = {
+      bold: true,
+      size: 18,
+      color: { argb: metric.tone === "bad" ? BRAND.badText : metric.tone === "warn" ? BRAND.warnText : BRAND.black },
+    };
+    value.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: {
+        argb: metric.tone === "bad" ? BRAND.badFill : metric.tone === "warn" ? BRAND.warnFill : BRAND.white,
+      },
+    };
+
+    worksheet.mergeCells(rowNumber + 2, block, rowNumber + 2, block + 2);
+    const detail = worksheet.getCell(rowNumber + 2, block);
+    detail.value = metric.detail;
+    detail.font = { size: 9, color: { argb: BRAND.muted } };
+    detail.alignment = { wrapText: true, vertical: "top" };
+  });
+
+  const indexStart = metricStartRow + Math.ceil(metrics.length / 2) * 4 + 2;
+  worksheet.mergeCells(indexStart, 2, indexStart, 8);
+  const section = worksheet.getCell(indexStart, 2);
+  section.value = "Índice de hojas";
+  section.font = { bold: true, size: 14, color: { argb: BRAND.black } };
+  section.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.soft } };
+
+  worksheet.getRow(indexStart + 1).values = [
+    undefined,
+    "Hoja",
+    "Descripción",
+    "",
+    "",
+    "",
+    "",
+    "",
+  ];
+  paintHeader(worksheet.getRow(indexStart + 1));
+
+  indexRows.forEach(([sheetName, description], index) => {
+    const row = worksheet.getRow(indexStart + 2 + index);
+    row.getCell(2).value = sheetName;
+    row.getCell(2).font = { bold: true, color: { argb: BRAND.magenta } };
+    row.getCell(3).value = description;
+    worksheet.mergeCells(row.number, 3, row.number, 8);
+    row.eachCell((cell) => {
+      cell.border = {
+        top: { style: "thin", color: { argb: BRAND.line } },
+        bottom: { style: "thin", color: { argb: BRAND.line } },
+      };
+      cell.alignment = { wrapText: true, vertical: "middle" };
+    });
+  });
+
+  if (alertCount > 0) {
+    worksheet.mergeCells("F6:H6");
+    const alert = worksheet.getCell("F6");
+    alert.value = `${alertCount} alerta(s) por revisar`;
+    alert.font = { bold: true, color: { argb: BRAND.warnText } };
+    alert.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.warnFill } };
+  }
+
+  return worksheet;
+}
+
+async function tryAddLogo(workbook: ExcelJS.Workbook, worksheet: ExcelJS.Worksheet) {
+  const candidates = [
+    "public/vento-group-logo.png",
+    "public/logo-vento-group.png",
+    "public/vento-logo.png",
+    "public/logo.png",
+    "public/brand/vento-group.png",
+    "public/brand/logo.png",
+  ];
+
+  for (const candidate of candidates) {
+    try {
+      const absolutePath = path.join(process.cwd(), candidate);
+      const buffer = await fs.readFile(absolutePath);
+      const imageId = workbook.addImage({
+        base64: buffer.toString("base64"),
+        extension: "png",
+      });
+
+      worksheet.addImage(imageId, {
+        tl: { col: 0.15, row: 0.55 },
+        ext: { width: 150, height: 48 },
+      });
+      return;
+    } catch {
+      // Logo opcional. Si no existe, el encabezado textual conserva la marca.
+    }
+  }
 }
 
 type ProductInventoryProfileRow = {
@@ -982,16 +1098,12 @@ export async function GET() {
   const positionById = new Map(locationPositions.map((row) => [row.id, row]));
   const positionLabels = buildPositionLabels(locationPositions);
 
-  const supplierIds = Array.from(
-    new Set(productSuppliers.map((row) => String(row.supplier_id ?? "").trim()).filter(Boolean))
-  );
-
   const suppliers = await loadOptionalRows<SupplierRow>({
     supabase,
     table: "suppliers",
     select: "id,name",
     warnings,
-    limit: Math.max(supplierIds.length + 100, 1000),
+    limit: 5000,
   });
 
   const supplierNameById = new Map(suppliers.map((row) => [row.id, row.name ?? row.id]));
@@ -1023,33 +1135,7 @@ export async function GET() {
     stockBySite.map((row) => [`${row.site_id ?? ""}|${row.product_id ?? ""}`, row])
   );
 
-  const stockByLocationKey = new Map(
-    stockByLocation.map((row) => [`${row.location_id ?? ""}|${row.product_id ?? ""}`, row])
-  );
-
-  const stockByPositionKey = new Map(
-    stockByPosition.map((row) => [`${row.position_id ?? ""}|${row.product_id ?? ""}`, row])
-  );
-
-  const catalogRows: Array<Array<ExcelValue | ExcelCell>> = [
-    [
-      "Producto",
-      "Tipo item",
-      "Inventario",
-      "SKU",
-      "Unidad base",
-      "Unidad stock",
-      "Costo stock",
-      "Proveedor principal",
-      "Precio compra",
-      "Precio neto",
-      "Tiene presentacion manual",
-      "Presentacion remision",
-      "Estado",
-      "ID producto",
-    ],
-  ];
-
+  const catalogRows: ExportRow[] = [];
   for (const product of products) {
     const supplierRows = supplierRowsByProduct.get(product.id) ?? [];
     const primarySupplier = [...supplierRows].sort((a, b) => Number(Boolean(b.is_primary)) - Number(Boolean(a.is_primary)))[0];
@@ -1069,33 +1155,14 @@ export async function GET() {
       supplierName,
       asMoneyCell(primarySupplier?.purchase_price),
       asMoneyCell(primarySupplier ? resolvePurchasePriceNet(primarySupplier) : null),
-      productIdsWithManualPresentation.has(product.id) ? "Si" : "No",
+      productIdsWithManualPresentation.has(product.id) ? { value: "Si", tone: "good" } : { value: "No", tone: "warn" },
       remissionProfile?.label ?? "",
-      product.is_active === false ? { value: "Inactivo", styleId: "Bad" } : { value: "Activo", styleId: "Good" },
+      product.is_active === false ? { value: "Inactivo", tone: "bad" } : { value: "Activo", tone: "good" },
       product.id,
     ]);
   }
 
-  const suppliersRows: Array<Array<ExcelValue | ExcelCell>> = [
-    [
-      "Producto",
-      "Tipo item",
-      "SKU",
-      "Proveedor",
-      "Proveedor primario",
-      "Precio compra",
-      "Precio neto sin IVA",
-      "Incluye IVA",
-      "% IVA",
-      "Moneda",
-      "Presentacion compra qty",
-      "Presentacion compra unidad",
-      "Unidad operativa compra",
-      "Unidad stock",
-      "Estado producto",
-    ],
-  ];
-
+  const suppliersRows: ExportRow[] = [];
   for (const product of products) {
     const supplierRows = supplierRowsByProduct.get(product.id) ?? [];
     if (!supplierRows.length) {
@@ -1103,7 +1170,7 @@ export async function GET() {
         product.name ?? "",
         resolveItemType(product),
         product.sku ?? "",
-        { value: "Sin proveedor", styleId: "Warn" },
+        { value: "Sin proveedor", tone: "warn" },
         "",
         "",
         "",
@@ -1153,31 +1220,14 @@ export async function GET() {
     }
   }
 
-  const presentationRows: Array<Array<ExcelValue | ExcelCell>> = [
-    [
-      "Producto",
-      "Tipo item",
-      "Perfil / presentacion",
-      "Contexto uso",
-      "Fuente",
-      "Default",
-      "Activa",
-      "Cantidad input",
-      "Unidad input",
-      "Cantidad base stock",
-      "Unidad stock",
-      "ID perfil",
-      "ID producto",
-    ],
-  ];
-
+  const presentationRows: ExportRow[] = [];
   for (const product of products) {
     const profiles = uomProfilesByProduct.get(product.id) ?? [];
     if (!profiles.length) {
       presentationRows.push([
         product.name ?? "",
         resolveItemType(product),
-        { value: "Sin presentaciones activas", styleId: "Warn" },
+        { value: "Sin presentaciones activas", tone: "warn" },
         "",
         "",
         "",
@@ -1207,7 +1257,7 @@ export async function GET() {
         profile.usage_context ?? "",
         profile.source ?? "",
         profile.is_default ? "Si" : "No",
-        profile.is_active === false ? "No" : "Si",
+        profile.is_active === false ? { value: "No", tone: "bad" } : { value: "Si", tone: "good" },
         asNumberCell(profile.qty_in_input_unit),
         profile.input_unit_code ?? "",
         asNumberCell(profile.qty_in_stock_unit),
@@ -1218,35 +1268,7 @@ export async function GET() {
     }
   }
 
-  const remissionRows: Array<Array<ExcelValue | ExcelCell>> = [
-    [
-      "Sede",
-      "Tipo sede",
-      "Producto",
-      "Tipo item",
-      "SKU",
-      "Remision activa",
-      "Config sede activa",
-      "Producto activo",
-      "Presentacion minima",
-      "Cantidad presentacion",
-      "Unidad presentacion",
-      "Cantidad base",
-      "Unidad stock",
-      "Areas destino",
-      "Area por defecto",
-      "Audiencia",
-      "Produccion local",
-      "LOC produccion/origen",
-      "Minimo stock",
-      "Stock sede",
-      "Diagnostico solicitud",
-      "Actualizado",
-      "ID producto",
-      "ID sede",
-    ],
-  ];
-
+  const remissionRows: ExportRow[] = [];
   const orderedSiteSettings = [...productSiteSettings].sort((a, b) => {
     const siteA = siteName(siteById, a.site_id);
     const siteB = siteName(siteById, b.site_id);
@@ -1290,9 +1312,9 @@ export async function GET() {
       product.name ?? product.id,
       resolveItemType(product),
       product.sku ?? "",
-      setting.remission_enabled === true ? { value: "Si", styleId: "Good" } : { value: "No", styleId: "Muted" },
-      setting.is_active === false ? { value: "No", styleId: "Bad" } : { value: "Si", styleId: "Good" },
-      product.is_active === false ? { value: "No", styleId: "Bad" } : { value: "Si", styleId: "Good" },
+      setting.remission_enabled === true ? { value: "Si", tone: "good" } : { value: "No", tone: "muted" },
+      setting.is_active === false ? { value: "No", tone: "bad" } : { value: "Si", tone: "good" },
+      product.is_active === false ? { value: "No", tone: "bad" } : { value: "Si", tone: "good" },
       remissionProfile?.label ?? "",
       asNumberCell(remissionProfile?.qty_in_input_unit),
       remissionProfile?.input_unit_code ?? "",
@@ -1312,23 +1334,7 @@ export async function GET() {
     ]);
   }
 
-  const stockSiteRows: Array<Array<ExcelValue | ExcelCell>> = [
-    [
-      "Sede",
-      "Tipo sede",
-      "Producto",
-      "Tipo item",
-      "SKU",
-      "Cantidad actual",
-      "Unidad stock",
-      "Costo unitario",
-      "Valor estimado",
-      "Actualizado",
-      "ID producto",
-      "ID sede",
-    ],
-  ];
-
+  const stockSiteRows: ExportRow[] = [];
   for (const row of [...stockBySite].sort((a, b) => siteName(siteById, a.site_id).localeCompare(siteName(siteById, b.site_id), "es"))) {
     const product = row.product_id ? productById.get(row.product_id) : null;
     const site = row.site_id ? siteById.get(row.site_id) : null;
@@ -1352,23 +1358,7 @@ export async function GET() {
     ]);
   }
 
-  const stockLocationRows: Array<Array<ExcelValue | ExcelCell>> = [
-    [
-      "Sede",
-      "LOC",
-      "Codigo LOC",
-      "Tipo LOC",
-      "LOC activo",
-      "Producto",
-      "Tipo item",
-      "Cantidad actual",
-      "Unidad stock",
-      "Valor estimado",
-      "ID LOC",
-      "ID producto",
-    ],
-  ];
-
+  const stockLocationRows: ExportRow[] = [];
   for (const row of [...stockByLocation].sort((a, b) => {
     const locA = a.location_id ? locationById.get(a.location_id) : null;
     const locB = b.location_id ? locationById.get(b.location_id) : null;
@@ -1392,29 +1382,13 @@ export async function GET() {
       asNumberCell(qty),
       product?.stock_unit_code ?? product?.unit ?? "",
       asMoneyCell(value),
+      row.updated_at ?? "",
       row.location_id ?? "",
       row.product_id ?? "",
     ]);
   }
 
-  const stockPositionRows: Array<Array<ExcelValue | ExcelCell>> = [
-    [
-      "Sede",
-      "LOC",
-      "Posicion interna",
-      "Tipo posicion",
-      "Posicion activa",
-      "Producto",
-      "Tipo item",
-      "Cantidad actual",
-      "Unidad stock",
-      "Valor estimado",
-      "ID posicion",
-      "ID LOC",
-      "ID producto",
-    ],
-  ];
-
+  const stockPositionRows: ExportRow[] = [];
   for (const row of [...stockByPosition].sort((a, b) => {
     const labelA = a.position_id ? positionLabels.get(a.position_id) ?? a.position_id : "";
     const labelB = b.position_id ? positionLabels.get(b.position_id) ?? b.position_id : "";
@@ -1439,32 +1413,14 @@ export async function GET() {
       asNumberCell(qty),
       product?.stock_unit_code ?? product?.unit ?? "",
       asMoneyCell(value),
+      row.updated_at ?? "",
       row.position_id ?? "",
       position?.location_id ?? "",
       row.product_id ?? "",
     ]);
   }
 
-  const stockPresentationRows: Array<Array<ExcelValue | ExcelCell>> = [
-    [
-      "Sede",
-      "LOC",
-      "Posicion interna",
-      "Producto",
-      "Presentacion",
-      "Cantidad presentacion",
-      "Unidad presentacion",
-      "Cantidad base",
-      "Unidad stock",
-      "Contexto",
-      "Fuente perfil",
-      "ID perfil",
-      "ID LOC",
-      "ID posicion",
-      "ID producto",
-    ],
-  ];
-
+  const stockPresentationRows: ExportRow[] = [];
   for (const row of [...stockByUomProfile].sort((a, b) => {
     const productA = productName(productById, a.product_id);
     const productB = productName(productById, b.product_id);
@@ -1487,29 +1443,13 @@ export async function GET() {
       product?.stock_unit_code ?? product?.unit ?? "",
       profile?.usage_context ?? "",
       profile?.source ?? "",
+      row.updated_at ?? "",
       row.uom_profile_id ?? "",
       row.location_id ?? "",
       row.location_position_id ?? "",
       row.product_id ?? "",
     ]);
   }
-
-  const locRows: Array<Array<ExcelValue | ExcelCell>> = [
-    [
-      "Sede",
-      "LOC",
-      "Codigo",
-      "Tipo",
-      "Zona",
-      "Pasillo",
-      "Nivel",
-      "Descripcion",
-      "Activo",
-      "Posiciones internas",
-      "Productos con stock",
-      "ID LOC",
-    ],
-  ];
 
   const positionsByLocation = new Map<string, LocationPositionRow[]>();
   for (const position of locationPositions) {
@@ -1529,6 +1469,7 @@ export async function GET() {
     );
   }
 
+  const locRows: ExportRow[] = [];
   for (const location of [...locations].sort((a, b) => {
     const siteCmp = siteName(siteById, a.site_id).localeCompare(siteName(siteById, b.site_id), "es");
     if (siteCmp !== 0) return siteCmp;
@@ -1544,29 +1485,12 @@ export async function GET() {
       location.aisle ?? "",
       location.level ?? "",
       location.description ?? "",
-      location.is_active === false ? "No" : "Si",
+      location.is_active === false ? { value: "No", tone: "bad" } : { value: "Si", tone: "good" },
       asNumberCell((positionsByLocation.get(location.id) ?? []).length),
       asNumberCell(stockProductCountByLocation.get(location.id) ?? 0),
       location.id,
     ]);
   }
-
-  const positionsRows: Array<Array<ExcelValue | ExcelCell>> = [
-    [
-      "Sede",
-      "LOC",
-      "Posicion interna",
-      "Codigo",
-      "Nombre",
-      "Tipo",
-      "Padre",
-      "Orden",
-      "Activo",
-      "Productos con stock",
-      "ID posicion",
-      "ID LOC",
-    ],
-  ];
 
   const stockProductCountByPosition = new Map<string, number>();
   for (const row of stockByPosition) {
@@ -1577,6 +1501,7 @@ export async function GET() {
     );
   }
 
+  const positionsRows: ExportRow[] = [];
   for (const position of [...locationPositions].sort((a, b) => {
     const locA = a.location_id ? locationById.get(a.location_id) : null;
     const locB = b.location_id ? locationById.get(b.location_id) : null;
@@ -1595,27 +1520,14 @@ export async function GET() {
       position.kind ?? "",
       position.parent_position_id ? positionLabels.get(position.parent_position_id) ?? position.parent_position_id : "",
       asNumberCell(position.sort_order),
-      position.is_active === false ? "No" : "Si",
+      position.is_active === false ? { value: "No", tone: "bad" } : { value: "Si", tone: "good" },
       asNumberCell(stockProductCountByPosition.get(position.id) ?? 0),
       position.id,
       position.location_id ?? "",
     ]);
   }
 
-  const siteRows: Array<Array<ExcelValue | ExcelCell>> = [
-    [
-      "Sede",
-      "Tipo sede",
-      "Areas",
-      "LOCs",
-      "Posiciones internas",
-      "Productos con stock",
-      "Configuraciones remision",
-      "Productos remision activa",
-      "ID sede",
-    ],
-  ];
-
+  const siteRows: ExportRow[] = [];
   for (const site of [...sites].sort((a, b) => String(a.name ?? a.id).localeCompare(String(b.name ?? b.id), "es"))) {
     const siteAreas = areas.filter((area) => area.site_id === site.id);
     const siteLocations = locations.filter((location) => location.site_id === site.id);
@@ -1644,18 +1556,6 @@ export async function GET() {
     ]);
   }
 
-  const areaRows: Array<Array<ExcelValue | ExcelCell>> = [
-    [
-      "Sede",
-      "Area",
-      "Kind",
-      "Uso remision segun kind",
-      "Reglas de proposito",
-      "ID area",
-      "ID sede",
-    ],
-  ];
-
   const areaKindByCode = new Map(areaKinds.map((kind) => [kind.code, kind]));
   const purposeRulesBySiteKind = new Map<string, SiteAreaPurposeRuleRow[]>();
   for (const rule of siteAreaPurposeRules) {
@@ -1665,6 +1565,7 @@ export async function GET() {
     purposeRulesBySiteKind.set(key, current);
   }
 
+  const areaRows: ExportRow[] = [];
   for (const area of [...areas].sort((a, b) => siteName(siteById, a.site_id).localeCompare(siteName(siteById, b.site_id), "es"))) {
     const kind = area.kind ? areaKindByCode.get(area.kind) : null;
     const rules = purposeRulesBySiteKind.get(`${area.site_id ?? ""}|${area.kind ?? ""}`) ?? [];
@@ -1672,23 +1573,21 @@ export async function GET() {
       siteName(siteById, area.site_id),
       area.name ?? "",
       area.kind ?? "",
-      kind?.use_for_remission ? "Si" : "No",
+      kind?.use_for_remission ? { value: "Si", tone: "good" } : { value: "No", tone: "muted" },
       rules.map((rule) => `${rule.purpose ?? ""}: ${rule.is_enabled ? "Si" : "No"}`).join(" · "),
       area.id,
       area.site_id ?? "",
     ]);
   }
 
-  const alertRows: Array<Array<ExcelValue | ExcelCell>> = [
-    ["Severidad", "Categoria", "Mensaje", "Producto", "Sede", "Referencia"],
-  ];
+  const alertRows: ExportRow[] = [];
 
   for (const product of products) {
     if (product.is_active === false) continue;
 
     if (!productIdsWithManualPresentation.has(product.id)) {
       alertRows.push([
-        { value: "Media", styleId: "Warn" },
+        { value: "Media", tone: "warn" },
         "Catalogo",
         "Producto activo sin presentacion manual activa.",
         product.name ?? product.id,
@@ -1706,7 +1605,7 @@ export async function GET() {
 
     if (diagnostic !== "Deberia aparecer en solicitud") {
       alertRows.push([
-        diagnostic.includes("No aparece") ? { value: "Alta", styleId: "Bad" } : { value: "Media", styleId: "Warn" },
+        diagnostic.includes("No aparece") ? { value: "Alta", tone: "bad" } : { value: "Media", tone: "warn" },
         "Remisiones por sede",
         diagnostic,
         product.name ?? product.id,
@@ -1720,7 +1619,7 @@ export async function GET() {
     const location = row.location_id ? locationById.get(row.location_id) : null;
     if (!location && Number(row.current_qty ?? 0) !== 0) {
       alertRows.push([
-        { value: "Alta", styleId: "Bad" },
+        { value: "Alta", tone: "bad" },
         "Stock LOC",
         "Hay stock asociado a un LOC que no se encontro en inventory_locations.",
         productName(productById, row.product_id),
@@ -1734,7 +1633,7 @@ export async function GET() {
     const position = row.position_id ? positionById.get(row.position_id) : null;
     if (!position && Number(row.current_qty ?? 0) !== 0) {
       alertRows.push([
-        { value: "Alta", styleId: "Bad" },
+        { value: "Alta", tone: "bad" },
         "Stock posiciones",
         "Hay stock asociado a una posicion interna que no se encontro.",
         productName(productById, row.product_id),
@@ -1746,7 +1645,7 @@ export async function GET() {
 
   for (const warning of warnings) {
     alertRows.push([
-      { value: "Media", styleId: "Warn" },
+      { value: "Media", tone: "warn" },
       "Exportacion",
       warning,
       "",
@@ -1755,8 +1654,8 @@ export async function GET() {
     ]);
   }
 
-  if (alertRows.length === 1) {
-    alertRows.push([{ value: "OK", styleId: "Good" }, "Sistema", "No se detectaron alertas principales en la exportacion.", "", "", ""]);
+  if (!alertRows.length) {
+    alertRows.push([{ value: "OK", tone: "good" }, "Sistema", "No se detectaron alertas principales en la exportacion.", "", "", ""]);
   }
 
   const remissionEnabledSettings = productSiteSettings.filter((row) => row.remission_enabled === true);
@@ -1768,145 +1667,362 @@ export async function GET() {
     return acc + Number(row.current_qty ?? 0) * cost;
   }, 0);
 
-  const summaryRows: Array<Array<ExcelValue | ExcelCell>> = [
-    ["Indicador", "Valor", "Lectura"],
-    ["Generado por", generatedBy, `Fecha: ${nowBogotaLabel()}`],
-    ["Productos en catalogo", asNumberCell(products.length), "Incluye activos e inactivos."],
-    ["Productos operativos", asNumberCell(operationalProducts.length), "Excluye equipos/activos para remision."],
-    ["Sedes", asNumberCell(sites.length), "Base para remisiones, stock y operacion."],
-    ["Areas", asNumberCell(areas.length), "Areas operativas por sede."],
-    ["LOCs", asNumberCell(locations.length), "Ubicaciones fisicas de inventario."],
-    ["Posiciones internas", asNumberCell(locationPositions.length), "Niveles, estanterias, bins o ubicaciones internas."],
-    ["Productos con remision activa por sede", asNumberCell(remissionEnabledSettings.length), "Filas de product_site_settings con remission_enabled."],
-    ["Registros stock por sede", asNumberCell(stockBySite.length), "inventory_stock_by_site."],
-    ["Registros stock por LOC", asNumberCell(stockByLocation.length), "inventory_stock_by_location."],
-    ["Registros stock por posicion", asNumberCell(stockByPosition.length), "inventory_stock_by_position."],
-    ["Registros stock por presentacion", asNumberCell(stockByUomProfile.length), "inventory_stock_by_uom_profile."],
-    ["Valor estimado de stock", asMoneyCell(stockValue), "Cantidad por sede x costo actual del producto."],
-    ["Alertas", asNumberCell(alertRows.length - 1), "Revisar la hoja Alertas."],
-    ["", "", ""],
-    [{ value: "Indice de hojas", styleId: "Section" }, "", ""],
-    ["Catalogo maestro", "Productos, tipo, unidades, costo, proveedor principal y presentacion de remision.", ""],
-    ["Proveedores compra", "Detalle proveedor-producto, precios y presentaciones de compra.", ""],
-    ["Presentaciones", "Perfiles UOM/presentaciones fisicas y contextos de uso.", ""],
-    ["Remisiones por sede", "Configuracion de cada producto por sede y diagnostico de aparicion en solicitud.", ""],
-    ["Stock por sede", "Existencia agregada por sede.", ""],
-    ["Stock por LOC", "Existencia por ubicacion fisica.", ""],
-    ["Stock posiciones", "Existencia por ubicacion interna/nivel/estanteria.", ""],
-    ["Stock presentaciones", "Existencia por presentacion fisica en LOC/posicion.", ""],
-    ["Sedes", "Resumen operativo por sede.", ""],
-    ["Areas", "Areas operativas, kinds y reglas de proposito.", ""],
-    ["LOCs", "Inventario de ubicaciones fisicas.", ""],
-    ["Posiciones", "Inventario de ubicaciones internas.", ""],
-    ["Alertas", "Problemas de configuracion o referencias incompletas.", ""],
-  ];
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "VENTO GROUP";
+  workbook.company = "VENTO GROUP";
+  workbook.subject = "NEXO · Libro maestro operativo";
+  workbook.title = "NEXO · Libro maestro operativo";
+  workbook.created = new Date();
+  workbook.modified = new Date();
 
-  const workbook = excelWorkbook([
+  const summary = addSummaryWorksheet({
+    workbook,
+    generatedBy,
+    alertCount: alertRows.length,
+    metrics: [
+      { label: "Productos en catálogo", value: products.length, detail: "Incluye activos e inactivos." },
+      { label: "Productos operativos", value: operationalProducts.length, detail: "Excluye equipos/activos para remisión." },
+      { label: "Sedes", value: sites.length, detail: "Base para remisiones, stock y operación." },
+      { label: "Áreas", value: areas.length, detail: "Áreas operativas por sede." },
+      { label: "LOCs", value: locations.length, detail: "Ubicaciones físicas de inventario." },
+      { label: "Posiciones internas", value: locationPositions.length, detail: "Niveles, estanterías, bins o ubicaciones internas." },
+      { label: "Remisiones activas por sede", value: remissionEnabledSettings.length, detail: "Filas de product_site_settings con remission_enabled." },
+      { label: "Stock por sede", value: stockBySite.length, detail: "Registros en inventory_stock_by_site." },
+      { label: "Stock por LOC", value: stockByLocation.length, detail: "Registros en inventory_stock_by_location." },
+      { label: "Stock por posición", value: stockByPosition.length, detail: "Registros en inventory_stock_by_position." },
+      { label: "Stock por presentación", value: stockByUomProfile.length, detail: "Registros en inventory_stock_by_uom_profile." },
+      { label: "Valor estimado stock", value: stockValue, detail: "Cantidad por sede x costo actual.", tone: "good" },
+      { label: "Alertas", value: alertRows.length, detail: "Revisar hoja Alertas.", tone: alertRows.length > 0 ? "warn" : "good" },
+    ],
+    indexRows: [
+      ["Catálogo maestro", "Productos, clasificación, unidades, costos, proveedor principal y presentación de remisión."],
+      ["Proveedores compra", "Detalle proveedor-producto, precios, impuestos y presentaciones de compra."],
+      ["Presentaciones", "Perfiles UOM/presentaciones físicas y contextos de uso."],
+      ["Remisiones por sede", "Configuración de cada producto por sede y diagnóstico de aparición en solicitud."],
+      ["Stock por sede", "Existencia agregada por sede."],
+      ["Stock por LOC", "Existencia por ubicación física."],
+      ["Stock posiciones", "Existencia por ubicación interna, nivel o estantería."],
+      ["Stock presentaciones", "Existencia por presentación física en LOC o posición."],
+      ["Sedes", "Resumen operativo por sede."],
+      ["Áreas", "Áreas operativas, kinds y reglas de propósito."],
+      ["LOCs", "Inventario de ubicaciones físicas."],
+      ["Posiciones", "Inventario de ubicaciones internas."],
+      ["Alertas", "Problemas de configuración o referencias incompletas."],
+    ],
+  });
+  await tryAddLogo(workbook, summary);
+
+  const sheetDefinitions: ExportSheet[] = [
     {
-      name: "Resumen",
-      title: "VENTO GROUP · NEXO",
-      subtitle: "Libro maestro operativo · Catalogo, remisiones, sedes, areas, LOCs, posiciones internas y stock",
-      columns: [190, 140, 420],
-      rows: summaryRows,
-    },
-    {
-      name: "Catalogo maestro",
-      title: "VENTO GROUP · Catalogo maestro",
-      subtitle: "Productos, clasificacion, unidades, costos y proveedor principal",
-      columns: [260, 150, 120, 110, 95, 95, 95, 220, 90, 90, 120, 170, 90, 230],
+      name: "Catálogo maestro",
+      title: "VENTO GROUP · Catálogo maestro",
+      subtitle: "Productos, clasificación, unidades, costos y proveedor principal",
+      tabColor: BRAND.magenta,
+      columns: [
+        { header: "Producto", width: 34 },
+        { header: "Tipo item", width: 20 },
+        { header: "Inventario", width: 16 },
+        { header: "SKU", width: 14 },
+        { header: "Unidad base", width: 13 },
+        { header: "Unidad stock", width: 13 },
+        { header: "Costo stock", width: 14, numFmt: '"$" #,##0.00' },
+        { header: "Proveedor principal", width: 28 },
+        { header: "Precio compra", width: 14, numFmt: '"$" #,##0.00' },
+        { header: "Precio neto", width: 14, numFmt: '"$" #,##0.00' },
+        { header: "Tiene presentación manual", width: 18 },
+        { header: "Presentación remisión", width: 24 },
+        { header: "Estado", width: 13 },
+        { header: "ID producto", width: 36 },
+      ],
       rows: catalogRows,
     },
     {
       name: "Proveedores compra",
       title: "VENTO GROUP · Proveedores y compra",
       subtitle: "Detalle proveedor-producto, precios, impuestos y presentaciones de compra",
-      columns: [260, 150, 100, 220, 90, 90, 90, 80, 65, 80, 110, 120, 130, 90, 90],
+      tabColor: BRAND.rose,
+      columns: [
+        { header: "Producto", width: 34 },
+        { header: "Tipo item", width: 20 },
+        { header: "SKU", width: 14 },
+        { header: "Proveedor", width: 30 },
+        { header: "Proveedor primario", width: 14 },
+        { header: "Precio compra", width: 14, numFmt: '"$" #,##0.00' },
+        { header: "Precio neto sin IVA", width: 16, numFmt: '"$" #,##0.00' },
+        { header: "Incluye IVA", width: 12 },
+        { header: "% IVA", width: 10, numFmt: "0.00" },
+        { header: "Moneda", width: 10 },
+        { header: "Presentación compra qty", width: 17, numFmt: "#,##0.###" },
+        { header: "Presentación compra unidad", width: 18 },
+        { header: "Unidad operativa compra", width: 18 },
+        { header: "Unidad stock", width: 13 },
+        { header: "Estado producto", width: 14 },
+      ],
       rows: suppliersRows,
     },
     {
       name: "Presentaciones",
-      title: "VENTO GROUP · Presentaciones fisicas",
+      title: "VENTO GROUP · Presentaciones físicas",
       subtitle: "Perfiles UOM usados para compras, remisiones, unidades operativas y stock",
-      columns: [260, 150, 210, 105, 110, 70, 70, 95, 95, 105, 90, 230, 230],
+      tabColor: "FF9E9AA6",
+      columns: [
+        { header: "Producto", width: 34 },
+        { header: "Tipo item", width: 20 },
+        { header: "Perfil / presentación", width: 28 },
+        { header: "Contexto uso", width: 16 },
+        { header: "Fuente", width: 16 },
+        { header: "Default", width: 10 },
+        { header: "Activa", width: 10 },
+        { header: "Cantidad input", width: 14, numFmt: "#,##0.###" },
+        { header: "Unidad input", width: 13 },
+        { header: "Cantidad base stock", width: 16, numFmt: "#,##0.###" },
+        { header: "Unidad stock", width: 13 },
+        { header: "ID perfil", width: 36 },
+        { header: "ID producto", width: 36 },
+      ],
       rows: presentationRows,
     },
     {
       name: "Remisiones por sede",
       title: "VENTO GROUP · Remisiones por sede",
-      subtitle: "Auditoria para validar que cada producto aparezca correctamente en solicitud de remision",
-      columns: [170, 95, 260, 145, 95, 85, 90, 85, 190, 105, 105, 95, 90, 180, 120, 90, 95, 190, 90, 95, 240, 140, 230, 230],
+      subtitle: "Auditoría para validar que cada producto aparezca correctamente en solicitud de remisión",
+      tabColor: BRAND.magenta,
+      columns: [
+        { header: "Sede", width: 22 },
+        { header: "Tipo sede", width: 13 },
+        { header: "Producto", width: 34 },
+        { header: "Tipo item", width: 20 },
+        { header: "SKU", width: 14 },
+        { header: "Remisión activa", width: 14 },
+        { header: "Config sede activa", width: 16 },
+        { header: "Producto activo", width: 15 },
+        { header: "Presentación mínima", width: 26 },
+        { header: "Cantidad presentación", width: 17, numFmt: "#,##0.###" },
+        { header: "Unidad presentación", width: 16 },
+        { header: "Cantidad base", width: 14, numFmt: "#,##0.###" },
+        { header: "Unidad stock", width: 13 },
+        { header: "Áreas destino", width: 24 },
+        { header: "Área por defecto", width: 18 },
+        { header: "Audiencia", width: 13 },
+        { header: "Producción local", width: 15 },
+        { header: "LOC producción/origen", width: 28 },
+        { header: "Mínimo stock", width: 14, numFmt: "#,##0.###" },
+        { header: "Stock sede", width: 14, numFmt: "#,##0.###" },
+        { header: "Diagnóstico solicitud", width: 36 },
+        { header: "Actualizado", width: 22 },
+        { header: "ID producto", width: 36 },
+        { header: "ID sede", width: 36 },
+      ],
       rows: remissionRows,
     },
     {
       name: "Stock por sede",
       title: "VENTO GROUP · Stock por sede",
       subtitle: "Existencia agregada por sede y valor estimado con costo actual",
-      columns: [170, 95, 260, 145, 95, 95, 90, 90, 100, 140, 230, 230],
+      tabColor: "FF14532D",
+      columns: [
+        { header: "Sede", width: 22 },
+        { header: "Tipo sede", width: 13 },
+        { header: "Producto", width: 34 },
+        { header: "Tipo item", width: 20 },
+        { header: "SKU", width: 14 },
+        { header: "Cantidad actual", width: 16, numFmt: "#,##0.###" },
+        { header: "Unidad stock", width: 13 },
+        { header: "Costo unitario", width: 14, numFmt: '"$" #,##0.00' },
+        { header: "Valor estimado", width: 16, numFmt: '"$" #,##0.00' },
+        { header: "Actualizado", width: 22 },
+        { header: "ID producto", width: 36 },
+        { header: "ID sede", width: 36 },
+      ],
       rows: stockSiteRows,
     },
     {
       name: "Stock por LOC",
       title: "VENTO GROUP · Stock por LOC",
-      subtitle: "Existencia por ubicacion fisica de inventario",
-      columns: [170, 230, 95, 100, 80, 260, 145, 95, 90, 100, 230, 230],
+      subtitle: "Existencia por ubicación física de inventario",
+      tabColor: "FF0F766E",
+      columns: [
+        { header: "Sede", width: 22 },
+        { header: "LOC", width: 32 },
+        { header: "Código LOC", width: 14 },
+        { header: "Tipo LOC", width: 14 },
+        { header: "LOC activo", width: 12 },
+        { header: "Producto", width: 34 },
+        { header: "Tipo item", width: 20 },
+        { header: "Cantidad actual", width: 16, numFmt: "#,##0.###" },
+        { header: "Unidad stock", width: 13 },
+        { header: "Valor estimado", width: 16, numFmt: '"$" #,##0.00' },
+        { header: "Actualizado", width: 22 },
+        { header: "ID LOC", width: 36 },
+        { header: "ID producto", width: 36 },
+      ],
       rows: stockLocationRows,
     },
     {
       name: "Stock posiciones",
       title: "VENTO GROUP · Stock por posiciones internas",
-      subtitle: "Existencia por estanteria, nivel, bin o ubicacion interna",
-      columns: [170, 220, 260, 100, 80, 260, 145, 95, 90, 100, 230, 230, 230],
+      subtitle: "Existencia por estantería, nivel, bin o ubicación interna",
+      tabColor: "FF0369A1",
+      columns: [
+        { header: "Sede", width: 22 },
+        { header: "LOC", width: 32 },
+        { header: "Posición interna", width: 36 },
+        { header: "Tipo posición", width: 16 },
+        { header: "Posición activa", width: 14 },
+        { header: "Producto", width: 34 },
+        { header: "Tipo item", width: 20 },
+        { header: "Cantidad actual", width: 16, numFmt: "#,##0.###" },
+        { header: "Unidad stock", width: 13 },
+        { header: "Valor estimado", width: 16, numFmt: '"$" #,##0.00' },
+        { header: "Actualizado", width: 22 },
+        { header: "ID posición", width: 36 },
+        { header: "ID LOC", width: 36 },
+        { header: "ID producto", width: 36 },
+      ],
       rows: stockPositionRows,
     },
     {
       name: "Stock presentaciones",
-      title: "VENTO GROUP · Stock por presentacion",
-      subtitle: "Presentaciones fisicas disponibles por LOC y posicion interna",
-      columns: [170, 220, 260, 260, 210, 110, 105, 105, 90, 100, 110, 230, 230, 230, 230],
+      title: "VENTO GROUP · Stock por presentación",
+      subtitle: "Presentaciones físicas disponibles por LOC y posición interna",
+      tabColor: "FF7C3AED",
+      columns: [
+        { header: "Sede", width: 22 },
+        { header: "LOC", width: 32 },
+        { header: "Posición interna", width: 36 },
+        { header: "Producto", width: 34 },
+        { header: "Presentación", width: 28 },
+        { header: "Cantidad presentación", width: 18, numFmt: "#,##0.###" },
+        { header: "Unidad presentación", width: 18 },
+        { header: "Cantidad base", width: 16, numFmt: "#,##0.###" },
+        { header: "Unidad stock", width: 13 },
+        { header: "Contexto", width: 14 },
+        { header: "Fuente perfil", width: 16 },
+        { header: "Actualizado", width: 22 },
+        { header: "ID perfil", width: 36 },
+        { header: "ID LOC", width: 36 },
+        { header: "ID posición", width: 36 },
+        { header: "ID producto", width: 36 },
+      ],
       rows: stockPresentationRows,
     },
     {
       name: "Sedes",
       title: "VENTO GROUP · Sedes",
       subtitle: "Resumen de estructura operativa por sede",
-      columns: [190, 110, 90, 90, 115, 125, 135, 140, 230],
+      tabColor: BRAND.black,
+      columns: [
+        { header: "Sede", width: 28 },
+        { header: "Tipo sede", width: 15 },
+        { header: "Áreas", width: 12, numFmt: "#,##0" },
+        { header: "LOCs", width: 12, numFmt: "#,##0" },
+        { header: "Posiciones internas", width: 18, numFmt: "#,##0" },
+        { header: "Productos con stock", width: 18, numFmt: "#,##0" },
+        { header: "Configuraciones remisión", width: 22, numFmt: "#,##0" },
+        { header: "Productos remisión activa", width: 22, numFmt: "#,##0" },
+        { header: "ID sede", width: 36 },
+      ],
       rows: siteRows,
     },
     {
-      name: "Areas",
-      title: "VENTO GROUP · Areas operativas",
-      subtitle: "Areas, kinds y reglas de uso para remisiones/operacion",
-      columns: [170, 220, 110, 120, 360, 230, 230],
+      name: "Áreas",
+      title: "VENTO GROUP · Áreas operativas",
+      subtitle: "Áreas, kinds y reglas de uso para remisiones/operación",
+      tabColor: BRAND.rose,
+      columns: [
+        { header: "Sede", width: 22 },
+        { header: "Área", width: 30 },
+        { header: "Kind", width: 16 },
+        { header: "Uso remisión según kind", width: 22 },
+        { header: "Reglas de propósito", width: 48 },
+        { header: "ID área", width: 36 },
+        { header: "ID sede", width: 36 },
+      ],
       rows: areaRows,
     },
     {
       name: "LOCs",
       title: "VENTO GROUP · LOCs",
-      subtitle: "Ubicaciones fisicas de inventario por sede",
-      columns: [170, 240, 95, 100, 110, 80, 80, 260, 75, 115, 115, 230],
+      subtitle: "Ubicaciones físicas de inventario por sede",
+      tabColor: "FF0F766E",
+      columns: [
+        { header: "Sede", width: 22 },
+        { header: "LOC", width: 32 },
+        { header: "Código", width: 14 },
+        { header: "Tipo", width: 14 },
+        { header: "Zona", width: 16 },
+        { header: "Pasillo", width: 12 },
+        { header: "Nivel", width: 12 },
+        { header: "Descripción", width: 34 },
+        { header: "Activo", width: 10 },
+        { header: "Posiciones internas", width: 18, numFmt: "#,##0" },
+        { header: "Productos con stock", width: 18, numFmt: "#,##0" },
+        { header: "ID LOC", width: 36 },
+      ],
       rows: locRows,
     },
     {
       name: "Posiciones",
       title: "VENTO GROUP · Posiciones internas",
-      subtitle: "Niveles, estanterias, bins o posiciones internas dentro de LOCs",
-      columns: [170, 230, 260, 100, 150, 105, 220, 80, 75, 115, 230, 230],
+      subtitle: "Niveles, estanterías, bins o posiciones internas dentro de LOCs",
+      tabColor: "FF0369A1",
+      columns: [
+        { header: "Sede", width: 22 },
+        { header: "LOC", width: 32 },
+        { header: "Posición interna", width: 36 },
+        { header: "Código", width: 14 },
+        { header: "Nombre", width: 22 },
+        { header: "Tipo", width: 16 },
+        { header: "Padre", width: 32 },
+        { header: "Orden", width: 10, numFmt: "#,##0" },
+        { header: "Activo", width: 10 },
+        { header: "Productos con stock", width: 18, numFmt: "#,##0" },
+        { header: "ID posición", width: 36 },
+        { header: "ID LOC", width: 36 },
+      ],
       rows: positionsRows,
     },
     {
       name: "Alertas",
-      title: "VENTO GROUP · Alertas de configuracion",
-      subtitle: "Puntos a revisar para catalogo, remisiones, stock y referencias operativas",
-      columns: [90, 150, 420, 260, 170, 260],
+      title: "VENTO GROUP · Alertas de configuración",
+      subtitle: "Puntos a revisar para catálogo, remisiones, stock y referencias operativas",
+      tabColor: "FFDC2626",
+      columns: [
+        { header: "Severidad", width: 12 },
+        { header: "Categoría", width: 22 },
+        { header: "Mensaje", width: 60 },
+        { header: "Producto", width: 34 },
+        { header: "Sede", width: 22 },
+        { header: "Referencia", width: 36 },
+      ],
       rows: alertRows,
     },
-  ]);
+  ];
 
-  return new NextResponse(workbook, {
+  for (const sheet of sheetDefinitions) {
+    addDataWorksheet(workbook, sheet);
+  }
+
+  workbook.eachSheet((worksheet) => {
+    worksheet.eachRow((row) => {
+      row.eachCell((cell) => {
+        cell.font = {
+          name: "Aptos",
+          size: cell.font?.size ?? 10,
+          bold: cell.font?.bold ?? false,
+          color: cell.font?.color,
+        };
+      });
+    });
+  });
+
+  const buffer = await workbook.xlsx.writeBuffer();
+
+  return new NextResponse(buffer as unknown as BodyInit, {
     status: 200,
     headers: {
-      "Content-Type": "application/vnd.ms-excel; charset=utf-8",
-      "Content-Disposition": 'attachment; filename="nexo-libro-maestro-operativo.xls"',
+      "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      "Content-Disposition": 'attachment; filename="nexo-libro-maestro-operativo.xlsx"',
       "Cache-Control": "no-store",
     },
   });
