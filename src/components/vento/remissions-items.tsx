@@ -254,6 +254,11 @@ export function RemissionsItems({
         const selectedAreaLabel =
           areaOptions.find((option) => option.value === (row.areaKind || defaultAreaKind))?.label ??
           (row.areaKind || defaultAreaKind);
+        const normalizedSelectedAreaLabel = String(selectedAreaLabel ?? "").trim();
+        const areaDestinationDisplay =
+          lockAreaKind && normalizedSelectedAreaLabel && normalizedSelectedAreaLabel.toLowerCase() !== "todos"
+            ? normalizedSelectedAreaLabel
+            : "Recepción global";
         const availableReference = Number(referenceMeta?.currentQty ?? 0);
         const referenceComparison =
           row.productId && referenceSiteName
@@ -374,13 +379,11 @@ export function RemissionsItems({
                 </label>
 
                 <label className="flex flex-col gap-1 md:col-span-3">
-                  <span className="ui-label">
-                    {siteMode === "simple" ? "Destino de la remision" : "Area operativa"}
-                  </span>
+                  <span className="ui-label">Área destino en sede</span>
                   {siteMode === "simple" || lockAreaKind ? (
                     <>
                       <div className="ui-input flex h-10 items-center bg-[linear-gradient(180deg,rgba(255,251,235,0.9)_0%,rgba(255,255,255,0.92)_100%)] font-semibold text-[var(--ui-text)]">
-                        {lockAreaKind ? selectedAreaLabel || "Area asignada" : "Solicitud global"}
+                        {areaDestinationDisplay}
                       </div>
                       <input type="hidden" name="item_area_kind" value={row.areaKind || defaultAreaKind} />
                     </>
@@ -397,14 +400,17 @@ export function RemissionsItems({
                         )
                       }
                     >
-                      <option value="">Area (opcional)</option>
+                      <option value="">Área destino (opcional)</option>
                       {areaOptions.map((option) => (
                         <option key={option.value} value={option.value}>
-                          {option.label}
+                          {option.value === "general" ? "Recepción global" : option.label}
                         </option>
                       ))}
                     </select>
                   )}
+                  <span className="text-xs text-[var(--ui-muted)]">
+                    Indica dónde se recibe en la sede solicitante. El área/LOC de preparación se define en la ficha del producto y en despacho.
+                  </span>
                 </label>
 
                 <input type="hidden" name="item_quantity_in_input" value={row.quantity} />
