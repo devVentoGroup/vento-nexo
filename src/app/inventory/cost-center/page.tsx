@@ -19,6 +19,8 @@ type SearchParams = {
   ok?: string;
   error?: string;
   pricing_status?: string;
+  document_date?: string;
+  result?: string;
 };
 
 type RestockRequestRow = {
@@ -91,11 +93,19 @@ function asText(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
 }
 
-function buildReturnUrl(status: { ok?: string; error?: string; pricingStatus?: string }) {
+function buildReturnUrl(status: {
+  ok?: string;
+  error?: string;
+  pricingStatus?: string;
+  documentDate?: string;
+  result?: string;
+}) {
   const params = new URLSearchParams();
   if (status.ok) params.set("ok", status.ok);
   if (status.error) params.set("error", status.error);
   if (status.pricingStatus) params.set("pricing_status", status.pricingStatus);
+  if (status.documentDate) params.set("document_date", status.documentDate);
+  if (status.result) params.set("result", status.result);
   const query = params.toString();
   return query ? `${PAGE_PATH}?${query}` : PAGE_PATH;
 }
@@ -118,6 +128,36 @@ function formatDate(value: string | null | undefined) {
     timeStyle: "short",
     timeZone: "America/Bogota",
   }).format(parsed);
+}
+
+function todayBogotaDateInput() {
+  return new Intl.DateTimeFormat("en-CA", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: "America/Bogota",
+  }).format(new Date());
+}
+
+function parseGenerationResult(value: string | null | undefined) {
+  if (!value) return null;
+
+  try {
+    return JSON.parse(safeDecodeURIComponent(value)) as Record<string, unknown>;
+  } catch {
+    return null;
+  }
+}
+
+function generationNumber(result: Record<string, unknown> | null, key: string) {
+  const value = result?.[key];
+  const parsed = Number(value ?? 0);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function generationText(result: Record<string, unknown> | null, key: string) {
+  const value = result?.[key];
+  return typeof value === "string" ? value : "";
 }
 
 function siteLabel(row: SiteRow | null | undefined) {
@@ -236,6 +276,59 @@ async function repriceInternalRemission(formData: FormData) {
   redirect(buildReturnUrl({ ok: "repriced", pricingStatus }));
 }
 
+async function previewManualInternalDocuments(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireInternalInvoiceGenerator();
+
+  const documentDate = asText(formData.get("document_date"));
+  const pricingStatus = asText(formData.get("pricing_status"));
+
+  const { data, error } = await supabase.rpc("preview_manual_daily_internal_pos_documents", {
+    p_document_date: documentDate || null,
+  });
+
+  if (error) {
+    redirect(buildReturnUrl({ error: error.message, pricingStatus, documentDate }));
+  }
+
+  redirect(
+    buildReturnUrl({
+      ok: "manual_preview",
+      pricingStatus,
+      documentDate,
+      result: JSON.stringify(data ?? {}),
+    })
+  );
+}
+
+async function generateManualInternalDocuments(formData: FormData) {
+  "use server";
+
+  const { supabase } = await requireInternalInvoiceGenerator();
+
+  const documentDate = asText(formData.get("document_date"));
+  const pricingStatus = asText(formData.get("pricing_status"));
+
+  const { data, error } = await supabase.rpc("generate_manual_daily_internal_pos_documents", {
+    p_document_date: documentDate || null,
+  });
+
+  if (error) {
+    redirect(buildReturnUrl({ error: error.message, pricingStatus, documentDate }));
+  }
+
+  revalidatePath(PAGE_PATH);
+  redirect(
+    buildReturnUrl({
+      ok: "manual_generated",
+      pricingStatus,
+      documentDate,
+      result: JSON.stringify(data ?? {}),
+    })
+  );
+}
+
 export default async function CostCenterPage({
   searchParams,
 }: {
@@ -243,10 +336,17 @@ export default async function CostCenterPage({
 }) {
   const sp = (await searchParams) ?? {};
   const selectedPricingStatus = String(sp.pricing_status ?? "all").trim() || "all";
+  const selectedDocumentDate =
+    String(sp.document_date ?? "").trim() || todayBogotaDateInput();
+  const generationResult = parseGenerationResult(sp.result);
   const okMsg =
     sp.ok === "repriced"
       ? "Remisión revalorizada."
-      : "";
+      : sp.ok === "manual_preview"
+        ? "Vista previa del corte generada."
+        : sp.ok === "manual_generated"
+          ? "Comprobantes internos generados."
+          : "";
   const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
 
   const { supabase } = await requireAppAccess({
@@ -447,6 +547,157 @@ export default async function CostCenterPage({
         <div className="mt-6 ui-alert ui-alert--warn">
           Puedes revisar estados de centros de costo, pero no tienes permiso para ver montos internos.
         </div>
+      ) : null}
+
+      {canGenerate ? (
+        <section className="mt-6 rounded-[1.75rem] border border-emerald-200/80 bg-[linear-gradient(135deg,#ffffff_0%,#f8fffb_70%,#ecfdf5_100%)] p-5 shadow-sm">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div>
+              <div className="text-lg font-bold text-[var(--ui-text)]">
+                Generar comprobantes internos del día
+              </div>
+              <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--ui-muted)]">
+                Usa el corte de las 5:00 p.m. Colombia para crear un comprobante interno
+                por comprador. Primero revisa la vista previa; luego genera el corte manualmente
+                cuando las remisiones estén cerradas, valorizadas y sin diferencias pendientes.
+              </p>
+            </div>
+
+            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
+              Corte manual
+            </span>
+          </div>
+
+          <div className="mt-4 grid gap-3 lg:grid-cols-2">
+            <form
+              action={previewManualInternalDocuments}
+              className="rounded-2xl border border-[var(--ui-border)] bg-white/90 p-4 shadow-sm"
+            >
+              <input type="hidden" name="pricing_status" value={selectedPricingStatus} />
+
+              <label className="flex flex-col gap-1">
+                <span className="ui-label">Fecha operativa</span>
+                <input
+                  name="document_date"
+                  type="date"
+                  defaultValue={selectedDocumentDate}
+                  className="ui-input"
+                />
+              </label>
+
+              <p className="mt-2 text-xs leading-5 text-[var(--ui-muted)]">
+                La vista previa no escribe datos. Solo calcula qué remisiones entrarían al corte.
+              </p>
+
+              <button type="submit" className="ui-btn ui-btn--ghost mt-4">
+                Vista previa
+              </button>
+            </form>
+
+            <form
+              action={generateManualInternalDocuments}
+              className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4 shadow-sm"
+            >
+              <input type="hidden" name="pricing_status" value={selectedPricingStatus} />
+
+              <label className="flex flex-col gap-1">
+                <span className="ui-label">Fecha operativa</span>
+                <input
+                  name="document_date"
+                  type="date"
+                  defaultValue={selectedDocumentDate}
+                  className="ui-input bg-white"
+                />
+              </label>
+
+              <p className="mt-2 text-xs leading-5 text-emerald-900">
+                Esta acción crea documentos internos, líneas y marca las remisiones como facturadas.
+                Úsala solo después de revisar el corte.
+              </p>
+
+              <button type="submit" className="ui-btn ui-btn--brand mt-4">
+                Generar comprobantes
+              </button>
+            </form>
+          </div>
+
+          {generationResult ? (
+            <div className="mt-4 rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <div className="text-sm font-bold text-[var(--ui-text)]">
+                    Resultado del corte
+                  </div>
+                  <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                    Fecha documento: {generationText(generationResult, "document_date") || selectedDocumentDate}
+                    {generationText(generationResult, "cutoff_at")
+                      ? ` · Corte: ${formatDate(generationText(generationResult, "cutoff_at"))}`
+                      : ""}
+                  </div>
+                </div>
+
+                <span className="ui-chip ui-chip--info">
+                  {generationResult.dry_run ? "Vista previa" : "Generado"}
+                </span>
+              </div>
+
+              <div className="mt-4 grid gap-3 md:grid-cols-5">
+                <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
+                    Remisiones
+                  </div>
+                  <div className="mt-1 text-2xl font-bold text-[var(--ui-text)]">
+                    {generationNumber(generationResult, "candidate_remissions") ||
+                      generationNumber(generationResult, "remissions_invoiced")}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
+                    Líneas
+                  </div>
+                  <div className="mt-1 text-2xl font-bold text-[var(--ui-text)]">
+                    {generationNumber(generationResult, "candidate_lines") ||
+                      generationNumber(generationResult, "lines_created")}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
+                    Documentos
+                  </div>
+                  <div className="mt-1 text-2xl font-bold text-[var(--ui-text)]">
+                    {generationNumber(generationResult, "documents_created")}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
+                    Total
+                  </div>
+                  <div className="mt-1 text-sm font-bold text-[var(--ui-text)]">
+                    {canViewAmounts
+                      ? formatMoney(
+                          generationNumber(generationResult, "candidate_total") ||
+                            generationNumber(generationResult, "total")
+                        )
+                      : "Restringido"}
+                  </div>
+                </div>
+
+                <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-3">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
+                    Bloqueadas
+                  </div>
+                  <div className="mt-1 text-sm font-bold text-[var(--ui-text)]">
+                    {generationNumber(generationResult, "blocked_unpriced_remissions")} sin precio ·{" "}
+                    {generationNumber(generationResult, "blocked_variance_remissions")} con diferencias
+                  </div>
+                </div>
+              </div>
+            </div>
+          ) : null}
+        </section>
       ) : null}
 
       <section className="mt-6 rounded-[1.75rem] border border-[var(--ui-border)] bg-white p-5 shadow-sm">
