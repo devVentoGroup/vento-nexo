@@ -92,9 +92,9 @@ export default async function RemissionDetailPage({
           : sp.ok === "line_shortcut"
             ? "Línea actualizada."
             : sp.ok === "loc_selected"
-              ? "Área seleccionada."
+              ? "Ubicación seleccionada."
               : sp.ok === "split_item"
-                ? "Línea partida. Ya puedes asignar un área distinta por línea."
+                ? "Distribución creada. Ya puedes asignar otra ubicación por parte."
                 : sp.ok === "status_updated"
                   ? "Estado actualizado."
                   : sp.ok === "preparing_started"
@@ -157,7 +157,7 @@ export default async function RemissionDetailPage({
   const { data: items } = await supabase
     .from("restock_request_items")
     .select(
-      "id, product_id, quantity, unit, input_qty, input_unit_code, stock_unit_code, source_location_id, prepared_quantity, shipped_quantity, received_quantity, shortage_quantity, notes, item_status, production_area_kind, product:products(name,unit,stock_unit_code)"
+      "id, product_id, quantity, unit, input_qty, input_unit_code, input_uom_profile_id, stock_unit_code, source_location_id, prepared_quantity, shipped_quantity, received_quantity, shortage_quantity, notes, item_status, production_area_kind, product:products(name,unit,stock_unit_code)"
     )
     .eq("request_id", id)
     .order("created_at", { ascending: true });
@@ -195,9 +195,11 @@ export default async function RemissionDetailPage({
     : ({
       stockBySiteMap: new Map<string, number>(),
       stockByLocValueMap: new Map<string, number>(),
+      stockByPositionValueMap: new Map<string, number>(),
       stockByLocCandidates: new Map<string, never[]>(),
       originLocRows: [] as LocRow[],
       originLocById: new Map<string, LocRow>(),
+      positionLabels: new Map<string, string>(),
     } as Awaited<ReturnType<typeof loadOriginStockContext>>);
 
   const {
@@ -519,16 +521,41 @@ export default async function RemissionDetailPage({
       return {
         id: item.id,
         baseItemId: item.id,
+        productId: item.product_id,
         productName: item.product?.name ?? item.product_id,
         requestedQty: roundQuantity(Number(item.quantity ?? 0)),
         unitLabel: vm.itemUnitLabel,
+        inputQty: roundQuantity(Number(item.input_qty ?? 0)),
+        presentationQty: roundQuantity(Number(item.input_qty ?? 0)),
+        inputUomProfileId:
+          String(
+            (item as { input_uom_profile_id?: string | null }).input_uom_profile_id ?? ""
+          ).trim() || null,
         selectedLocId: String(item.source_location_id ?? ""),
         recommendedLocId: vm.bestLocCandidate?.locationId ?? "",
-        locOptions: vm.locCandidates.map((loc) => ({
-          id: loc.locationId,
-          label: loc.label,
-          qty: loc.qty,
-        })),
+        locOptions: vm.locCandidates.map((loc) => {
+          const locWithExtras = loc as typeof loc & {
+            positions?: Array<{ positionId: string; label: string; qty: number }>;
+            positionOptions?: Array<{ positionId: string; label: string; qty: number }>;
+          };
+          const positions = (
+            locWithExtras.positions ??
+            locWithExtras.positionOptions ??
+            []
+          ).map((position) => ({
+            id: position.positionId,
+            label: position.label,
+            qty: position.qty,
+          }));
+
+          return {
+            id: loc.locationId,
+            label: loc.label,
+            qty: loc.qty,
+            positions,
+            positionOptions: positions,
+          };
+        }),
         dispatchQty: plannedDispatchQtyFromItem(item),
         shortageReason: parseShortageReasonFromItemNotes(item.notes),
         isVirtualSplit: false,

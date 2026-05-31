@@ -3,18 +3,39 @@
 import Link from "next/link";
 import { useMemo, useState } from "react";
 
-type LocOption = {
+type InternalPositionOption = {
   id: string;
   label: string;
   qty: number;
 };
 
+type LocOption = {
+  id: string;
+  label: string;
+  qty: number;
+  /**
+   * Posiciones internas dentro del LOC: estantería, nivel, bin, zona, etc.
+   * El padre puede enviar `positions` o `positionOptions` para mantener compatibilidad.
+   */
+  positions?: InternalPositionOption[];
+  positionOptions?: InternalPositionOption[];
+};
+
 type DraftLine = {
   id: string;
   baseItemId: string;
+  productId?: string;
   productName: string;
   requestedQty: number;
   unitLabel: string;
+  /**
+   * Datos opcionales de presentación física. Si el padre los envía,
+   * el plan de salida conserva presentación_qty + base_qty.
+   */
+  inputQty?: number;
+  presentationQty?: number;
+  inputUomProfileId?: string | null;
+  uomProfileId?: string | null;
   selectedLocId: string;
   recommendedLocId: string;
   locOptions: LocOption[];
@@ -28,6 +49,19 @@ type SplitDraft = {
   tempLineId: string;
   sourceItemId: string;
   splitQuantity: number;
+};
+
+type PickPayload = {
+  itemId: string;
+  baseItemId: string;
+  productId?: string;
+  sourceLocationId: string;
+  sourceLocationPositionId?: string | null;
+  uomProfileId?: string | null;
+  presentationQty?: number;
+  baseQty: number;
+  shortageReason?: string;
+  note?: string | null;
 };
 
 type PrepareWorkbenchProps = {
@@ -151,6 +185,101 @@ function parseQty(value: string, fallback = 0) {
   return Number.isFinite(n) ? roundQty(n) : fallback;
 }
 
+function getLineUomProfileId(line: DraftLine): string {
+  return String(line.inputUomProfileId ?? line.uomProfileId ?? "").trim();
+}
+
+function getRequestedPresentationQty(line: DraftLine): number {
+  return roundQty(Number(line.inputQty ?? line.presentationQty ?? 0));
+}
+
+function getPresentationQtyForDispatch(line: DraftLine, dispatchQty: number): number {
+  const requestedPresentationQty = getRequestedPresentationQty(line);
+  const requestedBaseQty = roundQty(Number(line.requestedQty ?? 0));
+
+  if (!getLineUomProfileId(line) || requestedPresentationQty <= 0 || requestedBaseQty <= 0) {
+    return 0;
+  }
+
+  return roundQty((roundQty(dispatchQty) / requestedBaseQty) * requestedPresentationQty);
+}
+
+function getPositionOptionsForLoc(loc?: LocOption | null): InternalPositionOption[] {
+  const candidates = loc?.positions ?? loc?.positionOptions ?? [];
+  return candidates
+    .map((position) => ({
+      ...position,
+      qty: roundQty(Number(position.qty ?? 0)),
+    }))
+    .filter((position) => position.id && position.qty > 0)
+    .sort((a, b) => {
+      // Regla operativa: consumir primero donde queda menos stock positivo.
+      if (a.qty !== b.qty) return a.qty - b.qty;
+      return a.label.localeCompare(b.label);
+    });
+}
+
+function buildPositionPlan(line: DraftLine): Array<{ positionId: string; label: string; qty: number }> {
+  const loc = line.locOptions.find((entry) => entry.id === line.selectedLocId);
+  const positions = getPositionOptionsForLoc(loc);
+  const targetQty = roundQty(clampQty(Number(line.dispatchQty ?? 0), 0, Number(line.requestedQty ?? 0)));
+  let remaining = targetQty;
+  const plan: Array<{ positionId: string; label: string; qty: number }> = [];
+
+  if (!loc || targetQty <= 0 || positions.length <= 0) return plan;
+
+  for (const position of positions) {
+    if (remaining <= 0) break;
+    const qty = roundQty(Math.min(remaining, Number(position.qty ?? 0)));
+    if (qty <= 0) continue;
+    plan.push({ positionId: position.id, label: position.label, qty });
+    remaining = roundQty(remaining - qty);
+  }
+
+  return plan;
+}
+
+function buildPicksForLine(line: DraftLine): PickPayload[] {
+  const baseQty = roundQty(clampQty(Number(line.dispatchQty ?? 0), 0, Number(line.requestedQty ?? 0)));
+  const sourceLocationId = String(line.selectedLocId ?? "").trim();
+
+  if (baseQty <= 0 || !sourceLocationId) return [];
+
+  const loc = line.locOptions.find((entry) => entry.id === sourceLocationId);
+  const positionPlan = buildPositionPlan(line);
+  const uomProfileId = getLineUomProfileId(line) || null;
+
+  const buildPick = (qty: number, sourceLocationPositionId?: string | null): PickPayload => {
+    const presentationQty = getPresentationQtyForDispatch(line, qty);
+    return {
+      itemId: line.baseItemId,
+      baseItemId: line.baseItemId,
+      productId: line.productId,
+      sourceLocationId,
+      sourceLocationPositionId: sourceLocationPositionId || null,
+      uomProfileId: uomProfileId && presentationQty > 0 ? uomProfileId : null,
+      presentationQty: uomProfileId && presentationQty > 0 ? presentationQty : 0,
+      baseQty: qty,
+      shortageReason: line.shortageReason.trim(),
+      note: line.shortageReason.trim() ? `FALTANTE ORIGEN: ${line.shortageReason.trim()}` : null,
+    };
+  };
+
+  if (loc && positionPlan.length > 0) {
+    const plannedQty = roundQty(positionPlan.reduce((acc, entry) => acc + entry.qty, 0));
+    const picks = positionPlan.map((entry) => buildPick(entry.qty, entry.positionId));
+
+    // Si las posiciones internas no cubren todo el despacho, dejamos el resto contra el LOC sin posición.
+    // Esto permite convivir con stock no posicionado dentro del mismo LOC.
+    const remainder = roundQty(baseQty - plannedQty);
+    if (remainder > 0) picks.push(buildPick(remainder, null));
+
+    return picks;
+  }
+
+  return [buildPick(baseQty, null)];
+}
+
 function getLineTone(line: DraftLine) {
   if (!line.selectedLocId && line.dispatchQty > 0) return "pending";
   if (line.dispatchQty < 0 || line.dispatchQty > line.requestedQty) return "error";
@@ -165,7 +294,10 @@ function getLineToneLabel(tone: "pending" | "warn" | "error" | "ok") {
   return "Pendiente";
 }
 
-/** Una línea se puede partir en dos ítems si hay más de 1 unidad solicitada y no es la fila hija recién creada en el borrador. */
+/**
+ * Compatibilidad temporal: permite dividir visualmente una línea para cubrirla desde varias ubicaciones.
+ * La nueva persistencia ya no duplica la línea real; genera picks contra la línea base.
+ */
 function canSplitDraftLine(line: DraftLine): boolean {
   if (line.isVirtualSplit) return false;
   return roundQty(line.requestedQty) > 1;
@@ -184,8 +316,8 @@ function sumLocQtyForLine(line: DraftLine): number {
 }
 
 /**
- * Ninguna área tiene stock suficiente para el pedido sola, pero la suma entre áreas sí alcanza.
- * Indica que conviene partir la línea en lugar de forzar faltante en una sola área.
+ * Ninguna ubicación cubre todo el pedido sola, pero la suma entre ubicaciones sí alcanza.
+ * Indica que conviene preparar desde varias ubicaciones en lugar de forzar faltante.
  */
 function needsMultilocSplitHint(line: DraftLine): boolean {
   if (!canSplitDraftLine(line)) return false;
@@ -196,7 +328,7 @@ function needsMultilocSplitHint(line: DraftLine): boolean {
   return maxQ < rq && sumQ >= rq;
 }
 
-/** Cantidad sugerida para la nueva línea: lo que cubre el área más llena. */
+/** Cantidad sugerida para la nueva línea: lo que cubre el ubicación más llena. */
 function suggestedSplitPrimaryQtyForMultiloc(line: DraftLine): number {
   const rq = roundQty(line.requestedQty);
   const maxQ = maxLocQtyForLine(line);
@@ -235,7 +367,7 @@ function RemissionPrepareReadonlySummary({
   return (
     <>
       <p className="mb-3 text-sm text-[var(--ui-muted)]">
-        Preparación registrada. El conductor revisa y pone en tránsito desde su cola.
+        Plan de salida registrado. El conductor revisa y pone en tránsito desde su cola.
       </p>
       {correctPrepareHref ? (
         <div className="mb-3">
@@ -249,8 +381,8 @@ function RemissionPrepareReadonlySummary({
       ) : null}
       <div className="overflow-hidden rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)]">
         <div className="hidden grid-cols-[minmax(220px,1.2fr)_minmax(260px,1.3fr)_120px_minmax(220px,1fr)_120px] gap-3 border-b border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ui-muted)] lg:grid">
-          <div>Insumo</div>
-          <div>Área</div>
+          <div>Producto</div>
+          <div>Plan de salida</div>
           <div>Cantidad</div>
           <div>Faltante</div>
           <div>Estado</div>
@@ -261,7 +393,7 @@ function RemissionPrepareReadonlySummary({
           const locEntry = line.locOptions.find((loc) => loc.id === line.selectedLocId);
           const locText = locEntry
             ? `${locEntry.label} · ${locEntry.qty} ${line.unitLabel}`
-            : (line.selectedLocId || "Sin área").trim() || "Sin área";
+            : (line.selectedLocId || "Sin ubicación").trim() || "Sin ubicación";
           return (
             <div key={line.id} className="border-t border-[var(--ui-border)] first:border-t-0">
               <div className="grid gap-3 px-4 py-3 lg:grid-cols-[minmax(220px,1.2fr)_minmax(260px,1.3fr)_120px_minmax(220px,1fr)_120px] lg:items-start">
@@ -438,6 +570,7 @@ function RemissionPrepareWorkbenchInteractive({
     setSplitQtyInput("");
   };
 
+  const shouldUsePickPayload = lines.every((line) => roundQty(Number(line.dispatchQty ?? 0)) > 0);
   const payload = JSON.stringify({
     lines: lines.map((line) => ({
       id: line.id,
@@ -448,15 +581,17 @@ function RemissionPrepareWorkbenchInteractive({
       shortageReason: line.shortageReason.trim(),
       isVirtualSplit: line.isVirtualSplit,
     })),
-    splitDrafts,
+    // Mientras el servidor no acepte líneas con faltante total sin pick, conservamos fallback legacy.
+    splitDrafts: shouldUsePickPayload ? [] : splitDrafts,
+    picks: shouldUsePickPayload ? lines.flatMap((line) => buildPicksForLine(line)) : [],
   });
 
   return (
     <>
       <div className="overflow-hidden rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)]">
         <div className="hidden grid-cols-[minmax(220px,1.2fr)_minmax(260px,1.3fr)_120px_minmax(220px,1fr)_120px] gap-3 border-b border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--ui-muted)] lg:grid">
-          <div>Insumo</div>
-          <div>Área</div>
+          <div>Producto</div>
+          <div>Plan de salida</div>
           <div>Cantidad</div>
           <div>Faltante</div>
           <div>Estado</div>
@@ -479,17 +614,45 @@ function RemissionPrepareWorkbenchInteractive({
                   </div>
                   {line.recommendedLocId ? (
                     <div className="mt-2 text-xs text-emerald-700">
-                      Asignación inteligente:{" "}
+                      Ubicación sugerida:{" "}
                       <strong>
                         {(line.locOptions.find((loc) => loc.id === line.selectedLocId)?.label ??
-                          line.selectedLocId) || "Sin área"}
+                          line.selectedLocId) || "Sin ubicación"}
                       </strong>
                     </div>
                   ) : line.locOptions.length === 0 ? (
                     <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900">
-                      No hay stock disponible en ningún LOC del origen. Déjalo en 0 y registra el faltante como pendiente de producción.
+                      No hay stock disponible en ubicaciones del origen. Déjalo en 0 y registra el faltante como pendiente de producción.
                     </div>
                   ) : null}
+                  {(() => {
+                    const loc = line.locOptions.find((entry) => entry.id === line.selectedLocId);
+                    const plan = buildPositionPlan(line);
+                    const positions = getPositionOptionsForLoc(loc);
+                    if (!loc || line.dispatchQty <= 0 || positions.length <= 0) return null;
+                    if (positions.length === 1) {
+                      return (
+                        <div className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs text-emerald-900">
+                          Sale de {positions[0].label}.
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="mt-2 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs text-sky-950">
+                        <p className="font-semibold">Plan interno sugerido</p>
+                        <ul className="mt-1 space-y-1">
+                          {plan.map((entry) => (
+                            <li key={entry.positionId}>
+                              {entry.label}: {entry.qty} {line.unitLabel}
+                            </li>
+                          ))}
+                        </ul>
+                        <p className="mt-1 text-sky-900/75">
+                          Prioriza posiciones con menor stock para liberar niveles primero.
+                        </p>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className="flex flex-col gap-2">
@@ -499,7 +662,7 @@ function RemissionPrepareWorkbenchInteractive({
                     className="ui-input h-10"
                   >
                     <option value="">
-                      {line.locOptions.length > 0 ? "Selecciona área" : "Sin stock en LOC"}
+                      {line.locOptions.length > 0 ? "Selecciona ubicación" : "Sin stock en ubicaciones"}
                     </option>
                     {line.locOptions.map((loc) => (
                       <option key={loc.id} value={loc.id}>
@@ -510,17 +673,17 @@ function RemissionPrepareWorkbenchInteractive({
                   {multilocHint ? (
                     <div className="rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs text-sky-950">
                       <p className="font-semibold leading-snug">
-                        Ninguna área cubre todo el pedido; entre áreas sí alcanza.
+                        Ninguna ubicación cubre todo el pedido; entre ubicaciones sí alcanza.
                       </p>
                       <p className="mt-1 leading-snug text-sky-900/80">
-                        Partí la línea para asignar un área distinta a cada parte.
+                        Usa varias ubicaciones para cubrir el pedido sin registrar faltante.
                       </p>
                       <button
                         type="button"
                         onClick={() => openSplit(line.id, multilocSuggested)}
                         className="mt-2 text-left text-sm font-semibold text-sky-900 underline-offset-4 transition hover:underline"
                       >
-                        Partición sugerida: {multilocPrimarySuggested} + {multilocSuggested}{" "}
+                        Distribución sugerida: {multilocPrimarySuggested} + {multilocSuggested}{" "}
                         {line.unitLabel}
                       </button>
                     </div>
@@ -532,11 +695,11 @@ function RemissionPrepareWorkbenchInteractive({
                     disabled={!canSplitDraftLine(line)}
                     title={
                       canSplitDraftLine(line)
-                        ? "Divide en dos líneas para asignar otra área a parte de la cantidad."
-                        : "Solo aplica con más de 1 unidad solicitada (no en líneas hijas de un split)."
+                        ? "Divide el preparado en dos partes para escoger otra ubicación de salida."
+                        : "Solo aplica con más de 1 unidad solicitada."
                     }
                   >
-                    Partir línea
+                    Usar varias ubicaciones
                   </button>
                 </div>
 
@@ -556,7 +719,7 @@ function RemissionPrepareWorkbenchInteractive({
                   />
                   {line.locOptions.length === 0 && line.dispatchQty === 0 ? (
                     <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                      Sin despacho hasta que producción cargue stock al LOC.
+                      Sin despacho hasta que producción cargue stock a una ubicación.
                     </div>
                   ) : null}
                 </div>
@@ -600,12 +763,12 @@ function RemissionPrepareWorkbenchInteractive({
       {splitTarget ? (
         <div className="fixed inset-0 z-50 bg-black/30 px-4 py-8">
           <div className="mx-auto max-w-lg rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-4">
-            <div className="text-lg font-semibold text-[var(--ui-text)]">Partir línea</div>
+            <div className="text-lg font-semibold text-[var(--ui-text)]">Usar varias ubicaciones</div>
             <div className="mt-2 text-sm text-[var(--ui-muted)]">
               {splitTarget.productName} · Solicitado {splitTarget.requestedQty} {splitTarget.unitLabel}
             </div>
             <label className="mt-3 flex flex-col gap-1">
-              <span className="text-xs text-[var(--ui-muted)]">Cantidad para nueva línea</span>
+              <span className="text-xs text-[var(--ui-muted)]">Cantidad que saldrá de otra ubicación</span>
               <input
                 type="number"
                 min={0}
@@ -632,7 +795,7 @@ function RemissionPrepareWorkbenchInteractive({
                 className="ui-btn ui-btn--action h-11 px-4 text-sm font-semibold"
                 onClick={applySplit}
               >
-                Aplicar partición
+                Aplicar distribución
               </button>
             </div>
           </div>
@@ -657,7 +820,7 @@ function RemissionPrepareWorkbenchInteractive({
               }}
               className="text-left text-sm font-medium text-[var(--ui-text)]/55 underline-offset-4 transition hover:text-[var(--ui-text)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ui-ring)]"
             >
-              Reoptimizar asignación
+              Recalcular ubicaciones
             </button>
             <form action={onCommit}>
               <input type="hidden" name="request_id" value={requestId} />

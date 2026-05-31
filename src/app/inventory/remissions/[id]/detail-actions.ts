@@ -50,6 +50,21 @@ async function isRemissionInventoryPostingEnabled(
     false
   );
 }
+async function requestHasPreparationPicks(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  requestId: string
+): Promise<boolean> {
+  if (!requestId) return false;
+
+  const { count, error } = await supabase
+    .from("restock_request_item_picks")
+    .select("id", { head: true, count: "exact" })
+    .eq("request_id", requestId);
+
+  if (error) return false;
+  return Number(count ?? 0) > 0;
+}
+
 async function ensureOperationalTransitReady(params: {
   supabase: Awaited<ReturnType<typeof createClient>>;
   requestId: string;
@@ -471,6 +486,50 @@ type CommitSplitPayload = {
   splitQuantity: number;
 };
 
+type CommitPickPayload = {
+  id?: string;
+  itemId?: string;
+  item_id?: string;
+  baseItemId?: string;
+  base_item_id?: string;
+  productId?: string;
+  product_id?: string;
+  sourceLocationId?: string;
+  source_location_id?: string;
+  selectedLocId?: string;
+  locationId?: string;
+  location_id?: string;
+  sourceLocationPositionId?: string | null;
+  source_location_position_id?: string | null;
+  sourcePositionId?: string | null;
+  source_position_id?: string | null;
+  selectedPositionId?: string | null;
+  positionId?: string | null;
+  position_id?: string | null;
+  uomProfileId?: string | null;
+  uom_profile_id?: string | null;
+  inputUomProfileId?: string | null;
+  input_uom_profile_id?: string | null;
+  presentationQty?: number | string;
+  presentation_qty?: number | string;
+  baseQty?: number | string;
+  base_qty?: number | string;
+  dispatchQty?: number | string;
+  quantity?: number | string;
+  note?: string | null;
+  notes?: string | null;
+  shortageReason?: string | null;
+  shortage_reason?: string | null;
+};
+
+function payloadString(value: unknown): string {
+  return String(value ?? "").trim();
+}
+
+function payloadNumber(value: unknown): number {
+  return roundQuantity(parseNumber(String(value ?? "0")));
+}
+
 export async function commitPreparationDraft(formData: FormData) {
   const supabase = await createClient();
   const { data: userRes } = await supabase.auth.getUser();
@@ -483,7 +542,11 @@ export async function commitPreparationDraft(formData: FormData) {
     redirect(await buildShellLoginUrl(buildRemissionDetailHref({ requestId, from: returnOrigin })));
   }
 
-  let parsed: { lines?: CommitLinePayload[]; splitDrafts?: CommitSplitPayload[] } = {};
+  let parsed: {
+    lines?: CommitLinePayload[];
+    splitDrafts?: CommitSplitPayload[];
+    picks?: CommitPickPayload[];
+  } = {};
   try {
     parsed = JSON.parse(payloadRaw || "{}");
   } catch {
@@ -499,7 +562,8 @@ export async function commitPreparationDraft(formData: FormData) {
 
   const lines = Array.isArray(parsed.lines) ? parsed.lines : [];
   const splitDrafts = Array.isArray(parsed.splitDrafts) ? parsed.splitDrafts : [];
-  if (!lines.length) {
+  const picks = Array.isArray(parsed.picks) ? parsed.picks : [];
+  if (!lines.length && !picks.length) {
     redirect(
       buildRemissionDetailHref({
         requestId,
@@ -538,6 +602,292 @@ export async function commitPreparationDraft(formData: FormData) {
     returnOrigin,
     fallbackMessage: "No puedes despachar esta remisión en este momento.",
   });
+
+  if (picks.length > 0) {
+    const { data: itemRowsData, error: itemRowsError } = await supabase
+      .from("restock_request_items")
+      .select("id,product_id,quantity")
+      .eq("request_id", requestId);
+
+    if (itemRowsError) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error: itemRowsError.message,
+        })
+      );
+    }
+
+    const itemRows = (itemRowsData ?? []) as Array<{
+      id: string;
+      product_id: string;
+      quantity: number | null;
+    }>;
+    const itemById = new Map(itemRows.map((row) => [row.id, row]));
+    const pickedQtyByItem = new Map<string, number>();
+    const locsByItem = new Map<string, Set<string>>();
+    const shortageReasonByItem = new Map<string, string>();
+
+    const nextPickRows: Array<{
+      request_id: string;
+      item_id: string;
+      product_id: string;
+      source_location_id: string;
+      source_location_position_id: string | null;
+      uom_profile_id: string | null;
+      presentation_qty: number;
+      base_qty: number;
+      note: string | null;
+      created_by: string;
+      updated_by: string;
+    }> = [];
+
+    for (const rawPick of picks) {
+      const itemId = payloadString(
+        rawPick.itemId ?? rawPick.item_id ?? rawPick.baseItemId ?? rawPick.base_item_id
+      );
+      const item = itemById.get(itemId);
+      if (!item) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            siteId: activeSiteId,
+            error: "El plan de salida contiene una línea que no pertenece a esta remisión.",
+          })
+        );
+      }
+
+      const productId = payloadString(rawPick.productId ?? rawPick.product_id) || item.product_id;
+      if (productId !== item.product_id) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            siteId: activeSiteId,
+            error: "El producto de un pick no coincide con la línea solicitada.",
+          })
+        );
+      }
+
+      const sourceLocationId = payloadString(
+        rawPick.sourceLocationId ??
+          rawPick.source_location_id ??
+          rawPick.selectedLocId ??
+          rawPick.locationId ??
+          rawPick.location_id
+      );
+      if (!sourceLocationId) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            siteId: activeSiteId,
+            error: "Cada pick debe tener una ubicación de salida.",
+          })
+        );
+      }
+
+      const sourceLocationPositionId =
+        payloadString(
+          rawPick.sourceLocationPositionId ??
+            rawPick.source_location_position_id ??
+            rawPick.sourcePositionId ??
+            rawPick.source_position_id ??
+            rawPick.selectedPositionId ??
+            rawPick.positionId ??
+            rawPick.position_id
+        ) || null;
+      const uomProfileId =
+        payloadString(
+          rawPick.uomProfileId ??
+            rawPick.uom_profile_id ??
+            rawPick.inputUomProfileId ??
+            rawPick.input_uom_profile_id
+        ) || null;
+      const presentationQty = uomProfileId
+        ? payloadNumber(rawPick.presentationQty ?? rawPick.presentation_qty)
+        : 0;
+      const baseQty = payloadNumber(
+        rawPick.baseQty ?? rawPick.base_qty ?? rawPick.dispatchQty ?? rawPick.quantity
+      );
+      const note =
+        payloadString(rawPick.note ?? rawPick.notes ?? rawPick.shortageReason ?? rawPick.shortage_reason) ||
+        null;
+      const shortageReason = payloadString(rawPick.shortageReason ?? rawPick.shortage_reason);
+
+      if (baseQty <= 0) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            siteId: activeSiteId,
+            error: "Cada pick debe tener una cantidad base mayor a cero.",
+          })
+        );
+      }
+      if (uomProfileId && presentationQty <= 0) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            siteId: activeSiteId,
+            error: "Cada pick con presentación física debe tener cantidad de presentación mayor a cero.",
+          })
+        );
+      }
+
+      pickedQtyByItem.set(itemId, roundQuantity((pickedQtyByItem.get(itemId) ?? 0) + baseQty));
+      const locs = locsByItem.get(itemId) ?? new Set<string>();
+      locs.add(sourceLocationId);
+      locsByItem.set(itemId, locs);
+      if (shortageReason) shortageReasonByItem.set(itemId, shortageReason);
+
+      nextPickRows.push({
+        request_id: requestId,
+        item_id: itemId,
+        product_id: productId,
+        source_location_id: sourceLocationId,
+        source_location_position_id: sourceLocationPositionId,
+        uom_profile_id: uomProfileId,
+        presentation_qty: presentationQty,
+        base_qty: baseQty,
+        note,
+        created_by: user.id,
+        updated_by: user.id,
+      });
+    }
+
+    for (const item of itemRows) {
+      const requestedQty = roundQuantity(Number(item.quantity ?? 0));
+      const pickedQty = roundQuantity(Number(pickedQtyByItem.get(item.id) ?? 0));
+
+      if (requestedQty > 0 && pickedQty <= 0) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            siteId: activeSiteId,
+            error: "Todas las líneas solicitadas deben tener al menos un pick de salida.",
+          })
+        );
+      }
+      if (requestedQty > 0 && pickedQty > requestedQty) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            siteId: activeSiteId,
+            error: `Cantidad preparada (${pickedQty}) mayor que solicitada (${requestedQty}).`,
+          })
+        );
+      }
+      if (requestedQty > 0 && pickedQty < requestedQty && !shortageReasonByItem.get(item.id)) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            siteId: activeSiteId,
+            error: "Debes registrar motivo de faltante en todas las líneas incompletas.",
+          })
+        );
+      }
+    }
+
+    const { error: deletePicksError } = await supabase
+      .from("restock_request_item_picks")
+      .delete()
+      .eq("request_id", requestId);
+
+    if (deletePicksError) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error: deletePicksError.message,
+        })
+      );
+    }
+
+    const { error: insertPicksError } = await supabase
+      .from("restock_request_item_picks")
+      .insert(nextPickRows);
+
+    if (insertPicksError) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error: insertPicksError.message,
+        })
+      );
+    }
+
+    for (const item of itemRows) {
+      const pickedQty = roundQuantity(Number(pickedQtyByItem.get(item.id) ?? 0));
+      const requestedQty = roundQuantity(Number(item.quantity ?? 0));
+      const shortageReason = shortageReasonByItem.get(item.id) ?? "";
+      const itemLocs = Array.from(locsByItem.get(item.id) ?? []);
+      const sourceLocationId = itemLocs.length === 1 ? itemLocs[0] : null;
+      const noteSuffix = pickedQty < requestedQty && shortageReason ? `FALTANTE ORIGEN: ${shortageReason}` : null;
+
+      const { error: updateItemError } = await supabase
+        .from("restock_request_items")
+        .update({
+          source_location_id: inventoryPostingEnabled ? sourceLocationId : null,
+          prepared_quantity: pickedQty,
+          shipped_quantity: pickedQty,
+          notes: noteSuffix,
+        })
+        .eq("id", item.id)
+        .eq("request_id", requestId);
+
+      if (updateItemError) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            siteId: activeSiteId,
+            error: updateItemError.message,
+          })
+        );
+      }
+    }
+
+    const nowIso = new Date().toISOString();
+    const { error: reqErr } = await supabase
+      .from("restock_requests")
+      .update({
+        status: "preparing",
+        prepared_at: nowIso,
+        prepared_by: user.id,
+        status_updated_at: nowIso,
+      })
+      .eq("id", requestId);
+    if (reqErr) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error: reqErr.message,
+        })
+      );
+    }
+
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        siteId: activeSiteId,
+        ok: "ready_dispatch",
+      })
+    );
+  }
 
   const virtualToRealId = new Map<string, string>();
   for (const splitDraft of splitDrafts) {
@@ -707,9 +1057,14 @@ export async function submitTransitChecklist(formData: FormData) {
   }
   const summary = operationalSummary as RemissionOperationalSummary;
 
-  const canTransitNow = inventoryPostingEnabled
-    ? Boolean(summary.can_transit)
-    : await ensureOperationalTransitReady({ supabase, requestId });
+  const hasPreparationPicks = inventoryPostingEnabled
+    ? await requestHasPreparationPicks(supabase, requestId)
+    : false;
+  const canTransitNow = hasPreparationPicks
+    ? true
+    : inventoryPostingEnabled
+      ? Boolean(summary.can_transit)
+      : await ensureOperationalTransitReady({ supabase, requestId });
 
   if (!canTransitNow) {
     redirect(
@@ -784,6 +1139,52 @@ export async function submitTransitChecklist(formData: FormData) {
         })
       );
     }
+  }
+
+  if (inventoryPostingEnabled && hasPreparationPicks) {
+    const { error: moveErr } = await supabase.rpc("apply_restock_shipment_from_picks", {
+      p_request_id: requestId,
+    });
+    if (moveErr) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error: moveErr.message,
+        })
+      );
+    }
+
+    const nowIso = new Date().toISOString();
+    const { error: reqErr } = await supabase
+      .from("restock_requests")
+      .update({
+        status: "in_transit",
+        in_transit_at: nowIso,
+        in_transit_by: user.id,
+        status_updated_at: nowIso,
+      })
+      .eq("id", requestId);
+    if (reqErr) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error: reqErr.message,
+        })
+      );
+    }
+
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        siteId: activeSiteId,
+        ok: "transit_started",
+      })
+    );
   }
 
   const sourceLocDeductions: Array<{
@@ -1315,6 +1716,10 @@ export async function updateStatus(formData: FormData) {
   }
 
   const summary = operationalSummary as RemissionOperationalSummary;
+  const hasPreparationPicks = inventoryPostingEnabled && action === "transit"
+    ? await requestHasPreparationPicks(supabase, requestId)
+    : false;
+
   if (action === "prepare" && !access.canPrepare) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "No puedes preparar." }));
   }
@@ -1419,9 +1824,11 @@ export async function updateStatus(formData: FormData) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "Solo puedes enviar una remision en estado preparando." }));
   }
   if (action === "transit") {
-    const canTransitNow = inventoryPostingEnabled
-      ? Boolean(summary.can_transit)
-      : await ensureOperationalTransitReady({ supabase, requestId });
+    const canTransitNow = hasPreparationPicks
+      ? true
+      : inventoryPostingEnabled
+        ? Boolean(summary.can_transit)
+        : await ensureOperationalTransitReady({ supabase, requestId });
 
     if (!canTransitNow) {
       redirect(
@@ -1564,7 +1971,7 @@ export async function updateStatus(formData: FormData) {
     uomProfileId?: string | null;
     presentationQty?: number;
   }> = [];
-  if (inventoryPostingEnabled && action === "transit") {
+  if (inventoryPostingEnabled && action === "transit" && !hasPreparationPicks) {
     const { data: itemsData } = await supabase
       .from("restock_request_items")
       .select("id,product_id,quantity,input_qty,input_uom_profile_id,prepared_quantity,shipped_quantity,source_location_id,stock_unit_code,unit")
@@ -1881,39 +2288,48 @@ export async function updateStatus(formData: FormData) {
   }
 
   if (inventoryPostingEnabled && action === "transit") {
-    const { error: moveErr } = await supabase.rpc("apply_restock_shipment", {
-      p_request_id: requestId,
-    });
-    if (moveErr) {
-      redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: moveErr.message }));
-    }
-    const fromSiteIdForMovement = request?.from_site_id ?? "";
-    if (!fromSiteIdForMovement) {
-      redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "No se encontro sede origen para la remision." }));
-    }
-
-    for (const deduction of sourceLocDeductions) {
-      if (deduction.uomProfileId && Number(deduction.presentationQty ?? 0) > 0) {
-        const { error: presentationErr } = await supabase.rpc("consume_inventory_stock_by_uom_profile", {
-          p_location_id: deduction.locationId,
-          p_product_id: deduction.productId,
-          p_uom_profile_id: deduction.uomProfileId,
-          p_presentation_qty: deduction.presentationQty,
-          p_base_qty: deduction.qty,
-          p_location_position_id: null,
-        });
-        if (presentationErr) {
-          redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: `No se pudo descontar presentacion fisica: ${presentationErr.message}` }));
-        }
+    if (hasPreparationPicks) {
+      const { error: moveErr } = await supabase.rpc("apply_restock_shipment_from_picks", {
+        p_request_id: requestId,
+      });
+      if (moveErr) {
+        redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: moveErr.message }));
+      }
+    } else {
+      const { error: moveErr } = await supabase.rpc("apply_restock_shipment", {
+        p_request_id: requestId,
+      });
+      if (moveErr) {
+        redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: moveErr.message }));
+      }
+      const fromSiteIdForMovement = request?.from_site_id ?? "";
+      if (!fromSiteIdForMovement) {
+        redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "No se encontro sede origen para la remision." }));
       }
 
-      const { error: locErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
-        p_location_id: deduction.locationId,
-        p_product_id: deduction.productId,
-        p_delta: -deduction.qty,
-      });
-      if (locErr) {
-        redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: `No se pudo actualizar stock del área de origen: ${locErr.message}` }));
+      for (const deduction of sourceLocDeductions) {
+        if (deduction.uomProfileId && Number(deduction.presentationQty ?? 0) > 0) {
+          const { error: presentationErr } = await supabase.rpc("consume_inventory_stock_by_uom_profile", {
+            p_location_id: deduction.locationId,
+            p_product_id: deduction.productId,
+            p_uom_profile_id: deduction.uomProfileId,
+            p_presentation_qty: deduction.presentationQty,
+            p_base_qty: deduction.qty,
+            p_location_position_id: null,
+          });
+          if (presentationErr) {
+            redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: `No se pudo descontar presentacion fisica: ${presentationErr.message}` }));
+          }
+        }
+
+        const { error: locErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
+          p_location_id: deduction.locationId,
+          p_product_id: deduction.productId,
+          p_delta: -deduction.qty,
+        });
+        if (locErr) {
+          redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: `No se pudo actualizar stock del área de origen: ${locErr.message}` }));
+        }
       }
     }
   }
