@@ -214,16 +214,29 @@ export function RemissionsCreateForm({
             }
           }
 
+          const displayUnit = String(selectedProfile?.label ?? "").trim() || inputUnitCode || stockUnitCode || "un";
+          const stockUnitDisplay = stockUnitCode || "un";
+          const conversionSummary =
+            selectedProfile && quantityInStock !== qty
+              ? `${Number.isFinite(qty) ? qty : 0} ${displayUnit} = ${quantityInStock.toLocaleString("es-CO", {
+                maximumFractionDigits: 3,
+              })} ${stockUnitDisplay}`
+              : "";
+
           acc.items.push({
             id: row.id,
             name: product?.name ?? "",
             quantity: Number.isFinite(qty) ? qty : 0,
-            unit: row.inputUnitCode || product?.stock_unit_code || product?.unit || "un",
+            unit: displayUnit,
+            inputUnitCode,
             areaKind: row.areaKind,
             stockQuantity: quantityInStock,
+            stockUnit: stockUnitDisplay,
             availableReference,
             referenceUpdatedAt: referenceMeta?.updatedAt ?? null,
             hasReferenceShortage,
+            hasPresentationProfile: Boolean(selectedProfile?.id),
+            conversionSummary,
             valid,
           });
         }
@@ -236,11 +249,15 @@ export function RemissionsCreateForm({
           name: string;
           quantity: number;
           unit: string;
+          inputUnitCode: string;
           areaKind: string;
           stockQuantity: number;
+          stockUnit: string;
           availableReference: number;
           referenceUpdatedAt: string | null;
           hasReferenceShortage: boolean;
+          hasPresentationProfile: boolean;
+          conversionSummary: string;
           valid: boolean;
         }>,
         incompleteRows: 0,
@@ -362,7 +379,7 @@ export function RemissionsCreateForm({
                   <div className="mt-1 text-2xl font-semibold text-[var(--ui-text)]">{selectedItems.length}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-[var(--ui-muted)]">Cantidad total</div>
+                  <div className="text-xs text-[var(--ui-muted)]">Presentaciones solicitadas</div>
                   <div className="mt-1 text-2xl font-semibold text-[var(--ui-text)]">{draftSummary.totalQuantity}</div>
                 </div>
                 <div>
@@ -389,6 +406,39 @@ export function RemissionsCreateForm({
                 )}
               </div>
             </div>
+
+            {selectedItems.length > 0 ? (
+              <div className="rounded-2xl border border-[rgba(200,210,220,0.95)] bg-white p-4 shadow-[0_14px_30px_rgba(15,23,42,0.06)]">
+                <div className="text-[11px] font-bold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
+                  Revisión de solicitud
+                </div>
+                <div className="mt-3 space-y-3">
+                  {selectedItems.slice(0, 6).map((item) => (
+                    <div key={item.id} className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-3">
+                      <div className="text-sm font-semibold text-[var(--ui-text)]">{item.name}</div>
+                      <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                        Solicitud: {item.quantity} × {item.unit}
+                      </div>
+                      {item.conversionSummary ? (
+                        <div className="mt-1 text-xs text-sky-900">
+                          Equivalencia inventario: {item.conversionSummary}
+                        </div>
+                      ) : null}
+                      {!item.hasPresentationProfile ? (
+                        <div className="mt-2 text-xs font-semibold text-amber-800">
+                          Revisa presentación mínima: esta línea no tiene perfil de remisión asociado.
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                  {selectedItems.length > 6 ? (
+                    <div className="text-xs text-[var(--ui-muted)]">
+                      + {selectedItems.length - 6} línea(s) adicional(es)
+                    </div>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
           </div>
         </div>
       </section>
@@ -399,8 +449,8 @@ export function RemissionsCreateForm({
             <div className="ui-h3">Productos</div>
             <div className="mt-1 ui-caption">
               {siteMode === "simple"
-                ? "Esta sede opera como un solo ambiente. Todo lo solicitado llegara como remision global."
-                : "Esta sede opera por areas. Define en cada linea si va para barra, cocina o mostrador."}
+                ? "Pide por la presentación mínima configurada. Centro podrá despachar combinaciones físicas equivalentes."
+                : "Pide por la presentación mínima configurada y define el área. Centro podrá despachar combinaciones físicas equivalentes."}
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
