@@ -352,6 +352,10 @@ async function createInternalPriceList(formData: FormData) {
     redirect(buildReturnUrl({ error: "Selecciona al menos un comprador: centro de costo o sede." }));
   }
 
+  if (buyerCostCenterId && buyerCostCenterId === sellerCostCenterId) {
+    redirect(buildReturnUrl({ error: "El comprador no puede ser el mismo centro de costo vendedor." }));
+  }
+
   if (validFrom && validTo && new Date(validTo).getTime() <= new Date(validFrom).getTime()) {
     redirect(buildReturnUrl({ error: "La fecha final debe ser posterior a la fecha inicial." }));
   }
@@ -434,7 +438,7 @@ async function addInternalPriceListItem(formData: FormData) {
   if (uomProfileId) {
     const { data: profile, error: profileError } = await supabase
       .from("product_uom_profiles")
-      .select("id,product_id,input_unit_code,is_active")
+      .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_active")
       .eq("id", uomProfileId)
       .maybeSingle();
 
@@ -489,14 +493,40 @@ async function addInternalPriceListItem(formData: FormData) {
     redirect(buildReturnUrl({ error: "El precio interno debe ser mayor o igual a 0.", listId: priceListId }));
   }
 
-  const { error } = await supabase.from("internal_price_list_items").insert({
+  const insertPayload: {
+    price_list_id: string;
+    product_id: string;
+    unit_price: number;
+    unit_code: string;
+    uom_profile_id: string | null;
+    pricing_label?: string | null;
+    pricing_input_unit_code?: string | null;
+    pricing_qty_in_input_unit?: number | null;
+    pricing_qty_in_stock_unit?: number | null;
+    is_active: boolean;
+  } = {
     price_list_id: priceListId,
     product_id: productId,
     unit_price: unitPrice,
     unit_code: unitCode,
     uom_profile_id: uomProfileId || null,
     is_active: true,
-  });
+  };
+
+  if (uomProfileId) {
+    const { data: profileSnapshot } = await supabase
+      .from("product_uom_profiles")
+      .select("label,input_unit_code,qty_in_input_unit,qty_in_stock_unit")
+      .eq("id", uomProfileId)
+      .maybeSingle();
+
+    insertPayload.pricing_label = profileSnapshot?.label ?? null;
+    insertPayload.pricing_input_unit_code = profileSnapshot?.input_unit_code ?? unitCode;
+    insertPayload.pricing_qty_in_input_unit = profileSnapshot?.qty_in_input_unit ?? null;
+    insertPayload.pricing_qty_in_stock_unit = profileSnapshot?.qty_in_stock_unit ?? null;
+  }
+
+  const { error } = await supabase.from("internal_price_list_items").insert(insertPayload);
 
   if (error) {
     redirect(buildReturnUrl({ error: error.message, listId: priceListId }));
@@ -811,6 +841,9 @@ export default async function InternalPricesSettingsPage({
           </div>
 
           <div className="flex flex-wrap gap-2">
+            <Link href="/inventory/cost-center" className="ui-btn ui-btn--ghost bg-white/80 shadow-sm">
+              Centros de costo
+            </Link>
             <Link href="/inventory/settings/remissions" className="ui-btn ui-btn--ghost bg-white/80 shadow-sm">
               Configuración de remisiones
             </Link>
