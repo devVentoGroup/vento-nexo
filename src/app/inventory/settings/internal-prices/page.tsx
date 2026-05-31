@@ -45,6 +45,19 @@ type ProductRow = {
   is_active: boolean | null;
 };
 
+type ProductUomProfileRow = {
+  id: string;
+  product_id: string | null;
+  label: string | null;
+  input_unit_code: string | null;
+  qty_in_input_unit: number | null;
+  qty_in_stock_unit: number | null;
+  is_default: boolean | null;
+  is_active: boolean | null;
+  source: string | null;
+  usage_context: string | null;
+};
+
 type InternalPriceListRow = {
   id: string;
   name: string;
@@ -65,6 +78,11 @@ type InternalPriceListItemRow = {
   product_id: string;
   unit_price: number;
   unit_code: string;
+  uom_profile_id: string | null;
+  pricing_label: string | null;
+  pricing_input_unit_code: string | null;
+  pricing_qty_in_input_unit: number | null;
+  pricing_qty_in_stock_unit: number | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -113,6 +131,79 @@ function formatMoney(value: number | null | undefined) {
     currency: "COP",
     maximumFractionDigits: 0,
   }).format(Number.isFinite(numericValue) ? numericValue : 0);
+}
+
+function formatQty(value: number | null | undefined) {
+  const numericValue = Number(value ?? 0);
+  return new Intl.NumberFormat("es-CO", {
+    maximumFractionDigits: 3,
+  }).format(Number.isFinite(numericValue) ? numericValue : 0);
+}
+
+function normalizeUnitCodeLocal(value: string | null | undefined) {
+  return String(value ?? "").trim() || "un";
+}
+
+function rankUomProfile(profile: ProductUomProfileRow) {
+  let score = 0;
+  const usageContext = String(profile.usage_context ?? "").trim().toLowerCase();
+  const source = String(profile.source ?? "").trim().toLowerCase();
+
+  if (usageContext === "remission") score += 100;
+  if (profile.is_default) score += 50;
+  if (source === "manual") score += 20;
+  if (source === "recipe_portion") score += 10;
+
+  return score;
+}
+
+function buildProductPriceOptionValue(productId: string, uomProfileId?: string | null) {
+  return `${productId}|${uomProfileId ?? ""}`;
+}
+
+function parseProductPriceOption(value: string) {
+  const [productId = "", uomProfileId = ""] = value.split("|");
+
+  return {
+    productId: productId.trim(),
+    uomProfileId: uomProfileId.trim(),
+  };
+}
+
+function buildPresentationEquivalenceLabel(params: {
+  label?: string | null;
+  inputUnitCode?: string | null;
+  qtyInInputUnit?: number | null;
+  stockUnitCode?: string | null;
+  qtyInStockUnit?: number | null;
+}) {
+  const label = String(params.label ?? "").trim();
+  const inputUnitCode = String(params.inputUnitCode ?? "").trim();
+  const stockUnitCode = String(params.stockUnitCode ?? "").trim();
+  const qtyInInputUnit = Number(params.qtyInInputUnit ?? 0);
+  const qtyInStockUnit = Number(params.qtyInStockUnit ?? 0);
+
+  const presentation = label || inputUnitCode || "Presentación";
+
+  if (qtyInInputUnit > 0 && qtyInStockUnit > 0 && stockUnitCode) {
+    return `${presentation} · ${formatQty(qtyInInputUnit)} ${inputUnitCode || "un"} = ${formatQty(qtyInStockUnit)} ${stockUnitCode}`;
+  }
+
+  return presentation;
+}
+
+function presentationShortLabel(params: {
+  label?: string | null;
+  inputUnitCode?: string | null;
+}) {
+  const label = String(params.label ?? "").trim();
+  const inputUnitCode = String(params.inputUnitCode ?? "").trim();
+
+  if (label && inputUnitCode && label !== inputUnitCode) {
+    return `${label} (${inputUnitCode})`;
+  }
+
+  return label || inputUnitCode || "Sin presentación";
 }
 
 function normalizeLabel(value: string | null | undefined) {
@@ -276,20 +367,71 @@ async function addInternalPriceListItem(formData: FormData) {
   const { supabase } = await requireInternalPricesManager();
 
   const priceListId = asText(formData.get("price_list_id"));
-  const productId = asText(formData.get("product_id"));
-  const unitCode = asText(formData.get("unit_code"));
+  const productOption = asText(formData.get("product_option"));
+  const { productId, uomProfileId } = parseProductPriceOption(productOption);
   const unitPrice = parseNonNegativeNumber(formData.get("unit_price"));
+  let unitCode = "";
 
   if (!priceListId) {
     redirect(buildReturnUrl({ error: "Selecciona una lista.", listId: priceListId }));
   }
 
   if (!productId) {
-    redirect(buildReturnUrl({ error: "Selecciona un producto.", listId: priceListId }));
+    redirect(buildReturnUrl({ error: "Selecciona un producto y presentación.", listId: priceListId }));
+  }
+
+  if (uomProfileId) {
+    const { data: profile, error: profileError } = await supabase
+      .from("product_uom_profiles")
+      .select("id,product_id,input_unit_code,is_active")
+      .eq("id", uomProfileId)
+      .maybeSingle();
+
+    if (profileError || !profile) {
+      redirect(
+        buildReturnUrl({
+          error: profileError?.message ?? "La presentación seleccionada no existe.",
+          listId: priceListId,
+        })
+      );
+    }
+
+    if (String(profile.product_id ?? "") !== productId || profile.is_active === false) {
+      redirect(
+        buildReturnUrl({
+          error: "La presentación seleccionada no pertenece al producto o está inactiva.",
+          listId: priceListId,
+        })
+      );
+    }
+
+    unitCode = normalizeUnitCodeLocal(profile.input_unit_code);
+  } else {
+    const { data: product, error: productError } = await supabase
+      .from("products")
+      .select("id,unit,stock_unit_code")
+      .eq("id", productId)
+      .maybeSingle();
+
+    if (productError || !product) {
+      redirect(
+        buildReturnUrl({
+          error: productError?.message ?? "El producto seleccionado no existe.",
+          listId: priceListId,
+        })
+      );
+    }
+
+    unitCode = normalizeUnitCodeLocal(product.stock_unit_code ?? product.unit);
   }
 
   if (!unitCode) {
-    redirect(buildReturnUrl({ error: "Escribe la unidad del precio interno.", listId: priceListId }));
+    redirect(
+      buildReturnUrl({
+        error: "Selecciona una presentación válida para el precio interno.",
+        listId: priceListId,
+      })
+    );
   }
 
   if (unitPrice === null) {
@@ -301,6 +443,7 @@ async function addInternalPriceListItem(formData: FormData) {
     product_id: productId,
     unit_price: unitPrice,
     unit_code: unitCode,
+    uom_profile_id: uomProfileId || null,
     is_active: true,
   });
 
@@ -327,21 +470,26 @@ async function updateInternalPriceListItem(formData: FormData) {
     redirect(buildReturnUrl({ error: "Ítem inválido.", listId: priceListId }));
   }
 
-  if (!unitCode) {
-    redirect(buildReturnUrl({ error: "La unidad no puede estar vacía.", listId: priceListId }));
-  }
-
   if (unitPrice === null) {
     redirect(buildReturnUrl({ error: "El precio interno debe ser mayor o igual a 0.", listId: priceListId }));
   }
 
+  const payload: {
+    unit_price: number;
+    updated_at: string;
+    unit_code?: string;
+  } = {
+    unit_price: unitPrice,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (unitCode) {
+    payload.unit_code = unitCode;
+  }
+
   const { error } = await supabase
     .from("internal_price_list_items")
-    .update({
-      unit_code: unitCode,
-      unit_price: unitPrice,
-      updated_at: new Date().toISOString(),
-    })
+    .update(payload)
     .eq("id", itemId);
 
   if (error) {
@@ -427,6 +575,7 @@ export default async function InternalPricesSettingsPage({
     { data: sitesData },
     { data: priceListsData },
     { data: productsData },
+    { data: productUomProfilesData },
   ] = await Promise.all([
     supabase
       .from("cost_centers")
@@ -450,16 +599,75 @@ export default async function InternalPricesSettingsPage({
       .eq("is_active", true)
       .order("name", { ascending: true })
       .limit(1500),
+    supabase
+      .from("product_uom_profiles")
+      .select(
+        "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
+      )
+      .eq("is_active", true)
+      .order("label", { ascending: true })
+      .limit(5000),
   ]);
 
   const costCenters = (costCentersData ?? []) as CostCenterRow[];
   const sites = (sitesData ?? []) as SiteRow[];
   const priceLists = (priceListsData ?? []) as InternalPriceListRow[];
   const products = (productsData ?? []) as ProductRow[];
+  const productUomProfiles = (productUomProfilesData ?? []) as ProductUomProfileRow[];
 
   const costCentersById = new Map(costCenters.map((row) => [row.id, row]));
   const sitesById = new Map(sites.map((row) => [row.id, row]));
   const productsById = new Map(products.map((row) => [row.id, row]));
+
+  const profilesByProductId = new Map<string, ProductUomProfileRow[]>();
+
+  for (const profile of productUomProfiles) {
+    const productId = String(profile.product_id ?? "").trim();
+    if (!productId || !productsById.has(productId)) continue;
+
+    const current = profilesByProductId.get(productId) ?? [];
+    current.push(profile);
+    profilesByProductId.set(productId, current);
+  }
+
+  for (const [productId, profiles] of profilesByProductId) {
+    profilesByProductId.set(
+      productId,
+      [...profiles].sort((a, b) => {
+        const rankDiff = rankUomProfile(b) - rankUomProfile(a);
+        if (rankDiff !== 0) return rankDiff;
+        return String(a.label ?? "").localeCompare(String(b.label ?? ""), "es");
+      })
+    );
+  }
+
+  const productPriceOptions = products.flatMap((product) => {
+    const profiles = profilesByProductId.get(product.id) ?? [];
+
+    if (profiles.length) {
+      return profiles.map((profile) => ({
+        key: `${product.id}:${profile.id}`,
+        value: buildProductPriceOptionValue(product.id, profile.id),
+        label: `${product.name ?? product.id} — ${buildPresentationEquivalenceLabel({
+          label: profile.label,
+          inputUnitCode: profile.input_unit_code,
+          qtyInInputUnit: profile.qty_in_input_unit,
+          qtyInStockUnit: profile.qty_in_stock_unit,
+          stockUnitCode: product.stock_unit_code ?? product.unit,
+        })}`,
+      }));
+    }
+
+    const unitCode = normalizeUnitCodeLocal(product.stock_unit_code ?? product.unit);
+
+    return [
+      {
+        key: `${product.id}:legacy`,
+        value: buildProductPriceOptionValue(product.id, null),
+        label: `${product.name ?? product.id} — ${unitCode} (legacy sin presentación)`,
+      },
+    ];
+  });
 
   const operationalSites = sites.filter((site) => !isDemoSite(site));
   const operationalCostCenters = costCenters.filter(
@@ -474,7 +682,7 @@ export default async function InternalPricesSettingsPage({
   const { data: priceItemsData } = selectedPriceList
     ? await supabase
         .from("internal_price_list_items")
-        .select("id,price_list_id,product_id,unit_price,unit_code,is_active,created_at,updated_at")
+        .select("id,price_list_id,product_id,unit_price,unit_code,uom_profile_id,pricing_label,pricing_input_unit_code,pricing_qty_in_input_unit,pricing_qty_in_stock_unit,is_active,created_at,updated_at")
         .eq("price_list_id", selectedPriceList.id)
         .order("is_active", { ascending: false })
         .order("updated_at", { ascending: false })
@@ -503,24 +711,67 @@ export default async function InternalPricesSettingsPage({
 
   return (
     <div className="w-full">
-      <div className="flex items-start justify-between gap-4">
-        <div>
-          <h1 className="ui-h1">Precios internos</h1>
-          <p className="mt-2 ui-body-muted">
-            Administra listas de precios para transferencias internas entre centros de costo.
-            Estos valores no son costo real ni precio fiscal al cliente.
-          </p>
+      <section className="relative overflow-hidden rounded-[2rem] border border-amber-200/80 bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.20),transparent_34%),radial-gradient(circle_at_bottom_right,rgba(226,0,106,0.12),transparent_32%),linear-gradient(135deg,#fffaf0_0%,#ffffff_48%,#f7fbff_100%)] p-6 shadow-[0_24px_70px_rgba(15,23,42,0.10)]">
+        <div className="pointer-events-none absolute -right-16 -top-16 h-44 w-44 rounded-full bg-amber-300/20 blur-3xl" />
+        <div className="pointer-events-none absolute -bottom-20 left-1/3 h-44 w-44 rounded-full bg-pink-400/10 blur-3xl" />
+
+        <div className="relative flex flex-wrap items-start justify-between gap-5">
+          <div className="max-w-3xl">
+            <div className="mb-3 flex flex-wrap gap-2">
+              <span className="rounded-full border border-amber-300 bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
+                Centro de costos
+              </span>
+              <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-800">
+                Precios por presentación
+              </span>
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
+                Remisiones valorizadas
+              </span>
+            </div>
+
+            <h1 className="text-3xl font-bold tracking-tight text-[var(--ui-text)]">
+              Precios internos
+            </h1>
+            <p className="mt-2 max-w-2xl text-sm leading-6 text-[var(--ui-muted)]">
+              Administra listas de precios para transferencias internas entre centros de costo.
+              Cada precio se amarra a una presentación real del producto para que NEXO pueda valorizar remisiones cerradas sin unidades libres ni ambigüedades.
+            </p>
+          </div>
+
+          <div className="flex flex-wrap gap-2">
+            <Link href="/inventory/settings/remissions" className="ui-btn ui-btn--ghost bg-white/80 shadow-sm">
+              Configuración de remisiones
+            </Link>
+            <Link href="/inventory/remissions" className="ui-btn ui-btn--ghost bg-white/80 shadow-sm">
+              Ir a remisiones
+            </Link>
+          </div>
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          <Link href="/inventory/settings/remissions" className="ui-btn ui-btn--ghost">
-            Configuración de remisiones
-          </Link>
-          <Link href="/inventory/remissions" className="ui-btn ui-btn--ghost">
-            Ir a remisiones
-          </Link>
+        <div className="relative mt-6 grid gap-3 md:grid-cols-3">
+          <div className="rounded-2xl border border-amber-200 bg-white/85 p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Listas activas</div>
+            <div className="mt-2 text-3xl font-bold text-[var(--ui-text)]">{activePriceLists.length}</div>
+            <div className="mt-1 text-xs text-[var(--ui-muted)]">{priceLists.length} listas totales</div>
+          </div>
+
+          <div className="rounded-2xl border border-sky-200 bg-white/85 p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-sky-700">Lista seleccionada</div>
+            <div className="mt-2 line-clamp-2 text-sm font-bold text-[var(--ui-text)]">
+              {selectedPriceList?.name ?? "Sin lista seleccionada"}
+            </div>
+            <div className="mt-1 text-xs text-[var(--ui-muted)]">
+              {selectedPriceList?.is_active ? "Activa" : selectedPriceList ? "Inactiva" : "Sin estado"}
+            </div>
+          </div>
+
+          <div className="rounded-2xl border border-emerald-200 bg-white/85 p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Productos activos</div>
+            <div className="mt-2 text-3xl font-bold text-[var(--ui-text)]">{activeItems.length}</div>
+            <div className="mt-1 text-xs text-[var(--ui-muted)]">{inactiveItems.length} desactivados</div>
+          </div>
         </div>
-      </div>
+      </section>
 
       {errorMsg ? <div className="mt-6 ui-alert ui-alert--error">Error: {errorMsg}</div> : null}
       {okMsg ? <div className="mt-6 ui-alert ui-alert--success">{okMsg}</div> : null}
@@ -531,45 +782,47 @@ export default async function InternalPricesSettingsPage({
         </div>
       ) : null}
 
-      <div className="mt-6 ui-panel">
+      <div className="mt-6 rounded-[1.75rem] border border-[var(--ui-border)] bg-white p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="ui-h3">Cómo configurarlo</div>
+            <div className="text-lg font-bold text-[var(--ui-text)]">Cómo configurarlo</div>
             <p className="mt-1 text-sm text-[var(--ui-muted)]">
               Crea una lista por cada satélite que compra al centro de producción. No uses App Review
               para operación real.
             </p>
           </div>
-          <span className="ui-chip ui-chip--success">Centro de Producción → Satélite</span>
+          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
+            Centro de Producción → Satélite
+          </span>
         </div>
 
         <div className="mt-4 grid gap-3 lg:grid-cols-3">
-          <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
-            <div className="ui-caption">1. Vendedor</div>
-            <div className="mt-2 text-sm font-semibold text-[var(--ui-text)]">
+          <div className="rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 to-white p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">1. Vendedor</div>
+            <div className="mt-2 text-sm font-bold text-[var(--ui-text)]">
               Centro de Producción
             </div>
-            <p className="mt-1 text-xs text-[var(--ui-muted)]">
+            <p className="mt-1 text-xs leading-5 text-[var(--ui-muted)]">
               Es quien produce o despacha internamente.
             </p>
           </div>
 
-          <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
-            <div className="ui-caption">2. Comprador</div>
-            <div className="mt-2 text-sm font-semibold text-[var(--ui-text)]">
+          <div className="rounded-2xl border border-sky-200 bg-gradient-to-br from-sky-50 to-white p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-sky-700">2. Comprador</div>
+            <div className="mt-2 text-sm font-bold text-[var(--ui-text)]">
               Molka, Saudo o Vento Café
             </div>
-            <p className="mt-1 text-xs text-[var(--ui-muted)]">
+            <p className="mt-1 text-xs leading-5 text-[var(--ui-muted)]">
               Es el centro de costo que recibirá y pagará la remisión interna.
             </p>
           </div>
 
-          <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
-            <div className="ui-caption">3. Sede compradora</div>
-            <div className="mt-2 text-sm font-semibold text-[var(--ui-text)]">
+          <div className="rounded-2xl border border-pink-200 bg-gradient-to-br from-pink-50 to-white p-4 shadow-sm">
+            <div className="text-xs font-semibold uppercase tracking-wide text-pink-700">3. Sede compradora</div>
+            <div className="mt-2 text-sm font-bold text-[var(--ui-text)]">
               Usa la misma sede del comprador
             </div>
-            <p className="mt-1 text-xs text-[var(--ui-muted)]">
+            <p className="mt-1 text-xs leading-5 text-[var(--ui-muted)]">
               Esto ayuda a que NEXO encuentre la lista correcta al valorizar remisiones.
             </p>
           </div>
@@ -577,40 +830,40 @@ export default async function InternalPricesSettingsPage({
       </div>
 
       <div className="mt-6 grid gap-3 lg:grid-cols-3">
-        <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
-          <div className="ui-caption">Listas activas</div>
-          <div className="mt-2 text-2xl font-semibold text-[var(--ui-text)]">
-            {activePriceLists.length}
+        <div className="rounded-2xl border border-amber-200 bg-amber-50/80 p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Modelo</div>
+          <div className="mt-2 text-sm font-bold text-[var(--ui-text)]">
+            Precio por presentación
           </div>
           <div className="mt-1 text-xs text-[var(--ui-muted)]">
-            {priceLists.length} listas totales
+            Evita unidades libres y conserva equivalencia operativa.
           </div>
         </div>
 
-        <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
-          <div className="ui-caption">Lista seleccionada</div>
-          <div className="mt-2 text-sm font-semibold text-[var(--ui-text)]">
-            {selectedPriceList?.name ?? "Sin lista seleccionada"}
+        <div className="rounded-2xl border border-sky-200 bg-sky-50/80 p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-sky-700">Valorización</div>
+          <div className="mt-2 text-sm font-bold text-[var(--ui-text)]">
+            Remisiones cerradas
           </div>
           <div className="mt-1 text-xs text-[var(--ui-muted)]">
-            {selectedPriceList?.is_active ? "Activa" : selectedPriceList ? "Inactiva" : "Sin estado"}
+            Congela el precio interno vigente al cerrar operación.
           </div>
         </div>
 
-        <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
-          <div className="ui-caption">Productos en lista</div>
-          <div className="mt-2 text-2xl font-semibold text-[var(--ui-text)]">
-            {activeItems.length}
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50/80 p-4">
+          <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Compatibilidad</div>
+          <div className="mt-2 text-sm font-bold text-[var(--ui-text)]">
+            Legacy controlado
           </div>
           <div className="mt-1 text-xs text-[var(--ui-muted)]">
-            {inactiveItems.length} desactivados
+            Ítems antiguos se muestran como unidad legacy hasta migrarlos.
           </div>
         </div>
       </div>
 
       {canManage ? (
-        <div className="mt-6 ui-panel">
-          <div className="ui-h3">Crear lista de precios internos</div>
+        <div className="mt-6 rounded-[1.75rem] border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-white p-5 shadow-sm">
+          <div className="text-lg font-bold text-[var(--ui-text)]">Crear lista de precios internos</div>
           <p className="mt-1 text-sm text-[var(--ui-muted)]">
             Crea una lista por relación interna, por ejemplo Centro de Producción → Molka.
           </p>
@@ -693,7 +946,7 @@ export default async function InternalPricesSettingsPage({
       ) : null}
 
       <div className="mt-6 grid gap-6 xl:grid-cols-[420px_1fr]">
-        <div className="ui-panel">
+        <div className="rounded-[1.75rem] border border-sky-200 bg-gradient-to-br from-sky-50 via-white to-white p-5 shadow-sm">
           <div className="flex items-start justify-between gap-3">
             <div>
               <div className="ui-h3">Listas creadas</div>
@@ -718,8 +971,8 @@ export default async function InternalPricesSettingsPage({
                     key={list.id}
                     className={
                       isSelected
-                        ? "rounded-2xl border border-[var(--ui-brand)] bg-[var(--ui-surface-2)] p-4"
-                        : "rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4"
+                        ? "rounded-2xl border border-amber-300 bg-gradient-to-br from-amber-50 to-white p-4 shadow-sm"
+                        : "rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm"
                     }
                   >
                     <div className="flex items-start justify-between gap-3">
@@ -776,14 +1029,14 @@ export default async function InternalPricesSettingsPage({
           </div>
         </div>
 
-        <div className="ui-panel">
+        <div className="rounded-[1.75rem] border border-amber-200 bg-white p-5 shadow-sm">
           {selectedPriceList ? (
             <>
               <div className="flex flex-wrap items-start justify-between gap-4">
                 <div>
                   <div className="ui-h3">{selectedPriceList.name}</div>
                   <p className="mt-1 text-sm text-[var(--ui-muted)]">
-                    Define el precio interno que se congelará al valorizar remisiones cerradas.
+                    Define el precio interno por presentación. Este valor se congelará al valorizar remisiones cerradas.
                   </p>
                 </div>
 
@@ -799,8 +1052,8 @@ export default async function InternalPricesSettingsPage({
               </div>
 
               <div className="mt-4 grid gap-3 lg:grid-cols-3">
-                <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
-                  <div className="ui-caption">Vendedor</div>
+                <div className="rounded-2xl border border-amber-200 bg-amber-50/70 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-amber-700">Vendedor</div>
                   <div className="mt-2 text-sm font-semibold text-[var(--ui-text)]">
                     {costCenterLabel(
                       costCentersById.get(selectedPriceList.seller_cost_center_id),
@@ -809,8 +1062,8 @@ export default async function InternalPricesSettingsPage({
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
-                  <div className="ui-caption">Comprador</div>
+                <div className="rounded-2xl border border-sky-200 bg-sky-50/70 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-sky-700">Comprador</div>
                   <div className="mt-2 text-sm font-semibold text-[var(--ui-text)]">
                     {selectedPriceList.buyer_cost_center_id
                       ? costCenterLabel(
@@ -823,8 +1076,8 @@ export default async function InternalPricesSettingsPage({
                   </div>
                 </div>
 
-                <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
-                  <div className="ui-caption">Vigencia</div>
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50/70 p-4">
+                  <div className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Vigencia</div>
                   <div className="mt-2 text-sm font-semibold text-[var(--ui-text)]">
                     {formatDate(selectedPriceList.valid_from)}
                   </div>
@@ -839,33 +1092,25 @@ export default async function InternalPricesSettingsPage({
               {canManage ? (
                 <form
                   action={addInternalPriceListItem}
-                  className="mt-6 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4"
+                  className="mt-6 rounded-2xl border border-amber-200 bg-gradient-to-br from-amber-50 via-white to-white p-4 shadow-sm"
                 >
                   <input type="hidden" name="price_list_id" value={selectedPriceList.id} />
                   <div className="ui-h3">Agregar producto</div>
 
-                  <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_160px_160px_auto]">
+                  <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_170px_auto]">
                     <label className="flex flex-col gap-1">
-                      <span className="ui-label">Producto</span>
-                      <select name="product_id" className="ui-input" required>
-                        <option value="">Seleccionar producto</option>
-                        {products.map((product) => (
-                          <option key={product.id} value={product.id}>
-                            {productLabel(product)}
+                      <span className="ui-label">Producto y presentación</span>
+                      <select name="product_option" className="ui-input" required>
+                        <option value="">Seleccionar producto y presentación</option>
+                        {productPriceOptions.map((option) => (
+                          <option key={option.key} value={option.value}>
+                            {option.label}
                           </option>
                         ))}
                       </select>
-                    </label>
-
-                    <label className="flex flex-col gap-1">
-                      <span className="ui-label">Unidad</span>
-                      <input
-                        name="unit_code"
-                        className="ui-input"
-                        placeholder="unidad"
-                        defaultValue="unidad"
-                        required
-                      />
+                      <span className="text-xs text-[var(--ui-muted)]">
+                        La presentación se toma de la ficha del producto. No se edita como texto libre.
+                      </span>
                     </label>
 
                     <label className="flex flex-col gap-1">
@@ -891,17 +1136,27 @@ export default async function InternalPricesSettingsPage({
               ) : null}
 
               <div className="mt-6">
-                <div className="ui-h3">Productos de la lista</div>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="text-lg font-bold text-[var(--ui-text)]">Productos de la lista</div>
+                    <p className="mt-1 text-xs text-[var(--ui-muted)]">
+                      Revisa presentación, equivalencia y precio interno por cada producto.
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-800">
+                    {priceItems.length} item(s)
+                  </span>
+                </div>
 
-                <div className="mt-4 overflow-x-auto rounded-2xl border border-[var(--ui-border)]">
-                  <table className="min-w-full divide-y divide-[var(--ui-border)] text-sm">
-                    <thead className="bg-[var(--ui-surface-2)]">
+                <div className="mt-4 overflow-hidden rounded-2xl border border-amber-200 shadow-sm">
+                  <table className="min-w-full divide-y divide-amber-100 text-sm">
+                    <thead className="bg-gradient-to-r from-amber-100 via-white to-sky-50">
                       <tr>
                         <th className="px-4 py-3 text-left font-semibold text-[var(--ui-text)]">
                           Producto
                         </th>
                         <th className="px-4 py-3 text-left font-semibold text-[var(--ui-text)]">
-                          Unidad
+                          Presentación
                         </th>
                         <th className="px-4 py-3 text-left font-semibold text-[var(--ui-text)]">
                           Precio
@@ -917,7 +1172,7 @@ export default async function InternalPricesSettingsPage({
                       </tr>
                     </thead>
 
-                    <tbody className="divide-y divide-[var(--ui-border)] bg-[var(--ui-surface)]">
+                    <tbody className="divide-y divide-amber-100 bg-white">
                       {priceItems.length ? (
                         priceItems.map((item) => {
                           const product = productsById.get(item.product_id);
@@ -933,32 +1188,17 @@ export default async function InternalPricesSettingsPage({
                               </td>
 
                               <td className="px-4 py-3 align-top">
-                                {canManage ? (
-                                  <form action={updateInternalPriceListItem} className="flex gap-2">
-                                    <input type="hidden" name="item_id" value={item.id} />
-                                    <input
-                                      type="hidden"
-                                      name="price_list_id"
-                                      value={selectedPriceList.id}
-                                    />
-                                    <input
-                                      name="unit_code"
-                                      className="ui-input w-28"
-                                      defaultValue={item.unit_code}
-                                      required
-                                    />
-                                    <input
-                                      name="unit_price"
-                                      type="hidden"
-                                      value={String(item.unit_price)}
-                                    />
-                                    <button type="submit" className="ui-btn ui-btn--ghost">
-                                      Guardar unidad
-                                    </button>
-                                  </form>
-                                ) : (
-                                  <span className="text-[var(--ui-text)]">{item.unit_code}</span>
-                                )}
+                                <div className="text-sm font-medium text-[var(--ui-text)]">
+                                  {presentationShortLabel({
+                                    label: item.pricing_label,
+                                    inputUnitCode: item.pricing_input_unit_code ?? item.unit_code,
+                                  })}
+                                </div>
+                                <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                                  {item.pricing_qty_in_input_unit && item.pricing_qty_in_stock_unit
+                                    ? `${formatQty(item.pricing_qty_in_input_unit)} ${item.pricing_input_unit_code ?? item.unit_code} = ${formatQty(item.pricing_qty_in_stock_unit)} ${product?.stock_unit_code ?? product?.unit ?? item.unit_code}`
+                                    : `Unidad legacy: ${item.unit_code}`}
+                                </div>
                               </td>
 
                               <td className="px-4 py-3 align-top">
@@ -970,7 +1210,11 @@ export default async function InternalPricesSettingsPage({
                                       name="price_list_id"
                                       value={selectedPriceList.id}
                                     />
-                                    <input type="hidden" name="unit_code" value={item.unit_code} />
+                                    <input
+                                      type="hidden"
+                                      name="unit_code"
+                                      value={item.unit_code || item.pricing_input_unit_code || ""}
+                                    />
                                     <input
                                       name="unit_price"
                                       type="number"
