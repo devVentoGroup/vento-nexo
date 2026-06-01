@@ -50,6 +50,42 @@ async function isRemissionInventoryPostingEnabled(
     false
   );
 }
+
+function toFriendlyTransitStockError(message: string): string {
+  const raw = String(message ?? "").trim();
+  const normalized = raw.toLowerCase();
+
+  if (
+    normalized.includes("insufficient physical stock") &&
+    normalized.includes("selected presentation")
+  ) {
+    return [
+      "No hay stock físico suficiente para la presentación seleccionada.",
+      "La remisión no se puso en tránsito ni se descontó inventario.",
+      "Revisa en la preparación: producto, presentación física, ubicación de origen y cantidad.",
+      "Si el stock existe en unidad base pero no en esa presentación, cambia la preparación a una presentación disponible o corrige el stock físico de esa presentación antes de despachar.",
+    ].join(" ");
+  }
+
+  if (normalized.includes("insufficient physical stock")) {
+    return [
+      "No hay stock físico suficiente para completar el despacho.",
+      "La remisión no se puso en tránsito ni se descontó inventario.",
+      "Revisa la ubicación de origen, presentación física y cantidad preparada.",
+    ].join(" ");
+  }
+
+  if (normalized.includes("insufficient stock")) {
+    return [
+      "No hay stock suficiente para completar el despacho.",
+      "La remisión no se puso en tránsito ni se descontó inventario.",
+      "Revisa la ubicación de origen y la cantidad preparada.",
+    ].join(" ");
+  }
+
+  return raw || "No se pudo poner la remisión en tránsito.";
+}
+
 async function requestHasPreparationPicks(
   supabase: Awaited<ReturnType<typeof createClient>>,
   requestId: string
@@ -1177,7 +1213,7 @@ export async function submitTransitChecklist(formData: FormData) {
           requestId,
           from: returnOrigin,
           siteId: activeSiteId,
-          error: moveErr.message,
+          error: toFriendlyTransitStockError(moveErr.message),
         })
       );
     }
@@ -1395,7 +1431,7 @@ export async function submitTransitChecklist(formData: FormData) {
           requestId,
           from: returnOrigin,
           siteId: activeSiteId,
-          error: moveErr.message,
+          error: toFriendlyTransitStockError(moveErr.message),
         })
       );
     }
@@ -1419,7 +1455,7 @@ export async function submitTransitChecklist(formData: FormData) {
               requestId,
               from: returnOrigin,
               siteId: activeSiteId,
-              error: `No se pudo descontar presentacion fisica: ${presentationErr.message}`,
+              error: toFriendlyTransitStockError(presentationErr.message),
             })
           );
         }
@@ -2319,14 +2355,14 @@ export async function updateStatus(formData: FormData) {
         p_request_id: requestId,
       });
       if (moveErr) {
-        redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: moveErr.message }));
+        redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: toFriendlyTransitStockError(moveErr.message) }));
       }
     } else {
       const { error: moveErr } = await supabase.rpc("apply_restock_shipment", {
         p_request_id: requestId,
       });
       if (moveErr) {
-        redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: moveErr.message }));
+        redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: toFriendlyTransitStockError(moveErr.message) }));
       }
       const fromSiteIdForMovement = request?.from_site_id ?? "";
       if (!fromSiteIdForMovement) {
@@ -2344,7 +2380,7 @@ export async function updateStatus(formData: FormData) {
             p_location_position_id: null,
           });
           if (presentationErr) {
-            redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: `No se pudo descontar presentacion fisica: ${presentationErr.message}` }));
+            redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: toFriendlyTransitStockError(presentationErr.message) }));
           }
         }
 
