@@ -60,6 +60,48 @@ const FOGO_BASE_URL =
   process.env.NEXT_PUBLIC_FOGO_URL?.replace(/\/$/, "") ||
   "https://fogo.ventogroup.co";
 
+type MeasurementMode =
+  | "fixed_presentation"
+  | "variable_weight"
+  | "count_with_weight"
+  | "bulk_volume";
+
+function normalizeMeasurementMode(value: string | null | undefined): MeasurementMode {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (
+    raw === "variable_weight" ||
+    raw === "count_with_weight" ||
+    raw === "bulk_volume" ||
+    raw === "fixed_presentation"
+  ) {
+    return raw;
+  }
+  return "fixed_presentation";
+}
+
+function defaultToleranceForMeasurementMode(mode: MeasurementMode): number {
+  if (mode === "fixed_presentation") return 0;
+  if (mode === "bulk_volume") return 2;
+  return 5;
+}
+
+function clampTolerancePercent(value: number | null, fallback: number): number {
+  if (value == null || !Number.isFinite(value)) return fallback;
+  if (value < 0) return 0;
+  if (value > 100) return 100;
+  return value;
+}
+
+function measurementPolicyForMode(mode: MeasurementMode) {
+  return {
+    requires_actual_receipt_qty: mode !== "fixed_presentation",
+    requires_actual_dispatch_qty: mode !== "fixed_presentation",
+    requires_actual_production_qty: mode !== "fixed_presentation",
+    requires_count_alongside_weight: mode === "count_with_weight",
+    default_tolerance_percent: defaultToleranceForMeasurementMode(mode),
+  };
+}
+
 function buildFogoRecipeUrl(productId: string) {
   const url = new URL("/recipes/new", FOGO_BASE_URL);
   url.searchParams.set("product_id", productId);
@@ -119,6 +161,12 @@ type InventoryProfileRow = {
   costing_mode: "auto_primary_supplier" | "manual" | null;
   lot_tracking: boolean;
   expiry_tracking: boolean;
+  measurement_mode?: MeasurementMode | string | null;
+  default_tolerance_percent?: number | null;
+  requires_actual_receipt_qty?: boolean | null;
+  requires_actual_dispatch_qty?: boolean | null;
+  requires_actual_production_qty?: boolean | null;
+  requires_count_alongside_weight?: boolean | null;
 };
 
 type CategoryRow = InventoryCategoryRow;
@@ -599,6 +647,18 @@ async function updateProduct(formData: FormData) {
     productTypeValue || existingProductType || "insumo",
     inventoryKindInput || ""
   );
+  const requestedMeasurementMode = normalizeMeasurementMode(
+    asText(formData.get("measurement_mode"))
+  );
+  const measurementMode =
+    String(inventoryKindValue ?? "").trim().toLowerCase() === "asset"
+      ? "fixed_presentation"
+      : requestedMeasurementMode;
+  const measurementPolicy = measurementPolicyForMode(measurementMode);
+  const defaultTolerancePercent = clampTolerancePercent(
+    asNullableNumber(formData.get("default_tolerance_percent")),
+    measurementPolicy.default_tolerance_percent
+  );
 
   const categoryId = asText(formData.get("category_id"));
   const categoryKind = resolveCategoryKindForProduct({
@@ -708,6 +768,12 @@ async function updateProduct(formData: FormData) {
     costing_mode: costingMode,
     lot_tracking: Boolean(formData.get("lot_tracking")),
     expiry_tracking: Boolean(formData.get("expiry_tracking")),
+    measurement_mode: measurementMode,
+    default_tolerance_percent: defaultTolerancePercent,
+    requires_actual_receipt_qty: measurementPolicy.requires_actual_receipt_qty,
+    requires_actual_dispatch_qty: measurementPolicy.requires_actual_dispatch_qty,
+    requires_actual_production_qty: measurementPolicy.requires_actual_production_qty,
+    requires_count_alongside_weight: measurementPolicy.requires_count_alongside_weight,
   };
   const { error: profileErr } = await supabase
     .from("product_inventory_profiles")
@@ -1383,7 +1449,7 @@ export default async function ProductCatalogDetailPage({
 
   const { data: profile } = await supabase
     .from("product_inventory_profiles")
-    .select("product_id,track_inventory,inventory_kind,default_unit,unit_family,costing_mode,lot_tracking,expiry_tracking")
+    .select("product_id,track_inventory,inventory_kind,default_unit,unit_family,costing_mode,lot_tracking,expiry_tracking,measurement_mode,default_tolerance_percent,requires_actual_receipt_qty,requires_actual_dispatch_qty,requires_actual_production_qty,requires_count_alongside_weight")
     .eq("product_id", id)
     .maybeSingle();
 
@@ -1937,6 +2003,11 @@ export default async function ProductCatalogDetailPage({
                 stockUnitCode={stockUnitCode}
                 defaultUnitCode={resolvedDefaultUnit}
                 defaultUnitHint="Si no coincide con la familia de la unidad base, se guardara automáticamente la unidad base."
+                measurementModeField={{
+                  defaultValue: normalizeMeasurementMode(profileRow?.measurement_mode),
+                  defaultTolerancePercent: profileRow?.default_tolerance_percent ?? null,
+                  disabled: isAssetItem,
+                }}
                 preCostingFields={
                   <>
                     <label className="flex flex-col gap-1">
@@ -2114,6 +2185,3 @@ export default async function ProductCatalogDetailPage({
     </div>
   );
 }
-
-
-
