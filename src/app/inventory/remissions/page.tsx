@@ -51,6 +51,32 @@ type SearchParams = {
 
 type SiteCapabilityRow = SiteOperationalCapabilities;
 
+type MeasurementMode =
+  | "fixed_presentation"
+  | "variable_weight"
+  | "count_with_weight"
+  | "bulk_volume";
+
+function normalizeMeasurementMode(value: unknown): MeasurementMode {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (
+    raw === "variable_weight" ||
+    raw === "count_with_weight" ||
+    raw === "bulk_volume"
+  ) {
+    return raw;
+  }
+  return "fixed_presentation";
+}
+
+function usesFixedPresentationMode(value: unknown): boolean {
+  return normalizeMeasurementMode(value) === "fixed_presentation";
+}
+
+function usesActualQuantityMode(value: unknown): boolean {
+  return normalizeMeasurementMode(value) !== "fixed_presentation";
+}
+
 function asText(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -94,6 +120,10 @@ type ProductRow = {
   unit: string | null;
   stock_unit_code: string | null;
   category_id?: string | null;
+  measurement_mode?: MeasurementMode;
+  default_tolerance_percent?: number | null;
+  requires_actual_dispatch_qty?: boolean | null;
+  requires_count_alongside_weight?: boolean | null;
 };
 
 type ProductSiteRow = {
@@ -110,6 +140,10 @@ type ProductSiteRow = {
 /** Filas de product_inventory_profiles con el join a products(id,name,unit) */
 type ProductProfileWithProduct = {
   product_id: string;
+  measurement_mode: string | null;
+  default_tolerance_percent: number | null;
+  requires_actual_dispatch_qty?: boolean | null;
+  requires_count_alongside_weight?: boolean | null;
   products: ProductRow | null;
 };
 
@@ -636,15 +670,57 @@ async function createRemission(formData: FormData) {
   const areaKinds = formData.getAll("item_area_kind").map((v) => String(v).trim());
 
   const productIdsForLookup = Array.from(new Set(productIds.filter(Boolean)));
-  const { data: productsData } = productIdsForLookup.length
+  const { data: productProfileLookupData } = productIdsForLookup.length
+    ? await supabase
+      .from("product_inventory_profiles")
+      .select(
+        "product_id,measurement_mode,default_tolerance_percent,requires_actual_dispatch_qty,requires_count_alongside_weight,products(id,unit,stock_unit_code)"
+      )
+      .in("product_id", productIdsForLookup)
+    : { data: [] as ProductProfileWithProduct[] };
+
+  const productRowsFromProfiles = ((productProfileLookupData ?? []) as unknown as ProductProfileWithProduct[])
+    .map<ProductRow | null>((row) => {
+      if (!row.products) return null;
+
+      return {
+        ...row.products,
+        measurement_mode: normalizeMeasurementMode(row.measurement_mode),
+        default_tolerance_percent: row.default_tolerance_percent ?? null,
+        requires_actual_dispatch_qty:
+          typeof row.requires_actual_dispatch_qty === "boolean"
+            ? row.requires_actual_dispatch_qty
+            : usesActualQuantityMode(row.measurement_mode),
+        requires_count_alongside_weight:
+          typeof row.requires_count_alongside_weight === "boolean"
+            ? row.requires_count_alongside_weight
+            : normalizeMeasurementMode(row.measurement_mode) === "count_with_weight",
+      };
+    })
+    .filter((row): row is ProductRow => row !== null);
+
+  const profileLookupIds = new Set(productRowsFromProfiles.map((product) => product.id));
+  const missingProductIdsForLookup = productIdsForLookup.filter((productId) => !profileLookupIds.has(productId));
+  const { data: fallbackProductsData } = missingProductIdsForLookup.length
     ? await supabase
       .from("products")
       .select("id,unit,stock_unit_code")
-      .in("id", productIdsForLookup)
+      .in("id", missingProductIdsForLookup)
     : { data: [] as ProductRow[] };
+
   const productMap = new Map(
-    ((productsData ?? []) as ProductRow[]).map((product) => [product.id, product])
+    [
+      ...productRowsFromProfiles,
+      ...((fallbackProductsData ?? []) as ProductRow[]).map((product) => ({
+        ...product,
+        measurement_mode: "fixed_presentation" as MeasurementMode,
+        default_tolerance_percent: null,
+        requires_actual_dispatch_qty: false,
+        requires_count_alongside_weight: false,
+      })),
+    ].map((product) => [product.id, product])
   );
+
   const requestedUomProfileIds = Array.from(new Set(inputUomProfileIds.filter(Boolean)));
   const { data: uomProfilesData } = requestedUomProfileIds.length
     ? await supabase
@@ -674,26 +750,45 @@ async function createRemission(formData: FormData) {
       .map((productId, idx) => {
         const product = productMap.get(productId);
         const stockUnitCode = normalizeUnitCode(product?.stock_unit_code || product?.unit || "un");
+        const measurementMode = normalizeMeasurementMode(product?.measurement_mode);
         const quantityInInput = roundQuantity(
           parseNumber(inputQuantities[idx] ?? quantities[idx] ?? "0")
         );
         const inputUomProfileId = inputUomProfileIds[idx] || "";
-        const selectedProfile = inputUomProfileId
-          ? uomProfileById.get(inputUomProfileId) ?? null
-          : null;
+        const selectedProfile =
+          measurementMode === "fixed_presentation" && inputUomProfileId
+            ? uomProfileById.get(inputUomProfileId) ?? null
+            : null;
+
+        if (measurementMode === "fixed_presentation" && inputUomProfileId) {
+          if (!selectedProfile) {
+            throw new Error("La presentación seleccionada no existe o no está disponible.");
+          }
+          if (selectedProfile.product_id !== productId || selectedProfile.is_active === false) {
+            throw new Error("La presentación seleccionada no corresponde al producto solicitado.");
+          }
+        }
+
+        const inputUnitCode = normalizeUnitCode(
+          inputUnits[idx] ||
+          selectedProfile?.input_unit_code ||
+          stockUnitCode
+        );
         const conversion = convertByProductProfile({
           quantityInInput,
-          inputUnitCode: normalizeUnitCode(inputUnits[idx] || stockUnitCode),
+          inputUnitCode,
           stockUnitCode,
           profile: selectedProfile,
         });
+
         return {
           product_id: productId,
           quantity: conversion.quantityInStock,
           input_qty: quantityInInput,
           unit: stockUnitCode,
-          input_unit_code: normalizeUnitCode(inputUnits[idx] || stockUnitCode),
-          input_uom_profile_id: inputUomProfileIds[idx] || null,
+          input_unit_code: inputUnitCode,
+          input_uom_profile_id:
+            measurementMode === "fixed_presentation" ? selectedProfile?.id ?? null : null,
           conversion_factor_to_stock: conversion.factorToStock,
           stock_unit_code: stockUnitCode,
           production_area_kind: areaKinds[idx] || null,
@@ -1298,7 +1393,9 @@ export default async function RemissionsPage({
   if (hasAudienceProducts) {
     const productsQuery = await supabase
       .from("product_inventory_profiles")
-      .select("product_id, products(id,name,unit,stock_unit_code,category_id)")
+      .select(
+        "product_id,measurement_mode,default_tolerance_percent,requires_actual_dispatch_qty,requires_count_alongside_weight,products(id,name,unit,stock_unit_code,category_id)"
+      )
       .eq("track_inventory", true)
       .in("inventory_kind", ["ingredient", "finished", "resale", "packaging"])
       .in("product_id", productSiteIds)
@@ -1306,8 +1403,24 @@ export default async function RemissionsPage({
       .limit(400);
 
     productRows = ((productsQuery.data ?? []) as unknown as ProductProfileWithProduct[])
-      .map((row) => row.products)
-      .filter((r): r is ProductRow => Boolean(r));
+      .map<ProductRow | null>((row) => {
+        if (!row.products) return null;
+
+        return {
+          ...row.products,
+          measurement_mode: normalizeMeasurementMode(row.measurement_mode),
+          default_tolerance_percent: row.default_tolerance_percent ?? null,
+          requires_actual_dispatch_qty:
+            typeof row.requires_actual_dispatch_qty === "boolean"
+              ? row.requires_actual_dispatch_qty
+              : usesActualQuantityMode(row.measurement_mode),
+          requires_count_alongside_weight:
+            typeof row.requires_count_alongside_weight === "boolean"
+              ? row.requires_count_alongside_weight
+              : normalizeMeasurementMode(row.measurement_mode) === "count_with_weight",
+        };
+      })
+      .filter((row): row is ProductRow => row !== null);
 
     if (productRows.length === 0) {
       const { data: fallbackProducts } = await supabase
@@ -1317,7 +1430,13 @@ export default async function RemissionsPage({
         .in("id", productSiteIds)
         .order("name", { ascending: true })
         .limit(400);
-      productRows = (fallbackProducts ?? []) as unknown as ProductRow[];
+      productRows = ((fallbackProducts ?? []) as unknown as ProductRow[]).map((row) => ({
+        ...row,
+        measurement_mode: "fixed_presentation",
+        default_tolerance_percent: null,
+        requires_actual_dispatch_qty: false,
+        requires_count_alongside_weight: false,
+      }));
     }
   }
   const productIds = productRows.map((row) => row.id);
@@ -1336,13 +1455,16 @@ export default async function RemissionsPage({
       String(row.name ?? "").trim() || "Sin categoria",
     ])
   );
-  const { data: uomProfilesData } = productIds.length
+  const fixedPresentationProductIds = productRows
+    .filter((row) => usesFixedPresentationMode(row.measurement_mode))
+    .map((row) => row.id);
+  const { data: uomProfilesData } = fixedPresentationProductIds.length
     ? await supabase
       .from("product_uom_profiles")
       .select(
         "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
       )
-      .in("product_id", productIds)
+      .in("product_id", fixedPresentationProductIds)
       .eq("is_active", true)
     : { data: [] as ProductUomProfile[] };
   const defaultUomProfiles = (uomProfilesData ?? []) as ProductUomProfile[];

@@ -11,12 +11,22 @@ import {
   type ProductUomProfile,
 } from "@/lib/inventory/uom";
 
+type MeasurementMode =
+  | "fixed_presentation"
+  | "variable_weight"
+  | "count_with_weight"
+  | "bulk_volume";
+
 type Option = {
   id: string;
   name: string | null;
   unit: string | null;
   stock_unit_code?: string | null;
   category_id?: string | null;
+  measurement_mode?: MeasurementMode | string | null;
+  default_tolerance_percent?: number | null;
+  requires_actual_dispatch_qty?: boolean | null;
+  requires_count_alongside_weight?: boolean | null;
 };
 
 type AreaOption = {
@@ -98,6 +108,90 @@ function getStockUnitCode(product: Option | null | undefined) {
   return normalizeUnitCode(product?.stock_unit_code ?? product?.unit ?? "un");
 }
 
+function normalizeMeasurementMode(value: unknown): MeasurementMode {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (
+    raw === "variable_weight" ||
+    raw === "count_with_weight" ||
+    raw === "bulk_volume"
+  ) {
+    return raw;
+  }
+  return "fixed_presentation";
+}
+
+function getProductMeasurementMode(product: Option | null | undefined): MeasurementMode {
+  return normalizeMeasurementMode(product?.measurement_mode);
+}
+
+function usesFixedPresentation(product: Option | null | undefined): boolean {
+  return getProductMeasurementMode(product) === "fixed_presentation";
+}
+
+function getMeasurementModeLabel(value: MeasurementMode): string {
+  switch (value) {
+    case "variable_weight":
+      return "Peso real";
+    case "count_with_weight":
+      return "Conteo + peso real";
+    case "bulk_volume":
+      return "Cantidad real";
+    case "fixed_presentation":
+    default:
+      return "Presentación fija";
+  }
+}
+
+function getActualQuantityDisplayLabel(product: Option | null | undefined, stockUnitCode: string): string {
+  const measurementMode = getProductMeasurementMode(product);
+  const unitCode = stockUnitCode || "un";
+  if (measurementMode === "count_with_weight") return `${unitCode} real + conteo físico`;
+  if (measurementMode === "bulk_volume") return `${unitCode} real`;
+  if (measurementMode === "variable_weight") return `${unitCode} real`;
+  return unitCode;
+}
+
+function getQuantityFieldLabel(measurementMode: MeasurementMode): string {
+  if (measurementMode === "fixed_presentation") return "Cantidad";
+  if (measurementMode === "count_with_weight") return "Peso solicitado";
+  if (measurementMode === "bulk_volume") return "Cantidad solicitada";
+  return "Cantidad real solicitada";
+}
+
+function getInputModeHelperText(measurementMode: MeasurementMode): string {
+  if (measurementMode === "fixed_presentation") {
+    return "El satélite pide en la presentación mínima. Centro podrá despachar una combinación equivalente.";
+  }
+  if (measurementMode === "count_with_weight") {
+    return "Solicita por peso real. El conteo físico se confirma al preparar, despachar o recibir.";
+  }
+  if (measurementMode === "bulk_volume") {
+    return "Solicita por cantidad real. Centro confirmará lo despachado realmente.";
+  }
+  return "Solicita por peso real. Centro confirmará la cantidad despachada realmente.";
+}
+
+function getOperationalEquivalenceLabel(params: {
+  measurementMode: MeasurementMode;
+  profile: ProductUomProfile | null;
+  presentationLabel: string;
+  stockUnitCode: string;
+}) {
+  const stockUnitCode = params.stockUnitCode || "un";
+  if (params.measurementMode === "fixed_presentation") {
+    return params.profile
+      ? `1 ${params.presentationLabel} = ${formatQuantity(params.profile.qty_in_stock_unit)} ${stockUnitCode}`
+      : `Solicitud en unidad base: ${stockUnitCode}`;
+  }
+  if (params.measurementMode === "count_with_weight") {
+    return `Solicitud por peso real en ${stockUnitCode}. El conteo físico queda para despacho/recepción.`;
+  }
+  if (params.measurementMode === "bulk_volume") {
+    return `Solicitud por cantidad real en ${stockUnitCode}.`;
+  }
+  return `Solicitud por peso real en ${stockUnitCode}.`;
+}
+
 function getRemissionPresentationLabel(
   profile: ProductUomProfile | null | undefined,
   stockUnitCode: string
@@ -161,14 +255,20 @@ export function RemissionsItems({
       const productId = String(row.productId ?? "").trim();
       const product = productsById.get(productId) ?? null;
       const stockUnitCode = getStockUnitCode(product);
-      const profile = productId ? defaultProfileByProduct.get(productId) ?? null : null;
-      const inputUnitCode = getRemissionInputUnitCode(profile, stockUnitCode);
+      const productUsesFixedPresentation = usesFixedPresentation(product);
+      const profile =
+        productId && productUsesFixedPresentation
+          ? defaultProfileByProduct.get(productId) ?? null
+          : null;
+      const inputUnitCode = productUsesFixedPresentation
+        ? getRemissionInputUnitCode(profile, stockUnitCode)
+        : stockUnitCode || "un";
       return {
         id: Number.isFinite(row.id) ? row.id : index,
         productId,
         quantity: String(row.quantity ?? "").trim(),
         inputUnitCode,
-        inputUomProfileId: profile?.id ?? "",
+        inputUomProfileId: productUsesFixedPresentation ? profile?.id ?? "" : "",
         areaKind: String(row.areaKind ?? "").trim() || defaultAreaKind,
       };
     });
@@ -203,14 +303,22 @@ export function RemissionsItems({
     const options = products.map((item) => {
       const groupLabel = categoryNameById[String(item.category_id ?? "").trim()] ?? "Sin categoria";
       const stockUnitCode = getStockUnitCode(item);
-      const profile = defaultProfileByProduct.get(item.id) ?? null;
-      const presentationLabel = getRemissionPresentationLabel(profile, stockUnitCode);
+      const measurementMode = getProductMeasurementMode(item);
+      const productUsesFixedPresentation = measurementMode === "fixed_presentation";
+      const profile = productUsesFixedPresentation ? defaultProfileByProduct.get(item.id) ?? null : null;
+      const presentationLabel = productUsesFixedPresentation
+        ? getRemissionPresentationLabel(profile, stockUnitCode)
+        : getActualQuantityDisplayLabel(item, stockUnitCode);
+      const modeLabel = getMeasurementModeLabel(measurementMode);
       const hasPresentation = Boolean(profile?.id);
       return {
         value: item.id,
         label: `${item.name ?? item.id} — ${presentationLabel}`,
-        searchText: `${item.name ?? ""} ${item.unit ?? ""} ${item.stock_unit_code ?? ""} ${presentationLabel} ${groupLabel}`,
-        groupLabel: hasPresentation ? groupLabel : `${groupLabel} · Sin presentación mínima`,
+        searchText: `${item.name ?? ""} ${item.unit ?? ""} ${item.stock_unit_code ?? ""} ${presentationLabel} ${modeLabel} ${groupLabel}`,
+        groupLabel:
+          productUsesFixedPresentation && !hasPresentation
+            ? `${groupLabel} · Sin presentación mínima`
+            : `${groupLabel} · ${modeLabel}`,
       };
     });
 
@@ -236,20 +344,30 @@ export function RemissionsItems({
         const isLast = idx === rows.length - 1;
         const product = productsById.get(row.productId) ?? null;
         const stockUnitCode = getStockUnitCode(product);
-        const defaultProfile = row.productId ? defaultProfileByProduct.get(row.productId) ?? null : null;
-        const effectiveInputUnitCode = getRemissionInputUnitCode(defaultProfile, stockUnitCode);
-        const effectiveInputUomProfileId = defaultProfile?.id ?? "";
-        const remissionPresentationLabel = getRemissionPresentationLabel(defaultProfile, stockUnitCode);
+        const measurementMode = getProductMeasurementMode(product);
+        const productUsesFixedPresentation = measurementMode === "fixed_presentation";
+        const defaultProfile =
+          row.productId && productUsesFixedPresentation
+            ? defaultProfileByProduct.get(row.productId) ?? null
+            : null;
+        const effectiveInputUnitCode = productUsesFixedPresentation
+          ? getRemissionInputUnitCode(defaultProfile, stockUnitCode)
+          : stockUnitCode || "un";
+        const effectiveInputUomProfileId = productUsesFixedPresentation ? defaultProfile?.id ?? "" : "";
+        const remissionPresentationLabel = productUsesFixedPresentation
+          ? getRemissionPresentationLabel(defaultProfile, stockUnitCode)
+          : getActualQuantityDisplayLabel(product, stockUnitCode);
         const quantityValue = Number(row.quantity);
         const rowReady = Boolean(
           row.productId && Number.isFinite(quantityValue) && quantityValue > 0 && effectiveInputUnitCode
         );
-        const missingPresentation = Boolean(row.productId && !defaultProfile);
-        const conversionLabel = defaultProfile
-          ? `1 ${remissionPresentationLabel} = ${formatQuantity(defaultProfile.qty_in_stock_unit)} ${stockUnitCode || "un"}`
-          : stockUnitCode
-            ? `Solicitud en unidad base: ${stockUnitCode}`
-            : "";
+        const missingPresentation = Boolean(row.productId && productUsesFixedPresentation && !defaultProfile);
+        const conversionLabel = getOperationalEquivalenceLabel({
+          measurementMode,
+          profile: defaultProfile,
+          presentationLabel: remissionPresentationLabel,
+          stockUnitCode,
+        });
         const referenceMeta = row.productId ? referenceStockByProduct[row.productId] ?? null : null;
         const selectedAreaLabel =
           areaOptions.find((option) => option.value === (row.areaKind || defaultAreaKind))?.label ??
@@ -295,6 +413,11 @@ export function RemissionsItems({
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
+                  {row.productId ? (
+                    <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-semibold text-sky-800">
+                      {getMeasurementModeLabel(measurementMode)}
+                    </span>
+                  ) : null}
                   <span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
                     rowReady
                       ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
@@ -319,15 +442,20 @@ export function RemissionsItems({
                     onValueChange={(nextProductId) => {
                       const nextProduct = productsById.get(nextProductId) ?? null;
                       const nextStockUnitCode = getStockUnitCode(nextProduct);
-                      const nextProfile = defaultProfileByProduct.get(nextProductId) ?? null;
+                      const nextUsesFixedPresentation = usesFixedPresentation(nextProduct);
+                      const nextProfile = nextUsesFixedPresentation
+                        ? defaultProfileByProduct.get(nextProductId) ?? null
+                        : null;
                       setRows((prev) =>
                         prev.map((current) =>
                           current.id === row.id
                             ? {
                               ...current,
                               productId: nextProductId,
-                              inputUnitCode: getRemissionInputUnitCode(nextProfile, nextStockUnitCode),
-                              inputUomProfileId: nextProfile?.id ?? "",
+                              inputUnitCode: nextUsesFixedPresentation
+                                ? getRemissionInputUnitCode(nextProfile, nextStockUnitCode)
+                                : nextStockUnitCode || "un",
+                              inputUomProfileId: nextUsesFixedPresentation ? nextProfile?.id ?? "" : "",
                             }
                             : current
                         )
@@ -346,7 +474,7 @@ export function RemissionsItems({
                 </label>
 
                 <label className="flex flex-col gap-1 md:col-span-2">
-                  <span className="ui-label">Cantidad</span>
+                  <span className="ui-label">{getQuantityFieldLabel(measurementMode)}</span>
                   <input
                     type="number"
                     inputMode="decimal"
@@ -367,14 +495,14 @@ export function RemissionsItems({
                 </label>
 
                 <label className="flex flex-col gap-1 md:col-span-2">
-                  <span className="ui-label">Presentación de solicitud</span>
+                  <span className="ui-label">{productUsesFixedPresentation ? "Presentación de solicitud" : "Unidad real de solicitud"}</span>
                   <div className="ui-input flex h-10 items-center bg-[linear-gradient(180deg,rgba(255,251,235,0.9)_0%,rgba(255,255,255,0.92)_100%)] font-semibold text-[var(--ui-text)]">
                     {row.productId ? remissionPresentationLabel : "Selecciona producto"}
                   </div>
                   <input type="hidden" name="item_input_unit_code" value={effectiveInputUnitCode} />
                   <input type="hidden" name="item_input_uom_profile_id" value={effectiveInputUomProfileId} />
                   <span className="text-xs text-[var(--ui-muted)]">
-                    El satélite pide en la presentación mínima. Centro podrá despachar una combinación equivalente.
+                    {getInputModeHelperText(measurementMode)}
                   </span>
                 </label>
 
@@ -417,7 +545,7 @@ export function RemissionsItems({
 
                 {missingPresentation ? (
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 md:col-span-12">
-                    Este producto no tiene presentación mínima para solicitud/remisión. Configúrala en la ficha del producto antes de usarlo en operación real.
+                    Este producto es de presentación fija y no tiene presentación mínima para solicitud/remisión. Configúrala en la ficha del producto antes de usarlo en operación real.
                   </div>
                 ) : null}
 

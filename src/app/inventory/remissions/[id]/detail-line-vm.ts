@@ -16,6 +16,59 @@ export type LocCandidate = {
   qty: number;
 };
 
+export type MeasurementMode =
+  | "fixed_presentation"
+  | "variable_weight"
+  | "count_with_weight"
+  | "bulk_volume";
+
+function normalizeMeasurementMode(value: unknown): MeasurementMode {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (
+    raw === "variable_weight" ||
+    raw === "count_with_weight" ||
+    raw === "bulk_volume"
+  ) {
+    return raw;
+  }
+  return "fixed_presentation";
+}
+
+function getMeasurementModeFromItem(item: RestockItemRow): MeasurementMode {
+  const row = item as RestockItemRow & {
+    measurement_mode?: unknown;
+    product?: (RestockItemRow["product"] & { measurement_mode?: unknown }) | null;
+  };
+
+  return normalizeMeasurementMode(row.measurement_mode ?? row.product?.measurement_mode);
+}
+
+function getMeasurementModeLabel(mode: MeasurementMode): string {
+  switch (mode) {
+    case "variable_weight":
+      return "Peso real";
+    case "count_with_weight":
+      return "Conteo + peso real";
+    case "bulk_volume":
+      return "Cantidad real";
+    default:
+      return "Presentación fija";
+  }
+}
+
+function getActualQuantityLabel(mode: MeasurementMode): string {
+  switch (mode) {
+    case "variable_weight":
+    case "count_with_weight":
+      return "peso real";
+    case "bulk_volume":
+      return "cantidad real";
+    default:
+      return "cantidad";
+  }
+}
+
+
 type BuildRemissionLineVmParams = {
   item: RestockItemRow;
   currentStatus: string;
@@ -47,6 +100,10 @@ export function buildRemissionLineVm(params: BuildRemissionLineVmParams) {
     activeLineEvent,
   } = params;
 
+  const measurementMode = getMeasurementModeFromItem(item);
+  const usesActualQuantity = measurementMode !== "fixed_presentation";
+  const measurementModeLabel = getMeasurementModeLabel(measurementMode);
+  const actualQuantityLabel = getActualQuantityLabel(measurementMode);
   const requestedQty = roundQuantity(Number(item.quantity ?? 0));
   const splitLineIndex = Math.max(lineIdsForProduct.indexOf(item.id), 0) + 1;
   const plannedQtyPreview = Math.max(
@@ -87,6 +144,14 @@ export function buildRemissionLineVm(params: BuildRemissionLineVmParams) {
   const receivedQty = roundQuantity(Number(item.received_quantity ?? 0));
   const shortageQty = roundQuantity(Number(item.shortage_quantity ?? 0));
   const plannedQty = Math.max(preparedQty, shippedQty);
+  const quantityVarianceQty = roundQuantity(plannedQty - requestedQty);
+  const quantityVarianceAbs = roundQuantity(Math.abs(quantityVarianceQty));
+  const quantityVarianceLabel =
+    requestedQty > 0 && plannedQty > 0 && quantityVarianceAbs > 0
+      ? `${quantityVarianceAbs} ${formatUnitLabel(item.stock_unit_code ?? item.unit ?? item.product?.unit ?? "")} ${
+          quantityVarianceQty > 0 ? "sobre lo solicitado" : "por debajo de lo solicitado"
+        }`
+      : "";
   const accountedQty = roundQuantity(receivedQty + shortageQty);
   const availableAtSelectedLoc = item.source_location_id
     ? stockByLocValueMap.get(`${item.source_location_id}|${item.product_id}`) ?? 0
@@ -100,15 +165,27 @@ export function buildRemissionLineVm(params: BuildRemissionLineVmParams) {
   const overLocStock =
     canEditPrepareItems && Boolean(item.source_location_id) && plannedQty > availableAtSelectedLoc;
   const linePreparationPartial =
-    canEditPrepareItems && plannedQty > 0 && requestedQty > 0 && plannedQty < requestedQty;
+    canEditPrepareItems &&
+    !usesActualQuantity &&
+    plannedQty > 0 &&
+    requestedQty > 0 &&
+    plannedQty < requestedQty;
+  const lineActualQuantityDiffers =
+    canEditPrepareItems &&
+    usesActualQuantity &&
+    plannedQty > 0 &&
+    requestedQty > 0 &&
+    quantityVarianceAbs > 0;
   const targetQtyForLoc = plannedQty > 0 ? plannedQty : requestedQty;
   const lineWithoutCoveringLoc =
     canEditPrepareItems &&
+    !usesActualQuantity &&
     targetQtyForLoc > 0 &&
     targetQtyForLoc <= availableSite &&
     (bestLocCandidate?.qty ?? 0) < targetQtyForLoc;
   const canSplitLine =
     canEditPrepareItems &&
+    !usesActualQuantity &&
     lineWithoutCoveringLoc &&
     requestedQty > 0 &&
     preparedQty === 0 &&
@@ -143,9 +220,13 @@ export function buildRemissionLineVm(params: BuildRemissionLineVmParams) {
       : missingSourceLoc
         ? "Área pendiente"
         : shippedQty > 0
-          ? "Lista para despachar"
+          ? usesActualQuantity
+            ? "Cantidad real lista"
+            : "Lista para despachar"
           : preparedQty > 0
-            ? "Preparado"
+            ? usesActualQuantity
+              ? "Real preparado"
+              : "Preparado"
             : linePreparationPartial
               ? "Preparación parcial"
               : lineWithoutCoveringLoc
@@ -179,13 +260,19 @@ export function buildRemissionLineVm(params: BuildRemissionLineVmParams) {
       : !item.source_location_id
         ? "Paso 1: elige el área"
         : preparedQty <= 0
-          ? "Paso 2: indica cuánto preparas"
+          ? usesActualQuantity
+            ? `Paso 2: registra ${actualQuantityLabel}`
+            : "Paso 2: indica cuánto preparas"
           : shippedQty <= 0
-            ? "Paso 3: confirma cuánto sale"
+            ? usesActualQuantity
+              ? "Paso 3: confirma salida real"
+              : "Paso 3: confirma cuánto sale"
             : "Lista para despacho";
   const receiveStepLabel =
     receivedQty <= 0 && shortageQty <= 0
-      ? "Paso 1: registra lo recibido"
+      ? usesActualQuantity
+        ? `Paso 1: registra ${actualQuantityLabel} recibido`
+        : "Paso 1: registra lo recibido"
       : linePartialReceipt
         ? "Pendiente de conciliación"
         : "Línea conciliada";
@@ -201,7 +288,9 @@ export function buildRemissionLineVm(params: BuildRemissionLineVmParams) {
         ? "La cantidad supera el disponible del área elegida."
         : lineWithoutCoveringLoc
           ? "Ninguna área alcanza sola."
-          : linePreparationPartial
+          : lineActualQuantityDiffers
+            ? `Cantidad real registrada: ${plannedQty} ${itemUnitLabel}; diferencia ${quantityVarianceLabel}.`
+            : linePreparationPartial
             ? "La preparación va corta frente a lo solicitado."
             : ""
     : canEditReceiveItems
@@ -246,7 +335,9 @@ export function buildRemissionLineVm(params: BuildRemissionLineVmParams) {
         : activeLineEvent === "prepare_auto"
           ? "Preparación guardada."
           : activeLineEvent === "set_prepare_partial"
-            ? "Envío parcial guardado."
+            ? usesActualQuantity
+            ? "Cantidad real guardada."
+            : "Envío parcial guardado."
             : activeLineEvent === "ship_prepared"
               ? "Salida confirmada."
               : activeLineEvent === "receive_all"
@@ -262,17 +353,33 @@ export function buildRemissionLineVm(params: BuildRemissionLineVmParams) {
                       : "Línea actualizada.";
   const quantityBadgeText = canEditPrepareItems
     ? shippedQty > 0
-      ? `${shippedQty} ${itemUnitLabel} listas`
+      ? usesActualQuantity
+        ? `${shippedQty} ${itemUnitLabel} reales listas`
+        : `${shippedQty} ${itemUnitLabel} listas`
       : preparedQty > 0
-        ? `${preparedQty} ${itemUnitLabel} preparadas`
-        : `${requestedQty} ${itemUnitLabel} por preparar`
+        ? usesActualQuantity
+          ? `${preparedQty} ${itemUnitLabel} reales preparadas`
+          : `${preparedQty} ${itemUnitLabel} preparadas`
+        : usesActualQuantity
+          ? `${requestedQty} ${itemUnitLabel} solicitadas`
+          : `${requestedQty} ${itemUnitLabel} por preparar`
     : canEditReceiveItems
       ? receivedQty > 0
-        ? `${receivedQty} ${itemUnitLabel} recibidas`
-        : `${shippedQty} ${itemUnitLabel} por recibir`
-      : `${requestedQty} ${itemUnitLabel}`;
+        ? usesActualQuantity
+          ? `${receivedQty} ${itemUnitLabel} reales recibidas`
+          : `${receivedQty} ${itemUnitLabel} recibidas`
+        : usesActualQuantity
+          ? `${shippedQty} ${itemUnitLabel} reales por recibir`
+          : `${shippedQty} ${itemUnitLabel} por recibir`
+      : usesActualQuantity
+        ? `${requestedQty} ${itemUnitLabel} solicitadas`
+        : `${requestedQty} ${itemUnitLabel}`;
 
   return {
+    measurementMode,
+    usesActualQuantity,
+    measurementModeLabel,
+    actualQuantityLabel,
     requestedQty,
     splitLineIndex,
     locCandidates: sortedLocCandidates,
@@ -284,6 +391,9 @@ export function buildRemissionLineVm(params: BuildRemissionLineVmParams) {
     receivedQty,
     shortageQty,
     plannedQty,
+    quantityVarianceQty,
+    quantityVarianceAbs,
+    quantityVarianceLabel,
     accountedQty,
     availableSite,
     availableAtSelectedLoc,
@@ -292,6 +402,7 @@ export function buildRemissionLineVm(params: BuildRemissionLineVmParams) {
     overSiteStock,
     overLocStock,
     linePreparationPartial,
+    lineActualQuantityDiffers,
     targetQtyForLoc,
     lineWithoutCoveringLoc,
     canSplitLine,

@@ -15,12 +15,48 @@ type SiteOption = {
   name: string;
 };
 
+type MeasurementMode =
+  | "fixed_presentation"
+  | "variable_weight"
+  | "count_with_weight"
+  | "bulk_volume";
+
+function normalizeMeasurementMode(value: unknown): MeasurementMode {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (raw === "variable_weight" || raw === "count_with_weight" || raw === "bulk_volume") {
+    return raw;
+  }
+  return "fixed_presentation";
+}
+
+function usesFixedPresentationMode(value: unknown): boolean {
+  return normalizeMeasurementMode(value) === "fixed_presentation";
+}
+
+function measurementModeLabel(value: unknown): string {
+  switch (normalizeMeasurementMode(value)) {
+    case "variable_weight":
+      return "Peso real";
+    case "count_with_weight":
+      return "Conteo + peso real";
+    case "bulk_volume":
+      return "Granel / volumen real";
+    case "fixed_presentation":
+    default:
+      return "Presentación fija";
+  }
+}
+
 type ProductOption = {
   id: string;
   name: string | null;
   unit: string | null;
   stock_unit_code?: string | null;
   category_id?: string | null;
+  measurement_mode?: MeasurementMode | string | null;
+  default_tolerance_percent?: number | null;
+  requires_actual_dispatch_qty?: boolean | null;
+  requires_count_alongside_weight?: boolean | null;
 };
 
 type AreaOption = {
@@ -183,11 +219,14 @@ export function RemissionsCreateForm({
         }
 
         if (valid) {
+          const measurementMode = normalizeMeasurementMode(product?.measurement_mode);
+          const isFixedPresentation = usesFixedPresentationMode(measurementMode);
           const stockUnitCode = normalizeUnitCode(product?.stock_unit_code || product?.unit || "un");
           const inputUnitCode = normalizeUnitCode(row.inputUnitCode || stockUnitCode);
-          const selectedProfile = row.inputUomProfileId
-            ? uomProfileById.get(row.inputUomProfileId) ?? null
-            : null;
+          const selectedProfile =
+            isFixedPresentation && row.inputUomProfileId
+              ? uomProfileById.get(row.inputUomProfileId) ?? null
+              : null;
           let quantityInStock = Number.isFinite(qty) ? qty : 0;
           try {
             quantityInStock = convertByProductProfile({
@@ -214,14 +253,21 @@ export function RemissionsCreateForm({
             }
           }
 
-          const displayUnit = String(selectedProfile?.label ?? "").trim() || inputUnitCode || stockUnitCode || "un";
+          const displayUnit =
+            isFixedPresentation
+              ? String(selectedProfile?.label ?? "").trim() || inputUnitCode || stockUnitCode || "un"
+              : inputUnitCode || stockUnitCode || "un";
           const stockUnitDisplay = stockUnitCode || "un";
           const conversionSummary =
             selectedProfile && quantityInStock !== qty
               ? `${Number.isFinite(qty) ? qty : 0} ${displayUnit} = ${quantityInStock.toLocaleString("es-CO", {
                 maximumFractionDigits: 3,
               })} ${stockUnitDisplay}`
-              : "";
+              : !isFixedPresentation && inputUnitCode !== stockUnitCode
+                ? `${Number.isFinite(qty) ? qty : 0} ${displayUnit} se guardará como ${quantityInStock.toLocaleString("es-CO", {
+                  maximumFractionDigits: 3,
+                })} ${stockUnitDisplay}`
+                : "";
 
           acc.items.push({
             id: row.id,
@@ -236,6 +282,9 @@ export function RemissionsCreateForm({
             referenceUpdatedAt: referenceMeta?.updatedAt ?? null,
             hasReferenceShortage,
             hasPresentationProfile: Boolean(selectedProfile?.id),
+            requiresPresentationProfile: isFixedPresentation,
+            measurementMode,
+            measurementModeLabel: measurementModeLabel(measurementMode),
             conversionSummary,
             valid,
           });
@@ -257,6 +306,9 @@ export function RemissionsCreateForm({
           referenceUpdatedAt: string | null;
           hasReferenceShortage: boolean;
           hasPresentationProfile: boolean;
+          requiresPresentationProfile: boolean;
+          measurementMode: MeasurementMode;
+          measurementModeLabel: string;
           conversionSummary: string;
           valid: boolean;
         }>,
@@ -379,7 +431,7 @@ export function RemissionsCreateForm({
                   <div className="mt-1 text-2xl font-semibold text-[var(--ui-text)]">{selectedItems.length}</div>
                 </div>
                 <div>
-                  <div className="text-xs text-[var(--ui-muted)]">Presentaciones solicitadas</div>
+                  <div className="text-xs text-[var(--ui-muted)]">Cantidad solicitada</div>
                   <div className="mt-1 text-2xl font-semibold text-[var(--ui-text)]">{draftSummary.totalQuantity}</div>
                 </div>
                 <div>
@@ -419,14 +471,22 @@ export function RemissionsCreateForm({
                       <div className="mt-1 text-xs text-[var(--ui-muted)]">
                         Solicitud: {item.quantity} × {item.unit}
                       </div>
+                      <div className="mt-1 text-xs font-semibold text-slate-700">
+                        Modo: {item.measurementModeLabel}
+                      </div>
                       {item.conversionSummary ? (
                         <div className="mt-1 text-xs text-sky-900">
                           Equivalencia inventario: {item.conversionSummary}
                         </div>
                       ) : null}
-                      {!item.hasPresentationProfile ? (
+                      {item.requiresPresentationProfile && !item.hasPresentationProfile ? (
                         <div className="mt-2 text-xs font-semibold text-amber-800">
                           Revisa presentación mínima: esta línea no tiene perfil de remisión asociado.
+                        </div>
+                      ) : null}
+                      {!item.requiresPresentationProfile ? (
+                        <div className="mt-2 text-xs font-semibold text-emerald-800">
+                          Se solicitará por cantidad real; no requiere presentación fija.
                         </div>
                       ) : null}
                     </div>
@@ -449,8 +509,8 @@ export function RemissionsCreateForm({
             <div className="ui-h3">Productos</div>
             <div className="mt-1 ui-caption">
               {siteMode === "simple"
-                ? "Pide por la presentación mínima configurada. Centro podrá despachar combinaciones físicas equivalentes."
-                : "Pide por la presentación mínima configurada y define el área. Centro podrá despachar combinaciones físicas equivalentes."}
+                ? "Los productos fijos usan presentación; los variables se solicitan por cantidad real."
+                : "Los productos fijos usan presentación; los variables se solicitan por cantidad real y área."}
             </div>
           </div>
           <div className="flex flex-wrap gap-2">

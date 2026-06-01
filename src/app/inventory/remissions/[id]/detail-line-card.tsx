@@ -14,6 +14,61 @@ type RemissionLineCardProps = {
   batchReceiveMode?: boolean;
 };
 
+
+type MeasurementMode =
+  | "fixed_presentation"
+  | "variable_weight"
+  | "count_with_weight"
+  | "bulk_volume";
+
+function normalizeMeasurementMode(value: unknown): MeasurementMode {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (
+    raw === "variable_weight" ||
+    raw === "count_with_weight" ||
+    raw === "bulk_volume"
+  ) {
+    return raw;
+  }
+  return "fixed_presentation";
+}
+
+function getMeasurementModeFromItem(item: RestockItemRow): MeasurementMode {
+  const row = item as RestockItemRow & {
+    measurement_mode?: unknown;
+    product?: {
+      measurement_mode?: unknown;
+    } | null;
+  };
+  return normalizeMeasurementMode(row.measurement_mode ?? row.product?.measurement_mode);
+}
+
+function getMeasurementModeLabel(mode: MeasurementMode): string {
+  switch (mode) {
+    case "variable_weight":
+      return "Peso real";
+    case "count_with_weight":
+      return "Conteo + peso real";
+    case "bulk_volume":
+      return "Cantidad real";
+    default:
+      return "Presentación fija";
+  }
+}
+
+function getActualQuantityLabel(mode: MeasurementMode): string {
+  switch (mode) {
+    case "variable_weight":
+      return "Peso real";
+    case "count_with_weight":
+      return "Peso real";
+    case "bulk_volume":
+      return "Cantidad real";
+    default:
+      return "Cantidad";
+  }
+}
+
 export function RemissionLineCard({
   item,
   vm,
@@ -39,6 +94,16 @@ export function RemissionLineCard({
 
   const isReceiveOnly = canEditReceiveItems && !canEditPrepareItems;
   const isBatchReceiveOnly = isReceiveOnly && batchReceiveMode;
+  const measurementMode = getMeasurementModeFromItem(item);
+  const usesActualQuantity = measurementMode !== "fixed_presentation";
+  const measurementChipLabel = getMeasurementModeLabel(measurementMode);
+  const actualQuantityLabel = getActualQuantityLabel(measurementMode);
+  const prepareInputMax = usesActualQuantity
+    ? Math.max(vm.availableAtSelectedLoc, 0)
+    : Math.min(vm.requestedQty, vm.availableAtSelectedLoc);
+  const prepareInputDefault = Math.min(vm.requestedQty, vm.availableAtSelectedLoc);
+  const canShipPreparedQuantity = vm.preparedQty > 0 && vm.availableAtSelectedLoc >= vm.preparedQty;
+  const canPrepareRequestedQuantity = vm.availableAtSelectedLoc >= vm.requestedQty;
 
   const rootClass = isReceiveOnly
     ? [
@@ -102,6 +167,17 @@ export function RemissionLineCard({
               >
                 {vm.quantityBadgeText}
               </span>
+              {usesActualQuantity ? (
+                <span
+                  className={
+                    batchReceiveMode
+                      ? "rounded-full bg-sky-50 px-2 py-1 text-xs font-semibold text-sky-800 ring-1 ring-sky-200/80 sm:px-3 sm:py-1.5 sm:text-sm"
+                      : "rounded-full bg-sky-50 px-3 py-1.5 text-sm font-semibold text-sky-800 ring-1 ring-sky-200/80"
+                  }
+                >
+                  {measurementChipLabel}
+                </span>
+              ) : null}
               {lineIdsForProduct.length > 1 ? (
                 <span
                   className={
@@ -131,6 +207,11 @@ export function RemissionLineCard({
               <span className="rounded-full border border-amber-200 bg-amber-50 px-3.5 py-1.5 text-[15px] font-semibold text-amber-950 shadow-sm">
                 {vm.quantityBadgeText}
               </span>
+              {usesActualQuantity ? (
+                <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[13px] font-semibold text-sky-800 shadow-sm">
+                  {measurementChipLabel}
+                </span>
+              ) : null}
               {lineIdsForProduct.length > 1 ? (
                 <span className="rounded-full border border-[var(--ui-border)] bg-white px-3 py-1 text-[13px] font-semibold text-[var(--ui-text)] shadow-sm">
                   Línea {vm.splitLineIndex} de {lineIdsForProduct.length}
@@ -170,6 +251,19 @@ export function RemissionLineCard({
             {vm.primaryHint}
           </div>
         )
+      ) : null}
+      {usesActualQuantity ? (
+        <div
+          className={
+            isReceiveOnly
+              ? batchReceiveMode
+                ? "mt-2 rounded-lg bg-sky-50 px-3 py-2 text-sm leading-snug text-sky-900 ring-1 ring-sky-200/70"
+                : "mt-3 rounded-xl bg-sky-50 px-4 py-2.5 text-base leading-snug text-sky-900 ring-1 ring-sky-200/70"
+              : "mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-sm text-sky-900"
+          }
+        >
+          Producto de {measurementChipLabel.toLowerCase()}: la cantidad preparada, enviada o recibida puede ser distinta a la solicitada. Registra siempre la cantidad real medida.
+        </div>
       ) : null}
       {vm.canSplitLine ? (
         <div className="mt-3 rounded-xl border border-dashed border-[var(--ui-border)] bg-[var(--ui-bg)] px-4 py-3">
@@ -293,7 +387,7 @@ export function RemissionLineCard({
               <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-3">
                 <div className="text-sm font-semibold text-emerald-950">Hecha</div>
                 <div className="mt-1 text-sm text-emerald-900">
-                  Ya quedaron marcadas {vm.shippedQty} {vm.itemUnitLabel} para esta línea.
+                  Ya quedó marcada la cantidad real enviada: {vm.shippedQty} {vm.itemUnitLabel}.
                 </div>
                 <details className="mt-3 rounded-xl border border-emerald-200 bg-[var(--ui-bg)] px-3 py-2">
                   <summary className="cursor-pointer text-sm font-semibold text-emerald-950">
@@ -313,16 +407,16 @@ export function RemissionLineCard({
             ) : vm.preparedQty > 0 ? (
               <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3">
                 <div className="text-sm text-[var(--ui-muted)]">
-                  Preparado: <strong className="text-[var(--ui-text)]">{vm.preparedQty} {vm.itemUnitLabel}</strong>
+                  {usesActualQuantity ? `${actualQuantityLabel} preparado` : "Preparado"}: <strong className="text-[var(--ui-text)]">{vm.preparedQty} {vm.itemUnitLabel}</strong>
                 </div>
                 <div className="mt-3">
                   <button
                     type="submit"
                     form={shipShortcutFormId}
                     className="ui-btn ui-btn--action ui-btn--compact w-full px-4 text-sm font-semibold sm:w-auto"
-                    disabled={vm.availableAtSelectedLoc < vm.requestedQty}
+                    disabled={!canShipPreparedQuantity}
                   >
-                    Marcar lista para despacho
+                    {usesActualQuantity ? "Confirmar cantidad real para despacho" : "Marcar lista para despacho"}
                   </button>
                 </div>
                 <details className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] px-3 py-2">
@@ -330,17 +424,17 @@ export function RemissionLineCard({
                     Cambiar o ajustar
                   </summary>
                   <div className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3">
-                    <div className="ui-caption">Enviar cantidad parcial</div>
+                    <div className="ui-caption">{usesActualQuantity ? "Ajustar cantidad real preparada" : "Enviar cantidad parcial"}</div>
                     <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
                       <label className="flex min-w-0 flex-1 flex-col gap-1">
-                        <span className="ui-caption">Cantidad a enviar</span>
+                        <span className="ui-caption">{usesActualQuantity ? actualQuantityLabel : "Cantidad a enviar"}</span>
                         <input
                           type="number"
                           step="any"
                           min={0}
-                          max={Math.min(vm.requestedQty, vm.availableAtSelectedLoc)}
+                          max={prepareInputMax}
                           name="prepare_qty"
-                          defaultValue={vm.preparedQty > 0 ? vm.preparedQty : Math.min(vm.requestedQty, vm.availableAtSelectedLoc)}
+                          defaultValue={vm.preparedQty > 0 ? vm.preparedQty : prepareInputDefault}
                           form={setPartialPrepareFormId}
                           className="ui-input h-11"
                         />
@@ -375,10 +469,12 @@ export function RemissionLineCard({
                     type="submit"
                     form={completeLineShortcutFormId}
                     className="ui-btn ui-btn--action ui-btn--compact w-full px-4 text-sm font-semibold sm:w-auto"
-                    disabled={vm.availableAtSelectedLoc < vm.requestedQty}
+                    disabled={!canPrepareRequestedQuantity}
                   >
-                    {vm.availableAtSelectedLoc >= vm.requestedQty
-                      ? `Preparar ${vm.requestedQty} ${vm.itemUnitLabel}`
+                    {canPrepareRequestedQuantity
+                      ? usesActualQuantity
+                        ? `Preparar solicitud base (${vm.requestedQty} ${vm.itemUnitLabel})`
+                        : `Preparar ${vm.requestedQty} ${vm.itemUnitLabel}`
                       : `No alcanza para ${vm.requestedQty} ${vm.itemUnitLabel}`}
                   </button>
                 </div>
@@ -387,17 +483,17 @@ export function RemissionLineCard({
                     Cambiar o ajustar
                   </summary>
                   <div className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3">
-                    <div className="ui-caption">Preparar cantidad parcial</div>
+                    <div className="ui-caption">{usesActualQuantity ? "Registrar cantidad real preparada" : "Preparar cantidad parcial"}</div>
                     <div className="mt-2 flex flex-col gap-2 sm:flex-row sm:items-end">
                       <label className="flex min-w-0 flex-1 flex-col gap-1">
-                        <span className="ui-caption">Cantidad a enviar</span>
+                        <span className="ui-caption">{usesActualQuantity ? actualQuantityLabel : "Cantidad a enviar"}</span>
                         <input
                           type="number"
                           step="any"
                           min={0}
-                          max={Math.min(vm.requestedQty, vm.availableAtSelectedLoc)}
+                          max={prepareInputMax}
                           name="prepare_qty"
-                          defaultValue={Math.min(vm.requestedQty, vm.availableAtSelectedLoc)}
+                          defaultValue={prepareInputDefault}
                           form={setPartialPrepareFormId}
                           className="ui-input h-11"
                         />
@@ -465,7 +561,7 @@ export function RemissionLineCard({
                         : "mt-1 text-sm text-emerald-800/80"
                     }
                   >
-                    {vm.receivedQty} {vm.itemUnitLabel} conciliadas en esta línea.
+                    {vm.receivedQty} {vm.itemUnitLabel} conciliadas en esta línea{usesActualQuantity ? " como cantidad real recibida" : ""}.
                   </p>
                 </div>
                 <span
@@ -496,12 +592,12 @@ export function RemissionLineCard({
                   {isReceiveOnly
                     ? batchReceiveMode
                       ? vm.linePartialReceipt
-                        ? `Ya registraste ${vm.receivedQty} ${vm.itemUnitLabel}. Marca la casilla cuando hayas verificado el físico; la barra inferior registra todo junto, o usa Más opciones para faltante o parcial.`
+                        ? `Ya registraste ${vm.receivedQty} ${vm.itemUnitLabel}. Marca la casilla cuando hayas verificado el físico; la barra inferior registra todo junto, o usa Más opciones para faltante o cantidad real distinta.`
                         : vm.shippedQty > 0
                           ? `${vm.shippedQty} ${vm.itemUnitLabel} enviadas desde el centro. Marca la casilla cuando las tengas listas; la confirmación es global abajo.`
                           : "Esta línea aún no tiene envío confirmado hacia tu sede."
                       : vm.linePartialReceipt
-                        ? `Ya registraste ${vm.receivedQty} ${vm.itemUnitLabel}. Puedes completar la línea o ajustar abajo si hace falta.`
+                        ? `Ya registraste ${vm.receivedQty} ${vm.itemUnitLabel}. Puedes completar la línea o registrar una cantidad real distinta abajo.`
                         : vm.shippedQty > 0
                           ? `${vm.shippedQty} ${vm.itemUnitLabel} enviadas desde el centro. Confirma que recibiste todo.`
                           : "Esta línea aún no tiene envío confirmado hacia tu sede."
@@ -528,7 +624,9 @@ export function RemissionLineCard({
                     }
                   >
                     {vm.shippedQty > 0
-                      ? `Recibir ${vm.shippedQty} ${vm.itemUnitLabel}`
+                      ? usesActualQuantity
+                        ? `Recibir cantidad real: ${vm.shippedQty} ${vm.itemUnitLabel}`
+                        : `Recibir ${vm.shippedQty} ${vm.itemUnitLabel}`
                       : "Nada por recibir aún"}
                   </button>
                 ) : null}
@@ -555,7 +653,7 @@ export function RemissionLineCard({
                           Más opciones
                         </span>
                         <span className="text-sm font-normal text-stone-500">
-                          Faltante · cantidad distinta · limpiar
+                          Faltante · cantidad real distinta · limpiar
                         </span>
                       </span>
                     ) : (
@@ -614,12 +712,16 @@ export function RemissionLineCard({
                             }
                           >
                             {isReceiveOnly
-                              ? "Recibir otra cantidad"
-                              : "Recibir cantidad diferente"}
+                              ? usesActualQuantity
+                                ? "Registrar cantidad real recibida"
+                                : "Recibir otra cantidad"
+                              : usesActualQuantity
+                                ? "Registrar cantidad real recibida"
+                                : "Recibir cantidad diferente"}
                           </p>
                           {isReceiveOnly ? (
                             <p className="mt-1 text-sm text-stone-500">
-                              Si no llegó todo lo enviado, indica cuánto recibiste.
+                              Si no llegó exactamente lo enviado, indica la cantidad real que mediste.
                             </p>
                           ) : null}
                         </div>
@@ -632,7 +734,7 @@ export function RemissionLineCard({
                                   : "ui-caption"
                               }
                             >
-                              Cantidad recibida
+                              {usesActualQuantity ? actualQuantityLabel : "Cantidad recibida"}
                             </span>
                             <input
                               type="number"

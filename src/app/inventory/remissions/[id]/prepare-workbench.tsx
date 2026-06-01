@@ -21,6 +21,12 @@ type LocOption = {
   positionOptions?: InternalPositionOption[];
 };
 
+type MeasurementMode =
+  | "fixed_presentation"
+  | "variable_weight"
+  | "count_with_weight"
+  | "bulk_volume";
+
 type DraftLine = {
   id: string;
   baseItemId: string;
@@ -28,6 +34,8 @@ type DraftLine = {
   productName: string;
   requestedQty: number;
   unitLabel: string;
+  measurementMode?: MeasurementMode | string | null;
+  measurement_mode?: MeasurementMode | string | null;
   /**
    * Datos opcionales de presentación física. Si el padre los envía,
    * el plan de salida conserva presentación_qty + base_qty.
@@ -87,8 +95,62 @@ function clampQty(value: number, min: number, max: number) {
 
 function suggestedQtyForLoc(line: DraftLine, locId: string) {
   const loc = line.locOptions.find((entry) => entry.id === locId);
-  const available = Number(loc?.qty ?? 0);
-  return roundQty(clampQty(available, 0, line.requestedQty));
+  const available = roundQty(Number(loc?.qty ?? 0));
+  return roundQty(clampQty(Number(line.requestedQty ?? 0), 0, available));
+}
+
+function normalizeMeasurementMode(value: unknown): MeasurementMode {
+  const raw = String(value ?? "").trim();
+  if (
+    raw === "variable_weight" ||
+    raw === "count_with_weight" ||
+    raw === "bulk_volume" ||
+    raw === "fixed_presentation"
+  ) {
+    return raw;
+  }
+  return "fixed_presentation";
+}
+
+function getLineMeasurementMode(line: DraftLine): MeasurementMode {
+  return normalizeMeasurementMode(line.measurementMode ?? line.measurement_mode);
+}
+
+function lineUsesActualQuantity(line: DraftLine): boolean {
+  return getLineMeasurementMode(line) !== "fixed_presentation";
+}
+
+function getLineMeasurementLabel(line: DraftLine): string {
+  const mode = getLineMeasurementMode(line);
+  if (mode === "variable_weight") return "Peso real";
+  if (mode === "count_with_weight") return "Conteo + peso real";
+  if (mode === "bulk_volume") return "Cantidad real";
+  return "Presentación fija";
+}
+
+function getSelectedLocAvailable(line: DraftLine): number {
+  const loc = line.locOptions.find((entry) => entry.id === line.selectedLocId);
+  return roundQty(Number(loc?.qty ?? 0));
+}
+
+function getDispatchMaxForLine(line: DraftLine): number {
+  const requestedQty = roundQty(Number(line.requestedQty ?? 0));
+  if (!lineUsesActualQuantity(line)) return requestedQty;
+
+  const selectedAvailable = getSelectedLocAvailable(line);
+  if (line.selectedLocId && selectedAvailable > 0) return selectedAvailable;
+
+  const maxLocQty = maxLocQtyForLine(line);
+  return maxLocQty > 0 ? maxLocQty : requestedQty;
+}
+
+function clampDispatchQty(line: DraftLine, value: number): number {
+  return roundQty(clampQty(Number(value ?? 0), 0, getDispatchMaxForLine(line)));
+}
+
+
+function getOverageQty(line: DraftLine): number {
+  return roundQty(Math.max(Number(line.dispatchQty ?? 0) - Number(line.requestedQty ?? 0), 0));
 }
 
 function applySmartAllocation(inputLines: DraftLine[], preserveManual: boolean): DraftLine[] {
@@ -114,9 +176,7 @@ function applySmartAllocation(inputLines: DraftLine[], preserveManual: boolean):
       for (const line of productLines) {
         if (!line.manualLocked || !line.selectedLocId) continue;
         const current = Number(locRemaining.get(line.selectedLocId) ?? 0);
-        const reserved = roundQty(
-          clampQty(Number(line.dispatchQty ?? 0), 0, Number(line.requestedQty ?? 0))
-        );
+        const reserved = clampDispatchQty(line, Number(line.dispatchQty ?? 0));
         locRemaining.set(line.selectedLocId, roundQty(Math.max(0, current - reserved)));
       }
     }
@@ -162,7 +222,7 @@ function normalizeLine(line: DraftLine): DraftLine {
   let dispatchQty = roundQty(Number(line.dispatchQty ?? 0));
 
   if (!selectedLocId) {
-    dispatchQty = roundQty(clampQty(dispatchQty, 0, line.requestedQty));
+    dispatchQty = clampDispatchQty({ ...line, selectedLocId }, dispatchQty);
     return { ...line, selectedLocId, dispatchQty };
   }
 
@@ -170,7 +230,7 @@ function normalizeLine(line: DraftLine): DraftLine {
   if (dispatchQty <= 0) {
     dispatchQty = suggestedQty;
   } else {
-    dispatchQty = roundQty(clampQty(dispatchQty, 0, line.requestedQty));
+    dispatchQty = clampDispatchQty({ ...line, selectedLocId }, dispatchQty);
   }
 
   return { ...line, selectedLocId, dispatchQty };
@@ -222,7 +282,7 @@ function getPositionOptionsForLoc(loc?: LocOption | null): InternalPositionOptio
 function buildPositionPlan(line: DraftLine): Array<{ positionId: string; label: string; qty: number }> {
   const loc = line.locOptions.find((entry) => entry.id === line.selectedLocId);
   const positions = getPositionOptionsForLoc(loc);
-  const targetQty = roundQty(clampQty(Number(line.dispatchQty ?? 0), 0, Number(line.requestedQty ?? 0)));
+  const targetQty = clampDispatchQty(line, Number(line.dispatchQty ?? 0));
   let remaining = targetQty;
   const plan: Array<{ positionId: string; label: string; qty: number }> = [];
 
@@ -240,7 +300,7 @@ function buildPositionPlan(line: DraftLine): Array<{ positionId: string; label: 
 }
 
 function buildPicksForLine(line: DraftLine): PickPayload[] {
-  const baseQty = roundQty(clampQty(Number(line.dispatchQty ?? 0), 0, Number(line.requestedQty ?? 0)));
+  const baseQty = clampDispatchQty(line, Number(line.dispatchQty ?? 0));
   const sourceLocationId = String(line.selectedLocId ?? "").trim();
 
   if (baseQty <= 0 || !sourceLocationId) return [];
@@ -282,7 +342,7 @@ function buildPicksForLine(line: DraftLine): PickPayload[] {
 
 function getLineTone(line: DraftLine) {
   if (!line.selectedLocId && line.dispatchQty > 0) return "pending";
-  if (line.dispatchQty < 0 || line.dispatchQty > line.requestedQty) return "error";
+  if (line.dispatchQty < 0 || line.dispatchQty > getDispatchMaxForLine(line)) return "error";
   if (line.dispatchQty < line.requestedQty && !line.shortageReason.trim()) return "warn";
   return "ok";
 }
@@ -300,6 +360,7 @@ function getLineToneLabel(tone: "pending" | "warn" | "error" | "ok") {
  */
 function canSplitDraftLine(line: DraftLine): boolean {
   if (line.isVirtualSplit) return false;
+  if (lineUsesActualQuantity(line)) return false;
   return roundQty(line.requestedQty) > 1;
 }
 
@@ -402,6 +463,9 @@ function RemissionPrepareReadonlySummary({
                   <div className="mt-1 text-xs text-[var(--ui-muted)]">
                     Solicitado: {line.requestedQty} {line.unitLabel}
                   </div>
+                  <div className="mt-1 inline-flex rounded-full border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--ui-muted)]">
+                    {getLineMeasurementLabel(line)}
+                  </div>
                 </div>
                 <div className="text-sm text-[var(--ui-text)]">{locText}</div>
                 <div className="text-sm font-medium text-[var(--ui-text)]">
@@ -464,9 +528,7 @@ function RemissionPrepareWorkbenchInteractive({
 
   const blockers = useMemo(() => {
     const missingLoc = lines.filter((line) => line.dispatchQty > 0 && !line.selectedLocId).length;
-    const invalidQty = lines.filter(
-      (line) => line.dispatchQty < 0 || line.dispatchQty > line.requestedQty
-    ).length;
+    const invalidQty = lines.filter((line) => getLineTone(line) === "error").length;
     const missingReason = lines.filter(
       (line) => line.dispatchQty < line.requestedQty && !line.shortageReason.trim()
     ).length;
@@ -479,7 +541,7 @@ function RemissionPrepareWorkbenchInteractive({
   const progress = useMemo(() => {
     const done = lines.filter((line) => {
       if (line.dispatchQty > 0 && !line.selectedLocId) return false;
-      if (line.dispatchQty < 0 || line.dispatchQty > line.requestedQty) return false;
+      if (getLineTone(line) === "error") return false;
       if (line.dispatchQty < line.requestedQty && !line.shortageReason.trim()) return false;
       return true;
     }).length;
@@ -498,7 +560,7 @@ function RemissionPrepareWorkbenchInteractive({
             if (next.dispatchQty >= next.requestedQty) next.shortageReason = "";
           }
         }
-        next.dispatchQty = roundQty(clampQty(Number(next.dispatchQty ?? 0), 0, next.requestedQty));
+        next.dispatchQty = clampDispatchQty(next, Number(next.dispatchQty ?? 0));
         return next;
       });
       return applySmartAllocation(patched, true);
@@ -604,6 +666,8 @@ function RemissionPrepareWorkbenchInteractive({
             ? suggestedSplitPrimaryQtyForMultiloc(line)
             : 0;
           const multilocSuggested = multilocHint ? suggestedNewLineQtyForMultiloc(line) : 0;
+          const dispatchMax = getDispatchMaxForLine(line);
+          const overageQty = getOverageQty(line);
           return (
             <div key={line.id} className="border-t border-[var(--ui-border)] first:border-t-0">
               <div className="grid gap-3 px-4 py-3 lg:grid-cols-[minmax(220px,1.2fr)_minmax(260px,1.3fr)_120px_minmax(220px,1fr)_120px] lg:items-start">
@@ -611,6 +675,9 @@ function RemissionPrepareWorkbenchInteractive({
                   <div className="text-sm font-semibold text-[var(--ui-text)]">{line.productName}</div>
                   <div className="mt-1 text-xs text-[var(--ui-muted)]">
                     Solicitado: {line.requestedQty} {line.unitLabel}
+                  </div>
+                  <div className="mt-1 inline-flex rounded-full border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--ui-muted)]">
+                    {getLineMeasurementLabel(line)}
                   </div>
                   {line.recommendedLocId ? (
                     <div className="mt-2 text-xs text-emerald-700">
@@ -623,6 +690,11 @@ function RemissionPrepareWorkbenchInteractive({
                   ) : line.locOptions.length === 0 ? (
                     <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900">
                       No hay stock disponible en ubicaciones del origen. Déjalo en 0 y registra el faltante como pendiente de producción.
+                    </div>
+                  ) : null}
+                  {lineUsesActualQuantity(line) ? (
+                    <div className="mt-2 rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs text-sky-950">
+                      Registra la cantidad real que sale. Puede quedar por encima o por debajo de lo solicitado; NEXO guardará la diferencia operativa.
                     </div>
                   ) : null}
                   {(() => {
@@ -696,7 +768,9 @@ function RemissionPrepareWorkbenchInteractive({
                     title={
                       canSplitDraftLine(line)
                         ? "Divide el preparado en dos partes para escoger otra ubicación de salida."
-                        : "Solo aplica con más de 1 unidad solicitada."
+                        : lineUsesActualQuantity(line)
+                          ? "Los productos de cantidad real se ajustan registrando el peso/volumen exacto preparado."
+                          : "Solo aplica con más de 1 unidad solicitada."
                     }
                   >
                     Usar varias ubicaciones
@@ -708,7 +782,7 @@ function RemissionPrepareWorkbenchInteractive({
                     type="number"
                     min={0}
                     step="any"
-                    max={line.requestedQty}
+                    max={dispatchMax}
                     value={line.dispatchQty}
                     onChange={(e) =>
                       updateLine(line.id, {
@@ -722,6 +796,11 @@ function RemissionPrepareWorkbenchInteractive({
                       Sin despacho hasta que producción cargue stock a una ubicación.
                     </div>
                   ) : null}
+                  {lineUsesActualQuantity(line) && overageQty > 0 ? (
+                    <div className="mt-1 text-xs font-semibold text-sky-800">
+                      Diferencia real: +{overageQty} {line.unitLabel} frente a lo solicitado.
+                    </div>
+                  ) : null}
                 </div>
 
                 <div>
@@ -730,7 +809,7 @@ function RemissionPrepareWorkbenchInteractive({
                       value={line.shortageReason}
                       onChange={(e) => updateLine(line.id, { shortageReason: e.target.value })}
                       className="ui-input min-h-[60px] w-full"
-                      placeholder="Motivo obligatorio..."
+                      placeholder="Motivo obligatorio si sale menos de lo solicitado..."
                     />
                   ) : (
                     <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-2 text-xs text-emerald-800">

@@ -24,6 +24,31 @@ export const dynamic = "force-dynamic";
 const APP_ID = "nexo";
 const PERMISSION = "inventory.stock";
 
+type MeasurementMode =
+  | "fixed_presentation"
+  | "variable_weight"
+  | "count_with_weight"
+  | "bulk_volume";
+
+const DEFAULT_MEASUREMENT_MODE: MeasurementMode = "fixed_presentation";
+
+function normalizeMeasurementMode(value: unknown): MeasurementMode {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (
+    raw === "fixed_presentation" ||
+    raw === "variable_weight" ||
+    raw === "count_with_weight" ||
+    raw === "bulk_volume"
+  ) {
+    return raw;
+  }
+  return DEFAULT_MEASUREMENT_MODE;
+}
+
+function usesPresentationRemissionRules(value: MeasurementMode): boolean {
+  return value === "fixed_presentation";
+}
+
 type SearchParams = {
   ok?: string;
   error?: string;
@@ -42,6 +67,7 @@ type ProductRow = {
 type InventoryProfileRow = {
   product_id: string;
   default_unit: string | null;
+  measurement_mode?: string | null;
 };
 
 type UomProfileRow = ProductPresentationEditorRow;
@@ -240,19 +266,37 @@ async function saveProductPresentations(formData: FormData) {
     redirectWithError("No se encontró el producto.");
   }
 
-  const { data: remissionSettingsData, error: remissionSettingsError } = await supabase
-    .from("product_site_settings")
-    .select("is_active,remission_enabled,sites(site_type)")
-    .eq("product_id", productId)
-    .eq("is_active", true)
-    .eq("remission_enabled", true);
+  const [
+    { data: remissionSettingsData, error: remissionSettingsError },
+    { data: inventoryProfileData, error: inventoryProfileError },
+  ] = await Promise.all([
+    supabase
+      .from("product_site_settings")
+      .select("is_active,remission_enabled,sites(site_type)")
+      .eq("product_id", productId)
+      .eq("is_active", true)
+      .eq("remission_enabled", true),
+    supabase
+      .from("product_inventory_profiles")
+      .select("measurement_mode")
+      .eq("product_id", productId)
+      .maybeSingle(),
+  ]);
 
   if (remissionSettingsError) {
     redirectWithError(remissionSettingsError.message);
   }
+  if (inventoryProfileError) {
+    redirectWithError(inventoryProfileError.message);
+  }
 
+  const measurementMode = normalizeMeasurementMode(
+    (inventoryProfileData as Pick<InventoryProfileRow, "measurement_mode"> | null)?.measurement_mode
+  );
   const requiresRemissionDefault = ((remissionSettingsData ?? []) as ProductRemissionSiteSettingRow[])
     .some(settingBelongsToSatellite);
+  const requiresPresentationRemissionDefault =
+    usesPresentationRemissionRules(measurementMode) && requiresRemissionDefault;
 
   const keys = parseJsonArray(asText(formData.get("presentation_keys")));
   const deletedIds = parseJsonArray(asText(formData.get("deleted_presentation_ids")));
@@ -285,7 +329,7 @@ async function saveProductPresentations(formData: FormData) {
     const wantsRemissionEnabled =
       formData.has(`${prefix}_is_remission_enabled`) ||
       postedUsageContext === "remission" ||
-      (requiresRemissionDefault && isDefault);
+      (requiresPresentationRemissionDefault && isDefault);
     const isRemissionEnabled = isActive && wantsRemissionEnabled;
     const usageContext = isRemissionEnabled ? "remission" : "general";
 
@@ -321,7 +365,7 @@ async function saveProductPresentations(formData: FormData) {
       redirectWithError(`La presentación "${row.label}" no puede ser mínima si está inactiva.`);
     }
 
-    if (requiresRemissionDefault && row.isDefault && !row.isRemissionEnabled) {
+    if (requiresPresentationRemissionDefault && row.isDefault && !row.isRemissionEnabled) {
       redirectWithError(
         `La presentación "${row.label}" no puede ser mínima si no está disponible para solicitud/remisión.`
       );
@@ -336,13 +380,13 @@ async function saveProductPresentations(formData: FormData) {
     (row) => row.isDefault && row.isActive && row.isRemissionEnabled
   );
 
-  if (requiresRemissionDefault && activeRemissionPresentations.length === 0) {
+  if (requiresPresentationRemissionDefault && activeRemissionPresentations.length === 0) {
     redirectWithError(
       "Este producto está activo para remisión en al menos un satélite. Marca al menos una presentación activa como disponible para solicitud/remisión."
     );
   }
 
-  if (requiresRemissionDefault && defaultRemissionPresentations.length === 0) {
+  if (requiresPresentationRemissionDefault && defaultRemissionPresentations.length === 0) {
     redirectWithError(
       "Este producto está activo para remisión en al menos un satélite. Selecciona como mínima la menor presentación activa disponible para solicitud/remisión."
     );
@@ -352,7 +396,7 @@ async function saveProductPresentations(formData: FormData) {
     redirectWithError("Solo puede haber una presentación mínima activa para solicitud/remisión.");
   }
 
-  if (requiresRemissionDefault && defaultRemissionPresentations.length === 1) {
+  if (requiresPresentationRemissionDefault && defaultRemissionPresentations.length === 1) {
     const defaultPresentation = defaultRemissionPresentations[0];
     const smallestQty = Math.min(
       ...activeRemissionPresentations.map((row) => row.qtyInStockUnit)
@@ -489,7 +533,7 @@ export default async function ProductPresentationsPage({
   ] = await Promise.all([
     supabase
       .from("product_inventory_profiles")
-      .select("product_id,default_unit")
+      .select("product_id,default_unit,measurement_mode")
       .eq("product_id", id)
       .maybeSingle(),
     supabase
@@ -526,6 +570,7 @@ export default async function ProductPresentationsPage({
   ]);
 
   const profile = (profileData ?? null) as InventoryProfileRow | null;
+  const measurementMode = normalizeMeasurementMode(profile?.measurement_mode);
   const units = (unitsData ?? []) as InventoryUnit[];
   const stockUnitCode = normalizeUnitCode(
     product.stock_unit_code || product.unit || profile?.default_unit || "un"
@@ -546,8 +591,9 @@ export default async function ProductPresentationsPage({
     catalog_image_url: row.catalog_image_url ?? "",
   }));
 
-  const requiresRemissionDefault = ((remissionSettingsData ?? []) as ProductRemissionSiteSettingRow[])
-    .some(settingBelongsToSatellite);
+  const requiresRemissionDefault = usesPresentationRemissionRules(measurementMode)
+    ? ((remissionSettingsData ?? []) as ProductRemissionSiteSettingRow[]).some(settingBelongsToSatellite)
+    : false;
 
   const productImageRows = (productImagesData ?? []) as ProductImageRow[];
 

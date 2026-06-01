@@ -51,6 +51,109 @@ async function isRemissionInventoryPostingEnabled(
   );
 }
 
+type MeasurementMode =
+  | "fixed_presentation"
+  | "variable_weight"
+  | "count_with_weight"
+  | "bulk_volume";
+
+type ProductMeasurementPolicy = {
+  product_id: string;
+  measurement_mode: MeasurementMode;
+  default_tolerance_percent: number | null;
+  requires_actual_dispatch_qty: boolean;
+};
+
+function normalizeMeasurementMode(value: unknown): MeasurementMode {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (
+    raw === "variable_weight" ||
+    raw === "count_with_weight" ||
+    raw === "bulk_volume"
+  ) {
+    return raw;
+  }
+  return "fixed_presentation";
+}
+
+function getDefaultMeasurementPolicy(productId: string): ProductMeasurementPolicy {
+  return {
+    product_id: productId,
+    measurement_mode: "fixed_presentation",
+    default_tolerance_percent: null,
+    requires_actual_dispatch_qty: false,
+  };
+}
+
+function getMeasurementPolicy(
+  policyByProductId: Map<string, ProductMeasurementPolicy>,
+  productId: string | null | undefined
+): ProductMeasurementPolicy {
+  const safeProductId = String(productId ?? "").trim();
+  return policyByProductId.get(safeProductId) ?? getDefaultMeasurementPolicy(safeProductId);
+}
+
+function mustRespectRequestedQuantityCap(policy: ProductMeasurementPolicy): boolean {
+  return normalizeMeasurementMode(policy.measurement_mode) === "fixed_presentation";
+}
+
+function shouldRejectOverRequestedQuantity(params: {
+  policyByProductId: Map<string, ProductMeasurementPolicy>;
+  productId: string | null | undefined;
+  requestedQty: number;
+  actualQty: number;
+}): boolean {
+  const policy = getMeasurementPolicy(params.policyByProductId, params.productId);
+  return (
+    mustRespectRequestedQuantityCap(policy) &&
+    params.requestedQty > 0 &&
+    params.actualQty > params.requestedQty
+  );
+}
+
+async function loadProductMeasurementPolicies(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  productIds: string[]
+): Promise<Map<string, ProductMeasurementPolicy>> {
+  const safeProductIds = Array.from(
+    new Set(productIds.map((productId) => String(productId ?? "").trim()).filter(Boolean))
+  );
+  const policies = new Map<string, ProductMeasurementPolicy>();
+  if (safeProductIds.length === 0) return policies;
+
+  const { data, error } = await supabase
+    .from("product_inventory_profiles")
+    .select("product_id,measurement_mode,default_tolerance_percent,requires_actual_dispatch_qty")
+    .in("product_id", safeProductIds);
+
+  if (error) return policies;
+
+  for (const row of (data ?? []) as Array<{
+    product_id: string | null;
+    measurement_mode: string | null;
+    default_tolerance_percent: number | null;
+    requires_actual_dispatch_qty: boolean | null;
+  }>) {
+    const productId = String(row.product_id ?? "").trim();
+    if (!productId) continue;
+    const measurementMode = normalizeMeasurementMode(row.measurement_mode);
+    policies.set(productId, {
+      product_id: productId,
+      measurement_mode: measurementMode,
+      default_tolerance_percent:
+        typeof row.default_tolerance_percent === "number"
+          ? row.default_tolerance_percent
+          : null,
+      requires_actual_dispatch_qty:
+        typeof row.requires_actual_dispatch_qty === "boolean"
+          ? row.requires_actual_dispatch_qty
+          : measurementMode !== "fixed_presentation",
+    });
+  }
+
+  return policies;
+}
+
 function toFriendlyTransitStockError(message: string): string {
   const raw = String(message ?? "").trim();
   const normalized = raw.toLowerCase();
@@ -297,6 +400,10 @@ export async function updateItems(formData: FormData) {
       }>
     ).map((row) => [row.id, row])
   );
+  const itemMeasurementPolicyByProductId = await loadProductMeasurementPolicies(
+    supabase,
+    Array.from(itemStateById.values()).map((row) => row.product_id)
+  );
 
   const fromSiteId = request?.from_site_id ?? "";
   const allowSourceLocation =
@@ -323,22 +430,36 @@ export async function updateItems(formData: FormData) {
         );
       }
 
-      if (requestedQty > 0 && prepQty > requestedQty) {
+      if (
+        shouldRejectOverRequestedQuantity({
+          policyByProductId: itemMeasurementPolicyByProductId,
+          productId: itemState.product_id,
+          requestedQty,
+          actualQty: prepQty,
+        })
+      ) {
         redirect(
           buildRemissionDetailHref({
             requestId,
             from: returnOrigin,
-            error: `Cantidad preparada (${prepQty}) mayor que solicitada (${requestedQty}).`,
+            error: `Cantidad preparada (${prepQty}) mayor que solicitada (${requestedQty}) para una presentación fija.`,
           })
         );
       }
 
-      if (requestedQty > 0 && shipQty > requestedQty) {
+      if (
+        shouldRejectOverRequestedQuantity({
+          policyByProductId: itemMeasurementPolicyByProductId,
+          productId: itemState.product_id,
+          requestedQty,
+          actualQty: shipQty,
+        })
+      ) {
         redirect(
           buildRemissionDetailHref({
             requestId,
             from: returnOrigin,
-            error: `Cantidad enviada (${shipQty}) mayor que solicitada (${requestedQty}).`,
+            error: `Cantidad enviada (${shipQty}) mayor que solicitada (${requestedQty}) para una presentación fija.`,
           })
         );
       }
@@ -688,6 +809,10 @@ export async function commitPreparationDraft(formData: FormData) {
       quantity: number | null;
     }>;
     const itemById = new Map(itemRows.map((row) => [row.id, row]));
+    const pickMeasurementPolicyByProductId = await loadProductMeasurementPolicies(
+      supabase,
+      itemRows.map((row) => row.product_id)
+    );
     const pickedQtyByItem = new Map<string, number>();
     const locsByItem = new Map<string, Set<string>>();
     const shortageReasonByItem = new Map<string, string>();
@@ -836,13 +961,20 @@ export async function commitPreparationDraft(formData: FormData) {
           })
         );
       }
-      if (requestedQty > 0 && pickedQty > requestedQty) {
+      if (
+        shouldRejectOverRequestedQuantity({
+          policyByProductId: pickMeasurementPolicyByProductId,
+          productId: item.product_id,
+          requestedQty,
+          actualQty: pickedQty,
+        })
+      ) {
         redirect(
           buildRemissionDetailHref({
             requestId,
             from: returnOrigin,
             siteId: activeSiteId,
-            error: `Cantidad preparada (${pickedQty}) mayor que solicitada (${requestedQty}).`,
+            error: `Cantidad preparada (${pickedQty}) mayor que solicitada (${requestedQty}) para una presentación fija.`,
           })
         );
       }
@@ -972,16 +1104,43 @@ export async function commitPreparationDraft(formData: FormData) {
     virtualToRealId.set(splitDraft.tempLineId, String(newItemId));
   }
 
+  const resolvedLineIds = lines
+    .map((line) =>
+      line.isVirtualSplit
+        ? virtualToRealId.get(line.id) ?? ""
+        : String(line.id ?? "").trim()
+    )
+    .filter(Boolean);
+  const { data: commitLineItemRows } = resolvedLineIds.length
+    ? await supabase
+      .from("restock_request_items")
+      .select("id,product_id,quantity")
+      .eq("request_id", requestId)
+      .in("id", resolvedLineIds)
+    : { data: [] as Array<{ id: string; product_id: string; quantity: number | null }> };
+  const commitLineItemById = new Map(
+    ((commitLineItemRows ?? []) as Array<{
+      id: string;
+      product_id: string;
+      quantity: number | null;
+    }>).map((row) => [row.id, row])
+  );
+  const commitLineMeasurementPolicyByProductId = await loadProductMeasurementPolicies(
+    supabase,
+    Array.from(commitLineItemById.values()).map((row) => row.product_id)
+  );
+
   for (const line of lines) {
     const lineId = line.isVirtualSplit
       ? virtualToRealId.get(line.id) ?? ""
       : String(line.id ?? "").trim();
     const selectedLocId = String(line.selectedLocId ?? "").trim();
-    const requestedQty = roundQuantity(Number(line.requestedQty ?? 0));
+    const lineItem = commitLineItemById.get(lineId);
+    const requestedQty = roundQuantity(Number(lineItem?.quantity ?? line.requestedQty ?? 0));
     const dispatchQty = roundQuantity(Number(line.dispatchQty ?? 0));
     const shortageReason = String(line.shortageReason ?? "").trim();
 
-    if (!lineId || (inventoryPostingEnabled && !selectedLocId)) {
+    if (!lineId || !lineItem || (inventoryPostingEnabled && !selectedLocId)) {
       redirect(
         buildRemissionDetailHref({
           requestId,
@@ -993,13 +1152,21 @@ export async function commitPreparationDraft(formData: FormData) {
         })
       );
     }
-    if (dispatchQty < 0 || dispatchQty > requestedQty) {
+    if (
+      dispatchQty < 0 ||
+      shouldRejectOverRequestedQuantity({
+        policyByProductId: commitLineMeasurementPolicyByProductId,
+        productId: lineItem.product_id,
+        requestedQty,
+        actualQty: dispatchQty,
+      })
+    ) {
       redirect(
         buildRemissionDetailHref({
           requestId,
           from: returnOrigin,
           siteId: activeSiteId,
-          error: "Hay líneas con cantidad a despachar inválida.",
+          error: "Hay líneas con cantidad a despachar inválida para una presentación fija.",
         })
       );
     }
@@ -1125,7 +1292,8 @@ export async function submitTransitChecklist(formData: FormData) {
   const canTransitNow = hasPreparationPicks
     ? true
     : inventoryPostingEnabled
-      ? Boolean(summary.can_transit)
+      ? Boolean(summary.can_transit) ||
+        (await ensureOperationalTransitReady({ supabase, requestId }))
       : await ensureOperationalTransitReady({ supabase, requestId });
 
   if (!canTransitNow) {
@@ -1272,6 +1440,10 @@ export async function submitTransitChecklist(formData: FormData) {
     shipped_quantity: number | null;
     source_location_id: string | null;
   }>;
+  const transitMeasurementPolicyByProductId = await loadProductMeasurementPolicies(
+    supabase,
+    itemRows.map((row) => row.product_id)
+  );
 
   if (inventoryPostingEnabled && access.fromCanFulfillRemissions) {
     const locIds = Array.from(
@@ -1316,24 +1488,38 @@ export async function submitTransitChecklist(formData: FormData) {
         );
       }
 
-      if (requestedQty > 0 && preparedQty > requestedQty) {
+      if (
+        shouldRejectOverRequestedQuantity({
+          policyByProductId: transitMeasurementPolicyByProductId,
+          productId: row.product_id,
+          requestedQty,
+          actualQty: preparedQty,
+        })
+      ) {
         redirect(
           buildRemissionDetailHref({
             requestId,
             from: returnOrigin,
             siteId: activeSiteId,
-            error: `Cantidad preparada (${preparedQty}) mayor que solicitada (${requestedQty}).`,
+            error: `Cantidad preparada (${preparedQty}) mayor que solicitada (${requestedQty}) para una presentación fija.`,
           })
         );
       }
 
-      if (requestedQty > 0 && effectiveShippedQty > requestedQty) {
+      if (
+        shouldRejectOverRequestedQuantity({
+          policyByProductId: transitMeasurementPolicyByProductId,
+          productId: row.product_id,
+          requestedQty,
+          actualQty: effectiveShippedQty,
+        })
+      ) {
         redirect(
           buildRemissionDetailHref({
             requestId,
             from: returnOrigin,
             siteId: activeSiteId,
-            error: `Cantidad enviada (${effectiveShippedQty}) mayor que solicitada (${requestedQty}).`,
+            error: `Cantidad enviada (${effectiveShippedQty}) mayor que solicitada (${requestedQty}) para una presentación fija.`,
           })
         );
       }
@@ -1889,7 +2075,8 @@ export async function updateStatus(formData: FormData) {
     const canTransitNow = hasPreparationPicks
       ? true
       : inventoryPostingEnabled
-        ? Boolean(summary.can_transit)
+        ? Boolean(summary.can_transit) ||
+          (await ensureOperationalTransitReady({ supabase, requestId }))
         : await ensureOperationalTransitReady({ supabase, requestId });
 
     if (!canTransitNow) {
@@ -2050,6 +2237,10 @@ export async function updateStatus(formData: FormData) {
       stock_unit_code: string | null;
       unit: string | null;
     }>;
+    const statusTransitMeasurementPolicyByProductId = await loadProductMeasurementPolicies(
+      supabase,
+      itemRows.map((row) => row.product_id)
+    );
 
     if (access.fromCanFulfillRemissions) {
       const locIds = Array.from(
@@ -2089,21 +2280,35 @@ export async function updateStatus(formData: FormData) {
             })
           );
         }
-        if (requestedQty > 0 && preparedQty > requestedQty) {
+        if (
+          shouldRejectOverRequestedQuantity({
+            policyByProductId: statusTransitMeasurementPolicyByProductId,
+            productId: row.product_id,
+            requestedQty,
+            actualQty: preparedQty,
+          })
+        ) {
           redirect(
             buildRemissionDetailHref({
               requestId,
               from: returnOrigin,
-              error: `Cantidad preparada (${preparedQty}) mayor que solicitada (${requestedQty}).`,
+              error: `Cantidad preparada (${preparedQty}) mayor que solicitada (${requestedQty}) para una presentación fija.`,
             })
           );
         }
-        if (requestedQty > 0 && effectiveShippedQty > requestedQty) {
+        if (
+          shouldRejectOverRequestedQuantity({
+            policyByProductId: statusTransitMeasurementPolicyByProductId,
+            productId: row.product_id,
+            requestedQty,
+            actualQty: effectiveShippedQty,
+          })
+        ) {
           redirect(
             buildRemissionDetailHref({
               requestId,
               from: returnOrigin,
-              error: `Cantidad enviada (${effectiveShippedQty}) mayor que solicitada (${requestedQty}).`,
+              error: `Cantidad enviada (${effectiveShippedQty}) mayor que solicitada (${requestedQty}) para una presentación fija.`,
             })
           );
         }
@@ -2517,6 +2722,11 @@ export async function applyPrepareShortcut(formData: FormData) {
     );
   }
 
+  const prepareShortcutMeasurementPolicyByProductId = await loadProductMeasurementPolicies(
+    supabase,
+    [itemRow.product_id]
+  );
+
   let nextPrepared = roundQuantity(Number(itemRow.prepared_quantity ?? 0));
   let nextShipped = roundQuantity(Number(itemRow.shipped_quantity ?? 0));
   const requestedQty = roundQuantity(Number(itemRow.quantity ?? 0));
@@ -2613,12 +2823,19 @@ export async function applyPrepareShortcut(formData: FormData) {
           })
         );
       }
-      if (requestedQty > 0 && partialQty > requestedQty) {
+      if (
+        shouldRejectOverRequestedQuantity({
+          policyByProductId: prepareShortcutMeasurementPolicyByProductId,
+          productId: itemRow.product_id,
+          requestedQty,
+          actualQty: partialQty,
+        })
+      ) {
         redirect(
           buildRemissionDetailHref({
             requestId,
             from: returnOrigin,
-            error: `La cantidad parcial (${partialQty}) no puede superar la solicitada (${requestedQty}).`,
+            error: `La cantidad parcial (${partialQty}) no puede superar la solicitada (${requestedQty}) para una presentación fija.`,
           })
         );
       }
@@ -2661,21 +2878,35 @@ export async function applyPrepareShortcut(formData: FormData) {
       })
     );
   }
-  if (requestedQty > 0 && nextPrepared > requestedQty) {
+  if (
+    shouldRejectOverRequestedQuantity({
+      policyByProductId: prepareShortcutMeasurementPolicyByProductId,
+      productId: itemRow.product_id,
+      requestedQty,
+      actualQty: nextPrepared,
+    })
+  ) {
     redirect(
       buildRemissionDetailHref({
         requestId,
         from: returnOrigin,
-        error: `Cantidad preparada (${nextPrepared}) mayor que solicitada (${requestedQty}).`,
+        error: `Cantidad preparada (${nextPrepared}) mayor que solicitada (${requestedQty}) para una presentación fija.`,
       })
     );
   }
-  if (requestedQty > 0 && nextShipped > requestedQty) {
+  if (
+    shouldRejectOverRequestedQuantity({
+      policyByProductId: prepareShortcutMeasurementPolicyByProductId,
+      productId: itemRow.product_id,
+      requestedQty,
+      actualQty: nextShipped,
+    })
+  ) {
     redirect(
       buildRemissionDetailHref({
         requestId,
         from: returnOrigin,
-        error: `Cantidad enviada (${nextShipped}) mayor que solicitada (${requestedQty}).`,
+        error: `Cantidad enviada (${nextShipped}) mayor que solicitada (${requestedQty}) para una presentación fija.`,
       })
     );
   }

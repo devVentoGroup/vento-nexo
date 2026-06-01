@@ -37,6 +37,12 @@ type EditableRow = ProductPresentationEditorRow & {
   isNew?: boolean;
 };
 
+export type ProductMeasurementMode =
+  | "fixed_presentation"
+  | "variable_weight"
+  | "count_with_weight"
+  | "bulk_volume";
+
 type Props = {
   productId: string;
   productName: string;
@@ -47,6 +53,7 @@ type Props = {
   existingImageUrls?: string[];
   returnHref: string;
   requiresRemissionDefault?: boolean;
+  measurementMode?: ProductMeasurementMode | string | null;
 };
 
 function createEmptyRow(stockUnitCode: string, key: string): EditableRow {
@@ -117,6 +124,34 @@ function remissionUsageContextForRow(
   return isRowAvailableForRemission(row) ? "remission" : row.usage_context ?? "general";
 }
 
+function normalizeMeasurementMode(value: ProductMeasurementMode | string | null | undefined): ProductMeasurementMode {
+  const raw = String(value ?? "fixed_presentation").trim().toLowerCase();
+  if (raw === "variable_weight" || raw === "count_with_weight" || raw === "bulk_volume") {
+    return raw;
+  }
+  return "fixed_presentation";
+}
+
+function measurementModeLabel(mode: ProductMeasurementMode): string {
+  if (mode === "variable_weight") return "Peso variable";
+  if (mode === "count_with_weight") return "Conteo + peso real";
+  if (mode === "bulk_volume") return "Granel / volumen variable";
+  return "Presentación fija";
+}
+
+function measurementModeDescription(mode: ProductMeasurementMode, stockUnitCode: string): string {
+  if (mode === "variable_weight") {
+    return `Este producto se pide, recibe, despacha y consume por cantidad real medida en ${stockUnitCode}. Las presentaciones físicas son opcionales y no definen la remisión.`;
+  }
+  if (mode === "count_with_weight") {
+    return `Este producto puede contarse por unidades físicas, pero el inventario real se controla por peso en ${stockUnitCode}. Las presentaciones son solo apoyo logístico.`;
+  }
+  if (mode === "bulk_volume") {
+    return `Este producto se controla por volumen o granel real en ${stockUnitCode}. Los recipientes o empaques son opcionales y no son requisito de remisión.`;
+  }
+  return "Este producto usa presentaciones físicas con equivalencia exacta. Si se remisiona, debe existir una presentación mínima remisionable.";
+}
+
 export function ProductPresentationsEditor({
   productId,
   productName,
@@ -127,7 +162,13 @@ export function ProductPresentationsEditor({
   existingImageUrls = [],
   returnHref,
   requiresRemissionDefault = false,
+  measurementMode = "fixed_presentation",
 }: Props) {
+  const normalizedMeasurementMode = normalizeMeasurementMode(measurementMode);
+  const usesFixedPresentation = normalizedMeasurementMode === "fixed_presentation";
+  const requiresFixedRemissionDefault = usesFixedPresentation && requiresRemissionDefault;
+  const modeLabel = measurementModeLabel(normalizedMeasurementMode);
+  const modeDescription = measurementModeDescription(normalizedMeasurementMode, stockUnitCode);
   const [rows, setRows] = useState<EditableRow[]>(() =>
     initialRows.length > 0
       ? initialRows.map((row) => ({
@@ -222,7 +263,7 @@ export function ProductPresentationsEditor({
       is_default: isDefault,
       is_active: isDefault ? true : row.is_active,
       usage_context:
-        isDefault && requiresRemissionDefault ? "remission" : row.usage_context ?? "general",
+        isDefault && requiresFixedRemissionDefault ? "remission" : row.usage_context ?? "general",
     }));
   }
 
@@ -260,7 +301,7 @@ export function ProductPresentationsEditor({
         return;
       }
 
-      if (requiresRemissionDefault && isDefault && !isAvailableForRemission) {
+      if (requiresFixedRemissionDefault && isDefault && !isAvailableForRemission) {
         setClientError(
           `La presentación "${label}" no puede ser mínima si no está disponible para solicitud/remisión.`
         );
@@ -268,7 +309,7 @@ export function ProductPresentationsEditor({
       }
 
       if (
-        requiresRemissionDefault &&
+        requiresFixedRemissionDefault &&
         isActive &&
         isAvailableForRemission &&
         Number.isFinite(qtyInStockUnit) &&
@@ -277,19 +318,19 @@ export function ProductPresentationsEditor({
         activeRemissionRows.push({ label, qtyInStockUnit, isDefault });
       }
 
-      if (isDefault && isActive && (!requiresRemissionDefault || isAvailableForRemission)) {
+      if (isDefault && isActive && (!requiresFixedRemissionDefault || isAvailableForRemission)) {
         activeDefaultCount += 1;
       }
     }
 
-    if (requiresRemissionDefault && activeRemissionRows.length === 0) {
+    if (requiresFixedRemissionDefault && activeRemissionRows.length === 0) {
       setClientError(
         "Este producto está activo para remisión en al menos un satélite. Marca al menos una presentación activa como disponible para solicitud/remisión."
       );
       return;
     }
 
-    if (requiresRemissionDefault && activeDefaultCount === 0) {
+    if (requiresFixedRemissionDefault && activeDefaultCount === 0) {
       setClientError(
         "Este producto está activo para remisión en al menos un satélite. Marca la menor presentación remisionable como mínima para solicitud/remisión antes de guardar."
       );
@@ -301,7 +342,7 @@ export function ProductPresentationsEditor({
       return;
     }
 
-    if (requiresRemissionDefault && activeDefaultCount === 1) {
+    if (requiresFixedRemissionDefault && activeDefaultCount === 1) {
       const defaultPresentation = activeRemissionRows.find((row) => row.isDefault);
       const smallestQty = Math.min(...activeRemissionRows.map((row) => row.qtyInStockUnit));
       const smallestPresentation = activeRemissionRows.find(
@@ -331,9 +372,9 @@ export function ProductPresentationsEditor({
             <div className="ui-caption">Presentaciones físicas</div>
             <h2 className="ui-h2">{productName}</h2>
             <p className="mt-2 ui-body-muted">
-              Administra las formas físicas en las que existe este producto. La remisión se habilita a nivel
-              de producto por sede, pero aquí defines qué presentaciones puede pedir o recibir el satélite.
-              Una presentación puede estar activa para inventario o producción sin estar disponible para remisión.
+              Administra las formas físicas en las que existe este producto. Para productos de presentación fija,
+              aquí defines qué presentaciones puede pedir o recibir el satélite. Para productos de cantidad real,
+              las presentaciones son opcionales y no reemplazan el peso, conteo o volumen real del flujo operativo.
             </p>
           </div>
 
@@ -343,13 +384,34 @@ export function ProductPresentationsEditor({
         </div>
       </div>
 
-      {requiresRemissionDefault ? (
+      <div
+        className={
+          usesFixedPresentation
+            ? "rounded-[28px] border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950"
+            : "rounded-[28px] border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-950"
+        }
+      >
+        <div className="font-bold">Modo de medición: {modeLabel}</div>
+        <p className="mt-1">{modeDescription}</p>
+      </div>
+
+      {requiresFixedRemissionDefault ? (
         <div className="rounded-[28px] border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">
           <div className="font-bold">Regla de remisión</div>
           <p className="mt-1">
             El satélite solicita usando la presentación mínima remisionable. Las presentaciones activas solo
             para producción o control interno no cuentan para esta regla. Si existen presentaciones remisionables
             mayores, Centro puede despachar una combinación física equivalente.
+          </p>
+        </div>
+      ) : null}
+
+      {!usesFixedPresentation && requiresRemissionDefault ? (
+        <div className="rounded-[28px] border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+          <div className="font-bold">Remisión por cantidad real</div>
+          <p className="mt-1">
+            Este producto está habilitado para remisión por sede, pero no necesita presentación mínima.
+            El flujo operativo deberá pedir y confirmar cantidad real según su modo de medición.
           </p>
         </div>
       ) : null}
@@ -370,7 +432,8 @@ export function ProductPresentationsEditor({
               <div className="text-sm font-bold text-amber-950">Sugeridas desde proveedores / compra</div>
               <p className="mt-1 text-sm text-amber-900">
                 Estas presentaciones vienen del empaque configurado en proveedores. Puedes agregarlas como
-                presentaciones físicas para adjuntar foto y usarlas en bodega.
+                presentaciones físicas para adjuntar foto y usarlas en bodega. En productos de cantidad real,
+                son solo apoyo logístico.
               </p>
             </div>
           </div>
@@ -406,10 +469,12 @@ export function ProductPresentationsEditor({
       <div className="space-y-4">
         {rows.map((row, index) => {
           const fieldPrefix = `presentation_${row.key}`;
-          const isAvailableForRemission = isRowAvailableForRemission(row);
-          const usageContextValue = requiresRemissionDefault
+          const isAvailableForRemission = usesFixedPresentation && isRowAvailableForRemission(row);
+          const usageContextValue = requiresFixedRemissionDefault
             ? remissionUsageContextForRow(row)
-            : row.usage_context ?? "general";
+            : usesFixedPresentation
+              ? row.usage_context ?? "general"
+              : "general";
 
           return (
             <article
@@ -432,7 +497,7 @@ export function ProductPresentationsEditor({
                     Presentación {index + 1}
                   </div>
                   <div className="text-xs text-[var(--ui-muted)]">
-                    {row.id ? "Existente" : "Nueva"} · Presentación física convertible a {stockUnitCode}
+                    {row.id ? "Existente" : "Nueva"} · {usesFixedPresentation ? "Presentación física convertible" : "Empaque o referencia logística opcional"} a {stockUnitCode}
                   </div>
                 </div>
 
@@ -473,7 +538,9 @@ export function ProductPresentationsEditor({
                       ))}
                     </select>
                     <span className="text-xs text-[var(--ui-muted)]">
-                      Unidad base en la que se mide el contenido interno. Ej. ml, g, un.
+                      {usesFixedPresentation
+                        ? "Unidad base en la que se mide el contenido interno. Ej. ml, g, un."
+                        : "Unidad base de referencia si decides registrar un empaque logístico. La operación real se mide en el flujo de compra, recepción, remisión o producción."}
                     </span>
                   </label>
 
@@ -489,8 +556,9 @@ export function ProductPresentationsEditor({
                       required
                     />
                     <span className="text-xs text-[var(--ui-muted)]">
-                      Cuánto descuenta o suma 1 presentación en inventario base. Ej. Pote 2 L = 2000 {stockUnitCode};
-                      bolsa 100 unidades = 100 {stockUnitCode}.
+                      {usesFixedPresentation
+                        ? <>Cuánto descuenta o suma 1 presentación en inventario base. Ej. Pote 2 L = 2000 {stockUnitCode}; bolsa 100 unidades = 100 {stockUnitCode}.</>
+                        : <>Equivalencia referencial del empaque, si aplica. No se usa como cantidad obligatoria para remisiones ni reemplaza la medición real.</>}
                     </span>
                   </label>
 
@@ -505,12 +573,14 @@ export function ProductPresentationsEditor({
                       <span>
                         <span className="ui-label block">Presentación física activa</span>
                         <span className="block text-xs text-[var(--ui-muted)]">
-                          Existe operativamente y puede usarse para inventario, producción, control interno o fotos.
+                          {usesFixedPresentation
+                            ? "Existe operativamente y puede usarse para inventario, producción, control interno o fotos."
+                            : "Existe como empaque, foto o referencia logística. La cantidad real sigue mandando en los flujos operativos."}
                         </span>
                       </span>
                     </label>
 
-                    {requiresRemissionDefault ? (
+                    {requiresFixedRemissionDefault ? (
                       <label className="flex items-start gap-2">
                         <input
                           type="checkbox"
@@ -536,16 +606,16 @@ export function ProductPresentationsEditor({
                         name={`${fieldPrefix}_is_default`}
                         checked={Boolean(row.is_default)}
                         onChange={(event) => setPresentationDefault(row.key, event.target.checked)}
-                        disabled={requiresRemissionDefault && !isAvailableForRemission}
+                        disabled={requiresFixedRemissionDefault && !isAvailableForRemission}
                       />
                       <span>
                         <span className="ui-label block">
-                          {requiresRemissionDefault
+                          {requiresFixedRemissionDefault
                             ? "Unidad mínima de solicitud/remisión"
                             : "Presentación predeterminada opcional"}
                         </span>
                         <span className="block text-xs text-[var(--ui-muted)]">
-                          {requiresRemissionDefault
+                          {requiresFixedRemissionDefault
                             ? "Debe ser la menor presentación activa disponible para remisión. Las presentaciones solo para producción no cuentan."
                             : "Puede usarse como referencia visual o predeterminada para bodega, inventario por LOC y quiosco."}
                         </span>

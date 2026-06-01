@@ -50,9 +50,49 @@ type TraceEmployeeRow = {
   alias: string | null;
 };
 
+type MeasurementMode =
+  | "fixed_presentation"
+  | "variable_weight"
+  | "count_with_weight"
+  | "bulk_volume";
+
+type ProductInventoryProfileRow = {
+  product_id: string | null;
+  measurement_mode: string | null;
+  default_tolerance_percent?: number | null;
+  requires_actual_dispatch_qty?: boolean | null;
+  requires_count_alongside_weight?: boolean | null;
+};
+
 function displayTraceEmployee(employee?: TraceEmployeeRow | null): string {
   if (!employee) return "-";
   return String(employee.alias ?? employee.full_name ?? employee.id).trim() || employee.id;
+}
+
+function normalizeMeasurementMode(value: unknown): MeasurementMode {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (
+    raw === "variable_weight" ||
+    raw === "count_with_weight" ||
+    raw === "bulk_volume"
+  ) {
+    return raw;
+  }
+  return "fixed_presentation";
+}
+
+function getItemMeasurementMode(item: RestockItemRow): MeasurementMode {
+  const extendedItem = item as RestockItemRow & {
+    measurement_mode?: unknown;
+    product?: (RestockItemRow["product"] & { measurement_mode?: unknown }) | null;
+  };
+  return normalizeMeasurementMode(
+    extendedItem.measurement_mode ?? extendedItem.product?.measurement_mode
+  );
+}
+
+function usesActualQuantityMode(item: RestockItemRow): boolean {
+  return getItemMeasurementMode(item) !== "fixed_presentation";
 }
 
 async function readBooleanAppSetting(
@@ -162,7 +202,50 @@ export default async function RemissionDetailPage({
     .eq("request_id", id)
     .order("created_at", { ascending: true });
 
-  const itemRows = (items ?? []) as unknown as RestockItemRow[];
+  const baseItemRows = (items ?? []) as unknown as RestockItemRow[];
+  const itemProductIds = Array.from(
+    new Set(baseItemRows.map((item) => String(item.product_id ?? "").trim()).filter(Boolean))
+  );
+  const { data: itemProfileRows } = itemProductIds.length
+    ? await supabase
+      .from("product_inventory_profiles")
+      .select(
+        "product_id,measurement_mode,default_tolerance_percent,requires_actual_dispatch_qty,requires_count_alongside_weight"
+      )
+      .in("product_id", itemProductIds)
+    : { data: [] as ProductInventoryProfileRow[] };
+
+  const profileByProductId = new Map(
+    ((itemProfileRows ?? []) as ProductInventoryProfileRow[])
+      .map((profile) => [String(profile.product_id ?? "").trim(), profile] as const)
+      .filter(([productId]) => Boolean(productId))
+  );
+
+  const itemRows = baseItemRows.map((item) => {
+    const profile = profileByProductId.get(String(item.product_id ?? "").trim()) ?? null;
+    const measurementMode = normalizeMeasurementMode(profile?.measurement_mode);
+    const product = item.product
+      ? ({
+        ...item.product,
+        measurement_mode: measurementMode,
+      } as RestockItemRow["product"] & { measurement_mode: MeasurementMode })
+      : item.product;
+
+    return {
+      ...item,
+      measurement_mode: measurementMode,
+      default_tolerance_percent: profile?.default_tolerance_percent ?? null,
+      requires_actual_dispatch_qty:
+        typeof profile?.requires_actual_dispatch_qty === "boolean"
+          ? profile.requires_actual_dispatch_qty
+          : measurementMode !== "fixed_presentation",
+      requires_count_alongside_weight:
+        typeof profile?.requires_count_alongside_weight === "boolean"
+          ? profile.requires_count_alongside_weight
+          : measurementMode === "count_with_weight",
+      product,
+    } as RestockItemRow;
+  });
   const showSourceLocSelector =
     inventoryPostingEnabled &&
     access.canPrepare &&
@@ -306,6 +389,8 @@ export default async function RemissionDetailPage({
     return requestedQty > 0 && Math.max(preparedQty, shippedQty) <= 0;
   }).length;
 
+  const hasActualQuantityLines = itemRows.some((item) => usesActualQuantityMode(item));
+
   const dispatchReadyLines = inventoryPostingEnabled
     ? summary.dispatch_ready_lines
     : operationalPreparedLines;
@@ -319,7 +404,13 @@ export default async function RemissionDetailPage({
     : 0;
 
   const canTransitByCurrentInventoryMode = inventoryPostingEnabled
-    ? summary.can_transit
+    ? Boolean(summary.can_transit) ||
+      (
+        hasActualQuantityLines &&
+        operationalPreparedLines > 0 &&
+        operationalBlockedLines === 0 &&
+        pendingLocSelectionLines === 0
+      )
     : operationalPreparedLines > 0 && operationalBlockedLines === 0;
   const canStartPreparationNow =
     access.canPrepare && currentStatus === "pending" && summary.can_start_prepare;
@@ -357,7 +448,7 @@ export default async function RemissionDetailPage({
       }));
     })()
     : [];
-  const isReadyToDispatch = currentStatus === "preparing" && summary.can_transit;
+  const isReadyToDispatch = currentStatus === "preparing" && canTransitByCurrentInventoryMode;
   const editPrepareRaw = sp.edit_prepare;
   const editPrepareVal = Array.isArray(editPrepareRaw) ? editPrepareRaw[0] : editPrepareRaw;
   const editPrepareRequested = String(editPrepareVal ?? "").trim() === "1";
@@ -523,6 +614,7 @@ export default async function RemissionDetailPage({
         baseItemId: item.id,
         productId: item.product_id,
         productName: item.product?.name ?? item.product_id,
+        measurementMode: getItemMeasurementMode(item),
         requestedQty: roundQuantity(Number(item.quantity ?? 0)),
         unitLabel: vm.itemUnitLabel,
         inputQty: roundQuantity(Number(item.input_qty ?? 0)),
@@ -603,6 +695,7 @@ export default async function RemissionDetailPage({
     return {
       id: item.id,
       productName: String(item.product?.name ?? item.product_id),
+      measurementMode: getItemMeasurementMode(item),
       quantity: plannedQty,
       unitLabel,
       locDetail,
