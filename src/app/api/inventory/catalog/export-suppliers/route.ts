@@ -180,14 +180,14 @@ function styleCell(cell: ExcelJS.Cell, source: ExportCell) {
 function paintHeader(row: ExcelJS.Row) {
   row.height = 30;
   row.eachCell((cell) => {
-    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.magenta } };
-    cell.font = { bold: true, color: { argb: BRAND.white }, size: 9 };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.soft } };
+    cell.font = { bold: true, color: { argb: BRAND.black }, size: 9 };
     cell.alignment = { horizontal: "center", vertical: "middle", wrapText: true };
     cell.border = {
-      top: { style: "thin", color: { argb: BRAND.rose } },
-      left: { style: "thin", color: { argb: BRAND.rose } },
+      top: { style: "thin", color: { argb: BRAND.line } },
+      left: { style: "thin", color: { argb: BRAND.line } },
       bottom: { style: "medium", color: { argb: BRAND.rose } },
-      right: { style: "thin", color: { argb: BRAND.rose } },
+      right: { style: "thin", color: { argb: BRAND.line } },
     };
   });
 }
@@ -219,8 +219,8 @@ function addDataWorksheet(workbook: ExcelJS.Workbook, sheet: ExportSheet) {
   worksheet.mergeCells(`A1:${lastColumnLetter}1`);
   const titleCell = worksheet.getCell("A1");
   titleCell.value = sheet.title;
-  titleCell.font = { name: "Aptos Display", bold: true, size: 18, color: { argb: BRAND.white } };
-  titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.black } };
+  titleCell.font = { name: "Aptos Display", bold: true, size: 18, color: { argb: BRAND.magenta } };
+  titleCell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.white } };
   titleCell.alignment = { vertical: "middle", horizontal: "left" };
   worksheet.getRow(1).height = 32;
 
@@ -235,7 +235,9 @@ function addDataWorksheet(workbook: ExcelJS.Workbook, sheet: ExportSheet) {
   worksheet.getRow(3).height = 8;
 
   const headerRow = worksheet.getRow(4);
-  headerRow.values = [undefined, ...sheet.columns.map((column) => column.header)];
+  sheet.columns.forEach((column, index) => {
+    headerRow.getCell(index + 1).value = column.header;
+  });
   paintHeader(headerRow);
 
   sheet.rows.forEach((sourceRow, rowIndex) => {
@@ -284,7 +286,7 @@ function addSummaryWorksheet(params: {
 }) {
   const { workbook, generatedBy, metrics, indexRows, alertCount } = params;
   const worksheet = workbook.addWorksheet("Resumen", {
-    properties: { tabColor: { argb: BRAND.black } },
+    properties: { tabColor: { argb: BRAND.rose } },
     views: [{ state: "frozen", ySplit: 8, showGridLines: false }],
   });
 
@@ -304,8 +306,8 @@ function addSummaryWorksheet(params: {
   worksheet.mergeCells("B2:H2");
   const title = worksheet.getCell("B2");
   title.value = "VENTO GROUP · NEXO";
-  title.font = { name: "Aptos Display", bold: true, size: 24, color: { argb: BRAND.white } };
-  title.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.black } };
+  title.font = { name: "Aptos Display", bold: true, size: 24, color: { argb: BRAND.magenta } };
+  title.fill = { type: "pattern", pattern: "solid", fgColor: { argb: BRAND.white } };
   title.alignment = { vertical: "middle", horizontal: "left" };
   worksheet.getRow(2).height = 38;
 
@@ -408,6 +410,7 @@ function addSummaryWorksheet(params: {
 
 async function tryAddLogo(workbook: ExcelJS.Workbook, worksheet: ExcelJS.Worksheet) {
   const candidates = [
+    "public/brand/vento-group-logo.png",
     "public/vento-group-logo.png",
     "public/logo-vento-group.png",
     "public/vento-logo.png",
@@ -424,10 +427,11 @@ async function tryAddLogo(workbook: ExcelJS.Workbook, worksheet: ExcelJS.Workshe
         base64: buffer.toString("base64"),
         extension: "png",
       });
+      const lastColumn = Math.max(worksheet.columnCount || worksheet.actualColumnCount || 8, 4);
 
       worksheet.addImage(imageId, {
-        tl: { col: 0.15, row: 0.55 },
-        ext: { width: 150, height: 48 },
+        tl: { col: Math.max(lastColumn - 2.25, 0.25), row: 0.25 },
+        ext: { width: 125, height: 40 },
       });
       return;
     } catch {
@@ -2000,7 +2004,8 @@ export async function GET() {
   ];
 
   for (const sheet of sheetDefinitions) {
-    addDataWorksheet(workbook, sheet);
+    const worksheet = addDataWorksheet(workbook, sheet);
+    await tryAddLogo(workbook, worksheet);
   }
 
   workbook.eachSheet((worksheet) => {
