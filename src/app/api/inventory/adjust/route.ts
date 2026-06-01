@@ -9,6 +9,7 @@ const MOVEMENT_TYPE = "adjustment";
 type RequestBody = {
   site_id?: string;
   location_id?: string;
+  location_position_id?: string;
   product_id?: string;
   quantity_delta?: number;
   counted_quantity?: number;
@@ -51,6 +52,8 @@ export async function POST(req: Request) {
 
   const siteId = typeof body?.site_id === "string" ? body.site_id.trim() : "";
   const locationId = typeof body?.location_id === "string" ? body.location_id.trim() : "";
+  const locationPositionId =
+    typeof body?.location_position_id === "string" ? body.location_position_id.trim() : "";
   const productId = typeof body?.product_id === "string" ? body.product_id.trim() : "";
   const rawQuantityDelta =
     typeof body?.quantity_delta === "number" ? body.quantity_delta : NaN;
@@ -72,6 +75,13 @@ export async function POST(req: Request) {
 
   if (!reason) {
     return NextResponse.json({ error: "reason es obligatorio" }, { status: 400 });
+  }
+
+  if (locationPositionId && !locationId) {
+    return NextResponse.json(
+      { error: "location_id requerido cuando se envia location_position_id" },
+      { status: 400 }
+    );
   }
 
   if (hasCountedQuantity && rawCountedQuantity < 0) {
@@ -110,6 +120,32 @@ export async function POST(req: Request) {
     }
   }
 
+  if (locationPositionId) {
+    const { data: positionRow, error: positionErr } = await supabase
+      .from("inventory_location_positions")
+      .select("id,location_id,is_active")
+      .eq("id", locationPositionId)
+      .maybeSingle();
+
+    if (positionErr) {
+      return NextResponse.json(
+        { error: `inventory_location_positions: ${positionErr.message}` },
+        { status: 500 }
+      );
+    }
+
+    if (
+      !positionRow ||
+      String(positionRow.location_id ?? "") !== locationId ||
+      positionRow.is_active === false
+    ) {
+      return NextResponse.json(
+        { error: "La ubicacion interna seleccionada no pertenece al LOC o esta inactiva." },
+        { status: 400 }
+      );
+    }
+  }
+
   const { data: currentSiteStock, error: siteStockReadErr } = await supabase
     .from("inventory_stock_by_site")
     .select("current_qty")
@@ -125,7 +161,8 @@ export async function POST(req: Request) {
   }
 
   const currentSiteQty = Number(currentSiteStock?.current_qty ?? 0);
-
+  let currentLocationQty = 0;
+  let currentPositionQty = 0;
   let currentQty = currentSiteQty;
 
   if (locationId) {
@@ -143,7 +180,27 @@ export async function POST(req: Request) {
       );
     }
 
-    currentQty = Number(currentLocationStock?.current_qty ?? 0);
+    currentLocationQty = Number(currentLocationStock?.current_qty ?? 0);
+    currentQty = currentLocationQty;
+  }
+
+  if (locationPositionId) {
+    const { data: currentPositionStock, error: positionStockReadErr } = await supabase
+      .from("inventory_stock_by_position")
+      .select("current_qty")
+      .eq("position_id", locationPositionId)
+      .eq("product_id", productId)
+      .maybeSingle();
+
+    if (positionStockReadErr) {
+      return NextResponse.json(
+        { error: `inventory_stock_by_position (read): ${positionStockReadErr.message}` },
+        { status: 500 }
+      );
+    }
+
+    currentPositionQty = Number(currentPositionStock?.current_qty ?? 0);
+    currentQty = currentPositionQty;
   }
 
   const quantityDelta = hasCountedQuantity
@@ -159,10 +216,12 @@ export async function POST(req: Request) {
 
   const newQty = currentQty + quantityDelta;
   const newSiteQty = currentSiteQty + quantityDelta;
+  const newLocationQty = locationId ? currentLocationQty + quantityDelta : null;
+  const newPositionQty = locationPositionId ? currentPositionQty + quantityDelta : null;
 
   if (newQty < 0) {
     return NextResponse.json(
-      { error: "El ajuste deja el stock del LOC/sede en negativo." },
+      { error: "El ajuste deja el stock del alcance seleccionado en negativo." },
       { status: 400 }
     );
   }
@@ -170,6 +229,20 @@ export async function POST(req: Request) {
   if (newSiteQty < 0) {
     return NextResponse.json(
       { error: "El ajuste deja el stock total de la sede en negativo." },
+      { status: 400 }
+    );
+  }
+
+  if (newLocationQty != null && newLocationQty < 0) {
+    return NextResponse.json(
+      { error: "El ajuste deja el stock del LOC en negativo." },
+      { status: 400 }
+    );
+  }
+
+  if (newPositionQty != null && newPositionQty < 0) {
+    return NextResponse.json(
+      { error: "El ajuste deja el stock de la ubicacion interna en negativo." },
       { status: 400 }
     );
   }
@@ -182,6 +255,10 @@ export async function POST(req: Request) {
 
   if (locationId) {
     noteParts.push(`LOC: ${locationId}`);
+  }
+
+  if (locationPositionId) {
+    noteParts.push(`Ubicacion interna: ${locationPositionId}`);
   }
 
   if (evidence) {
@@ -213,6 +290,10 @@ export async function POST(req: Request) {
 
   if (locationId) {
     movementPayload.location_id = locationId;
+  }
+
+  if (locationPositionId) {
+    movementPayload.location_position_id = locationPositionId;
   }
 
   const { data: insertedMovement, error: movErr } = await supabase
@@ -247,14 +328,14 @@ export async function POST(req: Request) {
     );
   }
 
-  if (locationId) {
+  if (locationId && newLocationQty != null) {
     const { error: locationStockUpsertErr } = await supabase
       .from("inventory_stock_by_location")
       .upsert(
         {
           location_id: locationId,
           product_id: productId,
-          current_qty: newQty,
+          current_qty: newLocationQty,
           updated_at: new Date().toISOString(),
         },
         { onConflict: "location_id,product_id" }
@@ -263,6 +344,27 @@ export async function POST(req: Request) {
     if (locationStockUpsertErr) {
       return NextResponse.json(
         { error: `inventory_stock_by_location (upsert): ${locationStockUpsertErr.message}` },
+        { status: 500 }
+      );
+    }
+  }
+
+  if (locationPositionId && newPositionQty != null) {
+    const { error: positionStockUpsertErr } = await supabase
+      .from("inventory_stock_by_position")
+      .upsert(
+        {
+          position_id: locationPositionId,
+          product_id: productId,
+          current_qty: newPositionQty,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "position_id,product_id" }
+      );
+
+    if (positionStockUpsertErr) {
+      return NextResponse.json(
+        { error: `inventory_stock_by_position (upsert): ${positionStockUpsertErr.message}` },
         { status: 500 }
       );
     }
@@ -342,10 +444,15 @@ export async function POST(req: Request) {
     ok: true,
     product_id: productId,
     location_id: locationId || null,
+    location_position_id: locationPositionId || null,
     quantity_delta: quantityDelta,
     previous_qty: currentQty,
     new_qty: newQty,
     previous_site_qty: currentSiteQty,
     new_site_qty: newSiteQty,
+    previous_location_qty: locationId ? currentLocationQty : null,
+    new_location_qty: newLocationQty,
+    previous_position_qty: locationPositionId ? currentPositionQty : null,
+    new_position_qty: newPositionQty,
   });
 }

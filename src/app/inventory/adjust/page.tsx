@@ -22,6 +22,20 @@ type ProductSiteRow = { product_id: string; is_active: boolean | null };
 type StockRow = { product_id: string; current_qty: number | null };
 type LocationRow = { id: string; name: string | null; code: string | null; };
 type LocationStockRow = { product_id: string | null; current_qty: number | null; };
+type LocationPositionRow = {
+  id: string;
+  location_id: string;
+  parent_position_id: string | null;
+  code: string;
+  name: string;
+  kind: string;
+  sort_order: number | null;
+};
+type PositionStockRow = {
+  product_id: string | null;
+  position_id: string | null;
+  current_qty: number | null;
+};
 
 export default async function InventoryAdjustPage({
   searchParams,
@@ -230,6 +244,40 @@ export default async function InventoryAdjustPage({
       .filter(([productId]) => Boolean(productId))
   );
 
+  const { data: locationPositionsData } =
+    safeLocationId
+      ? await supabase
+        .from("inventory_location_positions")
+        .select("id,location_id,parent_position_id,code,name,kind,sort_order")
+        .eq("location_id", safeLocationId)
+        .eq("is_active", true)
+        .order("sort_order", { ascending: true })
+        .order("code", { ascending: true })
+      : { data: [] as LocationPositionRow[] };
+
+  const locationPositions = (locationPositionsData ?? []) as LocationPositionRow[];
+  const locationPositionIds = locationPositions.map((position) => position.id).filter(Boolean);
+
+  const { data: positionStockData } =
+    locationPositionIds.length > 0 && productRows.length > 0
+      ? await supabase
+        .from("inventory_stock_by_position")
+        .select("product_id,position_id,current_qty")
+        .in("position_id", locationPositionIds)
+        .in("product_id", productRows.map((p) => p.id))
+      : { data: [] as PositionStockRow[] };
+
+  const positionStockRows = (positionStockData ?? []) as PositionStockRow[];
+  const currentPositionStock = Object.fromEntries(
+    positionStockRows
+      .map((row) => {
+        const positionId = String(row.position_id ?? "").trim();
+        const productId = String(row.product_id ?? "").trim();
+        return [`${positionId}|${productId}`, Number(row.current_qty ?? 0)];
+      })
+      .filter(([key]) => !String(key).startsWith("|") && !String(key).endsWith("|"))
+  );
+
   const siteName = siteNameMap.get(siteId) ?? siteId;
 
   return (
@@ -286,6 +334,8 @@ export default async function InventoryAdjustPage({
           locations={locationRows.map((location) => ({ id: location.id, name: location.name, code: location.code, }))}
           selectedLocationId={safeLocationId}
           currentLocationStock={currentLocationStock}
+          locationPositions={locationPositions}
+          currentPositionStock={currentPositionStock}
         />
       )}
     </div>
