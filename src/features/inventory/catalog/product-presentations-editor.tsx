@@ -105,6 +105,18 @@ function presentationSignature(params: {
   ].join("::");
 }
 
+function isRowAvailableForRemission(
+  row: Pick<ProductPresentationEditorRow, "usage_context" | "is_default">
+) {
+  return row.usage_context === "remission" || Boolean(row.is_default);
+}
+
+function remissionUsageContextForRow(
+  row: Pick<ProductPresentationEditorRow, "usage_context" | "is_default">
+): NonNullable<ProductPresentationEditorRow["usage_context"]> {
+  return isRowAvailableForRemission(row) ? "remission" : row.usage_context ?? "general";
+}
+
 export function ProductPresentationsEditor({
   productId,
   productName,
@@ -182,6 +194,38 @@ export function ProductPresentationsEditor({
     setRows((current) => current.filter((item) => item.key !== row.key));
   }
 
+  function updateRow(
+    key: string,
+    updater: (row: EditableRow) => Partial<EditableRow>
+  ) {
+    setRows((current) =>
+      current.map((row) => (row.key === key ? { ...row, ...updater(row) } : row))
+    );
+  }
+
+  function setPresentationActive(key: string, isActive: boolean) {
+    updateRow(key, (row) => ({
+      is_active: isActive,
+      is_default: isActive ? row.is_default : false,
+    }));
+  }
+
+  function setPresentationAvailableForRemission(key: string, isAvailable: boolean) {
+    updateRow(key, (row) => ({
+      usage_context: isAvailable ? "remission" : "general",
+      is_default: isAvailable ? row.is_default : false,
+    }));
+  }
+
+  function setPresentationDefault(key: string, isDefault: boolean) {
+    updateRow(key, (row) => ({
+      is_default: isDefault,
+      is_active: isDefault ? true : row.is_active,
+      usage_context:
+        isDefault && requiresRemissionDefault ? "remission" : row.usage_context ?? "general",
+    }));
+  }
+
   function handleSaveClick(event: MouseEvent<HTMLButtonElement>) {
     setClientError("");
 
@@ -192,7 +236,7 @@ export function ProductPresentationsEditor({
 
     const formData = new FormData(form);
     let activeDefaultCount = 0;
-    const activePresentationRows: Array<{
+    const activeRemissionRows: Array<{
       label: string;
       qtyInStockUnit: number;
       isDefault: boolean;
@@ -209,24 +253,45 @@ export function ProductPresentationsEditor({
       const qtyInStockUnit = Number(rawQty);
       const isDefault = formData.has(`${prefix}_is_default`);
       const isActive = formData.has(`${prefix}_is_active`);
+      const isAvailableForRemission = formData.has(`${prefix}_is_remission_enabled`);
 
       if (isDefault && !isActive) {
         setClientError(`La presentación "${label}" no puede ser mínima si está inactiva.`);
         return;
       }
 
-      if (isActive && Number.isFinite(qtyInStockUnit) && qtyInStockUnit > 0) {
-        activePresentationRows.push({ label, qtyInStockUnit, isDefault });
+      if (requiresRemissionDefault && isDefault && !isAvailableForRemission) {
+        setClientError(
+          `La presentación "${label}" no puede ser mínima si no está disponible para solicitud/remisión.`
+        );
+        return;
       }
 
-      if (isDefault && isActive) {
+      if (
+        requiresRemissionDefault &&
+        isActive &&
+        isAvailableForRemission &&
+        Number.isFinite(qtyInStockUnit) &&
+        qtyInStockUnit > 0
+      ) {
+        activeRemissionRows.push({ label, qtyInStockUnit, isDefault });
+      }
+
+      if (isDefault && isActive && (!requiresRemissionDefault || isAvailableForRemission)) {
         activeDefaultCount += 1;
       }
     }
 
+    if (requiresRemissionDefault && activeRemissionRows.length === 0) {
+      setClientError(
+        "Este producto está activo para remisión en al menos un satélite. Marca al menos una presentación activa como disponible para solicitud/remisión."
+      );
+      return;
+    }
+
     if (requiresRemissionDefault && activeDefaultCount === 0) {
       setClientError(
-        "Este producto está activo para remisión en al menos un satélite. Marca la presentación activa de menor contenido como mínima para solicitud/remisión antes de guardar."
+        "Este producto está activo para remisión en al menos un satélite. Marca la menor presentación remisionable como mínima para solicitud/remisión antes de guardar."
       );
       return;
     }
@@ -237,9 +302,9 @@ export function ProductPresentationsEditor({
     }
 
     if (requiresRemissionDefault && activeDefaultCount === 1) {
-      const defaultPresentation = activePresentationRows.find((row) => row.isDefault);
-      const smallestQty = Math.min(...activePresentationRows.map((row) => row.qtyInStockUnit));
-      const smallestPresentation = activePresentationRows.find(
+      const defaultPresentation = activeRemissionRows.find((row) => row.isDefault);
+      const smallestQty = Math.min(...activeRemissionRows.map((row) => row.qtyInStockUnit));
+      const smallestPresentation = activeRemissionRows.find(
         (row) => Math.abs(row.qtyInStockUnit - smallestQty) < 0.000001
       );
 
@@ -249,7 +314,7 @@ export function ProductPresentationsEditor({
         defaultPresentation.qtyInStockUnit > smallestQty + 0.000001
       ) {
         setClientError(
-          `La presentación mínima para remisión debe ser la de menor contenido activo. Marca "${smallestPresentation?.label ?? "la presentación más pequeña"}" como mínima.`
+          `La presentación mínima para remisión debe ser la de menor contenido entre las presentaciones remisionables. Marca "${smallestPresentation?.label ?? "la presentación remisionable más pequeña"}" como mínima.`
         );
         return;
       }
@@ -266,9 +331,9 @@ export function ProductPresentationsEditor({
             <div className="ui-caption">Presentaciones físicas</div>
             <h2 className="ui-h2">{productName}</h2>
             <p className="mt-2 ui-body-muted">
-              Administra las formas físicas en las que existe este producto. Si el producto se remisiona,
-              marca como mínima la presentación activa de menor contenido: el satélite pedirá en esa unidad
-              y Centro podrá despachar combinaciones equivalentes de presentaciones mayores.
+              Administra las formas físicas en las que existe este producto. La remisión se habilita a nivel
+              de producto por sede, pero aquí defines qué presentaciones puede pedir o recibir el satélite.
+              Una presentación puede estar activa para inventario o producción sin estar disponible para remisión.
             </p>
           </div>
 
@@ -282,9 +347,9 @@ export function ProductPresentationsEditor({
         <div className="rounded-[28px] border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">
           <div className="font-bold">Regla de remisión</div>
           <p className="mt-1">
-            El satélite solicita usando la presentación mínima activa. Si existen presentaciones mayores,
-            Centro puede despachar una combinación física equivalente. Ejemplo: 5 potes de 1 L pueden
-            cumplirse con 2 potes de 2 L y 1 pote de 1 L.
+            El satélite solicita usando la presentación mínima remisionable. Las presentaciones activas solo
+            para producción o control interno no cuentan para esta regla. Si existen presentaciones remisionables
+            mayores, Centro puede despachar una combinación física equivalente.
           </p>
         </div>
       ) : null}
@@ -341,6 +406,10 @@ export function ProductPresentationsEditor({
       <div className="space-y-4">
         {rows.map((row, index) => {
           const fieldPrefix = `presentation_${row.key}`;
+          const isAvailableForRemission = isRowAvailableForRemission(row);
+          const usageContextValue = requiresRemissionDefault
+            ? remissionUsageContextForRow(row)
+            : row.usage_context ?? "general";
 
           return (
             <article
@@ -349,7 +418,12 @@ export function ProductPresentationsEditor({
             >
               <input type="hidden" name={`${fieldPrefix}_id`} value={row.id} readOnly />
               <input type="hidden" name={`${fieldPrefix}_source`} value="manual" readOnly />
-              <input type="hidden" name={`${fieldPrefix}_usage_context`} value="general" readOnly />
+              <input
+                type="hidden"
+                name={`${fieldPrefix}_usage_context`}
+                value={usageContextValue}
+                readOnly
+              />
               <input type="hidden" name={`${fieldPrefix}_qty_in_input_unit`} value="1" readOnly />
 
               <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
@@ -420,36 +494,63 @@ export function ProductPresentationsEditor({
                     </span>
                   </label>
 
-                  <div className="space-y-2">
-                    <div className="flex flex-wrap gap-5">
-                      <label className="flex items-center gap-2">
+                  <div className="space-y-3 rounded-2xl border border-slate-200 bg-slate-50 p-3">
+                    <label className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        name={`${fieldPrefix}_is_active`}
+                        checked={row.is_active !== false}
+                        onChange={(event) => setPresentationActive(row.key, event.target.checked)}
+                      />
+                      <span>
+                        <span className="ui-label block">Presentación física activa</span>
+                        <span className="block text-xs text-[var(--ui-muted)]">
+                          Existe operativamente y puede usarse para inventario, producción, control interno o fotos.
+                        </span>
+                      </span>
+                    </label>
+
+                    {requiresRemissionDefault ? (
+                      <label className="flex items-start gap-2">
                         <input
                           type="checkbox"
-                          name={`${fieldPrefix}_is_default`}
-                          defaultChecked={Boolean(row.is_default)}
+                          name={`${fieldPrefix}_is_remission_enabled`}
+                          checked={isAvailableForRemission}
+                          onChange={(event) =>
+                            setPresentationAvailableForRemission(row.key, event.target.checked)
+                          }
+                          disabled={row.is_active === false}
                         />
-                        <span className="ui-label">
-                          {requiresRemissionDefault
-                            ? "Presentación mínima para solicitud/remisión"
-                            : "Presentación predeterminada opcional"}
+                        <span>
+                          <span className="ui-label block">Disponible para solicitud/remisión</span>
+                          <span className="block text-xs text-[var(--ui-muted)]">
+                            El satélite puede pedir esta presentación y Centro puede usarla para despachar.
+                          </span>
                         </span>
                       </label>
+                    ) : null}
 
-                      <label className="flex items-center gap-2">
-                        <input
-                          type="checkbox"
-                          name={`${fieldPrefix}_is_active`}
-                          defaultChecked={row.is_active !== false}
-                        />
-                        <span className="ui-label">Presentación física activa</span>
-                      </label>
-                    </div>
-
-                    <p className="text-xs text-[var(--ui-muted)]">
-                      {requiresRemissionDefault
-                        ? "Debe ser la presentación activa de menor contenido. El satélite pedirá esta unidad; Centro podrá despachar combinaciones equivalentes de presentaciones activas mayores."
-                        : "Opcional. Esta presentación puede usarse como referencia visual o predeterminada para bodega, inventario por LOC y quiosco."}
-                    </p>
+                    <label className="flex items-start gap-2">
+                      <input
+                        type="checkbox"
+                        name={`${fieldPrefix}_is_default`}
+                        checked={Boolean(row.is_default)}
+                        onChange={(event) => setPresentationDefault(row.key, event.target.checked)}
+                        disabled={requiresRemissionDefault && !isAvailableForRemission}
+                      />
+                      <span>
+                        <span className="ui-label block">
+                          {requiresRemissionDefault
+                            ? "Unidad mínima de solicitud/remisión"
+                            : "Presentación predeterminada opcional"}
+                        </span>
+                        <span className="block text-xs text-[var(--ui-muted)]">
+                          {requiresRemissionDefault
+                            ? "Debe ser la menor presentación activa disponible para remisión. Las presentaciones solo para producción no cuentan."
+                            : "Puede usarse como referencia visual o predeterminada para bodega, inventario por LOC y quiosco."}
+                        </span>
+                      </span>
+                    </label>
                   </div>
                 </div>
 

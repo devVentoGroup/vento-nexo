@@ -80,6 +80,21 @@ function asPositiveNumber(value: FormDataEntryValue | null): number {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 0;
 }
 
+function normalizePresentationUsageContext(
+  value: FormDataEntryValue | string | null
+): NonNullable<ProductPresentationEditorRow["usage_context"]> {
+  const raw = String(value ?? "").trim().toLowerCase();
+  return raw === "remission" || raw === "purchase" ? raw : "general";
+}
+
+function isSameQuantity(a: number, b: number): boolean {
+  return Math.abs(a - b) < 0.000001;
+}
+
+function isGreaterQuantity(a: number, b: number): boolean {
+  return a > b + 0.000001;
+}
+
 function parseJsonArray(raw: string): string[] {
   if (!raw) return [];
   try {
@@ -264,6 +279,15 @@ async function saveProductPresentations(formData: FormData) {
     const imageUrl = asText(formData.get(`${prefix}_image_url`));
     const isDefault = formData.has(`${prefix}_is_default`);
     const isActive = formData.has(`${prefix}_is_active`);
+    const postedUsageContext = normalizePresentationUsageContext(
+      formData.get(`${prefix}_usage_context`)
+    );
+    const wantsRemissionEnabled =
+      formData.has(`${prefix}_is_remission_enabled`) ||
+      postedUsageContext === "remission" ||
+      (requiresRemissionDefault && isDefault);
+    const isRemissionEnabled = isActive && wantsRemissionEnabled;
+    const usageContext = isRemissionEnabled ? "remission" : "general";
 
     return {
       id,
@@ -271,10 +295,11 @@ async function saveProductPresentations(formData: FormData) {
       inputUnitCode,
       qtyInInputUnit: 1,
       qtyInStockUnit,
-      usageContext: "general" as const,
+      usageContext,
       imageUrl,
       isDefault,
       isActive,
+      isRemissionEnabled,
     };
   });
 
@@ -290,11 +315,35 @@ async function saveProductPresentations(formData: FormData) {
     }
   }
 
-  const defaultPhysicalPresentations = rows.filter((row) => row.isDefault && row.isActive);
+  for (const row of rows) {
+    if (row.isDefault && !row.isActive) {
+      redirectWithError(`La presentación "${row.label}" no puede ser mínima si está inactiva.`);
+    }
 
-  if (requiresRemissionDefault && defaultPhysicalPresentations.length === 0) {
+    if (requiresRemissionDefault && row.isDefault && !row.isRemissionEnabled) {
+      redirectWithError(
+        `La presentación "${row.label}" no puede ser mínima si no está disponible para solicitud/remisión.`
+      );
+    }
+  }
+
+  const activeRemissionPresentations = rows.filter(
+    (row) => row.isActive && row.isRemissionEnabled
+  );
+  const defaultPhysicalPresentations = rows.filter((row) => row.isDefault && row.isActive);
+  const defaultRemissionPresentations = rows.filter(
+    (row) => row.isDefault && row.isActive && row.isRemissionEnabled
+  );
+
+  if (requiresRemissionDefault && activeRemissionPresentations.length === 0) {
     redirectWithError(
-      "Este producto está activo para remisión en al menos un satélite. Selecciona una presentación mínima activa para solicitud/remisión."
+      "Este producto está activo para remisión en al menos un satélite. Marca al menos una presentación activa como disponible para solicitud/remisión."
+    );
+  }
+
+  if (requiresRemissionDefault && defaultRemissionPresentations.length === 0) {
+    redirectWithError(
+      "Este producto está activo para remisión en al menos un satélite. Selecciona como mínima la menor presentación activa disponible para solicitud/remisión."
     );
   }
 
@@ -302,9 +351,19 @@ async function saveProductPresentations(formData: FormData) {
     redirectWithError("Solo puede haber una presentación mínima activa para solicitud/remisión.");
   }
 
-  for (const row of rows) {
-    if (row.isDefault && !row.isActive) {
-      redirectWithError(`La presentación "${row.label}" no puede ser mínima si está inactiva.`);
+  if (requiresRemissionDefault && defaultRemissionPresentations.length === 1) {
+    const defaultPresentation = defaultRemissionPresentations[0];
+    const smallestQty = Math.min(
+      ...activeRemissionPresentations.map((row) => row.qtyInStockUnit)
+    );
+    const smallestPresentation = activeRemissionPresentations.find((row) =>
+      isSameQuantity(row.qtyInStockUnit, smallestQty)
+    );
+
+    if (isGreaterQuantity(defaultPresentation.qtyInStockUnit, smallestQty)) {
+      redirectWithError(
+        `La presentación mínima para remisión debe ser la menor entre las presentaciones activas disponibles para remisión. Marca "${smallestPresentation?.label ?? "la presentación remisionable más pequeña"}" como mínima.`
+      );
     }
   }
 
@@ -316,7 +375,7 @@ async function saveProductPresentations(formData: FormData) {
         updated_at: new Date().toISOString(),
       })
       .eq("product_id", productId)
-      .eq("usage_context", "general")
+      .eq("source", "manual")
       .eq("is_default", true);
 
     if (error) redirectWithError(error.message);
@@ -329,7 +388,7 @@ async function saveProductPresentations(formData: FormData) {
       input_unit_code: row.inputUnitCode,
       qty_in_input_unit: 1,
       qty_in_stock_unit: row.qtyInStockUnit,
-      usage_context: "general",
+      usage_context: row.usageContext,
       is_default: row.isDefault,
       is_active: row.isActive,
       source: "manual",
@@ -408,7 +467,6 @@ export default async function ProductPresentationsPage({
       .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context,image_url,catalog_image_url")
       .eq("product_id", id)
       .eq("source", "manual")
-      .eq("usage_context", "general")
       .order("is_default", { ascending: false })
       .order("label", { ascending: true }),
     supabase
@@ -445,7 +503,7 @@ export default async function ProductPresentationsPage({
   const presentationRows = ((uomProfileData ?? []) as UomProfileRow[]).map((row) => ({
     ...row,
     qty_in_input_unit: 1,
-    usage_context: "general" as const,
+    usage_context: normalizePresentationUsageContext(row.usage_context),
     source: "manual" as const,
     image_url: row.image_url ?? "",
     catalog_image_url: row.catalog_image_url ?? "",
