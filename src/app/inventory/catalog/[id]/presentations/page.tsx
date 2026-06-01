@@ -290,6 +290,7 @@ async function saveProductPresentations(formData: FormData) {
     const usageContext = isRemissionEnabled ? "remission" : "general";
 
     return {
+      key,
       id,
       label,
       inputUnitCode,
@@ -367,19 +368,21 @@ async function saveProductPresentations(formData: FormData) {
     }
   }
 
-  if (defaultPhysicalPresentations.length === 1) {
-    const { error } = await supabase
-      .from("product_uom_profiles")
-      .update({
-        is_default: false,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("product_id", productId)
-      .eq("source", "manual")
-      .eq("is_default", true);
+  const selectedDefaultPresentation = defaultPhysicalPresentations[0] ?? null;
 
-    if (error) redirectWithError(error.message);
-  }
+  const { error: resetDefaultError } = await supabase
+    .from("product_uom_profiles")
+    .update({
+      is_default: false,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("product_id", productId)
+    .eq("is_default", true)
+    .or("usage_context.is.null,usage_context.eq.general,usage_context.eq.remission");
+
+  if (resetDefaultError) redirectWithError(resetDefaultError.message);
+
+  const savedRowIdsByKey = new Map<string, string>();
 
   for (const row of rows) {
     const payload = {
@@ -389,7 +392,7 @@ async function saveProductPresentations(formData: FormData) {
       qty_in_input_unit: 1,
       qty_in_stock_unit: row.qtyInStockUnit,
       usage_context: row.usageContext,
-      is_default: row.isDefault,
+      is_default: false,
       is_active: row.isActive,
       source: "manual",
       image_url: row.imageUrl || null,
@@ -404,11 +407,45 @@ async function saveProductPresentations(formData: FormData) {
         .eq("product_id", productId);
 
       if (error) redirectWithError(error.message);
+      savedRowIdsByKey.set(row.key, row.id);
       continue;
     }
 
-    const { error } = await supabase.from("product_uom_profiles").insert(payload);
+    const { data: insertedRow, error } = await supabase
+      .from("product_uom_profiles")
+      .insert(payload)
+      .select("id")
+      .single();
+
     if (error) redirectWithError(error.message);
+
+    const insertedId = String((insertedRow as { id?: string } | null)?.id ?? "").trim();
+    if (insertedId) {
+      savedRowIdsByKey.set(row.key, insertedId);
+    }
+  }
+
+  if (selectedDefaultPresentation) {
+    const defaultPresentationId =
+      savedRowIdsByKey.get(selectedDefaultPresentation.key) ||
+      selectedDefaultPresentation.id;
+
+    if (!defaultPresentationId) {
+      redirectWithError("No se pudo identificar la presentación mínima para guardarla.");
+    }
+
+    const { error: setDefaultError } = await supabase
+      .from("product_uom_profiles")
+      .update({
+        is_default: true,
+        is_active: true,
+        usage_context: selectedDefaultPresentation.usageContext,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", defaultPresentationId)
+      .eq("product_id", productId);
+
+    if (setDefaultError) redirectWithError(setDefaultError.message);
   }
 
   redirect(appendQueryParam(returnTo, "ok", "1"));
