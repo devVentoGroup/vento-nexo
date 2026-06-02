@@ -266,6 +266,282 @@ async function ensureReceiveSignature(params: {
   return updateErr?.message ?? null;
 }
 
+type DestinationReceiptBucket = "bar" | "cocina" | "almacenamiento";
+
+type DestinationReceiptItemRow = {
+  id: string;
+  product_id: string | null;
+  received_quantity: number | null;
+  production_area_kind: string | null;
+};
+
+type DestinationReceiptLocationRow = {
+  id: string;
+  site_id: string | null;
+  area_id: string | null;
+  code: string | null;
+  zone: string | null;
+  aisle: string | null;
+  level: string | null;
+  description: string | null;
+  is_active?: boolean | null;
+};
+
+type DestinationReceiptAreaRow = {
+  id: string;
+  site_id: string | null;
+  code: string | null;
+  name: string | null;
+  kind: string | null;
+  is_active?: boolean | null;
+};
+
+type DestinationReceiptAllocation = {
+  locationId: string;
+  productId: string;
+  qty: number;
+};
+
+function normalizeReceiptRoutingText(value: unknown): string {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function resolveDestinationReceiptBucket(areaKind: unknown): DestinationReceiptBucket {
+  const value = normalizeReceiptRoutingText(areaKind);
+
+  if (value.includes("bar") || value.includes("barra")) return "bar";
+  if (value.includes("coc") || value.includes("kitchen")) return "cocina";
+
+  // Mostrador no es área de producción: en Vento Café debe entrar al stock/almacenamiento.
+  return "almacenamiento";
+}
+
+function destinationReceiptBucketLabel(bucket: DestinationReceiptBucket): string {
+  switch (bucket) {
+    case "bar":
+      return "Barra / BAR";
+    case "cocina":
+      return "Cocina";
+    case "almacenamiento":
+    default:
+      return "Almacenamiento / stock";
+  }
+}
+
+function destinationReceiptLocationScore(params: {
+  location: DestinationReceiptLocationRow;
+  areaById: Map<string, DestinationReceiptAreaRow>;
+  bucket: DestinationReceiptBucket;
+}): number {
+  const { location, areaById, bucket } = params;
+  const area = location.area_id ? areaById.get(location.area_id) ?? null : null;
+  const zone = normalizeReceiptRoutingText(location.zone);
+  const tokens = [
+    location.code,
+    location.zone,
+    location.aisle,
+    location.level,
+    location.description,
+    area?.code,
+    area?.name,
+    area?.kind,
+  ].map(normalizeReceiptRoutingText);
+  const joined = tokens.filter(Boolean).join(" ");
+
+  let score = 0;
+
+  if (bucket === "bar") {
+    if (zone === "bar") score += 100;
+    if (joined.includes("bar") || joined.includes("barra")) score += 80;
+    if (joined.includes("almacen") || joined.includes("bodega")) score += 10;
+  }
+
+  if (bucket === "cocina") {
+    if (zone === "coc" || zone === "cocina") score += 100;
+    if (joined.includes("coc") || joined.includes("cocina") || joined.includes("kitchen")) {
+      score += 80;
+    }
+    if (joined.includes("preparacion") || joined.includes("prep")) score += 20;
+  }
+
+  if (bucket === "almacenamiento") {
+    const storageZoneCodes = new Set([
+      "bod",
+      "bodega",
+      "frio",
+      "cong",
+      "n2p",
+      "n3p",
+      "secos1",
+      "secprep",
+      "emp",
+      "rec",
+    ]);
+    const storageWords = [
+      "almacen",
+      "bodega",
+      "stock",
+      "inventario",
+      "frio",
+      "congel",
+      "seco",
+      "nevera",
+      "recepcion",
+      "recibo",
+    ];
+    const productionWords = ["bar", "barra", "coc", "cocina", "kitchen"];
+
+    if (storageZoneCodes.has(zone)) score += 100;
+    if (storageWords.some((word) => joined.includes(word))) score += 90;
+    if (joined.includes("general")) score += 30;
+    if (joined.includes("mostrador")) score += 20;
+    if (productionWords.some((word) => joined.includes(word))) score -= 60;
+  }
+
+  return score;
+}
+
+function selectDestinationReceiptLocation(params: {
+  locations: DestinationReceiptLocationRow[];
+  areaById: Map<string, DestinationReceiptAreaRow>;
+  bucket: DestinationReceiptBucket;
+}): DestinationReceiptLocationRow | null {
+  const { locations, areaById, bucket } = params;
+  const activeLocations = locations.filter((location) => location.is_active !== false);
+  if (activeLocations.length === 0) return null;
+
+  const ranked = activeLocations
+    .map((location) => ({
+      location,
+      score: destinationReceiptLocationScore({ location, areaById, bucket }),
+    }))
+    .filter((entry) => entry.score > 0)
+    .sort(
+      (a, b) =>
+        b.score - a.score ||
+        String(a.location.code ?? a.location.id).localeCompare(
+          String(b.location.code ?? b.location.id)
+        )
+    );
+
+  if (ranked[0]) return ranked[0].location;
+
+  // Sedes simples o recién migradas: si solo existe un LOC activo, úsalo como fallback seguro.
+  if (activeLocations.length === 1) return activeLocations[0] ?? null;
+
+  return null;
+}
+
+async function buildDestinationReceiptLocationAllocations(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  requestId: string;
+  toSiteId: string;
+}): Promise<{ allocations: DestinationReceiptAllocation[]; error: string | null }> {
+  const { supabase, requestId, toSiteId } = params;
+
+  const { data: itemRowsData, error: itemRowsErr } = await supabase
+    .from("restock_request_items")
+    .select("id,product_id,received_quantity,production_area_kind")
+    .eq("request_id", requestId);
+
+  if (itemRowsErr) return { allocations: [], error: itemRowsErr.message };
+
+  const itemRows = (itemRowsData ?? []) as DestinationReceiptItemRow[];
+  const receivedRows = itemRows.filter(
+    (row) => roundQuantity(Number(row.received_quantity ?? 0)) > 0
+  );
+
+  if (receivedRows.length === 0) return { allocations: [], error: null };
+
+  const { data: locationRowsData, error: locationRowsErr } = await supabase
+    .from("inventory_locations")
+    .select("id,site_id,area_id,code,zone,aisle,level,description,is_active")
+    .eq("site_id", toSiteId)
+    .eq("is_active", true);
+
+  if (locationRowsErr) return { allocations: [], error: locationRowsErr.message };
+
+  const locations = (locationRowsData ?? []) as DestinationReceiptLocationRow[];
+  if (locations.length === 0) {
+    return {
+      allocations: [],
+      error: "La sede destino no tiene LOC/áreas activas para recibir inventario.",
+    };
+  }
+
+  const areaIds = Array.from(
+    new Set(locations.map((location) => String(location.area_id ?? "").trim()).filter(Boolean))
+  );
+
+  const { data: areaRowsData, error: areaRowsErr } = areaIds.length
+    ? await supabase
+      .from("areas")
+      .select("id,site_id,code,name,kind,is_active")
+      .in("id", areaIds)
+    : { data: [] as DestinationReceiptAreaRow[], error: null };
+
+  if (areaRowsErr) return { allocations: [], error: areaRowsErr.message };
+
+  const areaById = new Map(
+    ((areaRowsData ?? []) as DestinationReceiptAreaRow[])
+      .filter((area) => area.is_active !== false)
+      .map((area) => [area.id, area])
+  );
+  const allocationsByKey = new Map<string, DestinationReceiptAllocation>();
+
+  for (const row of receivedRows) {
+    const productId = String(row.product_id ?? "").trim();
+    const qty = roundQuantity(Number(row.received_quantity ?? 0));
+    if (!productId || qty <= 0) continue;
+
+    const bucket = resolveDestinationReceiptBucket(row.production_area_kind);
+    const location = selectDestinationReceiptLocation({ locations, areaById, bucket });
+
+    if (!location) {
+      return {
+        allocations: [],
+        error: `No se encontró un LOC destino activo para ${destinationReceiptBucketLabel(bucket)}. Crea o activa un LOC de esa zona en la sede destino antes de recibir.`,
+      };
+    }
+
+    const key = `${location.id}|${productId}`;
+    const current = allocationsByKey.get(key) ?? {
+      locationId: location.id,
+      productId,
+      qty: 0,
+    };
+    current.qty = roundQuantity(current.qty + qty);
+    allocationsByKey.set(key, current);
+  }
+
+  return { allocations: Array.from(allocationsByKey.values()), error: null };
+}
+
+async function applyDestinationReceiptLocationAllocations(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  allocations: DestinationReceiptAllocation[];
+}): Promise<string | null> {
+  const { supabase, allocations } = params;
+
+  for (const allocation of allocations) {
+    if (!allocation.locationId || !allocation.productId || allocation.qty <= 0) continue;
+
+    const { error } = await supabase.rpc("upsert_inventory_stock_by_location", {
+      p_location_id: allocation.locationId,
+      p_product_id: allocation.productId,
+      p_delta: allocation.qty,
+    });
+
+    if (error) return error.message;
+  }
+
+  return null;
+}
+
 async function ensureDestinationReceiptMovements(params: {
   supabase: Awaited<ReturnType<typeof createClient>>;
   requestId: string;
@@ -295,10 +571,38 @@ async function ensureDestinationReceiptMovements(params: {
   if (countErr) return countErr.message;
   if (Number(count ?? 0) > 0) return null;
 
+  const allocationResult = await buildDestinationReceiptLocationAllocations({
+    supabase,
+    requestId,
+    toSiteId: siteId,
+  });
+  if (allocationResult.error) return allocationResult.error;
+
   const { error: receiptErr } = await supabase.rpc("apply_restock_receipt", {
     p_request_id: requestId,
   });
-  return receiptErr?.message ?? null;
+  if (receiptErr) return receiptErr.message;
+
+  const { data: transferInRows, error: transferInRowsErr } = await supabase
+    .from("inventory_movements")
+    .select("id,location_id")
+    .eq("related_restock_request_id", requestId)
+    .eq("movement_type", "transfer_in")
+    .eq("site_id", siteId)
+    .limit(10);
+  if (transferInRowsErr) return transferInRowsErr.message;
+
+  const receiptAlreadyPostedByLocation = ((transferInRows ?? []) as Array<{
+    id: string;
+    location_id: string | null;
+  }>).some((row) => Boolean(String(row.location_id ?? "").trim()));
+
+  if (receiptAlreadyPostedByLocation) return null;
+
+  return applyDestinationReceiptLocationAllocations({
+    supabase,
+    allocations: allocationResult.allocations,
+  });
 }
 
 async function ensureInternalTransferPricing(params: {
@@ -669,6 +973,16 @@ type CommitSplitPayload = {
   splitQuantity: number;
 };
 
+type ProductionPackagePlanItem = {
+  packageId: string;
+  dispatchQty: number;
+  unitCode: string;
+  remainingQty: number;
+  label: string;
+  batchId: string | null;
+  fractional: boolean;
+};
+
 type CommitPickPayload = {
   id?: string;
   itemId?: string;
@@ -703,7 +1017,206 @@ type CommitPickPayload = {
   notes?: string | null;
   shortageReason?: string | null;
   shortage_reason?: string | null;
+  productionPackageId?: string | null;
+  production_package_id?: string | null;
 };
+
+function parseProductionPackagePlan(value: unknown): ProductionPackagePlanItem[] {
+  if (!value) return [];
+
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed
+      .map((entry) => {
+        const packageId = String(entry?.packageId ?? "").trim();
+        const dispatchQty = roundQuantity(Number(entry?.dispatchQty ?? 0));
+        const unitCode = normalizeUnitCode(String(entry?.unitCode ?? ""));
+        const remainingQty = roundQuantity(Number(entry?.remainingQty ?? 0));
+        const label = String(entry?.label ?? "").trim();
+        const batchId = String(entry?.batchId ?? "").trim() || null;
+        const fractional = Boolean(entry?.fractional);
+
+        if (!packageId || dispatchQty <= 0) return null;
+
+        return {
+          packageId,
+          dispatchQty,
+          unitCode,
+          remainingQty,
+          label,
+          batchId,
+          fractional,
+        };
+      })
+      .filter((entry): entry is ProductionPackagePlanItem => entry !== null);
+  } catch {
+    return [];
+  }
+}
+
+async function applyProductionPackageDispatchForRequest(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  requestId: string;
+  userId: string;
+}): Promise<string | null> {
+  const { supabase, requestId, userId } = params;
+  if (!requestId) return null;
+
+  const { data: itemRowsData, error: itemRowsErr } = await supabase
+    .from("restock_request_items")
+    .select(
+      "id,product_id,prepared_quantity,shipped_quantity,production_package_plan,requires_package_dispatch,production_package_dispatch_applied_at"
+    )
+    .eq("request_id", requestId)
+    .eq("requires_package_dispatch", true)
+    .is("production_package_dispatch_applied_at", null);
+
+  if (itemRowsErr) return itemRowsErr.message;
+
+  const itemRows = (itemRowsData ?? []) as Array<{
+    id: string;
+    product_id: string | null;
+    prepared_quantity: number | null;
+    shipped_quantity: number | null;
+    production_package_plan: unknown;
+    requires_package_dispatch: boolean | null;
+    production_package_dispatch_applied_at: string | null;
+  }>;
+
+  if (itemRows.length === 0) return null;
+
+  const requestedByPackage = new Map<
+    string,
+    {
+      qty: number;
+      productId: string;
+      itemIds: Set<string>;
+    }
+  >;
+  const itemIdsToMark = new Set<string>();
+
+  for (const item of itemRows) {
+    const productId = String(item.product_id ?? "").trim();
+    const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
+    const preparedQty = roundQuantity(Number(item.prepared_quantity ?? 0));
+    const effectiveQty = shippedQty > 0 ? shippedQty : preparedQty;
+    const plan = parseProductionPackagePlan(item.production_package_plan);
+    const planTotal = roundQuantity(plan.reduce((sum, entry) => sum + Number(entry.dispatchQty ?? 0), 0));
+
+    if (!productId) {
+      return "Una línea con empaques FOGO no tiene producto asociado.";
+    }
+
+    if (effectiveQty <= 0) {
+      return "Una línea con empaques FOGO no tiene cantidad enviada.";
+    }
+
+    if (!plan.length) {
+      return "Una línea producida requiere empaques FOGO, pero no tiene plan de empaques.";
+    }
+
+    if (Math.abs(planTotal - effectiveQty) > 0.001) {
+      return "La cantidad enviada no coincide con el plan de empaques FOGO.";
+    }
+
+    itemIdsToMark.add(item.id);
+
+    for (const entry of plan) {
+      const current = requestedByPackage.get(entry.packageId) ?? {
+        qty: 0,
+        productId,
+        itemIds: new Set<string>(),
+      };
+
+      if (current.productId !== productId) {
+        return "Un empaque FOGO fue asignado a productos diferentes.";
+      }
+
+      current.qty = roundQuantity(current.qty + Number(entry.dispatchQty ?? 0));
+      current.itemIds.add(item.id);
+      requestedByPackage.set(entry.packageId, current);
+    }
+  }
+
+  const packageIds = Array.from(requestedByPackage.keys());
+  if (packageIds.length === 0) return null;
+
+  const { data: packageRowsData, error: packageRowsErr } = await supabase
+    .from("production_batch_packages")
+    .select("id,product_id,remaining_qty,status")
+    .in("id", packageIds);
+
+  if (packageRowsErr) return packageRowsErr.message;
+
+  const packageRowsById = new Map(
+    ((packageRowsData ?? []) as Array<{
+      id: string;
+      product_id: string | null;
+      remaining_qty: number | null;
+      status: string | null;
+    }>).map((row) => [row.id, row])
+  );
+
+  const nowIso = new Date().toISOString();
+
+  for (const [packageId, requested] of requestedByPackage.entries()) {
+    const packageRow = packageRowsById.get(packageId);
+    if (!packageRow) return "Uno de los empaques FOGO ya no existe.";
+
+    const packageProductId = String(packageRow.product_id ?? "").trim();
+    const status = String(packageRow.status ?? "available").trim().toLowerCase();
+    const remainingQty = roundQuantity(Number(packageRow.remaining_qty ?? 0));
+
+    if (packageProductId !== requested.productId) {
+      return "Uno de los empaques FOGO no coincide con el producto solicitado.";
+    }
+
+    if (!["available", "opened", "reserved"].includes(status)) {
+      return "Uno de los empaques FOGO ya no está disponible.";
+    }
+
+    if (requested.qty > remainingQty + 0.001) {
+      return "Uno de los empaques FOGO ya no tiene cantidad suficiente.";
+    }
+
+    const nextRemainingQty = roundQuantity(Math.max(remainingQty - requested.qty, 0));
+    const nextStatus = nextRemainingQty <= 0.001 ? "dispatched" : "opened";
+
+    const updatePayload: Record<string, string | number> = {
+      remaining_qty: nextRemainingQty,
+      status: nextStatus,
+    };
+
+    if (nextStatus === "opened") {
+      updatePayload.opened_at = nowIso;
+    } else {
+      updatePayload.dispatched_at = nowIso;
+    }
+
+    const { error: updatePackageErr } = await supabase
+      .from("production_batch_packages")
+      .update(updatePayload)
+      .eq("id", packageId);
+
+    if (updatePackageErr) return updatePackageErr.message;
+  }
+
+  if (itemIdsToMark.size > 0) {
+    const { error: markItemsErr } = await supabase
+      .from("restock_request_items")
+      .update({
+        production_package_dispatch_applied_at: nowIso,
+        production_package_dispatch_applied_by: userId,
+      })
+      .in("id", Array.from(itemIdsToMark));
+
+    if (markItemsErr) return markItemsErr.message;
+  }
+
+  return null;
+}
 
 function payloadString(value: unknown): string {
   return String(value ?? "").trim();
@@ -1386,6 +1899,22 @@ export async function submitTransitChecklist(formData: FormData) {
       );
     }
 
+    const packageDispatchErr = await applyProductionPackageDispatchForRequest({
+      supabase,
+      requestId,
+      userId: user.id,
+    });
+    if (packageDispatchErr) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error: packageDispatchErr,
+        })
+      );
+    }
+
     const nowIso = new Date().toISOString();
     const { error: reqErr } = await supabase
       .from("restock_requests")
@@ -1618,6 +2147,22 @@ export async function submitTransitChecklist(formData: FormData) {
           from: returnOrigin,
           siteId: activeSiteId,
           error: toFriendlyTransitStockError(moveErr.message),
+        })
+      );
+    }
+
+    const packageDispatchErr = await applyProductionPackageDispatchForRequest({
+      supabase,
+      requestId,
+      userId: user.id,
+    });
+    if (packageDispatchErr) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error: packageDispatchErr,
         })
       );
     }
@@ -2562,6 +3107,15 @@ export async function updateStatus(formData: FormData) {
       if (moveErr) {
         redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: toFriendlyTransitStockError(moveErr.message) }));
       }
+
+      const packageDispatchErr = await applyProductionPackageDispatchForRequest({
+        supabase,
+        requestId,
+        userId: user.id,
+      });
+      if (packageDispatchErr) {
+        redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: packageDispatchErr }));
+      }
     } else {
       const { error: moveErr } = await supabase.rpc("apply_restock_shipment", {
         p_request_id: requestId,
@@ -2569,6 +3123,16 @@ export async function updateStatus(formData: FormData) {
       if (moveErr) {
         redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: toFriendlyTransitStockError(moveErr.message) }));
       }
+
+      const packageDispatchErr = await applyProductionPackageDispatchForRequest({
+        supabase,
+        requestId,
+        userId: user.id,
+      });
+      if (packageDispatchErr) {
+        redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: packageDispatchErr }));
+      }
+
       const fromSiteIdForMovement = request?.from_site_id ?? "";
       if (!fromSiteIdForMovement) {
         redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "No se encontro sede origen para la remision." }));

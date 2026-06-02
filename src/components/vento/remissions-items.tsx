@@ -22,6 +22,8 @@ type Option = {
   name: string | null;
   unit: string | null;
   stock_unit_code?: string | null;
+  product_type?: string | null;
+  inventory_kind?: string | null;
   category_id?: string | null;
   measurement_mode?: MeasurementMode | string | null;
   default_tolerance_percent?: number | null;
@@ -34,6 +36,31 @@ type AreaOption = {
   label: string;
 };
 
+export type ProductionPackageOption = {
+  id: string;
+  batchId: string | null;
+  siteId: string;
+  locationId: string | null;
+  productId: string;
+  packageIndex: number | null;
+  packageLabel: string | null;
+  originalQty: number;
+  remainingQty: number;
+  reservedQty: number;
+  unitCode: string | null;
+  status: string | null;
+};
+
+export type ProductionPackagePlanItem = {
+  packageId: string;
+  dispatchQty: number;
+  unitCode: string;
+  remainingQty: number;
+  label: string;
+  batchId: string | null;
+  fractional: boolean;
+};
+
 type Row = {
   id: number;
   productId: string;
@@ -41,6 +68,8 @@ type Row = {
   inputUnitCode: string;
   inputUomProfileId: string;
   areaKind: string;
+  productionPackagePlan?: ProductionPackagePlanItem[];
+  acceptPackageFraction?: boolean;
 };
 
 export type RemissionDraftRow = Row;
@@ -52,6 +81,8 @@ const EMPTY_ROW: RemissionDraftRow = {
   inputUnitCode: "",
   inputUomProfileId: "",
   areaKind: "",
+  productionPackagePlan: [],
+  acceptPackageFraction: false,
 };
 
 type Props = {
@@ -62,6 +93,8 @@ type Props = {
   defaultAreaKind?: string;
   lockAreaKind?: boolean;
   defaultUomProfiles?: ProductUomProfile[];
+  productionPackageRows?: ProductionPackageOption[];
+  selectedFromSiteId?: string;
   onRowsChange?: (rows: RemissionDraftRow[]) => void;
   referenceStockByProduct?: Record<
     string,
@@ -124,12 +157,20 @@ function getProductMeasurementMode(product: Option | null | undefined): Measurem
   return normalizeMeasurementMode(product?.measurement_mode);
 }
 
-function usesFixedPresentation(product: Option | null | undefined): boolean {
-  return getProductMeasurementMode(product) === "fixed_presentation";
+function isProducedPackagedProduct(product: Option | null | undefined): boolean {
+  const productType = String(product?.product_type ?? "").trim().toLowerCase();
+  const inventoryKind = String(product?.inventory_kind ?? "").trim().toLowerCase();
+  return productType === "preparacion" || (productType === "venta" && inventoryKind !== "resale");
 }
 
-function getMeasurementModeLabel(value: MeasurementMode): string {
-  switch (value) {
+function usesFixedPresentation(product: Option | null | undefined): boolean {
+  return !isProducedPackagedProduct(product) && getProductMeasurementMode(product) === "fixed_presentation";
+}
+
+function getMeasurementModeLabel(product: Option | null | undefined): string {
+  if (isProducedPackagedProduct(product)) return "Empaques FOGO";
+
+  switch (getProductMeasurementMode(product)) {
     case "variable_weight":
       return "Peso real";
     case "count_with_weight":
@@ -145,20 +186,27 @@ function getMeasurementModeLabel(value: MeasurementMode): string {
 function getActualQuantityDisplayLabel(product: Option | null | undefined, stockUnitCode: string): string {
   const measurementMode = getProductMeasurementMode(product);
   const unitCode = stockUnitCode || "un";
+  if (isProducedPackagedProduct(product)) return `${unitCode} por empaques FOGO`;
   if (measurementMode === "count_with_weight") return `${unitCode} real + conteo físico`;
   if (measurementMode === "bulk_volume") return `${unitCode} real`;
   if (measurementMode === "variable_weight") return `${unitCode} real`;
   return unitCode;
 }
 
-function getQuantityFieldLabel(measurementMode: MeasurementMode): string {
+function getQuantityFieldLabel(product: Option | null | undefined): string {
+  const measurementMode = getProductMeasurementMode(product);
+  if (isProducedPackagedProduct(product)) return "Cantidad solicitada";
   if (measurementMode === "fixed_presentation") return "Cantidad";
   if (measurementMode === "count_with_weight") return "Peso solicitado";
   if (measurementMode === "bulk_volume") return "Cantidad solicitada";
   return "Cantidad real solicitada";
 }
 
-function getInputModeHelperText(measurementMode: MeasurementMode): string {
+function getInputModeHelperText(product: Option | null | undefined): string {
+  const measurementMode = getProductMeasurementMode(product);
+  if (isProducedPackagedProduct(product)) {
+    return "Se arma con empaques reales de lote. Si la cantidad es intermedia, debes aceptar fraccionamiento.";
+  }
   if (measurementMode === "fixed_presentation") {
     return "El satélite pide en la presentación mínima. Centro podrá despachar una combinación equivalente.";
   }
@@ -172,21 +220,43 @@ function getInputModeHelperText(measurementMode: MeasurementMode): string {
 }
 
 function getOperationalEquivalenceLabel(params: {
-  measurementMode: MeasurementMode;
+  product: Option | null | undefined;
   profile: ProductUomProfile | null;
   presentationLabel: string;
   stockUnitCode: string;
+  packagePlan: {
+    items: ProductionPackagePlanItem[];
+    total: number;
+    covered: boolean;
+    hasFractional: boolean;
+    shortage: number;
+  };
 }) {
   const stockUnitCode = params.stockUnitCode || "un";
-  if (params.measurementMode === "fixed_presentation") {
+
+  if (isProducedPackagedProduct(params.product)) {
+    if (!params.packagePlan.items.length) {
+      return `Solicitud por empaques reales disponibles en ${stockUnitCode}.`;
+    }
+
+    const parts = params.packagePlan.items.map((item) => {
+      const prefix = item.fractional ? "fracción" : "empaque";
+      return `${prefix} ${item.label}: ${formatQuantity(item.dispatchQty)} ${item.unitCode || stockUnitCode}`;
+    });
+
+    return `Plan FOGO: ${parts.join(" · ")}`;
+  }
+
+  const measurementMode = getProductMeasurementMode(params.product);
+  if (measurementMode === "fixed_presentation") {
     return params.profile
       ? `1 ${params.presentationLabel} = ${formatQuantity(params.profile.qty_in_stock_unit)} ${stockUnitCode}`
       : `Solicitud en unidad base: ${stockUnitCode}`;
   }
-  if (params.measurementMode === "count_with_weight") {
+  if (measurementMode === "count_with_weight") {
     return `Solicitud por peso real en ${stockUnitCode}. El conteo físico queda para despacho/recepción.`;
   }
-  if (params.measurementMode === "bulk_volume") {
+  if (measurementMode === "bulk_volume") {
     return `Solicitud por cantidad real en ${stockUnitCode}.`;
   }
   return `Solicitud por peso real en ${stockUnitCode}.`;
@@ -208,6 +278,83 @@ function getRemissionInputUnitCode(
   return normalizeUnitCode(profile?.input_unit_code ?? "") || stockUnitCode || "un";
 }
 
+function productionPackageLabel(row: ProductionPackageOption, stockUnitCode: string): string {
+  const unitCode = normalizeUnitCode(row.unitCode || stockUnitCode || "un");
+  const label = String(row.packageLabel ?? "").trim() || `Empaque ${row.packageIndex ?? ""}`.trim();
+  return `${label} · ${formatQuantity(row.remainingQty)} ${unitCode}`;
+}
+
+function buildPackagePlan(params: {
+  product: Option | null | undefined;
+  packages: ProductionPackageOption[];
+  requestedQty: number;
+  stockUnitCode: string;
+}) {
+  const requestedQty = roundQuantity(Number(params.requestedQty ?? 0));
+  const stockUnitCode = normalizeUnitCode(params.stockUnitCode || "un");
+
+  if (!isProducedPackagedProduct(params.product) || requestedQty <= 0) {
+    return {
+      items: [] as ProductionPackagePlanItem[],
+      total: 0,
+      covered: !isProducedPackagedProduct(params.product),
+      hasFractional: false,
+      shortage: 0,
+    };
+  }
+
+  let pendingQty = requestedQty;
+  const items: ProductionPackagePlanItem[] = [];
+  const sorted = [...params.packages]
+    .filter((row) => Number(row.remainingQty ?? 0) > 0)
+    .sort((a, b) => {
+      const aQty = Number(a.remainingQty ?? 0);
+      const bQty = Number(b.remainingQty ?? 0);
+      if (bQty !== aQty) return bQty - aQty;
+      return productionPackageLabel(a, stockUnitCode).localeCompare(
+        productionPackageLabel(b, stockUnitCode),
+        "es",
+        { numeric: true, sensitivity: "base" }
+      );
+    });
+
+  for (const row of sorted) {
+    if (pendingQty <= 0.001) break;
+
+    const remainingQty = roundQuantity(Number(row.remainingQty ?? 0));
+    if (remainingQty <= 0) continue;
+
+    const dispatchQty = roundQuantity(Math.min(remainingQty, pendingQty));
+    if (dispatchQty <= 0) continue;
+
+    const fractional = dispatchQty < remainingQty - 0.001;
+    const unitCode = normalizeUnitCode(row.unitCode || stockUnitCode || "un");
+
+    items.push({
+      packageId: row.id,
+      dispatchQty,
+      unitCode,
+      remainingQty,
+      label: productionPackageLabel(row, stockUnitCode),
+      batchId: row.batchId ?? null,
+      fractional,
+    });
+
+    pendingQty = roundQuantity(pendingQty - dispatchQty);
+  }
+
+  const total = roundQuantity(items.reduce((sum, item) => sum + Number(item.dispatchQty ?? 0), 0));
+  const shortage = roundQuantity(Math.max(requestedQty - total, 0));
+
+  return {
+    items,
+    total,
+    covered: shortage <= 0.001 && Math.abs(total - requestedQty) <= 0.001,
+    hasFractional: items.some((item) => item.fractional),
+    shortage,
+  };
+}
+
 export function RemissionsItems({
   products,
   categoryNameById = {},
@@ -216,6 +363,8 @@ export function RemissionsItems({
   defaultAreaKind = "",
   lockAreaKind = false,
   defaultUomProfiles = [],
+  productionPackageRows = [],
+  selectedFromSiteId = "",
   onRowsChange,
   referenceStockByProduct = {},
   referenceSiteName = "",
@@ -242,6 +391,34 @@ export function RemissionsItems({
     return selected;
   }, [defaultUomProfiles]);
 
+  const packagesByProductAndSite = useMemo(() => {
+    const map = new Map<string, ProductionPackageOption[]>();
+
+    for (const row of productionPackageRows) {
+      const productId = String(row.productId ?? "").trim();
+      const siteId = String(row.siteId ?? "").trim();
+      if (!productId || !siteId) continue;
+
+      const status = String(row.status ?? "available").trim().toLowerCase();
+      if (!["available", "opened", "reserved"].includes(status)) continue;
+
+      const remainingQty = Number(row.remainingQty ?? 0);
+      if (!Number.isFinite(remainingQty) || remainingQty <= 0) continue;
+
+      const key = `${siteId}|${productId}`;
+      const current = map.get(key) ?? [];
+      current.push(row);
+      map.set(key, current);
+    }
+
+    return map;
+  }, [productionPackageRows]);
+
+  const getAvailablePackages = (productId: string) => {
+    if (!selectedFromSiteId || !productId) return [];
+    return packagesByProductAndSite.get(`${selectedFromSiteId}|${productId}`) ?? [];
+  };
+
   const productsById = useMemo(
     () => new Map(products.map((product) => [product.id, product])),
     [products]
@@ -256,13 +433,16 @@ export function RemissionsItems({
       const product = productsById.get(productId) ?? null;
       const stockUnitCode = getStockUnitCode(product);
       const productUsesFixedPresentation = usesFixedPresentation(product);
+      const productUsesPackages = isProducedPackagedProduct(product);
       const profile =
         productId && productUsesFixedPresentation
           ? defaultProfileByProduct.get(productId) ?? null
           : null;
-      const inputUnitCode = productUsesFixedPresentation
-        ? getRemissionInputUnitCode(profile, stockUnitCode)
-        : stockUnitCode || "un";
+      const inputUnitCode = productUsesPackages
+        ? stockUnitCode || "un"
+        : productUsesFixedPresentation
+          ? getRemissionInputUnitCode(profile, stockUnitCode)
+          : stockUnitCode || "un";
       return {
         id: Number.isFinite(row.id) ? row.id : index,
         productId,
@@ -270,6 +450,8 @@ export function RemissionsItems({
         inputUnitCode,
         inputUomProfileId: productUsesFixedPresentation ? profile?.id ?? "" : "",
         areaKind: String(row.areaKind ?? "").trim() || defaultAreaKind,
+        productionPackagePlan: row.productionPackagePlan ?? [],
+        acceptPackageFraction: Boolean(row.acceptPackageFraction),
       };
     });
   }, [defaultAreaKind, defaultProfileByProduct, initialRowsSource, productsById]);
@@ -280,9 +462,28 @@ export function RemissionsItems({
     setRows(normalizedInitialRows);
   }, [normalizedInitialRows]);
 
+  const rowsWithDerivedPackagePlans = useMemo<RemissionDraftRow[]>(() => {
+    return rows.map((row) => {
+      const product = productsById.get(row.productId) ?? null;
+      const stockUnitCode = getStockUnitCode(product);
+      const quantityValue = Number(row.quantity);
+      const packagePlan = buildPackagePlan({
+        product,
+        packages: getAvailablePackages(row.productId),
+        requestedQty: Number.isFinite(quantityValue) ? quantityValue : 0,
+        stockUnitCode,
+      });
+
+      return {
+        ...row,
+        productionPackagePlan: packagePlan.items,
+      };
+    });
+  }, [packagesByProductAndSite, productsById, rows, selectedFromSiteId]);
+
   useEffect(() => {
-    onRowsChange?.(rows);
-  }, [rows, onRowsChange]);
+    onRowsChange?.(rowsWithDerivedPackagePlans);
+  }, [rowsWithDerivedPackagePlans, onRowsChange]);
 
   const addRow = () => {
     setRows((prev) => [
@@ -303,22 +504,32 @@ export function RemissionsItems({
     const options = products.map((item) => {
       const groupLabel = categoryNameById[String(item.category_id ?? "").trim()] ?? "Sin categoria";
       const stockUnitCode = getStockUnitCode(item);
+      const productUsesPackages = isProducedPackagedProduct(item);
       const measurementMode = getProductMeasurementMode(item);
-      const productUsesFixedPresentation = measurementMode === "fixed_presentation";
+      const productUsesFixedPresentation = usesFixedPresentation(item);
       const profile = productUsesFixedPresentation ? defaultProfileByProduct.get(item.id) ?? null : null;
-      const presentationLabel = productUsesFixedPresentation
-        ? getRemissionPresentationLabel(profile, stockUnitCode)
-        : getActualQuantityDisplayLabel(item, stockUnitCode);
-      const modeLabel = getMeasurementModeLabel(measurementMode);
+      const availablePackages = selectedFromSiteId ? getAvailablePackages(item.id) : [];
+      const availablePackageQty = availablePackages.reduce(
+        (sum, row) => sum + Number(row.remainingQty ?? 0),
+        0
+      );
+      const presentationLabel = productUsesPackages
+        ? `${availablePackages.length} empaque(s) · ${formatQuantity(availablePackageQty)} ${stockUnitCode}`
+        : productUsesFixedPresentation
+          ? getRemissionPresentationLabel(profile, stockUnitCode)
+          : getActualQuantityDisplayLabel(item, stockUnitCode);
+      const modeLabel = getMeasurementModeLabel(item);
       const hasPresentation = Boolean(profile?.id);
       return {
         value: item.id,
         label: `${item.name ?? item.id} — ${presentationLabel}`,
         searchText: `${item.name ?? ""} ${item.unit ?? ""} ${item.stock_unit_code ?? ""} ${presentationLabel} ${modeLabel} ${groupLabel}`,
         groupLabel:
-          productUsesFixedPresentation && !hasPresentation
-            ? `${groupLabel} · Sin presentación mínima`
-            : `${groupLabel} · ${modeLabel}`,
+          productUsesPackages
+            ? `${groupLabel} · Empaques FOGO`
+            : productUsesFixedPresentation && !hasPresentation
+              ? `${groupLabel} · Sin presentación mínima`
+              : `${groupLabel} · ${modeLabel}`,
       };
     });
 
@@ -336,7 +547,7 @@ export function RemissionsItems({
     });
 
     return options;
-  }, [products, categoryNameById, defaultProfileByProduct]);
+  }, [products, categoryNameById, defaultProfileByProduct, packagesByProductAndSite, selectedFromSiteId]);
 
   return (
     <div className="space-y-3">
@@ -345,28 +556,48 @@ export function RemissionsItems({
         const product = productsById.get(row.productId) ?? null;
         const stockUnitCode = getStockUnitCode(product);
         const measurementMode = getProductMeasurementMode(product);
-        const productUsesFixedPresentation = measurementMode === "fixed_presentation";
+        const productUsesPackages = isProducedPackagedProduct(product);
+        const productUsesFixedPresentation = usesFixedPresentation(product);
         const defaultProfile =
           row.productId && productUsesFixedPresentation
             ? defaultProfileByProduct.get(row.productId) ?? null
             : null;
-        const effectiveInputUnitCode = productUsesFixedPresentation
-          ? getRemissionInputUnitCode(defaultProfile, stockUnitCode)
-          : stockUnitCode || "un";
+        const effectiveInputUnitCode = productUsesPackages
+          ? stockUnitCode || "un"
+          : productUsesFixedPresentation
+            ? getRemissionInputUnitCode(defaultProfile, stockUnitCode)
+            : stockUnitCode || "un";
         const effectiveInputUomProfileId = productUsesFixedPresentation ? defaultProfile?.id ?? "" : "";
-        const remissionPresentationLabel = productUsesFixedPresentation
-          ? getRemissionPresentationLabel(defaultProfile, stockUnitCode)
-          : getActualQuantityDisplayLabel(product, stockUnitCode);
+        const remissionPresentationLabel = productUsesPackages
+          ? "Empaques reales FOGO"
+          : productUsesFixedPresentation
+            ? getRemissionPresentationLabel(defaultProfile, stockUnitCode)
+            : getActualQuantityDisplayLabel(product, stockUnitCode);
         const quantityValue = Number(row.quantity);
+        const availablePackages = getAvailablePackages(row.productId);
+        const packagePlan = buildPackagePlan({
+          product,
+          packages: availablePackages,
+          requestedQty: Number.isFinite(quantityValue) ? quantityValue : 0,
+          stockUnitCode,
+        });
+        const packagePlanReady =
+          !productUsesPackages ||
+          (packagePlan.covered && (!packagePlan.hasFractional || Boolean(row.acceptPackageFraction)));
         const rowReady = Boolean(
-          row.productId && Number.isFinite(quantityValue) && quantityValue > 0 && effectiveInputUnitCode
+          row.productId &&
+          Number.isFinite(quantityValue) &&
+          quantityValue > 0 &&
+          effectiveInputUnitCode &&
+          packagePlanReady
         );
         const missingPresentation = Boolean(row.productId && productUsesFixedPresentation && !defaultProfile);
         const conversionLabel = getOperationalEquivalenceLabel({
-          measurementMode,
+          product,
           profile: defaultProfile,
           presentationLabel: remissionPresentationLabel,
           stockUnitCode,
+          packagePlan,
         });
         const referenceMeta = row.productId ? referenceStockByProduct[row.productId] ?? null : null;
         const selectedAreaLabel =
@@ -382,13 +613,15 @@ export function RemissionsItems({
           row.productId && referenceSiteName
             ? (() => {
               try {
-                const requestedInStock = rowReady
-                  ? convertByProductProfile({
-                    quantityInInput: Number.isFinite(quantityValue) ? quantityValue : 0,
-                    inputUnitCode: effectiveInputUnitCode,
-                    stockUnitCode,
-                    profile: defaultProfile,
-                  }).quantityInStock
+                const requestedInStock = rowReady || (Number.isFinite(quantityValue) && quantityValue > 0)
+                  ? productUsesPackages
+                    ? roundQuantity(quantityValue)
+                    : convertByProductProfile({
+                      quantityInInput: Number.isFinite(quantityValue) ? quantityValue : 0,
+                      inputUnitCode: effectiveInputUnitCode,
+                      stockUnitCode,
+                      profile: defaultProfile,
+                    }).quantityInStock
                   : null;
                 const shortage =
                   requestedInStock !== null
@@ -400,6 +633,7 @@ export function RemissionsItems({
               }
             })()
             : null;
+
         return (
           <div key={row.id} className="space-y-3">
             <div className="overflow-hidden rounded-[24px] border border-[rgba(200,210,220,0.95)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(243,247,251,0.98)_100%)] shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
@@ -409,13 +643,13 @@ export function RemissionsItems({
                     {product?.name ?? `Item ${idx + 1}`}
                   </div>
                   <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                    {rowReady ? "Línea lista para solicitud" : "Completa producto y cantidad"}
+                    {rowReady ? "Línea lista para solicitud" : "Completa producto, cantidad y empaques"}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
                   {row.productId ? (
                     <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-semibold text-sky-800">
-                      {getMeasurementModeLabel(measurementMode)}
+                      {getMeasurementModeLabel(product)}
                     </span>
                   ) : null}
                   <span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
@@ -443,6 +677,7 @@ export function RemissionsItems({
                       const nextProduct = productsById.get(nextProductId) ?? null;
                       const nextStockUnitCode = getStockUnitCode(nextProduct);
                       const nextUsesFixedPresentation = usesFixedPresentation(nextProduct);
+                      const nextUsesPackages = isProducedPackagedProduct(nextProduct);
                       const nextProfile = nextUsesFixedPresentation
                         ? defaultProfileByProduct.get(nextProductId) ?? null
                         : null;
@@ -452,10 +687,13 @@ export function RemissionsItems({
                             ? {
                               ...current,
                               productId: nextProductId,
-                              inputUnitCode: nextUsesFixedPresentation
-                                ? getRemissionInputUnitCode(nextProfile, nextStockUnitCode)
-                                : nextStockUnitCode || "un",
+                              inputUnitCode: nextUsesPackages
+                                ? nextStockUnitCode || "un"
+                                : nextUsesFixedPresentation
+                                  ? getRemissionInputUnitCode(nextProfile, nextStockUnitCode)
+                                  : nextStockUnitCode || "un",
                               inputUomProfileId: nextUsesFixedPresentation ? nextProfile?.id ?? "" : "",
+                              acceptPackageFraction: false,
                             }
                             : current
                         )
@@ -474,7 +712,7 @@ export function RemissionsItems({
                 </label>
 
                 <label className="flex flex-col gap-1 md:col-span-2">
-                  <span className="ui-label">{getQuantityFieldLabel(measurementMode)}</span>
+                  <span className="ui-label">{getQuantityFieldLabel(product)}</span>
                   <input
                     type="number"
                     inputMode="decimal"
@@ -487,7 +725,13 @@ export function RemissionsItems({
                     onChange={(event) =>
                       setRows((prev) =>
                         prev.map((current) =>
-                          current.id === row.id ? { ...current, quantity: event.target.value } : current
+                          current.id === row.id
+                            ? {
+                                ...current,
+                                quantity: event.target.value,
+                                acceptPackageFraction: false,
+                              }
+                            : current
                         )
                       )
                     }
@@ -495,14 +739,15 @@ export function RemissionsItems({
                 </label>
 
                 <label className="flex flex-col gap-1 md:col-span-2">
-                  <span className="ui-label">{productUsesFixedPresentation ? "Presentación de solicitud" : "Unidad real de solicitud"}</span>
+                  <span className="ui-label">{productUsesPackages ? "Empaque de solicitud" : productUsesFixedPresentation ? "Presentación de solicitud" : "Unidad real de solicitud"}</span>
                   <div className="ui-input flex h-10 items-center bg-[linear-gradient(180deg,rgba(255,251,235,0.9)_0%,rgba(255,255,255,0.92)_100%)] font-semibold text-[var(--ui-text)]">
                     {row.productId ? remissionPresentationLabel : "Selecciona producto"}
                   </div>
                   <input type="hidden" name="item_input_unit_code" value={effectiveInputUnitCode} />
                   <input type="hidden" name="item_input_uom_profile_id" value={effectiveInputUomProfileId} />
+                  <input type="hidden" name="item_production_package_plan" value={productUsesPackages ? JSON.stringify(packagePlan.items) : "[]"} />
                   <span className="text-xs text-[var(--ui-muted)]">
-                    {getInputModeHelperText(measurementMode)}
+                    {getInputModeHelperText(product)}
                   </span>
                 </label>
 
@@ -545,7 +790,75 @@ export function RemissionsItems({
 
                 {missingPresentation ? (
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 md:col-span-12">
-                    Este producto es de presentación fija y no tiene presentación mínima para solicitud/remisión. Configúrala en la ficha del producto antes de usarlo en operación real.
+                    Este insumo es de presentación fija y no tiene presentación mínima para solicitud/remisión. Configúrala en la ficha del producto antes de usarlo en operación real.
+                  </div>
+                ) : null}
+
+                {productUsesPackages ? (
+                  <div className="rounded-2xl border border-[rgba(14,116,144,0.14)] bg-[linear-gradient(180deg,rgba(240,249,255,0.88)_0%,rgba(255,255,255,0.92)_100%)] px-3 py-3 text-xs text-sky-950 md:col-span-12">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="font-semibold text-[var(--ui-text)]">
+                        Empaques reales disponibles: {availablePackages.length}
+                      </div>
+                      <div className="font-semibold">
+                        Plan: {formatQuantity(packagePlan.total)} / {Number.isFinite(quantityValue) ? formatQuantity(quantityValue) : "0"} {stockUnitCode || "un"}
+                      </div>
+                    </div>
+
+                    {availablePackages.length > 0 ? (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {availablePackages.slice(0, 8).map((entry) => (
+                          <span key={entry.id} className="ui-chip">
+                            {productionPackageLabel(entry, stockUnitCode)}
+                          </span>
+                        ))}
+                        {availablePackages.length > 8 ? (
+                          <span className="ui-chip">+{availablePackages.length - 8}</span>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <div className="mt-2 font-semibold text-amber-800">
+                        No hay empaques disponibles en el origen seleccionado.
+                      </div>
+                    )}
+
+                    {packagePlan.items.length > 0 ? (
+                      <div className="mt-3 space-y-1">
+                        {packagePlan.items.map((item) => (
+                          <div key={`${row.id}-${item.packageId}`} className="rounded-xl border border-sky-100 bg-white px-3 py-2">
+                            {item.fractional ? "Fracción" : "Completo"} · {item.label} → {formatQuantity(item.dispatchQty)} {item.unitCode || stockUnitCode}
+                          </div>
+                        ))}
+                      </div>
+                    ) : null}
+
+                    {packagePlan.shortage > 0 ? (
+                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 font-semibold text-amber-900">
+                        Faltan {formatQuantity(packagePlan.shortage)} {stockUnitCode || "un"} en empaques disponibles del origen.
+                      </div>
+                    ) : null}
+
+                    {packagePlan.hasFractional ? (
+                      <label className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-950">
+                        <input
+                          type="checkbox"
+                          className="mt-0.5"
+                          checked={Boolean(row.acceptPackageFraction)}
+                          onChange={(event) =>
+                            setRows((prev) =>
+                              prev.map((current) =>
+                                current.id === row.id
+                                  ? { ...current, acceptPackageFraction: event.target.checked }
+                                  : current
+                              )
+                            )
+                          }
+                        />
+                        <span>
+                          Acepto fraccionar un empaque. El despacho deberá dejar remanente físico del empaque abierto.
+                        </span>
+                      </label>
+                    ) : null}
                   </div>
                 ) : null}
 

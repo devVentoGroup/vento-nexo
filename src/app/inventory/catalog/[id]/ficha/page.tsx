@@ -204,6 +204,39 @@ type InventoryReceiptItemTraceRow = {
   | null;
 };
 
+type ProductionBatchPackageRow = {
+  id: string;
+  batch_id: string | null;
+  site_id: string | null;
+  location_id: string | null;
+  location_position_id: string | null;
+  product_id: string | null;
+  package_index: number | null;
+  package_label: string | null;
+  actual_qty: number | null;
+  original_qty: number | null;
+  remaining_qty: number | null;
+  reserved_qty: number | null;
+  unit_code: string | null;
+  status: string | null;
+  created_at: string | null;
+};
+
+type PackageLocationRow = {
+  id: string;
+  code: string | null;
+  zone: string | null;
+  description: string | null;
+};
+
+type ProductionPackageGroup = {
+  key: string;
+  label: string;
+  unitCode: string;
+  packageCount: number;
+  totalQty: number;
+};
+
 function sanitizeCatalogReturnPath(value: string | undefined): string {
   const decoded = value ? safeDecodeURIComponent(value) : "";
   const trimmed = decoded.trim();
@@ -412,6 +445,65 @@ function uomProfileDisplayRank(row: UomProfileRow): number {
   return rank;
 }
 
+function productionPackageRemainingQty(row: ProductionBatchPackageRow): number {
+  const remaining = Number(row.remaining_qty ?? row.actual_qty ?? 0);
+  return Number.isFinite(remaining) && remaining > 0 ? remaining : 0;
+}
+
+function productionPackageOriginalQty(row: ProductionBatchPackageRow): number {
+  const original = Number(row.original_qty ?? row.actual_qty ?? row.remaining_qty ?? 0);
+  return Number.isFinite(original) && original > 0 ? original : 0;
+}
+
+function productionPackageStatusLabel(value: string | null | undefined): string {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (raw === "available") return "Disponible";
+  if (raw === "opened") return "Abierto";
+  if (raw === "reserved") return "Reservado";
+  if (raw === "dispatched") return "Despachado";
+  if (raw === "consumed") return "Consumido";
+  if (raw === "voided") return "Anulado";
+  return raw || "Disponible";
+}
+
+function packageLocationLabel(location: PackageLocationRow | null | undefined): string {
+  if (!location) return "Sin LOC";
+  return [location.code, location.zone, location.description].filter(Boolean).join(" - ") || location.id;
+}
+
+function buildProductionPackageGroups(
+  rows: ProductionBatchPackageRow[],
+  stockUnitCode: string
+): ProductionPackageGroup[] {
+  const groups = new Map<string, ProductionPackageGroup>();
+
+  for (const row of rows) {
+    const remainingQty = productionPackageRemainingQty(row);
+    if (remainingQty <= 0) continue;
+
+    const unitCode = normalizeUnitCode(row.unit_code || stockUnitCode || "un");
+    const key = `${remainingQty.toFixed(3)}::${unitCode}`;
+    const label = `${formatQty(remainingQty)} ${unitCode}`;
+
+    const current = groups.get(key) ?? {
+      key,
+      label,
+      unitCode,
+      packageCount: 0,
+      totalQty: 0,
+    };
+
+    current.packageCount += 1;
+    current.totalQty += remainingQty;
+    groups.set(key, current);
+  }
+
+  return Array.from(groups.values()).sort((a, b) => {
+    if (b.totalQty !== a.totalQty) return b.totalQty - a.totalQty;
+    return a.label.localeCompare(b.label, "es", { numeric: true, sensitivity: "base" });
+  });
+}
+
 async function loadCategoryRows(
   supabase: Awaited<ReturnType<typeof requireAppAccess>>["supabase"]
 ): Promise<InventoryCategoryRow[]> {
@@ -589,11 +681,25 @@ export default async function ProductTechnicalSheetPage({
     (normalizedCategoryPath.includes("maquinaria") &&
       (normalizedCategoryPath.includes("equipo") || normalizedCategoryPath.includes("equipos")));
 
+  const productTypeKey = String(product.product_type ?? "").trim().toLowerCase();
+  const inventoryKindKey = String(profile?.inventory_kind ?? "").trim().toLowerCase();
+  const isManualPresentationProduct = productTypeKey === "insumo" && inventoryKindKey !== "asset";
+  const isProducedPackagedProduct =
+    productTypeKey === "preparacion" || (productTypeKey === "venta" && inventoryKindKey !== "resale");
+  const legacyManualPresentationCount = isManualPresentationProduct
+    ? 0
+    : uomProfiles.filter((row) => {
+        const source = String(row.source ?? "").trim().toLowerCase();
+        const usageContext = String(row.usage_context ?? "").trim().toLowerCase();
+        return source === "manual" && usageContext !== "purchase";
+      }).length;
+
   const presentationRows = [...uomProfiles]
     .filter((row) => {
       const source = String(row.source ?? "").trim().toLowerCase();
       const usageContext = String(row.usage_context ?? "").trim().toLowerCase();
 
+      if (!isManualPresentationProduct) return false;
       return source === "manual" && usageContext !== "purchase";
     })
     .sort((a, b) => {
@@ -628,7 +734,7 @@ export default async function ProductTechnicalSheetPage({
     "";
 
   const imageUrl = presentationImageUrl || product.catalog_image_url || product.image_url || null;
-  const hasPresentationGallery = presentationRows.length >= 2;
+  const hasPresentationGallery = isManualPresentationProduct && presentationRows.length >= 2;
   const primarySupplier = supplierRows.find((row) => Boolean(row.is_primary)) ?? null;
   const secondarySuppliers = supplierRows.filter((row) => !Boolean(row.is_primary));
 
@@ -789,6 +895,75 @@ export default async function ProductTechnicalSheetPage({
   const assetQrImageUrl = `https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(
     technicalAbsoluteUrl
   )}`;
+
+  let productionPackageRows: ProductionBatchPackageRow[] = [];
+  let packageLocationRows: PackageLocationRow[] = [];
+  let packageSiteRows: SiteRow[] = [];
+
+  if (isProducedPackagedProduct) {
+    const { data: packageRowsData } = await supabase
+      .from("production_batch_packages")
+      .select(
+        "id,batch_id,site_id,location_id,location_position_id,product_id,package_index,package_label,actual_qty,original_qty,remaining_qty,reserved_qty,unit_code,status,created_at"
+      )
+      .eq("product_id", id)
+      .gt("remaining_qty", 0)
+      .order("created_at", { ascending: false })
+      .limit(80);
+
+    productionPackageRows = (packageRowsData ?? []) as ProductionBatchPackageRow[];
+
+    const packageLocationIds = Array.from(
+      new Set(
+        productionPackageRows
+          .map((row) => String(row.location_id ?? "").trim())
+          .filter(Boolean)
+      )
+    );
+    const packageSiteIds = Array.from(
+      new Set(
+        productionPackageRows
+          .map((row) => String(row.site_id ?? "").trim())
+          .filter(Boolean)
+      )
+    );
+
+    const [{ data: locationRowsData }, { data: packageSitesData }] = await Promise.all([
+      packageLocationIds.length
+        ? supabase
+            .from("inventory_locations")
+            .select("id,code,zone,description")
+            .in("id", packageLocationIds)
+        : Promise.resolve({ data: [] }),
+      packageSiteIds.length
+        ? supabase
+            .from("sites")
+            .select("id,name,is_active")
+            .in("id", packageSiteIds)
+        : Promise.resolve({ data: [] }),
+    ]);
+
+    packageLocationRows = (locationRowsData ?? []) as PackageLocationRow[];
+    packageSiteRows = (packageSitesData ?? []) as SiteRow[];
+  }
+
+  const packageLocationsById = new Map(packageLocationRows.map((row) => [row.id, row]));
+  const packageSitesById = new Map(packageSiteRows.map((row) => [row.id, row]));
+  const availableProductionPackages = productionPackageRows.filter(
+    (row) => productionPackageRemainingQty(row) > 0
+  );
+  const productionPackageGroups = buildProductionPackageGroups(
+    availableProductionPackages,
+    stockUnitCode
+  );
+  const productionPackageTotalRemaining = availableProductionPackages.reduce(
+    (acc, row) => acc + productionPackageRemainingQty(row),
+    0
+  );
+  const productionPackageReservedQty = availableProductionPackages.reduce(
+    (acc, row) => acc + Number(row.reserved_qty ?? 0),
+    0
+  );
 
   const maintenanceCalendarMap = assetMaintenanceRows.reduce(
     (acc, row) => {
@@ -1110,6 +1285,140 @@ export default async function ProductTechnicalSheetPage({
         </article>
       ) : null}
 
+      {isProducedPackagedProduct ? (
+        <article className="ui-panel">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-[var(--ui-text)]">
+                Empaques reales de lote
+              </div>
+              <p className="mt-1 text-sm text-[var(--ui-muted)]">
+                Este producto no usa presentaciones manuales. La disponibilidad física viene de FOGO:
+                lote, LOC, empaque, cantidad original y cantidad restante.
+              </p>
+            </div>
+            <Link
+              href={buildFogoRecipeUrl(product.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ui-btn ui-btn--ghost ui-btn--sm"
+            >
+              Abrir FOGO
+            </Link>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+              <div className="ui-caption">Empaques disponibles</div>
+              <div className="mt-1 text-xl font-semibold text-[var(--ui-text)]">
+                {availableProductionPackages.length}
+              </div>
+            </div>
+            <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+              <div className="ui-caption">Cantidad disponible</div>
+              <div className="mt-1 text-xl font-semibold text-[var(--ui-text)]">
+                {formatQty(productionPackageTotalRemaining)} {stockUnitCode}
+              </div>
+            </div>
+            <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+              <div className="ui-caption">Reservado</div>
+              <div className="mt-1 text-xl font-semibold text-[var(--ui-text)]">
+                {formatQty(productionPackageReservedQty)} {stockUnitCode}
+              </div>
+            </div>
+          </div>
+
+          {productionPackageGroups.length > 0 ? (
+            <div className="mt-4 flex flex-wrap gap-2">
+              {productionPackageGroups.map((group) => (
+                <span key={group.key} className="ui-chip ui-chip--success">
+                  {group.packageCount} × {group.label}
+                </span>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-4 ui-alert ui-alert--neutral">
+              No hay empaques disponibles de lote para este producto. Cuando FOGO registre producción,
+              aparecerán aquí.
+            </div>
+          )}
+
+          {legacyManualPresentationCount > 0 ? (
+            <div className="mt-4 ui-alert ui-alert--warn">
+              Este producto todavía tiene {legacyManualPresentationCount} presentación(es) manual(es)
+              heredada(s). No se usan para preparaciones producidas; después podemos hacer una limpieza controlada.
+            </div>
+          ) : null}
+
+          {availableProductionPackages.length > 0 ? (
+            <div className="mt-4 overflow-auto rounded-xl border border-[var(--ui-border)]">
+              <table className="ui-table min-w-[860px] text-sm">
+                <thead>
+                  <tr>
+                    <th className="py-2 pr-4">Empaque</th>
+                    <th className="py-2 pr-4">Lote</th>
+                    <th className="py-2 pr-4">Sede / LOC</th>
+                    <th className="py-2 pr-4">Original</th>
+                    <th className="py-2 pr-4">Restante</th>
+                    <th className="py-2 pr-4">Estado</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {availableProductionPackages.slice(0, 20).map((row) => {
+                    const location = packageLocationsById.get(String(row.location_id ?? ""));
+                    const site = packageSitesById.get(String(row.site_id ?? ""));
+                    const originalQty = productionPackageOriginalQty(row);
+                    const remainingQty = productionPackageRemainingQty(row);
+                    const unitCode = normalizeUnitCode(row.unit_code || stockUnitCode || "un");
+                    const wasOpened = originalQty > 0 && remainingQty < originalQty - 0.000001;
+
+                    return (
+                      <tr key={row.id} className="border-t border-zinc-200/60">
+                        <td className="py-2.5 pr-4">
+                          <div className="font-semibold text-[var(--ui-text)]">
+                            {row.package_label || `Empaque ${row.package_index ?? ""}`}
+                          </div>
+                          <div className="text-xs text-[var(--ui-muted)]">
+                            #{row.package_index ?? "-"}
+                          </div>
+                        </td>
+                        <td className="py-2.5 pr-4">
+                          {String(row.batch_id ?? "").slice(0, 8) || "-"}
+                        </td>
+                        <td className="py-2.5 pr-4">
+                          <div>{site?.name ?? "Sin sede"}</div>
+                          <div className="text-xs text-[var(--ui-muted)]">
+                            {packageLocationLabel(location)}
+                          </div>
+                        </td>
+                        <td className="py-2.5 pr-4">
+                          {formatQty(originalQty)} {unitCode}
+                        </td>
+                        <td className="py-2.5 pr-4">
+                          <span className={wasOpened ? "font-semibold text-amber-700" : "font-semibold text-emerald-700"}>
+                            {formatQty(remainingQty)} {unitCode}
+                          </span>
+                        </td>
+                        <td className="py-2.5 pr-4">
+                          <div className="flex flex-wrap gap-1">
+                            <span className={wasOpened ? "ui-chip ui-chip--warn" : "ui-chip ui-chip--success"}>
+                              {wasOpened ? "Fraccionado" : productionPackageStatusLabel(row.status)}
+                            </span>
+                            {Number(row.reserved_qty ?? 0) > 0 ? (
+                              <span className="ui-chip">Reservado {formatQty(Number(row.reserved_qty ?? 0))}</span>
+                            ) : null}
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          ) : null}
+        </article>
+      ) : null}
+
       {isAsset ? (
         <section className="space-y-4">
           {isMachineryAndEquipmentCategory &&
@@ -1405,21 +1714,46 @@ export default async function ProductTechnicalSheetPage({
             <p>
               <strong className="text-[var(--ui-text)]">Unidad operativa:</strong> {defaultUnitCode}
             </p>
-            <p>
-              <strong className="text-[var(--ui-text)]">Presentación compra:</strong> {purchasePackText}
-            </p>
-            <p>
-              <strong className="text-[var(--ui-text)]">Presentación remisión:</strong> {remissionPackText}
-            </p>
-            <p>
-              <strong className="text-[var(--ui-text)]">Unidad remisión:</strong> {remissionUnitText}
-            </p>
-            <p>
-              <strong className="text-[var(--ui-text)]">Regla activa:</strong> {operationRuleText}
-            </p>
-            <p>
-              <strong className="text-[var(--ui-text)]">Fuente remisión:</strong> {remissionSourceLabel}
-            </p>
+            {isProducedPackagedProduct ? (
+              <>
+                <p>
+                  <strong className="text-[var(--ui-text)]">Presentación compra:</strong>{" "}
+                  No aplica: se produce en FOGO.
+                </p>
+                <p>
+                  <strong className="text-[var(--ui-text)]">Empaque remisión:</strong>{" "}
+                  Empaques reales de lote disponibles.
+                </p>
+                <p>
+                  <strong className="text-[var(--ui-text)]">Unidad remisión:</strong> {stockUnitCode}
+                </p>
+                <p>
+                  <strong className="text-[var(--ui-text)]">Regla activa:</strong>{" "}
+                  Remitir empaques completos; si hay cantidad intermedia, fraccionar un empaque con confirmación.
+                </p>
+                <p>
+                  <strong className="text-[var(--ui-text)]">Fuente remisión:</strong> FOGO · empaques producidos
+                </p>
+              </>
+            ) : (
+              <>
+                <p>
+                  <strong className="text-[var(--ui-text)]">Presentación compra:</strong> {purchasePackText}
+                </p>
+                <p>
+                  <strong className="text-[var(--ui-text)]">Presentación remisión:</strong> {remissionPackText}
+                </p>
+                <p>
+                  <strong className="text-[var(--ui-text)]">Unidad remisión:</strong> {remissionUnitText}
+                </p>
+                <p>
+                  <strong className="text-[var(--ui-text)]">Regla activa:</strong> {operationRuleText}
+                </p>
+                <p>
+                  <strong className="text-[var(--ui-text)]">Fuente remisión:</strong> {remissionSourceLabel}
+                </p>
+              </>
+            )}
             <p>
               <strong className="text-[var(--ui-text)]">Controlar stock:</strong>{" "}
               {profile?.track_inventory ? "Sí" : "No"}
@@ -1437,7 +1771,22 @@ export default async function ProductTechnicalSheetPage({
         <article className="ui-panel">
           <div className="text-sm font-semibold text-[var(--ui-text)]">Abastecimiento y costo</div>
           <div className="mt-3 space-y-2 text-sm text-[var(--ui-muted)]">
-            {!isAsset && primarySupplier ? (
+            {isProducedPackagedProduct ? (
+              <>
+                <p>
+                  <strong className="text-[var(--ui-text)]">Origen:</strong>{" "}
+                  Producción FOGO.
+                </p>
+                <p>
+                  <strong className="text-[var(--ui-text)]">Abastecimiento operativo:</strong>{" "}
+                  Entra al inventario como lote producido y empaques físicos reales.
+                </p>
+                <p>
+                  <strong className="text-[var(--ui-text)]">Empaques disponibles:</strong>{" "}
+                  {availableProductionPackages.length} empaque(s) · {formatQty(productionPackageTotalRemaining)} {stockUnitCode}
+                </p>
+              </>
+            ) : !isAsset && primarySupplier ? (
               <>
                 <p>
                   <strong className="text-[var(--ui-text)]">Proveedor primario:</strong>{" "}

@@ -77,6 +77,47 @@ function usesActualQuantityMode(value: unknown): boolean {
   return normalizeMeasurementMode(value) !== "fixed_presentation";
 }
 
+function isProducedPackagedProduct(product: ProductRow | null | undefined): boolean {
+  const productType = String(product?.product_type ?? "").trim().toLowerCase();
+  const inventoryKind = String(product?.inventory_kind ?? "").trim().toLowerCase();
+  return productType === "preparacion" || (productType === "venta" && inventoryKind !== "resale");
+}
+
+function parseProductionPackagePlan(raw: string): ProductionPackagePlanItem[] {
+  if (!raw) return [];
+
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed)) return [];
+
+    return parsed
+      .map((entry) => {
+        const packageId = String(entry?.packageId ?? "").trim();
+        const dispatchQty = Number(entry?.dispatchQty ?? 0);
+        const remainingQty = Number(entry?.remainingQty ?? 0);
+        const unitCode = normalizeUnitCode(String(entry?.unitCode ?? ""));
+        const label = String(entry?.label ?? "").trim();
+        const batchId = String(entry?.batchId ?? "").trim() || null;
+        const fractional = Boolean(entry?.fractional);
+
+        if (!packageId || !Number.isFinite(dispatchQty) || dispatchQty <= 0) return null;
+
+        return {
+          packageId,
+          dispatchQty: roundQuantity(dispatchQty),
+          unitCode,
+          remainingQty: Number.isFinite(remainingQty) ? roundQuantity(remainingQty) : 0,
+          label,
+          batchId,
+          fractional,
+        };
+      })
+      .filter((entry): entry is ProductionPackagePlanItem => entry !== null);
+  } catch {
+    return [];
+  }
+}
+
 function asText(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
 }
@@ -119,6 +160,8 @@ type ProductRow = {
   name: string | null;
   unit: string | null;
   stock_unit_code: string | null;
+  product_type?: string | null;
+  inventory_kind?: string | null;
   category_id?: string | null;
   measurement_mode?: MeasurementMode;
   default_tolerance_percent?: number | null;
@@ -140,6 +183,7 @@ type ProductSiteRow = {
 /** Filas de product_inventory_profiles con el join a products(id,name,unit) */
 type ProductProfileWithProduct = {
   product_id: string;
+  inventory_kind: string | null;
   measurement_mode: string | null;
   default_tolerance_percent: number | null;
   requires_actual_dispatch_qty?: boolean | null;
@@ -152,6 +196,32 @@ type StockReferenceRow = {
   product_id: string;
   current_qty: number | null;
   updated_at: string | null;
+};
+
+type ProductionPackagePlanItem = {
+  packageId: string;
+  dispatchQty: number;
+  unitCode: string;
+  remainingQty: number;
+  label: string;
+  batchId: string | null;
+  fractional: boolean;
+};
+
+type ProductionBatchPackageRow = {
+  id: string;
+  batch_id: string | null;
+  site_id: string | null;
+  location_id: string | null;
+  product_id: string | null;
+  package_index: number | null;
+  package_label: string | null;
+  original_qty: number | null;
+  remaining_qty: number | null;
+  reserved_qty: number | null;
+  unit_code: string | null;
+  status: string | null;
+  created_at: string | null;
 };
 
 type RemissionRow = {
@@ -668,13 +738,16 @@ async function createRemission(formData: FormData) {
     .getAll("item_quantity_in_input")
     .map((v) => String(v).trim());
   const areaKinds = formData.getAll("item_area_kind").map((v) => String(v).trim());
+  const productionPackagePlans = formData
+    .getAll("item_production_package_plan")
+    .map((v) => parseProductionPackagePlan(String(v ?? "")));
 
   const productIdsForLookup = Array.from(new Set(productIds.filter(Boolean)));
   const { data: productProfileLookupData } = productIdsForLookup.length
     ? await supabase
       .from("product_inventory_profiles")
       .select(
-        "product_id,measurement_mode,default_tolerance_percent,requires_actual_dispatch_qty,requires_count_alongside_weight,products(id,unit,stock_unit_code)"
+        "product_id,inventory_kind,measurement_mode,default_tolerance_percent,requires_actual_dispatch_qty,requires_count_alongside_weight,products(id,unit,stock_unit_code,product_type)"
       )
       .in("product_id", productIdsForLookup)
     : { data: [] as ProductProfileWithProduct[] };
@@ -685,6 +758,7 @@ async function createRemission(formData: FormData) {
 
       return {
         ...row.products,
+        inventory_kind: row.inventory_kind ?? null,
         measurement_mode: normalizeMeasurementMode(row.measurement_mode),
         default_tolerance_percent: row.default_tolerance_percent ?? null,
         requires_actual_dispatch_qty:
@@ -704,7 +778,7 @@ async function createRemission(formData: FormData) {
   const { data: fallbackProductsData } = missingProductIdsForLookup.length
     ? await supabase
       .from("products")
-      .select("id,unit,stock_unit_code")
+      .select("id,unit,stock_unit_code,product_type")
       .in("id", missingProductIdsForLookup)
     : { data: [] as ProductRow[] };
 
@@ -713,6 +787,7 @@ async function createRemission(formData: FormData) {
       ...productRowsFromProfiles,
       ...((fallbackProductsData ?? []) as ProductRow[]).map((product) => ({
         ...product,
+        inventory_kind: null,
         measurement_mode: "fixed_presentation" as MeasurementMode,
         default_tolerance_percent: null,
         requires_actual_dispatch_qty: false,
@@ -744,6 +819,8 @@ async function createRemission(formData: FormData) {
     conversion_factor_to_stock: number;
     stock_unit_code: string;
     production_area_kind: string | null;
+    production_package_plan: ProductionPackagePlanItem[];
+    requires_package_dispatch: boolean;
   }> = [];
   try {
     items = productIds
@@ -751,16 +828,18 @@ async function createRemission(formData: FormData) {
         const product = productMap.get(productId);
         const stockUnitCode = normalizeUnitCode(product?.stock_unit_code || product?.unit || "un");
         const measurementMode = normalizeMeasurementMode(product?.measurement_mode);
+        const productUsesPackages = isProducedPackagedProduct(product);
         const quantityInInput = roundQuantity(
           parseNumber(inputQuantities[idx] ?? quantities[idx] ?? "0")
         );
-        const inputUomProfileId = inputUomProfileIds[idx] || "";
+        const inputUomProfileId = productUsesPackages ? "" : inputUomProfileIds[idx] || "";
+        const productionPackagePlan = productUsesPackages ? productionPackagePlans[idx] ?? [] : [];
         const selectedProfile =
-          measurementMode === "fixed_presentation" && inputUomProfileId
+          !productUsesPackages && measurementMode === "fixed_presentation" && inputUomProfileId
             ? uomProfileById.get(inputUomProfileId) ?? null
             : null;
 
-        if (measurementMode === "fixed_presentation" && inputUomProfileId) {
+        if (!productUsesPackages && measurementMode === "fixed_presentation" && inputUomProfileId) {
           if (!selectedProfile) {
             throw new Error("La presentación seleccionada no existe o no está disponible.");
           }
@@ -770,9 +849,11 @@ async function createRemission(formData: FormData) {
         }
 
         const inputUnitCode = normalizeUnitCode(
-          inputUnits[idx] ||
-          selectedProfile?.input_unit_code ||
-          stockUnitCode
+          productUsesPackages
+            ? stockUnitCode
+            : inputUnits[idx] ||
+              selectedProfile?.input_unit_code ||
+              stockUnitCode
         );
         const conversion = convertByProductProfile({
           quantityInInput,
@@ -788,10 +869,12 @@ async function createRemission(formData: FormData) {
           unit: stockUnitCode,
           input_unit_code: inputUnitCode,
           input_uom_profile_id:
-            measurementMode === "fixed_presentation" ? selectedProfile?.id ?? null : null,
+            !productUsesPackages && measurementMode === "fixed_presentation" ? selectedProfile?.id ?? null : null,
           conversion_factor_to_stock: conversion.factorToStock,
           stock_unit_code: stockUnitCode,
           production_area_kind: areaKinds[idx] || null,
+          production_package_plan: productionPackagePlan,
+          requires_package_dispatch: productUsesPackages,
         };
       })
       .filter((item) => item.product_id && item.quantity > 0);
@@ -802,6 +885,99 @@ async function createRemission(formData: FormData) {
         error instanceof Error ? error.message : "Error en conversion de unidades."
       )
     );
+  }
+
+  const packageDispatchItems = items.filter((item) => item.requires_package_dispatch);
+  if (packageDispatchItems.length > 0) {
+    const packageIds = Array.from(
+      new Set(
+        packageDispatchItems
+          .flatMap((item) => item.production_package_plan.map((entry) => entry.packageId))
+          .filter(Boolean)
+      )
+    );
+
+    if (packageIds.length === 0) {
+      redirect(
+        "/inventory/remissions?error=" +
+        encodeURIComponent("Selecciona empaques reales de lote para los productos producidos.")
+      );
+    }
+
+    const { data: selectedPackagesData, error: packagesErr } = await supabase
+      .from("production_batch_packages")
+      .select("id,site_id,product_id,remaining_qty,unit_code,status")
+      .in("id", packageIds);
+
+    if (packagesErr) {
+      redirect(
+        "/inventory/remissions?error=" +
+        encodeURIComponent(packagesErr.message)
+      );
+    }
+
+    const packagesById = new Map(
+      ((selectedPackagesData ?? []) as Array<{
+        id: string;
+        site_id: string | null;
+        product_id: string | null;
+        remaining_qty: number | null;
+        unit_code: string | null;
+        status: string | null;
+      }>).map((row) => [row.id, row])
+    );
+
+    const requestedByPackage = new Map<string, number>();
+
+    for (const item of packageDispatchItems) {
+      const planTotal = roundQuantity(
+        item.production_package_plan.reduce((sum, entry) => sum + Number(entry.dispatchQty ?? 0), 0)
+      );
+      if (Math.abs(planTotal - item.quantity) > 0.001) {
+        redirect(
+          "/inventory/remissions?error=" +
+          encodeURIComponent("La suma de empaques seleccionados no coincide con la cantidad solicitada.")
+        );
+      }
+
+      for (const entry of item.production_package_plan) {
+        const packageRow = packagesById.get(entry.packageId);
+        if (!packageRow) {
+          redirect(
+            "/inventory/remissions?error=" +
+            encodeURIComponent("Uno de los empaques seleccionados ya no existe.")
+          );
+        }
+
+        const status = String(packageRow.status ?? "available").trim().toLowerCase();
+        const availableStatus = ["available", "opened", "reserved"].includes(status);
+        const packageSiteId = String(packageRow.site_id ?? "").trim();
+        const packageProductId = String(packageRow.product_id ?? "").trim();
+
+        if (!availableStatus || packageSiteId !== fromSiteId || packageProductId !== item.product_id) {
+          redirect(
+            "/inventory/remissions?error=" +
+            encodeURIComponent("Uno de los empaques seleccionados no pertenece al origen/producto solicitado.")
+          );
+        }
+
+        requestedByPackage.set(
+          entry.packageId,
+          roundQuantity((requestedByPackage.get(entry.packageId) ?? 0) + Number(entry.dispatchQty ?? 0))
+        );
+      }
+    }
+
+    for (const [packageId, requestedQty] of requestedByPackage.entries()) {
+      const packageRow = packagesById.get(packageId);
+      const remainingQty = Number(packageRow?.remaining_qty ?? 0);
+      if (!Number.isFinite(remainingQty) || requestedQty > remainingQty + 0.001) {
+        redirect(
+          "/inventory/remissions?error=" +
+          encodeURIComponent("Uno de los empaques seleccionados ya no tiene cantidad suficiente.")
+        );
+      }
+    }
   }
 
   if (!toSiteId || !fromSiteId) {
@@ -964,6 +1140,8 @@ async function createRemission(formData: FormData) {
     conversion_factor_to_stock: item.conversion_factor_to_stock,
     stock_unit_code: item.stock_unit_code,
     production_area_kind: item.production_area_kind,
+    production_package_plan: item.production_package_plan,
+    requires_package_dispatch: item.requires_package_dispatch,
   }));
 
   const { error: itemsErr } = await supabase.from("restock_request_items").insert(payload);
@@ -1394,7 +1572,7 @@ export default async function RemissionsPage({
     const productsQuery = await supabase
       .from("product_inventory_profiles")
       .select(
-        "product_id,measurement_mode,default_tolerance_percent,requires_actual_dispatch_qty,requires_count_alongside_weight,products(id,name,unit,stock_unit_code,category_id)"
+        "product_id,inventory_kind,measurement_mode,default_tolerance_percent,requires_actual_dispatch_qty,requires_count_alongside_weight,products(id,name,unit,stock_unit_code,product_type,category_id)"
       )
       .eq("track_inventory", true)
       .in("inventory_kind", ["ingredient", "finished", "resale", "packaging"])
@@ -1408,6 +1586,7 @@ export default async function RemissionsPage({
 
         return {
           ...row.products,
+          inventory_kind: row.inventory_kind ?? null,
           measurement_mode: normalizeMeasurementMode(row.measurement_mode),
           default_tolerance_percent: row.default_tolerance_percent ?? null,
           requires_actual_dispatch_qty:
@@ -1425,13 +1604,14 @@ export default async function RemissionsPage({
     if (productRows.length === 0) {
       const { data: fallbackProducts } = await supabase
         .from("products")
-        .select("id,name,unit,stock_unit_code,category_id")
+        .select("id,name,unit,stock_unit_code,product_type,category_id")
         .eq("is_active", true)
         .in("id", productSiteIds)
         .order("name", { ascending: true })
         .limit(400);
       productRows = ((fallbackProducts ?? []) as unknown as ProductRow[]).map((row) => ({
         ...row,
+        inventory_kind: null,
         measurement_mode: "fixed_presentation",
         default_tolerance_percent: null,
         requires_actual_dispatch_qty: false,
@@ -1561,6 +1741,47 @@ export default async function RemissionsPage({
     currentQty: Number(row.current_qty ?? 0),
     updatedAt: row.updated_at,
   }));
+
+  const producedProductIds = productRows
+    .filter((product) => isProducedPackagedProduct(product))
+    .map((product) => product.id);
+
+  const { data: productionPackageData } =
+    canCreateWithConfiguredCatalog &&
+      fulfillmentSiteIdsForStock.length > 0 &&
+      producedProductIds.length > 0
+      ? await supabase
+        .from("production_batch_packages")
+        .select(
+          "id,batch_id,site_id,location_id,product_id,package_index,package_label,original_qty,remaining_qty,reserved_qty,unit_code,status,created_at"
+        )
+        .in("site_id", fulfillmentSiteIdsForStock)
+        .in("product_id", producedProductIds)
+        .gt("remaining_qty", 0)
+        .order("created_at", { ascending: false })
+        .limit(400)
+      : { data: [] as ProductionBatchPackageRow[] };
+
+  const productionPackageRows = ((productionPackageData ?? []) as ProductionBatchPackageRow[])
+    .filter((row) => {
+      const status = String(row.status ?? "available").trim().toLowerCase();
+      const remainingQty = Number(row.remaining_qty ?? 0);
+      return ["available", "opened", "reserved"].includes(status) && Number.isFinite(remainingQty) && remainingQty > 0;
+    })
+    .map((row) => ({
+      id: row.id,
+      batchId: row.batch_id ?? null,
+      siteId: row.site_id ?? "",
+      locationId: row.location_id ?? null,
+      productId: row.product_id ?? "",
+      packageIndex: row.package_index ?? null,
+      packageLabel: row.package_label ?? null,
+      originalQty: Number(row.original_qty ?? row.remaining_qty ?? 0),
+      remainingQty: Number(row.remaining_qty ?? 0),
+      reservedQty: Number(row.reserved_qty ?? 0),
+      unitCode: normalizeUnitCode(row.unit_code ?? ""),
+      status: row.status ?? "available",
+    }));
 
   return (
     <div className="ui-scene w-full space-y-6">
@@ -2019,6 +2240,7 @@ export default async function RemissionsPage({
               areaOptions={areaOptions}
               defaultAreaKind={requestedAreaKind}
               originStockRows={inventoryPostingEnabled ? originStockRows : []}
+              productionPackageRows={productionPackageRows}
               inventoryPostingEnabled={inventoryPostingEnabled}
             />
           </div>

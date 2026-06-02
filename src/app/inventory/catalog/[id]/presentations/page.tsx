@@ -60,6 +60,7 @@ type ProductRow = {
   name: string | null;
   unit: string | null;
   stock_unit_code: string | null;
+  product_type: string | null;
   image_url: string | null;
   catalog_image_url: string | null;
 };
@@ -111,6 +112,31 @@ function normalizePresentationUsageContext(
 ): NonNullable<ProductPresentationEditorRow["usage_context"]> {
   const raw = String(value ?? "").trim().toLowerCase();
   return raw === "remission" || raw === "purchase" ? raw : "general";
+}
+
+function normalizeProductType(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function isManualPresentationProductType(value: unknown): boolean {
+  return normalizeProductType(value) === "insumo";
+}
+
+function productTypeLabel(value: unknown): string {
+  const raw = normalizeProductType(value);
+
+  switch (raw) {
+    case "insumo":
+      return "Insumo";
+    case "preparacion":
+      return "Preparación";
+    case "venta":
+      return "Producto de venta";
+    case "equipo":
+      return "Equipo";
+    default:
+      return raw || "Sin tipo";
+  }
 }
 
 function isSameQuantity(a: number, b: number): boolean {
@@ -258,12 +284,18 @@ async function saveProductPresentations(formData: FormData) {
 
   const { data: product } = await supabase
     .from("products")
-    .select("id")
+    .select("id,product_type")
     .eq("id", productId)
     .maybeSingle();
 
   if (!product) {
     redirectWithError("No se encontró el producto.");
+  }
+
+  if (!isManualPresentationProductType((product as { product_type?: string | null }).product_type)) {
+    redirectWithError(
+      "Las presentaciones manuales solo aplican a insumos comprados. Las preparaciones y productos producidos usan empaques reales de lote desde FOGO."
+    );
   }
 
   const [
@@ -515,7 +547,7 @@ export default async function ProductPresentationsPage({
 
   const { data: productData } = await supabase
     .from("products")
-    .select("id,name,unit,stock_unit_code,image_url,catalog_image_url")
+    .select("id,name,unit,stock_unit_code,product_type,image_url,catalog_image_url")
     .eq("id", id)
     .maybeSingle();
 
@@ -596,6 +628,8 @@ export default async function ProductPresentationsPage({
     : false;
 
   const productImageRows = (productImagesData ?? []) as ProductImageRow[];
+  const isManualPresentationProduct = isManualPresentationProductType(product.product_type);
+  const currentProductTypeLabel = productTypeLabel(product.product_type);
 
   const existingImageUrls = Array.from(
     new Set(
@@ -615,26 +649,56 @@ export default async function ProductPresentationsPage({
       {sp.ok ? <div className="ui-alert ui-alert--success">Presentaciones guardadas.</div> : null}
       {sp.error ? <div className="ui-alert ui-alert--error">{sp.error}</div> : null}
 
-      <RequiredFieldsGuardForm
-        action={saveProductPresentations}
-        className="space-y-6"
-        persistKey={`catalog-presentations-${id}`}
-      >
-        <input type="hidden" name="product_id" value={id} />
-        <input type="hidden" name="return_to" value={`/inventory/catalog/${encodeURIComponent(id)}/presentations${from ? `?from=${encodeURIComponent(from)}` : ""}`} />
+      {isManualPresentationProduct ? (
+        <RequiredFieldsGuardForm
+          action={saveProductPresentations}
+          className="space-y-6"
+          persistKey={`catalog-presentations-${id}`}
+        >
+          <input type="hidden" name="product_id" value={id} />
+          <input type="hidden" name="return_to" value={`/inventory/catalog/${encodeURIComponent(id)}/presentations${from ? `?from=${encodeURIComponent(from)}` : ""}`} />
 
-        <ProductPresentationsEditor
-          productId={id}
-          productName={product.name ?? "Producto"}
-          stockUnitCode={stockUnitCode}
-          units={units.map((unit) => ({ code: unit.code, name: unit.name }))}
-          initialRows={presentationRows}
-          suggestedRows={supplierPresentationSuggestions}
-          existingImageUrls={existingImageUrls}
-          returnHref={returnHref}
-          requiresRemissionDefault={requiresRemissionDefault}
-        />
-      </RequiredFieldsGuardForm>
+          <ProductPresentationsEditor
+            productId={id}
+            productName={product.name ?? "Producto"}
+            stockUnitCode={stockUnitCode}
+            units={units.map((unit) => ({ code: unit.code, name: unit.name }))}
+            initialRows={presentationRows}
+            suggestedRows={supplierPresentationSuggestions}
+            existingImageUrls={existingImageUrls}
+            returnHref={returnHref}
+            requiresRemissionDefault={requiresRemissionDefault}
+            measurementMode={measurementMode}
+          />
+        </RequiredFieldsGuardForm>
+      ) : (
+        <section className="ui-panel ui-panel--halo space-y-4">
+          <div>
+            <div className="text-xs font-semibold uppercase text-[var(--ui-muted)]">
+              {currentProductTypeLabel}
+            </div>
+            <h1 className="mt-2 ui-h1">Presentaciones no editables aquí</h1>
+            <p className="mt-2 max-w-3xl ui-body-muted">
+              Las presentaciones manuales solo aplican a insumos comprados. Las preparaciones y productos
+              producidos usan empaques reales de lote generados desde FOGO.
+            </p>
+          </div>
+
+          <div className="ui-alert ui-alert--neutral">
+            Para este producto, la unidad física disponible debe venir de producción: lote, LOC, empaque,
+            cantidad original y cantidad restante. En remisiones se deberán seleccionar empaques reales
+            disponibles o fraccionarlos con confirmación.
+          </div>
+
+          {presentationRows.length > 0 ? (
+            <div className="ui-alert ui-alert--warn">
+              Este producto todavía tiene {presentationRows.length} presentación(es) manual(es) heredada(s).
+              No se editan desde esta pantalla para evitar mezclar presentaciones de compra con empaques
+              producidos. Después podemos hacer una limpieza controlada.
+            </div>
+          ) : null}
+        </section>
+      )}
 
       <div className="flex justify-start">
         <Link href={returnHref} className="ui-btn ui-btn--ghost">

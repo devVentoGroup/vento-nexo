@@ -27,6 +27,20 @@ type MeasurementMode =
   | "count_with_weight"
   | "bulk_volume";
 
+type ProductionPackagePlanItem = {
+  packageId: string;
+  dispatchQty: number;
+  unitCode: string;
+  remainingQty: number;
+  label: string;
+  batchId: string | null;
+  fractional: boolean;
+  locationId?: string | null;
+  locationLabel?: string | null;
+  currentRemainingQty?: number;
+  status?: string | null;
+};
+
 type DraftLine = {
   id: string;
   baseItemId: string;
@@ -51,6 +65,8 @@ type DraftLine = {
   shortageReason: string;
   isVirtualSplit: boolean;
   manualLocked?: boolean;
+  requiresPackageDispatch?: boolean;
+  productionPackagePlan?: ProductionPackagePlanItem[];
 };
 
 type SplitDraft = {
@@ -70,6 +86,7 @@ type PickPayload = {
   baseQty: number;
   shortageReason?: string;
   note?: string | null;
+  productionPackageId?: string | null;
 };
 
 type PrepareWorkbenchProps = {
@@ -91,6 +108,24 @@ type PrepareWorkbenchInteractiveProps = Omit<
 
 function clampQty(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), max);
+}
+
+function lineRequiresPackageDispatch(line: DraftLine): boolean {
+  return Boolean(line.requiresPackageDispatch);
+}
+
+function packagePlanForLine(line: DraftLine): ProductionPackagePlanItem[] {
+  return Array.isArray(line.productionPackagePlan) ? line.productionPackagePlan : [];
+}
+
+function packagePlanTotal(line: DraftLine): number {
+  return roundQty(
+    packagePlanForLine(line).reduce((sum, entry) => sum + Number(entry.dispatchQty ?? 0), 0)
+  );
+}
+
+function packagePlanHasMissingLocation(line: DraftLine): boolean {
+  return packagePlanForLine(line).some((entry) => !String(entry.locationId ?? "").trim());
 }
 
 function suggestedQtyForLoc(line: DraftLine, locId: string) {
@@ -117,10 +152,12 @@ function getLineMeasurementMode(line: DraftLine): MeasurementMode {
 }
 
 function lineUsesActualQuantity(line: DraftLine): boolean {
+  if (lineRequiresPackageDispatch(line)) return false;
   return getLineMeasurementMode(line) !== "fixed_presentation";
 }
 
 function getLineMeasurementLabel(line: DraftLine): string {
+  if (lineRequiresPackageDispatch(line)) return "Empaques FOGO";
   const mode = getLineMeasurementMode(line);
   if (mode === "variable_weight") return "Peso real";
   if (mode === "count_with_weight") return "Conteo + peso real";
@@ -135,6 +172,7 @@ function getSelectedLocAvailable(line: DraftLine): number {
 
 function getDispatchMaxForLine(line: DraftLine): number {
   const requestedQty = roundQty(Number(line.requestedQty ?? 0));
+  if (lineRequiresPackageDispatch(line)) return packagePlanTotal(line) || requestedQty;
   if (!lineUsesActualQuantity(line)) return requestedQty;
 
   const selectedAvailable = getSelectedLocAvailable(line);
@@ -158,6 +196,7 @@ function applySmartAllocation(inputLines: DraftLine[], preserveManual: boolean):
   const byProduct = new Map<string, DraftLine[]>();
 
   for (const line of lines) {
+    if (lineRequiresPackageDispatch(line)) continue;
     const key = `${line.productName}__${line.unitLabel}`;
     if (!byProduct.has(key)) byProduct.set(key, []);
     byProduct.get(key)!.push(line);
@@ -218,6 +257,23 @@ function applySmartAllocation(inputLines: DraftLine[], preserveManual: boolean):
 }
 
 function normalizeLine(line: DraftLine): DraftLine {
+  if (lineRequiresPackageDispatch(line)) {
+    const plan = packagePlanForLine(line);
+    const planTotal = packagePlanTotal(line);
+    const planLocIds = Array.from(
+      new Set(plan.map((entry) => String(entry.locationId ?? "").trim()).filter(Boolean))
+    );
+    const selectedLocId = planLocIds.length === 1 ? planLocIds[0] : line.selectedLocId || "";
+    const dispatchQty = planTotal > 0 ? planTotal : roundQty(Number(line.dispatchQty ?? line.requestedQty ?? 0));
+
+    return {
+      ...line,
+      selectedLocId,
+      recommendedLocId: selectedLocId || line.recommendedLocId || "",
+      dispatchQty,
+    };
+  }
+
   const selectedLocId = line.selectedLocId || line.recommendedLocId || "";
   let dispatchQty = roundQty(Number(line.dispatchQty ?? 0));
 
@@ -300,6 +356,32 @@ function buildPositionPlan(line: DraftLine): Array<{ positionId: string; label: 
 }
 
 function buildPicksForLine(line: DraftLine): PickPayload[] {
+  if (lineRequiresPackageDispatch(line)) {
+    return packagePlanForLine(line)
+      .map<PickPayload | null>((entry) => {
+        const sourceLocationId = String(entry.locationId ?? "").trim();
+        const baseQty = roundQty(Number(entry.dispatchQty ?? 0));
+        if (!sourceLocationId || baseQty <= 0) return null;
+
+        return {
+          itemId: line.baseItemId,
+          baseItemId: line.baseItemId,
+          productId: line.productId,
+          sourceLocationId,
+          sourceLocationPositionId: null,
+          uomProfileId: null,
+          presentationQty: 0,
+          baseQty,
+          shortageReason: line.shortageReason.trim(),
+          note: entry.fractional
+            ? `FOGO: fraccionar ${entry.label || entry.packageId}`
+            : `FOGO: empaque ${entry.label || entry.packageId}`,
+          productionPackageId: entry.packageId,
+        };
+      })
+      .filter((entry): entry is PickPayload => entry !== null);
+  }
+
   const baseQty = clampDispatchQty(line, Number(line.dispatchQty ?? 0));
   const sourceLocationId = String(line.selectedLocId ?? "").trim();
 
@@ -341,7 +423,12 @@ function buildPicksForLine(line: DraftLine): PickPayload[] {
 }
 
 function getLineTone(line: DraftLine) {
-  if (!line.selectedLocId && line.dispatchQty > 0) return "pending";
+  if (lineRequiresPackageDispatch(line)) {
+    const planTotal = packagePlanTotal(line);
+    if (!packagePlanForLine(line).length) return "error";
+    if (packagePlanHasMissingLocation(line)) return "pending";
+    if (Math.abs(planTotal - Number(line.dispatchQty ?? 0)) > 0.001) return "error";
+  } else if (!line.selectedLocId && line.dispatchQty > 0) return "pending";
   if (line.dispatchQty < 0 || line.dispatchQty > getDispatchMaxForLine(line)) return "error";
   if (line.dispatchQty < line.requestedQty && !line.shortageReason.trim()) return "warn";
   return "ok";
@@ -359,6 +446,7 @@ function getLineToneLabel(tone: "pending" | "warn" | "error" | "ok") {
  * La nueva persistencia ya no duplica la línea real; genera picks contra la línea base.
  */
 function canSplitDraftLine(line: DraftLine): boolean {
+  if (lineRequiresPackageDispatch(line)) return false;
   if (line.isVirtualSplit) return false;
   if (lineUsesActualQuantity(line)) return false;
   return roundQty(line.requestedQty) > 1;
@@ -418,6 +506,51 @@ function suggestedNewLineQtyForMultiloc(line: DraftLine): number {
   return Math.max(1, Math.floor(rq / 2));
 }
 
+function ProductionPackagePlanSummary({
+  line,
+  compact = false,
+}: {
+  line: DraftLine;
+  compact?: boolean;
+}) {
+  const plan = packagePlanForLine(line);
+  if (!lineRequiresPackageDispatch(line)) return null;
+
+  if (!plan.length) {
+    return (
+      <div className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-2 text-xs text-rose-900">
+        Esta línea requiere empaques FOGO, pero no tiene plan de empaques asociado.
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs text-sky-950">
+      <p className="font-semibold">
+        Empaques FOGO asignados · {packagePlanTotal(line)} {line.unitLabel}
+      </p>
+      <ul className={compact ? "mt-1 space-y-1" : "mt-2 space-y-1.5"}>
+        {plan.map((entry) => {
+          const locationLabel = String(entry.locationLabel ?? "").trim();
+          const locationText = locationLabel || (entry.locationId ? `LOC ${entry.locationId.slice(0, 8)}…` : "Sin LOC");
+          return (
+            <li key={`${entry.packageId}-${entry.dispatchQty}`} className="rounded-lg bg-white/80 px-2 py-1">
+              <span className="font-semibold">{entry.fractional ? "Fracción" : "Completo"}:</span>{" "}
+              {entry.label || entry.packageId.slice(0, 8)} · {entry.dispatchQty} {entry.unitCode || line.unitLabel}
+              <span className="text-sky-900/75"> · {locationText}</span>
+            </li>
+          );
+        })}
+      </ul>
+      {plan.some((entry) => entry.fractional) ? (
+        <p className="mt-2 font-semibold text-amber-900">
+          Incluye fraccionamiento: despacho dejará remanente físico en el empaque abierto.
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function RemissionPrepareReadonlySummary({
   lines,
   correctPrepareHref,
@@ -452,9 +585,11 @@ function RemissionPrepareReadonlySummary({
           const hasShortage = line.dispatchQty < line.requestedQty;
           const tone = getLineTone(line);
           const locEntry = line.locOptions.find((loc) => loc.id === line.selectedLocId);
-          const locText = locEntry
-            ? `${locEntry.label} · ${locEntry.qty} ${line.unitLabel}`
-            : (line.selectedLocId || "Sin ubicación").trim() || "Sin ubicación";
+          const locText = lineRequiresPackageDispatch(line)
+            ? "Empaques reales del lote"
+            : locEntry
+              ? `${locEntry.label} · ${locEntry.qty} ${line.unitLabel}`
+              : (line.selectedLocId || "Sin ubicación").trim() || "Sin ubicación";
           return (
             <div key={line.id} className="border-t border-[var(--ui-border)] first:border-t-0">
               <div className="grid gap-3 px-4 py-3 lg:grid-cols-[minmax(220px,1.2fr)_minmax(260px,1.3fr)_120px_minmax(220px,1fr)_120px] lg:items-start">
@@ -467,7 +602,13 @@ function RemissionPrepareReadonlySummary({
                     {getLineMeasurementLabel(line)}
                   </div>
                 </div>
-                <div className="text-sm text-[var(--ui-text)]">{locText}</div>
+                <div className="text-sm text-[var(--ui-text)]">
+                  {lineRequiresPackageDispatch(line) ? (
+                    <ProductionPackagePlanSummary line={line} compact />
+                  ) : (
+                    locText
+                  )}
+                </div>
                 <div className="text-sm font-medium text-[var(--ui-text)]">
                   {line.dispatchQty} {line.unitLabel}
                 </div>
@@ -632,7 +773,11 @@ function RemissionPrepareWorkbenchInteractive({
     setSplitQtyInput("");
   };
 
-  const shouldUsePickPayload = lines.every((line) => roundQty(Number(line.dispatchQty ?? 0)) > 0);
+  const shouldUsePickPayload = lines.every(
+    (line) =>
+      roundQty(Number(line.dispatchQty ?? 0)) > 0 &&
+      (!lineRequiresPackageDispatch(line) || !packagePlanHasMissingLocation(line))
+  );
   const payload = JSON.stringify({
     lines: lines.map((line) => ({
       id: line.id,
@@ -679,7 +824,12 @@ function RemissionPrepareWorkbenchInteractive({
                   <div className="mt-1 inline-flex rounded-full border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--ui-muted)]">
                     {getLineMeasurementLabel(line)}
                   </div>
-                  {line.recommendedLocId ? (
+                  {lineRequiresPackageDispatch(line) ? (
+                    <div className="mt-2">
+                      <ProductionPackagePlanSummary line={line} />
+                    </div>
+                  ) : null}
+                  {!lineRequiresPackageDispatch(line) && line.recommendedLocId ? (
                     <div className="mt-2 text-xs text-emerald-700">
                       Ubicación sugerida:{" "}
                       <strong>
@@ -687,7 +837,7 @@ function RemissionPrepareWorkbenchInteractive({
                           line.selectedLocId) || "Sin ubicación"}
                       </strong>
                     </div>
-                  ) : line.locOptions.length === 0 ? (
+                  ) : !lineRequiresPackageDispatch(line) && line.locOptions.length === 0 ? (
                     <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900">
                       No hay stock disponible en ubicaciones del origen. Déjalo en 0 y registra el faltante como pendiente de producción.
                     </div>
@@ -728,21 +878,27 @@ function RemissionPrepareWorkbenchInteractive({
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  <select
-                    value={line.selectedLocId}
-                    onChange={(e) => updateLine(line.id, { selectedLocId: e.target.value })}
-                    className="ui-input h-10"
-                  >
-                    <option value="">
-                      {line.locOptions.length > 0 ? "Selecciona ubicación" : "Sin stock en ubicaciones"}
-                    </option>
-                    {line.locOptions.map((loc) => (
-                      <option key={loc.id} value={loc.id}>
-                        {loc.label} · {loc.qty} {line.unitLabel}
+                  {lineRequiresPackageDispatch(line) ? (
+                    <div className="ui-input flex h-10 items-center bg-[linear-gradient(180deg,rgba(240,249,255,0.9)_0%,rgba(255,255,255,0.92)_100%)] text-xs font-semibold text-sky-950">
+                      Empaques FOGO asignados
+                    </div>
+                  ) : (
+                    <select
+                      value={line.selectedLocId}
+                      onChange={(e) => updateLine(line.id, { selectedLocId: e.target.value })}
+                      className="ui-input h-10"
+                    >
+                      <option value="">
+                        {line.locOptions.length > 0 ? "Selecciona ubicación" : "Sin stock en ubicaciones"}
                       </option>
-                    ))}
-                  </select>
-                  {multilocHint ? (
+                      {line.locOptions.map((loc) => (
+                        <option key={loc.id} value={loc.id}>
+                          {loc.label} · {loc.qty} {line.unitLabel}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                  {!lineRequiresPackageDispatch(line) && multilocHint ? (
                     <div className="rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs text-sky-950">
                       <p className="font-semibold leading-snug">
                         Ninguna ubicación cubre todo el pedido; entre ubicaciones sí alcanza.
@@ -764,7 +920,7 @@ function RemissionPrepareWorkbenchInteractive({
                     type="button"
                     onClick={() => openSplit(line.id, multilocHint ? multilocSuggested : undefined)}
                     className="ui-btn ui-btn--ghost h-9 text-xs font-semibold"
-                    disabled={!canSplitDraftLine(line)}
+                    disabled={lineRequiresPackageDispatch(line) || !canSplitDraftLine(line)}
                     title={
                       canSplitDraftLine(line)
                         ? "Divide el preparado en dos partes para escoger otra ubicación de salida."
@@ -784,13 +940,19 @@ function RemissionPrepareWorkbenchInteractive({
                     step="any"
                     max={dispatchMax}
                     value={line.dispatchQty}
+                    disabled={lineRequiresPackageDispatch(line)}
                     onChange={(e) =>
                       updateLine(line.id, {
                         dispatchQty: parseQty(e.target.value, 0),
                       })
                     }
-                    className="ui-input h-10 w-full"
+                    className="ui-input h-10 w-full disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-600"
                   />
+                  {lineRequiresPackageDispatch(line) ? (
+                    <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                      Cantidad fijada por empaques reales FOGO.
+                    </div>
+                  ) : null}
                   {line.locOptions.length === 0 && line.dispatchQty === 0 ? (
                     <div className="mt-1 text-xs text-[var(--ui-muted)]">
                       Sin despacho hasta que producción cargue stock a una ubicación.

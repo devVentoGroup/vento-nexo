@@ -11,6 +11,17 @@ import {
 
 import { applyReceiveBatchConfirm } from "./detail-actions";
 
+export type ReceiveBatchPackageTrace = {
+  itemId?: string;
+  packageId: string;
+  packageLabel?: string | null;
+  batchId?: string | null;
+  dispatchQty: number;
+  unitCode: string;
+  fractional?: boolean;
+  locationLabel?: string | null;
+};
+
 type ReceiveBatchContextValue = {
   selected: ReadonlySet<string>;
   toggle: (itemId: string, on: boolean) => void;
@@ -22,6 +33,7 @@ type ReceiveBatchContextValue = {
   setNote: (itemId: string, value: string) => void;
   receiveQty: Record<string, string>;
   setReceiveQty: (itemId: string, value: string) => void;
+  packageTraceByItemId: Record<string, ReceiveBatchPackageTrace[]>;
 };
 
 const ReceiveBatchContext = createContext<ReceiveBatchContextValue | null>(null);
@@ -39,14 +51,32 @@ type ReceiveBatchShellProps = {
   returnOrigin: string;
   siteId: string;
   eligibleProductGroups: Array<{ productId: string; itemIds: string[] }>;
+  packageTraceByItemId?: Record<string, ReceiveBatchPackageTrace[]>;
   children: ReactNode;
 };
+
+function formatTraceQty(value: number | null | undefined) {
+  const numericValue = Number(value ?? 0);
+  if (!Number.isFinite(numericValue)) return "0";
+  return new Intl.NumberFormat("es-CO", {
+    maximumFractionDigits: 3,
+  }).format(numericValue);
+}
+
+function packageTraceLabel(trace: ReceiveBatchPackageTrace) {
+  const label = String(trace.packageLabel ?? "").trim();
+  if (label) return label;
+
+  const packageId = String(trace.packageId ?? "").trim();
+  return packageId ? `Empaque ${packageId.slice(0, 8)}` : "Empaque FOGO";
+}
 
 export function ReceiveBatchShell({
   requestId,
   returnOrigin,
   siteId,
   eligibleProductGroups,
+  packageTraceByItemId = {},
   children,
 }: ReceiveBatchShellProps) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
@@ -101,6 +131,7 @@ export function ReceiveBatchShell({
       setNote,
       receiveQty,
       setReceiveQty,
+      packageTraceByItemId,
     }),
     [
       selected,
@@ -113,6 +144,7 @@ export function ReceiveBatchShell({
       setNote,
       receiveQty,
       setReceiveQty,
+      packageTraceByItemId,
     ]
   );
 
@@ -131,14 +163,25 @@ type ReceiveBatchDockProps = {
 };
 
 function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockProps) {
-  const { selected, productGroups, selectAllEligible, clearSelection, notes, receiveQty } =
-    useReceiveBatchContext();
+  const {
+    selected,
+    productGroups,
+    selectAllEligible,
+    clearSelection,
+    notes,
+    receiveQty,
+    packageTraceByItemId,
+  } = useReceiveBatchContext();
 
   const eligibleProductsCount = productGroups.length;
   const selectedProductsCount = productGroups.filter((g) =>
     g.itemIds.every((id) => selected.has(id))
   ).length;
 
+  const selectedPackageTraceCount = [...selected].reduce(
+    (acc, itemId) => acc + (packageTraceByItemId[itemId]?.length ?? 0),
+    0
+  );
   const noEligible = eligibleProductsCount === 0;
 
   return (
@@ -155,6 +198,11 @@ function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockP
               : selectedProductsCount === 0
                 ? `${eligibleProductsCount} pendiente${eligibleProductsCount === 1 ? "" : "s"}.`
                 : `${selectedProductsCount} seleccionad${selectedProductsCount === 1 ? "o" : "os"}.`}
+            {selectedPackageTraceCount > 0 ? (
+              <span className="ml-1 text-emerald-700">
+                · {selectedPackageTraceCount} empaque{selectedPackageTraceCount === 1 ? "" : "s"} FOGO
+              </span>
+            ) : null}
           </p>
           {!noEligible ? (
             <div className="flex flex-wrap gap-2 pt-1">
@@ -280,8 +328,9 @@ export function ReceiveBatchCompactLine({
   shippedQty,
   remainingQty,
 }: ReceiveBatchCompactLineProps) {
-  const { selected, toggle, notes, setNote } = useReceiveBatchContext();
+  const { selected, toggle, notes, setNote, packageTraceByItemId } = useReceiveBatchContext();
   const isChecked = selected.has(itemId);
+  const packageTrace: ReceiveBatchPackageTrace[] = packageTraceByItemId[itemId] ?? [];
 
   return (
     <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3 shadow-sm">
@@ -311,6 +360,22 @@ export function ReceiveBatchCompactLine({
           </div>
         </div>
       </div>
+
+      {packageTrace.length > 0 ? (
+        <div className="mt-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-950">
+          <div className="font-semibold">Empaques FOGO recibidos</div>
+          <div className="mt-1 space-y-1">
+            {packageTrace.map((trace, index) => (
+              <div key={`${trace.packageId}-${index}`}>
+                {trace.fractional ? "Fracción" : "Completo"} · {packageTraceLabel(trace)} ·{" "}
+                {formatTraceQty(trace.dispatchQty)} {trace.unitCode}
+                {trace.locationLabel ? ` · ${trace.locationLabel}` : ""}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
 
       <details className="mt-2 group">
         <summary className="cursor-pointer list-none select-none text-sm text-[var(--ui-muted)]">
@@ -349,13 +414,19 @@ export function ReceiveBatchCompactProductLine({
   shippedQtyTotal,
   pendingQtyTotal,
 }: ReceiveBatchCompactProductLineProps) {
-  const { selected, toggle, notes, setNote, receiveQty, setReceiveQty } =
+  const { selected, toggle, notes, setNote, receiveQty, setReceiveQty, packageTraceByItemId } =
     useReceiveBatchContext();
 
   const allSelected = itemIds.length > 0 && itemIds.every((id) => selected.has(id));
   const anySelected = itemIds.some((id) => selected.has(id));
 
   const [partialTotalInput, setPartialTotalInput] = useState<string>("");
+  const productPackageTrace: ReceiveBatchPackageTrace[] = itemIds.flatMap((itemId) =>
+    (packageTraceByItemId[itemId] ?? []).map((trace): ReceiveBatchPackageTrace => ({
+      ...trace,
+      itemId,
+    }))
+  );
 
   const onToggleProduct = (next: boolean) => {
     for (const id of itemIds) toggle(id, next);
@@ -434,6 +505,34 @@ export function ReceiveBatchCompactProductLine({
           </div>
         </div>
       </div>
+
+      {productPackageTrace.length > 0 ? (
+        <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-950">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="font-semibold">Trazabilidad FOGO</div>
+            <div className="font-semibold text-sky-900">
+              {productPackageTrace.length} empaque{productPackageTrace.length === 1 ? "" : "s"}
+            </div>
+          </div>
+          <div className="mt-2 space-y-1">
+            {productPackageTrace.map((trace, index) => (
+              <div
+                key={`${trace.itemId ?? "item"}-${trace.packageId}-${index}`}
+                className="rounded-lg bg-white/80 px-2 py-1"
+              >
+                <span className="font-semibold">
+                  {trace.fractional ? "Fracción" : "Completo"}
+                </span>{" "}
+                · {packageTraceLabel(trace)} · {formatTraceQty(trace.dispatchQty)} {trace.unitCode}
+                {trace.locationLabel ? ` · ${trace.locationLabel}` : ""}
+              </div>
+            ))}
+          </div>
+          <p className="mt-2 text-sky-900/75">
+            La recepción entra como cantidad base; el origen físico queda trazado desde los empaques de lote.
+          </p>
+        </div>
+      ) : null}
 
       <details className="mt-2 group">
         <summary className="cursor-pointer list-none select-none text-sm text-[var(--ui-muted)]">

@@ -8,7 +8,11 @@ import {
   type ProductUomProfile,
 } from "@/lib/inventory/uom";
 
-import { RemissionsItems, type RemissionDraftRow } from "./remissions-items";
+import {
+  RemissionsItems,
+  type ProductionPackageOption,
+  type RemissionDraftRow,
+} from "./remissions-items";
 
 type SiteOption = {
   id: string;
@@ -33,6 +37,19 @@ function usesFixedPresentationMode(value: unknown): boolean {
   return normalizeMeasurementMode(value) === "fixed_presentation";
 }
 
+function isProducedPackagedProduct(product: ProductOption | null | undefined): boolean {
+  const productType = String(product?.product_type ?? "").trim().toLowerCase();
+  const inventoryKind = String(product?.inventory_kind ?? "").trim().toLowerCase();
+  return productType === "preparacion" || (productType === "venta" && inventoryKind !== "resale");
+}
+
+function sumProductionPackagePlan(row: RemissionDraftRow): number {
+  return (row.productionPackagePlan ?? []).reduce(
+    (sum, entry) => sum + Number(entry.dispatchQty ?? 0),
+    0
+  );
+}
+
 function measurementModeLabel(value: unknown): string {
   switch (normalizeMeasurementMode(value)) {
     case "variable_weight":
@@ -52,6 +69,8 @@ type ProductOption = {
   name: string | null;
   unit: string | null;
   stock_unit_code?: string | null;
+  product_type?: string | null;
+  inventory_kind?: string | null;
   category_id?: string | null;
   measurement_mode?: MeasurementMode | string | null;
   default_tolerance_percent?: number | null;
@@ -80,6 +99,7 @@ type Props = {
   products: ProductOption[];
   categoryNameById?: Record<string, string>;
   defaultUomProfiles?: ProductUomProfile[];
+  productionPackageRows?: ProductionPackageOption[];
   areaOptions: AreaOption[];
   defaultAreaKind?: string;
   originStockRows?: OriginStockReference[];
@@ -102,6 +122,7 @@ export function RemissionsCreateForm({
   products,
   categoryNameById = {},
   defaultUomProfiles = [],
+  productionPackageRows = [],
   areaOptions,
   defaultAreaKind: defaultAreaKindProp = "",
   originStockRows = [],
@@ -123,6 +144,8 @@ export function RemissionsCreateForm({
         inputUnitCode: normalizeUnitCode(String(row.inputUnitCode ?? "").trim()),
         inputUomProfileId: String(row.inputUomProfileId ?? "").trim(),
         areaKind: String(row.areaKind ?? "").trim(),
+        productionPackagePlan: row.productionPackagePlan ?? [],
+        acceptPackageFraction: Boolean(row.acceptPackageFraction),
       })),
     [initialRowsSource]
   );
@@ -207,7 +230,22 @@ export function RemissionsCreateForm({
           row.inputUnitCode.trim() ||
           row.areaKind.trim()
         );
-        const valid = Boolean(row.productId && product?.name && Number.isFinite(qty) && qty > 0);
+        const isProducedPackaged = isProducedPackagedProduct(product);
+        const packagePlanTotal = sumProductionPackagePlan(row);
+        const packagePlanMatches =
+          !isProducedPackaged || Math.abs(packagePlanTotal - qty) <= 0.001;
+        const hasAcceptedFraction =
+          !isProducedPackaged ||
+          !(row.productionPackagePlan ?? []).some((entry) => Boolean(entry.fractional)) ||
+          Boolean(row.acceptPackageFraction);
+        const valid = Boolean(
+          row.productId &&
+          product?.name &&
+          Number.isFinite(qty) &&
+          qty > 0 &&
+          packagePlanMatches &&
+          hasAcceptedFraction
+        );
 
         if (row.areaKind && areaMap.has(row.areaKind)) {
           acc.requestedAreas.add(areaMap.get(row.areaKind) ?? row.areaKind);
@@ -220,9 +258,10 @@ export function RemissionsCreateForm({
 
         if (valid) {
           const measurementMode = normalizeMeasurementMode(product?.measurement_mode);
-          const isFixedPresentation = usesFixedPresentationMode(measurementMode);
+          const isProducedPackaged = isProducedPackagedProduct(product);
+          const isFixedPresentation = usesFixedPresentationMode(measurementMode) && !isProducedPackaged;
           const stockUnitCode = normalizeUnitCode(product?.stock_unit_code || product?.unit || "un");
-          const inputUnitCode = normalizeUnitCode(row.inputUnitCode || stockUnitCode);
+          const inputUnitCode = normalizeUnitCode(isProducedPackaged ? stockUnitCode : row.inputUnitCode || stockUnitCode);
           const selectedProfile =
             isFixedPresentation && row.inputUomProfileId
               ? uomProfileById.get(row.inputUomProfileId) ?? null
@@ -283,8 +322,15 @@ export function RemissionsCreateForm({
             hasReferenceShortage,
             hasPresentationProfile: Boolean(selectedProfile?.id),
             requiresPresentationProfile: isFixedPresentation,
+            requiresPackagePlan: isProducedPackaged,
+            packagePlanCount: row.productionPackagePlan?.length ?? 0,
+            packagePlanTotal,
+            packagePlanMatches,
+            hasPackageFraction:
+              row.productionPackagePlan?.some((entry) => Boolean(entry.fractional)) ?? false,
+            acceptPackageFraction: Boolean(row.acceptPackageFraction),
             measurementMode,
-            measurementModeLabel: measurementModeLabel(measurementMode),
+            measurementModeLabel: isProducedPackaged ? "Empaques FOGO" : measurementModeLabel(measurementMode),
             conversionSummary,
             valid,
           });
@@ -307,6 +353,12 @@ export function RemissionsCreateForm({
           hasReferenceShortage: boolean;
           hasPresentationProfile: boolean;
           requiresPresentationProfile: boolean;
+          requiresPackagePlan: boolean;
+          packagePlanCount: number;
+          packagePlanTotal: number;
+          packagePlanMatches: boolean;
+          hasPackageFraction: boolean;
+          acceptPackageFraction: boolean;
           measurementMode: MeasurementMode;
           measurementModeLabel: string;
           conversionSummary: string;
@@ -484,7 +536,13 @@ export function RemissionsCreateForm({
                           Revisa presentación mínima: esta línea no tiene perfil de remisión asociado.
                         </div>
                       ) : null}
-                      {!item.requiresPresentationProfile ? (
+                      {item.requiresPackagePlan ? (
+                        <div className={item.packagePlanMatches && (!item.hasPackageFraction || item.acceptPackageFraction) ? "mt-2 text-xs font-semibold text-emerald-800" : "mt-2 text-xs font-semibold text-amber-800"}>
+                          Empaques FOGO: {item.packagePlanCount} seleccionado(s), {item.packagePlanTotal.toLocaleString("es-CO", { maximumFractionDigits: 3 })} {item.stockUnit}.
+                          {!item.packagePlanMatches ? " La suma no coincide con la solicitud." : ""}
+                          {item.hasPackageFraction && !item.acceptPackageFraction ? " Falta aceptar fraccionamiento." : ""}
+                        </div>
+                      ) : !item.requiresPresentationProfile ? (
                         <div className="mt-2 text-xs font-semibold text-emerald-800">
                           Se solicitará por cantidad real; no requiere presentación fija.
                         </div>
@@ -509,8 +567,8 @@ export function RemissionsCreateForm({
             <div className="ui-h3">Productos</div>
             <div className="mt-1 ui-caption">
               {siteMode === "simple"
-                ? "Los productos fijos usan presentación; los variables se solicitan por cantidad real."
-                : "Los productos fijos usan presentación; los variables se solicitan por cantidad real y área."}
+                ? "Insumos usan presentación manual; preparaciones usan empaques reales FOGO; variables se solicitan por cantidad real."
+                : "Insumos usan presentación manual; preparaciones usan empaques reales FOGO; variables se solicitan por cantidad real y área."}
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -540,6 +598,8 @@ export function RemissionsCreateForm({
             defaultAreaKind={defaultAreaKind}
             lockAreaKind={Boolean(defaultAreaKindProp)}
             defaultUomProfiles={defaultUomProfiles}
+            productionPackageRows={productionPackageRows}
+            selectedFromSiteId={fromSiteId}
             onRowsChange={setDraftRows}
             referenceStockByProduct={inventoryPostingEnabled ? selectedOriginStockByProduct : {}}
             referenceSiteName={inventoryPostingEnabled ? selectedFromSite?.name ?? "" : ""}

@@ -15,7 +15,11 @@ import { ConductorTransitChecklistForm } from "./conductor-transit-checklist-for
 import { RemissionPrepareWorkbench } from "./prepare-workbench";
 import { RemissionLineCard } from "./detail-line-card";
 import { RemissionLineHiddenActions } from "./detail-line-hidden-actions";
-import { ReceiveBatchCompactProductLine, ReceiveBatchShell } from "./receive-batch-shell";
+import {
+  ReceiveBatchCompactProductLine,
+  ReceiveBatchShell,
+  type ReceiveBatchPackageTrace,
+} from "./receive-batch-shell";
 import { RemissionHeroSection, RemissionSummarySection } from "./detail-sections";
 import { buildRemissionLineVm } from "./detail-line-vm";
 import { loadOriginStockContext } from "./detail-stock";
@@ -64,6 +68,31 @@ type ProductInventoryProfileRow = {
   requires_count_alongside_weight?: boolean | null;
 };
 
+type ProductionPackagePlanItem = {
+  packageId: string;
+  dispatchQty: number;
+  unitCode: string;
+  remainingQty: number;
+  label: string;
+  batchId: string | null;
+  fractional: boolean;
+  locationId: string | null;
+  locationLabel: string | null;
+  currentRemainingQty: number;
+  status: string | null;
+};
+
+type ProductionBatchPackageLookupRow = {
+  id: string;
+  batch_id: string | null;
+  location_id: string | null;
+  package_index: number | null;
+  package_label: string | null;
+  remaining_qty: number | null;
+  unit_code: string | null;
+  status: string | null;
+};
+
 function displayTraceEmployee(employee?: TraceEmployeeRow | null): string {
   if (!employee) return "-";
   return String(employee.alias ?? employee.full_name ?? employee.id).trim() || employee.id;
@@ -93,6 +122,108 @@ function getItemMeasurementMode(item: RestockItemRow): MeasurementMode {
 
 function usesActualQuantityMode(item: RestockItemRow): boolean {
   return getItemMeasurementMode(item) !== "fixed_presentation";
+}
+
+function parseProductionPackagePlan(value: unknown): ProductionPackagePlanItem[] {
+  if (!value) return [];
+
+  try {
+    const parsed = typeof value === "string" ? JSON.parse(value) : value;
+    if (!Array.isArray(parsed)) return [];
+
+    const planItems: ProductionPackagePlanItem[] = [];
+
+    for (const entry of parsed) {
+      const packageId = String(entry?.packageId ?? "").trim();
+      const dispatchQty = roundQuantity(Number(entry?.dispatchQty ?? 0));
+      const unitCode = String(entry?.unitCode ?? "").trim();
+      const remainingQty = roundQuantity(Number(entry?.remainingQty ?? 0));
+      const label = String(entry?.label ?? "").trim();
+      const batchId = String(entry?.batchId ?? "").trim() || null;
+      const fractional = Boolean(entry?.fractional);
+      const locationId = String(entry?.locationId ?? "").trim() || null;
+      const locationLabel = String(entry?.locationLabel ?? "").trim() || null;
+      const currentRemainingQty = Number(entry?.currentRemainingQty ?? remainingQty);
+      const status = String(entry?.status ?? "").trim() || null;
+
+      if (!packageId || dispatchQty <= 0) continue;
+
+      planItems.push({
+        packageId,
+        dispatchQty,
+        unitCode,
+        remainingQty,
+        label,
+        batchId,
+        fractional,
+        locationId,
+        locationLabel,
+        currentRemainingQty: Number.isFinite(currentRemainingQty)
+          ? roundQuantity(currentRemainingQty)
+          : remainingQty,
+        status,
+      });
+    }
+
+    return planItems;
+  } catch {
+    return [];
+  }
+}
+
+function productionPackageLabel(
+  packageRow: ProductionBatchPackageLookupRow | undefined,
+  fallback: ProductionPackagePlanItem
+): string {
+  const label = String(packageRow?.package_label ?? fallback.label ?? "").trim();
+  if (label) return label;
+
+  const packageIndex = packageRow?.package_index;
+  if (typeof packageIndex === "number") return `Empaque ${packageIndex}`;
+
+  return fallback.packageId.slice(0, 8);
+}
+
+function buildProductionPackagePlanForItem({
+  item,
+  productionPackageById,
+  originLocById,
+}: {
+  item: RestockItemRow;
+  productionPackageById: Map<string, ProductionBatchPackageLookupRow>;
+  originLocById: Map<string, LocRow>;
+}): ProductionPackagePlanItem[] {
+  const rawPackagePlan = parseProductionPackagePlan(
+    (item as RestockItemRow & { production_package_plan?: unknown }).production_package_plan
+  );
+
+  return rawPackagePlan.map((entry): ProductionPackagePlanItem => {
+    const packageRow = productionPackageById.get(entry.packageId);
+    const locationId: string | null = entry.locationId || packageRow?.location_id || null;
+    const locRow = locationId ? originLocById.get(locationId) : undefined;
+    const locationLabel: string | null =
+      entry.locationLabel || (locRow ? buildLocDisplayLabel(locRow) : null);
+    const currentRemainingQty = Number(
+      packageRow?.remaining_qty ?? entry.currentRemainingQty ?? entry.remainingQty ?? 0
+    );
+    const unitCode =
+      entry.unitCode ||
+      packageRow?.unit_code ||
+      formatUnitLabel(item.stock_unit_code ?? item.unit ?? item.product?.stock_unit_code);
+
+    return {
+      ...entry,
+      batchId: entry.batchId || packageRow?.batch_id || null,
+      locationId,
+      locationLabel,
+      currentRemainingQty: Number.isFinite(currentRemainingQty)
+        ? roundQuantity(currentRemainingQty)
+        : entry.remainingQty,
+      status: packageRow?.status ?? entry.status ?? null,
+      unitCode,
+      label: productionPackageLabel(packageRow, entry),
+    };
+  });
 }
 
 async function readBooleanAppSetting(
@@ -197,7 +328,7 @@ export default async function RemissionDetailPage({
   const { data: items } = await supabase
     .from("restock_request_items")
     .select(
-      "id, product_id, quantity, unit, input_qty, input_unit_code, input_uom_profile_id, stock_unit_code, source_location_id, prepared_quantity, shipped_quantity, received_quantity, shortage_quantity, notes, item_status, production_area_kind, product:products(name,unit,stock_unit_code)"
+      "id, product_id, quantity, unit, input_qty, input_unit_code, input_uom_profile_id, stock_unit_code, source_location_id, prepared_quantity, shipped_quantity, received_quantity, shortage_quantity, notes, item_status, production_area_kind, production_package_plan, requires_package_dispatch, production_package_dispatch_applied_at, product:products(name,unit,stock_unit_code)"
     )
     .eq("request_id", id)
     .order("created_at", { ascending: true });
@@ -292,6 +423,33 @@ export default async function RemissionDetailPage({
     originLocRows,
     originLocById,
   } = originStockContext;
+
+  const productionPackageIds = Array.from(
+    new Set(
+      itemRows
+        .flatMap((item) =>
+          parseProductionPackagePlan(
+            (item as RestockItemRow & { production_package_plan?: unknown }).production_package_plan
+          ).map((entry) => entry.packageId)
+        )
+        .filter(Boolean)
+    )
+  );
+
+  const { data: productionPackageLookupData } = productionPackageIds.length
+    ? await supabase
+      .from("production_batch_packages")
+      .select("id,batch_id,location_id,package_index,package_label,remaining_qty,unit_code,status")
+      .in("id", productionPackageIds)
+    : { data: [] as ProductionBatchPackageLookupRow[] };
+
+  const productionPackageById = new Map(
+    ((productionPackageLookupData ?? []) as ProductionBatchPackageLookupRow[]).map((row) => [
+      row.id,
+      row,
+    ])
+  );
+
   const lineIdsByProduct = new Map<string, string[]>();
   for (const item of itemRows) {
     if (!lineIdsByProduct.has(item.product_id)) lineIdsByProduct.set(item.product_id, []);
@@ -448,6 +606,32 @@ export default async function RemissionDetailPage({
       }));
     })()
     : [];
+
+  const packageTraceByItemId: Record<string, ReceiveBatchPackageTrace[]> = {};
+  if (isReceiveDestinationFlow) {
+    for (const item of itemRows) {
+      if (!receiveBatchEligibleIdSet.has(item.id)) continue;
+
+      const productionPackagePlan = buildProductionPackagePlanForItem({
+        item,
+        productionPackageById,
+        originLocById,
+      });
+
+      if (productionPackagePlan.length === 0) continue;
+
+      packageTraceByItemId[item.id] = productionPackagePlan.map((entry) => ({
+        itemId: item.id,
+        packageId: entry.packageId,
+        packageLabel: entry.label,
+        batchId: entry.batchId,
+        dispatchQty: entry.dispatchQty,
+        unitCode: entry.unitCode,
+        fractional: entry.fractional,
+        locationLabel: entry.locationLabel ?? null,
+      }));
+    }
+  }
   const isReadyToDispatch = currentStatus === "preparing" && canTransitByCurrentInventoryMode;
   const editPrepareRaw = sp.edit_prepare;
   const editPrepareVal = Array.isArray(editPrepareRaw) ? editPrepareRaw[0] : editPrepareRaw;
@@ -595,6 +779,20 @@ export default async function RemissionDetailPage({
     ? itemRows.map((item) => {
       const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
       const lineIdsForProduct = lineIdsByProduct.get(item.product_id) ?? [item.id];
+      const requiresPackageDispatch = Boolean(
+        (item as RestockItemRow & { requires_package_dispatch?: boolean | null }).requires_package_dispatch
+      );
+      const productionPackagePlan = buildProductionPackagePlanForItem({
+        item,
+        productionPackageById,
+        originLocById,
+      });
+      const packagePlanTotal = roundQuantity(
+        productionPackagePlan.reduce((sum, entry) => sum + Number(entry.dispatchQty ?? 0), 0)
+      );
+      const packageLocIds = Array.from(
+        new Set(productionPackagePlan.map((entry) => String(entry.locationId ?? "").trim()).filter(Boolean))
+      );
       const vm = buildRemissionLineVm({
         item,
         currentStatus,
@@ -620,11 +818,23 @@ export default async function RemissionDetailPage({
         inputQty: roundQuantity(Number(item.input_qty ?? 0)),
         presentationQty: roundQuantity(Number(item.input_qty ?? 0)),
         inputUomProfileId:
-          String(
-            (item as { input_uom_profile_id?: string | null }).input_uom_profile_id ?? ""
-          ).trim() || null,
-        selectedLocId: String(item.source_location_id ?? ""),
-        recommendedLocId: vm.bestLocCandidate?.locationId ?? "",
+          requiresPackageDispatch
+            ? null
+            : String(
+              (item as { input_uom_profile_id?: string | null }).input_uom_profile_id ?? ""
+            ).trim() || null,
+        requiresPackageDispatch,
+        productionPackagePlan,
+        selectedLocId: requiresPackageDispatch
+          ? packageLocIds.length === 1
+            ? packageLocIds[0]
+            : ""
+          : String(item.source_location_id ?? ""),
+        recommendedLocId: requiresPackageDispatch
+          ? packageLocIds.length === 1
+            ? packageLocIds[0]
+            : ""
+          : vm.bestLocCandidate?.locationId ?? "",
         locOptions: vm.locCandidates.map((loc) => {
           const locWithExtras = loc as typeof loc & {
             positions?: Array<{ positionId: string; label: string; qty: number }>;
@@ -648,7 +858,9 @@ export default async function RemissionDetailPage({
             positionOptions: positions,
           };
         }),
-        dispatchQty: plannedDispatchQtyFromItem(item),
+        dispatchQty: requiresPackageDispatch && packagePlanTotal > 0
+          ? packagePlanTotal
+          : plannedDispatchQtyFromItem(item),
         shortageReason: parseShortageReasonFromItemNotes(item.notes),
         isVirtualSplit: false,
       };
@@ -997,6 +1209,7 @@ export default async function RemissionDetailPage({
             returnOrigin={cameFromPrepareQueue ? "prepare" : ""}
             siteId={activeSiteId}
             eligibleProductGroups={receiveBatchEligibleProductGroups}
+            packageTraceByItemId={packageTraceByItemId}
           >
             {isReceivePartialFollowUp ? (
               <>
