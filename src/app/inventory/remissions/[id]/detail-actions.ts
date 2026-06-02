@@ -61,7 +61,10 @@ type ProductMeasurementPolicy = {
   product_id: string;
   measurement_mode: MeasurementMode;
   default_tolerance_percent: number | null;
+  aux_count_unit_code: string | null;
+  requires_actual_receipt_qty: boolean;
   requires_actual_dispatch_qty: boolean;
+  requires_count_alongside_weight: boolean;
 };
 
 function normalizeMeasurementMode(value: unknown): MeasurementMode {
@@ -81,7 +84,10 @@ function getDefaultMeasurementPolicy(productId: string): ProductMeasurementPolic
     product_id: productId,
     measurement_mode: "fixed_presentation",
     default_tolerance_percent: null,
+    aux_count_unit_code: null,
+    requires_actual_receipt_qty: false,
     requires_actual_dispatch_qty: false,
+    requires_count_alongside_weight: false,
   };
 }
 
@@ -111,6 +117,25 @@ function shouldRejectOverRequestedQuantity(params: {
   );
 }
 
+function requiresExplicitActualReceiptQty(policy: ProductMeasurementPolicy): boolean {
+  return (
+    policy.requires_actual_receipt_qty ||
+    normalizeMeasurementMode(policy.measurement_mode) !== "fixed_presentation"
+  );
+}
+
+function requiresAuxCountAlongsideWeight(policy: ProductMeasurementPolicy): boolean {
+  return (
+    policy.requires_count_alongside_weight ||
+    normalizeMeasurementMode(policy.measurement_mode) === "count_with_weight"
+  );
+}
+
+function normalizeAuxCountUnitCode(value: unknown): string {
+  const normalized = String(value ?? "").trim();
+  return normalized || "piezas";
+}
+
 async function loadProductMeasurementPolicies(
   supabase: Awaited<ReturnType<typeof createClient>>,
   productIds: string[]
@@ -123,7 +148,7 @@ async function loadProductMeasurementPolicies(
 
   const { data, error } = await supabase
     .from("product_inventory_profiles")
-    .select("product_id,measurement_mode,default_tolerance_percent,requires_actual_dispatch_qty")
+    .select("product_id,measurement_mode,default_tolerance_percent,aux_count_unit_code,requires_actual_receipt_qty,requires_actual_dispatch_qty,requires_count_alongside_weight")
     .in("product_id", safeProductIds);
 
   if (error) return policies;
@@ -132,7 +157,10 @@ async function loadProductMeasurementPolicies(
     product_id: string | null;
     measurement_mode: string | null;
     default_tolerance_percent: number | null;
+    aux_count_unit_code: string | null;
+    requires_actual_receipt_qty: boolean | null;
     requires_actual_dispatch_qty: boolean | null;
+    requires_count_alongside_weight: boolean | null;
   }>) {
     const productId = String(row.product_id ?? "").trim();
     if (!productId) continue;
@@ -144,10 +172,19 @@ async function loadProductMeasurementPolicies(
         typeof row.default_tolerance_percent === "number"
           ? row.default_tolerance_percent
           : null,
+      aux_count_unit_code: String(row.aux_count_unit_code ?? "").trim() || null,
+      requires_actual_receipt_qty:
+        typeof row.requires_actual_receipt_qty === "boolean"
+          ? row.requires_actual_receipt_qty
+          : measurementMode !== "fixed_presentation",
       requires_actual_dispatch_qty:
         typeof row.requires_actual_dispatch_qty === "boolean"
           ? row.requires_actual_dispatch_qty
           : measurementMode !== "fixed_presentation",
+      requires_count_alongside_weight:
+        typeof row.requires_count_alongside_weight === "boolean"
+          ? row.requires_count_alongside_weight
+          : measurementMode === "count_with_weight",
     });
   }
 
@@ -3588,7 +3625,7 @@ export async function applyReceiveShortcut(formData: FormData) {
 
   const { data: itemRow } = await supabase
     .from("restock_request_items")
-    .select("id,quantity,prepared_quantity,shipped_quantity,received_quantity,shortage_quantity")
+    .select("id,product_id,quantity,prepared_quantity,shipped_quantity,received_quantity,shortage_quantity")
     .eq("id", itemId)
     .eq("request_id", requestId)
     .single();
@@ -3603,14 +3640,44 @@ export async function applyReceiveShortcut(formData: FormData) {
     );
   }
 
+  const receiveShortcutMeasurementPolicyByProductId = await loadProductMeasurementPolicies(
+    supabase,
+    [String(itemRow.product_id ?? "").trim()]
+  );
+  const receiveShortcutPolicy = getMeasurementPolicy(
+    receiveShortcutMeasurementPolicyByProductId,
+    itemRow.product_id
+  );
+  const shortcutRequiresActualReceiptQty =
+    requiresExplicitActualReceiptQty(receiveShortcutPolicy);
+  const shortcutRequiresAuxCount =
+    requiresAuxCountAlongsideWeight(receiveShortcutPolicy);
+
   const shippedQty = roundQuantity(Number(itemRow.shipped_quantity ?? 0));
   let nextReceived = roundQuantity(Number(itemRow.received_quantity ?? 0));
   let nextShortage = roundQuantity(Number(itemRow.shortage_quantity ?? 0));
+  let nextReceivedAuxCount: number | null = null;
+  let nextAuxCountUnitCode: string | null = null;
   const manualReceiveRaw = asText(formData.get("receive_qty"));
   const manualShortageRaw = asText(formData.get("shortage_qty"));
+  const manualReceiveAuxRaw =
+    asText(formData.get("receive_aux_count")) ||
+    asText(formData.get("line_receive_aux_count"));
+  const manualReceiveAuxUnitRaw =
+    asText(formData.get("receive_aux_count_unit_code")) ||
+    asText(formData.get("line_receive_aux_count_unit_code"));
 
   switch (shortcut) {
     case "receive_all":
+      if (shortcutRequiresActualReceiptQty) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: "Este producto requiere cantidad real recibida. Usa recepción parcial e ingresa la cantidad medida.",
+          })
+        );
+      }
       if (shippedQty <= 0) {
         redirect(
           buildRemissionDetailHref({
@@ -3638,9 +3705,38 @@ export async function applyReceiveShortcut(formData: FormData) {
     case "clear_receive":
       nextReceived = 0;
       nextShortage = 0;
+      nextReceivedAuxCount = null;
+      nextAuxCountUnitCode = null;
       break;
     case "set_partial": {
       const receivedQtyManual = roundQuantity(parseNumber(manualReceiveRaw || "0"));
+      const receivedAuxCountManual = manualReceiveAuxRaw
+        ? roundQuantity(parseNumber(manualReceiveAuxRaw))
+        : null;
+      if (shortcutRequiresActualReceiptQty && receivedQtyManual <= 0) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: "Este producto requiere una cantidad real recibida mayor a cero.",
+          })
+        );
+      }
+      if (shortcutRequiresAuxCount) {
+        if (receivedAuxCountManual === null || receivedAuxCountManual <= 0) {
+          redirect(
+            buildRemissionDetailHref({
+              requestId,
+              from: returnOrigin,
+              error: "Este producto requiere conteo auxiliar recibido mayor a cero.",
+            })
+          );
+        }
+        nextReceivedAuxCount = receivedAuxCountManual;
+        nextAuxCountUnitCode = normalizeAuxCountUnitCode(
+          manualReceiveAuxUnitRaw || receiveShortcutPolicy.aux_count_unit_code
+        );
+      }
       nextReceived = receivedQtyManual;
       // En recepción parcial abierta NO cerramos automáticamente la diferencia como faltante.
       // El faltante definitivo se resolverá en una acción posterior separada.
@@ -3676,12 +3772,21 @@ export async function applyReceiveShortcut(formData: FormData) {
     );
   }
 
+  const receiveShortcutUpdates: Record<string, number | string | null> = {
+    received_quantity: nextReceived,
+    shortage_quantity: nextShortage,
+  };
+  if (shortcut === "clear_receive") {
+    receiveShortcutUpdates.received_aux_count = null;
+    receiveShortcutUpdates.aux_count_unit_code = null;
+  } else if (shortcutRequiresAuxCount) {
+    receiveShortcutUpdates.received_aux_count = nextReceivedAuxCount;
+    receiveShortcutUpdates.aux_count_unit_code = nextAuxCountUnitCode;
+  }
+
   const { error } = await supabase
     .from("restock_request_items")
-    .update({
-      received_quantity: nextReceived,
-      shortage_quantity: nextShortage,
-    })
+    .update(receiveShortcutUpdates)
     .eq("id", itemId);
 
   if (error) {
@@ -3764,13 +3869,31 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
   const rawReceiveQty = formData
     .getAll("batch_receive_item_receive_qty")
     .map((value) => asText(value).trim());
+  const rawAuxCount = formData
+    .getAll("batch_receive_item_aux_count")
+    .map((value) => asText(value).trim());
+  const rawAuxCountUnitCode = formData
+    .getAll("batch_receive_item_aux_count_unit_code")
+    .map((value) => asText(value).trim());
 
-  const pairs: Array<{ itemId: string; note: string }> = [];
+  const pairs: Array<{
+    itemId: string;
+    note: string;
+    receiveQtyRaw: string;
+    auxCountRaw: string;
+    auxCountUnitCodeRaw: string;
+  }> = [];
   const seen = new Set<string>();
   for (let i = 0; i < rawIds.length; i += 1) {
     const itemId = rawIds[i];
     if (!itemId || seen.has(itemId)) continue;
-    pairs.push({ itemId, note: rawNotes[i] ?? "" });
+    pairs.push({
+      itemId,
+      note: rawNotes[i] ?? "",
+      receiveQtyRaw: rawReceiveQty[i] ?? "",
+      auxCountRaw: rawAuxCount[i] ?? "",
+      auxCountUnitCodeRaw: rawAuxCountUnitCode[i] ?? "",
+    });
     seen.add(itemId);
   }
 
@@ -3812,17 +3935,44 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
     fallbackMessage: "No puedes recibir esta remisión en este momento.",
   });
 
+  const { data: selectedItemRowsData, error: selectedItemRowsError } = await supabase
+    .from("restock_request_items")
+    .select("id,product_id")
+    .eq("request_id", requestId)
+    .in("id", pairs.map((pair) => pair.itemId));
+
+  if (selectedItemRowsError) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: selectedItemRowsError.message,
+      })
+    );
+  }
+
+  const selectedProductIdByItemId = new Map(
+    ((selectedItemRowsData ?? []) as Array<{ id: string; product_id: string | null }>).map((row) => [
+      row.id,
+      String(row.product_id ?? "").trim(),
+    ])
+  );
+  const batchReceiveMeasurementPolicyByProductId = await loadProductMeasurementPolicies(
+    supabase,
+    Array.from(selectedProductIdByItemId.values())
+  );
+
   let appliedCount = 0;
   let notesCount = 0;
 
   for (let i = 0; i < pairs.length; i += 1) {
-    const { itemId, note } = pairs[i];
-    const receiveQtyRaw = rawReceiveQty[i] ?? "";
+    const { itemId, note, receiveQtyRaw, auxCountRaw, auxCountUnitCodeRaw } = pairs[i];
     const receiveQtyManual = receiveQtyRaw === "" ? null : roundQuantity(parseNumber(receiveQtyRaw));
+    const auxCountManual = auxCountRaw === "" ? null : roundQuantity(parseNumber(auxCountRaw));
     const { data: itemRow } = await supabase
       .from("restock_request_items")
       .select(
-        "id,quantity,prepared_quantity,shipped_quantity,received_quantity,shortage_quantity,notes"
+        "id,quantity,prepared_quantity,shipped_quantity,received_quantity,shortage_quantity,received_aux_count,aux_count_unit_code,notes"
       )
       .eq("id", itemId)
       .eq("request_id", requestId)
@@ -3839,10 +3989,18 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
     }
 
     const noteTrim = String(note ?? "").trim();
+    const productId = selectedProductIdByItemId.get(itemId) ?? "";
+    const measurementPolicy = getMeasurementPolicy(
+      batchReceiveMeasurementPolicyByProductId,
+      productId
+    );
+    const mustSendActualReceiptQty = requiresExplicitActualReceiptQty(measurementPolicy);
+    const mustSendAuxCount = requiresAuxCountAlongsideWeight(measurementPolicy);
 
     const shippedQty = roundQuantity(Number(itemRow.shipped_quantity ?? 0));
     const receivedNow = roundQuantity(Number(itemRow.received_quantity ?? 0));
     const shortageNow = roundQuantity(Number(itemRow.shortage_quantity ?? 0));
+    const receivedAuxNow = roundQuantity(Number(itemRow.received_aux_count ?? 0));
     const accounted = roundQuantity(receivedNow + shortageNow);
 
     if (shippedQty <= 0) {
@@ -3883,6 +4041,36 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
 
     let finalReceived = receivedNow;
     let finalShortage = shortageNow;
+    let finalReceivedAuxCount = receivedAuxNow > 0 ? receivedAuxNow : null;
+    let finalAuxCountUnitCode =
+      String(itemRow.aux_count_unit_code ?? "").trim() || null;
+
+    if (mustSendActualReceiptQty && (receiveQtyManual === null || receiveQtyManual <= 0)) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          error: "Una de las líneas seleccionadas requiere cantidad real recibida mayor a cero.",
+        })
+      );
+    }
+
+    if (mustSendAuxCount) {
+      if (auxCountManual === null || auxCountManual <= 0) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: "Una de las líneas seleccionadas requiere conteo auxiliar recibido mayor a cero.",
+          })
+        );
+      }
+
+      finalReceivedAuxCount = roundQuantity(receivedAuxNow + auxCountManual);
+      finalAuxCountUnitCode = normalizeAuxCountUnitCode(
+        auxCountUnitCodeRaw || measurementPolicy.aux_count_unit_code
+      );
+    }
 
     if (receiveQtyManual !== null) {
       if (receiveQtyManual < 0) {
@@ -3922,12 +4110,18 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
       );
     }
 
+    const batchReceiveUpdates: Record<string, number | string | null> = {
+      received_quantity: finalReceived,
+      shortage_quantity: finalShortage,
+    };
+    if (mustSendAuxCount) {
+      batchReceiveUpdates.received_aux_count = finalReceivedAuxCount;
+      batchReceiveUpdates.aux_count_unit_code = finalAuxCountUnitCode;
+    }
+
     const { error } = await supabase
       .from("restock_request_items")
-      .update({
-        received_quantity: finalReceived,
-        shortage_quantity: finalShortage,
-      })
+      .update(batchReceiveUpdates)
       .eq("id", itemId);
 
     if (error) {

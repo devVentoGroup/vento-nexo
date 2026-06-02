@@ -18,6 +18,7 @@ import { RemissionLineHiddenActions } from "./detail-line-hidden-actions";
 import {
   ReceiveBatchCompactProductLine,
   ReceiveBatchShell,
+  type ReceiveBatchMeasurementPolicy,
   type ReceiveBatchPackageTrace,
 } from "./receive-batch-shell";
 import { RemissionHeroSection, RemissionSummarySection } from "./detail-sections";
@@ -64,6 +65,8 @@ type ProductInventoryProfileRow = {
   product_id: string | null;
   measurement_mode: string | null;
   default_tolerance_percent?: number | null;
+  aux_count_unit_code?: string | null;
+  requires_actual_receipt_qty?: boolean | null;
   requires_actual_dispatch_qty?: boolean | null;
   requires_count_alongside_weight?: boolean | null;
 };
@@ -341,7 +344,7 @@ export default async function RemissionDetailPage({
     ? await supabase
       .from("product_inventory_profiles")
       .select(
-        "product_id,measurement_mode,default_tolerance_percent,requires_actual_dispatch_qty,requires_count_alongside_weight"
+        "product_id,measurement_mode,default_tolerance_percent,aux_count_unit_code,requires_actual_receipt_qty,requires_actual_dispatch_qty,requires_count_alongside_weight"
       )
       .in("product_id", itemProductIds)
     : { data: [] as ProductInventoryProfileRow[] };
@@ -366,6 +369,11 @@ export default async function RemissionDetailPage({
       ...item,
       measurement_mode: measurementMode,
       default_tolerance_percent: profile?.default_tolerance_percent ?? null,
+      aux_count_unit_code: String(profile?.aux_count_unit_code ?? "").trim() || null,
+      requires_actual_receipt_qty:
+        typeof profile?.requires_actual_receipt_qty === "boolean"
+          ? profile.requires_actual_receipt_qty
+          : measurementMode !== "fixed_presentation",
       requires_actual_dispatch_qty:
         typeof profile?.requires_actual_dispatch_qty === "boolean"
           ? profile.requires_actual_dispatch_qty
@@ -632,6 +640,43 @@ export default async function RemissionDetailPage({
       }));
     }
   }
+
+  const measurementByItemId: Record<string, ReceiveBatchMeasurementPolicy> = {};
+  if (isReceiveDestinationFlow) {
+    for (const item of itemRows) {
+      if (!receiveBatchEligibleIdSet.has(item.id)) continue;
+
+      const measurementMode = getItemMeasurementMode(item);
+      const extendedItem = item as RestockItemRow & {
+        default_tolerance_percent?: number | null;
+        aux_count_unit_code?: string | null;
+        requires_actual_receipt_qty?: boolean | null;
+        requires_count_alongside_weight?: boolean | null;
+      };
+
+      measurementByItemId[item.id] = {
+        itemId: item.id,
+        measurementMode,
+        requiresActualReceiptQty:
+          typeof extendedItem.requires_actual_receipt_qty === "boolean"
+            ? extendedItem.requires_actual_receipt_qty
+            : measurementMode !== "fixed_presentation",
+        requiresCountAlongsideWeight:
+          typeof extendedItem.requires_count_alongside_weight === "boolean"
+            ? extendedItem.requires_count_alongside_weight
+            : measurementMode === "count_with_weight",
+        unitCode: formatUnitLabel(
+          item.stock_unit_code ?? item.unit ?? item.product?.stock_unit_code ?? ""
+        ),
+        auxCountUnitCode: String(extendedItem.aux_count_unit_code ?? "").trim() || null,
+        defaultTolerancePercent:
+          typeof extendedItem.default_tolerance_percent === "number"
+            ? extendedItem.default_tolerance_percent
+            : null,
+      };
+    }
+  }
+
   const isReadyToDispatch = currentStatus === "preparing" && canTransitByCurrentInventoryMode;
   const editPrepareRaw = sp.edit_prepare;
   const editPrepareVal = Array.isArray(editPrepareRaw) ? editPrepareRaw[0] : editPrepareRaw;
@@ -1210,6 +1255,7 @@ export default async function RemissionDetailPage({
             siteId={activeSiteId}
             eligibleProductGroups={receiveBatchEligibleProductGroups}
             packageTraceByItemId={packageTraceByItemId}
+            measurementByItemId={measurementByItemId}
           >
             {isReceivePartialFollowUp ? (
               <>

@@ -22,6 +22,22 @@ export type ReceiveBatchPackageTrace = {
   locationLabel?: string | null;
 };
 
+export type ReceiveBatchMeasurementMode =
+  | "fixed_presentation"
+  | "variable_weight"
+  | "count_with_weight"
+  | "bulk_volume";
+
+export type ReceiveBatchMeasurementPolicy = {
+  itemId?: string;
+  measurementMode: ReceiveBatchMeasurementMode;
+  requiresActualReceiptQty?: boolean | null;
+  requiresCountAlongsideWeight?: boolean | null;
+  unitCode?: string | null;
+  auxCountUnitCode?: string | null;
+  defaultTolerancePercent?: number | null;
+};
+
 type ReceiveBatchContextValue = {
   selected: ReadonlySet<string>;
   toggle: (itemId: string, on: boolean) => void;
@@ -33,7 +49,10 @@ type ReceiveBatchContextValue = {
   setNote: (itemId: string, value: string) => void;
   receiveQty: Record<string, string>;
   setReceiveQty: (itemId: string, value: string) => void;
+  auxCount: Record<string, string>;
+  setAuxCount: (itemId: string, value: string) => void;
   packageTraceByItemId: Record<string, ReceiveBatchPackageTrace[]>;
+  measurementByItemId: Record<string, ReceiveBatchMeasurementPolicy>;
 };
 
 const ReceiveBatchContext = createContext<ReceiveBatchContextValue | null>(null);
@@ -52,6 +71,7 @@ type ReceiveBatchShellProps = {
   siteId: string;
   eligibleProductGroups: Array<{ productId: string; itemIds: string[] }>;
   packageTraceByItemId?: Record<string, ReceiveBatchPackageTrace[]>;
+  measurementByItemId?: Record<string, ReceiveBatchMeasurementPolicy>;
   children: ReactNode;
 };
 
@@ -71,17 +91,99 @@ function packageTraceLabel(trace: ReceiveBatchPackageTrace) {
   return packageId ? `Empaque ${packageId.slice(0, 8)}` : "Empaque FOGO";
 }
 
+function measurementModeLabel(mode: ReceiveBatchMeasurementMode): string {
+  if (mode === "variable_weight") return "Peso variable";
+  if (mode === "count_with_weight") return "Conteo + peso real";
+  if (mode === "bulk_volume") return "Granel / cantidad real";
+  return "Presentación fija";
+}
+
+function itemRequiresActualReceiptQty(
+  policy: ReceiveBatchMeasurementPolicy | null | undefined
+): boolean {
+  if (!policy) return false;
+  if (typeof policy.requiresActualReceiptQty === "boolean") {
+    return policy.requiresActualReceiptQty;
+  }
+  return policy.measurementMode !== "fixed_presentation";
+}
+
+function hasPositiveQuantityInput(value: string | null | undefined): boolean {
+  const parsed = Number(String(value ?? "").trim().replace(",", "."));
+  return Number.isFinite(parsed) && parsed > 0;
+}
+
+function normalizeAuxCountUnitCode(value: string | null | undefined): string {
+  const normalized = String(value ?? "").trim();
+  return normalized || "piezas";
+}
+
+function itemRequiresAuxCount(policy: ReceiveBatchMeasurementPolicy | null | undefined): boolean {
+  if (!policy) return false;
+  return (
+    Boolean(policy.requiresCountAlongsideWeight) ||
+    policy.measurementMode === "count_with_weight"
+  );
+}
+
+function buildProductMeasurementPolicy(
+  itemIds: string[],
+  measurementByItemId: Record<string, ReceiveBatchMeasurementPolicy>,
+  fallbackUnitCode: string
+): ReceiveBatchMeasurementPolicy {
+  const policies = itemIds
+    .map((itemId) => measurementByItemId[itemId])
+    .filter((policy): policy is ReceiveBatchMeasurementPolicy => Boolean(policy));
+
+  const preferred =
+    policies.find((policy) => itemRequiresActualReceiptQty(policy)) ??
+    policies[0] ??
+    null;
+
+  return {
+    itemId: preferred?.itemId,
+    measurementMode: preferred?.measurementMode ?? "fixed_presentation",
+    requiresActualReceiptQty: policies.some(itemRequiresActualReceiptQty),
+    requiresCountAlongsideWeight: policies.some(itemRequiresAuxCount),
+    unitCode: preferred?.unitCode ?? fallbackUnitCode,
+    auxCountUnitCode: normalizeAuxCountUnitCode(preferred?.auxCountUnitCode),
+    defaultTolerancePercent: preferred?.defaultTolerancePercent ?? null,
+  };
+}
+
+function receiveQuantityFieldLabel(policy: ReceiveBatchMeasurementPolicy): string {
+  if (policy.measurementMode === "count_with_weight") return "Peso real recibido";
+  if (policy.measurementMode === "variable_weight") return "Cantidad real recibida";
+  if (policy.measurementMode === "bulk_volume") return "Cantidad real recibida";
+  return "Recibir ahora";
+}
+
+function receiveQuantityHelpText(policy: ReceiveBatchMeasurementPolicy, unitLabel: string): string {
+  if (policy.measurementMode === "count_with_weight") {
+    return `Ingresa el peso real recibido en ${unitLabel}. El conteo auxiliar se registra aparte y no cambia el stock base.`;
+  }
+  if (policy.measurementMode === "variable_weight") {
+    return `Ingresa la cantidad real medida en ${unitLabel}. No se asume que el empaque enviado equivalga exactamente a lo recibido.`;
+  }
+  if (policy.measurementMode === "bulk_volume") {
+    return `Ingresa la cantidad real recibida en ${unitLabel}. El recipiente o empaque es solo referencia logística.`;
+  }
+  return "Si ingresas una cantidad menor al pendiente, el sistema registra solo lo recibido ahora y deja la diferencia pendiente para seguimiento posterior.";
+}
+
 export function ReceiveBatchShell({
   requestId,
   returnOrigin,
   siteId,
   eligibleProductGroups,
   packageTraceByItemId = {},
+  measurementByItemId = {},
   children,
 }: ReceiveBatchShellProps) {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [receiveQty, setReceiveQtyState] = useState<Record<string, string>>({});
+  const [auxCount, setAuxCountState] = useState<Record<string, string>>({});
 
   const eligibleItemIds = useMemo(
     () => eligibleProductGroups.flatMap((g) => g.itemIds),
@@ -119,6 +221,10 @@ export function ReceiveBatchShell({
     setReceiveQtyState((prev) => ({ ...prev, [itemId]: value }));
   }, []);
 
+  const setAuxCount = useCallback((itemId: string, value: string) => {
+    setAuxCountState((prev) => ({ ...prev, [itemId]: value }));
+  }, []);
+
   const ctxValue = useMemo<ReceiveBatchContextValue>(
     () => ({
       selected,
@@ -131,7 +237,10 @@ export function ReceiveBatchShell({
       setNote,
       receiveQty,
       setReceiveQty,
+      auxCount,
+      setAuxCount,
       packageTraceByItemId,
+      measurementByItemId,
     }),
     [
       selected,
@@ -144,7 +253,10 @@ export function ReceiveBatchShell({
       setNote,
       receiveQty,
       setReceiveQty,
+      auxCount,
+      setAuxCount,
       packageTraceByItemId,
+      measurementByItemId,
     ]
   );
 
@@ -170,7 +282,9 @@ function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockP
     clearSelection,
     notes,
     receiveQty,
+    auxCount,
     packageTraceByItemId,
+    measurementByItemId,
   } = useReceiveBatchContext();
 
   const eligibleProductsCount = productGroups.length;
@@ -182,6 +296,14 @@ function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockP
     (acc, itemId) => acc + (packageTraceByItemId[itemId]?.length ?? 0),
     0
   );
+  const selectedMissingActualQtyCount = [...selected].filter((itemId) => {
+    const policy = measurementByItemId[itemId];
+    return itemRequiresActualReceiptQty(policy) && !hasPositiveQuantityInput(receiveQty[itemId]);
+  }).length;
+  const selectedMissingAuxCount = [...selected].filter((itemId) => {
+    const policy = measurementByItemId[itemId];
+    return itemRequiresAuxCount(policy) && !hasPositiveQuantityInput(auxCount[itemId]);
+  }).length;
   const noEligible = eligibleProductsCount === 0;
 
   return (
@@ -204,6 +326,16 @@ function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockP
               </span>
             ) : null}
           </p>
+          {selectedMissingActualQtyCount > 0 ? (
+            <p className="text-[11px] font-semibold text-amber-700">
+              Falta cantidad real recibida en {selectedMissingActualQtyCount} línea{selectedMissingActualQtyCount === 1 ? "" : "s"}.
+            </p>
+          ) : null}
+          {selectedMissingAuxCount > 0 ? (
+            <p className="text-[11px] font-semibold text-amber-700">
+              Falta conteo auxiliar en {selectedMissingAuxCount} línea{selectedMissingAuxCount === 1 ? "" : "s"}.
+            </p>
+          ) : null}
           {!noEligible ? (
             <div className="flex flex-wrap gap-2 pt-1">
               <button
@@ -244,11 +376,26 @@ function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockP
                 name="batch_receive_item_receive_qty"
                 value={receiveQty[id] ?? ""}
               />
+              <input
+                type="hidden"
+                name="batch_receive_item_aux_count"
+                value={auxCount[id] ?? ""}
+              />
+              <input
+                type="hidden"
+                name="batch_receive_item_aux_count_unit_code"
+                value={normalizeAuxCountUnitCode(measurementByItemId[id]?.auxCountUnitCode)}
+              />
             </span>
           ))}
           <button
             type="submit"
-            disabled={selectedProductsCount === 0 || noEligible}
+            disabled={
+              selectedProductsCount === 0 ||
+              noEligible ||
+              selectedMissingActualQtyCount > 0 ||
+              selectedMissingAuxCount > 0
+            }
             className="h-10 w-full min-w-[180px] rounded-lg bg-gradient-to-r from-teal-600 to-emerald-600 px-4 text-sm font-bold text-white shadow-lg shadow-teal-900/25 transition hover:from-teal-500 hover:to-emerald-500 disabled:cursor-not-allowed disabled:from-stone-300 disabled:to-stone-300 disabled:text-stone-500 disabled:shadow-none lg:w-auto"
           >
             Confirmar llegada
@@ -414,8 +561,18 @@ export function ReceiveBatchCompactProductLine({
   shippedQtyTotal,
   pendingQtyTotal,
 }: ReceiveBatchCompactProductLineProps) {
-  const { selected, toggle, notes, setNote, receiveQty, setReceiveQty, packageTraceByItemId } =
-    useReceiveBatchContext();
+  const {
+    selected,
+    toggle,
+    notes,
+    setNote,
+    receiveQty,
+    setReceiveQty,
+    auxCount,
+    setAuxCount,
+    packageTraceByItemId,
+    measurementByItemId,
+  } = useReceiveBatchContext();
 
   const allSelected = itemIds.length > 0 && itemIds.every((id) => selected.has(id));
   const anySelected = itemIds.some((id) => selected.has(id));
@@ -427,12 +584,25 @@ export function ReceiveBatchCompactProductLine({
       itemId,
     }))
   );
+  const measurementPolicy = buildProductMeasurementPolicy(
+    itemIds,
+    measurementByItemId,
+    unitLabel
+  );
+  const requiresActualReceiptQty = itemRequiresActualReceiptQty(measurementPolicy);
+  const requiresCountAlongsideWeight = itemRequiresAuxCount(measurementPolicy);
+  const auxCountUnitCode = normalizeAuxCountUnitCode(measurementPolicy.auxCountUnitCode);
+  const quantityFieldLabel = receiveQuantityFieldLabel(measurementPolicy);
+  const quantityHelpText = receiveQuantityHelpText(measurementPolicy, unitLabel);
 
   const onToggleProduct = (next: boolean) => {
     for (const id of itemIds) toggle(id, next);
     if (!next) {
       setPartialTotalInput("");
-      for (const id of itemIds) setReceiveQty(id, "");
+      for (const id of itemIds) {
+        setReceiveQty(id, "");
+        setAuxCount(id, "");
+      }
     }
   };
 
@@ -472,6 +642,46 @@ export function ReceiveBatchCompactProductLine({
     }
   };
 
+  const allocateAuxCountToLines = (rawValue: string) => {
+    const trimmed = rawValue.trim();
+    if (!trimmed) {
+      for (const id of itemIds) setAuxCount(id, "");
+      return;
+    }
+
+    const normalized = trimmed.replace(",", ".");
+    const manualTotal = Number(normalized);
+
+    if (!Number.isFinite(manualTotal) || manualTotal < 0) {
+      for (const id of itemIds) setAuxCount(id, "");
+      return;
+    }
+
+    if (itemIds.length <= 1) {
+      if (itemIds[0]) setAuxCount(itemIds[0], String(manualTotal));
+      return;
+    }
+
+    const totalPending = itemPendingQtys.reduce((sum, qty) => sum + Math.max(0, Number(qty ?? 0)), 0);
+    if (totalPending <= 0) {
+      for (const id of itemIds) setAuxCount(id, "0");
+      return;
+    }
+
+    let assigned = 0;
+    for (let i = 0; i < itemIds.length; i += 1) {
+      const id = itemIds[i];
+      const isLast = i === itemIds.length - 1;
+      const weight = Math.max(0, Number(itemPendingQtys[i] ?? 0)) / totalPending;
+      const alloc = isLast
+        ? Math.max(0, manualTotal - assigned)
+        : Number((manualTotal * weight).toFixed(3));
+
+      setAuxCount(id, String(alloc));
+      assigned += alloc;
+    }
+  };
+
   return (
     <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3 shadow-sm">
       <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3">
@@ -492,6 +702,16 @@ export function ReceiveBatchCompactProductLine({
           <p className="truncate text-base font-semibold leading-snug text-[var(--ui-text)] sm:text-lg">
             {productName}
           </p>
+          <div className="mt-1 flex flex-wrap gap-1.5">
+            <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-600">
+              {measurementModeLabel(measurementPolicy.measurementMode)}
+            </span>
+            {requiresActualReceiptQty ? (
+              <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-amber-800">
+                Requiere cantidad real
+              </span>
+            ) : null}
+          </div>
         </div>
 
         <div className="text-right">
@@ -553,13 +773,39 @@ export function ReceiveBatchCompactProductLine({
         </div>
       </details>
 
-      <details className="mt-2 group">
+      {requiresCountAlongsideWeight ? (
+        <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
+          <label className="block font-semibold">
+            Conteo auxiliar recibido
+          </label>
+          <div className="mt-2 flex items-center gap-2">
+            <input
+              type="number"
+              step="any"
+              min={0}
+              disabled={!allSelected}
+              value={itemIds.length > 0 ? auxCount[itemIds[0]] ?? "" : ""}
+              onChange={(event) => allocateAuxCountToLines(event.target.value)}
+              className="ui-input h-10 flex-1 rounded-xl bg-white disabled:cursor-not-allowed disabled:bg-stone-50"
+              placeholder={`Ej. 12 ${auxCountUnitCode}`}
+            />
+            <span className="shrink-0 rounded-full bg-white px-2 py-1 text-[11px] font-bold text-amber-900 ring-1 ring-amber-200">
+              {auxCountUnitCode}
+            </span>
+          </div>
+          <p className="mt-1">
+            Registra las piezas físicas recibidas. El stock contable se guarda por peso real en {unitLabel}.
+          </p>
+        </div>
+      ) : null}
+
+      <details className="mt-2 group" open={requiresActualReceiptQty}>
         <summary className="cursor-pointer list-none select-none text-sm text-[var(--ui-muted)]">
-          Registrar llegada parcial
+          {requiresActualReceiptQty ? "Registrar cantidad real recibida" : "Registrar llegada parcial"}
         </summary>
         <div className="mt-2">
           <label className="block text-xs font-semibold text-[var(--ui-muted)]">
-            Recibir ahora
+            {quantityFieldLabel}
           </label>
           <input
             type="number"
@@ -577,8 +823,7 @@ export function ReceiveBatchCompactProductLine({
             placeholder={`${pendingQtyTotal} ${unitLabel}`}
           />
           <p className="mt-1 text-[11px] leading-snug text-stone-500">
-            Si ingresas una cantidad menor al pendiente, el sistema registra solo lo recibido ahora
-            y deja la diferencia pendiente para seguimiento posterior.
+            {quantityHelpText}
           </p>
         </div>
       </details>

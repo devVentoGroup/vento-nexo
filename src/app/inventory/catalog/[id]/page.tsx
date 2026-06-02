@@ -92,6 +92,11 @@ function clampTolerancePercent(value: number | null, fallback: number): number {
   return value;
 }
 
+function sanitizeAuxCountUnitCode(value: string | null | undefined): string {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized || "piezas";
+}
+
 function measurementPolicyForMode(mode: MeasurementMode) {
   return {
     requires_actual_receipt_qty: mode !== "fixed_presentation",
@@ -163,6 +168,7 @@ type InventoryProfileRow = {
   expiry_tracking: boolean;
   measurement_mode?: MeasurementMode | string | null;
   default_tolerance_percent?: number | null;
+  aux_count_unit_code?: string | null;
   requires_actual_receipt_qty?: boolean | null;
   requires_actual_dispatch_qty?: boolean | null;
   requires_actual_production_qty?: boolean | null;
@@ -659,6 +665,10 @@ async function updateProduct(formData: FormData) {
     asNullableNumber(formData.get("default_tolerance_percent")),
     measurementPolicy.default_tolerance_percent
   );
+  const auxCountUnitCode =
+    measurementMode === "count_with_weight"
+      ? sanitizeAuxCountUnitCode(asText(formData.get("aux_count_unit_code")))
+      : null;
 
   const categoryId = asText(formData.get("category_id"));
   const categoryKind = resolveCategoryKindForProduct({
@@ -770,6 +780,7 @@ async function updateProduct(formData: FormData) {
     expiry_tracking: Boolean(formData.get("expiry_tracking")),
     measurement_mode: measurementMode,
     default_tolerance_percent: defaultTolerancePercent,
+    aux_count_unit_code: auxCountUnitCode,
     requires_actual_receipt_qty: measurementPolicy.requires_actual_receipt_qty,
     requires_actual_dispatch_qty: measurementPolicy.requires_actual_dispatch_qty,
     requires_actual_production_qty: measurementPolicy.requires_actual_production_qty,
@@ -1449,7 +1460,7 @@ export default async function ProductCatalogDetailPage({
 
   const { data: profile } = await supabase
     .from("product_inventory_profiles")
-    .select("product_id,track_inventory,inventory_kind,default_unit,unit_family,costing_mode,lot_tracking,expiry_tracking,measurement_mode,default_tolerance_percent,requires_actual_receipt_qty,requires_actual_dispatch_qty,requires_actual_production_qty,requires_count_alongside_weight")
+    .select("product_id,track_inventory,inventory_kind,default_unit,unit_family,costing_mode,lot_tracking,expiry_tracking,measurement_mode,default_tolerance_percent,aux_count_unit_code,requires_actual_receipt_qty,requires_actual_dispatch_qty,requires_actual_production_qty,requires_count_alongside_weight")
     .eq("product_id", id)
     .maybeSingle();
 
@@ -1747,6 +1758,8 @@ export default async function ProductCatalogDetailPage({
       (normalizedCategoryPath.includes("equipo") || normalizedCategoryPath.includes("equipos")));
 
   const stockUnitCode = normalizeUnitCode(productRow.stock_unit_code || productRow.unit || "un");
+  const currentMeasurementMode = normalizeMeasurementMode(profileRow?.measurement_mode);
+  const auxCountUnitCode = sanitizeAuxCountUnitCode(profileRow?.aux_count_unit_code);
   const presentationProfiles = activeUomProfiles
     .filter((profile) => profile.is_active)
     .sort((a, b) => {
@@ -2004,7 +2017,7 @@ export default async function ProductCatalogDetailPage({
                 defaultUnitCode={resolvedDefaultUnit}
                 defaultUnitHint="Si no coincide con la familia de la unidad base, se guardara automáticamente la unidad base."
                 measurementModeField={{
-                  defaultValue: normalizeMeasurementMode(profileRow?.measurement_mode),
+                  defaultValue: currentMeasurementMode,
                   defaultTolerancePercent: profileRow?.default_tolerance_percent ?? null,
                   disabled: isAssetItem,
                 }}
@@ -2018,6 +2031,22 @@ export default async function ProductCatalogDetailPage({
                         Se define por el flujo de creacion y se mantiene bloqueado en edición.
                       </span>
                     </label>
+                    {currentMeasurementMode === "count_with_weight" ? (
+                      <label className="flex flex-col gap-1">
+                        <span className="ui-label">Unidad auxiliar de conteo</span>
+                        <input
+                          name="aux_count_unit_code"
+                          defaultValue={auxCountUnitCode}
+                          className="ui-input"
+                          placeholder="Ej. piezas"
+                        />
+                        <span className="text-xs text-[var(--ui-muted)]">
+                          Se usa para registrar conteo físico junto al peso real. Ejemplo: Aguacate = 2850 g + 12 piezas.
+                        </span>
+                      </label>
+                    ) : (
+                      <input type="hidden" name="aux_count_unit_code" value="" />
+                    )}
                     {String(productRow.product_type ?? "").trim().toLowerCase() === "venta" ? (
                       <label className="flex flex-col gap-1">
                         <span className="ui-label">Precio base referencial</span>

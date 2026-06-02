@@ -357,6 +357,11 @@ export function ProductSiteSettingsEditor({
     normalizedProductType === "preparacion" ||
     (normalizedProductType === "venta" && normalizedInventoryKind !== "resale");
 
+  const canConfigureSatelliteLocalProductionForProduct =
+    hasRecipe &&
+    normalizedProductType === "venta" &&
+    normalizedInventoryKind !== "resale";
+
   const selectedCenterSite = siteMap.get(centerSiteId) ?? null;
   const hasMultipleProductionSites = productionSites.length > 1;
 
@@ -441,16 +446,25 @@ export function ProductSiteSettingsEditor({
 
       const normalizedAreaKinds = normalizeAreaKinds(state.areaKinds);
       const normalizedDefaultAreaKind = normalizedAreaKinds[0] ?? "";
+      const siteCanProduce = capabilitiesBySite.get(site.id)?.can_produce ?? true;
+      const canUseLocalProduction =
+        canConfigureSatelliteLocalProductionForProduct && siteCanProduce;
+      const validProductionLocationForSite = getProductionLocationsForSite(site.id).some(
+        (location) => location.id === state.productionLocationId
+      );
+      const localProductionEnabled =
+        canUseLocalProduction &&
+        Boolean(state.localProductionEnabled) &&
+        validProductionLocationForSite;
+
       next.push({
         id: current?.id,
         site_id: site.id,
         is_active: state.enabled ? state.isActive : false,
         default_area_kind: normalizedDefaultAreaKind || undefined,
         area_kinds: normalizedAreaKinds.length ? normalizedAreaKinds : undefined,
-        production_location_id: state.localProductionEnabled && getProductionLocationsForSite(site.id).some((location) => location.id === state.productionLocationId)
-          ? state.productionLocationId
-          : undefined,
-        local_production_enabled: Boolean(state.localProductionEnabled),
+        production_location_id: localProductionEnabled ? state.productionLocationId : undefined,
+        local_production_enabled: localProductionEnabled,
         min_stock_qty: state.minStockQty,
         min_stock_input_mode: "base",
         audience: current?.audience ?? "BOTH",
@@ -705,7 +719,7 @@ export function ProductSiteSettingsEditor({
                 Configuración por sede
               </div>
               <p className="mt-1 text-xs text-[var(--ui-muted)]">
-                Disponibilidad, remisión, producción local y mínimos por ubicación.
+                Disponibilidad, remisión, mínimos y producción local solo cuando aplique.
               </p>
             </div>
 
@@ -720,6 +734,8 @@ export function ProductSiteSettingsEditor({
             const capabilities = capabilitiesBySite.get(site.id);
             const canRequestRemissions = capabilities?.can_request_remissions ?? true;
             const canProduce = capabilities?.can_produce ?? true;
+            const canUseLocalProduction =
+              canConfigureSatelliteLocalProductionForProduct && canProduce;
             const state = satelliteState.get(site.id) ?? {
               enabled: false,
               isActive: true,
@@ -772,7 +788,7 @@ export function ProductSiteSettingsEditor({
                     <div className="mt-1 flex flex-wrap gap-1.5 text-[11px] text-[var(--ui-muted)]">
                       {canRequestRemissions ? <span>Remisiones</span> : <span>Sin remisiones</span>}
                       <span>·</span>
-                      {canProduce ? <span>Producción local</span> : <span>Sin producción local</span>}
+                      {canUseLocalProduction ? <span>Producción local</span> : <span>Sin producción local</span>}
                     </div>
                   </div>
 
@@ -919,7 +935,7 @@ export function ProductSiteSettingsEditor({
                         </p>
                       </div>
 
-                      {canProduce ? (
+                      {canUseLocalProduction ? (
                         <>
                           <label className="flex items-center gap-2 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm">
                             <input
@@ -967,7 +983,9 @@ export function ProductSiteSettingsEditor({
                         </>
                       ) : (
                         <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-[var(--ui-muted)]">
-                          Producción local no aplica para esta sede.
+                          {canConfigureSatelliteLocalProductionForProduct
+                            ? "Esta sede no tiene producción local habilitada."
+                            : "Producción local no aplica para este producto. Solo aplica a productos de venta terminados con receta."}
                         </div>
                       )}
                     </div>
