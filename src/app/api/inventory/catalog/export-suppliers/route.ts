@@ -470,9 +470,13 @@ type ProductSupplierRow = {
   currency?: string | null;
 };
 
+type SupplierPaymentType = "cash" | "credit";
+
 type SupplierRow = {
   id: string;
   name: string | null;
+  payment_type?: SupplierPaymentType | string | null;
+  credit_days?: number | null;
 };
 
 type ProductUomProfileRow = {
@@ -749,6 +753,75 @@ async function loadOptionalRows<T>({
   }
 
   return (data ?? []) as T[];
+}
+
+function resolveSupplierPaymentType(supplier?: SupplierRow | null): SupplierPaymentType | null {
+  const raw = String(supplier?.payment_type ?? "").trim().toLowerCase();
+
+  if (raw === "credit") return "credit";
+  if (raw === "cash") return "cash";
+
+  return null;
+}
+
+function supplierPaymentTermsLabel(supplier?: SupplierRow | null): string {
+  const paymentType = resolveSupplierPaymentType(supplier);
+
+  if (!paymentType) return "Sin dato";
+
+  if (paymentType === "credit") {
+    const creditDays = Number(supplier?.credit_days ?? NaN);
+    return Number.isFinite(creditDays) && creditDays > 0 ? `Crédito · ${creditDays} días` : "Crédito";
+  }
+
+  return "Contado";
+}
+
+async function loadSuppliers({
+  supabase,
+  warnings,
+}: {
+  supabase: SupabaseClient;
+  warnings: string[];
+}): Promise<SupplierRow[]> {
+  const withPaymentTerms = await supabase
+    .from("suppliers")
+    .select("id,name,payment_type,credit_days")
+    .limit(5000);
+
+  if (!withPaymentTerms.error) {
+    return (withPaymentTerms.data ?? []) as SupplierRow[];
+  }
+
+  const missingPaymentType = isMissingColumnError(withPaymentTerms.error, "payment_type");
+  const missingCreditDays = isMissingColumnError(withPaymentTerms.error, "credit_days");
+
+  if (!missingPaymentType && !missingCreditDays) {
+    warnings.push(`suppliers: ${withPaymentTerms.error.message}`);
+    return [];
+  }
+
+  warnings.push(
+    "suppliers: no se pudieron leer payment_type/credit_days; la condicion de pago se exportara como Sin dato."
+  );
+
+  const fallbackSelect = [
+    "id",
+    "name",
+    missingPaymentType ? null : "payment_type",
+    missingCreditDays ? null : "credit_days",
+  ]
+    .filter(Boolean)
+    .join(",");
+
+  const fallback = await supabase.from("suppliers").select(fallbackSelect).limit(5000);
+
+  if (fallback.error) {
+    warnings.push(`suppliers: ${fallback.error.message}`);
+    return [];
+  }
+
+  return (fallback.data ?? []) as SupplierRow[];
 }
 
 async function loadProductSuppliersForChunk({
@@ -1102,14 +1175,8 @@ export async function GET() {
   const positionById = new Map(locationPositions.map((row) => [row.id, row]));
   const positionLabels = buildPositionLabels(locationPositions);
 
-  const suppliers = await loadOptionalRows<SupplierRow>({
-    supabase,
-    table: "suppliers",
-    select: "id,name",
-    warnings,
-    limit: 5000,
-  });
-
+  const suppliers = await loadSuppliers({ supabase, warnings });
+  const supplierById = new Map(suppliers.map((row) => [row.id, row]));
   const supplierNameById = new Map(suppliers.map((row) => [row.id, row.name ?? row.id]));
 
   const supplierRowsByProduct = new Map<string, ProductSupplierRow[]>();
@@ -1143,9 +1210,10 @@ export async function GET() {
   for (const product of products) {
     const supplierRows = supplierRowsByProduct.get(product.id) ?? [];
     const primarySupplier = [...supplierRows].sort((a, b) => Number(Boolean(b.is_primary)) - Number(Boolean(a.is_primary)))[0];
-    const supplierName =
-      supplierNameById.get(String(primarySupplier?.supplier_id ?? "")) ??
-      String(primarySupplier?.supplier_id ?? "");
+    const primarySupplierId = String(primarySupplier?.supplier_id ?? "");
+    const supplier = primarySupplierId ? supplierById.get(primarySupplierId) : null;
+    const supplierName = supplier?.name ?? supplierNameById.get(primarySupplierId) ?? primarySupplierId;
+    const supplierPaymentTerms = primarySupplier ? supplierPaymentTermsLabel(supplier) : "";
     const remissionProfile = getDefaultRemissionProfile(uomProfiles, product.id);
 
     catalogRows.push([
@@ -1157,6 +1225,7 @@ export async function GET() {
       product.stock_unit_code ?? product.unit ?? "",
       asMoneyCell(product.cost),
       supplierName,
+      supplierPaymentTerms,
       asMoneyCell(primarySupplier?.purchase_price),
       asMoneyCell(primarySupplier ? resolvePurchasePriceNet(primarySupplier) : null),
       productIdsWithManualPresentation.has(product.id) ? { value: "Si", tone: "good" } : { value: "No", tone: "warn" },
@@ -1184,6 +1253,7 @@ export async function GET() {
         "",
         "",
         "",
+        "",
         product.stock_unit_code ?? product.unit ?? "",
         product.is_active === false ? "Inactivo" : "Activo",
       ]);
@@ -1200,15 +1270,18 @@ export async function GET() {
     });
 
     for (const supplierRow of orderedSuppliers) {
+      const supplierId = String(supplierRow.supplier_id ?? "");
+      const supplier = supplierId ? supplierById.get(supplierId) : null;
       const supplierName =
-        supplierNameById.get(String(supplierRow.supplier_id ?? "")) ??
-        String(supplierRow.supplier_id ?? "Sin proveedor");
+        supplier?.name ?? supplierNameById.get(supplierId) ?? String(supplierRow.supplier_id ?? "Sin proveedor");
+      const supplierPaymentTerms = supplierPaymentTermsLabel(supplier);
 
       suppliersRows.push([
         product.name ?? "",
         resolveItemType(product),
         product.sku ?? "",
         supplierName,
+        supplierPaymentTerms,
         supplierRow.is_primary ? "Si" : "No",
         asMoneyCell(supplierRow.purchase_price),
         asMoneyCell(resolvePurchasePriceNet(supplierRow)),
@@ -1699,8 +1772,8 @@ export async function GET() {
       { label: "Alertas", value: alertRows.length, detail: "Revisar hoja Alertas.", tone: alertRows.length > 0 ? "warn" : "good" },
     ],
     indexRows: [
-      ["Catálogo maestro", "Productos, clasificación, unidades, costos, proveedor principal y presentación de remisión."],
-      ["Proveedores compra", "Detalle proveedor-producto, precios, impuestos y presentaciones de compra."],
+      ["Catálogo maestro", "Productos, clasificación, unidades, costos, proveedor principal, condición de pago y presentación de remisión."],
+      ["Proveedores compra", "Detalle proveedor-producto, condición de pago, precios, impuestos y presentaciones de compra."],
       ["Presentaciones", "Perfiles UOM/presentaciones físicas y contextos de uso."],
       ["Remisiones por sede", "Configuración de cada producto por sede y diagnóstico de aparición en solicitud."],
       ["Stock por sede", "Existencia agregada por sede."],
@@ -1720,7 +1793,7 @@ export async function GET() {
     {
       name: "Catálogo maestro",
       title: "VENTO GROUP · Catálogo maestro",
-      subtitle: "Productos, clasificación, unidades, costos y proveedor principal",
+      subtitle: "Productos, clasificación, unidades, costos, proveedor principal y condición de pago",
       tabColor: BRAND.magenta,
       columns: [
         { header: "Producto", width: 34 },
@@ -1731,6 +1804,7 @@ export async function GET() {
         { header: "Unidad stock", width: 13 },
         { header: "Costo stock", width: 14, numFmt: '"$" #,##0.00' },
         { header: "Proveedor principal", width: 28 },
+        { header: "Condición proveedor", width: 18 },
         { header: "Precio compra", width: 14, numFmt: '"$" #,##0.00' },
         { header: "Precio neto", width: 14, numFmt: '"$" #,##0.00' },
         { header: "Tiene presentación manual", width: 18 },
@@ -1743,13 +1817,14 @@ export async function GET() {
     {
       name: "Proveedores compra",
       title: "VENTO GROUP · Proveedores y compra",
-      subtitle: "Detalle proveedor-producto, precios, impuestos y presentaciones de compra",
+      subtitle: "Detalle proveedor-producto, condición de pago, precios, impuestos y presentaciones de compra",
       tabColor: BRAND.rose,
       columns: [
         { header: "Producto", width: 34 },
         { header: "Tipo item", width: 20 },
         { header: "SKU", width: 14 },
         { header: "Proveedor", width: 30 },
+        { header: "Condición pago", width: 18 },
         { header: "Proveedor primario", width: 14 },
         { header: "Precio compra", width: 14, numFmt: '"$" #,##0.00' },
         { header: "Precio neto sin IVA", width: 16, numFmt: '"$" #,##0.00' },
