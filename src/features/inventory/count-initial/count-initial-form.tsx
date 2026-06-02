@@ -102,6 +102,13 @@ function parseQty(value: string | undefined) {
   return Number.isFinite(n) && n >= 0 ? n : 0;
 }
 
+function hasExplicitCountQty(value: string | undefined) {
+  const v = String(value ?? "").trim().replace(",", ".");
+  if (v === "") return false;
+  const n = Number(v);
+  return Number.isFinite(n) && n >= 0;
+}
+
 function formatProfileQty(value: number) {
   if (!Number.isFinite(value)) return "?";
   return value.toLocaleString("es-CO", { maximumFractionDigits: 3 });
@@ -417,9 +424,9 @@ export function CountInitialForm({
       const entries = getProductEntries(product.id);
 
       for (const entry of entries) {
-        const inputQty = parseQty(entry.rawQuantity);
-        if (inputQty <= 0) continue;
+        if (!hasExplicitCountQty(entry.rawQuantity)) continue;
 
+        const inputQty = parseQty(entry.rawQuantity);
         const selectedUnit = resolveEntryUnit(capture, unitOptions, entry);
 
         const converted = convertByProductProfile({
@@ -459,18 +466,20 @@ export function CountInitialForm({
     }
 
     if (onlyWithQty) {
-      result = result.filter((product) => (qtyByProductId[product.id] ?? 0) > 0);
+      result = result.filter((product) =>
+        getProductEntries(product.id).some((entry) => hasExplicitCountQty(entry.rawQuantity))
+      );
     }
 
     return result;
-  }, [onlyWithQty, productRuntimeById, products, qtyByProductId, search]);
+  }, [getProductEntries, onlyWithQty, productRuntimeById, products, search]);
 
   const totalBaseQty = useMemo(() => lines.reduce((acc, line) => acc + line.quantity, 0), [lines]);
   const filledLineCount = lines.length;
 
   const filledProductCount = useMemo(
-    () => products.filter((product) => (qtyByProductId[product.id] ?? 0) > 0).length,
-    [products, qtyByProductId]
+    () => new Set(lines.map((line) => line.product_id)).size,
+    [lines]
   );
 
   const scopeToneClass = useMemo(() => {
@@ -480,7 +489,7 @@ export function CountInitialForm({
   }, [countScopeLabel]);
 
   const searchResultLabel = onlyWithQty
-    ? `${filteredProducts.length} con cantidad de ${products.length} producto(s).`
+    ? `${filteredProducts.length} capturado(s) de ${products.length} producto(s).`
     : `${filteredProducts.length} de ${products.length} producto(s) visibles.`;
 
   const sortedProducts = useMemo(
@@ -628,7 +637,7 @@ export function CountInitialForm({
 
   const openConfirm = () => {
     if (lines.length === 0) {
-      setError("Ingresa al menos una cantidad mayor a 0.");
+      setError("Ingresa al menos una cantidad. El 0 es valido cuando la ubicacion esta fisicamente vacia.");
       return;
     }
 
@@ -639,7 +648,7 @@ export function CountInitialForm({
 
   const handleConfirm = async () => {
     if (lines.length === 0) {
-      setError("Ingresa al menos una cantidad mayor a 0.");
+      setError("Ingresa al menos una cantidad. El 0 es valido cuando la ubicacion esta fisicamente vacia.");
       return;
     }
 
@@ -713,7 +722,7 @@ export function CountInitialForm({
             <div>
               <div className="ui-h3">Conteo</div>
               <div className="ui-caption mt-1">
-                Captura en la presentacion visible. El sistema convierte a unidad base para guardar inventario.
+                Captura en la presentacion visible. Puedes escribir 0 cuando el producto no existe fisicamente en esa ubicacion.
               </div>
             </div>
             <div className="flex flex-wrap gap-2 text-xs font-semibold">
@@ -729,11 +738,11 @@ export function CountInitialForm({
 
           <div className="grid gap-3 sm:grid-cols-3">
             <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-2">
-              <div className="ui-caption">Productos con cantidad</div>
+              <div className="ui-caption">Productos contados</div>
               <div className="text-lg font-semibold text-[var(--ui-text)]">{filledProductCount}</div>
             </div>
             <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-2">
-              <div className="ui-caption">Lineas contadas</div>
+              <div className="ui-caption">Lineas capturadas</div>
               <div className="text-lg font-semibold text-[var(--ui-text)]">{filledLineCount}</div>
             </div>
             <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-2">
@@ -853,7 +862,7 @@ export function CountInitialForm({
                 <thead>
                   <tr>
                     <TableHeaderCell>Producto</TableHeaderCell>
-                    <TableHeaderCell>Conteo</TableHeaderCell>
+                    <TableHeaderCell>Conteo fisico</TableHeaderCell>
                     <TableHeaderCell>Base</TableHeaderCell>
                     {internalPositions.length > 0 ? <TableHeaderCell>Ubicacion interna</TableHeaderCell> : null}
                   </tr>

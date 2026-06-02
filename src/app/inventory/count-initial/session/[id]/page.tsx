@@ -87,12 +87,18 @@ type LineRow = {
   id: string;
   product_id: string;
   quantity_counted: number | null;
+  input_quantity: number | null;
+  input_unit_code: string | null;
+  input_uom_profile_id: string | null;
+  stock_unit_code: string | null;
+  location_position_id: string | null;
   current_qty_at_open: number | null;
   current_qty_at_close: number | null;
   quantity_delta: number | null;
   adjustment_applied_at: string | null;
-  product: { name: string | null; unit: string | null } | null;
+  product: { name: string | null; unit: string | null; stock_unit_code?: string | null } | null;
 };
+type PositionRow = { id: string; code: string | null; name: string | null; parent_position_id: string | null; sort_order: number | null };
 type SiteRow = { id: string; name: string | null };
 type LocRow = { id: string; code: string | null };
 
@@ -143,10 +149,30 @@ export default async function CountSessionPage({
 
   const { data: lines } = await supabase
     .from("inventory_count_lines")
-    .select("id,product_id,quantity_counted,current_qty_at_open,current_qty_at_close,quantity_delta,adjustment_applied_at,product:products(name,unit)")
+    .select("id,product_id,quantity_counted,input_quantity,input_unit_code,input_uom_profile_id,stock_unit_code,location_position_id,current_qty_at_open,current_qty_at_close,quantity_delta,adjustment_applied_at,product:products(name,unit,stock_unit_code)")
     .eq("session_id", id)
     .order("product_id", { ascending: true });
   const lineRows = (lines ?? []) as unknown as LineRow[];
+
+  const positionIds = Array.from(
+    new Set(lineRows.map((line) => String(line.location_position_id ?? "").trim()).filter(Boolean))
+  );
+
+  const { data: positionsData } =
+    positionIds.length > 0
+      ? await supabase
+        .from("inventory_location_positions")
+        .select("id,code,name,parent_position_id,sort_order")
+        .in("id", positionIds)
+      : { data: [] as PositionRow[] };
+
+  const positionRows = (positionsData ?? []) as PositionRow[];
+  const positionLabelById = new Map(
+    positionRows.map((position) => [
+      position.id,
+      String(position.name || position.code || position.id).trim(),
+    ])
+  );
 
   const scopeLabel =
     sess.scope_type === "loc" && sess.scope_location_id
@@ -205,7 +231,8 @@ export default async function CountSessionPage({
               <tr>
                 <TableHeaderCell>Producto</TableHeaderCell>
                 <TableHeaderCell>Unidad</TableHeaderCell>
-                <TableHeaderCell>Contado</TableHeaderCell>
+                <TableHeaderCell>Ubicacion interna</TableHeaderCell>
+                <TableHeaderCell>Conteo fisico</TableHeaderCell>
                 <TableHeaderCell>Actual en sistema</TableHeaderCell>
                 <TableHeaderCell>Diferencia</TableHeaderCell>
                 <TableHeaderCell>Ajuste</TableHeaderCell>
@@ -222,8 +249,20 @@ export default async function CountSessionPage({
                 return (
                   <tr key={line.id} className="ui-body">
                     <TableCell>{line.product?.name ?? line.product_id}</TableCell>
-                    <TableCell>{line.product?.unit ?? "-"}</TableCell>
-                    <TableCell className="font-mono">{counted}</TableCell>
+                    <TableCell>{line.stock_unit_code ?? line.product?.stock_unit_code ?? line.product?.unit ?? "-"}</TableCell>
+                    <TableCell>
+                      {line.location_position_id
+                        ? positionLabelById.get(line.location_position_id) ?? line.location_position_id.slice(0, 8)
+                        : "-"}
+                    </TableCell>
+                    <TableCell className="font-mono">
+                      {counted}
+                      {line.input_unit_code && line.input_quantity != null ? (
+                        <span className="ml-2 text-xs text-[var(--ui-muted)]">
+                          ({line.input_quantity} {line.input_unit_code})
+                        </span>
+                      ) : null}
+                    </TableCell>
                     <TableCell className="font-mono">{current}</TableCell>
                     <TableCell className="font-mono">
                       {delta !== 0 ? (delta > 0 ? `+${delta}` : delta) : "0"}
