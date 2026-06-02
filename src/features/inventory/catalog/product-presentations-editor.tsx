@@ -141,10 +141,10 @@ function measurementModeLabel(mode: ProductMeasurementMode): string {
 
 function measurementModeDescription(mode: ProductMeasurementMode, stockUnitCode: string): string {
   if (mode === "variable_weight") {
-    return `Este producto se pide, recibe, despacha y consume por cantidad real medida en ${stockUnitCode}. Las presentaciones físicas son opcionales y no definen la remisión.`;
+    return `Este producto se pide, recibe, despacha y consume por cantidad real medida en ${stockUnitCode}. Los empaques son opcionales y solo sirven como apoyo logístico, foto o referencia de proveedor.`;
   }
   if (mode === "count_with_weight") {
-    return `Este producto puede contarse por unidades físicas, pero el inventario real se controla por peso en ${stockUnitCode}. Las presentaciones son solo apoyo logístico.`;
+    return `Este producto puede contarse por piezas, pero el inventario real se controla por peso en ${stockUnitCode}. No crees equivalencias fijas por unidad si el peso real varía.`;
   }
   if (mode === "bulk_volume") {
     return `Este producto se controla por volumen o granel real en ${stockUnitCode}. Los recipientes o empaques son opcionales y no son requisito de remisión.`;
@@ -166,9 +166,16 @@ export function ProductPresentationsEditor({
 }: Props) {
   const normalizedMeasurementMode = normalizeMeasurementMode(measurementMode);
   const usesFixedPresentation = normalizedMeasurementMode === "fixed_presentation";
+  const usesCountWithWeight = normalizedMeasurementMode === "count_with_weight";
   const requiresFixedRemissionDefault = usesFixedPresentation && requiresRemissionDefault;
   const modeLabel = measurementModeLabel(normalizedMeasurementMode);
   const modeDescription = measurementModeDescription(normalizedMeasurementMode, stockUnitCode);
+  const physicalConfigTitle = usesFixedPresentation
+    ? "Presentaciones físicas"
+    : "Empaques logísticos opcionales";
+  const physicalConfigSingular = usesFixedPresentation ? "presentación" : "empaque";
+  const physicalConfigSingularTitle = usesFixedPresentation ? "Presentación" : "Empaque logístico";
+  const physicalConfigPlural = usesFixedPresentation ? "presentaciones" : "empaques";
   const [rows, setRows] = useState<EditableRow[]>(() =>
     initialRows.length > 0
       ? initialRows.map((row) => ({
@@ -177,7 +184,9 @@ export function ProductPresentationsEditor({
         image_url: row.image_url ?? "",
         catalog_image_url: row.catalog_image_url ?? "",
       }))
-      : [createEmptyRow(stockUnitCode, "new-0")]
+      : usesFixedPresentation
+        ? [createEmptyRow(stockUnitCode, "new-0")]
+        : []
   );
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
 
@@ -369,12 +378,12 @@ export function ProductPresentationsEditor({
       <div className="ui-panel ui-remission-section">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="ui-caption">Presentaciones físicas</div>
+            <div className="ui-caption">{physicalConfigTitle}</div>
             <h2 className="ui-h2">{productName}</h2>
             <p className="mt-2 ui-body-muted">
-              Administra las formas físicas en las que existe este producto. Para productos de presentación fija,
-              aquí defines qué presentaciones puede pedir o recibir el satélite. Para productos de cantidad real,
-              las presentaciones son opcionales y no reemplazan el peso, conteo o volumen real del flujo operativo.
+              {usesFixedPresentation
+                ? "Administra las formas físicas con equivalencia exacta en las que existe este producto. Aquí defines qué presentaciones puede pedir o recibir el satélite."
+                : "Administra empaques, fotos o referencias logísticas opcionales. En productos de cantidad real, el flujo operativo sigue registrando peso, conteo o volumen real."}
             </p>
           </div>
 
@@ -394,6 +403,19 @@ export function ProductPresentationsEditor({
         <div className="font-bold">Modo de medición: {modeLabel}</div>
         <p className="mt-1">{modeDescription}</p>
       </div>
+
+      {!usesFixedPresentation ? (
+        <div className="rounded-[28px] border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+          <div className="font-bold">
+            {usesCountWithWeight ? "Conteo auxiliar, stock real por peso" : "Cantidad real manda sobre el empaque"}
+          </div>
+          <p className="mt-1">
+            {usesCountWithWeight
+              ? `Ejemplo: registra 12 piezas y el peso real en ${stockUnitCode}. No guardes “1 unidad = X ${stockUnitCode}” si cada pieza pesa diferente.`
+              : `Puedes guardar empaques como referencia, pero la entrada, salida, conteo y remisión deben confirmar la cantidad real en ${stockUnitCode}.`}
+          </p>
+        </div>
+      ) : null}
 
       {requiresFixedRemissionDefault ? (
         <div className="rounded-[28px] border border-sky-200 bg-sky-50 p-4 text-sm text-sky-950">
@@ -431,9 +453,9 @@ export function ProductPresentationsEditor({
             <div>
               <div className="text-sm font-bold text-amber-950">Sugeridas desde proveedores / compra</div>
               <p className="mt-1 text-sm text-amber-900">
-                Estas presentaciones vienen del empaque configurado en proveedores. Puedes agregarlas como
-                presentaciones físicas para adjuntar foto y usarlas en bodega. En productos de cantidad real,
-                son solo apoyo logístico.
+                {usesFixedPresentation
+                  ? "Estas presentaciones vienen del empaque configurado en proveedores. Puedes agregarlas como presentaciones físicas para adjuntar foto y usarlas en bodega."
+                  : "Estas sugerencias vienen del empaque configurado en proveedores. Puedes agregarlas como empaque logístico para foto o referencia, pero no reemplazan la cantidad real."}
               </p>
             </div>
           </div>
@@ -446,7 +468,7 @@ export function ProductPresentationsEditor({
               >
                 <div className="text-sm font-bold text-[var(--ui-text)]">{suggestion.label}</div>
                 <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                  {suggestion.sourceLabel} · 1 presentación ={" "}
+                  {suggestion.sourceLabel} · 1 {physicalConfigSingular} ={" "}
                   {Number(suggestion.qty_in_stock_unit || 0).toLocaleString("es-CO", {
                     maximumFractionDigits: 3,
                   })}{" "}
@@ -458,11 +480,17 @@ export function ProductPresentationsEditor({
                   onClick={() => addSuggestedRow(suggestion)}
                   className="ui-btn ui-btn--ghost mt-3 h-10 px-4 text-sm"
                 >
-                  Agregar a presentaciones físicas
+                  {usesFixedPresentation ? "Agregar a presentaciones físicas" : "Agregar como empaque logístico"}
                 </button>
               </div>
             ))}
           </div>
+        </div>
+      ) : null}
+
+      {!usesFixedPresentation && rows.length === 0 ? (
+        <div className="rounded-[28px] border border-slate-200 bg-white p-4 text-sm text-[var(--ui-muted)] shadow-sm">
+          Este producto puede operar sin empaques logísticos manuales. Para aguacate, por ejemplo, puedes dejar esta sección vacía y registrar siempre piezas + peso real en los flujos operativos.
         </div>
       ) : null}
 
@@ -494,10 +522,10 @@ export function ProductPresentationsEditor({
               <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
                 <div>
                   <div className="text-sm font-bold text-[var(--ui-text)]">
-                    Presentación {index + 1}
+                    {physicalConfigSingularTitle} {index + 1}
                   </div>
                   <div className="text-xs text-[var(--ui-muted)]">
-                    {row.id ? "Existente" : "Nueva"} · {usesFixedPresentation ? "Presentación física convertible" : "Empaque o referencia logística opcional"} a {stockUnitCode}
+                    {row.id ? "Existente" : "Nuevo"} · {usesFixedPresentation ? "Presentación física convertible" : "Referencia logística opcional"} a {stockUnitCode}
                   </div>
                 </div>
 
@@ -513,7 +541,7 @@ export function ProductPresentationsEditor({
               <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
                 <div className="space-y-4">
                   <label className="flex flex-col gap-1">
-                    <span className="ui-label">Nombre de la presentación</span>
+                    <span className="ui-label">Nombre {usesFixedPresentation ? "de la presentación" : "del empaque"}</span>
                     <input
                       name={`${fieldPrefix}_label`}
                       className="ui-input"
@@ -524,7 +552,7 @@ export function ProductPresentationsEditor({
                   </label>
 
                   <label className="flex flex-col gap-1">
-                    <span className="ui-label">Unidad base del contenido</span>
+                    <span className="ui-label">{usesFixedPresentation ? "Unidad base del contenido" : "Unidad real de referencia"}</span>
                     <select
                       name={`${fieldPrefix}_input_unit_code`}
                       className="ui-input"
@@ -545,7 +573,7 @@ export function ProductPresentationsEditor({
                   </label>
 
                   <label className="flex flex-col gap-1">
-                    <span className="ui-label">Contenido equivalente por presentación</span>
+                    <span className="ui-label">{usesFixedPresentation ? "Contenido equivalente por presentación" : "Equivalencia referencial del empaque"}</span>
                     <input
                       name={`${fieldPrefix}_qty_in_stock_unit`}
                       type="number"
@@ -571,7 +599,7 @@ export function ProductPresentationsEditor({
                         onChange={(event) => setPresentationActive(row.key, event.target.checked)}
                       />
                       <span>
-                        <span className="ui-label block">Presentación física activa</span>
+                        <span className="ui-label block">{usesFixedPresentation ? "Presentación física activa" : "Empaque logístico activo"}</span>
                         <span className="block text-xs text-[var(--ui-muted)]">
                           {usesFixedPresentation
                             ? "Existe operativamente y puede usarse para inventario, producción, control interno o fotos."
@@ -634,7 +662,9 @@ export function ProductPresentationsEditor({
                     kind="presentation"
                   />
                   <p className="mt-3 text-xs text-[var(--ui-muted)]">
-                    Ejemplo: bolsa de 100 unidades y bolsa de 200 unidades pueden tener fotos diferentes aunque sean el mismo producto.
+                    {usesFixedPresentation
+                      ? "Ejemplo: bolsa de 100 unidades y bolsa de 200 unidades pueden tener fotos diferentes aunque sean el mismo producto."
+                      : "Ejemplo: bolsa de proveedor, canastilla o caja logística. La foto ayuda a identificar el empaque, pero el stock sigue por cantidad real."}
                   </p>
                 </div>
               </div>
@@ -649,11 +679,11 @@ export function ProductPresentationsEditor({
           onClick={addRow}
           className="ui-btn ui-btn--ghost"
         >
-          Agregar presentación
+          {usesFixedPresentation ? "Agregar presentación" : "Agregar empaque logístico"}
         </button>
 
         <button type="button" onClick={handleSaveClick} className="ui-btn ui-btn--brand">
-          Guardar presentaciones
+          {usesFixedPresentation ? "Guardar presentaciones" : "Guardar empaques"}
         </button>
       </div>
     </div>
