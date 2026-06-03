@@ -45,8 +45,11 @@ type ProductIdentityFieldsProps = {
   categoryLabel?: string;
   categoryRequired?: boolean;
   categoryEmptyOptionLabel?: string;
+  descriptionLabel?: string;
+  descriptionRequired?: boolean;
   descriptionDefaultValue?: string | null;
   descriptionPlaceholder?: string;
+  descriptionHint?: string;
   skuField: SkuFieldConfig;
   aside?: ReactNode;
   lockedTypeField?: LockedTypeField;
@@ -65,8 +68,11 @@ export function ProductIdentityFields({
   categoryLabel = "Categoría operativa",
   categoryRequired = false,
   categoryEmptyOptionLabel = "Selecciona categoría",
+  descriptionLabel = "Descripción",
+  descriptionRequired = false,
   descriptionDefaultValue,
   descriptionPlaceholder = "Opcional",
+  descriptionHint,
   skuField,
   aside = null,
   lockedTypeField,
@@ -85,7 +91,7 @@ export function ProductIdentityFields({
           defaultValue={nameDefaultValue ?? ""}
           className="ui-input"
           placeholder={namePlaceholder}
-          required
+          required={nameRequired}
         />
       </label>
 
@@ -141,13 +147,20 @@ export function ProductIdentityFields({
       />
 
       <label className="flex flex-col gap-1 sm:col-span-2">
-        <span className="ui-label">Descripción</span>
+        <span className="ui-label">
+          {descriptionLabel}
+          {descriptionRequired ? <span className="text-[var(--ui-danger)]"> *</span> : null}
+        </span>
         <input
           name="description"
           defaultValue={descriptionDefaultValue ?? ""}
           className="ui-input"
           placeholder={descriptionPlaceholder}
+          required={descriptionRequired}
         />
+        {descriptionHint ? (
+          <span className="text-xs text-[var(--ui-muted)]">{descriptionHint}</span>
+        ) : null}
       </label>
 
       {priceField ? (

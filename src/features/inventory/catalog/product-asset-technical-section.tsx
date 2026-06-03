@@ -48,78 +48,80 @@ type Props = {
   siteOptions?: Array<{ id: string; name: string }>;
 };
 
-const EMPTY_MAINTENANCE: MaintenanceLine = {
-  scheduled_date: "",
-  performed_date: "",
-  responsible: "",
-  maintenance_provider: "",
-  work_done: "",
-  parts_replaced: false,
-  replaced_parts: "",
-  planner_bucket: "mensual",
-};
-
-const EMPTY_TRANSFER: TransferLine = {
-  moved_at: "",
-  from_location: "",
-  to_location: "",
-  responsible: "",
-  notes: "",
-};
+function hiddenValue(value: string | number | boolean | null | undefined) {
+  if (value == null) return "";
+  if (typeof value === "boolean") return value ? "1" : "";
+  return String(value);
+}
 
 export function ProductAssetTechnicalSection({
   initialProfile,
   initialMaintenance,
   initialTransfers,
   defaultTemplate = "general",
-  siteOptions = [],
 }: Props) {
   const [profileTemplate, setProfileTemplate] = useState<"industrial" | "general">(defaultTemplate);
-  const [physicalLocation, setPhysicalLocation] = useState(initialProfile?.physical_location ?? "");
-  const [quickSiteId, setQuickSiteId] = useState("");
-  const [quickArea, setQuickArea] = useState("");
-  const [quickLoc, setQuickLoc] = useState("");
-  const [quickContainer, setQuickContainer] = useState("");
-  const [maintenanceLines, setMaintenanceLines] = useState<MaintenanceLine[]>(
-    initialMaintenance.length ? initialMaintenance : []
-  );
-  const [transferLines, setTransferLines] = useState<TransferLine[]>(
-    initialTransfers.length ? initialTransfers : []
-  );
 
-  const visibleMaintenance = maintenanceLines.filter((line) => !line._delete);
-  const visibleTransfers = transferLines.filter((line) => !line._delete);
-
-  const applyQuickLocation = () => {
-    const siteName = siteOptions.find((site) => site.id === quickSiteId)?.name?.trim() || "";
-    const composed = [siteName, quickArea.trim(), quickLoc.trim(), quickContainer.trim()]
-      .filter(Boolean)
-      .join(" · ");
-    if (composed) setPhysicalLocation(composed);
-  };
+  const hasLegacyOperationalData = Boolean(
+    initialProfile?.serial_number ||
+      initialProfile?.physical_location ||
+      initialProfile?.purchase_invoice_url ||
+      initialProfile?.commercial_value ||
+      initialProfile?.purchase_date ||
+      initialProfile?.started_use_date ||
+      initialProfile?.equipment_status ||
+      initialMaintenance.length > 0 ||
+      initialTransfers.length > 0
+  );
 
   return (
     <section className="ui-panel space-y-5">
-      <h2 className="ui-h2">Ficha del equipo / activo</h2>
-      <p className="ui-body-muted">
-        Define una plantilla según el tipo de activo para evitar campos que no aplican.
-      </p>
-      <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3 text-sm text-[var(--ui-muted)]">
-        <p>
-          Puedes guardar con datos parciales: marca, modelo, serial, factura y fechas son opcionales.
-        </p>
-        <p className="mt-1">
-          El QR de la ficha técnica se genera automáticamente cuando guardas y abres la vista de ficha.
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h2 className="ui-h2">Ficha base del modelo de activo</h2>
+          <p className="mt-2 ui-body-muted">
+            Define solo la información técnica que aplica al modelo del equipo, mobiliario o activo.
+          </p>
+        </div>
+        <a href="/inventory/assets" className="ui-btn ui-btn--ghost ui-btn--sm">
+          Abrir Activos físicos
+        </a>
+      </div>
+
+      <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-4 text-sm text-cyan-950">
+        <div className="font-black">Esta sección no controla unidades físicas reales</div>
+        <p className="mt-1 leading-6">
+          Serial, placa interna, ubicación, responsable, QR, estado real, movimientos, conteos y mantenimientos
+          reales se gestionan en <strong>Activos físicos</strong>. Aquí solo se guarda la referencia base del catálogo.
         </p>
       </div>
 
+      {hasLegacyOperationalData ? (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+          <div className="font-black">Datos operativos antiguos protegidos</div>
+          <p className="mt-1 leading-6">
+            Este modelo todavía tiene datos viejos de operación guardados en el catálogo. No se muestran para evitar
+            confusión, pero se envían ocultos al guardar para no borrarlos accidentalmente.
+          </p>
+        </div>
+      ) : null}
+
       <input type="hidden" name="asset_profile_enabled" value="1" />
-      <input type="hidden" name="asset_maintenance_lines" value={JSON.stringify(maintenanceLines)} />
-      <input type="hidden" name="asset_transfer_lines" value={JSON.stringify(transferLines)} />
       <input type="hidden" name="asset_profile_template" value={profileTemplate} />
 
+      {/* Datos operativos legados: se conservan para no borrar información existente al guardar. */}
+      <input type="hidden" name="asset_serial_number" value={hiddenValue(initialProfile?.serial_number)} />
+      <input type="hidden" name="asset_physical_location" value={hiddenValue(initialProfile?.physical_location)} />
+      <input type="hidden" name="asset_purchase_invoice_url" value={hiddenValue(initialProfile?.purchase_invoice_url)} />
+      <input type="hidden" name="asset_commercial_value" value={hiddenValue(initialProfile?.commercial_value)} />
+      <input type="hidden" name="asset_purchase_date" value={hiddenValue(initialProfile?.purchase_date)} />
+      <input type="hidden" name="asset_started_use_date" value={hiddenValue(initialProfile?.started_use_date)} />
+      <input type="hidden" name="asset_equipment_status" value={hiddenValue(initialProfile?.equipment_status || "operativo")} />
+      <input type="hidden" name="asset_maintenance_lines" value={JSON.stringify(initialMaintenance)} />
+      <input type="hidden" name="asset_transfer_lines" value={JSON.stringify(initialTransfers)} />
+
       <label className="flex flex-col gap-1">
-        <span className="ui-label">Tipo de ficha</span>
+        <span className="ui-label">Tipo de modelo</span>
         <select
           value={profileTemplate}
           onChange={(event) =>
@@ -127,510 +129,140 @@ export function ProductAssetTechnicalSection({
           }
           className="ui-input"
         >
-          <option value="general">Activo general (vajilla, menaje, mobiliario)</option>
-          <option value="industrial">Equipo industrial (con serial y mantenimiento)</option>
+          <option value="general">Activo general / mobiliario / menaje</option>
+          <option value="industrial">Equipo técnico o industrial</option>
         </select>
         <span className="text-xs text-[var(--ui-muted)]">
-          Usa industrial solo para equipos que sí requieren trazabilidad técnica y plan de mantenimiento.
+          Usa “equipo técnico o industrial” cuando el modelo requiere proveedor o frecuencia sugerida de mantenimiento.
         </span>
       </label>
 
       <div className="grid gap-4 md:grid-cols-2">
+        <label className="flex flex-col gap-1">
+          <span className="ui-label">Marca base</span>
+          <input
+            name="asset_brand"
+            defaultValue={initialProfile?.brand ?? ""}
+            className="ui-input"
+            placeholder="Ej. Rational, Hobart, Torrey, McQuay"
+          />
+          <span className="text-xs text-[var(--ui-muted)]">
+            Marca general del modelo. No identifica una unidad física específica.
+          </span>
+        </label>
+
+        <label className="flex flex-col gap-1">
+          <span className="ui-label">Modelo / referencia base</span>
+          <input
+            name="asset_model"
+            defaultValue={initialProfile?.model ?? ""}
+            className="ui-input"
+            placeholder="Ej. SCC 61, Mcc104060ccu236a"
+          />
+          <span className="text-xs text-[var(--ui-muted)]">
+            Referencia técnica del modelo. El serial de cada unidad va en Activos físicos.
+          </span>
+        </label>
+
         {profileTemplate === "industrial" ? (
           <>
             <label className="flex flex-col gap-1">
-              <span className="ui-label">Marca (opcional)</span>
+              <span className="ui-label">Proveedor de mantenimiento sugerido</span>
               <input
-                name="asset_brand"
-                defaultValue={initialProfile?.brand ?? ""}
+                name="asset_maintenance_service_provider"
+                defaultValue={initialProfile?.maintenance_service_provider ?? ""}
                 className="ui-input"
-                placeholder="Ej. Rational, Hobart, Torrey"
+                placeholder="Ej. proveedor recomendado para este tipo de equipo"
+              />
+              <span className="text-xs text-[var(--ui-muted)]">
+                Referencia del modelo; el proveedor real usado se registra en el mantenimiento del activo físico.
+              </span>
+            </label>
+
+            <label className="flex items-center gap-2 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-2">
+              <input
+                type="checkbox"
+                name="asset_maintenance_cycle_enabled"
+                defaultChecked={Boolean(initialProfile?.maintenance_cycle_enabled)}
+              />
+              <span className="text-sm text-[var(--ui-text)]">
+                Recomendar mantenimiento recurrente para este modelo
+              </span>
+            </label>
+
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Frecuencia sugerida en meses</span>
+              <input
+                name="asset_maintenance_cycle_months"
+                type="number"
+                min={1}
+                max={60}
+                defaultValue={initialProfile?.maintenance_cycle_months ?? ""}
+                className="ui-input"
+                placeholder="Ej. 3"
               />
             </label>
+
             <label className="flex flex-col gap-1">
-              <span className="ui-label">Modelo (opcional)</span>
-              <input name="asset_model" defaultValue={initialProfile?.model ?? ""} className="ui-input" />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="ui-label">Serial (opcional)</span>
+              <span className="ui-label">Fecha base sugerida</span>
               <input
-                name="asset_serial_number"
-                defaultValue={initialProfile?.serial_number ?? ""}
+                name="asset_maintenance_cycle_anchor_date"
+                type="date"
+                defaultValue={initialProfile?.maintenance_cycle_anchor_date ?? ""}
                 className="ui-input"
               />
+              <span className="text-xs text-[var(--ui-muted)]">
+                Es solo una referencia del modelo. La programación real queda en la ficha del activo físico.
+              </span>
             </label>
           </>
-        ) : null}
-        <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 md:col-span-2">
-          <div className="text-sm font-semibold text-[var(--ui-text)]">
-            Ubicación guiada (opcional)
-          </div>
-          <p className="mt-1 text-xs text-[var(--ui-muted)]">
-            Sugerencia de formato: Sede · Área/Zona · LOC/Contenedor.
-          </p>
-          <div className="mt-2 grid gap-2 md:grid-cols-4">
-            <label className="flex flex-col gap-1">
-              <span className="ui-caption">Sede</span>
-              <select
-                value={quickSiteId}
-                onChange={(event) => setQuickSiteId(event.target.value)}
-                className="ui-input"
-              >
-                <option value="">Seleccionar</option>
-                {siteOptions.map((site) => (
-                  <option key={site.id} value={site.id}>
-                    {site.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="ui-caption">Área / Zona</span>
-              <input
-                value={quickArea}
-                onChange={(event) => setQuickArea(event.target.value)}
-                className="ui-input"
-                placeholder="Ej. Cocina caliente"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="ui-caption">LOC / Contenedor</span>
-              <input
-                value={quickLoc}
-                onChange={(event) => setQuickLoc(event.target.value)}
-                className="ui-input"
-                placeholder="Ej. LOC-CP-FRIO-MAIN"
-              />
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="ui-caption">Referencia</span>
-              <input
-                value={quickContainer}
-                onChange={(event) => setQuickContainer(event.target.value)}
-                className="ui-input"
-                placeholder="Ej. Contenedor azul #3"
-              />
-            </label>
-          </div>
-          <div className="mt-3 flex flex-wrap gap-2">
-            <button type="button" className="ui-btn ui-btn--ghost ui-btn--sm" onClick={applyQuickLocation}>
-              Aplicar ubicación sugerida
-            </button>
-            <button
-              type="button"
-              className="ui-btn ui-btn--ghost ui-btn--sm"
-              onClick={() => {
-                setQuickSiteId("");
-                setQuickArea("");
-                setQuickLoc("");
-                setQuickContainer("");
-              }}
-            >
-              Limpiar guía
-            </button>
-          </div>
-        </div>
-        <label className="flex flex-col gap-1">
-          <span className="ui-label">Ubicación física (opcional)</span>
-          <input
-            name="asset_physical_location"
-            value={physicalLocation}
-            onChange={(event) => setPhysicalLocation(event.target.value)}
-            className="ui-input"
-            placeholder="Ej. Centro de Producción · Cocina caliente · LOC-CP-PROD-01"
-          />
-          <span className="text-xs text-[var(--ui-muted)]">
-            Si no la tienes clara hoy, puedes guardar y completarla luego.
-          </span>
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="ui-label">Factura de compra (URL opcional)</span>
-          <input
-            name="asset_purchase_invoice_url"
-            type="url"
-            defaultValue={initialProfile?.purchase_invoice_url ?? ""}
-            className="ui-input"
-            placeholder="https://..."
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="ui-label">Valor comercial (opcional)</span>
-          <input
-            name="asset_commercial_value"
-            type="number"
-            step="0.01"
-            defaultValue={initialProfile?.commercial_value ?? ""}
-            className="ui-input"
-            placeholder="0"
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="ui-label">Fecha de compra (opcional)</span>
-          <input
-            name="asset_purchase_date"
-            type="date"
-            defaultValue={initialProfile?.purchase_date ?? ""}
-            className="ui-input"
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="ui-label">Fecha inicio de uso (opcional)</span>
-          <input
-            name="asset_started_use_date"
-            type="date"
-            defaultValue={initialProfile?.started_use_date ?? ""}
-            className="ui-input"
-          />
-        </label>
-        <label className="flex flex-col gap-1">
-          <span className="ui-label">Estado del equipo</span>
-          <select name="asset_equipment_status" defaultValue={initialProfile?.equipment_status ?? "operativo"} className="ui-input">
-            <option value="operativo">Operativo</option>
-            <option value="en_mantenimiento">En mantenimiento</option>
-            <option value="fuera_servicio">Fuera de servicio</option>
-            <option value="baja">De baja</option>
-          </select>
-        </label>
-        {profileTemplate === "industrial" ? (
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Proveedor de mantenimiento (opcional)</span>
+        ) : (
+          <>
             <input
+              type="hidden"
               name="asset_maintenance_service_provider"
-              defaultValue={initialProfile?.maintenance_service_provider ?? ""}
-              className="ui-input"
+              value={hiddenValue(initialProfile?.maintenance_service_provider)}
             />
-          </label>
-        ) : null}
-        {profileTemplate === "industrial" ? (
-          <label className="flex items-center gap-2 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-2">
             <input
-              type="checkbox"
-              name="asset_maintenance_cycle_enabled"
-              defaultChecked={Boolean(initialProfile?.maintenance_cycle_enabled)}
-            />
-            <span className="text-sm text-[var(--ui-text)]">
-              Programar mantenimiento recurrente
-            </span>
-          </label>
-        ) : null}
-        {profileTemplate === "industrial" ? (
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Cada cuántos meses</span>
-            <input
+              type="hidden"
               name="asset_maintenance_cycle_months"
-              type="number"
-              min={1}
-              max={60}
-              defaultValue={initialProfile?.maintenance_cycle_months ?? ""}
-              className="ui-input"
-              placeholder="Ej. 3"
+              value={hiddenValue(initialProfile?.maintenance_cycle_months)}
             />
-          </label>
-        ) : null}
-        {profileTemplate === "industrial" ? (
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Fecha base del ciclo</span>
             <input
+              type="hidden"
               name="asset_maintenance_cycle_anchor_date"
-              type="date"
-              defaultValue={initialProfile?.maintenance_cycle_anchor_date ?? ""}
-              className="ui-input"
+              value={hiddenValue(initialProfile?.maintenance_cycle_anchor_date)}
             />
-          </label>
-        ) : null}
+          </>
+        )}
       </div>
 
       <label className="flex flex-col gap-1">
-        <span className="ui-label">Notas del equipo (opcional)</span>
+        <span className="ui-label">Descripción técnica base</span>
         <textarea
           name="asset_technical_description"
           defaultValue={initialProfile?.technical_description ?? ""}
           className="ui-input min-h-0 py-2"
-          rows={3}
-          placeholder="Capacidad, potencia, observaciones y uso operativo."
+          rows={4}
+          placeholder="Capacidad, potencia, dimensiones, uso recomendado, compatibilidades, observaciones generales del modelo."
         />
+        <span className="text-xs text-[var(--ui-muted)]">
+          Esta descripción debe servir como referencia para cualquier unidad física creada desde este modelo.
+        </span>
       </label>
 
-      {profileTemplate === "industrial" ? (
-      <div className="space-y-3 rounded-xl border border-[var(--ui-border)] p-4">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-[var(--ui-text)]">Historial de mantenimiento</h3>
-          <button
-            type="button"
-            className="ui-btn ui-btn--ghost ui-btn--sm"
-            onClick={() => setMaintenanceLines((prev) => [...prev, { ...EMPTY_MAINTENANCE }])}
-          >
-            + Agregar evento
-          </button>
-        </div>
-        <div className="space-y-2">
-          {visibleMaintenance.length === 0 ? (
-            <div className="ui-empty">Sin eventos de mantenimiento.</div>
-          ) : (
-            visibleMaintenance.map((line, idx) => {
-              const index = maintenanceLines.findIndex((entry) => entry === line);
-              return (
-                <div key={line.id ?? `maintenance-${idx}`} className="rounded-lg border border-[var(--ui-border)] p-3">
-                  <div className="grid gap-2 md:grid-cols-4">
-                    <label className="flex flex-col gap-1">
-                      <span className="ui-caption">Programado</span>
-                      <input
-                        type="date"
-                        value={line.scheduled_date ?? ""}
-                        onChange={(event) =>
-                          setMaintenanceLines((prev) =>
-                            prev.map((row, rowIdx) =>
-                              rowIdx === index ? { ...row, scheduled_date: event.target.value } : row
-                            )
-                          )
-                        }
-                        className="ui-input"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1">
-                      <span className="ui-caption">Realizado</span>
-                      <input
-                        type="date"
-                        value={line.performed_date ?? ""}
-                        onChange={(event) =>
-                          setMaintenanceLines((prev) =>
-                            prev.map((row, rowIdx) =>
-                              rowIdx === index ? { ...row, performed_date: event.target.value } : row
-                            )
-                          )
-                        }
-                        className="ui-input"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1">
-                      <span className="ui-caption">Responsable</span>
-                      <input
-                        value={line.responsible ?? ""}
-                        onChange={(event) =>
-                          setMaintenanceLines((prev) =>
-                            prev.map((row, rowIdx) =>
-                              rowIdx === index ? { ...row, responsible: event.target.value } : row
-                            )
-                          )
-                        }
-                        className="ui-input"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1">
-                      <span className="ui-caption">Planeador</span>
-                      <select
-                        value={line.planner_bucket ?? "mensual"}
-                        onChange={(event) =>
-                          setMaintenanceLines((prev) =>
-                            prev.map((row, rowIdx) =>
-                              rowIdx === index ? { ...row, planner_bucket: event.target.value } : row
-                            )
-                          )
-                        }
-                        className="ui-input"
-                      >
-                        <option value="correctivo">Correctivo</option>
-                        <option value="semanal">Semanal</option>
-                        <option value="mensual">Mensual</option>
-                        <option value="trimestral">Trimestral</option>
-                        <option value="semestral">Semestral</option>
-                        <option value="anual">Anual</option>
-                      </select>
-                    </label>
-                  </div>
-                  <div className="mt-2 grid gap-2 md:grid-cols-3">
-                    <label className="flex flex-col gap-1 md:col-span-1">
-                      <span className="ui-caption">Proveedor servicio</span>
-                      <input
-                        value={line.maintenance_provider ?? ""}
-                        onChange={(event) =>
-                          setMaintenanceLines((prev) =>
-                            prev.map((row, rowIdx) =>
-                              rowIdx === index ? { ...row, maintenance_provider: event.target.value } : row
-                            )
-                          )
-                        }
-                        className="ui-input"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1 md:col-span-2">
-                      <span className="ui-caption">Trabajo realizado</span>
-                      <input
-                        value={line.work_done ?? ""}
-                        onChange={(event) =>
-                          setMaintenanceLines((prev) =>
-                            prev.map((row, rowIdx) =>
-                              rowIdx === index ? { ...row, work_done: event.target.value } : row
-                            )
-                          )
-                        }
-                        className="ui-input"
-                      />
-                    </label>
-                  </div>
-                  <div className="mt-2 flex flex-wrap items-end gap-3">
-                    <label className="flex items-center gap-2">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(line.parts_replaced)}
-                        onChange={(event) =>
-                          setMaintenanceLines((prev) =>
-                            prev.map((row, rowIdx) =>
-                              rowIdx === index ? { ...row, parts_replaced: event.target.checked } : row
-                            )
-                          )
-                        }
-                      />
-                      <span className="ui-caption">Reemplazo de piezas</span>
-                    </label>
-                    <label className="flex min-w-[240px] flex-1 flex-col gap-1">
-                      <span className="ui-caption">Piezas reemplazadas</span>
-                      <input
-                        value={line.replaced_parts ?? ""}
-                        onChange={(event) =>
-                          setMaintenanceLines((prev) =>
-                            prev.map((row, rowIdx) =>
-                              rowIdx === index ? { ...row, replaced_parts: event.target.value } : row
-                            )
-                          )
-                        }
-                        className="ui-input"
-                        placeholder="Ej. Termostato, válvula, sello"
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className="ui-btn ui-btn--danger ui-btn--sm"
-                      onClick={() =>
-                        setMaintenanceLines((prev) =>
-                          prev.map((row, rowIdx) =>
-                            rowIdx === index ? { ...row, _delete: true } : row
-                          )
-                        )
-                      }
-                    >
-                      Quitar
-                    </button>
-                  </div>
-                </div>
-              );
-            })
-          )}
-        </div>
-      </div>
-      ) : null}
-
-      <div className="space-y-3 rounded-xl border border-[var(--ui-border)] p-4">
-        <div className="flex items-center justify-between gap-2">
-          <h3 className="text-sm font-semibold text-[var(--ui-text)]">Traslados del equipo</h3>
-          <button
-            type="button"
-            className="ui-btn ui-btn--ghost ui-btn--sm"
-            onClick={() => setTransferLines((prev) => [...prev, { ...EMPTY_TRANSFER }])}
-          >
-            + Agregar traslado
-          </button>
-        </div>
-        <div className="space-y-2">
-          {visibleTransfers.length === 0 ? (
-            <div className="ui-empty">Sin traslados registrados.</div>
-          ) : (
-            visibleTransfers.map((line, idx) => {
-              const index = transferLines.findIndex((entry) => entry === line);
-              return (
-                <div key={line.id ?? `transfer-${idx}`} className="rounded-lg border border-[var(--ui-border)] p-3">
-                  <div className="grid gap-2 md:grid-cols-4">
-                    <label className="flex flex-col gap-1">
-                      <span className="ui-caption">Fecha</span>
-                      <input
-                        type="date"
-                        value={line.moved_at ?? ""}
-                        onChange={(event) =>
-                          setTransferLines((prev) =>
-                            prev.map((row, rowIdx) =>
-                              rowIdx === index ? { ...row, moved_at: event.target.value } : row
-                            )
-                          )
-                        }
-                        className="ui-input"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1">
-                      <span className="ui-caption">Desde</span>
-                      <input
-                        value={line.from_location ?? ""}
-                        onChange={(event) =>
-                          setTransferLines((prev) =>
-                            prev.map((row, rowIdx) =>
-                              rowIdx === index ? { ...row, from_location: event.target.value } : row
-                            )
-                          )
-                        }
-                        className="ui-input"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1">
-                      <span className="ui-caption">Hacia</span>
-                      <input
-                        value={line.to_location ?? ""}
-                        onChange={(event) =>
-                          setTransferLines((prev) =>
-                            prev.map((row, rowIdx) =>
-                              rowIdx === index ? { ...row, to_location: event.target.value } : row
-                            )
-                          )
-                        }
-                        className="ui-input"
-                      />
-                    </label>
-                    <label className="flex flex-col gap-1">
-                      <span className="ui-caption">Responsable</span>
-                      <input
-                        value={line.responsible ?? ""}
-                        onChange={(event) =>
-                          setTransferLines((prev) =>
-                            prev.map((row, rowIdx) =>
-                              rowIdx === index ? { ...row, responsible: event.target.value } : row
-                            )
-                          )
-                        }
-                        className="ui-input"
-                      />
-                    </label>
-                  </div>
-                  <div className="mt-2 flex items-end gap-2">
-                    <label className="flex flex-1 flex-col gap-1">
-                      <span className="ui-caption">Nota</span>
-                      <input
-                        value={line.notes ?? ""}
-                        onChange={(event) =>
-                          setTransferLines((prev) =>
-                            prev.map((row, rowIdx) =>
-                              rowIdx === index ? { ...row, notes: event.target.value } : row
-                            )
-                          )
-                        }
-                        className="ui-input"
-                      />
-                    </label>
-                    <button
-                      type="button"
-                      className="ui-btn ui-btn--danger ui-btn--sm"
-                      onClick={() =>
-                        setTransferLines((prev) =>
-                          prev.map((row, rowIdx) =>
-                            rowIdx === index ? { ...row, _delete: true } : row
-                          )
-                        )
-                      }
-                    >
-                      Quitar
-                    </button>
-                  </div>
-                </div>
-              );
-            })
-          )}
+      <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-4 text-sm text-[var(--ui-muted)]">
+        <div className="font-semibold text-[var(--ui-text)]">Qué NO va aquí</div>
+        <div className="mt-2 grid gap-2 md:grid-cols-3">
+          <div className="rounded-lg border border-[var(--ui-border)] bg-white/70 p-3">
+            Serial, placa y QR de una unidad.
+          </div>
+          <div className="rounded-lg border border-[var(--ui-border)] bg-white/70 p-3">
+            Sede, área, LOC, ubicación interna y responsable.
+          </div>
+          <div className="rounded-lg border border-[var(--ui-border)] bg-white/70 p-3">
+            Historial real de mantenimiento, traslados y conteos.
+          </div>
         </div>
       </div>
     </section>

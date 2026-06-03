@@ -1219,20 +1219,16 @@ async function updateProduct(formData: FormData) {
 
     const assetProfilePayload = {
       product_id: productId,
-      brand: assetProfileTemplate === "industrial" ? asText(formData.get("asset_brand")) || null : null,
-      model: assetProfileTemplate === "industrial" ? asText(formData.get("asset_model")) || null : null,
-      serial_number:
-        assetProfileTemplate === "industrial" ? asText(formData.get("asset_serial_number")) || null : null,
+      brand: asText(formData.get("asset_brand")) || null,
+      model: asText(formData.get("asset_model")) || null,
+      serial_number: asText(formData.get("asset_serial_number")) || null,
       physical_location: asText(formData.get("asset_physical_location")) || null,
       purchase_invoice_url: asText(formData.get("asset_purchase_invoice_url")) || null,
       commercial_value: asNullableNumber(formData.get("asset_commercial_value")),
       purchase_date: asNullableDateText(asText(formData.get("asset_purchase_date"))),
       started_use_date: asNullableDateText(asText(formData.get("asset_started_use_date"))),
       equipment_status: equipmentStatus,
-      maintenance_service_provider:
-        assetProfileTemplate === "industrial"
-          ? asText(formData.get("asset_maintenance_service_provider")) || null
-          : null,
+      maintenance_service_provider: asText(formData.get("asset_maintenance_service_provider")) || null,
       technical_description: asText(formData.get("asset_technical_description")) || null,
       maintenance_cycle_enabled:
         assetProfileTemplate === "industrial"
@@ -1246,11 +1242,11 @@ async function updateProduct(formData: FormData) {
               ? Math.trunc(value)
               : null;
           })()
-          : null,
+          : asNullableNumber(formData.get("asset_maintenance_cycle_months")),
       maintenance_cycle_anchor_date:
         assetProfileTemplate === "industrial"
           ? asNullableDateText(asText(formData.get("asset_maintenance_cycle_anchor_date")))
-          : null,
+          : asNullableDateText(asText(formData.get("asset_maintenance_cycle_anchor_date"))),
     };
 
     const { error: assetProfileErr } = await supabase
@@ -1258,10 +1254,9 @@ async function updateProduct(formData: FormData) {
       .upsert(assetProfilePayload, { onConflict: "product_id" });
     if (assetProfileErr) redirectWithError(assetProfileErr.message);
 
-    const maintenanceLines =
-      assetProfileTemplate === "industrial"
-        ? parseJsonArray<AssetMaintenanceLine>(formData.get("asset_maintenance_lines"))
-        : [];
+    const maintenanceLines = parseJsonArray<AssetMaintenanceLine>(
+      formData.get("asset_maintenance_lines")
+    );
     const normalizedMaintenance = maintenanceLines
       .filter((line) => !line?._delete)
       .map((line) => ({
@@ -1829,7 +1824,9 @@ export default async function ProductCatalogDetailPage({
               </Link>
               <h1 className="ui-h1">{productRow.name ?? "Ficha maestra"}</h1>
               <p className="ui-body-muted">
-                Ficha maestra del producto: identidad operativa, compra, almacenamiento y setup por sede.
+                {isAssetItem
+                  ? "Ficha maestra del modelo patrimonial: identidad, categoría y datos técnicos base. Las unidades reales viven en Activos físicos."
+                  : "Ficha maestra del producto: identidad operativa, compra, almacenamiento y setup por sede."}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -1854,12 +1851,23 @@ export default async function ProductCatalogDetailPage({
               >
                 Ver ficha técnica
               </Link>
-              <Link
-                href={`/inventory/catalog/${productRow.id}/presentations?from=${encodeURIComponent(productDetailHref)}`}
-                className="ui-btn ui-btn--brand"
-              >
-                Administrar presentaciones
-              </Link>
+              {isAssetItem ? (
+                <>
+                  <Link href="/inventory/assets/new" className="ui-btn ui-btn--brand">
+                    Crear activo físico
+                  </Link>
+                  <Link href="/inventory/assets" className="ui-btn ui-btn--ghost">
+                    Ver activos físicos
+                  </Link>
+                </>
+              ) : (
+                <Link
+                  href={`/inventory/catalog/${productRow.id}/presentations?from=${encodeURIComponent(productDetailHref)}`}
+                  className="ui-btn ui-btn--brand"
+                >
+                  Administrar presentaciones
+                </Link>
+              )}
             </div>
           </div>
           <div className="ui-remission-kpis ui-remission-kpis--stack sm:grid-cols-3 lg:grid-cols-1">
@@ -1871,18 +1879,24 @@ export default async function ProductCatalogDetailPage({
             <article className="ui-remission-kpi" data-tone="cool">
               <div className="ui-remission-kpi-label">Tipo</div>
               <div className="ui-remission-kpi-value">
-                {String(productRow.product_type ?? "insumo").trim().toLowerCase() === "venta"
-                  ? "Venta"
-                  : String(productRow.product_type ?? "insumo").trim().toLowerCase() === "preparacion"
-                    ? "Prep"
-                    : "Insumo"}
+                {isAssetItem
+                  ? "Activo"
+                  : String(productRow.product_type ?? "insumo").trim().toLowerCase() === "venta"
+                    ? "Venta"
+                    : String(productRow.product_type ?? "insumo").trim().toLowerCase() === "preparacion"
+                      ? "Prep"
+                      : "Insumo"}
               </div>
-              <div className="ui-remission-kpi-note">Clasificacion operativa del producto</div>
+              <div className="ui-remission-kpi-note">
+                {isAssetItem ? "Modelo patrimonial del catálogo" : "Clasificacion operativa del producto"}
+              </div>
             </article>
             <article className="ui-remission-kpi" data-tone="success">
-              <div className="ui-remission-kpi-label">Sedes</div>
-              <div className="ui-remission-kpi-value">{siteRows.length}</div>
-              <div className="ui-remission-kpi-note">Configuraciones por sede en esta ficha</div>
+              <div className="ui-remission-kpi-label">{isAssetItem ? "Operación real" : "Sedes"}</div>
+              <div className="ui-remission-kpi-value">{isAssetItem ? "Assets" : siteRows.length}</div>
+              <div className="ui-remission-kpi-note">
+                {isAssetItem ? "Ubicación, QR y conteo en Activos físicos" : "Configuraciones por sede en esta ficha"}
+              </div>
             </article>
           </div>
         </div>
@@ -1895,51 +1909,70 @@ export default async function ProductCatalogDetailPage({
         </div>
       ) : null}
 
-      <CatalogSection
-        title="Presentaciónes operativas"
-        description="Las presentaciones físicas se administran en una pantalla separada para no mezclar identidad del producto con empaque, equivalencias y fotos por presentación."
-      >
-        <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-start">
-          <div className="space-y-3">
-            {presentationProfiles.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {presentationProfiles.slice(0, 8).map((profile) => (
-                  <span
-                    key={profile.id}
-                    className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
-                  >
-                    {profile.label || "Presentación"} · {uomUsageContextLabel(profile.usage_context)} · 1{" "}
-                    {profile.input_unit_code} ={" "}
-                    {Number(profile.qty_in_stock_unit ?? 0).toLocaleString("es-CO", {
-                      maximumFractionDigits: 3,
-                    })}{" "}
-                    {stockUnitCode}
-                  </span>
-                ))}
-                {presentationProfiles.length > 8 ? (
-                  <span className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-500">
-                    +{presentationProfiles.length - 8} más
-                  </span>
-                ) : null}
-              </div>
-            ) : (
-              <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
-                Este producto todavía no tiene presentaciones operativas activas.
-              </div>
-            )}
-            <p className="text-sm text-[var(--ui-muted)]">
-              La ficha mantiene datos maestros. Las presentaciones controlan empaque físico, equivalencia operativa e imagen propia para quiosco e inventario.
-            </p>
+      {isAssetItem ? (
+        <CatalogSection
+          title="Modelo patrimonial"
+          description="Este item no usa presentaciones, remisiones ni stock operativo de insumos. Sirve como modelo base para crear activos físicos reales."
+        >
+          <div className="grid gap-3 md:grid-cols-3">
+            <Link href="/inventory/assets/new" className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4 text-sm font-semibold text-cyan-950 transition hover:bg-cyan-100">
+              Crear activo físico →
+            </Link>
+            <Link href="/inventory/assets" className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm font-semibold text-indigo-950 transition hover:bg-indigo-100">
+              Ver activos físicos →
+            </Link>
+            <Link href="/inventory/assets/counts" className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-950 transition hover:bg-amber-100">
+              Conteo patrimonial →
+            </Link>
           </div>
+        </CatalogSection>
+      ) : (
+        <CatalogSection
+          title="Presentaciónes operativas"
+          description="Las presentaciones físicas se administran en una pantalla separada para no mezclar identidad del producto con empaque, equivalencias y fotos por presentación."
+        >
+          <div className="grid gap-4 lg:grid-cols-[1fr_auto] lg:items-start">
+            <div className="space-y-3">
+              {presentationProfiles.length > 0 ? (
+                <div className="flex flex-wrap gap-2">
+                  {presentationProfiles.slice(0, 8).map((profile) => (
+                    <span
+                      key={profile.id}
+                      className="rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700"
+                    >
+                      {profile.label || "Presentación"} · {uomUsageContextLabel(profile.usage_context)} · 1{" "}
+                      {profile.input_unit_code} ={" "}
+                      {Number(profile.qty_in_stock_unit ?? 0).toLocaleString("es-CO", {
+                        maximumFractionDigits: 3,
+                      })}{" "}
+                      {stockUnitCode}
+                    </span>
+                  ))}
+                  {presentationProfiles.length > 8 ? (
+                    <span className="rounded-2xl border border-slate-200 bg-slate-50 px-3 py-2 text-sm font-semibold text-slate-500">
+                      +{presentationProfiles.length - 8} más
+                    </span>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
+                  Este producto todavía no tiene presentaciones operativas activas.
+                </div>
+              )}
+              <p className="text-sm text-[var(--ui-muted)]">
+                La ficha mantiene datos maestros. Las presentaciones controlan empaque físico, equivalencia operativa e imagen propia para quiosco e inventario.
+              </p>
+            </div>
 
-          <Link
-            href={`/inventory/catalog/${productRow.id}/presentations?from=${encodeURIComponent(productDetailHref)}`}
-            className="ui-btn ui-btn--brand h-12 px-5 text-base"
-          >
-            Administrar presentaciones
-          </Link>
-        </div>
-      </CatalogSection>
+            <Link
+              href={`/inventory/catalog/${productRow.id}/presentations?from=${encodeURIComponent(productDetailHref)}`}
+              className="ui-btn ui-btn--brand h-12 px-5 text-base"
+            >
+              Administrar presentaciones
+            </Link>
+          </div>
+        </CatalogSection>
+      )}
 
       {canEdit ? (
         <>
@@ -1952,17 +1985,33 @@ export default async function ProductCatalogDetailPage({
             <input type="hidden" name="return_to" value={from} />
 
             <CatalogSection
-              title="Datos basicos"
-              description="Identidad del item: nombre, SKU, tipo fijo, categoría operativa y descripción."
+              title={isAssetItem ? "Identidad del modelo patrimonial" : "Datos basicos"}
+              description={
+                isAssetItem
+                  ? "Define cómo se identifica este modelo en el catálogo. Las unidades reales, QR, ubicación y conteo se gestionan en Activos físicos."
+                  : "Identidad del item: nombre, SKU, tipo fijo, categoría operativa y descripción."
+              }
             >
               <ProductIdentityFields
-                nameLabel="Nombre del producto / insumo"
-                namePlaceholder="Ej. Harina 000"
+                nameLabel={isAssetItem ? "Nombre del modelo / activo" : "Nombre del producto / insumo"}
+                namePlaceholder={isAssetItem ? "Ej. Aire acondicionado, silla terraza, licuadora industrial" : "Ej. Harina 000"}
                 nameDefaultValue={productRow.name ?? ""}
                 categories={categoryRows}
                 selectedCategoryId={productRow.category_id ?? ""}
                 siteNamesById={siteNamesById}
-                categoryEmptyOptionLabel="Sin categoría"
+                categoryLabel={isAssetItem ? "Categoría patrimonial" : "Categoría operativa"}
+                categoryEmptyOptionLabel={isAssetItem ? "Sin categoría patrimonial" : "Sin categoría"}
+                descriptionLabel={isAssetItem ? "Descripción base del modelo" : "Descripción"}
+                descriptionPlaceholder={
+                  isAssetItem
+                    ? "Ej. Equipo de aire acondicionado tipo cassette para zona de atención, referencia general del modelo."
+                    : "Opcional"
+                }
+                descriptionHint={
+                  isAssetItem
+                    ? "Describe el modelo en términos generales. No escribas aquí serial, ubicación, responsable ni mantenimiento real."
+                    : undefined
+                }
                 descriptionDefaultValue={productRow.description ?? ""}
                 skuField={{
                   mode: "edit",
@@ -1971,15 +2020,20 @@ export default async function ProductCatalogDetailPage({
                   initialInventoryKind: profileRow?.inventory_kind ?? "",
                 }}
                 lockedTypeField={{
-                  label: "Tipo",
+                  label: isAssetItem ? "Tipo de maestro" : "Tipo",
                   value:
-                    String(productRow.product_type ?? "").trim().toLowerCase() === "venta"
-                      ? "Venta"
-                      : String(productRow.product_type ?? "").trim().toLowerCase() === "preparacion"
-                        ? "Preparacion"
-                        : "Insumo",
+                    isAssetItem
+                      ? "Activo"
+                      : String(productRow.product_type ?? "").trim().toLowerCase() === "venta"
+                        ? "Venta"
+                        : String(productRow.product_type ?? "").trim().toLowerCase() === "preparacion"
+                          ? "Preparacion"
+                          : "Insumo",
                   hiddenName: "product_type",
                   hiddenValue: productRow.product_type ?? "insumo",
+                  hint: isAssetItem
+                    ? "Este maestro sirve para crear activos físicos reales desde el catálogo."
+                    : undefined,
                 }}
               />
             </CatalogSection>
@@ -2006,6 +2060,40 @@ export default async function ProductCatalogDetailPage({
               </CatalogOptionalDetails>
             )}
 
+            {isAssetItem ? (
+              <CatalogSection
+                title="Configuración mínima del modelo patrimonial"
+                description="Los activos no usan compra/remisión/stock como insumos. Se guardan campos mínimos para mantener compatibilidad del catálogo."
+              >
+                <input type="hidden" name="stock_unit_code" value={stockUnitCode || "un"} />
+                <input type="hidden" name="default_unit" value={resolvedDefaultUnit || stockUnitCode || "un"} />
+                <input type="hidden" name="inventory_kind" value={lockedInventoryKind} />
+                <input type="hidden" name="measurement_mode" value="fixed_presentation" />
+                <input type="hidden" name="default_tolerance_percent" value="0" />
+                <input type="hidden" name="aux_count_unit_code" value="" />
+                <input type="hidden" name="costing_mode" value="manual" />
+                <input type="hidden" name="price" value={productRow.price ?? ""} />
+
+                <div className="grid gap-3 md:grid-cols-3">
+                  <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+                    <div className="ui-caption">Tipo de inventario</div>
+                    <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">Activo</div>
+                  </div>
+                  <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+                    <div className="ui-caption">Unidad técnica</div>
+                    <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">{stockUnitCode || "un"}</div>
+                  </div>
+                  <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+                    <div className="ui-caption">Stock operativo</div>
+                    <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">No aplica aquí</div>
+                  </div>
+                </div>
+
+                <div className="ui-alert ui-alert--warn mt-4">
+                  La existencia real, ubicación, QR, responsable, mantenimientos y conteos se manejan en Activos físicos.
+                </div>
+              </CatalogSection>
+            ) : (
             <CatalogSection
               title="Unidad base e inventario"
               description="Configura la unidad técnica de stock, trazabilidad y costo. Las presentaciones físicas se administran aparte."
@@ -2096,15 +2184,18 @@ export default async function ProductCatalogDetailPage({
                 Las presentaciones físicas, equivalencias operativas y fotos por presentación ahora se administran desde la pantalla dedicada de presentaciones.
               </div>
             </CatalogSection>
+            )}
 
-            <ProductPurchaseSection
-              enabled={hasSuppliers}
-              initialRows={supplierInitialRows}
-              suppliers={suppliersList.map((s) => ({ id: s.id, name: s.name }))}
-              units={unitsList}
-              stockUnitCode={stockUnitCode}
-              stockUnitFieldId={STOCK_UNIT_FIELD_ID}
-            />
+            {!isAssetItem ? (
+              <ProductPurchaseSection
+                enabled={hasSuppliers}
+                initialRows={supplierInitialRows}
+                suppliers={suppliersList.map((s) => ({ id: s.id, name: s.name }))}
+                units={unitsList}
+                stockUnitCode={stockUnitCode}
+                stockUnitFieldId={STOCK_UNIT_FIELD_ID}
+              />
+            ) : null}
 
             {isAssetItem ? (
               <ProductAssetTechnicalSection

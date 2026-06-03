@@ -9,7 +9,7 @@ export function ProductFormFooter({
   submitLabel,
   showActiveToggle = false,
   activeDefaultChecked = true,
-  activeLabel = "Producto activo",
+  activeLabel = "Registro activo",
 }: ProductFormFooterProps) {
   return (
     <>

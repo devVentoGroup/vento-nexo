@@ -88,7 +88,7 @@ function CatalogProductImage({ src, name }: { src?: string; name: string }) {
 }
 
 export function CatalogResultsPanel({
-  activeTab: _activeTab,
+  activeTab,
   activeTabLabel,
   siteLabel,
   lowStockCount,
@@ -111,7 +111,7 @@ export function CatalogResultsPanel({
   onToggleProductActive,
   onDeleteProduct,
 }: CatalogResultsPanelProps) {
-  void _activeTab;
+  const isAssetCatalogTab = activeTab === "equipos";
   void _categoryKind;
   void _stockAlert;
   void _categoryScope;
@@ -133,6 +133,9 @@ export function CatalogResultsPanel({
         row.categoryLabel,
         row.categoryPath,
         row.unitLabel,
+        row.inventoryLabel,
+        row.currentQtyLabel,
+        row.statusLabel,
       ]
         .join(" ")
         .toLowerCase();
@@ -145,20 +148,24 @@ export function CatalogResultsPanel({
       <div className="flex items-center justify-between gap-3">
         <div>
           <div className="ui-h3">{activeTabLabel}</div>
-          <div className="mt-1 ui-body-muted">Mostrando hasta 1200 items.</div>
-          {siteId ? (
+          <div className="mt-1 ui-body-muted">
+            {isAssetCatalogTab
+              ? "Mostrando modelos base del catálogo patrimonial."
+              : "Mostrando hasta 1200 items."}
+          </div>
+          {siteId && !isAssetCatalogTab ? (
             <div className="mt-1 text-xs text-[var(--ui-muted)]">
               Sede activa: {siteLabel}. Bajo mínimo: {lowStockCount}.
             </div>
           ) : null}
         </div>
         <div className="ui-caption">
-          Items: {filteredRows.length}
+          {isAssetCatalogTab ? "Modelos" : "Items"}: {filteredRows.length}
           {normalizedQuery ? <span className="text-[var(--ui-muted)]"> / {itemCount}</span> : null}
         </div>
       </div>
 
-      {siteId ? (
+      {siteId && !isAssetCatalogTab ? (
         <div className="mt-4 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4">
           <details className="group" open={purchaseSuggestions.length > 0}>
             <summary className="flex cursor-pointer items-center justify-between gap-3">
@@ -207,12 +214,12 @@ export function CatalogResultsPanel({
       <div className="mt-4 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-3">
         <div className="flex flex-col gap-2 sm:flex-row sm:items-end">
           <label className="flex-1">
-            <span className="ui-label">Buscar producto</span>
+            <span className="ui-label">{isAssetCatalogTab ? "Buscar modelo patrimonial" : "Buscar producto"}</span>
             <input
               name="q"
               value={liveQuery}
               onChange={(event) => setLiveQuery(event.target.value)}
-              placeholder="SKU o nombre de producto"
+              placeholder={isAssetCatalogTab ? "SKU o nombre del modelo" : "SKU o nombre de producto"}
               className="ui-input mt-1"
             />
           </label>
@@ -234,19 +241,31 @@ export function CatalogResultsPanel({
         <table className="ui-table min-w-[1100px] text-sm">
           <thead className="text-left text-[var(--ui-muted)]">
             <tr>
-              <th className="py-2 pr-4 whitespace-nowrap">Producto</th>
+              <th className="py-2 pr-4 whitespace-nowrap">{isAssetCatalogTab ? "Modelo" : "Producto"}</th>
               {viewMode === "catalogo" ? (
                 <>
-                  <th className="py-2 pr-4 whitespace-nowrap">Categoría</th>
-                  <th className="py-2 pr-4 whitespace-nowrap">Unidad</th>
+                  <th className="py-2 pr-4 whitespace-nowrap">
+                    {isAssetCatalogTab ? "Categoría patrimonial" : "Categoría"}
+                  </th>
+                  <th className="py-2 pr-4 whitespace-nowrap">
+                    {isAssetCatalogTab ? "Tipo" : "Unidad"}
+                  </th>
                 </>
               ) : null}
-              <th className="py-2 pr-4 whitespace-nowrap">Stock sede</th>
-              <th className="py-2 pr-4 whitespace-nowrap">Mínimo</th>
-              <th className="py-2 pr-4 whitespace-nowrap">Faltante</th>
+              <th className="py-2 pr-4 whitespace-nowrap">
+                {isAssetCatalogTab ? "Inventario real" : "Stock sede"}
+              </th>
+              <th className="py-2 pr-4 whitespace-nowrap">
+                {isAssetCatalogTab ? "Stock" : "Mínimo"}
+              </th>
+              <th className="py-2 pr-4 whitespace-nowrap">
+                {isAssetCatalogTab ? "Uso" : "Faltante"}
+              </th>
               {viewMode === "catalogo" ? (
                 <>
-                  <th className="py-2 pr-4 whitespace-nowrap">Auto-costo</th>
+                  <th className="py-2 pr-4 whitespace-nowrap">
+                    {isAssetCatalogTab ? "Operación" : "Auto-costo"}
+                  </th>
                   <th className="py-2 pr-4 whitespace-nowrap">Estado</th>
                 </>
               ) : (
@@ -320,7 +339,7 @@ export function CatalogResultsPanel({
                 <td className="py-2.5 pr-4 align-top">
                   <div className="flex flex-nowrap items-center gap-2">
                     <Link href={row.fichaHref} className={TABLE_ACTION_BUTTON_CLASS}>
-                      Ficha
+                      {isAssetCatalogTab ? "Modelo" : "Ficha"}
                     </Link>
                     {canManageProducts ? (
                       <form action={onToggleProductActive}>
@@ -337,7 +356,9 @@ export function CatalogResultsPanel({
                         action={onDeleteProduct}
                         onSubmit={(event) => {
                           const ok = window.confirm(
-                            "¿Eliminar este producto? Esta acción no se puede deshacer."
+                            isAssetCatalogTab
+                              ? "¿Eliminar este modelo patrimonial? Esta acción no se puede deshacer."
+                              : "¿Eliminar este producto? Esta acción no se puede deshacer."
                           );
                           if (!ok) event.preventDefault();
                         }}
@@ -365,8 +386,12 @@ export function CatalogResultsPanel({
               <tr>
                 <td className="py-4 text-[var(--ui-muted)]" colSpan={viewMode === "catalogo" ? 9 : 6}>
                   {normalizedQuery
-                    ? "No hay productos que coincidan con la búsqueda."
-                    : "No hay productos para mostrar con estos filtros."}
+                    ? isAssetCatalogTab
+                      ? "No hay modelos patrimoniales que coincidan con la búsqueda."
+                      : "No hay productos que coincidan con la búsqueda."
+                    : isAssetCatalogTab
+                      ? "No hay modelos patrimoniales para mostrar con estos filtros."
+                      : "No hay productos para mostrar con estos filtros."}
                 </td>
               </tr>
             ) : null}

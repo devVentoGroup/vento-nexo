@@ -176,6 +176,22 @@ function formatDate(value?: string | null) {
   return value;
 }
 
+function formatMetric(value: number, maxFractionDigits = 1): string {
+  if (!Number.isFinite(value)) return "-";
+  return new Intl.NumberFormat("es-CO", {
+    maximumFractionDigits: maxFractionDigits,
+  }).format(value);
+}
+
+function siteTypeLabel(value?: string | null): string {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "production_center") return "Centro de producción";
+  if (normalized === "satellite") return "Satélite";
+  if (normalized === "warehouse") return "Bodega";
+  if (normalized === "store") return "Tienda";
+  return "Sede";
+}
+
 function parseQuantity(value: FormDataEntryValue | null): number {
   const normalized = String(value ?? "")
     .trim()
@@ -519,14 +535,14 @@ export default async function InventoryStockPage({
   const productTypeOptions = [
     { value: "", label: "Todos los tipos" },
     { value: "insumo", label: "Insumo" },
-    { value: "preparacion", label: "Preparacion" },
+    { value: "preparacion", label: "Preparación" },
     { value: "venta", label: "Venta" },
   ];
 
   const categoryKindOptions = [
     { value: "", label: "Todas" },
     { value: "insumo", label: "Insumo" },
-    { value: "preparacion", label: "Preparacion" },
+    { value: "preparacion", label: "Preparación" },
     { value: "venta", label: "Venta" },
     { value: "equipo", label: "Equipo/activo" },
   ];
@@ -669,7 +685,7 @@ export default async function InventoryStockPage({
   const quickStockClassesBase: Array<{ value: string; label: string }> = [
     { value: "", label: "Todos" },
     { value: "insumos", label: "Insumos" },
-    { value: "preparaciones", label: "Preparaciones" },
+    { value: "preparaciones", label: "Preparaciónes" },
     { value: "venta", label: "Venta" },
     { value: "venta_reventa", label: "Reventa" },
     { value: "venta_terminado", label: "Venta terminados" },
@@ -702,8 +718,29 @@ export default async function InventoryStockPage({
     const qty = Number(stockMap.get(product.id)?.current_qty ?? 0);
     return sum + (Number.isFinite(qty) ? qty : 0);
   }, 0);
+  const visibleStockRowsWithQty = productRows.filter((product) => {
+    const qty = Number(stockMap.get(product.id)?.current_qty ?? 0);
+    return Math.abs(qty) > 0.000001;
+  }).length;
+  const positiveStockRows = productRows.filter((product) => {
+    const qty = Number(stockMap.get(product.id)?.current_qty ?? 0);
+    return qty > 0.000001;
+  }).length;
+  const zeroStockRows = Math.max(productRows.length - positiveStockRows - negativeCount, 0);
+  const productsWithLocStock = Array.from(locSummaryByProduct.values()).filter((row) => row.totalQty > 0.000001).length;
+  const locCoveragePct =
+    positiveStockRows > 0 ? Math.round((productsWithLocStock / positiveStockRows) * 100) : 100;
+  const zoneCount = new Set(locList.map((loc) => String(loc.zone ?? "").trim()).filter(Boolean)).size;
+  const stockWithoutLocCount = productIdsWithStockNoLoc.length;
+  const alertCount = negativeCount + stockWithoutLocCount;
   const siteLabel = siteId ? siteNameMap.get(siteId) ?? siteId : "Todas las sedes";
   const locCount = siteId ? locList.length : 0;
+  const selectedLoc = locationIdFilter && locList.length > 0
+    ? locList.find((loc) => loc.id === locationIdFilter)
+    : null;
+  const selectedLocLabel =
+    selectedLoc?.description || selectedLoc?.code || selectedLoc?.zone || locationIdFilter;
+  const activeViewLabel = viewByLoc ? "Stock por área / LOC" : "Stock por sede";
   const heroTitle = isOperatorFocusMode
     ? isSatellite
       ? "Verifica stock para pedir o recibir"
@@ -711,11 +748,11 @@ export default async function InventoryStockPage({
     : "Stock por sede";
   const heroSubtitle = isOperatorFocusMode
     ? isSatellite
-      ? "Consulta rapido si tu sede tiene saldo, que areas estan activas y desde aqui vuelve a pedir o recibir."
-      : "Usa esta vista para confirmar saldo, ubicar producto por area y seguir con preparacion o conteo."
+      ? "Consulta rápido si tu sede tiene saldo, qué áreas están activas y desde aqui vuelve a pedir o recibir."
+      : "Usa esta vista para confirmar saldo, ubicar producto por área y seguir con preparacion o conteo."
     : "Lee el inventario actual y entra a conteos, movimientos o vista por area sin cambiar de flujo.";
   const heroModeLabel = isSatellite
-    ? "Modo satelite"
+    ? "Modo satélite"
     : isProductionCenter
       ? "Modo Centro"
       : "Modo verificacion";
@@ -756,14 +793,14 @@ export default async function InventoryStockPage({
       const unassignedQty = Math.max(0, qtyValue - Number(locSummary?.totalQty ?? 0));
       const areaLines = [...(locSummary?.lines ?? [])];
       if (unassignedQty > 0.000001) {
-        areaLines.push(`Sin area: ${unassignedQty}`);
+        areaLines.push(`Sin área: ${unassignedQty}`);
       }
       const areaSummary =
         siteId && locList.length > 0
           ? areaLines.length
             ? areaLines.join(" / ")
             : qtyValue > 0
-              ? "Sin area"
+              ? "Sin área"
               : ""
           : "";
       const byLocation = Object.fromEntries(
@@ -818,88 +855,191 @@ export default async function InventoryStockPage({
 
   return (
     <div className="ui-scene w-full space-y-6">
-      <section className="ui-remission-hero ui-fade-up">
-        <div className="ui-remission-hero-grid">
-          <div>
-            <span className="ui-chip ui-chip--brand">{heroModeLabel} / {siteLabel}</span>
-            <h1 className="mt-4 text-3xl font-semibold tracking-[-0.03em] text-[var(--ui-text)]">
-              {heroTitle}
-            </h1>
-            <p className="mt-3 max-w-2xl text-sm leading-6 text-[var(--ui-muted)] sm:text-base">
-              {heroSubtitle}
-            </p>
+      <section className="ui-remission-hero ui-fade-up overflow-hidden">
+        <div className="ui-remission-hero-grid lg:grid-cols-[1.25fr_0.95fr] lg:items-start">
+          <div className="space-y-5">
+            <div className="flex flex-wrap gap-2">
+              <span className="ui-chip ui-chip--brand">{heroModeLabel}</span>
+              <span className="ui-chip">{siteLabel}</span>
+              <span className={viewByLoc ? "ui-chip ui-chip--success" : "ui-chip ui-chip--warn"}>
+                {activeViewLabel}
+              </span>
+              {selectedSiteType ? <span className="ui-chip">{siteTypeLabel(selectedSiteType)}</span> : null}
+            </div>
+
+            <div>
+              <h1 className="text-4xl font-black tracking-[-0.04em] text-[var(--ui-text)] sm:text-5xl">
+                {heroTitle}
+              </h1>
+              <p className="mt-4 max-w-3xl text-base leading-7 text-[var(--ui-muted)]">
+                {heroSubtitle}
+              </p>
+            </div>
+
+            <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+              <Link
+                href="/inventory/count-initial"
+                className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-950 transition hover:-translate-y-0.5 hover:bg-emerald-100 hover:shadow-sm"
+              >
+                <div className="text-2xl">🧮</div>
+                <div className="mt-2">Conteo inicial</div>
+                <div className="mt-1 text-xs font-medium text-emerald-800">
+                  Cargar o corregir saldo base.
+                </div>
+              </Link>
+
+              <Link
+                href={`/inventory/stock/assign-location${siteId ? `?site_id=${encodeURIComponent(siteId)}` : ""}`}
+                className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-950 transition hover:-translate-y-0.5 hover:bg-amber-100 hover:shadow-sm"
+              >
+                <div className="text-2xl">📍</div>
+                <div className="mt-2">Asignar sin área</div>
+                <div className="mt-1 text-xs font-medium text-amber-800">
+                  {stockWithoutLocCount} producto(s) pendientes.
+                </div>
+              </Link>
+
+              <Link
+                href="/inventory/movements"
+                className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm font-semibold text-indigo-950 transition hover:-translate-y-0.5 hover:bg-indigo-100 hover:shadow-sm"
+              >
+                <div className="text-2xl">↔️</div>
+                <div className="mt-2">Movimientos</div>
+                <div className="mt-1 text-xs font-medium text-indigo-800">
+                  Entradas, salidas y ajustes.
+                </div>
+              </Link>
+
+              {siteId && locList.length > 0 ? (
+                <Link
+                  href={
+                    viewByLoc
+                      ? `/inventory/stock?site_id=${encodeURIComponent(siteId)}${searchQuery ? `&q=${encodeURIComponent(searchQuery)}` : ""}${stockClass ? `&stock_class=${encodeURIComponent(stockClass)}` : ""}${productType ? `&product_type=${encodeURIComponent(productType)}` : ""}${inventoryKind ? `&inventory_kind=${encodeURIComponent(inventoryKind)}` : ""}`
+                      : `/inventory/stock?site_id=${encodeURIComponent(siteId)}&view=by_loc${searchQuery ? `&q=${encodeURIComponent(searchQuery)}` : ""}${stockClass ? `&stock_class=${encodeURIComponent(stockClass)}` : ""}${productType ? `&product_type=${encodeURIComponent(productType)}` : ""}${inventoryKind ? `&inventory_kind=${encodeURIComponent(inventoryKind)}` : ""}`
+                  }
+                  className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4 text-sm font-semibold text-cyan-950 transition hover:-translate-y-0.5 hover:bg-cyan-100 hover:shadow-sm"
+                >
+                  <div className="text-2xl">🗂️</div>
+                  <div className="mt-2">{viewByLoc ? "Ver por sede" : "Ver por área"}</div>
+                  <div className="mt-1 text-xs font-medium text-cyan-800">
+                    {locCount} área(s) / {zoneCount} zona(s).
+                  </div>
+                </Link>
+              ) : null}
+            </div>
           </div>
 
-          <div className="ui-remission-kpis">
-            <div className="ui-remission-kpi">
-              <div className="ui-remission-kpi-label">Productos</div>
-              <div className="ui-remission-kpi-value">{productRows.length}</div>
-              <div className="ui-remission-kpi-note">Visibles con los filtros actuales</div>
+          <div className="grid gap-3">
+            <div className="ui-remission-kpis sm:grid-cols-2">
+              <article className="ui-remission-kpi" data-tone="warm">
+                <div className="ui-remission-kpi-label">Productos visibles</div>
+                <div className="ui-remission-kpi-value">{formatMetric(productRows.length, 0)}</div>
+                <div className="ui-remission-kpi-note">Según sede, filtros y vista actual</div>
+              </article>
+              <article className="ui-remission-kpi" data-tone="cool">
+                <div className="ui-remission-kpi-label">Stock total visible</div>
+                <div className="ui-remission-kpi-value">{formatMetric(totalQty, 2)}</div>
+                <div className="ui-remission-kpi-note">{visibleStockRowsWithQty} producto(s) con saldo</div>
+              </article>
+              <article className="ui-remission-kpi" data-tone={alertCount > 0 ? "danger" : "success"}>
+                <div className="ui-remission-kpi-label">Alertas</div>
+                <div className="ui-remission-kpi-value">{formatMetric(alertCount, 0)}</div>
+                <div className="ui-remission-kpi-note">{negativeCount} negativos · {stockWithoutLocCount} sin área</div>
+              </article>
+              <article className="ui-remission-kpi" data-tone={locCoveragePct >= 95 ? "success" : "warn"}>
+                <div className="ui-remission-kpi-label">Cobertura LOC</div>
+                <div className="ui-remission-kpi-value">{locCoveragePct}%</div>
+                <div className="ui-remission-kpi-note">{productsWithLocStock}/{positiveStockRows || 0} con ubicación</div>
+              </article>
             </div>
-            <div className="ui-remission-kpi" data-tone="cool">
-              <div className="ui-remission-kpi-label">Qty total</div>
-              <div className="ui-remission-kpi-value">{totalQty}</div>
-              <div className="ui-remission-kpi-note">Suma de stock visible</div>
-            </div>
-            <div className="ui-remission-kpi" data-tone="success">
-              <div className="ui-remission-kpi-label">Alertas</div>
-              <div className="ui-remission-kpi-value">{negativeCount + productIdsWithStockNoLoc.length}</div>
-              <div className="ui-remission-kpi-note">Negativos o sin area</div>
+
+            <div className="rounded-[1.5rem] border border-white/70 bg-white/80 p-4 shadow-sm backdrop-blur">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-sm font-black text-[var(--ui-text)]">Lectura rápida</div>
+                  <div className="mt-1 text-xs leading-5 text-[var(--ui-muted)]">
+                    {viewByLoc
+                      ? "Estás viendo la distribución por área/LOC. Ideal para validar dónde está físicamente cada saldo."
+                      : "Estás viendo el total consolidado por sede. Cambia a área/LOC para validar distribución física."}
+                  </div>
+                </div>
+                <div className="text-3xl">📦</div>
+              </div>
             </div>
           </div>
         </div>
       </section>
 
-      <div className="flex items-start justify-between gap-4 ui-fade-up ui-delay-1">
-        <div>
-          <div className="ui-caption">
-            {activeFilterCount > 0 ? `${activeFilterCount} filtro(s) activos` : "Sin filtros adicionales"}
-            {locCount > 0 ? ` / ${locCount} areas visibles` : ""}
+      <section className="grid gap-4 ui-fade-up ui-delay-1 xl:grid-cols-[1.1fr_0.9fr]">
+        <div className="ui-panel">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div>
+              <h2 className="ui-h2">Centro de control de stock</h2>
+              <p className="mt-2 ui-body-muted">
+                Revisa primero alertas, ubicación y cobertura antes de hacer conteos, asignaciones o movimientos.
+              </p>
+            </div>
+            <span className="ui-chip">
+              {activeFilterCount > 0 ? `${activeFilterCount} filtro(s)` : "Sin filtros"}
+            </span>
+          </div>
+
+          <div className="mt-5 grid gap-3 md:grid-cols-3">
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Sede</div>
+              <div className="mt-1 text-base font-black text-[var(--ui-text)]">{siteLabel}</div>
+              <div className="mt-1 text-xs text-[var(--ui-muted)]">{siteTypeLabel(selectedSiteType)}</div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Áreas / zonas</div>
+              <div className="mt-1 text-base font-black text-[var(--ui-text)]">{locCount} / {zoneCount}</div>
+              <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                {selectedLocLabel ? `Filtrado por ${selectedLocLabel}` : "Sin filtro de área puntual"}
+              </div>
+            </div>
+            <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Ceros / sin saldo</div>
+              <div className="mt-1 text-base font-black text-[var(--ui-text)]">{zeroStockRows}</div>
+              <div className="mt-1 text-xs text-[var(--ui-muted)]">Productos visibles sin existencia positiva</div>
+            </div>
           </div>
         </div>
 
-        <div className="flex flex-wrap gap-2">
-          {isSatellite ? (
-            <Link href="/inventory/remissions" className="ui-btn ui-btn--brand">
-              Pedir / recibir
-            </Link>
-          ) : null}
-          {isProductionCenter ? (
-            <Link href="/inventory/remissions/prepare" className="ui-btn ui-btn--brand">
-              Preparar remisiones
-            </Link>
-          ) : null}
-          {siteId && locList.length > 0 ? (
-            viewByLoc ? (
-              <Link
-                href={`/inventory/stock?site_id=${encodeURIComponent(siteId)}${searchQuery ? `&q=${encodeURIComponent(searchQuery)}` : ""}${stockClass ? `&stock_class=${encodeURIComponent(stockClass)}` : ""}${productType ? `&product_type=${encodeURIComponent(productType)}` : ""}${inventoryKind ? `&inventory_kind=${encodeURIComponent(inventoryKind)}` : ""}`}
-                className="ui-btn ui-btn--ghost"
-              >
-                Ver stock por sede
+        <div className="ui-panel">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <h2 className="ui-h2">Acciones operativas</h2>
+              <p className="mt-2 ui-body-muted">Atajos según el tipo de sede y la operación del día.</p>
+            </div>
+            <div className="text-3xl">⚡</div>
+          </div>
+
+          <div className="mt-4 flex flex-wrap gap-2">
+            {isSatellite ? (
+              <Link href="/inventory/remissions" className="ui-btn ui-btn--brand">
+                Pedir / recibir
               </Link>
-            ) : (
-              <Link
-                href={`/inventory/stock?site_id=${encodeURIComponent(siteId)}&view=by_loc${searchQuery ? `&q=${encodeURIComponent(searchQuery)}` : ""}${stockClass ? `&stock_class=${encodeURIComponent(stockClass)}` : ""}${productType ? `&product_type=${encodeURIComponent(productType)}` : ""}${inventoryKind ? `&inventory_kind=${encodeURIComponent(inventoryKind)}` : ""}`}
-                className="ui-btn ui-btn--brand"
-              >
-                Stock por area (tabla)
+            ) : null}
+            {isProductionCenter ? (
+              <Link href="/inventory/remissions/prepare" className="ui-btn ui-btn--brand">
+                Preparar remisiones
               </Link>
-            )
-          ) : null}
-          <Link href="/inventory/count-initial" className="ui-btn ui-btn--brand">
-            Conteo inicial
-          </Link>
-          <Link
-            href={`/inventory/stock/assign-location${siteId ? `?site_id=${encodeURIComponent(siteId)}` : ""}`}
-            className="ui-btn ui-btn--ghost"
-          >
-            Asignar sin area
-          </Link>
-          <Link href="/inventory/movements" className="ui-btn ui-btn--ghost">
-            Ver movimientos
-          </Link>
+            ) : null}
+            <Link href="/inventory/count-initial" className="ui-btn ui-btn--ghost">
+              Conteo inicial
+            </Link>
+            <Link
+              href={`/inventory/stock/assign-location${siteId ? `?site_id=${encodeURIComponent(siteId)}` : ""}`}
+              className="ui-btn ui-btn--ghost"
+            >
+              Asignar sin área
+            </Link>
+            <Link href="/inventory/movements" className="ui-btn ui-btn--ghost">
+              Movimientos
+            </Link>
+          </div>
         </div>
-      </div>
+      </section>
 
       {sp.count_initial === "1" ? (
         <div className="ui-alert ui-alert--success ui-fade-up ui-delay-1">
@@ -915,14 +1055,14 @@ export default async function InventoryStockPage({
 
       {sp.assigned === "1" ? (
         <div className="ui-alert ui-alert--success ui-fade-up ui-delay-1">
-          Stock asignado al area. El total de la sede no cambio.
+          Stock asignado al área. El total de la sede no cambió.
         </div>
       ) : null}
 
       {productIdsWithStockNoLoc.length > 0 ? (
         <div className="ui-alert ui-alert--warn ui-fade-up ui-delay-1">
-          <strong>Sin ubicacion:</strong> {productIdsWithStockNoLoc.length} producto(s) tienen stock en esta sede pero
-          no esta completamente asignado a un area.
+          <strong>Sin ubicación:</strong> {productIdsWithStockNoLoc.length} producto(s) tienen stock en esta sede pero
+          no está completamente asignado a un área.
         </div>
       ) : null}
 
@@ -935,15 +1075,19 @@ export default async function InventoryStockPage({
       <div className="ui-panel ui-panel--halo ui-remission-section ui-fade-up ui-delay-1">
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
-            <div className="ui-h3">Vista</div>
+            <div className="ui-h3">Filtros y alcance</div>
             <div className="mt-1 ui-caption">
-              Elige sede y area cuando necesites acotar el stock.
+              Elige sede, área, zona y categoría para leer el stock desde la operación correcta.
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <span className="ui-chip">{siteLabel}</span>
-            <span className="ui-chip ui-chip--warn">{negativeCount} negativos</span>
-            <span className="ui-chip ui-chip--brand">{productIdsWithStockNoLoc.length} sin area</span>
+            <span className={negativeCount > 0 ? "ui-chip ui-chip--danger" : "ui-chip ui-chip--success"}>
+              {negativeCount} negativos
+            </span>
+            <span className={stockWithoutLocCount > 0 ? "ui-chip ui-chip--warn" : "ui-chip ui-chip--success"}>
+              {stockWithoutLocCount} sin área
+            </span>
           </div>
         </div>
         <form method="get" className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
@@ -962,7 +1106,7 @@ export default async function InventoryStockPage({
           {siteId && locList.length > 0 ? (
             <>
               <label className="flex flex-col gap-1">
-                <span className="ui-label">Area</span>
+                <span className="ui-label">Área / LOC</span>
                 <select name="location_id" defaultValue={locationIdFilter} className="ui-input">
                   <option value="">Todas</option>
                   {locList.map((loc) => (
@@ -1003,7 +1147,7 @@ export default async function InventoryStockPage({
                 </label>
 
                 <label className="flex flex-col gap-1">
-                  <span className="ui-label">Categoria aplica a</span>
+                  <span className="ui-label">Categoría aplica a</span>
                   <select name="category_kind" defaultValue={categoryKind ?? ""} className="ui-input">
                     {categoryKindOptions.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -1014,7 +1158,7 @@ export default async function InventoryStockPage({
                 </label>
 
                 <label className="flex flex-col gap-1">
-                  <span className="ui-label">Alcance de categoria</span>
+                  <span className="ui-label">Alcance de categoría</span>
                   <select name="category_scope" defaultValue={categoryScope} className="ui-input">
                     {categoryScopeOptions.map((option) => (
                       <option key={option.value} value={option.value}>
@@ -1042,7 +1186,7 @@ export default async function InventoryStockPage({
 
                 {categoryScope === "site" ? (
                   <label className="flex flex-col gap-1 sm:col-span-2">
-                    <span className="ui-label">Sede para categorias</span>
+                    <span className="ui-label">Sede para categorías</span>
                     <select name="category_site_id" defaultValue={categorySiteId} className="ui-input">
                       <option value="">Seleccionar sede</option>
                       {siteIds.map((id) => (
@@ -1062,7 +1206,7 @@ export default async function InventoryStockPage({
                   selectedCategoryId={effectiveCategoryId}
                   siteNamesById={siteNamesById}
                   className="sm:col-span-2 lg:col-span-4"
-                  label="Categoria"
+                  label="Categoría"
                   emptyOptionLabel="Todas"
                   maxVisibleOptions={10}
                 />
@@ -1082,9 +1226,9 @@ export default async function InventoryStockPage({
         <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <div className="ui-h3">Asignar stock sin area</div>
+              <div className="ui-h3">Asignar stock sin área</div>
               <div className="mt-1 ui-body-muted">
-                Mueve stock existente de la sede a un LOC activo sin cambiar el total de inventario.
+                Productos con saldo en la sede que todavía no tienen distribución completa por LOC.
               </div>
             </div>
             <span className="ui-chip ui-chip--warn">{unassignedStockRows.length} visibles</span>
@@ -1095,7 +1239,7 @@ export default async function InventoryStockPage({
               <thead>
                 <tr>
                   <TableHeaderCell>Producto</TableHeaderCell>
-                  <TableHeaderCell className="text-right">Sin area</TableHeaderCell>
+                  <TableHeaderCell className="text-right">Sin área</TableHeaderCell>
                   <TableHeaderCell>Asignacion</TableHeaderCell>
                 </tr>
               </thead>
@@ -1112,7 +1256,7 @@ export default async function InventoryStockPage({
                         <input type="hidden" name="product_id" value={row.product.id} />
                         <select name="location_id" className="ui-input" required defaultValue="">
                           <option value="" disabled>
-                            Selecciona area
+                            Selecciona área
                           </option>
                           {locList.map((loc) => (
                             <option key={loc.id} value={loc.id}>
@@ -1147,9 +1291,9 @@ export default async function InventoryStockPage({
         <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div>
-              <div className="ui-h3">Stock por area</div>
+              <div className="ui-h3">Matriz de stock por área / LOC</div>
               <div className="mt-1 ui-body-muted">
-                Cantidades por producto y por area. Sede: {siteNameMap.get(siteId) ?? siteId}.
+                Lee la distribución física por producto y ubicación interna. Sede: {siteNameMap.get(siteId) ?? siteId}.
               </div>
             </div>
             {canExportByLoc ? (
@@ -1167,7 +1311,7 @@ export default async function InventoryStockPage({
               rows={stockTableRows}
               locations={stockTableLocations}
               mode="by-location"
-              emptyMessage="No hay stock por area para mostrar con estos filtros."
+              emptyMessage="No hay stock por área para mostrar con estos filtros."
             />
           </div>
         </div>
@@ -1175,7 +1319,7 @@ export default async function InventoryStockPage({
 
       {hasError ? (
         <div className="ui-alert ui-alert--error ui-fade-up ui-delay-2">
-          Fallo el SELECT de inventario: {productError?.message ?? stockError?.message}
+          Falló el SELECT de inventario: {productError?.message ?? stockError?.message}
         </div>
       ) : null}
 
@@ -1183,12 +1327,15 @@ export default async function InventoryStockPage({
       <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <div className="ui-h3">Stock</div>
-            <div className="mt-1 ui-caption">Mostrando productos segun filtros actuales.</div>
+            <div className="ui-h3">Stock consolidado por sede</div>
+            <div className="mt-1 ui-caption">Totales visibles según sede, categoría, tipo y filtros actuales.</div>
           </div>
           <div className="flex flex-wrap gap-2">
             <span className="ui-chip">{productRows.length} items</span>
-            <span className="ui-chip ui-chip--warn">{negativeCount} negativos</span>
+            <span className="ui-chip ui-chip--success">{positiveStockRows} con saldo</span>
+            <span className={negativeCount > 0 ? "ui-chip ui-chip--danger" : "ui-chip ui-chip--success"}>
+              {negativeCount} negativos
+            </span>
           </div>
         </div>
 
@@ -1223,3 +1370,4 @@ export default async function InventoryStockPage({
 
 
 
+  

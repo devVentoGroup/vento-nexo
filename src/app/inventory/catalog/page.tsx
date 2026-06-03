@@ -40,7 +40,7 @@ const TAB_OPTIONS = [
   { value: "insumos", label: "Insumos" },
   { value: "preparaciones", label: "Preparaciones" },
   { value: "productos", label: "Productos" },
-  { value: "equipos", label: "Equipos y activos" },
+  { value: "equipos", label: "Modelos patrimoniales" },
 ] as const;
 
 type TabValue = (typeof TAB_OPTIONS)[number]["value"];
@@ -384,6 +384,7 @@ export default async function InventoryCatalogPage({
   const activeTab: TabValue = TAB_OPTIONS.some((t) => t.value === tabRaw)
     ? (tabRaw as TabValue)
     : "insumos";
+  const isAssetCatalogTab = activeTab === "equipos";
 
   const categoryKind = categoryKindFromCatalogTab(activeTab);
   const requestedCategoryId = String(sp.category_id ?? "").trim();
@@ -689,12 +690,12 @@ export default async function InventoryCatalogPage({
   }
 
   const visibleProducts =
-    stockAlert === "low"
+    !isAssetCatalogTab && stockAlert === "low"
       ? productRows.filter((product) => stockMetricsByProduct.get(product.id)?.isLow)
       : productRows;
-  const lowStockCount = productRows.filter(
-    (product) => stockMetricsByProduct.get(product.id)?.isLow
-  ).length;
+  const lowStockCount = isAssetCatalogTab
+    ? 0
+    : productRows.filter((product) => stockMetricsByProduct.get(product.id)?.isLow).length;
 
   const primarySupplierIds = Array.from(
     new Set(
@@ -845,7 +846,10 @@ export default async function InventoryCatalogPage({
       ]
       : [
         ...(activeTab === "equipos"
-          ? [{ href: "/inventory/assets", label: "Ver activos físicos", tone: "ghost" as const }]
+          ? [
+            { href: "/inventory/assets", label: "Activos físicos", tone: "ghost" as const },
+            { href: "/inventory/assets/counts", label: "Conteo patrimonial", tone: "ghost" as const },
+          ]
           : []),
         {
           href: `/inventory/catalog/new?type=${activeTab === "insumos"
@@ -858,7 +862,7 @@ export default async function InventoryCatalogPage({
             ? "insumo"
             : activeTab === "preparaciones"
               ? "preparacion"
-              : "equipo"
+              : "modelo patrimonial"
             }`,
           tone: "brand" as const,
         },
@@ -963,22 +967,22 @@ export default async function InventoryCatalogPage({
       sku: product.sku ?? "-",
       categoryPath,
       categoryLabel,
-      inventoryLabel,
-      unitLabel: product.unit ?? "-",
-      currentQtyLabel: formatQty(stockMetrics.currentQty),
-      currentQtyIsLow: stockMetrics.isLow,
-      minStockLabel: formatQty(stockMetrics.minStock),
-      shortageLabel,
-      shortageTone,
-      autoCostLabel,
-      autoCostTone,
-      autoCostDetail,
+      inventoryLabel: isAssetCatalogTab ? "Modelo patrimonial" : inventoryLabel,
+      unitLabel: isAssetCatalogTab ? "Modelo base" : product.unit ?? "-",
+      currentQtyLabel: isAssetCatalogTab ? "Activos físicos" : formatQty(stockMetrics.currentQty),
+      currentQtyIsLow: isAssetCatalogTab ? false : stockMetrics.isLow,
+      minStockLabel: isAssetCatalogTab ? "No aplica" : formatQty(stockMetrics.minStock),
+      shortageLabel: isAssetCatalogTab ? "Modelo" : shortageLabel,
+      shortageTone: isAssetCatalogTab ? "muted" : shortageTone,
+      autoCostLabel: isAssetCatalogTab ? "Catálogo" : autoCostLabel,
+      autoCostTone: isAssetCatalogTab ? "default" : autoCostTone,
+      autoCostDetail: isAssetCatalogTab ? "La operación real vive en Activos físicos." : autoCostDetail,
       statusLabel: product.is_active === false ? "Inactivo" : "Activo",
-      primarySupplierName,
+      primarySupplierName: isAssetCatalogTab ? "No aplica" : primarySupplierName,
       fichaHref: `/inventory/catalog/${product.id}/ficha?from=${encodeURIComponent(catalogReturnUrl)}`,
       nextIsActive: product.is_active === false,
       toggleLabel: product.is_active === false ? "Habilitar" : "Deshabilitar",
-      origoHref: rowOrigoHref,
+      origoHref: isAssetCatalogTab ? "" : rowOrigoHref,
     };
   });
 
@@ -996,14 +1000,16 @@ export default async function InventoryCatalogPage({
               </Link>
               <h1 className="ui-h1">Catálogo maestro</h1>
               <p className="ui-body-muted">
-                Productos maestros, salud operativa por sede y continuidad de compra sin mezclar lógica comercial.
+                {isAssetCatalogTab
+                  ? "Modelos base de equipos, mobiliario, herramientas y activos. El inventario real, QR, ubicación, mantenimiento y conteo viven en Activos físicos."
+                  : "Productos maestros, salud operativa por sede y continuidad de compra sin mezclar lógica comercial."}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
                 {activeTabLabel}
               </span>
-              {activeSiteLabel ? (
+              {activeSiteLabel && !isAssetCatalogTab ? (
                 <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-900">
                   {activeSiteLabel}
                 </span>
@@ -1013,26 +1019,43 @@ export default async function InventoryCatalogPage({
               </span>
             </div>
             <div className="flex flex-wrap gap-2">
-              <Link href="/inventory/stock" className="ui-btn ui-btn--ghost">
-                Ver stock
-              </Link>
+              {isAssetCatalogTab ? (
+                <>
+                  <Link href="/inventory/assets" className="ui-btn ui-btn--brand">
+                    Ver activos físicos
+                  </Link>
+                  <Link href="/inventory/assets/counts" className="ui-btn ui-btn--ghost">
+                    Conteo patrimonial
+                  </Link>
+                </>
+              ) : (
+                <Link href="/inventory/stock" className="ui-btn ui-btn--ghost">
+                  Ver stock
+                </Link>
+              )}
             </div>
           </div>
           <div className="ui-remission-kpis sm:grid-cols-3 lg:grid-cols-1">
             <article className="ui-remission-kpi" data-tone="warm">
-              <div className="ui-remission-kpi-label">Items visibles</div>
+              <div className="ui-remission-kpi-label">{isAssetCatalogTab ? "Modelos visibles" : "Items visibles"}</div>
               <div className="ui-remission-kpi-value">{visibleProducts.length}</div>
-              <div className="ui-remission-kpi-note">Aplicando filtros y tab actual</div>
+              <div className="ui-remission-kpi-note">
+                {isAssetCatalogTab ? "Modelos base del catálogo patrimonial" : "Aplicando filtros y tab actual"}
+              </div>
             </article>
             <article className="ui-remission-kpi" data-tone="cool">
-              <div className="ui-remission-kpi-label">Stock bajo</div>
-              <div className="ui-remission-kpi-value">{lowStockCount}</div>
-              <div className="ui-remission-kpi-note">Alertas dentro de la vista actual</div>
+              <div className="ui-remission-kpi-label">{isAssetCatalogTab ? "Inventario real" : "Stock bajo"}</div>
+              <div className="ui-remission-kpi-value">{isAssetCatalogTab ? "Assets" : lowStockCount}</div>
+              <div className="ui-remission-kpi-note">
+                {isAssetCatalogTab ? "Se controla desde Activos físicos" : "Alertas dentro de la vista actual"}
+              </div>
             </article>
             <article className="ui-remission-kpi" data-tone="success">
               <div className="ui-remission-kpi-label">Modo</div>
-              <div className="ui-remission-kpi-value">Maestro</div>
-              <div className="ui-remission-kpi-note">Base operativa para stock, sedes y abastecimiento</div>
+              <div className="ui-remission-kpi-value">{isAssetCatalogTab ? "Modelo" : "Maestro"}</div>
+              <div className="ui-remission-kpi-note">
+                {isAssetCatalogTab ? "Catálogo base, no conteo físico" : "Base operativa para stock, sedes y abastecimiento"}
+              </div>
             </article>
           </div>
         </div>
@@ -1041,6 +1064,27 @@ export default async function InventoryCatalogPage({
       {okMsg ? <div className="ui-alert ui-alert--success">{okMsg}</div> : null}
       {errorMsg ? <div className="ui-alert ui-alert--error">Error: {errorMsg}</div> : null}
       <CatalogToolbar tabs={tabLinks} actions={toolbarActions} />
+
+      {isAssetCatalogTab ? (
+        <section className="grid gap-4 lg:grid-cols-[1.2fr_0.8fr]">
+          <div className="ui-panel border-cyan-200 bg-cyan-50/60">
+            <div className="text-sm font-black text-cyan-950">Esta pestaña es catálogo de modelos</div>
+            <p className="mt-2 text-sm leading-6 text-cyan-900">
+              Aquí se definen modelos como “Aire acondicionado”, “Silla terraza” o “Licuadora industrial”.
+              No representa cuántas unidades existen ni dónde están. Para unidades reales, grupos contables,
+              QR, responsables, mantenimiento y conteo usa Activos físicos.
+            </p>
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
+            <Link href="/inventory/assets" className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4 text-sm font-semibold text-indigo-950 transition hover:bg-indigo-100">
+              Abrir inventario real →
+            </Link>
+            <Link href="/inventory/assets/counts" className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-950 transition hover:bg-amber-100">
+              Abrir conteo patrimonial →
+            </Link>
+          </div>
+        </section>
+      ) : null}
 
       <CatalogOptionalDetails
         title="Refinar vista"
@@ -1057,9 +1101,9 @@ export default async function InventoryCatalogPage({
           clearHref={clearHref}
           hasAdvancedFilters={hasAdvancedFilters}
           categoryScope={categoryScope}
-          stockAlert={stockAlert}
+          stockAlert={isAssetCatalogTab ? "all" : stockAlert}
           viewMode={viewMode}
-          effectiveSupplierId={effectiveSupplierId}
+          effectiveSupplierId={isAssetCatalogTab ? "" : effectiveSupplierId}
           suppliers={suppliersFilterRows}
           categorySiteId={activeSiteId}
           sites={siteRows}
@@ -1076,11 +1120,11 @@ export default async function InventoryCatalogPage({
         activeTab={activeTab}
         activeTabLabel={activeTabLabel}
         siteLabel={activeSiteLabel}
-        lowStockCount={lowStockCount}
+        lowStockCount={isAssetCatalogTab ? 0 : lowStockCount}
         itemCount={visibleProducts.length}
-        siteId={siteId}
-        viewMode={viewMode}
-        purchaseSuggestions={purchaseSuggestionRows}
+        siteId={isAssetCatalogTab ? "" : siteId}
+        viewMode={isAssetCatalogTab ? "catalogo" : viewMode}
+        purchaseSuggestions={isAssetCatalogTab ? [] : purchaseSuggestionRows}
         rows={catalogResultRows}
         canManageProducts={canManageProducts}
         catalogReturnUrl={catalogReturnUrl}

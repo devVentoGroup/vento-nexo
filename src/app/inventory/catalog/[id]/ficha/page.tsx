@@ -1106,9 +1106,11 @@ export default async function ProductTechnicalSheetPage({
               >
                 ← Volver al catálogo
               </Link>
-              <h1 className="ui-h1">Ficha técnica</h1>
+              <h1 className="ui-h1">{isAsset ? "Ficha base del modelo" : "Ficha técnica"}</h1>
               <p className="ui-body-muted">
-                Vista de solo lectura para operación: identidad, unidades, inventario por sede y abastecimiento.
+                {isAsset
+                  ? "Vista de solo lectura para catálogo: identidad, foto y datos técnicos base del modelo. La ubicación real, QR, mantenimiento y conteo viven en Activos físicos."
+                  : "Vista de solo lectura para operación: identidad, unidades, inventario por sede y abastecimiento."}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -1133,6 +1135,16 @@ export default async function ProductTechnicalSheetPage({
                   Editar ficha maestra
                 </Link>
               ) : null}
+              {isAsset ? (
+                <>
+                  <Link href="/inventory/assets/new" className="ui-btn ui-btn--brand">
+                    Crear activo físico
+                  </Link>
+                  <Link href="/inventory/assets" className="ui-btn ui-btn--ghost">
+                    Ver activos físicos
+                  </Link>
+                </>
+              ) : null}
               {(isPreparation || (isSale && !isResale)) ? (
                 <Link
                   href={buildFogoRecipeUrl(product.id)}
@@ -1146,25 +1158,55 @@ export default async function ProductTechnicalSheetPage({
             </div>
           </div>
           <div className="ui-remission-kpis sm:grid-cols-3 lg:grid-cols-1">
-            <article className="ui-remission-kpi" data-tone="warm">
-              <div className="ui-remission-kpi-label">Unidad operativa</div>
-              <div className="ui-remission-kpi-value">{defaultUnitCode}</div>
-              <div className="ui-remission-kpi-note">
-                Captura por defecto cuando no hay empaque operativo.
-              </div>
-            </article>
-            <article className="ui-remission-kpi" data-tone="cool">
-              <div className="ui-remission-kpi-label">Unidad base</div>
-              <div className="ui-remission-kpi-value">{stockUnitCode}</div>
-              <div className="ui-remission-kpi-note">Referencia para stock, costo y consumo.</div>
-            </article>
-            <article className="ui-remission-kpi" data-tone="success">
-              <div className="ui-remission-kpi-label">Sedes configuradas</div>
-              <div className="ui-remission-kpi-value">
-                {sheetRows.filter((row) => row.configured).length}
-              </div>
-              <div className="ui-remission-kpi-note">Con setup activo para este producto.</div>
-            </article>
+            {isAsset ? (
+              <>
+                <article className="ui-remission-kpi" data-tone="cool">
+                  <div className="ui-remission-kpi-label">Modelo base</div>
+                  <div className="ui-remission-kpi-value">Activo</div>
+                  <div className="ui-remission-kpi-note">
+                    Esta ficha describe el modelo, no una unidad física.
+                  </div>
+                </article>
+                <article className="ui-remission-kpi" data-tone="warm">
+                  <div className="ui-remission-kpi-label">Datos técnicos</div>
+                  <div className="ui-remission-kpi-value">
+                    {assetProfile?.brand || assetProfile?.model ? "Listos" : "Pendiente"}
+                  </div>
+                  <div className="ui-remission-kpi-note">
+                    Marca, modelo y referencia técnica del catálogo.
+                  </div>
+                </article>
+                <article className="ui-remission-kpi" data-tone="success">
+                  <div className="ui-remission-kpi-label">Operación real</div>
+                  <div className="ui-remission-kpi-value">NEXO</div>
+                  <div className="ui-remission-kpi-note">
+                    Unidades, QR, ubicación y conteo se gestionan en Activos físicos.
+                  </div>
+                </article>
+              </>
+            ) : (
+              <>
+                <article className="ui-remission-kpi" data-tone="warm">
+                  <div className="ui-remission-kpi-label">Unidad operativa</div>
+                  <div className="ui-remission-kpi-value">{defaultUnitCode}</div>
+                  <div className="ui-remission-kpi-note">
+                    Captura por defecto cuando no hay empaque operativo.
+                  </div>
+                </article>
+                <article className="ui-remission-kpi" data-tone="cool">
+                  <div className="ui-remission-kpi-label">Unidad base</div>
+                  <div className="ui-remission-kpi-value">{stockUnitCode}</div>
+                  <div className="ui-remission-kpi-note">Referencia para stock, costo y consumo.</div>
+                </article>
+                <article className="ui-remission-kpi" data-tone="success">
+                  <div className="ui-remission-kpi-label">Sedes configuradas</div>
+                  <div className="ui-remission-kpi-value">
+                    {sheetRows.filter((row) => row.configured).length}
+                  </div>
+                  <div className="ui-remission-kpi-note">Con setup activo para este producto.</div>
+                </article>
+              </>
+            )}
           </div>
         </div>
       </section>
@@ -1220,7 +1262,7 @@ export default async function ProductTechnicalSheetPage({
         ) : null}
       </section>
 
-      {hasPresentationGallery ? (
+      {!isAsset && hasPresentationGallery ? (
         <article className="ui-panel">
           <div className="flex items-center justify-between gap-2">
             <div className="text-sm font-semibold text-[var(--ui-text)]">Presentaciones del producto</div>
@@ -1285,7 +1327,7 @@ export default async function ProductTechnicalSheetPage({
         </article>
       ) : null}
 
-      {isProducedPackagedProduct ? (
+      {!isAsset && isProducedPackagedProduct ? (
         <article className="ui-panel">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
@@ -1421,289 +1463,146 @@ export default async function ProductTechnicalSheetPage({
 
       {isAsset ? (
         <section className="space-y-4">
-          {isMachineryAndEquipmentCategory &&
-            (overdueMaintenance.length > 0 ||
-              next7DaysMaintenance.length > 0 ||
-              next30DaysMaintenance.length > 0 ||
-              recurrenceIn7Days ||
-              recurrenceIn30Days) ? (
-            <article className="ui-panel">
-              <div className="text-sm font-semibold text-[var(--ui-text)]">
-                Recordatorio de mantenimiento programado
-              </div>
-              <div className="mt-3 grid gap-3 md:grid-cols-3">
-                <div className="rounded-xl border border-red-200 bg-red-50 p-3">
-                  <div className="ui-caption text-red-700">Vencidos</div>
-                  <div className="mt-1 text-xl font-semibold text-red-800">
-                    {overdueMaintenance.length}
-                  </div>
-                  <div className="mt-1 text-xs text-red-700">
-                    Programados antes de hoy y sin cierre.
-                  </div>
+          <article className="ui-panel border-cyan-200 bg-cyan-50/60">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-cyan-950">
+                  Este es un modelo de activo, no una unidad física
                 </div>
-                <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
-                  <div className="ui-caption text-amber-700">Próximos 7 días</div>
-                  <div className="mt-1 text-xl font-semibold text-amber-800">
-                    {next7DaysMaintenance.length + (recurrenceIn7Days ? 1 : 0)}
-                  </div>
-                  <div className="mt-1 text-xs text-amber-700">
-                    Prioridad alta para programación.
-                  </div>
-                </div>
-                <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-3">
-                  <div className="ui-caption text-cyan-700">Próximos 30 días</div>
-                  <div className="mt-1 text-xl font-semibold text-cyan-800">
-                    {next30DaysMaintenance.length + (recurrenceIn30Days ? 1 : 0)}
-                  </div>
-                  <div className="mt-1 text-xs text-cyan-700">
-                    Planeación preventiva mensual.
-                  </div>
-                </div>
+                <p className="mt-2 max-w-3xl text-sm leading-6 text-cyan-900">
+                  Usa esta ficha para consultar la información base del equipo o mobiliario. Para ubicación real,
+                  QR operativo, responsable, mantenimiento, movimientos y conteo patrimonial usa el módulo
+                  <strong> Activos físicos</strong>.
+                </p>
               </div>
-              <div className="mt-3 space-y-2">
-                {scheduledPendingRows.slice(0, 5).map(({ row }) => (
-                  <div
-                    key={`reminder-${row.id}`}
-                    className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm"
-                  >
-                    <span className="font-semibold text-[var(--ui-text)]">
-                      {formatDate(row.scheduled_date)}
-                    </span>
-                    <span className="text-[var(--ui-muted)]">
-                      {" · "}
-                      {row.work_done || "Mantenimiento programado"}
-                      {" · Responsable: "}
-                      {row.responsible || "Sin asignar"}
-                    </span>
-                  </div>
-                ))}
-                {recurrenceNextDueDate ? (
-                  <div className="rounded-xl border border-dashed border-cyan-300 bg-cyan-50 px-3 py-2 text-sm text-cyan-900">
-                    Próximo mantenimiento recurrente: {formatDate(recurrenceNextDueDate.toISOString())}
-                    {" · "}cada {recurrenceMonths} mes(es)
-                  </div>
-                ) : null}
+              <div className="flex flex-wrap gap-2">
+                <Link href="/inventory/assets/new" className="ui-btn ui-btn--brand ui-btn--sm">
+                  Crear activo físico
+                </Link>
+                <Link href="/inventory/assets" className="ui-btn ui-btn--ghost ui-btn--sm">
+                  Ver activos físicos
+                </Link>
+                <Link href="/inventory/assets/counts" className="ui-btn ui-btn--ghost ui-btn--sm">
+                  Conteo patrimonial
+                </Link>
               </div>
-            </article>
-          ) : null}
+            </div>
+          </article>
 
           <article className="ui-panel">
-            <div className="text-sm font-semibold text-[var(--ui-text)]">
-              Ficha del equipo (solo lectura)
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <div className="text-sm font-semibold text-[var(--ui-text)]">
+                  Datos técnicos base del modelo
+                </div>
+                <p className="mt-1 text-sm text-[var(--ui-muted)]">
+                  Información genérica que aplica a todos los activos físicos creados desde este producto.
+                </p>
+              </div>
+              <span className="ui-chip ui-chip--brand">Catálogo</span>
             </div>
-            <div className="mt-3 grid gap-3 md:grid-cols-3">
+
+            <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
               <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
-                <div className="ui-caption">Marca</div>
+                <div className="ui-caption">Marca base</div>
                 <div className="mt-1 text-sm font-semibold">{assetProfile?.brand || "Sin dato"}</div>
               </div>
               <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
-                <div className="ui-caption">Modelo</div>
+                <div className="ui-caption">Modelo / referencia base</div>
                 <div className="mt-1 text-sm font-semibold">{assetProfile?.model || "Sin dato"}</div>
               </div>
               <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
-                <div className="ui-caption">Serial</div>
-                <div className="mt-1 text-sm font-semibold">{assetProfile?.serial_number || "Sin dato"}</div>
+                <div className="ui-caption">Categoría patrimonial</div>
+                <div className="mt-1 text-sm font-semibold">{categoryPath}</div>
               </div>
               <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
-                <div className="ui-caption">Ubicación física</div>
+                <div className="ui-caption">Proveedor mantenimiento sugerido</div>
                 <div className="mt-1 text-sm font-semibold">
-                  {assetProfile?.physical_location || "Sin ubicación"}
-                </div>
-              </div>
-              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
-                <div className="ui-caption">Estado del equipo</div>
-                <div className="mt-1 text-sm font-semibold">
-                  {equipmentStatusLabel(assetProfile?.equipment_status)}
-                </div>
-              </div>
-              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
-                <div className="ui-caption">Valor comercial</div>
-                <div className="mt-1 text-sm font-semibold">
-                  {formatMoney(assetProfile?.commercial_value)}
-                </div>
-              </div>
-              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
-                <div className="ui-caption">Factura de compra</div>
-                {assetProfile?.purchase_invoice_url ? (
-                  <a
-                    href={assetProfile.purchase_invoice_url}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-1 inline-flex text-sm font-semibold text-cyan-700 underline underline-offset-2"
-                  >
-                    Abrir factura
-                  </a>
-                ) : (
-                  <div className="mt-1 text-sm">Sin factura adjunta</div>
-                )}
-              </div>
-              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
-                <div className="ui-caption">Fecha compra</div>
-                <div className="mt-1 text-sm font-semibold">{formatDate(assetProfile?.purchase_date)}</div>
-              </div>
-              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
-                <div className="ui-caption">Inicio de uso</div>
-                <div className="mt-1 text-sm font-semibold">{formatDate(assetProfile?.started_use_date)}</div>
-              </div>
-            </div>
-            <div className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
-              <div className="ui-caption">Notas del equipo</div>
-              <p className="mt-1 text-sm text-[var(--ui-muted)]">
-                {assetProfile?.technical_description || "Sin notas registradas."}
-              </p>
-            </div>
-            <div className="mt-3 grid gap-3 md:grid-cols-[1fr_220px]">
-              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 text-sm">
-                <div className="ui-caption">Proveedor de mantenimiento (referencia)</div>
-                <div className="mt-1 font-semibold text-[var(--ui-text)]">
                   {assetProfile?.maintenance_service_provider || "Sin proveedor definido"}
                 </div>
-                <div className="mt-2 ui-caption">Ciclo programado</div>
-                <div className="mt-1 font-semibold text-[var(--ui-text)]">
+              </div>
+              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+                <div className="ui-caption">Ciclo sugerido</div>
+                <div className="mt-1 text-sm font-semibold">
                   {recurrenceEnabled
-                    ? `Cada ${recurrenceMonths} mes(es), base ${formatDate(
-                      assetProfile?.maintenance_cycle_anchor_date
-                    )}`
-                    : "Sin ciclo recurrente"}
-                </div>
-                {recurrenceNextDueDate ? (
-                  <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                    Próxima fecha sugerida: {formatDate(recurrenceNextDueDate.toISOString())}
-                  </div>
-                ) : null}
-                <div className="mt-2 text-[var(--ui-muted)]">
-                  URL directa de la ficha técnica:
-                  <a href={technicalPath} className="ml-1 font-semibold text-cyan-700 underline underline-offset-2">
-                    {technicalPath}
-                  </a>
+                    ? `Cada ${recurrenceMonths} mes(es)`
+                    : "Sin ciclo sugerido"}
                 </div>
               </div>
-              <div className="rounded-xl border border-[var(--ui-border)] bg-white p-3">
-                <div className="ui-caption">QR ficha técnica (auto)</div>
-                <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                  Este QR abre esta ficha del equipo en NEXO.
+              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+                <div className="ui-caption">Próxima fecha sugerida</div>
+                <div className="mt-1 text-sm font-semibold">
+                  {recurrenceNextDueDate ? formatDate(recurrenceNextDueDate.toISOString()) : "-"}
                 </div>
-                <img src={assetQrImageUrl} alt="QR ficha técnica" className="mt-2 h-[180px] w-[180px] rounded-md border border-[var(--ui-border)]" />
               </div>
             </div>
+
+            <div className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+              <div className="ui-caption">Descripción técnica base</div>
+              <p className="mt-1 text-sm leading-6 text-[var(--ui-muted)]">
+                {assetProfile?.technical_description || "Sin descripción técnica registrada."}
+              </p>
+            </div>
           </article>
-
-          <section className="grid gap-4 xl:grid-cols-3">
-            <article className="ui-panel xl:col-span-1">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-sm font-semibold text-[var(--ui-text)]">Mantenimiento · Lista</div>
-                <div className="ui-caption">{assetMaintenanceRows.length} evento(s)</div>
-              </div>
-              {assetMaintenanceRows.length === 0 ? (
-                <p className="mt-3 text-sm text-[var(--ui-muted)]">Sin eventos registrados.</p>
-              ) : (
-                <div className="mt-3 space-y-2">
-                  {assetMaintenanceRows.map((row) => (
-                    <div key={row.id} className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 text-sm">
-                      <div className="font-semibold text-[var(--ui-text)]">
-                        {formatDate(row.performed_date || row.scheduled_date)}
-                      </div>
-                      <div className="mt-1 text-[var(--ui-muted)]">
-                        {row.work_done || "Mantenimiento sin detalle"}
-                      </div>
-                      <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                        Responsable: {row.responsible || "Sin responsable"} · Proveedor:{" "}
-                        {row.maintenance_provider || "Sin proveedor"}
-                      </div>
-                      {row.parts_replaced ? (
-                        <div className="mt-1 text-xs font-semibold text-amber-700">
-                          Reemplazo de piezas: {row.replaced_parts || "Sí (sin detalle)"}
-                        </div>
-                      ) : null}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </article>
-
-            <article className="ui-panel xl:col-span-1">
-              <div className="text-sm font-semibold text-[var(--ui-text)]">Mantenimiento · Calendario</div>
-              {maintenanceCalendarBuckets.length === 0 ? (
-                <p className="mt-3 text-sm text-[var(--ui-muted)]">Sin eventos para calendario.</p>
-              ) : (
-                <div className="mt-3 space-y-2">
-                  {maintenanceCalendarBuckets.map(([bucketKey, rows]) => (
-                    <div key={bucketKey} className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
-                        {bucketKey === "Sin fecha" ? "Sin fecha" : bucketKey}
-                      </div>
-                      <ul className="mt-2 space-y-1 text-sm">
-                        {rows.map((row) => (
-                          <li key={`${bucketKey}-${row.id}`} className="text-[var(--ui-text)]">
-                            {formatDate(row.performed_date || row.scheduled_date)} ·{" "}
-                            {row.work_done || "Mantenimiento"}
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </article>
-
-            <article className="ui-panel xl:col-span-1">
-              <div className="text-sm font-semibold text-[var(--ui-text)]">Mantenimiento · Planeador</div>
-              {Object.keys(maintenancePlannerMap).length === 0 ? (
-                <p className="mt-3 text-sm text-[var(--ui-muted)]">Sin tareas planificadas.</p>
-              ) : (
-                <div className="mt-3 space-y-2">
-                  {Object.entries(maintenancePlannerMap).map(([bucket, rows]) => (
-                    <div key={bucket} className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
-                      <div className="text-xs font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
-                        {bucket}
-                      </div>
-                      <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">
-                        {rows.length} tarea(s)
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </article>
-          </section>
 
           <article className="ui-panel">
-            <div className="flex items-center justify-between gap-2">
-              <div className="text-sm font-semibold text-[var(--ui-text)]">Historial de traslados</div>
-              <div className="ui-caption">{assetTransferRows.length} traslado(s)</div>
-            </div>
-            {assetTransferRows.length === 0 ? (
-              <p className="mt-3 text-sm text-[var(--ui-muted)]">Sin traslados registrados.</p>
-            ) : (
-              <div className="mt-3 overflow-auto rounded-xl border border-[var(--ui-border)]">
-                <table className="ui-table min-w-[720px] text-sm">
-                  <thead>
-                    <tr>
-                      <th className="py-2 pr-4">Fecha</th>
-                      <th className="py-2 pr-4">Desde</th>
-                      <th className="py-2 pr-4">Hacia</th>
-                      <th className="py-2 pr-4">Responsable</th>
-                      <th className="py-2 pr-4">Nota</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {assetTransferRows.map((row) => (
-                      <tr key={row.id} className="border-t border-zinc-200/60">
-                        <td className="py-2.5 pr-4">{formatDate(row.moved_at)}</td>
-                        <td className="py-2.5 pr-4">{row.from_location || "-"}</td>
-                        <td className="py-2.5 pr-4">{row.to_location || "-"}</td>
-                        <td className="py-2.5 pr-4">{row.responsible || "-"}</td>
-                        <td className="py-2.5 pr-4">{row.notes || "-"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <div className="text-sm font-semibold text-[var(--ui-text)]">
+                  Información operativa real
+                </div>
+                <p className="mt-1 max-w-3xl text-sm leading-6 text-[var(--ui-muted)]">
+                  Serial, placa interna, ubicación, responsable, factura real, estado físico, movimientos,
+                  QR por unidad y mantenimientos reales pertenecen a cada activo físico, no a este modelo base.
+                </p>
               </div>
-            )}
+              <Link href="/inventory/assets" className="ui-btn ui-btn--brand">
+                Abrir Activos físicos
+              </Link>
+            </div>
+
+            <div className="mt-4 grid gap-3 md:grid-cols-3">
+              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+                <div className="ui-caption">Ubicación real</div>
+                <div className="mt-1 text-sm font-semibold">En ficha del activo físico</div>
+              </div>
+              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+                <div className="ui-caption">Mantenimiento real</div>
+                <div className="mt-1 text-sm font-semibold">Por unidad física</div>
+              </div>
+              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+                <div className="ui-caption">Conteo patrimonial</div>
+                <div className="mt-1 text-sm font-semibold">Por sede, área, LOC o posición</div>
+              </div>
+            </div>
           </article>
+
+          {(assetProfile?.serial_number ||
+            assetProfile?.physical_location ||
+            assetProfile?.purchase_invoice_url ||
+            assetProfile?.commercial_value ||
+            assetProfile?.purchase_date ||
+            assetProfile?.started_use_date ||
+            assetProfile?.equipment_status ||
+            assetMaintenanceRows.length > 0 ||
+            assetTransferRows.length > 0) ? (
+            <article className="ui-panel border-amber-200 bg-amber-50/50">
+              <div className="text-sm font-semibold text-amber-950">
+                Datos operativos legados ocultos de la ficha principal
+              </div>
+              <p className="mt-2 text-sm leading-6 text-amber-900">
+                Este modelo todavía tiene información antigua guardada en tablas de catálogo
+                como serial, ubicación física, factura, estado, mantenimientos o traslados. No se borra
+                para proteger datos existentes, pero la operación real debe migrarse y manejarse desde
+                Activos físicos.
+              </p>
+            </article>
+          ) : null}
         </section>
       ) : null}
 
+      {!isAsset ? (
+        <>
       <section className="grid gap-4 lg:grid-cols-2">
         <article className="ui-panel">
           <div className="text-sm font-semibold text-[var(--ui-text)]">Unidades y control</div>
@@ -2011,6 +1910,8 @@ export default async function ProductTechnicalSheetPage({
           </table>
         </div>
       </article>
+        </>
+      ) : null}
     </div>
   );
 }

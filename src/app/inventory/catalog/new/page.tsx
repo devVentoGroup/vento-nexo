@@ -308,8 +308,8 @@ const TYPE_CONFIG = {
     hasStorage: true,
   },
   asset: {
-    title: "Nuevo equipo / activo",
-    subtitle: "Equipo, herramienta o activo fijo para control patrimonial.",
+    title: "Nuevo modelo patrimonial",
+    subtitle: "Crea el modelo base de un equipo, mobiliario, herramienta o activo. Las unidades físicas reales se crean después en Activos físicos.",
     productType: "insumo",
     inventoryKind: "asset",
     hasSuppliers: false,
@@ -673,20 +673,16 @@ async function createProduct(formData: FormData) {
 
     const assetProfilePayload = {
       product_id: productId,
-      brand: assetProfileTemplate === "industrial" ? asText(formData.get("asset_brand")) || null : null,
-      model: assetProfileTemplate === "industrial" ? asText(formData.get("asset_model")) || null : null,
-      serial_number:
-        assetProfileTemplate === "industrial" ? asText(formData.get("asset_serial_number")) || null : null,
+      brand: asText(formData.get("asset_brand")) || null,
+      model: asText(formData.get("asset_model")) || null,
+      serial_number: asText(formData.get("asset_serial_number")) || null,
       physical_location: asText(formData.get("asset_physical_location")) || null,
       purchase_invoice_url: asText(formData.get("asset_purchase_invoice_url")) || null,
       commercial_value: asNullableNumber(formData.get("asset_commercial_value")),
       purchase_date: asNullableDateText(asText(formData.get("asset_purchase_date"))),
       started_use_date: asNullableDateText(asText(formData.get("asset_started_use_date"))),
       equipment_status: equipmentStatus,
-      maintenance_service_provider:
-        assetProfileTemplate === "industrial"
-          ? asText(formData.get("asset_maintenance_service_provider")) || null
-          : null,
+      maintenance_service_provider: asText(formData.get("asset_maintenance_service_provider")) || null,
       technical_description: asText(formData.get("asset_technical_description")) || null,
       maintenance_cycle_enabled:
         assetProfileTemplate === "industrial"
@@ -700,11 +696,11 @@ async function createProduct(formData: FormData) {
               ? Math.trunc(value)
               : null;
           })()
-          : null,
+          : asNullableNumber(formData.get("asset_maintenance_cycle_months")),
       maintenance_cycle_anchor_date:
         assetProfileTemplate === "industrial"
           ? asNullableDateText(asText(formData.get("asset_maintenance_cycle_anchor_date")))
-          : null,
+          : asNullableDateText(asText(formData.get("asset_maintenance_cycle_anchor_date"))),
     };
     const { error: assetProfileErr } = await supabase
       .from("product_asset_profiles")
@@ -716,10 +712,9 @@ async function createProduct(formData: FormData) {
       );
     }
 
-    const maintenanceLines =
-      assetProfileTemplate === "industrial"
-        ? parseJsonArray<AssetMaintenanceLine>(formData.get("asset_maintenance_lines"))
-        : [];
+    const maintenanceLines = parseJsonArray<AssetMaintenanceLine>(
+      formData.get("asset_maintenance_lines")
+    );
     const maintenanceRows = maintenanceLines
       .filter((line) => !line?._delete)
       .map((line) => ({
@@ -1553,28 +1548,34 @@ export default async function NewProductPage({
             </div>
             <div className="flex flex-wrap gap-2">
               <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
-                Formulario completo
+                {typeKey === "asset" ? "Modelo patrimonial" : "Formulario completo"}
               </span>
               <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
-                {typeKey}
+                {typeKey === "asset" ? "activo" : typeKey}
               </span>
             </div>
           </div>
           <div className="ui-remission-kpis ui-remission-kpis--stack sm:grid-cols-3 lg:grid-cols-1">
             <article className="ui-remission-kpi" data-tone="warm">
               <div className="ui-remission-kpi-label">Tipo</div>
-              <div className="ui-remission-kpi-value">{typeKey}</div>
-              <div className="ui-remission-kpi-note">Clase operativa del maestro que vas a crear</div>
+              <div className="ui-remission-kpi-value">{typeKey === "asset" ? "Activo" : typeKey}</div>
+              <div className="ui-remission-kpi-note">
+                {typeKey === "asset" ? "Modelo base del catálogo patrimonial" : "Clase operativa del maestro que vas a crear"}
+              </div>
             </article>
             <article className="ui-remission-kpi" data-tone="cool">
               <div className="ui-remission-kpi-label">Modo</div>
-              <div className="ui-remission-kpi-value">Completo</div>
-              <div className="ui-remission-kpi-note">Alta definitiva con unidades, proveedor y sedes</div>
+              <div className="ui-remission-kpi-value">{typeKey === "asset" ? "Simple" : "Completo"}</div>
+              <div className="ui-remission-kpi-note">
+                {typeKey === "asset" ? "Solo identidad y datos técnicos base" : "Alta definitiva con unidades, proveedor y sedes"}
+              </div>
             </article>
             <article className="ui-remission-kpi" data-tone="success">
               <div className="ui-remission-kpi-label">Objetivo</div>
-              <div className="ui-remission-kpi-value">Definitivo</div>
-              <div className="ui-remission-kpi-note">Maestro completo conectado a compras ORIGO y remisiones</div>
+              <div className="ui-remission-kpi-value">{typeKey === "asset" ? "Modelo" : "Definitivo"}</div>
+              <div className="ui-remission-kpi-note">
+                {typeKey === "asset" ? "Luego creas unidades reales en Activos físicos" : "Maestro completo conectado a compras ORIGO y remisiones"}
+              </div>
             </article>
           </div>
         </div>
@@ -1590,24 +1591,48 @@ export default async function NewProductPage({
         <CreateRequestKeyField initialValue={createRequestKey} />
 
         <CatalogSection
-          title="Datos basicos"
-          description="Nombre, código y categoría operativa. Las unidades se definen en la sección de almacenamiento."
+          title={typeKey === "asset" ? "Identidad del modelo patrimonial" : "Datos basicos"}
+          description={
+            typeKey === "asset"
+              ? "Crea el maestro del modelo. No escribas aquí serial, ubicación, responsable, QR ni mantenimiento real."
+              : "Nombre, código y categoría operativa. Las unidades se definen en la sección de almacenamiento."
+          }
         >
           <ProductIdentityFields
-            namePlaceholder={typeKey === "asset" ? "Ej. Horno industrial" : "Ej. Harina 000"}
+            nameLabel={typeKey === "asset" ? "Nombre del modelo / activo" : undefined}
+            namePlaceholder={typeKey === "asset" ? "Ej. Aire acondicionado, silla terraza, licuadora industrial" : "Ej. Harina 000"}
             categories={categoryRows}
             selectedCategoryId=""
             siteNamesById={siteNamesById}
+            categoryLabel={typeKey === "asset" ? "Categoría patrimonial" : undefined}
+            categoryEmptyOptionLabel={typeKey === "asset" ? "Selecciona categoría patrimonial" : undefined}
             categoryRequired
+            descriptionLabel={typeKey === "asset" ? "Descripción base del modelo" : undefined}
+            descriptionPlaceholder={
+              typeKey === "asset"
+                ? "Ej. Modelo de aire acondicionado tipo cassette para zona de atención."
+                : "Opcional"
+            }
+            descriptionHint={
+              typeKey === "asset"
+                ? "Describe el modelo en términos generales. La unidad física real se crea después en Activos físicos."
+                : undefined
+            }
             skuField={{
               mode: "create",
               initialProductType: config.productType,
               initialInventoryKind: config.inventoryKind,
             }}
             aside={
-              <div className="ui-panel-soft p-3 text-sm text-[var(--ui-muted)]">
-                Configura unidad base y unidad operativa en la sección de almacenamiento.
-              </div>
+              typeKey === "asset" ? (
+                <div className="ui-panel-soft p-3 text-sm text-[var(--ui-muted)]">
+                  Este registro es solo el modelo base. Para QR, ubicación, responsable y conteo usa Activos físicos después de crearlo.
+                </div>
+              ) : (
+                <div className="ui-panel-soft p-3 text-sm text-[var(--ui-muted)]">
+                  Configura unidad base y unidad operativa en la sección de almacenamiento.
+                </div>
+              )
             }
             priceField={
               config.hasPrice
@@ -1639,6 +1664,42 @@ export default async function NewProductPage({
             }
           />
         </CatalogSection>
+
+        {typeKey === "asset" ? (
+          <CatalogSection
+            title="Configuración mínima del modelo patrimonial"
+            description="Los equipos y mobiliario no usan proveedor, presentación de compra, remisión ni stock operativo en esta pantalla."
+          >
+            <input type="hidden" name="stock_unit_code" value="un" />
+            <input type="hidden" name="default_unit" value="un" />
+            <input type="hidden" name="unit" value="un" />
+            <input type="hidden" name="track_inventory" value="" />
+            <input type="hidden" name="lot_tracking" value="" />
+            <input type="hidden" name="expiry_tracking" value="" />
+            <input type="hidden" name="costing_mode" value="manual" />
+            <input type="hidden" name="cost" value="" />
+            <input type="hidden" name="price" value="" />
+
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+                <div className="ui-caption">Tipo</div>
+                <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">Activo patrimonial</div>
+              </div>
+              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+                <div className="ui-caption">Unidad técnica</div>
+                <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">Unidad</div>
+              </div>
+              <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+                <div className="ui-caption">Operación real</div>
+                <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">Activos físicos</div>
+              </div>
+            </div>
+
+            <div className="ui-alert ui-alert--warn mt-4">
+              Después de crear este modelo, crea la unidad física o grupo contable en Activos físicos para asignar ubicación, QR, responsable y mantenimiento.
+            </div>
+          </CatalogSection>
+        ) : null}
 
         {/* --- Unidades y almacenamiento (definir antes de proveedores) --- */}
         {config.hasStorage && (
@@ -1789,7 +1850,7 @@ export default async function NewProductPage({
 
         <ProductFormFooter
           submitLabel={`Crear ${typeKey === "asset"
-            ? "equipo"
+            ? "modelo patrimonial"
             : typeKey === "venta"
               ? "producto"
               : typeKey === "reventa"
