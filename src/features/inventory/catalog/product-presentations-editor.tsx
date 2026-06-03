@@ -176,18 +176,20 @@ export function ProductPresentationsEditor({
   const physicalConfigSingular = usesFixedPresentation ? "presentación" : "empaque";
   const physicalConfigSingularTitle = usesFixedPresentation ? "Presentación" : "Empaque logístico";
   const physicalConfigPlural = usesFixedPresentation ? "presentaciones" : "empaques";
-  const [rows, setRows] = useState<EditableRow[]>(() =>
-    initialRows.length > 0
-      ? initialRows.map((row) => ({
+  const [rows, setRows] = useState<EditableRow[]>(() => {
+    const activeInitialRows = initialRows.filter((row) => row.is_active !== false);
+
+    if (activeInitialRows.length > 0) {
+      return activeInitialRows.map((row) => ({
         ...row,
         key: row.id,
         image_url: row.image_url ?? "",
         catalog_image_url: row.catalog_image_url ?? "",
-      }))
-      : usesFixedPresentation
-        ? [createEmptyRow(stockUnitCode, "new-0")]
-        : []
-  );
+      }));
+    }
+
+    return usesFixedPresentation ? [createEmptyRow(stockUnitCode, "new-0")] : [];
+  });
   const [deletedIds, setDeletedIds] = useState<string[]>([]);
 
   const [clientError, setClientError] = useState("");

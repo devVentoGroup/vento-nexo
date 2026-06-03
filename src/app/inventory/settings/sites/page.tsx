@@ -189,6 +189,7 @@ export default async function SitesPage({
                 <TableHeaderCell>Tipo</TableHeaderCell>
                 <TableHeaderCell>Estado</TableHeaderCell>
                 <TableHeaderCell>Capacidades operativas</TableHeaderCell>
+                <TableHeaderCell>Mapa operativo</TableHeaderCell>
               </tr>
             </thead>
             <tbody>
@@ -236,12 +237,25 @@ export default async function SitesPage({
                         ) : null}
                       </form>
                     </TableCell>
+                    <TableCell>
+                      <div className="flex min-w-[180px] flex-col gap-2">
+                        <Link
+                          href={`/inventory/settings/sites/${s.id}/operations`}
+                          className="ui-btn ui-btn--brand h-9 px-3 text-sm"
+                        >
+                          Mapa operativo
+                        </Link>
+                        <span className="text-xs leading-snug text-[var(--ui-muted)]">
+                          Áreas, LOCs, ubicaciones internas y rutas de producción.
+                        </span>
+                      </div>
+                    </TableCell>
                   </tr>
                 );
               })}
               {siteRows.length === 0 ? (
                 <tr>
-                  <TableCell colSpan={5} className="ui-empty">
+                  <TableCell colSpan={6} className="ui-empty">
                     No hay sedes.
                   </TableCell>
                 </tr>
@@ -255,7 +269,8 @@ export default async function SitesPage({
         <strong className="text-[var(--ui-text)]">Tipos:</strong> Centro de producción = bodega que abastece. Satélite = Saudo, Vento Café (solicitan remisiones). Luego configura las{" "}
         <Link href="/inventory/settings/supply-routes" className="font-medium underline">
           rutas de abastecimiento
-        </Link>.
+        </Link>{" "}
+        y el mapa operativo de cada sede para áreas, LOCs, ubicaciones internas y rutas de producción.
       </div>
     </div>
   );
