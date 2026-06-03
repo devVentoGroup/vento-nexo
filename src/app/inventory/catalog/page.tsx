@@ -844,6 +844,9 @@ export default async function InventoryCatalogPage({
         { href: "/inventory/catalog/new?type=reventa", label: "+ Producto de reventa", tone: "ghost" as const },
       ]
       : [
+        ...(activeTab === "equipos"
+          ? [{ href: "/inventory/assets", label: "Ver activos físicos", tone: "ghost" as const }]
+          : []),
         {
           href: `/inventory/catalog/new?type=${activeTab === "insumos"
             ? "insumo"
@@ -863,7 +866,9 @@ export default async function InventoryCatalogPage({
           ? [{ href: "/api/inventory/catalog/export-suppliers", label: "Descargar Excel de insumos", tone: "ghost" as const }]
           : []),
       ]
-    : [];
+    : activeTab === "equipos"
+      ? [{ href: "/inventory/assets", label: "Ver activos físicos", tone: "ghost" as const }]
+      : [];
 
   const catalogResultRows: CatalogResultRow[] = visibleProducts.map((product) => {
     const inventoryProfile = product.product_inventory_profiles;
