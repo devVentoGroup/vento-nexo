@@ -16,15 +16,17 @@ type SearchParams = {
   product_id?: string;
 };
 
+type ProductInventoryProfileRef = {
+  inventory_kind: string | null;
+} | null;
+
 type ProductRow = {
   id: string;
   name: string | null;
   sku: string | null;
   image_url: string | null;
   catalog_image_url: string | null;
-  product_inventory_profiles?: {
-    inventory_kind: string | null;
-  } | null;
+  product_inventory_profiles?: ProductInventoryProfileRef;
 };
 
 type ProductAssetProfileRow = {
@@ -114,6 +116,16 @@ function generatedCode(prefix: string, sku: string | null | undefined) {
   return `${prefix}-${safeSku}-${suffix}`;
 }
 
+function readInventoryKind(product?: {
+  product_inventory_profiles?:
+    | ProductInventoryProfileRef
+    | Array<{ inventory_kind: string | null }>;
+} | null) {
+  const profileRef = product?.product_inventory_profiles ?? null;
+  const profile = Array.isArray(profileRef) ? profileRef[0] ?? null : profileRef;
+  return String(profile?.inventory_kind ?? "").trim().toLowerCase();
+}
+
 function buildNewAssetReturn(error?: string, productId?: string) {
   const params = new URLSearchParams();
   if (error) params.set("error", error);
@@ -140,8 +152,9 @@ async function createAssetPhysicalRecord(formData: FormData) {
 
   const { data: productData } = await supabase
     .from("products")
-    .select("id,name,sku,product_type,product_inventory_profiles(inventory_kind)")
+    .select("id,name,sku,product_type,product_inventory_profiles!inner(inventory_kind)")
     .eq("id", productId)
+    .eq("product_inventory_profiles.inventory_kind", "asset")
     .maybeSingle();
 
   const product = productData as
@@ -150,11 +163,13 @@ async function createAssetPhysicalRecord(formData: FormData) {
         name: string | null;
         sku: string | null;
         product_type: string | null;
-        product_inventory_profiles?: { inventory_kind: string | null } | null;
+        product_inventory_profiles?:
+          | ProductInventoryProfileRef
+          | Array<{ inventory_kind: string | null }>;
       }
     | null;
 
-  const inventoryKind = String(product?.product_inventory_profiles?.inventory_kind ?? "").trim().toLowerCase();
+  const inventoryKind = readInventoryKind(product);
   if (!product || String(product.product_type ?? "").trim().toLowerCase() !== "insumo" || inventoryKind !== "asset") {
     redirect(buildNewAssetReturn("El producto seleccionado no está marcado como equipo/activo.", productId));
   }
@@ -354,7 +369,7 @@ export default async function NewPhysicalAssetPage({
   const [productsRes, sitesRes, areasRes, locationsRes, positionsRes, employeesRes] = await Promise.all([
     supabase
       .from("products")
-      .select("id,name,sku,image_url,catalog_image_url,product_inventory_profiles(inventory_kind)")
+      .select("id,name,sku,image_url,catalog_image_url,product_inventory_profiles!inner(inventory_kind)")
       .eq("product_type", "insumo")
       .eq("product_inventory_profiles.inventory_kind", "asset")
       .eq("is_active", true)
@@ -387,7 +402,24 @@ export default async function NewPhysicalAssetPage({
       .order("full_name", { ascending: true }),
   ]);
 
-  const products = (productsRes.data ?? []) as unknown as ProductRow[];
+  const products = ((productsRes.data ?? []) as unknown as Array<
+    Omit<ProductRow, "product_inventory_profiles"> & {
+      product_inventory_profiles?:
+        | ProductInventoryProfileRef
+        | Array<{ inventory_kind: string | null }>;
+    }
+  >)
+    .filter((product) => readInventoryKind(product) === "asset")
+    .map((product) => {
+      const profileRef = product.product_inventory_profiles ?? null;
+      const profile = Array.isArray(profileRef) ? profileRef[0] ?? null : profileRef;
+
+      return {
+        ...product,
+        product_inventory_profiles: profile,
+      } satisfies ProductRow;
+    });
+
   const productIds = products.map((product) => product.id);
   const { data: productAssetProfilesData } = productIds.length
     ? await supabase

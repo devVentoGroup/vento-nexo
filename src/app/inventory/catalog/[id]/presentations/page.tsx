@@ -23,6 +23,9 @@ export const dynamic = "force-dynamic";
 
 const APP_ID = "nexo";
 const PERMISSION = "inventory.stock";
+const FOGO_BASE_URL =
+  process.env.NEXT_PUBLIC_FOGO_URL?.replace(/\/$/, "") ||
+  "https://fogo.ventogroup.co";
 
 type MeasurementMode =
   | "fixed_presentation"
@@ -69,6 +72,7 @@ type InventoryProfileRow = {
   product_id: string;
   default_unit: string | null;
   measurement_mode?: string | null;
+  inventory_kind?: string | null;
 };
 
 type UomProfileRow = ProductPresentationEditorRow;
@@ -118,25 +122,44 @@ function normalizeProductType(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
 }
 
-function isManualPresentationProductType(value: unknown): boolean {
-  return normalizeProductType(value) === "insumo";
+function normalizeInventoryKind(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
 }
 
-function productTypeLabel(value: unknown): string {
-  const raw = normalizeProductType(value);
+function isManualPresentationEligible(params: {
+  productType: unknown;
+  inventoryKind: unknown;
+}): boolean {
+  const productType = normalizeProductType(params.productType);
+  const inventoryKind = normalizeInventoryKind(params.inventoryKind);
+  return productType === "insumo" && inventoryKind !== "asset";
+}
+
+function productTypeLabel(params: { productType: unknown; inventoryKind: unknown }): string {
+  const raw = normalizeProductType(params.productType);
+  const inventoryKind = normalizeInventoryKind(params.inventoryKind);
+
+  if (inventoryKind === "asset") return "Modelo patrimonial";
 
   switch (raw) {
     case "insumo":
-      return "Insumo";
+      return "Insumo comprado";
     case "preparacion":
-      return "Preparación";
+      return "Preparación / WIP";
     case "venta":
-      return "Producto de venta";
+      return inventoryKind === "resale" ? "Producto de reventa" : "Producto de venta";
     case "equipo":
       return "Equipo";
     default:
       return raw || "Sin tipo";
   }
+}
+
+function buildFogoRecipeUrl(productId: string) {
+  const url = new URL("/recipes/new", FOGO_BASE_URL);
+  url.searchParams.set("source", "nexo");
+  url.searchParams.set("product_id", productId);
+  return url.toString();
 }
 
 function isSameQuantity(a: number, b: number): boolean {
@@ -292,12 +315,6 @@ async function saveProductPresentations(formData: FormData) {
     redirectWithError("No se encontró el producto.");
   }
 
-  if (!isManualPresentationProductType((product as { product_type?: string | null }).product_type)) {
-    redirectWithError(
-      "Las presentaciones manuales solo aplican a insumos comprados. Las preparaciones y productos producidos usan empaques reales de lote desde FOGO."
-    );
-  }
-
   const [
     { data: remissionSettingsData, error: remissionSettingsError },
     { data: inventoryProfileData, error: inventoryProfileError },
@@ -310,7 +327,7 @@ async function saveProductPresentations(formData: FormData) {
       .eq("remission_enabled", true),
     supabase
       .from("product_inventory_profiles")
-      .select("measurement_mode")
+      .select("measurement_mode,inventory_kind")
       .eq("product_id", productId)
       .maybeSingle(),
   ]);
@@ -320,6 +337,20 @@ async function saveProductPresentations(formData: FormData) {
   }
   if (inventoryProfileError) {
     redirectWithError(inventoryProfileError.message);
+  }
+
+  const inventoryKindForSave = String(
+    (inventoryProfileData as Pick<InventoryProfileRow, "inventory_kind"> | null)?.inventory_kind ?? ""
+  );
+  if (
+    !isManualPresentationEligible({
+      productType: (product as { product_type?: string | null }).product_type,
+      inventoryKind: inventoryKindForSave,
+    })
+  ) {
+    redirectWithError(
+      "Las presentaciones manuales solo aplican a insumos comprados. Las preparaciones y productos producidos usan empaques reales de lote desde FOGO; los modelos patrimoniales se gestionan en Activos físicos."
+    );
   }
 
   const measurementMode = normalizeMeasurementMode(
@@ -565,7 +596,7 @@ export default async function ProductPresentationsPage({
   ] = await Promise.all([
     supabase
       .from("product_inventory_profiles")
-      .select("product_id,default_unit,measurement_mode")
+      .select("product_id,default_unit,measurement_mode,inventory_kind")
       .eq("product_id", id)
       .maybeSingle(),
     supabase
@@ -628,8 +659,19 @@ export default async function ProductPresentationsPage({
     : false;
 
   const productImageRows = (productImagesData ?? []) as ProductImageRow[];
-  const isManualPresentationProduct = isManualPresentationProductType(product.product_type);
-  const currentProductTypeLabel = productTypeLabel(product.product_type);
+  const inventoryKind = normalizeInventoryKind(profile?.inventory_kind);
+  const productType = normalizeProductType(product.product_type);
+  const isPreparation = productType === "preparacion";
+  const isProducedProduct = productType === "preparacion" || (productType === "venta" && inventoryKind !== "resale");
+  const isAssetModel = inventoryKind === "asset";
+  const canEditManualPresentations = isManualPresentationEligible({
+    productType: product.product_type,
+    inventoryKind,
+  });
+  const currentProductTypeLabel = productTypeLabel({
+    productType: product.product_type,
+    inventoryKind,
+  });
 
   const existingImageUrls = Array.from(
     new Set(
@@ -649,7 +691,7 @@ export default async function ProductPresentationsPage({
       {sp.ok ? <div className="ui-alert ui-alert--success">Presentaciones guardadas.</div> : null}
       {sp.error ? <div className="ui-alert ui-alert--error">{sp.error}</div> : null}
 
-      {isManualPresentationProduct ? (
+      {canEditManualPresentations ? (
         <RequiredFieldsGuardForm
           action={saveProductPresentations}
           className="space-y-6"
@@ -672,29 +714,106 @@ export default async function ProductPresentationsPage({
           />
         </RequiredFieldsGuardForm>
       ) : (
-        <section className="ui-panel ui-panel--halo space-y-4">
-          <div>
-            <div className="text-xs font-semibold uppercase text-[var(--ui-muted)]">
-              {currentProductTypeLabel}
+        <section className="ui-panel ui-panel--halo space-y-5">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="text-xs font-semibold uppercase text-[var(--ui-muted)]">
+                {currentProductTypeLabel}
+              </div>
+              <h1 className="mt-2 ui-h1">
+                {isAssetModel
+                  ? "Presentaciones no aplican a modelos patrimoniales"
+                  : isPreparation
+                    ? "Presentaciones administradas por FOGO"
+                    : "Presentaciones no editables aquí"}
+              </h1>
+              <p className="mt-2 max-w-3xl ui-body-muted">
+                {isAssetModel
+                  ? "Los equipos, mobiliario y activos no usan presentaciones de compra/remisión. La unidad real, QR, ubicación y conteo viven en Activos físicos."
+                  : isPreparation
+                    ? "Las preparaciones son WIP: su salida operativa debe venir de receta, rendimiento, porción o empaques reales publicados por FOGO."
+                    : "Los productos producidos usan empaques reales de lote generados desde FOGO, no presentaciones manuales del catálogo."}
+              </p>
             </div>
-            <h1 className="mt-2 ui-h1">Presentaciones no editables aquí</h1>
-            <p className="mt-2 max-w-3xl ui-body-muted">
-              Las presentaciones manuales solo aplican a insumos comprados. Las preparaciones y productos
-              producidos usan empaques reales de lote generados desde FOGO.
-            </p>
+
+            <div className="flex flex-wrap gap-2">
+              <Link href={returnHref} className="ui-btn ui-btn--ghost">
+                Volver a ficha maestra
+              </Link>
+              <Link
+                href={`/inventory/catalog/${encodeURIComponent(id)}/ficha?from=${encodeURIComponent(returnHref)}`}
+                className="ui-btn ui-btn--ghost"
+              >
+                Ver ficha técnica
+              </Link>
+              {isProducedProduct ? (
+                <Link
+                  href={buildFogoRecipeUrl(id)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="ui-btn ui-btn--brand"
+                >
+                  Abrir FOGO
+                </Link>
+              ) : null}
+              {isAssetModel ? (
+                <Link href="/inventory/assets" className="ui-btn ui-btn--brand">
+                  Ver activos físicos
+                </Link>
+              ) : null}
+            </div>
           </div>
 
-          <div className="ui-alert ui-alert--neutral">
-            Para este producto, la unidad física disponible debe venir de producción: lote, LOC, empaque,
-            cantidad original y cantidad restante. En remisiones se deberán seleccionar empaques reales
-            disponibles o fraccionarlos con confirmación.
-          </div>
+          {isPreparation ? (
+            <div className="grid gap-3 md:grid-cols-3">
+              <div className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4">
+                <div className="ui-caption">Fuente correcta</div>
+                <div className="mt-1 text-sm font-semibold text-cyan-950">
+                  Receta / rendimiento
+                </div>
+                <p className="mt-1 text-xs leading-5 text-cyan-900">
+                  FOGO debe publicar la porción o empaque remisionable.
+                </p>
+              </div>
+              <div className="rounded-2xl border border-indigo-200 bg-indigo-50 p-4">
+                <div className="ui-caption">Inventario físico</div>
+                <div className="mt-1 text-sm font-semibold text-indigo-950">
+                  Lotes y empaques reales
+                </div>
+                <p className="mt-1 text-xs leading-5 text-indigo-900">
+                  La disponibilidad sale de producción, LOC y cantidad restante.
+                </p>
+              </div>
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+                <div className="ui-caption">Temporal en NEXO</div>
+                <div className="mt-1 text-sm font-semibold text-amber-950">
+                  Unidad operativa/manual
+                </div>
+                <p className="mt-1 text-xs leading-5 text-amber-900">
+                  Si aún no hay receta publicada, configúrala en editar ficha.
+                </p>
+              </div>
+            </div>
+          ) : null}
+
+          {isAssetModel ? (
+            <div className="ui-alert ui-alert--neutral">
+              Este registro es un modelo patrimonial. No crees presentaciones manuales aquí: crea activos físicos
+              reales para manejar cantidad, ubicación, QR, responsable, mantenimiento y conteo.
+            </div>
+          ) : (
+            <div className="ui-alert ui-alert--neutral">
+              Para este producto, la unidad física disponible debe venir de producción: lote, LOC, empaque,
+              cantidad original y cantidad restante. En remisiones se deberán seleccionar empaques reales
+              disponibles o fraccionarlos con confirmación.
+            </div>
+          )}
 
           {presentationRows.length > 0 ? (
             <div className="ui-alert ui-alert--warn">
               Este producto todavía tiene {presentationRows.length} presentación(es) manual(es) heredada(s).
               No se editan desde esta pantalla para evitar mezclar presentaciones de compra con empaques
-              producidos. Después podemos hacer una limpieza controlada.
+              producidos o modelos patrimoniales. Después podemos hacer una limpieza controlada.
             </div>
           ) : null}
         </section>
@@ -702,7 +821,7 @@ export default async function ProductPresentationsPage({
 
       <div className="flex justify-start">
         <Link href={returnHref} className="ui-btn ui-btn--ghost">
-          Volver sin guardar
+          {canEditManualPresentations ? "Volver sin guardar" : "Volver"}
         </Link>
       </div>
     </div>

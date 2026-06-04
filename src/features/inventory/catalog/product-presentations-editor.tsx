@@ -141,15 +141,15 @@ function measurementModeLabel(mode: ProductMeasurementMode): string {
 
 function measurementModeDescription(mode: ProductMeasurementMode, stockUnitCode: string): string {
   if (mode === "variable_weight") {
-    return `Este producto se pide, recibe, despacha y consume por cantidad real medida en ${stockUnitCode}. Los empaques son opcionales y solo sirven como apoyo logístico, foto o referencia de proveedor.`;
+    return `Este insumo se pide, recibe, despacha y consume por cantidad real medida en ${stockUnitCode}. Los empaques son opcionales y solo sirven como apoyo logístico, foto o referencia de proveedor.`;
   }
   if (mode === "count_with_weight") {
-    return `Este producto puede contarse por piezas, pero el inventario real se controla por peso en ${stockUnitCode}. No crees equivalencias fijas por unidad si el peso real varía.`;
+    return `Este insumo puede contarse por piezas, pero el inventario real se controla por peso en ${stockUnitCode}. No crees equivalencias fijas por unidad si el peso real varía.`;
   }
   if (mode === "bulk_volume") {
-    return `Este producto se controla por volumen o granel real en ${stockUnitCode}. Los recipientes o empaques son opcionales y no son requisito de remisión.`;
+    return `Este insumo se controla por volumen o granel real en ${stockUnitCode}. Los recipientes o empaques son opcionales y no son requisito de remisión.`;
   }
-  return "Este producto usa presentaciones físicas con equivalencia exacta. Si se remisiona, debe existir una presentación mínima remisionable.";
+  return "Este insumo usa presentaciones físicas con equivalencia exacta. Si se remisiona, debe existir una presentación mínima remisionable.";
 }
 
 export function ProductPresentationsEditor({
@@ -336,14 +336,14 @@ export function ProductPresentationsEditor({
 
     if (requiresFixedRemissionDefault && activeRemissionRows.length === 0) {
       setClientError(
-        "Este producto está activo para remisión en al menos un satélite. Marca al menos una presentación activa como disponible para solicitud/remisión."
+        "Este insumo está activo para remisión en al menos un satélite. Marca al menos una presentación activa como disponible para solicitud/remisión."
       );
       return;
     }
 
     if (requiresFixedRemissionDefault && activeDefaultCount === 0) {
       setClientError(
-        "Este producto está activo para remisión en al menos un satélite. Marca la menor presentación remisionable como mínima para solicitud/remisión antes de guardar."
+        "Este insumo está activo para remisión en al menos un satélite. Marca la menor presentación remisionable como mínima para solicitud/remisión antes de guardar."
       );
       return;
     }
@@ -384,9 +384,12 @@ export function ProductPresentationsEditor({
             <h2 className="ui-h2">{productName}</h2>
             <p className="mt-2 ui-body-muted">
               {usesFixedPresentation
-                ? "Administra las formas físicas con equivalencia exacta en las que existe este producto. Aquí defines qué presentaciones puede pedir o recibir el satélite."
-                : "Administra empaques, fotos o referencias logísticas opcionales. En productos de cantidad real, el flujo operativo sigue registrando peso, conteo o volumen real."}
+                ? "Administra las formas físicas con equivalencia exacta en las que existe este insumo comprado. Aquí defines qué presentaciones puede pedir o recibir el satélite."
+                : "Administra empaques, fotos o referencias logísticas opcionales. En insumos de cantidad real, el flujo operativo sigue registrando peso, conteo o volumen real."}
             </p>
+            <div className="mt-3 inline-flex rounded-full border border-slate-200 bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-700">
+              Solo para insumos comprados · no aplica a preparaciones FOGO ni activos físicos
+            </div>
           </div>
 
           <Link href={returnHref} className="ui-btn ui-btn--ghost">
@@ -434,7 +437,7 @@ export function ProductPresentationsEditor({
         <div className="rounded-[28px] border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
           <div className="font-bold">Remisión por cantidad real</div>
           <p className="mt-1">
-            Este producto está habilitado para remisión por sede, pero no necesita presentación mínima.
+            Este insumo está habilitado para remisión por sede, pero no necesita presentación mínima.
             El flujo operativo deberá pedir y confirmar cantidad real según su modo de medición.
           </p>
         </div>
@@ -453,7 +456,7 @@ export function ProductPresentationsEditor({
         <div className="rounded-[28px] border border-amber-200 bg-amber-50 p-4">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <div className="text-sm font-bold text-amber-950">Sugeridas desde proveedores / compra</div>
+              <div className="text-sm font-bold text-amber-950">Sugeridas desde proveedor / compra</div>
               <p className="mt-1 text-sm text-amber-900">
                 {usesFixedPresentation
                   ? "Estas presentaciones vienen del empaque configurado en proveedores. Puedes agregarlas como presentaciones físicas para adjuntar foto y usarlas en bodega."
@@ -492,7 +495,7 @@ export function ProductPresentationsEditor({
 
       {!usesFixedPresentation && rows.length === 0 ? (
         <div className="rounded-[28px] border border-slate-200 bg-white p-4 text-sm text-[var(--ui-muted)] shadow-sm">
-          Este producto puede operar sin empaques logísticos manuales. Para aguacate, por ejemplo, puedes dejar esta sección vacía y registrar siempre piezas + peso real en los flujos operativos.
+          Este insumo puede operar sin empaques logísticos manuales. Para aguacate, por ejemplo, puedes dejar esta sección vacía y registrar siempre piezas + peso real en los flujos operativos.
         </div>
       ) : null}
 

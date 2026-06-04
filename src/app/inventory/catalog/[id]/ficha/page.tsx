@@ -429,6 +429,20 @@ function uomSourceLabel(value: UomProfileRow["source"]): string {
   return "Manual";
 }
 
+function preparationRemissionStatusLabel(profile: ProductUomProfile | null): string {
+  if (!profile) return "Pendiente";
+  if (profile.source === "recipe_portion") return "FOGO publicado";
+  if (profile.source === "manual") return "Manual temporal";
+  if (profile.source === "supplier_primary") return "Proveedor";
+  return "Configurado";
+}
+
+function preparationRemissionStatusTone(profile: ProductUomProfile | null): "success" | "warn" | "neutral" {
+  if (!profile) return "warn";
+  if (profile.source === "recipe_portion") return "success";
+  return "neutral";
+}
+
 function uomProfileDisplayRank(row: UomProfileRow): number {
   const usageContext = String(row.usage_context ?? "").trim().toLowerCase();
   const source = String(row.source ?? "").trim().toLowerCase();
@@ -805,6 +819,8 @@ export default async function ProductTechnicalSheetPage({
       ? "Usa porción de receta publicada."
       : "Usa presentación de remisión."
     : "No usa remisión: opera con unidad operativa.";
+  const preparationRemissionStatus = preparationRemissionStatusLabel(remissionProfile);
+  const preparationRemissionTone = preparationRemissionStatusTone(remissionProfile);
 
   const primarySupplierPackPrice = primarySupplier
     ? Number(primarySupplier.purchase_price_net ?? primarySupplier.purchase_price ?? 0)
@@ -1106,11 +1122,19 @@ export default async function ProductTechnicalSheetPage({
               >
                 ← Volver al catálogo
               </Link>
-              <h1 className="ui-h1">{isAsset ? "Ficha base del modelo" : "Ficha técnica"}</h1>
+              <h1 className="ui-h1">
+                {isAsset
+                  ? "Ficha base del modelo"
+                  : isPreparation
+                    ? "Ficha técnica de preparación"
+                    : "Ficha técnica"}
+              </h1>
               <p className="ui-body-muted">
                 {isAsset
                   ? "Vista de solo lectura para catálogo: identidad, foto y datos técnicos base del modelo. La ubicación real, QR, mantenimiento y conteo viven en Activos físicos."
-                  : "Vista de solo lectura para operación: identidad, unidades, inventario por sede y abastecimiento."}
+                  : isPreparation
+                    ? "Vista de solo lectura del WIP: identidad, unidad base, remisión, empaques reales y continuidad de receta en FOGO."
+                    : "Vista de solo lectura para operación: identidad, unidades, inventario por sede y abastecimiento."}
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -1181,6 +1205,34 @@ export default async function ProductTechnicalSheetPage({
                   <div className="ui-remission-kpi-value">NEXO</div>
                   <div className="ui-remission-kpi-note">
                     Unidades, QR, ubicación y conteo se gestionan en Activos físicos.
+                  </div>
+                </article>
+              </>
+            ) : isPreparation ? (
+              <>
+                <article className="ui-remission-kpi" data-tone="warm">
+                  <div className="ui-remission-kpi-label">Base WIP</div>
+                  <div className="ui-remission-kpi-value">{stockUnitCode}</div>
+                  <div className="ui-remission-kpi-note">
+                    Unidad canónica para receta, inventario y consumo.
+                  </div>
+                </article>
+                <article className="ui-remission-kpi" data-tone={preparationRemissionTone}>
+                  <div className="ui-remission-kpi-label">Remisión</div>
+                  <div className="ui-remission-kpi-value">{preparationRemissionStatus}</div>
+                  <div className="ui-remission-kpi-note">
+                    {remissionProfile?.source === "recipe_portion"
+                      ? "Fuente: porción publicada por FOGO."
+                      : remissionProfile
+                        ? "Fuente temporal hasta publicar receta."
+                        : "Falta definir salida operativa."}
+                  </div>
+                </article>
+                <article className="ui-remission-kpi" data-tone="success">
+                  <div className="ui-remission-kpi-label">Empaques FOGO</div>
+                  <div className="ui-remission-kpi-value">{availableProductionPackages.length}</div>
+                  <div className="ui-remission-kpi-note">
+                    {formatQty(productionPackageTotalRemaining)} {stockUnitCode} disponible(s).
                   </div>
                 </article>
               </>
@@ -1327,16 +1379,82 @@ export default async function ProductTechnicalSheetPage({
         </article>
       ) : null}
 
+      {!isAsset && isPreparation ? (
+        <article className="ui-panel border-cyan-200 bg-cyan-50/50">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div className="text-sm font-semibold text-cyan-950">
+                Continuidad FOGO · receta, rendimiento y remisión
+              </div>
+              <p className="mt-2 max-w-3xl text-sm leading-6 text-cyan-900">
+                Esta preparación se administra como WIP. NEXO muestra el maestro, el stock y la salida operativa;
+                FOGO debe publicar receta, rendimiento, merma, empaques y porción remisionable.
+              </p>
+            </div>
+            <Link
+              href={buildFogoRecipeUrl(product.id)}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ui-btn ui-btn--brand ui-btn--sm"
+            >
+              Abrir FOGO
+            </Link>
+          </div>
+
+          <div className="mt-4 grid gap-3 md:grid-cols-3">
+            <div className="rounded-xl border border-cyan-200 bg-white/80 p-3">
+              <div className="ui-caption">Fuente de remisión</div>
+              <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">
+                {preparationRemissionStatus}
+              </div>
+              <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                {remissionSourceLabel}
+              </div>
+            </div>
+            <div className="rounded-xl border border-cyan-200 bg-white/80 p-3">
+              <div className="ui-caption">Presentación remisionable</div>
+              <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">
+                {remissionProfileDisplay ? remissionPackText : "Pendiente de definir"}
+              </div>
+              <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                {remissionProfile?.source === "recipe_portion"
+                  ? "Publicada desde receta FOGO."
+                  : remissionProfile
+                    ? "Configuración temporal desde NEXO."
+                    : "Configúrala en edición o publícala desde FOGO."}
+              </div>
+            </div>
+            <div className="rounded-xl border border-cyan-200 bg-white/80 p-3">
+              <div className="ui-caption">Empaques reales</div>
+              <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">
+                {availableProductionPackages.length} paquete(s)
+              </div>
+              <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                {formatQty(productionPackageTotalRemaining)} {stockUnitCode} disponible(s).
+              </div>
+            </div>
+          </div>
+
+          {!remissionProfileDisplay ? (
+            <div className="mt-4 ui-alert ui-alert--warn">
+              Esta preparación aún no tiene salida remisionable definida. Puede existir como WIP interno,
+              pero para remisiones conviene publicar porción en FOGO o configurar una unidad temporal en edición.
+            </div>
+          ) : null}
+        </article>
+      ) : null}
+
       {!isAsset && isProducedPackagedProduct ? (
         <article className="ui-panel">
           <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
               <div className="text-sm font-semibold text-[var(--ui-text)]">
-                Empaques reales de lote
+                {isPreparation ? "Empaques reales producidos en FOGO" : "Empaques reales de lote"}
               </div>
               <p className="mt-1 text-sm text-[var(--ui-muted)]">
-                Este producto no usa presentaciones manuales. La disponibilidad física viene de FOGO:
-                lote, LOC, empaque, cantidad original y cantidad restante.
+                {isPreparation
+                  ? "La disponibilidad física de esta preparación viene de FOGO: lote, LOC, empaque, cantidad original y cantidad restante."
+                  : "Este producto no usa presentaciones manuales. La disponibilidad física viene de FOGO: lote, LOC, empaque, cantidad original y cantidad restante."}
               </p>
             </div>
             <Link
@@ -1620,18 +1738,30 @@ export default async function ProductTechnicalSheetPage({
                   No aplica: se produce en FOGO.
                 </p>
                 <p>
-                  <strong className="text-[var(--ui-text)]">Empaque remisión:</strong>{" "}
-                  Empaques reales de lote disponibles.
+                  <strong className="text-[var(--ui-text)]">
+                    {isPreparation ? "Presentación remisionable:" : "Empaque remisión:"}
+                  </strong>{" "}
+                  {isPreparation
+                    ? remissionProfileDisplay
+                      ? remissionPackText
+                      : "Pendiente: define unidad temporal o publica porción desde FOGO."
+                    : "Empaques reales de lote disponibles."}
                 </p>
                 <p>
-                  <strong className="text-[var(--ui-text)]">Unidad remisión:</strong> {stockUnitCode}
+                  <strong className="text-[var(--ui-text)]">Unidad remisión:</strong>{" "}
+                  {isPreparation ? remissionUnitText : stockUnitCode}
                 </p>
                 <p>
                   <strong className="text-[var(--ui-text)]">Regla activa:</strong>{" "}
-                  Remitir empaques completos; si hay cantidad intermedia, fraccionar un empaque con confirmación.
+                  {isPreparation
+                    ? remissionProfileDisplay
+                      ? operationRuleText
+                      : "WIP interno sin salida remisionable configurada."
+                    : "Remitir empaques completos; si hay cantidad intermedia, fraccionar un empaque con confirmación."}
                 </p>
                 <p>
-                  <strong className="text-[var(--ui-text)]">Fuente remisión:</strong> FOGO · empaques producidos
+                  <strong className="text-[var(--ui-text)]">Fuente remisión:</strong>{" "}
+                  {isPreparation ? remissionSourceLabel : "FOGO · empaques producidos"}
                 </p>
               </>
             ) : (
@@ -1674,16 +1804,26 @@ export default async function ProductTechnicalSheetPage({
               <>
                 <p>
                   <strong className="text-[var(--ui-text)]">Origen:</strong>{" "}
-                  Producción FOGO.
+                  {isPreparation ? "Preparación producida en FOGO." : "Producción FOGO."}
                 </p>
                 <p>
                   <strong className="text-[var(--ui-text)]">Abastecimiento operativo:</strong>{" "}
-                  Entra al inventario como lote producido y empaques físicos reales.
+                  {isPreparation
+                    ? "Entra al inventario como WIP/lote producido, con empaques reales disponibles para operación."
+                    : "Entra al inventario como lote producido y empaques físicos reales."}
                 </p>
                 <p>
                   <strong className="text-[var(--ui-text)]">Empaques disponibles:</strong>{" "}
                   {availableProductionPackages.length} empaque(s) · {formatQty(productionPackageTotalRemaining)} {stockUnitCode}
                 </p>
+                {isPreparation ? (
+                  <p>
+                    <strong className="text-[var(--ui-text)]">Costo técnico:</strong>{" "}
+                    {product.cost == null
+                      ? "Pendiente de receta/rendimiento en FOGO."
+                      : `${formatUnitMoney(product.cost)} / ${stockUnitCode}`}
+                  </p>
+                ) : null}
               </>
             ) : !isAsset && primarySupplier ? (
               <>

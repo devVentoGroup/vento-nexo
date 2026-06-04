@@ -277,8 +277,8 @@ const TYPE_CONFIG = {
     hasStorage: true,
   },
   preparacion: {
-    title: "Nueva preparacion",
-    subtitle: "Producto intermedio (WIP): se produce a partir de insumos y se usa en otros productos.",
+    title: "Nueva preparación",
+    subtitle: "Modelo producido / WIP: se fabrica desde receta en FOGO y puede usarse en otros productos, remisiones o producción interna.",
     productType: "preparacion",
     inventoryKind: "finished",
     hasSuppliers: false,
@@ -329,6 +329,51 @@ function buildFogoRecipeCreateUrl(typeKey: ProductTypeKey) {
   url.searchParams.set("source", "nexo");
   url.searchParams.set("product_type", typeKey);
   return url.toString();
+}
+
+function typeBadgeLabel(typeKey: ProductTypeKey) {
+  if (typeKey === "asset") return "Modelo patrimonial";
+  if (typeKey === "preparacion") return "Producción interna";
+  return "Formulario completo";
+}
+
+function typeDisplayLabel(typeKey: ProductTypeKey) {
+  if (typeKey === "asset") return "activo";
+  if (typeKey === "preparacion") return "preparación";
+  return typeKey;
+}
+
+function heroKpis(typeKey: ProductTypeKey) {
+  if (typeKey === "asset") {
+    return {
+      typeValue: "Activo",
+      typeNote: "Modelo base del catálogo patrimonial",
+      modeValue: "Simple",
+      modeNote: "Solo identidad y datos técnicos base",
+      objectiveValue: "Modelo",
+      objectiveNote: "Luego creas unidades reales en Activos físicos",
+    };
+  }
+
+  if (typeKey === "preparacion") {
+    return {
+      typeValue: "Preparación",
+      typeNote: "Producto intermedio producido desde receta",
+      modeValue: "Producción",
+      modeNote: "Unidad base, WIP y continuidad en FOGO",
+      objectiveValue: "Receta / WIP",
+      objectiveNote: "Después conectas fórmula, rendimiento y porciones",
+    };
+  }
+
+  return {
+    typeValue: typeKey,
+    typeNote: "Clase operativa del maestro que vas a crear",
+    modeValue: "Completo",
+    modeNote: "Alta definitiva con unidades, proveedor y sedes",
+    objectiveValue: "Definitivo",
+    objectiveNote: "Maestro completo conectado a compras ORIGO y remisiones",
+  };
 }
 
 function buildOperationUnitHintFromUnits(params: {
@@ -1319,6 +1364,7 @@ export default async function NewProductPage({
   const typeKey = (sp.type ?? "insumo") as ProductTypeKey;
   const createRequestKey = crypto.randomUUID();
   const config = TYPE_CONFIG[typeKey] ?? TYPE_CONFIG.insumo;
+  const kpis = heroKpis(typeKey);
 
   const { supabase, user } = await requireAppAccess({
     appId: "nexo",
@@ -1548,34 +1594,28 @@ export default async function NewProductPage({
             </div>
             <div className="flex flex-wrap gap-2">
               <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
-                {typeKey === "asset" ? "Modelo patrimonial" : "Formulario completo"}
+                {typeBadgeLabel(typeKey)}
               </span>
               <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
-                {typeKey === "asset" ? "activo" : typeKey}
+                {typeDisplayLabel(typeKey)}
               </span>
             </div>
           </div>
           <div className="ui-remission-kpis ui-remission-kpis--stack sm:grid-cols-3 lg:grid-cols-1">
             <article className="ui-remission-kpi" data-tone="warm">
               <div className="ui-remission-kpi-label">Tipo</div>
-              <div className="ui-remission-kpi-value">{typeKey === "asset" ? "Activo" : typeKey}</div>
-              <div className="ui-remission-kpi-note">
-                {typeKey === "asset" ? "Modelo base del catálogo patrimonial" : "Clase operativa del maestro que vas a crear"}
-              </div>
+              <div className="ui-remission-kpi-value">{kpis.typeValue}</div>
+              <div className="ui-remission-kpi-note">{kpis.typeNote}</div>
             </article>
             <article className="ui-remission-kpi" data-tone="cool">
               <div className="ui-remission-kpi-label">Modo</div>
-              <div className="ui-remission-kpi-value">{typeKey === "asset" ? "Simple" : "Completo"}</div>
-              <div className="ui-remission-kpi-note">
-                {typeKey === "asset" ? "Solo identidad y datos técnicos base" : "Alta definitiva con unidades, proveedor y sedes"}
-              </div>
+              <div className="ui-remission-kpi-value">{kpis.modeValue}</div>
+              <div className="ui-remission-kpi-note">{kpis.modeNote}</div>
             </article>
             <article className="ui-remission-kpi" data-tone="success">
               <div className="ui-remission-kpi-label">Objetivo</div>
-              <div className="ui-remission-kpi-value">{typeKey === "asset" ? "Modelo" : "Definitivo"}</div>
-              <div className="ui-remission-kpi-note">
-                {typeKey === "asset" ? "Luego creas unidades reales en Activos físicos" : "Maestro completo conectado a compras ORIGO y remisiones"}
-              </div>
+              <div className="ui-remission-kpi-value">{kpis.objectiveValue}</div>
+              <div className="ui-remission-kpi-note">{kpis.objectiveNote}</div>
             </article>
           </div>
         </div>
@@ -1591,32 +1631,74 @@ export default async function NewProductPage({
         <CreateRequestKeyField initialValue={createRequestKey} />
 
         <CatalogSection
-          title={typeKey === "asset" ? "Identidad del modelo patrimonial" : "Datos basicos"}
+          title={
+            typeKey === "asset"
+              ? "Identidad del modelo patrimonial"
+              : typeKey === "preparacion"
+                ? "Identidad de la preparación"
+                : "Datos básicos"
+          }
           description={
             typeKey === "asset"
               ? "Crea el maestro del modelo. No escribas aquí serial, ubicación, responsable, QR ni mantenimiento real."
-              : "Nombre, código y categoría operativa. Las unidades se definen en la sección de almacenamiento."
+              : typeKey === "preparacion"
+                ? "Define el producto intermedio que luego tendrá receta, rendimiento y porciones en FOGO."
+                : "Nombre, código y categoría operativa. Las unidades se definen en la sección de almacenamiento."
           }
         >
           <ProductIdentityFields
-            nameLabel={typeKey === "asset" ? "Nombre del modelo / activo" : undefined}
-            namePlaceholder={typeKey === "asset" ? "Ej. Aire acondicionado, silla terraza, licuadora industrial" : "Ej. Harina 000"}
+            nameLabel={
+              typeKey === "asset"
+                ? "Nombre del modelo / activo"
+                : typeKey === "preparacion"
+                  ? "Nombre de la preparación"
+                  : undefined
+            }
+            namePlaceholder={
+              typeKey === "asset"
+                ? "Ej. Aire acondicionado, silla terraza, licuadora industrial"
+                : typeKey === "preparacion"
+                  ? "Ej. Zumo de limón, jarabe base, salsa de la casa"
+                  : "Ej. Harina 000"
+            }
             categories={categoryRows}
             selectedCategoryId=""
             siteNamesById={siteNamesById}
-            categoryLabel={typeKey === "asset" ? "Categoría patrimonial" : undefined}
-            categoryEmptyOptionLabel={typeKey === "asset" ? "Selecciona categoría patrimonial" : undefined}
+            categoryLabel={
+              typeKey === "asset"
+                ? "Categoría patrimonial"
+                : typeKey === "preparacion"
+                  ? "Categoría de preparación"
+                  : undefined
+            }
+            categoryEmptyOptionLabel={
+              typeKey === "asset"
+                ? "Selecciona categoría patrimonial"
+                : typeKey === "preparacion"
+                  ? "Selecciona categoría de preparación"
+                  : undefined
+            }
             categoryRequired
-            descriptionLabel={typeKey === "asset" ? "Descripción base del modelo" : undefined}
+            descriptionLabel={
+              typeKey === "asset"
+                ? "Descripción base del modelo"
+                : typeKey === "preparacion"
+                  ? "Descripción de producción"
+                  : undefined
+            }
             descriptionPlaceholder={
               typeKey === "asset"
                 ? "Ej. Modelo de aire acondicionado tipo cassette para zona de atención."
-                : "Opcional"
+                : typeKey === "preparacion"
+                  ? "Ej. Preparación base para bebidas; se produce por lote y se usa en recetas de venta."
+                  : "Opcional"
             }
             descriptionHint={
               typeKey === "asset"
                 ? "Describe el modelo en términos generales. La unidad física real se crea después en Activos físicos."
-                : undefined
+                : typeKey === "preparacion"
+                  ? "No escribas aquí la receta completa. Fórmula, rendimiento, mermas y pasos se conectan en FOGO."
+                  : undefined
             }
             skuField={{
               mode: "create",
@@ -1627,6 +1709,11 @@ export default async function NewProductPage({
               typeKey === "asset" ? (
                 <div className="ui-panel-soft p-3 text-sm text-[var(--ui-muted)]">
                   Este registro es solo el modelo base. Para QR, ubicación, responsable y conteo usa Activos físicos después de crearlo.
+                </div>
+              ) : typeKey === "preparacion" ? (
+                <div className="ui-panel-soft p-3 text-sm text-[var(--ui-muted)]">
+                  Crea primero el maestro en NEXO. Después completa receta, rendimiento y porciones en FOGO.
+                  La unidad operativa de esta pantalla queda como referencia temporal para producción y remisión.
                 </div>
               ) : (
                 <div className="ui-panel-soft p-3 text-sm text-[var(--ui-muted)]">
@@ -1649,14 +1736,28 @@ export default async function NewProductPage({
                   <>
                     <input type="hidden" name="cost" value="" />
                     <div className="ui-panel-soft p-3 text-sm text-[var(--ui-muted)] sm:col-span-2">
-                      <p className="font-medium text-[var(--ui-text)]">Costo automático</p>
-                      <p className="mt-1">
-                        El costo unitario se calcula automáticamente desde proveedor primario y entradas.
-                      </p>
-                      <p>
-                        Si faltan datos de proveedor, el producto se guarda y quedara marcado como
-                        incompleto para terminar configuración.
-                      </p>
+                      {typeKey === "preparacion" ? (
+                        <>
+                          <p className="font-medium text-[var(--ui-text)]">Costo desde receta</p>
+                          <p className="mt-1">
+                            Para preparaciones, el costo debe calcularse desde consumos, rendimiento y merma de la receta en FOGO.
+                          </p>
+                          <p>
+                            En NEXO se crea el maestro operativo; la fórmula y el costo técnico se completan después.
+                          </p>
+                        </>
+                      ) : (
+                        <>
+                          <p className="font-medium text-[var(--ui-text)]">Costo automático</p>
+                          <p className="mt-1">
+                            El costo unitario se calcula automáticamente desde proveedor primario y entradas.
+                          </p>
+                          <p>
+                            Si faltan datos de proveedor, el producto se guarda y quedará marcado como
+                            incompleto para terminar configuración.
+                          </p>
+                        </>
+                      )}
                     </div>
                   </>
                 ) : null}
@@ -1704,8 +1805,12 @@ export default async function NewProductPage({
         {/* --- Unidades y almacenamiento (definir antes de proveedores) --- */}
         {config.hasStorage && (
           <CatalogSection
-            title="Unidades del producto"
-            description="Configura unidad base, unidad de remisión y unidad de vista interna para este producto."
+            title={typeKey === "preparacion" ? "Unidades de producción" : "Unidades del producto"}
+            description={
+              typeKey === "preparacion"
+                ? "Define la unidad base del WIP y la unidad operativa temporal hasta que FOGO publique rendimiento y porciones."
+                : "Configura unidad base, unidad de remisión y unidad de vista interna para este producto."
+            }
           >
             <ProductStorageFields
               stockUnitFieldId={STOCK_UNIT_FIELD_ID}
@@ -1713,9 +1818,17 @@ export default async function NewProductPage({
               stockUnitCode={defaultStockUnitCode}
               defaultUnitCode={defaultStockUnitCode}
               defaultRemissionMode="disabled"
-              stockUnitLabel="Unidad base de stock *"
-              stockUnitHint="Ejemplo jugo: base = ml. Ejemplo queso: base = un/lonja."
-              defaultUnitHint="Se usa para captura rapida en formularios cuando no hay empaque operativo."
+              stockUnitLabel={typeKey === "preparacion" ? "Unidad base del WIP *" : "Unidad base de stock *"}
+              stockUnitHint={
+                typeKey === "preparacion"
+                  ? "Ejemplo zumo: base = ml. Ejemplo masa: base = g. Esta será la unidad canónica hasta conectar rendimiento en FOGO."
+                  : "Ejemplo jugo: base = ml. Ejemplo queso: base = un/lonja."
+              }
+              defaultUnitHint={
+                typeKey === "preparacion"
+                  ? "Unidad rápida para producción, conteo o formularios mientras la receta define porciones."
+                  : "Se usa para captura rápida en formularios cuando no hay empaque operativo."
+              }
               costingModeField={{
                 hasSuppliers: config.hasSuppliers,
                 defaultValue: "auto_primary_supplier",
@@ -1728,15 +1841,59 @@ export default async function NewProductPage({
               }}
             />
             <div className="grid gap-4 lg:grid-cols-2">
-              <ProductRemissionUomFields
-                units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
-                stockUnitCode={defaultStockUnitCode}
-                defaultLabel="Unidad operativa"
-                defaultInputUnitCode={defaultStockUnitCode}
-                defaultQtyInStockUnit={1}
-                defaultSourceMode="disabled"
-                allowPurchasePrimaryOption={config.hasSuppliers}
-              />
+              {typeKey === "preparacion" ? (
+                <div className="rounded-2xl border border-cyan-200 bg-cyan-50/70 p-4">
+                  <div className="text-sm font-semibold text-cyan-950">
+                    Remisión ligada a producción / FOGO
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-cyan-900">
+                    En creación, NEXO usará temporalmente la unidad operativa. Cuando la receta esté publicada en FOGO,
+                    la presentación de remisión debe salir de la porción o rendimiento de receta.
+                  </p>
+
+                  <input type="hidden" name="remission_source_mode" value="operation_unit" />
+
+                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-xl border border-cyan-200 bg-white/70 p-3">
+                      <div className="ui-caption">Ahora</div>
+                      <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">
+                        Unidad operativa temporal
+                      </div>
+                      <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                        1 unidad operativa se convierte a la unidad base configurada arriba.
+                      </div>
+                    </div>
+                    <div className="rounded-xl border border-cyan-200 bg-white/70 p-3">
+                      <div className="ui-caption">Después en FOGO</div>
+                      <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">
+                        Porción / rendimiento publicado
+                      </div>
+                      <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                        La receta define presentación real, merma y equivalencia operacional.
+                      </div>
+                    </div>
+                  </div>
+
+                  <a
+                    href={buildFogoRecipeCreateUrl(typeKey)}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-3 inline-flex ui-btn ui-btn--ghost ui-btn--sm"
+                  >
+                    Abrir FOGO para receta
+                  </a>
+                </div>
+              ) : (
+                <ProductRemissionUomFields
+                  units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
+                  stockUnitCode={defaultStockUnitCode}
+                  defaultLabel="Unidad operativa"
+                  defaultInputUnitCode={defaultStockUnitCode}
+                  defaultQtyInStockUnit={1}
+                  defaultSourceMode="disabled"
+                  allowPurchasePrimaryOption={config.hasSuppliers}
+                />
+              )}
               <ProductInternalBreakdownFields
                 units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
                 stockUnitCode={defaultStockUnitCode}
@@ -1788,24 +1945,40 @@ export default async function NewProductPage({
           </CatalogSection>
         )}
 
-        {/* Receta se gestiona fuera del flujo actual */}
+        {/* Receta se gestiona en FOGO */}
         {config.hasRecipe && (
           <CatalogOptionalDetails
-            title="Receta y producción"
-            summary="Esta configuración queda fuera del flujo operativo actual."
+            title={typeKey === "preparacion" ? "Continuidad en FOGO" : "Receta y producción"}
+            summary={
+              typeKey === "preparacion"
+                ? "Después de crear la preparación, completa receta, rendimiento, mermas y porciones en FOGO."
+                : "Esta configuración queda fuera del flujo operativo actual."
+            }
           >
             <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
-              <p>
-                Crea primero este producto en NEXO para definir inventario y sedes.
-                Si luego activas FOGO, completa BOM, pasos y medios desde alla.
-              </p>
+              {typeKey === "preparacion" ? (
+                <>
+                  <p>
+                    NEXO crea el maestro de inventario. FOGO debe completar la fórmula, los pasos, el rendimiento,
+                    la porción remisionable y el costo técnico de producción.
+                  </p>
+                  <p className="mt-2">
+                    Cuando esa receta esté publicada, la remisión podrá tomar su presentación desde la porción de receta.
+                  </p>
+                </>
+              ) : (
+                <p>
+                  Crea primero este producto en NEXO para definir inventario y sedes.
+                  Si luego activas FOGO, completa BOM, pasos y medios desde allá.
+                </p>
+              )}
               <a
                 href={buildFogoRecipeCreateUrl(typeKey)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="mt-3 inline-flex ui-btn ui-btn--ghost"
               >
-                Abrir continuidad externa
+                Abrir FOGO
               </a>
             </div>
           </CatalogOptionalDetails>

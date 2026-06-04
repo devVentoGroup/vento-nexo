@@ -6,6 +6,7 @@ import { ProductFormFooter } from "@/features/inventory/catalog/product-form-foo
 import { ProductIdentityFields } from "@/features/inventory/catalog/product-identity-fields";
 import { ProductAssetTechnicalSection } from "@/features/inventory/catalog/product-asset-technical-section";
 import { ProductPurchaseSection } from "@/features/inventory/catalog/product-purchase-section";
+import { ProductRemissionUomFields } from "@/features/inventory/catalog/product-remission-uom-fields";
 import { ProductSiteAvailabilitySection } from "@/features/inventory/catalog/product-site-availability-section";
 import { ProductStorageFields } from "@/features/inventory/catalog/product-storage-fields";
 import { RequiredFieldsGuardForm } from "@/components/inventory/forms/RequiredFieldsGuardForm";
@@ -137,6 +138,42 @@ function buildOperationUnitHintFromUnits(params: {
       inputUnitCode,
       qtyInInputUnit: 1,
       qtyInStockUnit: quantity,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function buildRemissionFromDefaultUnit(params: {
+  defaultUnitCode: string;
+  stockUnitCode: string;
+  unitMap: ReturnType<typeof createUnitMap>;
+}):
+  | {
+    label: string;
+    inputUnitCode: string;
+    qtyInInputUnit: number;
+    qtyInStockUnit: number;
+    source: "manual";
+  }
+  | null {
+  const inputUnitCode = normalizeUnitCode(params.defaultUnitCode || "");
+  const stockUnitCode = normalizeUnitCode(params.stockUnitCode || "");
+  if (!inputUnitCode || !stockUnitCode) return null;
+  try {
+    const { quantity } = convertQuantity({
+      quantity: 1,
+      fromUnitCode: inputUnitCode,
+      toUnitCode: stockUnitCode,
+      unitMap: params.unitMap,
+    });
+    if (!Number.isFinite(quantity) || quantity <= 0) return null;
+    return {
+      label: "Unidad operativa",
+      inputUnitCode,
+      qtyInInputUnit: 1,
+      qtyInStockUnit: quantity,
+      source: "manual",
     };
   } catch {
     return null;
@@ -991,7 +1028,7 @@ async function updateProduct(formData: FormData) {
   }
 
   async function upsertContextProfile(params: {
-    usageContext: "purchase";
+    usageContext: "purchase" | "remission";
     label: string;
     inputUnitCode: string;
     qtyInInputUnit: number;
@@ -1040,6 +1077,15 @@ async function updateProduct(formData: FormData) {
     });
   }
 
+  async function deactivateContextProfile(usageContext: "remission") {
+    await supabase
+      .from("product_uom_profiles")
+      .update({ is_active: false, updated_at: new Date().toISOString() })
+      .eq("product_id", productId)
+      .eq("usage_context", usageContext)
+      .eq("is_default", true);
+  }
+
   if (purchaseUomFromSupplier) {
     await upsertContextProfile({
       usageContext: "purchase",
@@ -1049,6 +1095,115 @@ async function updateProduct(formData: FormData) {
       qtyInStockUnit: purchaseUomFromSupplier.qtyInStockUnit,
       source: "supplier_primary",
     });
+  }
+
+  if (formData.has("remission_source_mode")) {
+    const remissionSourceModeRaw = asText(formData.get("remission_source_mode")).toLowerCase();
+    const remissionSourceMode =
+      remissionSourceModeRaw === "disabled" ||
+        remissionSourceModeRaw === "purchase_primary" ||
+        remissionSourceModeRaw === "remission_profile" ||
+        remissionSourceModeRaw === "recipe_portion" ||
+        remissionSourceModeRaw === "operation_unit"
+        ? remissionSourceModeRaw
+        : "disabled";
+
+    const remissionInputUnitCode = normalizeUnitCode(asText(formData.get("remission_uom_code")));
+    const remissionQtyInStockRaw = Number(asText(formData.get("remission_uom_qty_in_stock")) || 0);
+    const remissionQtyInStock =
+      Number.isFinite(remissionQtyInStockRaw) && remissionQtyInStockRaw > 0
+        ? remissionQtyInStockRaw
+        : 0;
+    const remissionLabelText = asText(formData.get("remission_uom_label"));
+    let remissionProfile:
+      | {
+        label: string;
+        inputUnitCode: string;
+        qtyInInputUnit: number;
+        qtyInStockUnit: number;
+        source: "manual" | "supplier_primary" | "recipe_portion";
+      }
+      | null = null;
+
+    if (remissionSourceMode === "disabled") {
+      remissionProfile = null;
+    } else if (remissionSourceMode === "remission_profile") {
+      if (!remissionInputUnitCode || remissionQtyInStock <= 0) {
+        redirectWithError("Completa la presentación de remisión: unidad y equivalencia a unidad base.");
+      }
+      remissionProfile = {
+        label: remissionLabelText || "Presentación remisión",
+        inputUnitCode: remissionInputUnitCode,
+        qtyInInputUnit: 1,
+        qtyInStockUnit: remissionQtyInStock,
+        source: "manual",
+      };
+    } else if (remissionSourceMode === "purchase_primary") {
+      if (!purchaseUomFromSupplier) {
+        redirectWithError("No se pudo usar la presentación de compra en operación. Completa el proveedor primario.");
+        return;
+      }
+
+      const purchaseProfile = purchaseUomFromSupplier;
+      remissionProfile = {
+        label: purchaseProfile.label || "Presentación compra",
+        inputUnitCode: purchaseProfile.inputUnitCode,
+        qtyInInputUnit: purchaseProfile.qtyInInputUnit,
+        qtyInStockUnit: purchaseProfile.qtyInStockUnit,
+        source: "supplier_primary",
+      };
+    } else if (remissionSourceMode === "operation_unit") {
+      remissionProfile = buildRemissionFromDefaultUnit({
+        defaultUnitCode: resolvedDefaultUnit,
+        stockUnitCode,
+        unitMap,
+      });
+      if (!remissionProfile) {
+        redirectWithError("No se pudo definir la presentación de remisión desde unidad operativa. Revisa unidad base y unidad operativa.");
+      }
+    } else if (remissionSourceMode === "recipe_portion") {
+      const { data: existingRecipePortionProfile, error: recipePortionProfileError } = await supabase
+        .from("product_uom_profiles")
+        .select("label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,source")
+        .eq("product_id", productId)
+        .eq("usage_context", "remission")
+        .eq("is_default", true)
+        .eq("is_active", true)
+        .eq("source", "recipe_portion")
+        .maybeSingle();
+
+      if (recipePortionProfileError) redirectWithError(recipePortionProfileError.message);
+      if (!existingRecipePortionProfile) {
+        redirectWithError("FOGO todavía no ha publicado una porción de receta para remisión. Usa unidad operativa temporal o presentación manual.");
+        return;
+      }
+
+      const recipePortionProfile = existingRecipePortionProfile;
+      remissionProfile = {
+        label: String(recipePortionProfile.label ?? "Porción de receta").trim(),
+        inputUnitCode: normalizeUnitCode(recipePortionProfile.input_unit_code),
+        qtyInInputUnit: Number(recipePortionProfile.qty_in_input_unit ?? 1) || 1,
+        qtyInStockUnit: Number(recipePortionProfile.qty_in_stock_unit ?? 0) || 0,
+        source: "recipe_portion",
+      };
+
+      if (!remissionProfile.inputUnitCode || remissionProfile.qtyInStockUnit <= 0) {
+        redirectWithError("La porción de receta publicada por FOGO no tiene equivalencia válida.");
+      }
+    }
+
+    if (remissionProfile) {
+      await upsertContextProfile({
+        usageContext: "remission",
+        label: remissionProfile.label,
+        inputUnitCode: remissionProfile.inputUnitCode,
+        qtyInInputUnit: remissionProfile.qtyInInputUnit,
+        qtyInStockUnit: remissionProfile.qtyInStockUnit,
+        source: remissionProfile.source,
+      });
+    } else {
+      await deactivateContextProfile("remission");
+    }
   }
 
   if (costingMode === "auto_primary_supplier" && manualCost == null && autoCostFromPrimary != null) {
@@ -1673,6 +1828,15 @@ export default async function ProductCatalogDetailPage({
   );
   const purchaseUomProfile =
     profileByContext.get("purchase") ?? profileByContext.get("general") ?? null;
+  const remissionUomProfile = profileByContext.get("remission") ?? null;
+  const remissionDefaultSourceMode =
+    remissionUomProfile?.source === "supplier_primary"
+      ? "purchase_primary"
+      : remissionUomProfile?.source === "recipe_portion"
+        ? "recipe_portion"
+        : remissionUomProfile
+          ? "remission_profile"
+          : "disabled";
 
   const { data: suppliersData } = await supabase.from("suppliers").select("id,name").eq("is_active", true).order("name");
   const suppliersList = (suppliersData ?? []) as { id: string; name: string | null }[];
@@ -2041,20 +2205,36 @@ export default async function ProductCatalogDetailPage({
             {/* Receta y producción ahora viven en FOGO */}
             {hasRecipe && (
               <CatalogOptionalDetails
-                title="Receta y producción"
-                summary="Esta configuración queda fuera del flujo operativo actual."
+                title={normalizedProductType === "preparacion" ? "Continuidad en FOGO" : "Receta y producción"}
+                summary={
+                  normalizedProductType === "preparacion"
+                    ? "FOGO completa receta, rendimiento, mermas, porciones y costo técnico de esta preparación."
+                    : "Esta configuración queda fuera del flujo operativo actual."
+                }
               >
                 <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)] space-y-2">
-                  <p>
-                    NEXO mantiene inventario, sedes y logistica. Si luego activas producción externa, la configuración de receta se completa fuera de NEXO.
-                  </p>
+                  {normalizedProductType === "preparacion" ? (
+                    <>
+                      <p>
+                        NEXO mantiene el maestro de inventario, sedes y unidad base. FOGO debe publicar la fórmula,
+                        el rendimiento y la porción remisionable cuando la preparación esté lista para operar.
+                      </p>
+                      <p>
+                        Cuando exista porción publicada, puedes usarla abajo como fuente de unidad para remisión.
+                      </p>
+                    </>
+                  ) : (
+                    <p>
+                      NEXO mantiene inventario, sedes y logística. Si luego activas producción externa, la configuración de receta se completa fuera de NEXO.
+                    </p>
+                  )}
                   <a
                     href={buildFogoRecipeUrl(productRow.id)}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="inline-flex ui-btn ui-btn--ghost"
                   >
-                    Abrir continuidad externa
+                    Abrir FOGO
                   </a>
                 </div>
               </CatalogOptionalDetails>
@@ -2185,6 +2365,27 @@ export default async function ProductCatalogDetailPage({
               </div>
             </CatalogSection>
             )}
+
+            {!isAssetItem && normalizedProductType === "preparacion" ? (
+              <CatalogSection
+                title="Remisión y salida de producción"
+                description="Conecta cómo esta preparación se mueve desde producción hacia operación. La fuente ideal es la porción o rendimiento publicado por FOGO."
+              >
+                <ProductRemissionUomFields
+                  units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
+                  stockUnitCode={stockUnitCode}
+                  defaultLabel={remissionUomProfile?.label ?? "Unidad operativa"}
+                  defaultInputUnitCode={remissionUomProfile?.input_unit_code ?? resolvedDefaultUnit ?? stockUnitCode}
+                  defaultQtyInStockUnit={remissionUomProfile?.qty_in_stock_unit ?? 1}
+                  defaultSourceMode={remissionDefaultSourceMode}
+                  allowPurchasePrimaryOption={false}
+                  allowRecipePortionOption
+                  variant="preparation"
+                  fogoRecipeHref={buildFogoRecipeUrl(productRow.id)}
+                  recipePortionAvailable={remissionUomProfile?.source === "recipe_portion"}
+                />
+              </CatalogSection>
+            ) : null}
 
             {!isAssetItem ? (
               <ProductPurchaseSection
