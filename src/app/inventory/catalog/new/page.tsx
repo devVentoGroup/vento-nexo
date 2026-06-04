@@ -1563,7 +1563,7 @@ export default async function NewProductPage({
 
   if (!canCreate) {
     return (
-      <div className="ui-scene w-full max-w-6xl space-y-6">
+      <div className="ui-scene w-full max-w-none space-y-6">
         <section className="ui-remission-hero ui-fade-up">
           <div className="space-y-2">
             <h1 className="ui-h1">{config.title}</h1>
@@ -1578,7 +1578,7 @@ export default async function NewProductPage({
   }
 
   return (
-    <div className="ui-scene w-full max-w-6xl space-y-8">
+    <div className="ui-scene w-full max-w-none space-y-8">
       <section className="ui-remission-hero ui-fade-up">
         <div className="ui-remission-hero-grid lg:grid-cols-[1.45fr_1fr] lg:items-start">
           <div className="space-y-4">
@@ -1623,7 +1623,7 @@ export default async function NewProductPage({
 
       <RequiredFieldsGuardForm
         action={createProduct}
-        className="space-y-8"
+        className="min-w-0 space-y-8"
         persistKey={`catalog-new-${typeKey}`}
       >
         <input type="hidden" name="_type_key" value={typeKey} />
@@ -1840,7 +1840,7 @@ export default async function NewProductPage({
                 collapsible: true,
               }}
             />
-            <div className="grid gap-4 lg:grid-cols-2">
+            <div className="grid gap-4 xl:grid-cols-2">
               {typeKey === "preparacion" ? (
                 <div className="rounded-2xl border border-cyan-200 bg-cyan-50/70 p-4">
                   <div className="text-sm font-semibold text-cyan-950">
