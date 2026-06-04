@@ -25,10 +25,27 @@ type EditSkuFieldProps = CommonProps & {
 
 type SkuFieldProps = CreateSkuFieldProps | EditSkuFieldProps;
 
-function readInputValue(selector: string): string {
+function readFieldValue(fieldName: string): string {
   if (typeof document === "undefined") return "";
-  const element = document.querySelector<HTMLInputElement | HTMLSelectElement>(selector);
+
+  const selector = `input[name="${fieldName}"], select[name="${fieldName}"], textarea[name="${fieldName}"]`;
+  const element = document.querySelector<HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement>(selector);
+
   return (element?.value ?? "").trim();
+}
+
+function displayAutomaticSkuPreview(value: string): string {
+  const preview = String(value ?? "").trim();
+  if (!preview) return "SKU-AUTO";
+
+  return preview.replace(/#+/g, "000XXX");
+}
+
+function displayExampleSku(value: string): string {
+  const preview = String(value ?? "").trim();
+  if (!preview) return "INS-ITEM-000123";
+
+  return preview.replace(/#+/g, "000123");
 }
 
 export function SkuField(props: SkuFieldProps) {
@@ -49,14 +66,10 @@ export function SkuField(props: SkuFieldProps) {
   const [assignAutoSku, setAssignAutoSku] = useState(true);
 
   useEffect(() => {
-    const nameSelector = `input[name="${nameFieldName}"]`;
-    const typeSelector = `select[name="${typeFieldName}"]`;
-    const inventoryKindSelector = `select[name="${inventoryKindFieldName}"]`;
-
     const onInput = () => {
-      setNameValue(readInputValue(nameSelector));
-      setProductType(readInputValue(typeSelector) || initialProductType || "");
-      setInventoryKind(readInputValue(inventoryKindSelector) || initialInventoryKind || "");
+      setNameValue(readFieldValue(nameFieldName));
+      setProductType(readFieldValue(typeFieldName) || initialProductType || "");
+      setInventoryKind(readFieldValue(inventoryKindFieldName) || initialInventoryKind || "");
     };
 
     onInput();
@@ -78,13 +91,21 @@ export function SkuField(props: SkuFieldProps) {
     [inventoryKind, nameValue, productType]
   );
 
+  const readablePreview = useMemo(() => displayAutomaticSkuPreview(preview), [preview]);
+  const exampleSku = useMemo(() => displayExampleSku(preview), [preview]);
+
   if (props.mode === "create") {
     return (
       <label className={`flex flex-col gap-1 ${className ?? ""}`.trim()}>
-        <span className="ui-label">SKU (automático)</span>
-        <input value={preview} readOnly className="ui-input font-mono bg-zinc-50" />
+        <span className="ui-label">SKU automático</span>
+        <input
+          value={readablePreview}
+          readOnly
+          aria-readonly="true"
+          className="ui-input bg-zinc-50 font-mono"
+        />
         <span className="text-xs text-[var(--ui-muted)]">
-          Se genera automáticamente al guardar. El numero final se asigna con secuencia global.
+          Vista previa. El número final se asigna automáticamente al guardar con la siguiente secuencia disponible.
         </span>
       </label>
     );
@@ -100,7 +121,8 @@ export function SkuField(props: SkuFieldProps) {
         <input
           value={hasCurrentSku ? currentSku : "Sin SKU (legacy)"}
           readOnly
-          className="ui-input font-mono bg-zinc-50"
+          aria-readonly="true"
+          className="ui-input bg-zinc-50 font-mono"
         />
       ) : (
         <>
@@ -142,10 +164,9 @@ export function SkuField(props: SkuFieldProps) {
 
       {allowOverride ? (
         <span className="text-xs text-[var(--ui-muted)]">
-          Formato valido: letras y numeros con guiones (ej. {preview.replace("######", "000123")}).
+          Formato válido: letras y números con guiones. Ejemplo: {exampleSku}.
         </span>
       ) : null}
     </div>
   );
 }
-
