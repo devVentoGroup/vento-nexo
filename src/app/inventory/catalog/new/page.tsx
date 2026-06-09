@@ -13,11 +13,11 @@ import {
 import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 
-import { ProductSuppliersEditor } from "@/features/inventory/catalog/product-suppliers-editor";
+import { ProductCostStatusPanel } from "@/features/inventory/catalog/product-cost-status-panel";
 import { ProductFormFooter } from "@/features/inventory/catalog/product-form-footer";
 import { ProductIdentityFields } from "@/features/inventory/catalog/product-identity-fields";
-import { ProductInternalBreakdownFields } from "@/features/inventory/catalog/product-internal-breakdown-fields";
 import { ProductAssetTechnicalSection } from "@/features/inventory/catalog/product-asset-technical-section";
+import { ProductPurchaseSection } from "@/features/inventory/catalog/product-purchase-section";
 import { ProductRemissionUomFields } from "@/features/inventory/catalog/product-remission-uom-fields";
 import { ProductSiteAvailabilitySection } from "@/features/inventory/catalog/product-site-availability-section";
 import { ProductStorageFields } from "@/features/inventory/catalog/product-storage-fields";
@@ -49,6 +49,53 @@ export const dynamic = "force-dynamic";
 type CategoryRow = InventoryCategoryRow;
 type UnitRow = InventoryUnit;
 const STOCK_UNIT_FIELD_ID = "stock_unit_code";
+
+type MeasurementMode =
+  | "fixed_presentation"
+  | "variable_weight"
+  | "count_with_weight"
+  | "bulk_volume";
+
+function normalizeMeasurementMode(value: string | null | undefined): MeasurementMode {
+  const raw = String(value ?? "").trim().toLowerCase();
+  if (
+    raw === "variable_weight" ||
+    raw === "count_with_weight" ||
+    raw === "bulk_volume" ||
+    raw === "fixed_presentation"
+  ) {
+    return raw;
+  }
+  return "fixed_presentation";
+}
+
+function defaultToleranceForMeasurementMode(mode: MeasurementMode): number {
+  if (mode === "fixed_presentation") return 0;
+  if (mode === "bulk_volume") return 2;
+  return 5;
+}
+
+function clampTolerancePercent(value: number | null, fallback: number): number {
+  if (value == null || !Number.isFinite(value)) return fallback;
+  if (value < 0) return 0;
+  if (value > 100) return 100;
+  return value;
+}
+
+function sanitizeAuxCountUnitCode(value: string | null | undefined): string {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  return normalized || "piezas";
+}
+
+function measurementPolicyForMode(mode: MeasurementMode) {
+  return {
+    requires_actual_receipt_qty: mode !== "fixed_presentation",
+    requires_actual_dispatch_qty: mode !== "fixed_presentation",
+    requires_actual_production_qty: mode !== "fixed_presentation",
+    requires_count_alongside_weight: mode === "count_with_weight",
+    default_tolerance_percent: defaultToleranceForMeasurementMode(mode),
+  };
+}
 
 function asText(v: FormDataEntryValue | null) {
   return typeof v === "string" ? v.trim() : "";
@@ -341,6 +388,25 @@ function typeDisplayLabel(typeKey: ProductTypeKey) {
   if (typeKey === "asset") return "activo";
   if (typeKey === "preparacion") return "preparación";
   return typeKey;
+}
+
+function inventoryKindLabel(kindRaw: string): string {
+  const kind = String(kindRaw ?? "").trim().toLowerCase();
+  if (kind === "ingredient") return "Insumo";
+  if (kind === "finished") return "Producto terminado";
+  if (kind === "resale") return "Reventa";
+  if (kind === "packaging") return "Empaque";
+  if (kind === "asset") return "Activo";
+  return "Sin clasificar";
+}
+
+function safeDecode(value: string | null | undefined) {
+  if (!value) return "";
+  try {
+    return decodeURIComponent(value);
+  } catch {
+    return value;
+  }
 }
 
 function heroKpis(typeKey: ProductTypeKey) {
@@ -677,6 +743,18 @@ async function createProduct(formData: FormData) {
 
   // Inventory profile
   const invKind = config.inventoryKind as string;
+  const requestedMeasurementMode = normalizeMeasurementMode(asText(formData.get("measurement_mode")));
+  const measurementMode = invKind === "asset" ? "fixed_presentation" : requestedMeasurementMode;
+  const measurementPolicy = measurementPolicyForMode(measurementMode);
+  const defaultTolerancePercent = clampTolerancePercent(
+    asNullableNumber(formData.get("default_tolerance_percent")),
+    measurementPolicy.default_tolerance_percent
+  );
+  const auxCountUnitCode =
+    measurementMode === "count_with_weight"
+      ? sanitizeAuxCountUnitCode(asText(formData.get("aux_count_unit_code")))
+      : null;
+
   if (config.hasStorage || invKind === "asset") {
     const profilePayload = {
       product_id: productId,
@@ -687,6 +765,13 @@ async function createProduct(formData: FormData) {
       costing_mode: costingMode,
       lot_tracking: Boolean(formData.get("lot_tracking")),
       expiry_tracking: Boolean(formData.get("expiry_tracking")),
+      measurement_mode: measurementMode,
+      default_tolerance_percent: defaultTolerancePercent,
+      aux_count_unit_code: auxCountUnitCode,
+      requires_actual_receipt_qty: measurementPolicy.requires_actual_receipt_qty,
+      requires_actual_dispatch_qty: measurementPolicy.requires_actual_dispatch_qty,
+      requires_actual_production_qty: measurementPolicy.requires_actual_production_qty,
+      requires_count_alongside_weight: measurementPolicy.requires_count_alongside_weight,
     };
     await supabase.from("product_inventory_profiles").upsert(profilePayload, { onConflict: "product_id" });
   } else {
@@ -698,6 +783,13 @@ async function createProduct(formData: FormData) {
         default_unit: resolvedDefaultUnit,
         unit_family: unitFamily,
         costing_mode: costingMode,
+        measurement_mode: measurementMode,
+        default_tolerance_percent: defaultTolerancePercent,
+        aux_count_unit_code: auxCountUnitCode,
+        requires_actual_receipt_qty: measurementPolicy.requires_actual_receipt_qty,
+        requires_actual_dispatch_qty: measurementPolicy.requires_actual_dispatch_qty,
+        requires_actual_production_qty: measurementPolicy.requires_actual_production_qty,
+        requires_count_alongside_weight: measurementPolicy.requires_count_alongside_weight,
       },
       { onConflict: "product_id" }
     );
@@ -1365,6 +1457,22 @@ export default async function NewProductPage({
   const createRequestKey = crypto.randomUUID();
   const config = TYPE_CONFIG[typeKey] ?? TYPE_CONFIG.insumo;
   const kpis = heroKpis(typeKey);
+  const errorMsg = safeDecode(sp.error);
+  const normalizedProductType = String(config.productType ?? "").trim().toLowerCase();
+  const normalizedInventoryKind = String(config.inventoryKind ?? "").trim().toLowerCase();
+  const isAssetItem = normalizedInventoryKind === "asset";
+  const hasRecipe = Boolean(config.hasRecipe);
+  const hasSuppliers = Boolean(config.hasSuppliers);
+  const lockedInventoryKind = config.inventoryKind;
+  const lockedInventoryKindText = inventoryKindLabel(lockedInventoryKind);
+  const createTypeLabel =
+    isAssetItem
+      ? "Activo"
+      : normalizedProductType === "venta"
+        ? "Venta"
+        : normalizedProductType === "preparacion"
+          ? "Preparación"
+          : "Insumo";
 
   const { supabase, user } = await requireAppAccess({
     appId: "nexo",
@@ -1578,7 +1686,7 @@ export default async function NewProductPage({
   }
 
   return (
-    <div className="ui-scene w-full max-w-none space-y-8">
+    <div className="ui-scene w-full space-y-8">
       <section className="ui-remission-hero ui-fade-up">
         <div className="ui-remission-hero-grid lg:grid-cols-[1.45fr_1fr] lg:items-start">
           <div className="space-y-4">
@@ -1590,40 +1698,55 @@ export default async function NewProductPage({
                 ← Volver al catálogo
               </Link>
               <h1 className="ui-h1">{config.title}</h1>
-              <p className="ui-body-muted">{config.subtitle}</p>
+              <p className="ui-body-muted">
+                {isAssetItem
+                  ? "Crea el modelo base del catálogo patrimonial. Las unidades reales se gestionan después en Activos físicos."
+                  : "Crea la ficha maestra con el mismo orden de edición: identidad, receta, inventario, compra y sedes."}
+              </p>
             </div>
+
             <div className="flex flex-wrap gap-2">
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
-                {typeBadgeLabel(typeKey)}
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-900">
+                Nuevo
               </span>
               <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
                 {typeDisplayLabel(typeKey)}
               </span>
+              {hasRecipe ? (
+                <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-900">
+                  Con receta
+                </span>
+              ) : null}
             </div>
           </div>
+
           <div className="ui-remission-kpis ui-remission-kpis--stack sm:grid-cols-3 lg:grid-cols-1">
             <article className="ui-remission-kpi" data-tone="warm">
-              <div className="ui-remission-kpi-label">Tipo</div>
-              <div className="ui-remission-kpi-value">{kpis.typeValue}</div>
-              <div className="ui-remission-kpi-note">{kpis.typeNote}</div>
+              <div className="ui-remission-kpi-label">Estado</div>
+              <div className="ui-remission-kpi-value">Nuevo</div>
+              <div className="ui-remission-kpi-note">Se guardará como maestro activo</div>
             </article>
             <article className="ui-remission-kpi" data-tone="cool">
-              <div className="ui-remission-kpi-label">Modo</div>
-              <div className="ui-remission-kpi-value">{kpis.modeValue}</div>
-              <div className="ui-remission-kpi-note">{kpis.modeNote}</div>
+              <div className="ui-remission-kpi-label">Tipo</div>
+              <div className="ui-remission-kpi-value">{isAssetItem ? "Activo" : normalizedProductType === "preparacion" ? "Prep" : normalizedProductType === "venta" ? "Venta" : "Insumo"}</div>
+              <div className="ui-remission-kpi-note">Clasificación operativa del producto</div>
             </article>
             <article className="ui-remission-kpi" data-tone="success">
-              <div className="ui-remission-kpi-label">Objetivo</div>
-              <div className="ui-remission-kpi-value">{kpis.objectiveValue}</div>
-              <div className="ui-remission-kpi-note">{kpis.objectiveNote}</div>
+              <div className="ui-remission-kpi-label">{isAssetItem ? "Operación real" : "Sedes"}</div>
+              <div className="ui-remission-kpi-value">{isAssetItem ? "Assets" : "0"}</div>
+              <div className="ui-remission-kpi-note">
+                {isAssetItem ? "Después creas activos físicos" : "Se configurarán al guardar"}
+              </div>
             </article>
           </div>
         </div>
       </section>
 
+      {errorMsg ? <div className="ui-alert ui-alert--error">{errorMsg}</div> : null}
+
       <RequiredFieldsGuardForm
         action={createProduct}
-        className="min-w-0 space-y-8"
+        className="space-y-8"
         persistKey={`catalog-new-${typeKey}`}
       >
         <input type="hidden" name="_type_key" value={typeKey} />
@@ -1631,149 +1754,108 @@ export default async function NewProductPage({
         <CreateRequestKeyField initialValue={createRequestKey} />
 
         <CatalogSection
-          title={
-            typeKey === "asset"
-              ? "Identidad del modelo patrimonial"
-              : typeKey === "preparacion"
-                ? "Identidad de la preparación"
-                : "Datos básicos"
-          }
+          title={isAssetItem ? "Identidad del modelo patrimonial" : "Datos básicos"}
           description={
-            typeKey === "asset"
-              ? "Crea el maestro del modelo. No escribas aquí serial, ubicación, responsable, QR ni mantenimiento real."
-              : typeKey === "preparacion"
-                ? "Define el producto intermedio que luego tendrá receta, rendimiento y porciones en FOGO."
-                : "Nombre, código y categoría operativa. Las unidades se definen en la sección de almacenamiento."
+            isAssetItem
+              ? "Define cómo se identifica este modelo en el catálogo. Las unidades reales, QR, ubicación y conteo se gestionan en Activos físicos."
+              : "Identidad inicial del item: nombre, SKU automático, tipo fijo, categoría operativa y descripción."
           }
         >
           <ProductIdentityFields
-            nameLabel={
-              typeKey === "asset"
-                ? "Nombre del modelo / activo"
-                : typeKey === "preparacion"
-                  ? "Nombre de la preparación"
-                  : undefined
-            }
+            nameLabel={isAssetItem ? "Nombre del modelo / activo" : "Nombre del producto / insumo"}
             namePlaceholder={
-              typeKey === "asset"
+              isAssetItem
                 ? "Ej. Aire acondicionado, silla terraza, licuadora industrial"
                 : typeKey === "preparacion"
                   ? "Ej. Zumo de limón, jarabe base, salsa de la casa"
-                  : "Ej. Harina 000"
+                  : typeKey === "venta"
+                    ? "Ej. Espresso, croissant, cappuccino"
+                    : "Ej. Harina 000"
             }
             categories={categoryRows}
             selectedCategoryId=""
             siteNamesById={siteNamesById}
-            categoryLabel={
-              typeKey === "asset"
-                ? "Categoría patrimonial"
-                : typeKey === "preparacion"
-                  ? "Categoría de preparación"
-                  : undefined
-            }
-            categoryEmptyOptionLabel={
-              typeKey === "asset"
-                ? "Selecciona categoría patrimonial"
-                : typeKey === "preparacion"
-                  ? "Selecciona categoría de preparación"
-                  : undefined
-            }
+            categoryLabel={isAssetItem ? "Categoría patrimonial" : "Categoría operativa"}
+            categoryEmptyOptionLabel={isAssetItem ? "Selecciona categoría patrimonial" : "Selecciona categoría"}
             categoryRequired
-            descriptionLabel={
-              typeKey === "asset"
-                ? "Descripción base del modelo"
-                : typeKey === "preparacion"
-                  ? "Descripción de producción"
-                  : undefined
-            }
+            descriptionLabel={isAssetItem ? "Descripción base del modelo" : "Descripción"}
             descriptionPlaceholder={
-              typeKey === "asset"
-                ? "Ej. Modelo de aire acondicionado tipo cassette para zona de atención."
-                : typeKey === "preparacion"
-                  ? "Ej. Preparación base para bebidas; se produce por lote y se usa en recetas de venta."
-                  : "Opcional"
+              isAssetItem
+                ? "Ej. Equipo de aire acondicionado tipo cassette para zona de atención, referencia general del modelo."
+                : "Opcional"
             }
             descriptionHint={
-              typeKey === "asset"
-                ? "Describe el modelo en términos generales. La unidad física real se crea después en Activos físicos."
-                : typeKey === "preparacion"
-                  ? "No escribas aquí la receta completa. Fórmula, rendimiento, mermas y pasos se conectan en FOGO."
-                  : undefined
+              isAssetItem
+                ? "Describe el modelo en términos generales. No escribas aquí serial, ubicación, responsable ni mantenimiento real."
+                : undefined
             }
             skuField={{
               mode: "create",
               initialProductType: config.productType,
               initialInventoryKind: config.inventoryKind,
             }}
-            aside={
-              typeKey === "asset" ? (
-                <div className="ui-panel-soft p-3 text-sm text-[var(--ui-muted)]">
-                  Este registro es solo el modelo base. Para QR, ubicación, responsable y conteo usa Activos físicos después de crearlo.
-                </div>
-              ) : typeKey === "preparacion" ? (
-                <div className="ui-panel-soft p-3 text-sm text-[var(--ui-muted)]">
-                  Crea primero el maestro en NEXO. Después completa receta, rendimiento y porciones en FOGO.
-                  La unidad operativa de esta pantalla queda como referencia temporal para producción y remisión.
-                </div>
-              ) : (
-                <div className="ui-panel-soft p-3 text-sm text-[var(--ui-muted)]">
-                  Configura unidad base y unidad operativa en la sección de almacenamiento.
-                </div>
-              )
-            }
-            priceField={
-              config.hasPrice
-                ? {
-                  label: "Precio base referencial",
-                  placeholder: "Opcional",
-                  hint: "El precio final se define por sede/canal en la capa comercial.",
-                }
-                : undefined
-            }
-            trailingContent={
-              <>
-                {typeKey !== "asset" ? (
-                  <>
-                    <input type="hidden" name="cost" value="" />
-                    <div className="ui-panel-soft p-3 text-sm text-[var(--ui-muted)] sm:col-span-2">
-                      {typeKey === "preparacion" ? (
-                        <>
-                          <p className="font-medium text-[var(--ui-text)]">Costo desde receta</p>
-                          <p className="mt-1">
-                            Para preparaciones, el costo debe calcularse desde consumos, rendimiento y merma de la receta en FOGO.
-                          </p>
-                          <p>
-                            En NEXO se crea el maestro operativo; la fórmula y el costo técnico se completan después.
-                          </p>
-                        </>
-                      ) : (
-                        <>
-                          <p className="font-medium text-[var(--ui-text)]">Costo automático</p>
-                          <p className="mt-1">
-                            El costo unitario se calcula automáticamente desde proveedor primario y entradas.
-                          </p>
-                          <p>
-                            Si faltan datos de proveedor, el producto se guarda y quedará marcado como
-                            incompleto para terminar configuración.
-                          </p>
-                        </>
-                      )}
-                    </div>
-                  </>
-                ) : null}
-              </>
-            }
+            lockedTypeField={{
+              label: isAssetItem ? "Tipo de maestro" : "Tipo",
+              value: createTypeLabel,
+              hiddenName: "product_type",
+              hiddenValue: config.productType,
+              hint: isAssetItem
+                ? "Este maestro sirve para crear activos físicos reales desde el catálogo."
+                : "Se define por el flujo de creación y se mantiene bloqueado en edición.",
+            }}
           />
         </CatalogSection>
 
-        {typeKey === "asset" ? (
+        {/* Receta y producción ahora viven en FOGO */}
+        {hasRecipe ? (
+          <CatalogOptionalDetails
+            title={normalizedProductType === "preparacion" ? "Continuidad en FOGO" : "Receta y producción"}
+            summary={
+              normalizedProductType === "preparacion"
+                ? "FOGO completa receta, rendimiento, mermas, porciones y costo técnico de esta preparación."
+                : "NEXO crea el maestro; FOGO completa la receta cuando el producto ya exista."
+            }
+          >
+            <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)] space-y-2">
+              {normalizedProductType === "preparacion" ? (
+                <>
+                  <p>
+                    NEXO crea el maestro de inventario, sedes y unidad base. FOGO debe publicar la fórmula,
+                    el rendimiento y la porción remisionable cuando la preparación esté lista para operar.
+                  </p>
+                  <p>
+                    Mientras no exista porción publicada, puedes usar la unidad operativa temporal en la sección de remisión.
+                  </p>
+                </>
+              ) : (
+                <p>
+                  Este producto de venta nace como producto terminado con receta. Crea primero el maestro en NEXO y luego completa BOM, pasos y medios en FOGO.
+                </p>
+              )}
+              <a
+                href={buildFogoRecipeCreateUrl(typeKey)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex ui-btn ui-btn--ghost"
+              >
+                Abrir FOGO
+              </a>
+            </div>
+          </CatalogOptionalDetails>
+        ) : null}
+
+        {isAssetItem ? (
           <CatalogSection
             title="Configuración mínima del modelo patrimonial"
-            description="Los equipos y mobiliario no usan proveedor, presentación de compra, remisión ni stock operativo en esta pantalla."
+            description="Los activos no usan compra/remisión/stock como insumos. Se guardan campos mínimos para mantener compatibilidad del catálogo."
           >
             <input type="hidden" name="stock_unit_code" value="un" />
             <input type="hidden" name="default_unit" value="un" />
             <input type="hidden" name="unit" value="un" />
+            <input type="hidden" name="inventory_kind" value={lockedInventoryKind} />
+            <input type="hidden" name="measurement_mode" value="fixed_presentation" />
+            <input type="hidden" name="default_tolerance_percent" value="0" />
+            <input type="hidden" name="aux_count_unit_code" value="" />
             <input type="hidden" name="track_inventory" value="" />
             <input type="hidden" name="lot_tracking" value="" />
             <input type="hidden" name="expiry_tracking" value="" />
@@ -1783,208 +1865,137 @@ export default async function NewProductPage({
 
             <div className="grid gap-3 md:grid-cols-3">
               <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
-                <div className="ui-caption">Tipo</div>
-                <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">Activo patrimonial</div>
+                <div className="ui-caption">Tipo de inventario</div>
+                <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">Activo</div>
               </div>
               <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
                 <div className="ui-caption">Unidad técnica</div>
-                <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">Unidad</div>
+                <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">un</div>
               </div>
               <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
-                <div className="ui-caption">Operación real</div>
-                <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">Activos físicos</div>
+                <div className="ui-caption">Stock operativo</div>
+                <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">No aplica aquí</div>
               </div>
             </div>
 
             <div className="ui-alert ui-alert--warn mt-4">
-              Después de crear este modelo, crea la unidad física o grupo contable en Activos físicos para asignar ubicación, QR, responsable y mantenimiento.
+              La existencia real, ubicación, QR, responsable, mantenimientos y conteos se manejan en Activos físicos.
             </div>
           </CatalogSection>
-        ) : null}
-
-        {/* --- Unidades y almacenamiento (definir antes de proveedores) --- */}
-        {config.hasStorage && (
+        ) : (
           <CatalogSection
-            title={typeKey === "preparacion" ? "Unidades de producción" : "Unidades del producto"}
-            description={
-              typeKey === "preparacion"
-                ? "Define la unidad base del WIP y la unidad operativa temporal hasta que FOGO publique rendimiento y porciones."
-                : "Configura unidad base, unidad de remisión y unidad de vista interna para este producto."
-            }
+            title="Unidad base e inventario"
+            description="Configura la unidad técnica de stock, trazabilidad y costo. Las presentaciones físicas se administran aparte después de crear el maestro."
           >
             <ProductStorageFields
               stockUnitFieldId={STOCK_UNIT_FIELD_ID}
               units={defaultUnitOptions}
               stockUnitCode={defaultStockUnitCode}
               defaultUnitCode={defaultStockUnitCode}
-              defaultRemissionMode="disabled"
-              stockUnitLabel={typeKey === "preparacion" ? "Unidad base del WIP *" : "Unidad base de stock *"}
-              stockUnitHint={
-                typeKey === "preparacion"
-                  ? "Ejemplo zumo: base = ml. Ejemplo masa: base = g. Esta será la unidad canónica hasta conectar rendimiento en FOGO."
-                  : "Ejemplo jugo: base = ml. Ejemplo queso: base = un/lonja."
+              defaultUnitHint="Si no coincide con la familia de la unidad base, se guardará automáticamente la unidad base."
+              measurementModeField={{
+                defaultValue: "fixed_presentation",
+                defaultTolerancePercent: null,
+                disabled: false,
+              }}
+              preCostingFields={
+                <>
+                  <label className="flex flex-col gap-1">
+                    <span className="ui-label">Tipo de inventario</span>
+                    <input type="hidden" name="inventory_kind" value={lockedInventoryKind} />
+                    <div className="ui-input flex items-center">{lockedInventoryKindText}</div>
+                    <span className="text-xs text-[var(--ui-muted)]">
+                      Se define por el flujo de creación y se mantiene bloqueado en edición.
+                    </span>
+                  </label>
+
+                  <input type="hidden" name="aux_count_unit_code" value="" />
+
+                  {normalizedProductType === "venta" ? (
+                    <label className="flex flex-col gap-1">
+                      <span className="ui-label">Precio base referencial</span>
+                      <input
+                        name="price"
+                        type="number"
+                        step="0.01"
+                        className="ui-input"
+                        placeholder="Opcional"
+                      />
+                      <span className="text-xs text-[var(--ui-muted)]">
+                        El precio final se configura por sede/canal en la capa comercial.
+                      </span>
+                    </label>
+                  ) : (
+                    <input type="hidden" name="price" value="" />
+                  )}
+                </>
               }
-              defaultUnitHint={
-                typeKey === "preparacion"
-                  ? "Unidad rápida para producción, conteo o formularios mientras la receta define porciones."
-                  : "Se usa para captura rápida en formularios cuando no hay empaque operativo."
+              postCostingFields={
+                <>
+                  <input type="hidden" name="cost" value="" />
+                  <ProductCostStatusPanel
+                    hasSuppliers={hasSuppliers}
+                    hasRecipe={hasRecipe}
+                    hasComputedCost={false}
+                    costingMode={hasSuppliers ? "auto_primary_supplier" : "manual"}
+                    autoCostReady={!hasSuppliers}
+                    autoCostReadinessReason={
+                      hasSuppliers ? "proveedor primario, empaque, unidad y precio" : null
+                    }
+                    currentCost={null}
+                  />
+                </>
               }
               costingModeField={{
-                hasSuppliers: config.hasSuppliers,
-                defaultValue: "auto_primary_supplier",
+                hasSuppliers,
+                defaultValue: hasSuppliers ? "auto_primary_supplier" : "manual",
+                autoOptionLabel: "Auto proveedor primario",
               }}
               trackingOptions={{
                 trackInventoryDefaultChecked: true,
                 lotTrackingDefaultChecked: false,
                 expiryTrackingDefaultChecked: false,
-                collapsible: true,
               }}
             />
-            <div className="grid gap-4 xl:grid-cols-2">
-              {typeKey === "preparacion" ? (
-                <div className="rounded-2xl border border-cyan-200 bg-cyan-50/70 p-4">
-                  <div className="text-sm font-semibold text-cyan-950">
-                    Remisión ligada a producción / FOGO
-                  </div>
-                  <p className="mt-1 text-xs leading-5 text-cyan-900">
-                    En creación, NEXO usará temporalmente la unidad operativa. Cuando la receta esté publicada en FOGO,
-                    la presentación de remisión debe salir de la porción o rendimiento de receta.
-                  </p>
-
-                  <input type="hidden" name="remission_source_mode" value="operation_unit" />
-
-                  <div className="mt-3 grid gap-3 sm:grid-cols-2">
-                    <div className="rounded-xl border border-cyan-200 bg-white/70 p-3">
-                      <div className="ui-caption">Ahora</div>
-                      <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">
-                        Unidad operativa temporal
-                      </div>
-                      <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                        1 unidad operativa se convierte a la unidad base configurada arriba.
-                      </div>
-                    </div>
-                    <div className="rounded-xl border border-cyan-200 bg-white/70 p-3">
-                      <div className="ui-caption">Después en FOGO</div>
-                      <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">
-                        Porción / rendimiento publicado
-                      </div>
-                      <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                        La receta define presentación real, merma y equivalencia operacional.
-                      </div>
-                    </div>
-                  </div>
-
-                  <a
-                    href={buildFogoRecipeCreateUrl(typeKey)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="mt-3 inline-flex ui-btn ui-btn--ghost ui-btn--sm"
-                  >
-                    Abrir FOGO para receta
-                  </a>
-                </div>
-              ) : (
-                <ProductRemissionUomFields
-                  units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
-                  stockUnitCode={defaultStockUnitCode}
-                  defaultLabel="Unidad operativa"
-                  defaultInputUnitCode={defaultStockUnitCode}
-                  defaultQtyInStockUnit={1}
-                  defaultSourceMode="disabled"
-                  allowPurchasePrimaryOption={config.hasSuppliers}
-                />
-              )}
-              <ProductInternalBreakdownFields
-                units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
-                stockUnitCode={defaultStockUnitCode}
-              />
+            <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
+              Las presentaciones físicas, equivalencias operativas y fotos por presentación se administran en la pantalla dedicada después de crear el producto.
             </div>
           </CatalogSection>
         )}
 
-        {/* Guia: proveedores (solo insumo) */}
-        {config.hasSuppliers ? (
-          <CatalogOptionalDetails
-            title="Guia rapida de unidades"
-            summary="Casos reales para validar unidades base y de compra sin saturar la ficha."
-          >
-            <div className="text-sm text-[var(--ui-muted)] space-y-2">
-              <p>
-                <strong className="text-[var(--ui-text)]">Queso gouda:</strong> base = lonja/un, compra = 1 paquete de 10 un, receta = 2 un.
-              </p>
-              <p>
-                <strong className="text-[var(--ui-text)]">Jugo de naranja:</strong> base = ml, compra = 1 botella de 1 l, receta = ml.
-              </p>
-              <p>
-                <strong className="text-[var(--ui-text)]">Cloro:</strong> base = ml, compra = galon, remisión = botella 1 l, uso final = taza (convertida a ml).
-              </p>
-              <p>Regla: el sistema guarda stock y costo en unidad base; compra/remisión se convierten automáticamente.</p>
-            </div>
-          </CatalogOptionalDetails>
-        ) : null}
-
-        {config.hasSuppliers && (
+        {!isAssetItem && normalizedProductType === "preparacion" ? (
           <CatalogSection
-            title="Compra principal (proveedor)"
-            description="Aquí defines como compra o factura el proveedor. El sistema convierte automáticamente a la unidad base."
+            title="Remisión y salida de producción"
+            description="Conecta cómo esta preparación se mueve desde producción hacia operación. La fuente ideal será la porción o rendimiento publicado por FOGO."
           >
-            <ProductSuppliersEditor
-              name="supplier_lines"
-              initialRows={[]}
-              suppliers={suppliersList.map((s) => ({ id: s.id, name: s.name }))}
-              units={unitsList.map((unit) => ({
-                code: unit.code,
-                name: unit.name,
-                family: unit.family,
-                factor_to_base: unit.factor_to_base,
-              }))}
+            <ProductRemissionUomFields
+              units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
               stockUnitCode={defaultStockUnitCode}
-              stockUnitCodeFieldId={STOCK_UNIT_FIELD_ID}
-              mode="simple"
+              defaultLabel="Unidad operativa"
+              defaultInputUnitCode={defaultStockUnitCode}
+              defaultQtyInStockUnit={1}
+              defaultSourceMode="operation_unit"
+              allowPurchasePrimaryOption={false}
+              allowRecipePortionOption
+              variant="preparation"
+              fogoRecipeHref={buildFogoRecipeCreateUrl(typeKey)}
+              recipePortionAvailable={false}
             />
           </CatalogSection>
-        )}
+        ) : null}
 
-        {/* Receta se gestiona en FOGO */}
-        {config.hasRecipe && (
-          <CatalogOptionalDetails
-            title={typeKey === "preparacion" ? "Continuidad en FOGO" : "Receta y producción"}
-            summary={
-              typeKey === "preparacion"
-                ? "Después de crear la preparación, completa receta, rendimiento, mermas y porciones en FOGO."
-                : "Esta configuración queda fuera del flujo operativo actual."
-            }
-          >
-            <div className="ui-panel-soft p-4 text-sm text-[var(--ui-muted)]">
-              {typeKey === "preparacion" ? (
-                <>
-                  <p>
-                    NEXO crea el maestro de inventario. FOGO debe completar la fórmula, los pasos, el rendimiento,
-                    la porción remisionable y el costo técnico de producción.
-                  </p>
-                  <p className="mt-2">
-                    Cuando esa receta esté publicada, la remisión podrá tomar su presentación desde la porción de receta.
-                  </p>
-                </>
-              ) : (
-                <p>
-                  Crea primero este producto en NEXO para definir inventario y sedes.
-                  Si luego activas FOGO, completa BOM, pasos y medios desde allá.
-                </p>
-              )}
-              <a
-                href={buildFogoRecipeCreateUrl(typeKey)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-3 inline-flex ui-btn ui-btn--ghost"
-              >
-                Abrir FOGO
-              </a>
-            </div>
-          </CatalogOptionalDetails>
-        )}
+        {!isAssetItem ? (
+          <ProductPurchaseSection
+            enabled={hasSuppliers}
+            initialRows={[]}
+            suppliers={suppliersList.map((s) => ({ id: s.id, name: s.name }))}
+            units={unitsList}
+            stockUnitCode={defaultStockUnitCode}
+            stockUnitFieldId={STOCK_UNIT_FIELD_ID}
+          />
+        ) : null}
 
-        {typeKey === "asset" ? (
+        {isAssetItem ? (
           <ProductAssetTechnicalSection
             defaultTemplate="general"
             initialProfile={null}
@@ -1994,7 +2005,7 @@ export default async function NewProductPage({
           />
         ) : null}
 
-        {typeKey !== "asset" ? (
+        {!isAssetItem ? (
           <ProductSiteAvailabilitySection
             initialRows={[]}
             sites={sitesList.map((s) => ({ id: s.id, name: s.name, site_type: s.site_type }))}
@@ -2002,7 +2013,7 @@ export default async function NewProductPage({
             areaKinds={areaKindsList.map((a) => ({
               code: a.code,
               name: a.name ?? a.code,
-              use_for_remission: a.use_for_remission ?? null,
+              use_for_remission: Boolean(a.use_for_remission),
             }))}
             siteAreaKinds={siteAreaKindsList}
             productionLocations={productionLocationsList.map((location) => ({
@@ -2018,6 +2029,9 @@ export default async function NewProductPage({
               inputUnitCode: defaultStockUnitCode,
               stockUnitCode: defaultStockUnitCode,
             })}
+            productType={config.productType}
+            inventoryKind={config.inventoryKind}
+            hasRecipe={hasRecipe}
           />
         ) : null}
 
@@ -2034,6 +2048,5 @@ export default async function NewProductPage({
       </RequiredFieldsGuardForm>
     </div>
   );
+
 }
-
-
