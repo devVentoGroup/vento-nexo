@@ -131,7 +131,7 @@ const APP_SWITCHER_ITEMS: Omit<AppSwitcherItem, "access">[] = [
     id: "hub",
     name: "Hub",
     description: "Launcher del ecosistema.",
-    logoSrc: "/apps/hub.png",
+    logoSrc: "/apps/hub.svg",
     brandColor: "#111827",
     href: "https://os.ventogroup.co",
     status: "active",

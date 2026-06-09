@@ -40,6 +40,30 @@ function DotsIcon() {
   );
 }
 
+function AppLogosPreloader({ logoSources }: { logoSources: string[] }) {
+  if (!logoSources.length) return null;
+
+  return (
+    <div
+      aria-hidden="true"
+      className="pointer-events-none fixed -left-[10000px] top-0 h-px w-px overflow-hidden opacity-0"
+    >
+      {logoSources.map((logoSrc) => (
+        <Image
+          key={logoSrc}
+          src={logoSrc}
+          alt=""
+          width={40}
+          height={40}
+          priority
+          unoptimized
+          className="h-px w-px"
+        />
+      ))}
+    </div>
+  );
+}
+
 function StatusPill({ access }: { access: AppAccess }) {
   const label =
     access === "enabled"
@@ -64,8 +88,16 @@ function AppTile({
   onNavigate: () => void;
 }) {
   const isEnabled = app.access === "enabled";
+  const isHub = app.id === "hub";
   const [logoError, setLogoError] = useState(false);
   const fallback = app.name.slice(0, 1);
+
+  const iconWrapStyle = isHub
+    ? { width: 92, height: 50, maxWidth: "100%" }
+    : undefined;
+
+  const logoWidth = isHub ? 84 : 40;
+  const logoHeight = isHub ? 44 : 40;
 
   const logoClassName =
     app.access === "enabled"
@@ -78,14 +110,21 @@ function AppTile({
       : "ui-app-icon-fallback opacity-35 grayscale";
 
   const logoNode = logoError ? (
-    <div className={fallbackClassName}>{fallback}</div>
+    <div
+      className={fallbackClassName}
+      style={isHub ? { width: logoWidth, height: logoHeight } : undefined}
+    >
+      {fallback}
+    </div>
   ) : (
     <Image
       src={app.logoSrc}
       alt={`Logo ${app.name}`}
       className={logoClassName}
-      width={40}
-      height={40}
+      width={logoWidth}
+      height={logoHeight}
+      unoptimized
+      style={isHub ? { width: logoWidth, height: logoHeight, objectFit: "contain" } : undefined}
       onError={() => setLogoError(true)}
     />
   );
@@ -101,7 +140,7 @@ function AppTile({
             : app.description
         }
       >
-        <div className="ui-app-glyph-icon-wrap">{logoNode}</div>
+        <div className="ui-app-glyph-icon-wrap" style={iconWrapStyle}>{logoNode}</div>
         <div className="ui-app-glyph-name">{app.name}</div>
 
         <div className="mt-1">
@@ -117,7 +156,7 @@ function AppTile({
       onClick={onNavigate}
       className="ui-app-glyph ui-app-glyph--active"
     >
-      <div className="ui-app-glyph-icon-wrap">{logoNode}</div>
+      <div className="ui-app-glyph-icon-wrap" style={iconWrapStyle}>{logoNode}</div>
       <div className="ui-app-glyph-name">{app.name}</div>
 
       <div className="mt-1">
@@ -132,6 +171,13 @@ export function AppSwitcher({ appSwitcherItems }: AppSwitcherProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
 
   const apps = appSwitcherItems ?? [];
+  const logoSources = Array.from(
+    new Set(
+      apps
+        .map((app) => String(app.logoSrc ?? "").trim())
+        .filter((logoSrc) => logoSrc.length > 0)
+    )
+  );
 
   const workspace = apps.filter((app) => app.group === "Workspace");
   const operacion = apps.filter((app) => app.group === "Operacion");
@@ -157,6 +203,8 @@ export function AppSwitcher({ appSwitcherItems }: AppSwitcherProps) {
 
   return (
     <div ref={rootRef} className="relative">
+      <AppLogosPreloader logoSources={logoSources} />
+
       <button
         type="button"
         onClick={() => setOpen((value) => !value)}
