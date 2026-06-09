@@ -411,6 +411,15 @@ function newProductHrefForTypeKey(typeKey: ProductTypeKey) {
   return `/inventory/catalog/new?type=${encodeURIComponent(typeKey)}`;
 }
 
+type AfterCreateAction = "view" | "catalog" | "create_another";
+
+function normalizeAfterCreateAction(value: string): AfterCreateAction {
+  if (value === "view" || value === "catalog" || value === "create_another") {
+    return value;
+  }
+  return "create_another";
+}
+
 function appendQueryParam(path: string, key: string, value: string): string {
   const [pathname, qs] = path.split("?", 2);
   const params = new URLSearchParams(qs ?? "");
@@ -557,7 +566,7 @@ async function createProduct(formData: FormData) {
   const createRequestKey = createRequestKeyRaw || null;
   const modeQuery = "";
   const config = TYPE_CONFIG[typeKey] ?? TYPE_CONFIG.insumo;
-  const afterCreate = asText(formData.get("_after_create"));
+  const afterCreate = normalizeAfterCreateAction(asText(formData.get("_after_create")));
   const catalogHref = catalogHrefForTypeKey(typeKey);
   const createAnotherHref = newProductHrefForTypeKey(typeKey);
 
@@ -1484,6 +1493,28 @@ async function createProduct(formData: FormData) {
   redirect(`/inventory/catalog/${productId}?ok=1`);
 }
 
+async function createProductAndView(formData: FormData) {
+  "use server";
+
+  formData.set("_after_create", "view");
+  return createProduct(formData);
+}
+
+async function createProductAndReturnToCatalog(formData: FormData) {
+  "use server";
+
+  formData.set("_after_create", "catalog");
+  return createProduct(formData);
+}
+
+async function createProductAndCreateAnother(formData: FormData) {
+  "use server";
+
+  formData.set("_after_create", "create_another");
+  return createProduct(formData);
+}
+
+
 export default async function NewProductPage({
   searchParams,
 }: {
@@ -1812,6 +1843,7 @@ export default async function NewProductPage({
         <input type="hidden" name="_type_key" value={typeKey} />
         <input type="hidden" name="_mode" value="" />
         <CreateRequestKeyField initialValue={createRequestKey} />
+        <input type="hidden" name="_after_create" value="create_another" />
 
         <CatalogSection
           title={isAssetItem ? "Identidad del modelo patrimonial" : "Datos básicos"}
@@ -2110,24 +2142,21 @@ export default async function NewProductPage({
               </Link>
               <button
                 type="submit"
-                name="_after_create"
-                value="view"
+                formAction={createProductAndView}
                 className="ui-btn ui-btn--ghost justify-center"
               >
                 {createSubmitLabel} y ver ficha
               </button>
               <button
                 type="submit"
-                name="_after_create"
-                value="catalog"
+                formAction={createProductAndReturnToCatalog}
                 className="ui-btn ui-btn--ghost justify-center"
               >
                 {createSubmitLabel} y volver
               </button>
               <button
                 type="submit"
-                name="_after_create"
-                value="create_another"
+                formAction={createProductAndCreateAnother}
                 className="ui-btn ui-btn--brand justify-center"
               >
                 {createSubmitLabel} y crear otro
