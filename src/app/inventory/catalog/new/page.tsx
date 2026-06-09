@@ -14,7 +14,6 @@ import { createClient } from "@/lib/supabase/server";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
 
 import { ProductCostStatusPanel } from "@/features/inventory/catalog/product-cost-status-panel";
-import { ProductFormFooter } from "@/features/inventory/catalog/product-form-footer";
 import { ProductIdentityFields } from "@/features/inventory/catalog/product-identity-fields";
 import { ProductAssetTechnicalSection } from "@/features/inventory/catalog/product-asset-technical-section";
 import { ProductPurchaseSection } from "@/features/inventory/catalog/product-purchase-section";
@@ -390,6 +389,36 @@ function typeDisplayLabel(typeKey: ProductTypeKey) {
   return typeKey;
 }
 
+function catalogTabForTypeKey(typeKey: ProductTypeKey) {
+  if (typeKey === "asset") return "equipos";
+  if (typeKey === "preparacion") return "preparaciones";
+  if (typeKey === "venta" || typeKey === "reventa") return "productos";
+  return "insumos";
+}
+
+function catalogLabelForTypeKey(typeKey: ProductTypeKey) {
+  if (typeKey === "asset") return "Equipos";
+  if (typeKey === "preparacion") return "Preparaciones";
+  if (typeKey === "venta" || typeKey === "reventa") return "Productos";
+  return "Insumos";
+}
+
+function catalogHrefForTypeKey(typeKey: ProductTypeKey) {
+  return `/inventory/catalog?tab=${catalogTabForTypeKey(typeKey)}`;
+}
+
+function newProductHrefForTypeKey(typeKey: ProductTypeKey) {
+  return `/inventory/catalog/new?type=${encodeURIComponent(typeKey)}`;
+}
+
+function appendQueryParam(path: string, key: string, value: string): string {
+  const [pathname, qs] = path.split("?", 2);
+  const params = new URLSearchParams(qs ?? "");
+  params.set(key, value);
+  const query = params.toString();
+  return query ? `${pathname}?${query}` : pathname;
+}
+
 function inventoryKindLabel(kindRaw: string): string {
   const kind = String(kindRaw ?? "").trim().toLowerCase();
   if (kind === "ingredient") return "Insumo";
@@ -528,6 +557,9 @@ async function createProduct(formData: FormData) {
   const createRequestKey = createRequestKeyRaw || null;
   const modeQuery = "";
   const config = TYPE_CONFIG[typeKey] ?? TYPE_CONFIG.insumo;
+  const afterCreate = asText(formData.get("_after_create"));
+  const catalogHref = catalogHrefForTypeKey(typeKey);
+  const createAnotherHref = newProductHrefForTypeKey(typeKey);
 
   const name = asText(formData.get("name"));
   if (!name) {
@@ -738,6 +770,12 @@ async function createProduct(formData: FormData) {
 
   if (dedupedByRequestKey) {
     revalidatePath("/inventory/catalog");
+    if (afterCreate === "create_another") {
+      redirect(appendQueryParam(createAnotherHref, "ok", "created"));
+    }
+    if (afterCreate === "catalog") {
+      redirect(appendQueryParam(catalogHref, "ok", "1"));
+    }
     redirect(`/inventory/catalog/${productId}?ok=1`);
   }
 
@@ -1437,6 +1475,12 @@ async function createProduct(formData: FormData) {
   }
 
   revalidatePath("/inventory/catalog");
+  if (afterCreate === "create_another") {
+    redirect(appendQueryParam(createAnotherHref, "ok", "created"));
+  }
+  if (afterCreate === "catalog") {
+    redirect(appendQueryParam(catalogHref, "ok", "1"));
+  }
   redirect(`/inventory/catalog/${productId}?ok=1`);
 }
 
@@ -1447,6 +1491,7 @@ export default async function NewProductPage({
     type?: string;
     mode?: string;
     error?: string;
+    ok?: string;
     category_scope?: string;
     category_site_id?: string;
     category_domain?: string;
@@ -1458,6 +1503,16 @@ export default async function NewProductPage({
   const config = TYPE_CONFIG[typeKey] ?? TYPE_CONFIG.insumo;
   const kpis = heroKpis(typeKey);
   const errorMsg = safeDecode(sp.error);
+  const createdMsg = sp.ok === "created" ? "Producto creado. Puedes registrar el siguiente sin volver al catálogo." : "";
+  const catalogHref = catalogHrefForTypeKey(typeKey);
+  const catalogLabel = catalogLabelForTypeKey(typeKey);
+  const createSubmitLabel = typeKey === "asset"
+    ? "Crear modelo patrimonial"
+    : typeKey === "venta"
+      ? "Crear producto"
+      : typeKey === "reventa"
+        ? "Crear producto de reventa"
+        : `Crear ${typeKey}`;
   const normalizedProductType = String(config.productType ?? "").trim().toLowerCase();
   const normalizedInventoryKind = String(config.inventoryKind ?? "").trim().toLowerCase();
   const isAssetItem = normalizedInventoryKind === "asset";
@@ -1692,10 +1747,10 @@ export default async function NewProductPage({
           <div className="space-y-4">
             <div className="space-y-2">
               <Link
-                href="/inventory/catalog"
+                href={catalogHref}
                 className="ui-btn ui-btn--ghost inline-flex h-12 items-center px-5 text-base font-semibold"
               >
-                ← Volver al catálogo
+                ← Volver a {catalogLabel}
               </Link>
               <h1 className="ui-h1">{config.title}</h1>
               <p className="ui-body-muted">
@@ -1743,6 +1798,11 @@ export default async function NewProductPage({
       </section>
 
       {errorMsg ? <div className="ui-alert ui-alert--error">{errorMsg}</div> : null}
+      {createdMsg ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-900 shadow-sm">
+          {createdMsg}
+        </div>
+      ) : null}
 
       <RequiredFieldsGuardForm
         action={createProduct}
@@ -2035,16 +2095,46 @@ export default async function NewProductPage({
           />
         ) : null}
 
-        <ProductFormFooter
-          submitLabel={`Crear ${typeKey === "asset"
-            ? "modelo patrimonial"
-            : typeKey === "venta"
-              ? "producto"
-              : typeKey === "reventa"
-                ? "producto de reventa"
-                : typeKey
-            }`}
-        />
+        <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-sm font-semibold text-[var(--ui-text)]">Finalizar creación</p>
+              <p className="mt-1 text-xs text-[var(--ui-muted)]">
+                Elige qué quieres hacer después de guardar para evitar clics innecesarios.
+              </p>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+              <Link href={catalogHref} className="ui-btn ui-btn--ghost justify-center">
+                Volver a {catalogLabel}
+              </Link>
+              <button
+                type="submit"
+                name="_after_create"
+                value="view"
+                className="ui-btn ui-btn--ghost justify-center"
+              >
+                {createSubmitLabel} y ver ficha
+              </button>
+              <button
+                type="submit"
+                name="_after_create"
+                value="catalog"
+                className="ui-btn ui-btn--ghost justify-center"
+              >
+                {createSubmitLabel} y volver
+              </button>
+              <button
+                type="submit"
+                name="_after_create"
+                value="create_another"
+                className="ui-btn ui-btn--brand justify-center"
+              >
+                {createSubmitLabel} y crear otro
+              </button>
+            </div>
+          </div>
+        </div>
       </RequiredFieldsGuardForm>
     </div>
   );
