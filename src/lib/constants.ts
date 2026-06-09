@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Category domain codes used by sales categories.
  * The value identifies the brand/POS where the category is specific.
  */
@@ -7,7 +7,7 @@ export const CATEGORY_DOMAIN_LABELS: Record<string, string> = {
   INVENTORY: "Abastecimiento",
   SAU: "Saudo",
   VCF: "Vento Cafe",
-  CP: "Centro de Produccion",
+  CP: "Centro de Producción",
   VGR: "Vento Group",
 };
 
@@ -25,7 +25,7 @@ const CATEGORY_DOMAIN_MEANINGS: Record<string, string> = {
   INVENTORY: "Abastecimiento interno.",
   SAU: "Solo para Saudo.",
   VCF: "Solo para Vento Cafe.",
-  CP: "Solo para Centro de Produccion.",
+  CP: "Solo para Centro de Producción.",
   VGR: "Solo para Vento Group.",
 };
 

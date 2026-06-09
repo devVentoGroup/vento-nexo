@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 
 type TraceabilityItem = {
   label: string;
@@ -32,7 +32,7 @@ function TraceabilityRows({
   compact?: boolean;
 }) {
   if (!traceability.length) {
-    return <div className="ui-caption">Sin trazabilidad visible todavia.</div>;
+    return <div className="ui-caption">Sin trazabilidad visible todavía.</div>;
   }
 
   return (
@@ -126,7 +126,7 @@ export function RemissionHeroSection(props: HeroProps) {
               className="ui-remission-kpi"
               data-tone={statusLabel === "Recibida" ? "success" : "cool"}
             >
-              <div className="ui-remission-kpi-label">Lineas</div>
+              <div className="ui-remission-kpi-label">Líneas</div>
               <div className="ui-remission-kpi-value">{itemCount}</div>
               <div className="ui-remission-kpi-note">
                 {statusLabel === "Recibida" ? "Productos conciliados" : "Productos por revisar"}
@@ -146,9 +146,9 @@ export function RemissionHeroSection(props: HeroProps) {
               <div className="ui-remission-kpi-note">Responsable operativo visible</div>
             </div>
             <div className="ui-remission-kpi" data-tone="cool">
-              <div className="ui-remission-kpi-label">Lineas</div>
+              <div className="ui-remission-kpi-label">Líneas</div>
               <div className="ui-remission-kpi-value">{itemCount}</div>
-              <div className="ui-remission-kpi-note">Items dentro de la remision</div>
+              <div className="ui-remission-kpi-note">Items dentro de la remisión</div>
             </div>
             <div className="ui-remission-kpi" data-tone={activeSignals > 0 ? "warm" : "success"}>
               <div className="ui-remission-kpi-label">Senales activas</div>

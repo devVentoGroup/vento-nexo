@@ -34,6 +34,8 @@ const ACCENT_WORDS = [
 ];
 
 const CODE_TOKEN_CONTEXT = /(?:const|let|var|function|type|interface|import|from|return|if|else|await|async|new|class)\b/;
+const TECHNICAL_TEXT_CONTEXT =
+  /type="hidden"|name="view_mode"|value="catalogo"|value: "logistica"|viewMode|view_mode|buildHubHref|hash:|"nevera-produccion"|"sin-ubicacion"|normalized\.includes|normalizedId|return base \|\| "categoria"/;
 
 function walk(dir) {
   const entries = [];
@@ -49,6 +51,7 @@ function walk(dir) {
 function looksLikeVisibleText(line) {
   const trimmed = line.trim();
   if (!trimmed || trimmed.startsWith("//") || trimmed.startsWith("*")) return false;
+  if (TECHNICAL_TEXT_CONTEXT.test(trimmed)) return false;
   if (trimmed.includes("className=") && !trimmed.includes(">")) return false;
   if (CODE_TOKEN_CONTEXT.test(trimmed) && !trimmed.includes('"') && !trimmed.includes("'") && !trimmed.includes(">")) {
     return false;

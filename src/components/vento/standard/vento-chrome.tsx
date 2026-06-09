@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
@@ -99,7 +99,7 @@ const APP_TAGLINE_RAW = process.env.NEXT_PUBLIC_VENTO_APP_TAGLINE;
 const APP_TAGLINE =
   APP_TAGLINE_RAW && !/[\u00C3\u00C2\u00E2\uFFFD]/.test(APP_TAGLINE_RAW)
     ? APP_TAGLINE_RAW
-    : "Logistica e inventario operativo";
+    : "Logística e inventario operativo";
 
 function Icon({ name }: { name?: IconName }) {
   const common = "none";

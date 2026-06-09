@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { CategoryTreeFilter } from "@/components/inventory/CategoryTreeFilter";
@@ -748,7 +748,7 @@ export default async function InventoryStockPage({
     : "Stock por sede";
   const heroSubtitle = isOperatorFocusMode
     ? isSatellite
-      ? "Consulta rápido si tu sede tiene saldo, qué áreas están activas y desde aqui vuelve a pedir o recibir."
+      ? "Consulta rápido si tu sede tiene saldo, qué áreas están activas y desde aquí vuelve a pedir o recibir."
       : "Usa esta vista para confirmar saldo, ubicar producto por área y seguir con preparacion o conteo."
     : "Lee el inventario actual y entra a conteos, movimientos o vista por area sin cambiar de flujo.";
   const heroModeLabel = isSatellite
@@ -881,7 +881,7 @@ export default async function InventoryStockPage({
                 href="/inventory/count-initial"
                 className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm font-semibold text-emerald-950 transition hover:-translate-y-0.5 hover:bg-emerald-100 hover:shadow-sm"
               >
-                <div className="text-2xl">🧮</div>
+                <div className="text-2xl">ðŸ§®</div>
                 <div className="mt-2">Conteo inicial</div>
                 <div className="mt-1 text-xs font-medium text-emerald-800">
                   Cargar o corregir saldo base.
@@ -892,7 +892,7 @@ export default async function InventoryStockPage({
                 href={`/inventory/stock/assign-location${siteId ? `?site_id=${encodeURIComponent(siteId)}` : ""}`}
                 className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-950 transition hover:-translate-y-0.5 hover:bg-amber-100 hover:shadow-sm"
               >
-                <div className="text-2xl">📍</div>
+                <div className="text-2xl">ðŸ“</div>
                 <div className="mt-2">Asignar sin área</div>
                 <div className="mt-1 text-xs font-medium text-amber-800">
                   {stockWithoutLocCount} producto(s) pendientes.
@@ -919,7 +919,7 @@ export default async function InventoryStockPage({
                   }
                   className="rounded-2xl border border-cyan-200 bg-cyan-50 p-4 text-sm font-semibold text-cyan-950 transition hover:-translate-y-0.5 hover:bg-cyan-100 hover:shadow-sm"
                 >
-                  <div className="text-2xl">🗂️</div>
+                  <div className="text-2xl">ðŸ—‚️</div>
                   <div className="mt-2">{viewByLoc ? "Ver por sede" : "Ver por área"}</div>
                   <div className="mt-1 text-xs font-medium text-cyan-800">
                     {locCount} área(s) / {zoneCount} zona(s).
@@ -963,7 +963,7 @@ export default async function InventoryStockPage({
                       : "Estás viendo el total consolidado por sede. Cambia a área/LOC para validar distribución física."}
                   </div>
                 </div>
-                <div className="text-3xl">📦</div>
+                <div className="text-3xl">ðŸ“¦</div>
               </div>
             </div>
           </div>
@@ -1011,7 +1011,7 @@ export default async function InventoryStockPage({
               <h2 className="ui-h2">Acciones operativas</h2>
               <p className="mt-2 ui-body-muted">Atajos según el tipo de sede y la operación del día.</p>
             </div>
-            <div className="text-3xl">⚡</div>
+            <div className="text-3xl">âš¡</div>
           </div>
 
           <div className="mt-4 flex flex-wrap gap-2">

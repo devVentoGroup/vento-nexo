@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
@@ -143,7 +143,7 @@ async function deleteAliasAction(formData: FormData) {
   const alias = asText(formData.get("alias")).toLowerCase();
   if (!alias) {
     redirect(
-      "/inventory/settings/units?error=" + encodeURIComponent("Alias invalido.")
+      "/inventory/settings/units?error=" + encodeURIComponent("Alias inválido.")
     );
   }
   const { error } = await supabase

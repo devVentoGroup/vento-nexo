@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+﻿import { randomUUID } from "crypto";
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
@@ -103,7 +103,7 @@ function storageUploadErrorResponse(message: string) {
 
   if (normalized.includes("bucket") && normalized.includes("not found")) {
     return NextResponse.json(
-      { error: "No esta configurado el bucket de imagenes del catalogo. Ejecuta migraciones de Storage." },
+      { error: "No esta configurado el bucket de imagenes del catálogo. Ejecuta migraciones de Storage." },
       { status: 500 }
     );
   }
@@ -217,7 +217,7 @@ export async function POST(req: Request) {
 
     if (!sourcePath) {
       return NextResponse.json(
-        { error: "La imagen seleccionada no pertenece al bucket del catalogo o no tiene una ruta valida." },
+        { error: "La imagen seleccionada no pertenece al bucket del catálogo o no tiene una ruta valida." },
         { status: 400 }
       );
     }

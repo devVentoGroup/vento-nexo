@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
@@ -224,14 +224,14 @@ export default async function CountSessionPage({
       ) : null}
 
       <div className="ui-panel">
-        <div className="ui-h3">Lineas del conteo</div>
+        <div className="ui-h3">Líneas del conteo</div>
         <div className="mt-4 overflow-x-auto">
           <Table>
             <thead>
               <tr>
                 <TableHeaderCell>Producto</TableHeaderCell>
                 <TableHeaderCell>Unidad</TableHeaderCell>
-                <TableHeaderCell>Ubicacion interna</TableHeaderCell>
+                <TableHeaderCell>Ubicación interna</TableHeaderCell>
                 <TableHeaderCell>Conteo fisico</TableHeaderCell>
                 <TableHeaderCell>Actual en sistema</TableHeaderCell>
                 <TableHeaderCell>Diferencia</TableHeaderCell>

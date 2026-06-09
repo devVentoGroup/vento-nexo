@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -155,7 +155,7 @@ export function CategorySettingsForm({
 
   const scopeDescription = selectedSiteId
     ? `Sede: esta categoría solo se vera en ${selectedSiteName}.`
-    : "Global: esta categoría se vera en todas las sedes.";
+    : "Global: esta categoría se verá en todas las sedes.";
 
   const rootParentOptions = parentOptions.filter((row) => row.isRoot);
   const filteredRootParentOptions = useMemo(() => {

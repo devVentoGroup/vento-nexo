@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import Link from "next/link";
@@ -295,7 +295,7 @@ export default function DesignerPage() {
                   type="text"
                   value={locSearch}
                   onChange={(e) => setLocSearch(e.target.value)}
-                  placeholder="Codigo, zona o descripcion..."
+                  placeholder="Codigo, zona o descripción..."
                   className="ui-input"
                 />
               </label>

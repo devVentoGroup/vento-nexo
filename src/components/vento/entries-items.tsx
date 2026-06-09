@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useCallback, useMemo, useState } from "react";
 
@@ -565,7 +565,7 @@ export function EntriesItems({
       })}
 
       <div className="ui-panel-soft">
-        <div className="ui-caption font-semibold">Resumen rapido</div>
+        <div className="ui-caption font-semibold">Resumen rápido</div>
         <div className="mt-2 flex flex-wrap gap-3">
           <span className="ui-chip">
             Declarado: <strong>{completion.declared}</strong>

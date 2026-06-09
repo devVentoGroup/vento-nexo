@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 
@@ -47,7 +47,7 @@ export async function POST(req: Request) {
   try {
     body = await req.json();
   } catch {
-    return NextResponse.json({ error: "JSON invalido" }, { status: 400 });
+    return NextResponse.json({ error: "JSON inválido" }, { status: 400 });
   }
 
   const siteId = typeof body?.site_id === "string" ? body.site_id.trim() : "";
@@ -140,7 +140,7 @@ export async function POST(req: Request) {
       positionRow.is_active === false
     ) {
       return NextResponse.json(
-        { error: "La ubicacion interna seleccionada no pertenece al LOC o esta inactiva." },
+        { error: "La ubicación interna seleccionada no pertenece al LOC o esta inactiva." },
         { status: 400 }
       );
     }
@@ -242,7 +242,7 @@ export async function POST(req: Request) {
 
   if (newPositionQty != null && newPositionQty < 0) {
     return NextResponse.json(
-      { error: "El ajuste deja el stock de la ubicacion interna en negativo." },
+      { error: "El ajuste deja el stock de la ubicación interna en negativo." },
       { status: 400 }
     );
   }
@@ -258,7 +258,7 @@ export async function POST(req: Request) {
   }
 
   if (locationPositionId) {
-    noteParts.push(`Ubicacion interna: ${locationPositionId}`);
+    noteParts.push(`Ubicación interna: ${locationPositionId}`);
   }
 
   if (evidence) {

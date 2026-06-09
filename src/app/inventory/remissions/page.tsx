@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
@@ -431,7 +431,7 @@ function buildRemissionTraceSummary(
   if (dispatchedBy) steps.push(`Despacho: ${dispatchedBy}`);
   const receivedBy = employeeNameMap.get(String(row.received_by ?? ""));
   if (receivedBy) steps.push(`Recibio: ${receivedBy}`);
-  return steps.length ? steps.join(" · ") : "Sin trazabilidad visible todavia";
+  return steps.length ? steps.join(" · ") : "Sin trazabilidad visible todavía";
 }
 
 type RemissionListAction = "view" | "edit" | "cancel" | "delete" | "reverse_cancel";
@@ -1056,7 +1056,7 @@ async function createRemission(formData: FormData) {
     redirect(
       "/inventory/remissions?error=" +
       encodeURIComponent(
-        "Esta sede no tiene productos habilitados. Configura disponibilidad por sede en catalogo."
+        "Esta sede no tiene productos habilitados. Configura disponibilidad por sede en catálogo."
       )
     );
   }
@@ -1074,7 +1074,7 @@ async function createRemission(formData: FormData) {
     redirect(
       "/inventory/remissions?error=" +
       encodeURIComponent(
-        "Esta sede no tiene productos habilitados para su uso operativo. Ajusta Uso en sede en catalogo."
+        "Esta sede no tiene productos habilitados para su uso operativo. Ajusta Uso en sede en catálogo."
       )
     );
   }
@@ -1632,7 +1632,7 @@ export default async function RemissionsPage({
   const categoryNameById = new Map(
     ((categoryData ?? []) as Array<{ id: string; name: string | null }>).map((row) => [
       row.id,
-      String(row.name ?? "").trim() || "Sin categoria",
+      String(row.name ?? "").trim() || "Sin categoría",
     ])
   );
   const fixedPresentationProductIds = productRows
@@ -2035,9 +2035,9 @@ export default async function RemissionsPage({
           <div>
             <div className="ui-h3">
               {viewMode === "bodega"
-                ? "Requieren accion ahora"
+                ? "Requieren acción ahora"
                 : nextReceiveRow
-                  ? "Requieren accion ahora"
+                  ? "Requieren acción ahora"
                   : canCreate
                     ? "Solicitudes abiertas"
                     : "Remisiones abiertas"}
@@ -2190,7 +2190,7 @@ export default async function RemissionsPage({
       </div>
 
       {canCreateWithConfiguredCatalog && !showCreatePanel ? (
-        <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2" id="nueva-remision">
+        <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2" id="nueva-remisión">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <div className="ui-h3">Nueva remisión</div>
@@ -2209,7 +2209,7 @@ export default async function RemissionsPage({
       ) : null}
 
       {canCreateWithConfiguredCatalog && showCreatePanel ? (
-        <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2" id="nueva-remision">
+        <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2" id="nueva-remisión">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <div className="ui-h3">Nueva remisión</div>

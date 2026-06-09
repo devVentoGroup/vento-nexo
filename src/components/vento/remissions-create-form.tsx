@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -130,7 +130,7 @@ export function RemissionsCreateForm({
   initialExpectedDate = "",
   initialNotes = "",
   initialRows,
-  submitLabel = "Crear remision",
+  submitLabel = "Crear remisión",
   formMode = "create",
 }: Props) {
   const initialRowsSource = useMemo(() => initialRows ?? [], [initialRows]);

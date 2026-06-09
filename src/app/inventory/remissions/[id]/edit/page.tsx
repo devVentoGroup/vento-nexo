@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { RemissionsCreateForm } from "@/components/vento/remissions-create-form";
@@ -690,7 +690,7 @@ export default async function EditOwnPendingRemissionPage({
   const categoryNameById = new Map(
     ((categoryData ?? []) as Array<{ id: string; name: string | null }>).map((row) => [
       row.id,
-      String(row.name ?? "").trim() || "Sin categoria",
+      String(row.name ?? "").trim() || "Sin categoría",
     ])
   );
 

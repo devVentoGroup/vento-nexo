@@ -122,7 +122,7 @@ const SALE_CATEGORY_PRIORITY = [
   "Cocteles y alcohol",
   "Productos empacados y retail",
   "Otros de venta",
-  "Sin categoria",
+  "Sin categoría",
 ];
 
 const saleCategoryPriorityMap = new Map(
@@ -502,7 +502,7 @@ export function RemissionsItems({
 
   const productOptions = useMemo(() => {
     const options = products.map((item) => {
-      const groupLabel = categoryNameById[String(item.category_id ?? "").trim()] ?? "Sin categoria";
+      const groupLabel = categoryNameById[String(item.category_id ?? "").trim()] ?? "Sin categoría";
       const stockUnitCode = getStockUnitCode(item);
       const productUsesPackages = isProducedPackagedProduct(item);
       const measurementMode = getProductMeasurementMode(item);

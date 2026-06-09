@@ -1,17 +1,17 @@
-import type { GuidedFieldHelp } from "@/lib/inventory/forms/types";
+﻿import type { GuidedFieldHelp } from "@/lib/inventory/forms/types";
 
 const HELP_CONTENT: Record<string, GuidedFieldHelp> = {
   category_scope: {
-    meaning: "Define donde se vera la categoria.",
+    meaning: "Define donde se verá la categoría.",
     when_to_use: "Global cuando aplica en todas las sedes. Sede cuando solo aplica en una sede puntual.",
-    example: "Categoria global: Insumos secos. Categoria por sede: Menaje exclusivo de Saudo.",
-    impact: "Cambia el universo de categorias visibles al crear y editar productos.",
+    example: "Categoría global: Insumos secos. Categoría por sede: Menaje exclusivo de Saudo.",
+    impact: "Cambia el universo de categorías visibles al crear y editar productos.",
   },
   category_channel: {
-    meaning: "Segmenta categorias de venta por canal o marca.",
+    meaning: "Segmenta categorías de venta por canal o marca.",
     when_to_use: "Solo cuando el uso incluye Venta. Si no hay segmentacion, dejar Sin canal.",
-    example: "Venta -> Saudo. Venta -> Vento Cafe. Sin canal para categoria comun.",
-    impact: "Evita mezclar categorias de venta entre marcas o canales.",
+    example: "Venta -> Saudo. Venta -> Vento Cafe. Sin canal para categoría comun.",
+    impact: "Evita mezclar categorías de venta entre marcas o canales.",
   },
   stock_unit_code: {
     meaning: "Unidad canonica del inventario.",
@@ -23,7 +23,7 @@ const HELP_CONTENT: Record<string, GuidedFieldHelp> = {
     meaning: "Unidad sugerida para captura en formularios.",
     when_to_use: "Cuando el usuario opera mejor en una unidad distinta pero compatible.",
     example: "Stock en g, captura en kg.",
-    impact: "Mejora usabilidad sin perder consistencia tecnica.",
+    impact: "Mejora usabilidad sin perder consistencia técnica.",
   },
   base_vs_operational_unit: {
     meaning: "Separa la unidad de consumo/costo de la unidad practica de captura.",
@@ -35,7 +35,7 @@ const HELP_CONTENT: Record<string, GuidedFieldHelp> = {
     meaning: "Perfil de conversion por producto para operar en empaque.",
     when_to_use: "Activalo cuando compras o mueves en caja/paquete pero consumes en unidad menor.",
     example: "1 caja = 24 un, 1 paquete = 10 lonjas.",
-    impact: "Permite capturar '2 paquetes' y descontar automaticamente en unidad base.",
+    impact: "Permite capturar '2 paquetes' y descontar automáticamente en unidad base.",
   },
   supplier_pack_conversion: {
     meaning: "Relacion entre unidad de compra del proveedor y unidad base del inventario.",

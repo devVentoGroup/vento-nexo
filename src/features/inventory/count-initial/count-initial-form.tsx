@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -160,7 +160,7 @@ function getCaptureConfig(product: Product): CaptureConfig {
 function getUnitOptions(product: Product, capture = getCaptureConfig(product)): UnitOption[] {
   const contextLabelMap: Record<string, string> = {
     purchase: "compra",
-    remission: "remision",
+    remission: "remisión",
     general: "general",
   };
   const options: Array<{
@@ -309,7 +309,7 @@ const CountRow = memo(function CountRow({
                     onChange={(event) => onEntryPositionChange(product.id, entry.id, event.target.value)}
                     className="ui-input min-w-0"
                   >
-                    <option value="">Sin ubicacion interna</option>
+                    <option value="">Sin ubicación interna</option>
                     {internalPositions.map((position) => (
                       <option key={position.id} value={position.id}>
                         {position.label}
@@ -637,7 +637,7 @@ export function CountInitialForm({
 
   const openConfirm = () => {
     if (lines.length === 0) {
-      setError("Ingresa al menos una cantidad. El 0 es valido cuando la ubicacion esta fisicamente vacia.");
+      setError("Ingresa al menos una cantidad. El 0 es valido cuando la ubicación esta fisicamente vacia.");
       return;
     }
 
@@ -648,7 +648,7 @@ export function CountInitialForm({
 
   const handleConfirm = async () => {
     if (lines.length === 0) {
-      setError("Ingresa al menos una cantidad. El 0 es valido cuando la ubicacion esta fisicamente vacia.");
+      setError("Ingresa al menos una cantidad. El 0 es valido cuando la ubicación esta fisicamente vacia.");
       return;
     }
 
@@ -730,7 +730,7 @@ export function CountInitialForm({
               {countScopeLabel ? <span className={`rounded-full border px-3 py-1 ${scopeToneClass}`}>{countScopeLabel}</span> : null}
               {internalPositions.length > 0 ? (
                 <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-emerald-900">
-                  Ubicacion interna activa
+                  Ubicación interna activa
                 </span>
               ) : null}
             </div>
@@ -742,7 +742,7 @@ export function CountInitialForm({
               <div className="text-lg font-semibold text-[var(--ui-text)]">{filledProductCount}</div>
             </div>
             <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-2">
-              <div className="ui-caption">Lineas capturadas</div>
+              <div className="ui-caption">Líneas capturadas</div>
               <div className="text-lg font-semibold text-[var(--ui-text)]">{filledLineCount}</div>
             </div>
             <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-3 py-2">
@@ -781,7 +781,7 @@ export function CountInitialForm({
                   <TableHeaderCell>Producto</TableHeaderCell>
                   {!compactMode ? <TableHeaderCell>SKU</TableHeaderCell> : null}
                   {!compactMode ? <TableHeaderCell>Unidad de conteo</TableHeaderCell> : null}
-                  <TableHeaderCell>Cantidad / ubicacion</TableHeaderCell>
+                  <TableHeaderCell>Cantidad / ubicación</TableHeaderCell>
                 </tr>
               </thead>
               <tbody>
@@ -815,7 +815,7 @@ export function CountInitialForm({
                 })}
                 {visibleProducts.length === 0 ? (
                   <tr>
-                    <TableCell colSpan={compactMode ? 2 : 4}>No hay productos para esa busqueda.</TableCell>
+                    <TableCell colSpan={compactMode ? 2 : 4}>No hay productos para esa búsqueda.</TableCell>
                   </tr>
                 ) : null}
               </tbody>
@@ -856,7 +856,7 @@ export function CountInitialForm({
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 p-4">
           <div className="w-full max-w-2xl rounded-2xl border border-[var(--ui-border)] bg-white p-5 shadow-[var(--ui-shadow-2)]">
             <div className="ui-h3">Resumen final de conteo</div>
-            <p className="mt-1 ui-body-muted">Revisa estas lineas antes de guardar. Puedes cerrar este cuadro para ajustar cantidades.</p>
+            <p className="mt-1 ui-body-muted">Revisa estas líneas antes de guardar. Puedes cerrar este cuadro para ajustar cantidades.</p>
             <div className="mt-4 max-h-[50vh] overflow-auto rounded-xl border border-[var(--ui-border)]">
               <Table>
                 <thead>
@@ -864,7 +864,7 @@ export function CountInitialForm({
                     <TableHeaderCell>Producto</TableHeaderCell>
                     <TableHeaderCell>Conteo fisico</TableHeaderCell>
                     <TableHeaderCell>Base</TableHeaderCell>
-                    {internalPositions.length > 0 ? <TableHeaderCell>Ubicacion interna</TableHeaderCell> : null}
+                    {internalPositions.length > 0 ? <TableHeaderCell>Ubicación interna</TableHeaderCell> : null}
                   </tr>
                 </thead>
                 <tbody>

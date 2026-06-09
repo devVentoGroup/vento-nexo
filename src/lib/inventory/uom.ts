@@ -1,4 +1,4 @@
-export type UnitFamily = "volume" | "mass" | "count";
+﻿export type UnitFamily = "volume" | "mass" | "count";
 
 export type InventoryUnit = {
   code: string;
@@ -158,7 +158,7 @@ export function computeCostPerStockUnit(params: {
 }): number {
   const { packPrice, packQty, packUnitCode, stockUnitCode, unitMap } = params;
   if (!Number.isFinite(packPrice) || packPrice < 0) {
-    throw new Error("Precio de compra invalido.");
+    throw new Error("Precio de compra inválido.");
   }
   const { stockQty } = computePackToStock({
     packQty,
@@ -221,7 +221,7 @@ export function convertByProductProfile(params: {
     qtyInInputUnit <= 0 ||
     qtyInStockUnit <= 0
   ) {
-    throw new Error("Perfil operativo invalido para conversion.");
+    throw new Error("Perfil operativo inválido para conversion.");
   }
 
   const factorToStock = qtyInStockUnit / qtyInInputUnit;

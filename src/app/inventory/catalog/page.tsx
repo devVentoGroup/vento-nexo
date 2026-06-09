@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
@@ -1123,7 +1123,7 @@ export default async function InventoryCatalogPage({
         lowStockCount={isAssetCatalogTab ? 0 : lowStockCount}
         itemCount={visibleProducts.length}
         siteId={isAssetCatalogTab ? "" : siteId}
-        viewMode={isAssetCatalogTab ? "catalogo" : viewMode}
+        viewMode={isAssetCatalogTab ? "catálogo" : viewMode}
         purchaseSuggestions={isAssetCatalogTab ? [] : purchaseSuggestionRows}
         rows={catalogResultRows}
         canManageProducts={canManageProducts}

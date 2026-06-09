@@ -1,4 +1,4 @@
-"use server";
+﻿"use server";
 
 import { redirect } from "next/navigation";
 
@@ -2325,7 +2325,7 @@ export async function splitItem(formData: FormData) {
   const currentStatus = String(request?.status ?? "");
 
   if (!access.canPrepare || !["pending", "preparing"].includes(currentStatus)) {
-    redirect(detailHref({ error: "Solo puedes partir lineas mientras la remision esta pendiente o preparando." }));
+    redirect(detailHref({ error: "Solo puedes partir líneas mientras la remisión esta pendiente o preparando." }));
   }
 
   await enforceOperationalGateOrRedirect({
@@ -2430,7 +2430,7 @@ export async function chooseSourceLoc(formData: FormData) {
       buildRemissionDetailHref({
         requestId,
         from: returnOrigin,
-        error: "No se encontro sede origen para la remision.",
+        error: "No se encontro sede origen para la remisión.",
       })
     );
   }
@@ -2446,7 +2446,7 @@ export async function chooseSourceLoc(formData: FormData) {
       buildRemissionDetailHref({
         requestId,
         from: returnOrigin,
-        error: "La linea seleccionada no pertenece a esta remision.",
+        error: "La linea seleccionada no pertenece a esta remisión.",
       })
     );
   }
@@ -2521,7 +2521,7 @@ export async function updateStatus(formData: FormData) {
       buildRemissionDetailHref({
         requestId,
         from: returnOrigin,
-        error: "Accion invalida. Vuelve a intentar desde el botón correspondiente.",
+        error: "Acción invalida. Vuelve a intentar desde el botón correspondiente.",
       })
     );
   }
@@ -2581,7 +2581,7 @@ export async function updateStatus(formData: FormData) {
       buildRemissionDetailHref({
         requestId,
         from: returnOrigin,
-        error: "En v1 la remision termina en recibida. El cierre administrativo ya no se usa.",
+        error: "En v1 la remisión termina en recibida. El cierre administrativo ya no se usa.",
       })
     );
   }
@@ -2625,7 +2625,7 @@ export async function updateStatus(formData: FormData) {
   }
 
   if (action === "prepare" && currentStatus !== "pending") {
-    redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "Solo puedes preparar una remision pendiente." }));
+    redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "Solo puedes preparar una remisión pendiente." }));
   }
   if (
     inventoryPostingEnabled &&
@@ -2651,7 +2651,7 @@ export async function updateStatus(formData: FormData) {
     );
   }
   if (action === "transit" && currentStatus !== "preparing") {
-    redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "Solo puedes enviar una remision en estado preparando." }));
+    redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "Solo puedes enviar una remisión en estado preparando." }));
   }
   if (action === "transit") {
     const canTransitNow = hasPreparationPicks
@@ -2675,7 +2675,7 @@ export async function updateStatus(formData: FormData) {
     (action === "receive" || action === "receive_partial" || action === "resolve_shortage") &&
     !["in_transit", "partial"].includes(currentStatus)
   ) {
-    redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "La remision debe estar en transito/parcial para recibir." }));
+    redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "La remisión debe estar en transito/parcial para recibir." }));
   }
   if (action === "receive_partial" && currentStatus !== "in_transit") {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "Solo puedes registrar recepcion parcial desde en transito." }));
@@ -3172,7 +3172,7 @@ export async function updateStatus(formData: FormData) {
 
       const fromSiteIdForMovement = request?.from_site_id ?? "";
       if (!fromSiteIdForMovement) {
-        redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "No se encontro sede origen para la remision." }));
+        redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "No se encontro sede origen para la remisión." }));
       }
 
       for (const deduction of sourceLocDeductions) {
@@ -3301,7 +3301,7 @@ export async function applyPrepareShortcut(formData: FormData) {
       buildRemissionDetailHref({
         requestId,
         from: returnOrigin,
-        error: "Solo puedes preparar mientras la remision esta pendiente o preparando.",
+        error: "Solo puedes preparar mientras la remisión esta pendiente o preparando.",
       })
     );
   }
@@ -3318,7 +3318,7 @@ export async function applyPrepareShortcut(formData: FormData) {
       buildRemissionDetailHref({
         requestId,
         from: returnOrigin,
-        error: "La línea seleccionada no pertenece a esta remision.",
+        error: "La línea seleccionada no pertenece a esta remisión.",
       })
     );
   }
@@ -3609,7 +3609,7 @@ export async function applyReceiveShortcut(formData: FormData) {
       buildRemissionDetailHref({
         requestId,
         from: returnOrigin,
-        error: "Solo puedes registrar recepción mientras la remision está en tránsito o parcial.",
+        error: "Solo puedes registrar recepción mientras la remisión está en tránsito o parcial.",
       })
     );
   }
@@ -3921,7 +3921,7 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
       buildRemissionDetailHref({
         requestId,
         from: returnOrigin,
-        error: "Solo puedes registrar recepción mientras la remision está en tránsito o parcial.",
+        error: "Solo puedes registrar recepción mientras la remisión está en tránsito o parcial.",
       })
     );
   }

@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -80,7 +80,7 @@ export function LocEditForm({ loc, areas, action, cancelHref }: Props) {
                 setDescription(event.target.value);
               }}
               className="ui-input"
-              placeholder="Descripcion corta para reconocerlo rapido"
+              placeholder="Descripción corta para reconocerlo rápido"
             />
           </label>
           <label className="flex flex-col gap-1">

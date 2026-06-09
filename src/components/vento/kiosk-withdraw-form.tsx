@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useRef, useState, type FormEvent } from "react";
 
@@ -101,7 +101,7 @@ function profileStockFactor(profile: ProductUomProfile) {
 }
 
 function profileOptionLabel(profile: ProductUomProfile, stockUnitCode: string) {
-  const label = String(profile.label ?? "").trim() || normalizeUnitCode(profile.input_unit_code) || "Presentacion";
+  const label = String(profile.label ?? "").trim() || normalizeUnitCode(profile.input_unit_code) || "Presentación";
   const factor = profileStockFactor(profile);
 
   if (!Number.isFinite(factor) || factor <= 0) {
@@ -419,7 +419,7 @@ export function KioskWithdrawForm({
                 </div>
               </div>
             ) : (
-              <div className="mt-2 text-xs font-semibold text-amber-900">Sin desglose por presentacion</div>
+              <div className="mt-2 text-xs font-semibold text-amber-900">Sin desglose por presentación</div>
             )}
           </div>
         ) : (

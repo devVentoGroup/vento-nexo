@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useMemo, useState } from "react";
 
@@ -81,7 +81,7 @@ export function InternalPositionAssignmentList({ locationId, rows, positions, ac
             value={query}
             onChange={(event) => setQuery(event.target.value)}
             className="ui-input h-12"
-            placeholder="Nombre, unidad o ubicacion actual"
+            placeholder="Nombre, unidad o ubicación actual"
           />
         </label>
         <div className="flex rounded-2xl border border-[var(--ui-border)] bg-white p-1 shadow-sm">
@@ -167,10 +167,10 @@ export function InternalPositionAssignmentList({ locationId, rows, positions, ac
                           }))
                         }
                         options={positionOptions}
-                        placeholder="Ubicacion interna"
+                        placeholder="Ubicación interna"
                         searchPlaceholder="Buscar posicion..."
                         emptyMessage="Sin posiciones"
-                        sheetTitle="Selecciona ubicacion interna"
+                        sheetTitle="Selecciona ubicación interna"
                         mobilePresentation="sheet"
                         mobileBreakpointPx={1024}
                       />

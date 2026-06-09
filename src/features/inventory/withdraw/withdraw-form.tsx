@@ -394,7 +394,7 @@ export function WithdrawForm({
                         <span className="ui-label">Nota opcional</span>
                         <input
                           name="item_notes"
-                          placeholder="Ej. produccion, merma, mise en place"
+                          placeholder="Ej. producción, merma, mise en place"
                           value={row.notes}
                           onChange={(event) =>
                             setRows((prev) =>

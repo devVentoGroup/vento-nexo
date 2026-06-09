@@ -320,7 +320,7 @@ async function createEntry(formData: FormData) {
       if (inputUomProfileId && (!selectedUomProfile || selectedUomProfile.product_id !== productId)) {
         redirect(
           "/inventory/entries?error=" +
-            encodeURIComponent(`Perfil de presentacion invalido para producto ${productId}.`)
+            encodeURIComponent(`Perfil de presentación inválido para producto ${productId}.`)
         );
       }
       const rawInputUnitCost = parseNumber(inputUnitCosts[idx] ?? "");

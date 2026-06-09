@@ -1,4 +1,4 @@
-import { NextResponse } from "next/server";
+﻿import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import ExcelJS from "exceljs";
@@ -718,10 +718,10 @@ function resolveRemissionDiagnostic(params: {
   const { product, setting, remissionProfile } = params;
 
   if (product.is_active === false) return "No aparece: producto inactivo";
-  if (setting.is_active === false) return "No aparece: configuracion por sede inactiva";
-  if (setting.remission_enabled !== true) return "No aparece: remision deshabilitada para la sede";
+  if (setting.is_active === false) return "No aparece: configuración por sede inactiva";
+  if (setting.remission_enabled !== true) return "No aparece: remisión deshabilitada para la sede";
   if (!isOperationalRemissionType(product)) return "No deberia aparecer: activo/equipo";
-  if (!remissionProfile) return "Revisar: falta presentacion minima activa";
+  if (!remissionProfile) return "Revisar: falta presentación minima activa";
   if (
     !String(setting.default_area_kind ?? "").trim() &&
     (!Array.isArray(setting.area_kinds) || setting.area_kinds.length === 0)
@@ -1160,7 +1160,7 @@ export async function GET() {
   if (productSiteSettingsResult.error) {
     return NextResponse.json(
       {
-        error: "No se pudo cargar la configuracion de productos por sede.",
+        error: "No se pudo cargar la configuración de productos por sede.",
         detail: productSiteSettingsResult.error,
       },
       { status: 400 }
@@ -1665,8 +1665,8 @@ export async function GET() {
     if (!productIdsWithManualPresentation.has(product.id)) {
       alertRows.push([
         { value: "Media", tone: "warn" },
-        "Catalogo",
-        "Producto activo sin presentacion manual activa.",
+        "Catálogo",
+        "Producto activo sin presentación manual activa.",
         product.name ?? product.id,
         "",
         product.id,

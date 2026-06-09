@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
@@ -256,7 +256,7 @@ async function saveCategoryAction(formData: FormData) {
     : rawDescription || buildCategorySuggestedDescription({ name, kinds });
 
   if (!name) {
-    redirect(buildReturnUrl(returnQs, returnView, "error", "El nombre de categoria es obligatorio.", { editId: id }));
+    redirect(buildReturnUrl(returnQs, returnView, "error", "El nombre de categoría es obligatorio.", { editId: id }));
   }
   if (!kinds.length) {
     redirect(buildReturnUrl(returnQs, returnView, "error", "Selecciona al menos un uso.", { editId: id }));
@@ -311,7 +311,7 @@ async function saveCategoryAction(formData: FormData) {
     .single();
 
   if (error || !created) {
-    redirect(buildReturnUrl(returnQs, returnView, "error", error?.message ?? "No fue posible crear la categoria."));
+    redirect(buildReturnUrl(returnQs, returnView, "error", error?.message ?? "No fue posible crear la categoría."));
   }
 
   await clearDraft({
@@ -416,7 +416,7 @@ async function autofillCategoryDescriptionsAction(formData: FormData) {
     if (isSalesOnlyCategoryKinds(kinds)) continue;
 
     const suggestedDescription = buildCategorySuggestedDescription({
-      name: asText(row.name) || "esta categoria",
+      name: asText(row.name) || "esta categoría",
       kinds,
     });
     if (!suggestedDescription) continue;
@@ -458,7 +458,7 @@ async function toggleCategoryActiveAction(formData: FormData) {
 
   if (!categoryId) {
     redirect(
-      buildReturnUrl(returnQs, returnView, "error", "Categoria invalida.", {
+      buildReturnUrl(returnQs, returnView, "error", "Categoría inválida.", {
         editId: returnEditId,
       })
     );
@@ -501,7 +501,7 @@ async function deleteCategoryAction(formData: FormData) {
 
   if (!categoryId) {
     redirect(
-      buildReturnUrl(returnQs, returnView, "error", "Categoria invalida.", {
+      buildReturnUrl(returnQs, returnView, "error", "Categoría inválida.", {
         editId: returnEditId,
       })
     );
@@ -518,7 +518,7 @@ async function deleteCategoryAction(formData: FormData) {
         returnQs,
         returnView,
         "error",
-        "No se puede eliminar una categoria con subcategorias. Deshabilitala o mueve las hijas.",
+        "No se puede eliminar una categoría con subcategorias. Deshabilitala o mueve las hijas.",
         { editId: returnEditId }
       )
     );
@@ -535,7 +535,7 @@ async function deleteCategoryAction(formData: FormData) {
         returnQs,
         returnView,
         "error",
-        "No se puede eliminar una categoria con productos vinculados. Primero reasignalos o deshabilita.",
+        "No se puede eliminar una categoría con productos vinculados. Primero reasignalos o deshabilita.",
         { editId: returnEditId }
       )
     );
@@ -566,7 +566,7 @@ async function linkCategoryToSiteAction(formData: FormData) {
   const siteId = asText(formData.get("site_id"));
 
   if (!categoryId || !siteId) {
-    redirect(buildReturnUrl(returnQs, returnView, "error", "Categoria o sede invalida."));
+    redirect(buildReturnUrl(returnQs, returnView, "error", "Categoría o sede invalida."));
   }
 
   const { error } = await supabase
@@ -596,7 +596,7 @@ async function unlinkCategoryFromSiteAction(formData: FormData) {
   const categoryId = asText(formData.get("category_id"));
 
   if (!categoryId) {
-    redirect(buildReturnUrl(returnQs, returnView, "error", "Categoria invalida."));
+    redirect(buildReturnUrl(returnQs, returnView, "error", "Categoría invalida."));
   }
 
   const { error } = await supabase
@@ -627,19 +627,19 @@ export default async function InventoryCategorySettingsPage({
 
   const okMsg = sp.ok
     ? sp.ok === "category_created"
-      ? "Categoria creada."
+      ? "Categoría creada."
       : sp.ok === "category_updated"
-        ? "Categoria actualizada."
+        ? "Categoría actualizada."
         : sp.ok === "category_status_updated"
-          ? "Estado de categoria actualizado."
+          ? "Estado de categoría actualizado."
           : sp.ok === "category_deleted"
-            ? "Categoria eliminada."
+            ? "Categoría eliminada."
           : sp.ok === "draft_saved"
             ? "Borrador guardado."
           : sp.ok === "category_linked_site"
-            ? "Categoria vinculada a la sede."
+            ? "Categoría vinculada a la sede."
           : sp.ok === "category_unlinked_site"
-            ? "Categoria devuelta a alcance global."
+            ? "Categoría devuelta a alcance global."
           : sp.ok === "descriptions_autofilled"
             ? "Descripciones faltantes completadas."
           : sp.ok === "descriptions_up_to_date"
@@ -738,7 +738,7 @@ export default async function InventoryCategorySettingsPage({
         product_id: product.id,
         product_name: product.name ?? product.id,
         category_id: linkedCategoryId,
-        reason: "Categoria inexistente",
+        reason: "Categoría inexistente",
         category_path: linkedCategoryId,
       });
       continue;
@@ -754,7 +754,7 @@ export default async function InventoryCategorySettingsPage({
         product_id: product.id,
         product_name: product.name ?? product.id,
         category_id: category.id,
-        reason: `Categoria no aplica al uso ${CATEGORY_KIND_LABELS[productKind]}`,
+        reason: `Categoría no aplica al uso ${CATEGORY_KIND_LABELS[productKind]}`,
         category_path: getCategoryPath(category.id, categoryMap),
       });
     }
@@ -764,7 +764,7 @@ export default async function InventoryCategorySettingsPage({
         product_id: product.id,
         product_name: product.name ?? product.id,
         category_id: category.id,
-        reason: "Canal definido en categoria que no es de Venta",
+        reason: "Canal definido en categoría que no es de Venta",
         category_path: getCategoryPath(category.id, categoryMap),
       });
     }
@@ -956,12 +956,12 @@ export default async function InventoryCategorySettingsPage({
             <div className="ui-h3">Que quieres hacer?</div>
             <div className="grid gap-3 sm:grid-cols-3">
               <Link href={buildViewHref("ficha")} className="ui-panel-soft p-4 hover:bg-[var(--ui-surface)] transition-colors">
-                <div className="font-semibold">Crear categoria</div>
+                <div className="font-semibold">Crear categoría</div>
                 <div className="ui-caption mt-1">Abre una ficha vacia para crear.</div>
               </Link>
               <div className="ui-panel-soft p-4">
-                <div className="font-semibold">Editar categoria</div>
-                <div className="ui-caption mt-1">Usa la tabla para abrir la ficha de una categoria existente.</div>
+                <div className="font-semibold">Editar categoría</div>
+                <div className="ui-caption mt-1">Usa la tabla para abrir la ficha de una categoría existente.</div>
               </div>
               <Link href={buildViewHref("salud")} className="ui-panel-soft p-4 hover:bg-[var(--ui-surface)] transition-colors">
                 <div className="font-semibold">Ver salud</div>
@@ -983,7 +983,7 @@ export default async function InventoryCategorySettingsPage({
                     <option key={kind} value={kind}>{CATEGORY_KIND_LABELS[kind]}</option>
                   ))}
                 </select>
-                <span className="ui-caption">Filtra por donde se usa la categoria.</span>
+                <span className="ui-caption">Filtra por donde se usa la categoría.</span>
               </label>
 
               <label className="flex flex-col gap-1">
@@ -1035,7 +1035,7 @@ export default async function InventoryCategorySettingsPage({
                 emptyOptionLabel="Todas"
                 maxVisibleOptions={8}
                 showMeta={false}
-                searchPlaceholder="Buscar categoria por nombre o ruta"
+                searchPlaceholder="Buscar categoría por nombre o ruta"
               />
 
               <div className="sm:col-span-2 lg:col-span-4 flex gap-2">
@@ -1055,7 +1055,7 @@ export default async function InventoryCategorySettingsPage({
           </section>
 
           <section className="ui-panel space-y-4">
-            <div className="ui-h3">Vincular Categorias Por Sede</div>
+            <div className="ui-h3">Vincular Categorías Por Sede</div>
             <p className="ui-body-muted">
               Vincula categorias globales a una sede especifica o devuelvelas a global.
             </p>
@@ -1112,14 +1112,14 @@ export default async function InventoryCategorySettingsPage({
                       </div>
                     ))}
                     {globalAvailableRows.length === 0 ? (
-                      <div className="ui-caption">No hay categorias globales disponibles.</div>
+                      <div className="ui-caption">No hay categorías globales disponibles.</div>
                     ) : null}
                   </div>
                 </div>
 
                 <div className="rounded-xl border border-[var(--ui-border)] p-3">
                   <div className="font-semibold">Vinculadas a {manageSiteName} ({siteLinkedRows.length})</div>
-                  <div className="ui-caption mt-1">Categorias locales de esa sede.</div>
+                  <div className="ui-caption mt-1">Categorías locales de esa sede.</div>
                   <div className="mt-3 space-y-2 max-h-[320px] overflow-auto">
                     {siteLinkedRows.map((row) => (
                       <div
@@ -1140,7 +1140,7 @@ export default async function InventoryCategorySettingsPage({
                       </div>
                     ))}
                     {siteLinkedRows.length === 0 ? (
-                      <div className="ui-caption">No hay categorias vinculadas a esta sede.</div>
+                      <div className="ui-caption">No hay categorías vinculadas a esta sede.</div>
                     ) : null}
                   </div>
                 </div>
@@ -1154,14 +1154,14 @@ export default async function InventoryCategorySettingsPage({
             <div className="flex items-center justify-between gap-3">
               <div>
                 <div className="ui-h3">Categorías</div>
-                <div className="ui-body-muted mt-1">{visibleRows.length} categoria(s) visibles.</div>
+                <div className="ui-body-muted mt-1">{visibleRows.length} categoría(s) visibles.</div>
               </div>
             </div>
             <div className="mt-4 overflow-x-auto">
               <table className="ui-table min-w-full text-sm">
                 <thead className="text-left text-[var(--ui-muted)]">
                   <tr>
-                    <th className="py-2 pr-4">Categoria</th>
+                    <th className="py-2 pr-4">Categoría</th>
                     <th className="py-2 pr-4">Uso</th>
                     <th className="py-2 pr-4">Alcance</th>
                     <th className="py-2 pr-4">Canal</th>
@@ -1186,14 +1186,14 @@ export default async function InventoryCategorySettingsPage({
                               <span
                                 tabIndex={0}
                                 className="inline-flex h-5 w-5 shrink-0 cursor-help items-center justify-center rounded-full border border-[var(--ui-border)] text-[10px] font-semibold text-[var(--ui-muted)]"
-                                aria-label="Ver descripcion de la categoria"
+                                aria-label="Ver descripción de la categoría"
                               >
                                 i
                               </span>
                             ) : null}
                             {resolvedDescription ? (
                               <div className="pointer-events-none absolute left-0 top-full z-20 mt-2 hidden w-[360px] rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 text-xs text-[var(--ui-text)] shadow-lg group-hover:block group-focus-within:block">
-                                <div className="font-semibold">Descripcion sugerida</div>
+                                <div className="font-semibold">Descripción sugerida</div>
                                 <div className="mt-1 leading-relaxed">{resolvedDescription}</div>
                               </div>
                             ) : null}
@@ -1259,10 +1259,10 @@ export default async function InventoryCategorySettingsPage({
           <section className="ui-panel space-y-4">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <div className="ui-caption">Ficha de categoria</div>
-                <div className="ui-h3 mt-1">{editingCategory ? editingCategory.name : "Nueva categoria"}</div>
+                <div className="ui-caption">Ficha de categoría</div>
+                <div className="ui-h3 mt-1">{editingCategory ? editingCategory.name : "Nueva categoría"}</div>
                 <div className="ui-body-muted mt-1">
-                  {editingCategory ? getCategoryPath(editingCategory.id, categoryMap) : "Completa los campos para crear una categoria."}
+                  {editingCategory ? getCategoryPath(editingCategory.id, categoryMap) : "Completa los campos para crear una categoría."}
                 </div>
               </div>
               <div className="flex gap-2">
@@ -1336,7 +1336,7 @@ export default async function InventoryCategorySettingsPage({
 
             {editingCategory && currentCategoryIssues.length > 0 ? (
               <div className="ui-alert ui-alert--warn">
-                Esta categoria tiene {currentCategoryIssues.length} advertencia(s). Revisa la pestana de Salud.
+                Esta categoría tiene {currentCategoryIssues.length} advertencia(s). Revisa la pestana de Salud.
               </div>
             ) : null}
           </section>
@@ -1355,7 +1355,7 @@ export default async function InventoryCategorySettingsPage({
 
             <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
               <div className="ui-panel-soft p-4">
-                <div className="ui-caption">Productos sin categoria</div>
+                <div className="ui-caption">Productos sin categoría</div>
                 <div className="mt-1 text-2xl font-semibold">{uncategorizedProductsCount}</div>
               </div>
               <div className="ui-panel-soft p-4">
@@ -1375,12 +1375,12 @@ export default async function InventoryCategorySettingsPage({
 
           <section className="grid gap-4 lg:grid-cols-2">
             <div className="ui-panel">
-              <div className="ui-h3">Impacto por categoria</div>
+              <div className="ui-h3">Impacto por categoría</div>
               <div className="mt-4 overflow-x-auto">
                 <table className="ui-table min-w-full text-sm">
                   <thead className="text-left text-[var(--ui-muted)]">
                     <tr>
-                      <th className="py-2 pr-4">Categoria</th>
+                      <th className="py-2 pr-4">Categoría</th>
                       <th className="py-2 pr-4">Productos</th>
                       <th className="py-2 pr-4 w-[340px]">Acciones</th>
                     </tr>
@@ -1403,14 +1403,14 @@ export default async function InventoryCategorySettingsPage({
                                 <span
                                   tabIndex={0}
                                   className="inline-flex h-5 w-5 shrink-0 cursor-help items-center justify-center rounded-full border border-[var(--ui-border)] text-[10px] font-semibold text-[var(--ui-muted)]"
-                                  aria-label="Ver descripcion de la categoria"
+                                  aria-label="Ver descripción de la categoría"
                                 >
                                   i
                                 </span>
                               ) : null}
                               {rowDescription ? (
                                 <div className="pointer-events-none absolute left-0 top-full z-20 mt-2 hidden w-[360px] rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 text-xs text-[var(--ui-text)] shadow-lg group-hover:block group-focus-within:block">
-                                  <div className="font-semibold">Descripcion sugerida</div>
+                                  <div className="font-semibold">Descripción sugerida</div>
                                   <div className="mt-1 leading-relaxed">{rowDescription}</div>
                                 </div>
                               ) : null}
@@ -1474,7 +1474,7 @@ export default async function InventoryCategorySettingsPage({
                     <tr>
                       <th className="py-2 pr-4">Producto</th>
                       <th className="py-2 pr-4">Detalle</th>
-                      <th className="py-2 pr-4">Categoria</th>
+                      <th className="py-2 pr-4">Categoría</th>
                       <th className="py-2 pr-4 w-[340px]">Acciones</th>
                     </tr>
                   </thead>
@@ -1503,14 +1503,14 @@ export default async function InventoryCategorySettingsPage({
                                 <span
                                   tabIndex={0}
                                   className="inline-flex h-5 w-5 shrink-0 cursor-help items-center justify-center rounded-full border border-[var(--ui-border)] text-[10px] font-semibold text-[var(--ui-muted)]"
-                                  aria-label="Ver descripcion de la categoria"
+                                  aria-label="Ver descripción de la categoría"
                                 >
                                   i
                                 </span>
                               ) : null}
                               {linkedDescription ? (
                                 <div className="pointer-events-none absolute left-0 top-full z-20 mt-2 hidden w-[360px] rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3 text-xs text-[var(--ui-text)] shadow-lg group-hover:block group-focus-within:block">
-                                  <div className="font-semibold">Descripcion sugerida</div>
+                                  <div className="font-semibold">Descripción sugerida</div>
                                   <div className="mt-1 leading-relaxed">{linkedDescription}</div>
                                 </div>
                               ) : null}

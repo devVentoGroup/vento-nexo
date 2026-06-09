@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useMemo, useState } from "react";
@@ -384,7 +384,7 @@ export function CatalogResultsPanel({
             ))}
             {filteredRows.length === 0 ? (
               <tr>
-                <td className="py-4 text-[var(--ui-muted)]" colSpan={viewMode === "catalogo" ? 9 : 6}>
+                <td className="py-4 text-[var(--ui-muted)]" colSpan={viewMode === "catálogo" ? 9 : 6}>
                   {normalizedQuery
                     ? isAssetCatalogTab
                       ? "No hay modelos patrimoniales que coincidan con la búsqueda."

@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { revalidatePath } from "next/cache";
 import { notFound, redirect } from "next/navigation";
 
@@ -239,7 +239,7 @@ async function hideZeroStockProductFromBoard(formData: FormData) {
   const currentQty = Number((stockRow as { current_qty?: number | null } | null)?.current_qty ?? 0);
 
   if (currentQty > 0.000001) {
-    redirectBoardMessage(returnTo, "No se puede ocultar un producto que todavia tiene stock.");
+    redirectBoardMessage(returnTo, "No se puede ocultar un producto que todavía tiene stock.");
   }
 
   const { data: positionRows, error: positionsErr } = await supabase
@@ -557,7 +557,7 @@ export default async function LocationBoardPage({
 
       const current = partsByProfile.get(row.uom_profile_id) ?? {
         uomProfileId: row.uom_profile_id,
-        baseLabel: String(profile.label || profile.input_unit_code || "presentacion").trim(),
+        baseLabel: String(profile.label || profile.input_unit_code || "presentación").trim(),
         qty: 0,
         baseQty: 0,
         imageUrl: profile.image_url || profile.catalog_image_url || "",
@@ -601,7 +601,7 @@ export default async function LocationBoardPage({
     const unit = product?.stock_unit_code ?? product?.unit ?? "un";
     const categoryId = String(product?.category_id ?? "").trim();
     const categoryPath = getCategoryPath(categoryId, categoryMap);
-    const categoryLabel = categoryPath.split(" / ").at(-1) || "Sin categoria";
+    const categoryLabel = categoryPath.split(" / ").at(-1) || "Sin categoría";
     const presentationParts = presentationPartsByProduct.get(row.product_id) ?? [];
     const presentationImageUrl =
       presentationParts.find((part) => String(part.imageUrl ?? "").trim())?.imageUrl ?? "";

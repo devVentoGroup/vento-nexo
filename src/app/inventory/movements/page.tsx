@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { formatHistoryDateParts } from "@/lib/formatters";
@@ -36,12 +36,12 @@ const MOVEMENT_TYPE_LABELS: Record<string, string> = {
   receipt_in: "Entrada",
   receipt: "Entrada",
   purchase_in: "Compra recibida",
-  restock_in: "Entrada por remision",
-  production_in: "Ingreso de produccion",
+  restock_in: "Entrada por remisión",
+  production_in: "Ingreso de producción",
   consumption: "Retiro",
   sale_out: "Salida por venta",
-  restock_out: "Salida por remision",
-  production_out: "Salida a produccion",
+  restock_out: "Salida por remisión",
+  production_out: "Salida a producción",
   issue_internal: "Consumo interno",
   waste: "Merma",
   shrink: "Perdida",

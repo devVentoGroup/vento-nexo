@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 
 import { KioskWithdrawForm } from "@/components/vento/kiosk-withdraw-form";
@@ -360,7 +360,7 @@ async function submitKioskWithdraw(formData: FormData) {
       : null;
 
     if (rawItem.input_uom_profile_id && (!selectedProfile || selectedProfile.product_id !== rawItem.product_id)) {
-      redirect(errorUrl(sourceLocationId, "Perfil de unidad invalido para el producto.", rawItem.product_id));
+      redirect(errorUrl(sourceLocationId, "Perfil de unidad inválido para el producto.", rawItem.product_id));
     }
 
     try {
@@ -490,7 +490,7 @@ async function submitKioskWithdraw(formData: FormData) {
     const requestedFactor = profileBaseFactor(requestedProfile);
 
     if (!requestedProfile || requestedFactor <= 0) {
-      redirect(errorUrl(sourceLocationId, "Perfil de unidad invalido para retiro fisico.", requested.product_id));
+      redirect(errorUrl(sourceLocationId, "Perfil de unidad inválido para retiro fisico.", requested.product_id));
     }
 
     let availableAsRequestedUnits = 0;
@@ -591,7 +591,7 @@ async function submitKioskWithdraw(formData: FormData) {
     const requestedFactor = profileBaseFactor(requestedProfile);
 
     if (!requestedProfile || requestedFactor <= 0) {
-      redirect(errorUrl(sourceLocationId, "Perfil de unidad invalido para retiro fisico.", item.product_id));
+      redirect(errorUrl(sourceLocationId, "Perfil de unidad inválido para retiro fisico.", item.product_id));
     }
 
     const availableBaseQty = availableBaseQtyByProduct.get(item.product_id) ?? 0;
@@ -1017,7 +1017,7 @@ export default async function KioskWithdrawPage({
 
     const current = presentationPartsByProfile.get(row.uom_profile_id) ?? {
       uomProfileId: row.uom_profile_id,
-      baseLabel: String(profile.label || profile.input_unit_code || "presentacion").trim(),
+      baseLabel: String(profile.label || profile.input_unit_code || "presentación").trim(),
       qty: 0,
       baseQty: 0,
       imageUrl: profile.image_url || profile.catalog_image_url || "",

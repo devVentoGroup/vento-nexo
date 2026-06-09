@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
@@ -74,7 +74,7 @@ function suggestLocationDescription(loc: Pick<LocationRow, "zone" | "aisle" | "l
   if (currentDescription) return currentDescription;
 
   const zoneCode = String(loc.zone ?? "").trim().toUpperCase();
-  const zoneLabel = ZONE_LABEL_MAP.get(zoneCode) || humanizeLocSegment(zoneCode) || "Ubicacion";
+  const zoneLabel = ZONE_LABEL_MAP.get(zoneCode) || humanizeLocSegment(zoneCode) || "Ubicación";
   const aisle = humanizeLocSegment(loc.aisle);
   const level = humanizeLocSegment(loc.level);
 
@@ -83,7 +83,7 @@ function suggestLocationDescription(loc: Pick<LocationRow, "zone" | "aisle" | "l
   if (level) parts.push(`nivel ${level}`);
   const suggested = parts.join(" / ").trim();
 
-  return suggested || String(loc.code ?? "").trim() || "Ubicacion";
+  return suggested || String(loc.code ?? "").trim() || "Ubicación";
 }
 
 export default async function InventoryLocationsPage({
@@ -558,7 +558,7 @@ export default async function InventoryLocationsPage({
               <h1 className="ui-h1">Áreas</h1>
               <p className="ui-body-muted">
                 {isEditingLoc
-                  ? "Corrige solo la ubicacion seleccionada y vuelve al listado."
+                  ? "Corrige solo la ubicación seleccionada y vuelve al listado."
                   : "Crea áreas con nombre humano primero y deja el código técnico en segundo plano."}
               </p>
             </div>
@@ -596,7 +596,7 @@ export default async function InventoryLocationsPage({
               <div className="ui-remission-kpi-note">Disponibles para crear o filtrar ubicaciones</div>
             </article>
             <article className="ui-remission-kpi" data-tone="success">
-              <div className="ui-remission-kpi-label">Accion</div>
+              <div className="ui-remission-kpi-label">Acción</div>
               <div className="ui-remission-kpi-value">{isEditingLoc ? "Editar" : "Crear"}</div>
               <div className="ui-remission-kpi-note">Una sola tarea visible segun el modo actual</div>
             </article>
@@ -631,7 +631,7 @@ export default async function InventoryLocationsPage({
       {canEditLoc && editingLoc ? (
         <>
           <div className="ui-panel ui-remission-section ui-fade-up ui-delay-1 space-y-3">
-            <div className="ui-h3">{editingLoc.description?.trim() || editingLoc.code || "Editar ubicacion"}</div>
+            <div className="ui-h3">{editingLoc.description?.trim() || editingLoc.code || "Editar ubicación"}</div>
             <div className="flex flex-wrap gap-2 text-sm text-[var(--ui-muted)]">
               <span className="ui-chip">{editingLoc.zone ?? "Sin zona"}</span>
               {editingLoc.code ? <span className="ui-chip">{editingLoc.code}</span> : null}

@@ -1,4 +1,4 @@
-export type ElementType = "title" | "text" | "barcode_dm" | "barcode_c128" | "barcode_qr";
+﻿export type ElementType = "title" | "text" | "barcode_dm" | "barcode_c128" | "barcode_qr";
 
 export type LabelElement = {
   id: string;
@@ -38,7 +38,7 @@ export const DEFAULT_ELEMENT_SIZES: Record<ElementType, { width: number; height:
 };
 
 export const ELEMENT_LABELS: Record<ElementType, string> = {
-  title: "Titulo",
+  title: "Título",
   text: "Texto / Codigo",
   barcode_dm: "DataMatrix",
   barcode_c128: "Code128",

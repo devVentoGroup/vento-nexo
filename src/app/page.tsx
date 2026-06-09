@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 
 import { requireAppAccess } from "@/lib/auth/guard";
@@ -499,7 +499,7 @@ export default async function Home({
   const viewLabel = !activeSiteId
     ? "Sin sede"
     : isProductionCenter
-      ? "Centro de produccion"
+      ? "Centro de producción"
       : isSatellite
         ? "Satelite operativo"
         : "Sede operativa";
@@ -671,7 +671,7 @@ export default async function Home({
       id: "catalog",
       section: "configure",
       title: "Productos maestros",
-      description: "Catalogo operativo, activacion por sede y salud base.",
+      description: "Catálogo operativo, activacion por sede y salud base.",
       href: "/inventory/catalog",
       cta: "Abrir",
       tone: "secondary",
@@ -704,7 +704,7 @@ export default async function Home({
       id: "locations",
       section: "configure",
       title: "Ubicaciones",
-      description: "LOC, zonas y ubicaciones fisicas del centro.",
+      description: "LOC, zonas y ubicaciones físicas del centro.",
       href: "/inventory/locations",
       cta: "Abrir",
       tone: "secondary",
@@ -735,7 +735,7 @@ export default async function Home({
                 id: "receive-now",
                 section: "operate",
                 title: "Recibir ahora",
-                description: "Tienes una remision en tránsito o parcial lista para conciliar.",
+                description: "Tienes una remisión en tránsito o parcial lista para conciliar.",
                 href: `/inventory/remissions/${receiveNowRow.id}`,
                 cta: "Abrir recepción",
                 tone: "primary" as const,
@@ -760,7 +760,7 @@ export default async function Home({
                 id: "request-next",
                 section: "operate",
                 title: "Crear otra solicitud",
-                description: "Cuando termines de recibir, aquí mismo puedes pedir otra remision.",
+                description: "Cuando termines de recibir, aquí mismo puedes pedir otra remisión.",
                 href: "/inventory/remissions",
                 cta: "Solicitar",
                 tone: "secondary" as const,
@@ -1077,7 +1077,7 @@ export default async function Home({
                   <TableCell colSpan={isOperatorFocusMode ? 4 : 5}>
                     <EmptyState
                       title="Sin movimientos recientes"
-                      description="Cuando se creen solicitudes de abastecimiento apareceran aqui."
+                      description="Cuando se creen solicitudes de abastecimiento apareceran aquí."
                       cta="Abrir abastecimiento"
                       href="/inventory/remissions"
                     />

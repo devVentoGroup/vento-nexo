@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -84,7 +84,7 @@ function StockAmount({ item, size = "lg" }: { item: KioskBoardStockItem; size?: 
         </div>
       )}
       {presentationParts.length === 0 ? (
-        <div className="text-xs font-semibold text-[var(--ui-muted)]">Sin desglose por presentacion</div>
+        <div className="text-xs font-semibold text-[var(--ui-muted)]">Sin desglose por presentación</div>
       ) : null}
     </div>
   );

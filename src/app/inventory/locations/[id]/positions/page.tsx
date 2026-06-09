@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
@@ -346,7 +346,7 @@ export default async function LocationPositionsPage({
               Volver al LOC
             </Link>
             <div className="space-y-2">
-              <div className="ui-caption">Ubicacion interna</div>
+              <div className="ui-caption">Ubicación interna</div>
               <h1 className="ui-h1">Detalle interno de bodega</h1>
               <p className="ui-body-muted">
                 Ubica el inventario que ya esta en {locTitle} dentro de estanterias o niveles internos. Esto no cambia
@@ -545,7 +545,7 @@ export default async function LocationPositionsPage({
               })}
 
               {positions.length === 0 ? (
-                <div className="ui-empty 2xl:col-span-2">Todavia no hay posiciones internas en este LOC.</div>
+                <div className="ui-empty 2xl:col-span-2">Todavía no hay posiciones internas en este LOC.</div>
               ) : null}
             </div>
 

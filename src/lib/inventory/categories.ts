@@ -1,4 +1,4 @@
-import { getCategoryDomainBusinessLabel, getCategoryDomainLabel } from "@/lib/constants";
+﻿import { getCategoryDomainBusinessLabel, getCategoryDomainLabel } from "@/lib/constants";
 
 export const CATEGORY_KINDS = ["insumo", "preparacion", "venta", "equipo"] as const;
 
@@ -156,7 +156,7 @@ export function getCategoryPath(
   categoryMap: Map<string, InventoryCategoryRow>
 ): string {
   const normalizedId = normalizeValue(categoryId);
-  if (!normalizedId) return "Sin categoria";
+  if (!normalizedId) return "Sin categoría";
 
   const parts: string[] = [];
   let current = categoryMap.get(normalizedId);
@@ -167,7 +167,7 @@ export function getCategoryPath(
     safety += 1;
   }
 
-  return parts.length ? parts.join(" / ") : "Sin categoria";
+  return parts.length ? parts.join(" / ") : "Sin categoría";
 }
 
 export function buildCategoryMetaLabel(
@@ -350,7 +350,7 @@ export function buildCategorySuggestedDescription(params: {
       ? examples.join("; ")
       : "insumos o preparaciones relacionadas con la operacion";
 
-  return `Categoria orientativa para ${cleanName}. Puede incluir ${detail}.`;
+  return `Categoría orientativa para ${cleanName}. Puede incluir ${detail}.`;
 }
 
 export function resolveCategoryDescription(params: {

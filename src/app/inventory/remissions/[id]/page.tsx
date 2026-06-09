@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { requireAppAccess } from "@/lib/auth/guard";
@@ -1210,10 +1210,10 @@ export default async function RemissionDetailPage({
                     ? "Modo Bodeguero · Lista para despacho"
                     : "Modo Bodeguero · Preparar salida"
                 : canEditReceiveItems
-                  ? "Recibir remision"
+                  ? "Recibir remisión"
                   : compactSatelliteView
                     ? "Productos"
-                    : "Items de la remision"}
+                    : "Items de la remisión"}
           </div>
         )}
         {canEditPrepareItems ? (

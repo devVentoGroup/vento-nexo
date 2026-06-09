@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { notFound } from "next/navigation";
 
 import { requireAppAccess } from "@/lib/auth/guard";
@@ -228,7 +228,7 @@ export default async function LocationLandingPage({
               <div className="ui-remission-kpi-note">Suma de cantidades visibles</div>
             </article>
             <article className="ui-remission-kpi" data-tone="success">
-              <div className="ui-remission-kpi-label">Accion</div>
+              <div className="ui-remission-kpi-label">Acción</div>
               <div className="ui-remission-kpi-value">Área</div>
               <div className="ui-remission-kpi-note">Bodega y producción entran desde aquí</div>
             </article>
