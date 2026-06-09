@@ -1123,7 +1123,7 @@ export default async function InventoryCatalogPage({
         lowStockCount={isAssetCatalogTab ? 0 : lowStockCount}
         itemCount={visibleProducts.length}
         siteId={isAssetCatalogTab ? "" : siteId}
-        viewMode={isAssetCatalogTab ? "catálogo" : viewMode}
+        viewMode={isAssetCatalogTab ? "catalogo" : viewMode}
         purchaseSuggestions={isAssetCatalogTab ? [] : purchaseSuggestionRows}
         rows={catalogResultRows}
         canManageProducts={canManageProducts}

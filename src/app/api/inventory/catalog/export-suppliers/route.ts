@@ -2,8 +2,6 @@
 import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import ExcelJS from "exceljs";
-import { promises as fs } from "node:fs";
-import path from "node:path";
 
 export const runtime = "nodejs";
 
@@ -409,35 +407,8 @@ function addSummaryWorksheet(params: {
 }
 
 async function tryAddLogo(workbook: ExcelJS.Workbook, worksheet: ExcelJS.Worksheet) {
-  const candidates = [
-    "public/brand/vento-group-logo.png",
-    "public/vento-group-logo.png",
-    "public/logo-vento-group.png",
-    "public/vento-logo.png",
-    "public/logo.png",
-    "public/brand/vento-group.png",
-    "public/brand/logo.png",
-  ];
-
-  for (const candidate of candidates) {
-    try {
-      const absolutePath = path.join(process.cwd(), candidate);
-      const buffer = await fs.readFile(absolutePath);
-      const imageId = workbook.addImage({
-        base64: buffer.toString("base64"),
-        extension: "png",
-      });
-      const lastColumn = Math.max(worksheet.columnCount || worksheet.actualColumnCount || 8, 4);
-
-      worksheet.addImage(imageId, {
-        tl: { col: Math.max(lastColumn - 2.25, 0.25), row: 0.25 },
-        ext: { width: 125, height: 40 },
-      });
-      return;
-    } catch {
-      // Logo opcional. Si no existe, el encabezado textual conserva la marca.
-    }
-  }
+  void workbook;
+  void worksheet;
 }
 
 type ProductInventoryProfileRow = {

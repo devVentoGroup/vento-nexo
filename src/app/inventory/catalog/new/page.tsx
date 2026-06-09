@@ -2048,5 +2048,4 @@ export default async function NewProductPage({
       </RequiredFieldsGuardForm>
     </div>
   );
-
 }
