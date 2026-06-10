@@ -229,6 +229,7 @@ type SiteSettingRow = {
   min_stock_purchase_to_base_factor?: number | null;
   audience: "SAUDO" | "VCF" | "BOTH" | "INTERNAL" | null;
   remission_enabled?: boolean | null;
+  sales_enabled?: boolean | null;
   sites?: { id: string; name: string | null } | null;
   updated_at?: string | null;
   created_at?: string | null;
@@ -508,6 +509,7 @@ function buildProductSiteSettingPayloadVariants(
       "local_production_enabled",
       "area_kinds",
       "remission_enabled",
+      "sales_enabled",
       "min_stock_input_mode",
       "min_stock_purchase_qty",
       "min_stock_purchase_unit_code",
@@ -518,6 +520,7 @@ function buildProductSiteSettingPayloadVariants(
       "local_production_enabled",
       "area_kinds",
       "remission_enabled",
+      "sales_enabled",
       "min_stock_input_mode",
       "min_stock_purchase_qty",
       "min_stock_purchase_unit_code",
@@ -529,6 +532,7 @@ function buildProductSiteSettingPayloadVariants(
       "local_production_enabled",
       "area_kinds",
       "remission_enabled",
+      "sales_enabled",
       "min_stock_input_mode",
       "min_stock_purchase_qty",
       "min_stock_purchase_unit_code",
@@ -1231,6 +1235,7 @@ async function updateProduct(formData: FormData) {
       min_stock_purchase_to_base_factor?: number | string;
       audience?: string;
       remission_enabled?: boolean | string | null;
+      sales_enabled?: boolean | string | null;
       _delete?: boolean;
     }> = [];
     try {
@@ -1244,6 +1249,7 @@ async function updateProduct(formData: FormData) {
       if (line._delete) continue;
       const rawRemissionEnabled = line.remission_enabled;
       const rawLocalProductionEnabled = line.local_production_enabled;
+      const rawSalesEnabled = line.sales_enabled;
       const parsedRemissionEnabled =
         typeof rawRemissionEnabled === "boolean"
           ? rawRemissionEnabled
@@ -1256,6 +1262,10 @@ async function updateProduct(formData: FormData) {
         typeof rawLocalProductionEnabled === "boolean"
           ? rawLocalProductionEnabled
           : rawLocalProductionEnabled === "true";
+      const parsedSalesEnabled =
+        typeof rawSalesEnabled === "boolean"
+          ? rawSalesEnabled
+          : rawSalesEnabled === "true";
 
       const hasMeaningfulData =
         Boolean(String(line.site_id ?? "").trim()) ||
@@ -1265,6 +1275,7 @@ async function updateProduct(formData: FormData) {
         rawLocalProductionEnabled !== undefined ||
         Boolean(String(line.audience ?? "").trim()) ||
         rawRemissionEnabled !== undefined ||
+        rawSalesEnabled !== undefined ||
         String(line.min_stock_qty ?? "").trim() !== "";
       if (!line.site_id && hasMeaningfulData) {
         redirectWithError("En disponibilidad por sede debes seleccionar una sede.");
@@ -1339,6 +1350,7 @@ async function updateProduct(formData: FormData) {
                 ? "INTERNAL"
                 : "BOTH",
         remission_enabled: parsedRemissionEnabled,
+        sales_enabled: parsedSalesEnabled,
       };
       if (line.id) {
         const upErr = await updateProductSiteSettingCompat(
@@ -1644,7 +1656,7 @@ export default async function ProductCatalogDetailPage({
   const { data: siteSettingsWithAudience, error: siteSettingsAudienceError } = await supabase
     .from("product_site_settings")
     .select(
-      "id,site_id,is_active,default_area_kind,area_kinds,production_location_id,local_production_enabled,min_stock_qty,min_stock_input_mode,min_stock_purchase_qty,min_stock_purchase_unit_code,min_stock_purchase_to_base_factor,audience,remission_enabled,updated_at,created_at,sites(id,name)"
+      "id,site_id,is_active,default_area_kind,area_kinds,production_location_id,local_production_enabled,min_stock_qty,min_stock_input_mode,min_stock_purchase_qty,min_stock_purchase_unit_code,min_stock_purchase_to_base_factor,audience,remission_enabled,sales_enabled,updated_at,created_at,sites(id,name)"
     )
     .eq("product_id", id);
   const siteSettings =
@@ -2453,6 +2465,8 @@ export default async function ProductCatalogDetailPage({
                   audience: r.audience ?? "BOTH",
                   remission_enabled:
                     typeof r.remission_enabled === "boolean" ? r.remission_enabled : null,
+                  sales_enabled:
+                    typeof r.sales_enabled === "boolean" ? r.sales_enabled : null,
                 }))}
                 sites={sitesList.map((s) => ({ id: s.id, name: s.name, site_type: s.site_type }))}
                 siteCapabilities={Array.from(capabilitiesBySite.values())}

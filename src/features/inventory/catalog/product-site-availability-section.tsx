@@ -45,6 +45,7 @@ type ProductSiteAvailabilitySectionProps = {
   productType?: string | null;
   inventoryKind?: string | null;
   hasRecipe?: boolean;
+  defaultSalesEnabled?: boolean;
 };
 
 export function ProductSiteAvailabilitySection({
@@ -61,6 +62,7 @@ export function ProductSiteAvailabilitySection({
   productType = null,
   inventoryKind = null,
   hasRecipe = false,
+  defaultSalesEnabled = false,
 }: ProductSiteAvailabilitySectionProps) {
   return (
     <CatalogSection
@@ -82,6 +84,7 @@ export function ProductSiteAvailabilitySection({
         productType={productType}
         inventoryKind={inventoryKind}
         hasRecipe={hasRecipe}
+        defaultSalesEnabled={defaultSalesEnabled}
       />
     </CatalogSection>
   );

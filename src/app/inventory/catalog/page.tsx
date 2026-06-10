@@ -861,11 +861,14 @@ export default async function InventoryCatalogPage({
           label: `+ Crear ${activeTab === "insumos"
             ? "insumo"
             : activeTab === "preparaciones"
-              ? "preparacion"
+              ? "preparación"
               : "modelo patrimonial"
             }`,
           tone: "brand" as const,
         },
+        ...(activeTab === "preparaciones"
+          ? [{ href: "/inventory/catalog/new?type=preparacion_vendible", label: "+ Preparación vendible", tone: "ghost" as const }]
+          : []),
         ...(activeTab === "insumos"
           ? [{ href: "/api/inventory/catalog/export-suppliers", label: "Descargar Excel de insumos", tone: "ghost" as const }]
           : []),

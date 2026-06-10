@@ -20,6 +20,7 @@ import { ProductPurchaseSection } from "@/features/inventory/catalog/product-pur
 import { ProductRemissionUomFields } from "@/features/inventory/catalog/product-remission-uom-fields";
 import { ProductSiteAvailabilitySection } from "@/features/inventory/catalog/product-site-availability-section";
 import { ProductStorageFields } from "@/features/inventory/catalog/product-storage-fields";
+import { NewProductHero } from "./_components/new-product-hero";
 import {
   CatalogOptionalDetails,
   CatalogSection,
@@ -223,6 +224,7 @@ function buildProductSiteSettingPayloadVariants(
       "local_production_enabled",
       "area_kinds",
       "remission_enabled",
+      "sales_enabled",
       "min_stock_input_mode",
       "min_stock_purchase_qty",
       "min_stock_purchase_unit_code",
@@ -233,6 +235,7 @@ function buildProductSiteSettingPayloadVariants(
       "local_production_enabled",
       "area_kinds",
       "remission_enabled",
+      "sales_enabled",
       "min_stock_input_mode",
       "min_stock_purchase_qty",
       "min_stock_purchase_unit_code",
@@ -244,6 +247,7 @@ function buildProductSiteSettingPayloadVariants(
       "local_production_enabled",
       "area_kinds",
       "remission_enabled",
+      "sales_enabled",
       "min_stock_input_mode",
       "min_stock_purchase_qty",
       "min_stock_purchase_unit_code",
@@ -307,7 +311,7 @@ async function loadCategoryRows(
 function resolveTypeCategoryKind(typeKey: ProductTypeKey): CategoryKind {
   if (typeKey === "asset") return "equipo";
   if (typeKey === "venta" || typeKey === "reventa") return "venta";
-  if (typeKey === "preparacion") return "preparacion";
+  if (typeKey === "preparacion" || typeKey === "preparacion_vendible") return "preparacion";
   return "insumo";
 }
 
@@ -325,6 +329,16 @@ const TYPE_CONFIG = {
   preparacion: {
     title: "Nueva preparación",
     subtitle: "Modelo producido / WIP: se fabrica desde receta en FOGO y puede usarse en otros productos, remisiones o producción interna.",
+    productType: "preparacion",
+    inventoryKind: "finished",
+    hasSuppliers: false,
+    hasRecipe: true,
+    hasPrice: false,
+    hasStorage: true,
+  },
+  preparacion_vendible: {
+    title: "Nueva preparación vendible",
+    subtitle: "Se produce internamente con receta, se puede vender directamente y tambien se puede usar dentro de otras recetas.",
     productType: "preparacion",
     inventoryKind: "finished",
     hasSuppliers: false,
@@ -379,26 +393,27 @@ function buildFogoRecipeCreateUrl(typeKey: ProductTypeKey) {
 
 function typeBadgeLabel(typeKey: ProductTypeKey) {
   if (typeKey === "asset") return "Modelo patrimonial";
-  if (typeKey === "preparacion") return "Producción interna";
+  if (typeKey === "preparacion" || typeKey === "preparacion_vendible") return "Producción interna";
   return "Formulario completo";
 }
 
 function typeDisplayLabel(typeKey: ProductTypeKey) {
   if (typeKey === "asset") return "activo";
+  if (typeKey === "preparacion_vendible") return "preparación vendible";
   if (typeKey === "preparacion") return "preparación";
   return typeKey;
 }
 
 function catalogTabForTypeKey(typeKey: ProductTypeKey) {
   if (typeKey === "asset") return "equipos";
-  if (typeKey === "preparacion") return "preparaciones";
+  if (typeKey === "preparacion" || typeKey === "preparacion_vendible") return "preparaciones";
   if (typeKey === "venta" || typeKey === "reventa") return "productos";
   return "insumos";
 }
 
 function catalogLabelForTypeKey(typeKey: ProductTypeKey) {
   if (typeKey === "asset") return "Equipos";
-  if (typeKey === "preparacion") return "Preparaciones";
+  if (typeKey === "preparacion" || typeKey === "preparacion_vendible") return "Preparaciones";
   if (typeKey === "venta" || typeKey === "reventa") return "Productos";
   return "Insumos";
 }
@@ -459,10 +474,13 @@ function heroKpis(typeKey: ProductTypeKey) {
     };
   }
 
-  if (typeKey === "preparacion") {
+  if (typeKey === "preparacion" || typeKey === "preparacion_vendible") {
     return {
-      typeValue: "Preparación",
-      typeNote: "Producto intermedio producido desde receta",
+      typeValue: typeKey === "preparacion_vendible" ? "Preparación vendible" : "Preparación",
+      typeNote:
+        typeKey === "preparacion_vendible"
+          ? "Producto producido que VISO puede vender por sede"
+          : "Producto intermedio producido desde receta",
       modeValue: "Producción",
       modeNote: "Unidad base, WIP y continuidad en FOGO",
       objectiveValue: "Receta / WIP",
@@ -1376,6 +1394,7 @@ async function createProduct(formData: FormData) {
 
       const rawRemissionEnabled = line.remission_enabled;
       const rawLocalProductionEnabled = line.local_production_enabled;
+      const rawSalesEnabled = line.sales_enabled;
       const parsedRemissionEnabled =
         typeof rawRemissionEnabled === "boolean"
           ? rawRemissionEnabled
@@ -1388,6 +1407,10 @@ async function createProduct(formData: FormData) {
         typeof rawLocalProductionEnabled === "boolean"
           ? rawLocalProductionEnabled
           : rawLocalProductionEnabled === "true";
+      const parsedSalesEnabled =
+        typeof rawSalesEnabled === "boolean"
+          ? rawSalesEnabled
+          : rawSalesEnabled === "true";
 
       const hasMeaningfulData =
         Boolean(siteIdFromLine) ||
@@ -1397,6 +1420,7 @@ async function createProduct(formData: FormData) {
         rawLocalProductionEnabled !== undefined ||
         Boolean(String(line.audience ?? "").trim()) ||
         rawRemissionEnabled !== undefined ||
+        rawSalesEnabled !== undefined ||
         String(line.min_stock_qty ?? "").trim() !== "";
 
       if (!siteIdFromLine && hasMeaningfulData) {
@@ -1471,6 +1495,7 @@ async function createProduct(formData: FormData) {
                 ? "INTERNAL"
                 : "BOTH",
         remission_enabled: parsedRemissionEnabled,
+        sales_enabled: parsedSalesEnabled,
       };
       const siteInsertError = await insertProductSiteSettingCompat(supabase, siteRowPayload);
       if (siteInsertError) {
@@ -1543,7 +1568,9 @@ export default async function NewProductPage({
       ? "Crear producto"
       : typeKey === "reventa"
         ? "Crear producto de reventa"
-        : `Crear ${typeKey}`;
+        : typeKey === "preparacion_vendible"
+          ? "Crear preparación vendible"
+          : `Crear ${typeKey}`;
   const normalizedProductType = String(config.productType ?? "").trim().toLowerCase();
   const normalizedInventoryKind = String(config.inventoryKind ?? "").trim().toLowerCase();
   const isAssetItem = normalizedInventoryKind === "asset";
@@ -1590,23 +1617,6 @@ export default async function NewProductPage({
     site_type: string | null;
   }[];
   const siteIds = sitesList.map((site) => site.id);
-  const { data: capabilityRows } = siteIds.length
-    ? await supabase
-      .from("site_operational_capabilities")
-      .select(
-        "site_id,can_request_remissions,can_fulfill_remissions,can_receive_remissions,can_sell,can_produce,can_hold_inventory,is_commercial_business,show_in_product_setup"
-      )
-      .in("site_id", siteIds)
-    : { data: [] as SiteOperationalCapabilities[] };
-  const capabilitiesBySite = getSiteCapabilitiesMap(
-    siteIds,
-    (capabilityRows ?? []) as SiteOperationalCapabilities[]
-  );
-  const capabilitySiteIds = new Set(
-    ((capabilityRows ?? []) as SiteOperationalCapabilities[]).map((row) =>
-      String(row.site_id ?? "")
-    )
-  );
   const siteNamesById = Object.fromEntries(
     sitesList.map((site) => [site.id, site.name ?? site.id])
   );
@@ -1628,17 +1638,78 @@ export default async function NewProductPage({
   const effectiveCategorySiteId = isSaleCategoryKind ? "" : categorySiteId;
   const categoryDomain = isSaleCategoryKind ? "" : requestedCategoryDomain;
 
-  const allCategoryRows = await loadCategoryRows(supabase);
+  const capabilityRowsPromise = siteIds.length
+    ? supabase
+      .from("site_operational_capabilities")
+      .select(
+        "site_id,can_request_remissions,can_fulfill_remissions,can_receive_remissions,can_sell,can_produce,can_hold_inventory,is_commercial_business,show_in_product_setup"
+      )
+      .in("site_id", siteIds)
+    : Promise.resolve({ data: [] as SiteOperationalCapabilities[] });
+  const allCategoryRowsPromise = loadCategoryRows(supabase);
+  const areaKindsWithPurposePromise = supabase
+    .from("area_kinds")
+    .select("code,name,use_for_remission")
+    .order("name", { ascending: true });
+  const siteAreasPromise = supabase
+    .from("areas")
+    .select("site_id,kind,is_active")
+    .eq("is_active", true);
+  const productionLocationsPromise = supabase
+    .from("inventory_locations")
+    .select("id,site_id,code,zone,location_type,is_active,area:areas(kind)")
+    .eq("is_active", true)
+    .order("code", { ascending: true });
+  const productionAreaRulesPromise = supabase
+    .from("site_area_purpose_rules")
+    .select("site_id,area_kind,purpose,is_enabled")
+    .eq("purpose", "production_recipe")
+    .eq("is_enabled", true);
+  const suppliersPromise = config.hasSuppliers
+    ? supabase.from("suppliers").select("id,name").eq("is_active", true).order("name")
+    : Promise.resolve({ data: [] as { id: string; name: string | null }[] });
+  const unitsPromise = supabase
+    .from("inventory_units")
+    .select("code,name,family,factor_to_base,symbol,display_decimals,is_active")
+    .eq("is_active", true)
+    .order("family", { ascending: true })
+    .order("factor_to_base", { ascending: true })
+    .limit(500);
+
+  const [
+    { data: capabilityRows },
+    allCategoryRows,
+    { data: areaKindsWithPurpose, error: areaKindsWithPurposeError },
+    { data: siteAreasData },
+    { data: productionLocationsData },
+    { data: productionAreaRulesData },
+    { data: suppliersData },
+    { data: unitsData },
+  ] = await Promise.all([
+    capabilityRowsPromise,
+    allCategoryRowsPromise,
+    areaKindsWithPurposePromise,
+    siteAreasPromise,
+    productionLocationsPromise,
+    productionAreaRulesPromise,
+    suppliersPromise,
+    unitsPromise,
+  ]);
+  const capabilitiesBySite = getSiteCapabilitiesMap(
+    siteIds,
+    (capabilityRows ?? []) as SiteOperationalCapabilities[]
+  );
+  const capabilitySiteIds = new Set(
+    ((capabilityRows ?? []) as SiteOperationalCapabilities[]).map((row) =>
+      String(row.site_id ?? "")
+    )
+  );
   const categoryRows = filterCategoryRows(allCategoryRows, {
     kind: categoryKind,
     domain: categoryDomain,
     scope: categoryScope,
     siteId: effectiveCategorySiteId,
   });
-  const { data: areaKindsWithPurpose, error: areaKindsWithPurposeError } = await supabase
-    .from("area_kinds")
-    .select("code,name,use_for_remission")
-    .order("name", { ascending: true });
   const areaKindsList = !areaKindsWithPurposeError
     ? ((areaKindsWithPurpose ?? []) as Array<{
       code: string;
@@ -1652,20 +1723,6 @@ export default async function NewProductPage({
           String(row.code ?? "").trim().toLowerCase()
         ),
       }));
-  const { data: siteAreasData } = await supabase
-    .from("areas")
-    .select("site_id,kind,is_active")
-    .eq("is_active", true);
-  const { data: productionLocationsData } = await supabase
-    .from("inventory_locations")
-    .select("id,site_id,code,zone,location_type,is_active,area:areas(kind)")
-    .eq("is_active", true)
-    .order("code", { ascending: true });
-  const { data: productionAreaRulesData } = await supabase
-    .from("site_area_purpose_rules")
-    .select("site_id,area_kind,purpose,is_enabled")
-    .eq("purpose", "production_recipe")
-    .eq("is_enabled", true);
   const productionAreaKindsBySite = ((productionAreaRulesData ?? []) as Array<{ site_id: string | null; area_kind: string | null }>).reduce(
     (acc, row) => {
       const siteId = String(row.site_id ?? "").trim();
@@ -1738,18 +1795,7 @@ export default async function NewProductPage({
     {} as Record<string, string[]>
   );
 
-  const { data: suppliersData } = config.hasSuppliers
-    ? await supabase.from("suppliers").select("id,name").eq("is_active", true).order("name")
-    : { data: [] };
   const suppliersList = (suppliersData ?? []) as { id: string; name: string | null }[];
-
-  const { data: unitsData } = await supabase
-    .from("inventory_units")
-    .select("code,name,family,factor_to_base,symbol,display_decimals,is_active")
-    .eq("is_active", true)
-    .order("family", { ascending: true })
-    .order("factor_to_base", { ascending: true })
-    .limit(500);
   const unitsList = (unitsData ?? []) as UnitRow[];
 
   const defaultStockUnitCode = unitsList[0]?.code ?? "un";
@@ -1773,60 +1819,15 @@ export default async function NewProductPage({
 
   return (
     <div className="ui-scene w-full space-y-8">
-      <section className="ui-remission-hero ui-fade-up">
-        <div className="ui-remission-hero-grid lg:grid-cols-[1.45fr_1fr] lg:items-start">
-          <div className="space-y-4">
-            <div className="space-y-2">
-              <Link
-                href={catalogHref}
-                className="ui-btn ui-btn--ghost inline-flex h-12 items-center px-5 text-base font-semibold"
-              >
-                ← Volver a {catalogLabel}
-              </Link>
-              <h1 className="ui-h1">{config.title}</h1>
-              <p className="ui-body-muted">
-                {isAssetItem
-                  ? "Crea el modelo base del catálogo patrimonial. Las unidades reales se gestionan después en Activos físicos."
-                  : "Crea la ficha maestra con el mismo orden de edición: identidad, receta, inventario, compra y sedes."}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-2">
-              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-900">
-                Nuevo
-              </span>
-              <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
-                {typeDisplayLabel(typeKey)}
-              </span>
-              {hasRecipe ? (
-                <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-900">
-                  Con receta
-                </span>
-              ) : null}
-            </div>
-          </div>
-
-          <div className="ui-remission-kpis ui-remission-kpis--stack sm:grid-cols-3 lg:grid-cols-1">
-            <article className="ui-remission-kpi" data-tone="warm">
-              <div className="ui-remission-kpi-label">Estado</div>
-              <div className="ui-remission-kpi-value">Nuevo</div>
-              <div className="ui-remission-kpi-note">Se guardará como maestro activo</div>
-            </article>
-            <article className="ui-remission-kpi" data-tone="cool">
-              <div className="ui-remission-kpi-label">Tipo</div>
-              <div className="ui-remission-kpi-value">{isAssetItem ? "Activo" : normalizedProductType === "preparacion" ? "Prep" : normalizedProductType === "venta" ? "Venta" : "Insumo"}</div>
-              <div className="ui-remission-kpi-note">Clasificación operativa del producto</div>
-            </article>
-            <article className="ui-remission-kpi" data-tone="success">
-              <div className="ui-remission-kpi-label">{isAssetItem ? "Operación real" : "Sedes"}</div>
-              <div className="ui-remission-kpi-value">{isAssetItem ? "Assets" : "0"}</div>
-              <div className="ui-remission-kpi-note">
-                {isAssetItem ? "Después creas activos físicos" : "Se configurarán al guardar"}
-              </div>
-            </article>
-          </div>
-        </div>
-      </section>
+      <NewProductHero
+        catalogHref={catalogHref}
+        catalogLabel={catalogLabel}
+        configTitle={config.title}
+        hasRecipe={hasRecipe}
+        isAssetItem={isAssetItem}
+        normalizedProductType={normalizedProductType}
+        typeLabel={typeDisplayLabel(typeKey)}
+      />
 
       {errorMsg ? <div className="ui-alert ui-alert--error">{errorMsg}</div> : null}
       {createdMsg ? (
@@ -2124,6 +2125,7 @@ export default async function NewProductPage({
             productType={config.productType}
             inventoryKind={config.inventoryKind}
             hasRecipe={hasRecipe}
+            defaultSalesEnabled={typeKey === "preparacion_vendible"}
           />
         ) : null}
 

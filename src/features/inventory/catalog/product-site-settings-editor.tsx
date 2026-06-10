@@ -19,6 +19,7 @@ export type SiteSettingLine = {
   min_stock_purchase_to_base_factor?: number;
   audience?: string | null;
   remission_enabled?: boolean | null;
+  sales_enabled?: boolean | null;
   _delete?: boolean;
 };
 
@@ -56,6 +57,7 @@ type Props = {
   productType?: string | null;
   inventoryKind?: string | null;
   hasRecipe?: boolean;
+  defaultSalesEnabled?: boolean;
   operationUnitHint?: {
     label: string;
     inputUnitCode: string;
@@ -77,6 +79,7 @@ type SatelliteState = {
   isActive: boolean;
   areaKinds: string[];
   remissionEnabled?: boolean | null;
+  salesEnabled?: boolean | null;
   localProductionEnabled: boolean;
   minStockQty?: number;
   productionLocationId?: string;
@@ -175,6 +178,7 @@ export function ProductSiteSettingsEditor({
   productType = null,
   inventoryKind = null,
   hasRecipe = false,
+  defaultSalesEnabled = false,
   operationUnitHint,
   purchaseUnitHint,
 }: Props) {
@@ -307,6 +311,9 @@ export function ProductSiteSettingsEditor({
     existingCenter?.min_stock_qty
   );
 
+  const normalizedProductType = String(productType ?? "").trim().toLowerCase();
+  const normalizedInventoryKind = String(inventoryKind ?? "").trim().toLowerCase();
+
   const initialSatelliteState = useMemo(() => {
     const state = new Map<string, SatelliteState>();
     for (const site of satelliteSites) {
@@ -325,6 +332,13 @@ export function ProductSiteSettingsEditor({
             : existing
               ? null
               : false,
+        salesEnabled:
+          typeof existing?.sales_enabled === "boolean"
+            ? existing.sales_enabled
+            : defaultSalesEnabled ||
+                (normalizedProductType === "venta" && normalizedInventoryKind !== "resale")
+              ? true
+              : false,
         localProductionEnabled:
           Boolean(existing?.local_production_enabled) ||
           Boolean(existing?.production_location_id),
@@ -333,7 +347,7 @@ export function ProductSiteSettingsEditor({
       });
     }
     return state;
-  }, [initialBySite, satelliteSites]);
+  }, [defaultSalesEnabled, initialBySite, normalizedInventoryKind, normalizedProductType, satelliteSites]);
   const [satelliteState, setSatelliteState] = useState<Map<string, SatelliteState>>(initialSatelliteState);
 
   const unknownRows = useMemo(
@@ -349,9 +363,6 @@ export function ProductSiteSettingsEditor({
     ? centerProductionLocationId
     : "";
 
-  const normalizedProductType = String(productType ?? "").trim().toLowerCase();
-  const normalizedInventoryKind = String(inventoryKind ?? "").trim().toLowerCase();
-
   const shouldShowProductionLocationUi =
     hasRecipe ||
     normalizedProductType === "preparacion" ||
@@ -359,7 +370,7 @@ export function ProductSiteSettingsEditor({
 
   const canConfigureSatelliteLocalProductionForProduct =
     hasRecipe &&
-    normalizedProductType === "venta" &&
+    (normalizedProductType === "venta" || normalizedProductType === "preparacion") &&
     normalizedInventoryKind !== "resale";
 
   const selectedCenterSite = siteMap.get(centerSiteId) ?? null;
@@ -447,6 +458,7 @@ export function ProductSiteSettingsEditor({
       const normalizedAreaKinds = normalizeAreaKinds(state.areaKinds);
       const normalizedDefaultAreaKind = normalizedAreaKinds[0] ?? "";
       const siteCanProduce = capabilitiesBySite.get(site.id)?.can_produce ?? true;
+      const siteCanSell = capabilitiesBySite.get(site.id)?.can_sell ?? true;
       const canUseLocalProduction =
         canConfigureSatelliteLocalProductionForProduct && siteCanProduce;
       const validProductionLocationForSite = getProductionLocationsForSite(site.id).some(
@@ -469,6 +481,7 @@ export function ProductSiteSettingsEditor({
         min_stock_input_mode: "base",
         audience: current?.audience ?? "BOTH",
         remission_enabled: state.remissionEnabled ?? null,
+        sales_enabled: siteCanSell ? state.salesEnabled ?? false : false,
       });
     }
 
@@ -483,6 +496,7 @@ export function ProductSiteSettingsEditor({
         isActive: true,
         areaKinds: [],
         remissionEnabled: false,
+        salesEnabled: false,
         localProductionEnabled: false,
         minStockQty: undefined,
       };
@@ -734,6 +748,7 @@ export function ProductSiteSettingsEditor({
             const capabilities = capabilitiesBySite.get(site.id);
             const canRequestRemissions = capabilities?.can_request_remissions ?? true;
             const canProduce = capabilities?.can_produce ?? true;
+            const canSell = capabilities?.can_sell ?? true;
             const canUseLocalProduction =
               canConfigureSatelliteLocalProductionForProduct && canProduce;
             const state = satelliteState.get(site.id) ?? {
@@ -808,7 +823,7 @@ export function ProductSiteSettingsEditor({
                 </div>
 
                 {state.enabled ? (
-                  <div className="grid gap-3 p-4 xl:grid-cols-[0.9fr_1.2fr_1fr]">
+                  <div className="grid gap-3 p-4 xl:grid-cols-[0.9fr_1.1fr_1fr_1fr]">
                     <div className="space-y-3 rounded-xl border border-[var(--ui-border)] bg-white p-3">
                       <div>
                         <div className="ui-label">Disponibilidad</div>
@@ -848,6 +863,32 @@ export function ProductSiteSettingsEditor({
                           Referencia visual. No mueve stock real.
                         </p>
                       </label>
+                    </div>
+
+                    <div className="space-y-3 rounded-xl border border-[var(--ui-border)] bg-white p-3">
+                      <div>
+                        <div className="ui-label">Venta al cliente</div>
+                        <p className="mt-1 text-xs text-[var(--ui-muted)]">
+                          Habilita este producto para crear item comercial en VISO.
+                        </p>
+                      </div>
+
+                      {canSell ? (
+                        <label className="flex items-center gap-2 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={Boolean(state.salesEnabled)}
+                            onChange={(event) =>
+                              updateSatellite(site.id, { salesEnabled: event.target.checked })
+                            }
+                          />
+                          <span>Se vende en esta sede</span>
+                        </label>
+                      ) : (
+                        <div className="rounded-xl border border-slate-200 bg-slate-50 p-3 text-xs text-[var(--ui-muted)]">
+                          Esta sede no tiene venta habilitada.
+                        </div>
+                      )}
                     </div>
 
                     <div className="space-y-3 rounded-xl border border-[var(--ui-border)] bg-white p-3">
