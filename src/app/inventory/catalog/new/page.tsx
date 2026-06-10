@@ -17,7 +17,6 @@ import { ProductCostStatusPanel } from "@/features/inventory/catalog/product-cos
 import { ProductIdentityFields } from "@/features/inventory/catalog/product-identity-fields";
 import { ProductAssetTechnicalSection } from "@/features/inventory/catalog/product-asset-technical-section";
 import { ProductPurchaseSection } from "@/features/inventory/catalog/product-purchase-section";
-import { ProductRemissionUomFields } from "@/features/inventory/catalog/product-remission-uom-fields";
 import { ProductSiteAvailabilitySection } from "@/features/inventory/catalog/product-site-availability-section";
 import { ProductStorageFields } from "@/features/inventory/catalog/product-storage-fields";
 import { NewProductHero } from "./_components/new-product-hero";
@@ -1242,17 +1241,21 @@ async function createProduct(formData: FormData) {
       source: "supplier_primary",
     };
   } else if (remissionSourceMode === "operation_unit") {
-    remissionUomFromSupplier = buildRemissionFromDefaultUnit({
-      defaultUnitCode: resolvedDefaultUnit,
-      stockUnitCode,
-      unitMap,
-    });
-    if (!remissionUomFromSupplier) {
-      redirect(
-        `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
-          "No se pudo definir la presentación de remisión desde unidad operativa. Revisa unidad base y unidad operativa."
-        )}`
-      );
+    if (config.productType === "preparacion") {
+      remissionUomFromSupplier = null;
+    } else {
+      remissionUomFromSupplier = buildRemissionFromDefaultUnit({
+        defaultUnitCode: resolvedDefaultUnit,
+        stockUnitCode,
+        unitMap,
+      });
+      if (!remissionUomFromSupplier) {
+        redirect(
+          `/inventory/catalog/new?type=${typeKey}${modeQuery}&error=${encodeURIComponent(
+            "No se pudo definir la presentación de remisión desde unidad operativa. Revisa unidad base y unidad operativa."
+          )}`
+        );
+      }
     }
   } else if (remissionSourceMode === "recipe_portion") {
     redirect(
@@ -1917,7 +1920,7 @@ export default async function NewProductPage({
                     el rendimiento y la porción remisionable cuando la preparación esté lista para operar.
                   </p>
                   <p>
-                    Mientras no exista porción publicada, puedes usar la unidad operativa temporal en la sección de remisión.
+                    Mientras no exista porción publicada, NEXO no crea presentaciones operativas temporales.
                   </p>
                 </>
               ) : (
@@ -2056,26 +2059,6 @@ export default async function NewProductPage({
           </CatalogSection>
         )}
 
-        {!isAssetItem && normalizedProductType === "preparacion" ? (
-          <CatalogSection
-            title="Remisión y salida de producción"
-            description="Conecta cómo esta preparación se mueve desde producción hacia operación. La fuente ideal será la porción o rendimiento publicado por FOGO."
-          >
-            <ProductRemissionUomFields
-              units={unitsList.map((unit) => ({ code: unit.code, name: unit.name }))}
-              stockUnitCode={defaultStockUnitCode}
-              defaultLabel="Unidad operativa"
-              defaultInputUnitCode={defaultStockUnitCode}
-              defaultQtyInStockUnit={1}
-              defaultSourceMode="operation_unit"
-              allowPurchasePrimaryOption={false}
-              allowRecipePortionOption
-              variant="preparation"
-              fogoRecipeHref={buildFogoRecipeCreateUrl(typeKey)}
-              recipePortionAvailable={false}
-            />
-          </CatalogSection>
-        ) : null}
 
         {!isAssetItem ? (
           <ProductPurchaseSection

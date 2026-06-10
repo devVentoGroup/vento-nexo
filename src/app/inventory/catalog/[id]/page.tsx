@@ -1157,13 +1157,17 @@ async function updateProduct(formData: FormData) {
         source: "supplier_primary",
       };
     } else if (remissionSourceMode === "operation_unit") {
-      remissionProfile = buildRemissionFromDefaultUnit({
-        defaultUnitCode: resolvedDefaultUnit,
-        stockUnitCode,
-        unitMap,
-      });
-      if (!remissionProfile) {
-        redirectWithError("No se pudo definir la presentación de remisión desde unidad operativa. Revisa unidad base y unidad operativa.");
+      if (normalizedProductType === "preparacion") {
+        remissionProfile = null;
+      } else {
+        remissionProfile = buildRemissionFromDefaultUnit({
+          defaultUnitCode: resolvedDefaultUnit,
+          stockUnitCode,
+          unitMap,
+        });
+        if (!remissionProfile) {
+          redirectWithError("No se pudo definir la presentación de remisión desde unidad operativa. Revisa unidad base y unidad operativa.");
+        }
       }
     } else if (remissionSourceMode === "recipe_portion") {
       const { data: existingRecipePortionProfile, error: recipePortionProfileError } = await supabase
@@ -1364,6 +1368,14 @@ async function updateProduct(formData: FormData) {
         const insErr = await insertProductSiteSettingCompat(supabase, row);
         if (insErr) redirectWithError(insErr.message);
       }
+    }
+
+    const hasRemissionEnabledSite = siteLines.some((line) => {
+      if (line._delete) return false;
+      return line.remission_enabled === true || line.remission_enabled === "true";
+    });
+    if (normalizedProductType === "preparacion" && !hasRemissionEnabledSite) {
+      await deactivateContextProfile("remission");
     }
   }
 
@@ -1849,6 +1861,9 @@ export default async function ProductCatalogDetailPage({
         : remissionUomProfile
           ? "remission_profile"
           : "disabled";
+  const hasRemissionEnabledSite = ((settingsData ?? []) as SiteSettingRow[]).some(
+    (row) => row.remission_enabled === true
+  );
 
   const { data: suppliersData } = await supabase.from("suppliers").select("id,name").eq("is_active", true).order("name");
   const suppliersList = (suppliersData ?? []) as { id: string; name: string | null }[];
@@ -2378,7 +2393,7 @@ export default async function ProductCatalogDetailPage({
             </CatalogSection>
             )}
 
-            {!isAssetItem && normalizedProductType === "preparacion" ? (
+            {!isAssetItem && normalizedProductType === "preparacion" && hasRemissionEnabledSite ? (
               <CatalogSection
                 title="Remisión y salida de producción"
                 description="Conecta cómo esta preparación se mueve desde producción hacia operación. La fuente ideal es la porción o rendimiento publicado por FOGO."

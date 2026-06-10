@@ -1,4 +1,4 @@
-import Link from "next/link";
+﻿import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
@@ -90,6 +90,11 @@ type InternalPriceListItemRow = {
   pricing_input_unit_code: string | null;
   pricing_qty_in_input_unit: number | null;
   pricing_qty_in_stock_unit: number | null;
+  pricing_method: string | null;
+  margin_pct: number | null;
+  base_unit_cost: number | null;
+  base_cost_source: string | null;
+  suggested_unit_price: number | null;
   is_active: boolean;
   created_at: string;
   updated_at: string;
@@ -114,6 +119,100 @@ function buildReturnUrl(status: { ok?: string; error?: string; listId?: string }
   return query ? `${PAGE_PATH}?${query}` : PAGE_PATH;
 }
 
+
+type PriceComputation = {
+  unitPrice: number;
+  pricingMethod: "manual" | "cost_plus_margin";
+  marginPct: number | null;
+  baseUnitCost: number | null;
+  baseCostSource: string | null;
+  suggestedUnitPrice: number | null;
+  formulaSnapshot: Record<string, unknown>;
+};
+
+function parsePricingMethod(value: FormDataEntryValue | null): "manual" | "cost_plus_margin" {
+  return asText(value) === "cost_plus_margin" ? "cost_plus_margin" : "manual";
+}
+
+async function computeInternalPrice(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  priceListId: string;
+  productId: string;
+  uomProfileId: string | null;
+  pricingMethod: "manual" | "cost_plus_margin";
+  manualUnitPrice: number | null;
+  marginPct: number | null;
+}): Promise<PriceComputation> {
+  if (params.pricingMethod === "manual") {
+    if (params.manualUnitPrice === null) {
+      redirect(buildReturnUrl({ error: "El precio interno debe ser mayor o igual a 0.", listId: params.priceListId }));
+    }
+
+    return {
+      unitPrice: params.manualUnitPrice,
+      pricingMethod: "manual",
+      marginPct: null,
+      baseUnitCost: null,
+      baseCostSource: null,
+      suggestedUnitPrice: null,
+      formulaSnapshot: { method: "manual" },
+    };
+  }
+
+  const marginPct = params.marginPct ?? 0;
+
+  const { data: list, error: listError } = await params.supabase
+    .from("internal_price_lists")
+    .select("seller_cost_center_id")
+    .eq("id", params.priceListId)
+    .maybeSingle();
+
+  if (listError || !list) {
+    redirect(buildReturnUrl({ error: listError?.message ?? "Lista de precios invalida.", listId: params.priceListId }));
+  }
+
+  const estimateInternalPrice = params.supabase.rpc as unknown as (
+    fn: "estimate_internal_price_unit",
+    args: Record<string, unknown>
+  ) => Promise<{ data: unknown; error: { message: string } | null }>;
+  const { data, error } = await estimateInternalPrice("estimate_internal_price_unit", {
+    p_product_id: params.productId,
+    p_seller_cost_center_id: list.seller_cost_center_id,
+    p_uom_profile_id: params.uomProfileId || null,
+    p_margin_pct: marginPct,
+  });
+
+  if (error) {
+    redirect(buildReturnUrl({ error: error.message, listId: params.priceListId }));
+  }
+
+  const estimate = Array.isArray(data) ? (data[0] as Record<string, unknown> | undefined) : null;
+  const suggestedUnitPrice = Number(estimate?.suggested_unit_price ?? 0);
+  const baseUnitCost = Number(estimate?.base_unit_cost ?? 0);
+  const baseCostSource = String(estimate?.base_cost_source ?? "none");
+
+  if (!Number.isFinite(suggestedUnitPrice) || suggestedUnitPrice <= 0 || baseCostSource === "none") {
+    redirect(buildReturnUrl({ error: "No hay costo base para calcular este precio. Usa precio manual o carga costos primero.", listId: params.priceListId }));
+  }
+
+  return {
+    unitPrice: suggestedUnitPrice,
+    pricingMethod: "cost_plus_margin",
+    marginPct,
+    baseUnitCost: Number.isFinite(baseUnitCost) ? baseUnitCost : null,
+    baseCostSource,
+    suggestedUnitPrice,
+    formulaSnapshot: {
+      method: "cost_plus_margin",
+      marginPct,
+      baseUnitCost,
+      baseCostSource,
+      suggestedUnitPrice,
+      pricingFactorToStock: estimate?.pricing_factor_to_stock ?? null,
+      stockUnitCost: estimate?.stock_unit_cost ?? null,
+    },
+  };
+}
 function parseDateAsBogotaStartOfDay(value: FormDataEntryValue | null) {
   const raw = asText(value);
   if (!raw) return null;
@@ -418,7 +517,9 @@ async function addInternalPriceListItem(formData: FormData) {
   const priceListId = asText(formData.get("price_list_id"));
   const productOption = asText(formData.get("product_option"));
   const { productId, uomProfileId } = parseProductPriceOption(productOption);
+  const pricingMethod = parsePricingMethod(formData.get("pricing_method"));
   const unitPrice = parseNonNegativeNumber(formData.get("unit_price"));
+  const marginPct = parseNonNegativeNumber(formData.get("margin_pct"));
   let unitCode = "";
 
   if (!priceListId) {
@@ -483,15 +584,27 @@ async function addInternalPriceListItem(formData: FormData) {
     );
   }
 
-  if (unitPrice === null) {
-    redirect(buildReturnUrl({ error: "El precio interno debe ser mayor o igual a 0.", listId: priceListId }));
-  }
+  const priceComputation = await computeInternalPrice({
+    supabase,
+    priceListId,
+    productId,
+    uomProfileId: uomProfileId || null,
+    pricingMethod,
+    manualUnitPrice: unitPrice,
+    marginPct,
+  });
 
   const insertPayload: {
     price_list_id: string;
     product_id: string;
     unit_price: number;
     unit_code: string;
+    pricing_method: "manual" | "cost_plus_margin";
+    margin_pct: number | null;
+    base_unit_cost: number | null;
+    base_cost_source: string | null;
+    suggested_unit_price: number | null;
+    formula_snapshot: Record<string, unknown>;
     uom_profile_id: string | null;
     pricing_label?: string | null;
     pricing_input_unit_code?: string | null;
@@ -501,8 +614,14 @@ async function addInternalPriceListItem(formData: FormData) {
   } = {
     price_list_id: priceListId,
     product_id: productId,
-    unit_price: unitPrice,
+    unit_price: priceComputation.unitPrice,
     unit_code: unitCode,
+    pricing_method: priceComputation.pricingMethod,
+    margin_pct: priceComputation.marginPct,
+    base_unit_cost: priceComputation.baseUnitCost,
+    base_cost_source: priceComputation.baseCostSource,
+    suggested_unit_price: priceComputation.suggestedUnitPrice,
+    formula_snapshot: priceComputation.formulaSnapshot,
     uom_profile_id: uomProfileId || null,
     is_active: true,
   };
@@ -539,23 +658,53 @@ async function updateInternalPriceListItem(formData: FormData) {
   const itemId = asText(formData.get("item_id"));
   const priceListId = asText(formData.get("price_list_id"));
   const unitCode = asText(formData.get("unit_code"));
+  const pricingMethod = parsePricingMethod(formData.get("pricing_method"));
   const unitPrice = parseNonNegativeNumber(formData.get("unit_price"));
+  const marginPct = parseNonNegativeNumber(formData.get("margin_pct"));
 
   if (!itemId || !priceListId) {
     redirect(buildReturnUrl({ error: "Ítem inválido.", listId: priceListId }));
   }
 
-  if (unitPrice === null) {
-    redirect(buildReturnUrl({ error: "El precio interno debe ser mayor o igual a 0.", listId: priceListId }));
+  const { data: itemRow, error: itemError } = await supabase
+    .from("internal_price_list_items")
+    .select("product_id,uom_profile_id")
+    .eq("id", itemId)
+    .maybeSingle();
+
+  if (itemError || !itemRow) {
+    redirect(buildReturnUrl({ error: itemError?.message ?? "Ítem inválido.", listId: priceListId }));
   }
+
+  const priceComputation = await computeInternalPrice({
+    supabase,
+    priceListId,
+    productId: String(itemRow.product_id),
+    uomProfileId: itemRow.uom_profile_id ? String(itemRow.uom_profile_id) : null,
+    pricingMethod,
+    manualUnitPrice: unitPrice,
+    marginPct,
+  });
 
   const payload: {
     unit_price: number;
     updated_at: string;
+    pricing_method: "manual" | "cost_plus_margin";
+    margin_pct: number | null;
+    base_unit_cost: number | null;
+    base_cost_source: string | null;
+    suggested_unit_price: number | null;
+    formula_snapshot: Record<string, unknown>;
     unit_code?: string;
   } = {
-    unit_price: unitPrice,
+    unit_price: priceComputation.unitPrice,
     updated_at: new Date().toISOString(),
+    pricing_method: priceComputation.pricingMethod,
+    margin_pct: priceComputation.marginPct,
+    base_unit_cost: priceComputation.baseUnitCost,
+    base_cost_source: priceComputation.baseCostSource,
+    suggested_unit_price: priceComputation.suggestedUnitPrice,
+    formula_snapshot: priceComputation.formulaSnapshot,
   };
 
   if (unitCode) {
@@ -739,7 +888,7 @@ export default async function InternalPricesSettingsPage({
   const { data: priceItemsData } = selectedPriceList
     ? await supabase
         .from("internal_price_list_items")
-        .select("id,price_list_id,product_id,unit_price,unit_code,uom_profile_id,pricing_label,pricing_input_unit_code,pricing_qty_in_input_unit,pricing_qty_in_stock_unit,is_active,created_at,updated_at")
+        .select("id,price_list_id,product_id,unit_price,unit_code,uom_profile_id,pricing_label,pricing_input_unit_code,pricing_qty_in_input_unit,pricing_qty_in_stock_unit,pricing_method,margin_pct,base_unit_cost,base_cost_source,suggested_unit_price,is_active,created_at,updated_at")
         .eq("price_list_id", selectedPriceList.id)
         .order("is_active", { ascending: false })
         .order("updated_at", { ascending: false })
@@ -777,7 +926,7 @@ export default async function InternalPricesSettingsPage({
             .map((profile) => ({
               key: `${product.id}:${profile.id}`,
               value: buildProductPriceOptionValue(product.id, profile.id),
-              label: `${product.name ?? product.id} — ${buildPresentationEquivalenceLabel({
+              label: `${product.name ?? product.id} - ${buildPresentationEquivalenceLabel({
                 label: profile.label,
                 inputUnitCode: profile.input_unit_code,
                 qtyInInputUnit: profile.qty_in_input_unit,
@@ -891,7 +1040,7 @@ export default async function InternalPricesSettingsPage({
             </p>
           </div>
           <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-800">
-            Centro de Producción → Satélite
+            Centro de Producción - Satélite
           </span>
         </div>
 
@@ -964,7 +1113,7 @@ export default async function InternalPricesSettingsPage({
         <div className="mt-6 rounded-[1.75rem] border border-amber-200/80 bg-[radial-gradient(circle_at_top_left,rgba(245,158,11,0.10),transparent_24%),linear-gradient(135deg,#ffffff_0%,#ffffff_68%,#fffaf0_100%)] p-5 shadow-sm">
           <div className="text-lg font-bold text-[var(--ui-text)]">Crear lista de precios internos</div>
           <p className="mt-1 text-sm text-[var(--ui-muted)]">
-            Crea una lista por relación interna, por ejemplo Centro de Producción → Molka.
+            Crea una lista por relación interna, por ejemplo Centro de Producción - Molka.
           </p>
 
           <form action={createInternalPriceList} className="mt-4 grid gap-4 lg:grid-cols-2">
@@ -973,7 +1122,7 @@ export default async function InternalPricesSettingsPage({
               <input
                 name="name"
                 className="ui-input"
-                placeholder="Ej. Centro de Producción → Molka"
+                placeholder="Ej. Centro de Producción - Molka"
                 required
               />
             </label>
@@ -1083,7 +1232,7 @@ export default async function InternalPricesSettingsPage({
                           {list.name}
                         </Link>
                         <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                          {costCenterLabel(seller, sitesById)} →{" "}
+                          {costCenterLabel(seller, sitesById)} -{" "}
                           {buyer ? costCenterLabel(buyer, sitesById) : buyerSite?.name ?? "Comprador general"}
                         </div>
                       </div>
@@ -1219,7 +1368,7 @@ export default async function InternalPricesSettingsPage({
                     </div>
                   ) : null}
 
-                  <div className="mt-4 grid gap-3 lg:grid-cols-[1fr_170px_auto]">
+                  <div className="mt-4 grid gap-3 xl:grid-cols-[minmax(0,1fr)_180px_150px_170px_auto]">
                     <label className="flex flex-col gap-1">
                       <span className="ui-label">Producto y presentación</span>
                       <select
@@ -1236,20 +1385,41 @@ export default async function InternalPricesSettingsPage({
                         ))}
                       </select>
                       <span className="text-xs text-[var(--ui-muted)]">
-                        Solo aparecen productos habilitados para remisión en la sede compradora y presentaciones físicas manuales activas.
+                        El precio queda congelado para las remisiones. Usa costo + margen cuando ya exista costo base del producto.
                       </span>
                     </label>
 
                     <label className="flex flex-col gap-1">
-                      <span className="ui-label">Precio interno</span>
+                      <span className="ui-label">Método</span>
+                      <select name="pricing_method" className="ui-input" defaultValue="cost_plus_margin">
+                        <option value="cost_plus_margin">Costo + margen</option>
+                        <option value="manual">Manual</option>
+                      </select>
+                    </label>
+
+                    <label className="flex flex-col gap-1">
+                      <span className="ui-label">Margen %</span>
+                      <input
+                        name="margin_pct"
+                        type="number"
+                        min="0"
+                        max="500"
+                        step="0.01"
+                        className="ui-input"
+                        defaultValue="25"
+                        placeholder="25"
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-1">
+                      <span className="ui-label">Precio manual</span>
                       <input
                         name="unit_price"
                         type="number"
                         min="0"
                         step="0.01"
                         className="ui-input"
-                        placeholder="0"
-                        required
+                        placeholder="Solo manual"
                       />
                     </label>
 
@@ -1333,8 +1503,20 @@ export default async function InternalPricesSettingsPage({
                               </td>
 
                               <td className="px-4 py-3 align-top">
+                                <div className="font-semibold text-[var(--ui-text)]">
+                                  {formatMoney(item.unit_price)}
+                                </div>
+                                <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                                  {item.pricing_method === "cost_plus_margin"
+                                    ? `Costo ${formatMoney(item.base_unit_cost)} + ${formatQty(item.margin_pct)}% = ${formatMoney(item.suggested_unit_price)}`
+                                    : "Precio manual"}
+                                  {item.base_cost_source ? ` - ${item.base_cost_source}` : ""}
+                                </div>
                                 {canManage ? (
-                                  <form action={updateInternalPriceListItem} className="flex gap-2">
+                                  <form
+                                    action={updateInternalPriceListItem}
+                                    className="mt-3 grid gap-2 lg:grid-cols-[150px_120px_140px_auto]"
+                                  >
                                     <input type="hidden" name="item_id" value={item.id} />
                                     <input
                                       type="hidden"
@@ -1346,24 +1528,38 @@ export default async function InternalPricesSettingsPage({
                                       name="unit_code"
                                       value={item.unit_code || item.pricing_input_unit_code || ""}
                                     />
+                                    <select
+                                      name="pricing_method"
+                                      className="ui-input"
+                                      defaultValue={item.pricing_method ?? "manual"}
+                                    >
+                                      <option value="cost_plus_margin">Costo + margen</option>
+                                      <option value="manual">Manual</option>
+                                    </select>
+                                    <input
+                                      name="margin_pct"
+                                      type="number"
+                                      min="0"
+                                      max="500"
+                                      step="0.01"
+                                      className="ui-input"
+                                      defaultValue={item.margin_pct ?? ""}
+                                      placeholder="Margen %"
+                                    />
                                     <input
                                       name="unit_price"
                                       type="number"
                                       min="0"
                                       step="0.01"
-                                      className="ui-input w-36"
+                                      className="ui-input"
                                       defaultValue={String(item.unit_price)}
-                                      required
+                                      placeholder="Manual"
                                     />
                                     <button type="submit" className="ui-btn ui-btn--ghost">
-                                      Guardar precio
+                                      Guardar
                                     </button>
                                   </form>
-                                ) : (
-                                  <span className="font-semibold text-[var(--ui-text)]">
-                                    {formatMoney(item.unit_price)}
-                                  </span>
-                                )}
+                                ) : null}
                               </td>
 
                               <td className="px-4 py-3 align-top">
@@ -1426,3 +1622,7 @@ export default async function InternalPricesSettingsPage({
     </div>
   );
 }
+
+
+
+
