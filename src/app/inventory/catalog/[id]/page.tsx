@@ -689,6 +689,9 @@ async function updateProduct(formData: FormData) {
   });
   const manualCost = asNullableNumber(formData.get("cost"));
   const productTypeValue = asText(formData.get("product_type")) || null;
+  const normalizedProductType = String(productTypeValue || existingProductType || "")
+    .trim()
+    .toLowerCase();
   const inventoryKindInput = asText(formData.get("inventory_kind")) || null;
   const inventoryKindValue = resolveLockedInventoryKind(
     productTypeValue || existingProductType || "insumo",
@@ -1861,7 +1864,7 @@ export default async function ProductCatalogDetailPage({
         : remissionUomProfile
           ? "remission_profile"
           : "disabled";
-  const hasRemissionEnabledSite = ((settingsData ?? []) as SiteSettingRow[]).some(
+  const hasRemissionEnabledSite = ((siteSettings ?? []) as unknown as Pick<SiteSettingRow, "remission_enabled">[]).some(
     (row) => row.remission_enabled === true
   );
 
