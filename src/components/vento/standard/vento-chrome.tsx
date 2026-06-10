@@ -89,6 +89,7 @@ const APP_ENTITY =
     | "pulso"
     | "viso"
     | "origo"
+    | "numera"
     | "anima"
     | "aura") ?? "nexo";
 
@@ -626,3 +627,4 @@ export function VentoChrome({
     </div>
   );
 }
+

@@ -7,7 +7,8 @@ type VentoEntity =
   | "pulso"
   | "viso"
   | "origo"
-  | "anima"
+    | "numera"
+    | "anima"
   | "aura";
 
 const ENTITY_COLORS: Record<VentoEntity, string> = {
@@ -17,6 +18,7 @@ const ENTITY_COLORS: Record<VentoEntity, string> = {
   pulso: "#00D4FF",
   viso: "#A855F7",
   origo: "#10B981",
+  numera: "#2563EB",
   anima: "#E2006A",
   aura: "#FF7A59",
 };
@@ -150,4 +152,5 @@ export function VentoLogo({
     </div>
   );
 }
+
 

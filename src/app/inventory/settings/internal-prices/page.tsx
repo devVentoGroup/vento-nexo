@@ -193,7 +193,7 @@ function buildPresentationEquivalenceLabel(params: {
   const presentation = label || inputUnitCode || "Presentación";
 
   if (qtyInInputUnit > 0 && qtyInStockUnit > 0 && stockUnitCode) {
-    return `${presentation} · ${formatQty(qtyInInputUnit)} ${inputUnitCode || "un"} = ${formatQty(qtyInStockUnit)} ${stockUnitCode}`;
+    return `${presentation} - ${formatQty(qtyInInputUnit)} ${inputUnitCode || "un"} = ${formatQty(qtyInStockUnit)} ${stockUnitCode}`;
   }
 
   return presentation;
@@ -304,18 +304,12 @@ function costCenterLabel(row: CostCenterRow | null | undefined, sitesById: Map<s
   const mainName = centerName || fallbackName || "Centro de costo sin nombre";
 
   if (siteName && !isSameLabel(mainName, siteName)) {
-    return `${mainName} · ${siteName}`;
+    return `${mainName} - ${siteName}`;
   }
 
   return mainName;
 }
 
-function productLabel(row: ProductRow | null | undefined) {
-  if (!row) return "Producto no encontrado";
-  const sku = row.sku ? ` · ${row.sku}` : "";
-  const unit = row.stock_unit_code || row.unit ? ` · ${row.stock_unit_code ?? row.unit}` : "";
-  return `${row.name ?? row.id}${sku}${unit}`;
-}
 
 async function requireInternalPricesManager() {
   const supabase = await createClient();
