@@ -2172,7 +2172,7 @@ export default async function ProductCatalogDetailPage({
         <>
           <RequiredFieldsGuardForm
             action={updateProduct}
-            className="space-y-8"
+            className="space-y-8 pb-28"
             persistKey={`catalog-edit-${productRow.id}`}
           >
             <input type="hidden" name="product_id" value={productRow.id} />
@@ -2528,6 +2528,15 @@ export default async function ProductCatalogDetailPage({
               showActiveToggle
               activeDefaultChecked={Boolean(productRow.is_active)}
             />
+
+            <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-end px-4 sm:bottom-6 sm:px-6 lg:px-8">
+              <button
+                type="submit"
+                className="ui-btn ui-btn--brand pointer-events-auto h-12 min-w-[11rem] justify-center rounded-full px-6 text-base font-semibold shadow-2xl ring-1 ring-black/5"
+              >
+                Guardar cambios
+              </button>
+            </div>
           </RequiredFieldsGuardForm>
         </>
       ) : (

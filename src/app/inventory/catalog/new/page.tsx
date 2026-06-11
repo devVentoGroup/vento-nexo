@@ -1841,7 +1841,7 @@ export default async function NewProductPage({
 
       <RequiredFieldsGuardForm
         action={createProduct}
-        className="space-y-8"
+        className="space-y-8 pb-28"
         persistKey={`catalog-new-${typeKey}`}
       >
         <input type="hidden" name="_type_key" value={typeKey} />
@@ -2148,6 +2148,16 @@ export default async function NewProductPage({
               </button>
             </div>
           </div>
+        </div>
+
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-end px-4 sm:bottom-6 sm:px-6">
+          <button
+            type="submit"
+            formAction={createProductAndCreateAnother}
+            className="ui-btn ui-btn--brand pointer-events-auto h-12 min-w-[180px] justify-center rounded-full px-5 text-base font-semibold shadow-xl shadow-black/20"
+          >
+            {createSubmitLabel}
+          </button>
         </div>
       </RequiredFieldsGuardForm>
     </div>
