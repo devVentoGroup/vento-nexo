@@ -13,6 +13,20 @@ type SiteOption = {
   name: string | null;
 };
 
+type FilterRadioOption = {
+  value: string;
+  label: string;
+  caption?: string;
+};
+
+type FilterRadioGroupProps = {
+  label: string;
+  name: string;
+  value: string;
+  options: FilterRadioOption[];
+  className?: string;
+};
+
 type CatalogFiltersPanelProps = {
   activeTab: string;
   siteId: string;
@@ -35,6 +49,61 @@ type CatalogFiltersPanelProps = {
   effectiveCategoryId: string;
   siteNamesById: Record<string, string>;
 };
+
+function getSelectedLabel<T extends { id: string; name: string | null }>(
+  rows: T[],
+  selectedId: string,
+  fallback = "Seleccionado",
+): string {
+  if (!selectedId) return "";
+  const selected = rows.find((row) => row.id === selectedId);
+  return selected?.name ?? selected?.id ?? fallback;
+}
+
+function getSelectedValueLabel(
+  rows: Array<{ value: string; label: string }>,
+  selectedValue: string,
+  fallback = "Seleccionado",
+): string {
+  if (!selectedValue) return "";
+  const selected = rows.find((row) => row.value === selectedValue);
+  return selected?.label ?? fallback;
+}
+
+function FilterRadioGroup({
+  label,
+  name,
+  value,
+  options,
+  className = "",
+}: FilterRadioGroupProps) {
+  return (
+    <fieldset className={`grid gap-2 ${className}`.trim()}>
+      <legend className="ui-label">{label}</legend>
+      <div className="flex flex-wrap gap-2">
+        {options.map((option) => (
+          <label key={option.value} className="cursor-pointer">
+            <input
+              type="radio"
+              name={name}
+              value={option.value}
+              defaultChecked={value === option.value}
+              className="peer sr-only"
+            />
+            <span className="inline-flex min-h-9 items-center gap-1 rounded-full border border-[var(--ui-border)] bg-white px-3 py-1.5 text-sm font-semibold text-[var(--ui-text)] shadow-sm transition hover:border-[color:var(--ui-brand)]/50 hover:bg-[var(--ui-surface)] peer-checked:border-[color:var(--ui-brand)]/50 peer-checked:bg-[color:var(--ui-brand)]/10 peer-checked:text-[var(--ui-brand)]">
+              {option.label}
+              {option.caption ? (
+                <span className="text-[11px] font-medium text-[var(--ui-muted)]">
+                  {option.caption}
+                </span>
+              ) : null}
+            </span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
+  );
+}
 
 export function CatalogFiltersPanel({
   activeTab,
@@ -59,110 +128,163 @@ export function CatalogFiltersPanel({
   siteNamesById,
 }: CatalogFiltersPanelProps) {
   const isAssetCatalogTab = activeTab === "equipos";
+  const effectiveCategoryScope = categoryScope || "all";
+  const effectiveStockAlert = stockAlert || "all";
+  const effectiveViewMode = viewMode || "catalogo";
+
+  const selectedSupplierLabel = getSelectedLabel(suppliers, effectiveSupplierId, "Proveedor");
+  const selectedSiteLabel = getSelectedLabel(sites, categorySiteId, "Sede");
+  const selectedDomainLabel = getSelectedValueLabel(
+    categoryDomainOptions,
+    categoryDomain,
+    "Dominio",
+  );
+  const selectedCategoryLabel =
+    categoryRows.find((row) => row.id === effectiveCategoryId)?.name ?? "Categoría";
+
+  const activeFilterLabels = [
+    showDisabled ? "Deshabilitados" : null,
+    !isAssetCatalogTab && effectiveStockAlert === "low" ? "Stock bajo" : null,
+    !isAssetCatalogTab && effectiveViewMode === "compras" ? "Compras ORIGO" : null,
+    !isAssetCatalogTab && effectiveSupplierId
+      ? `Proveedor: ${selectedSupplierLabel}`
+      : null,
+    effectiveCategoryScope === "global" ? "Categorías globales" : null,
+    effectiveCategoryScope === "site" ? "Categorías por sede" : null,
+    effectiveCategoryScope === "site" && categorySiteId ? `Sede: ${selectedSiteLabel}` : null,
+    showCategoryDomain && categoryDomain ? `Dominio: ${selectedDomainLabel}` : null,
+    effectiveCategoryId ? `Categoría: ${selectedCategoryLabel}` : null,
+  ].filter(Boolean) as string[];
+
+  const hasAnyFilters = hasAdvancedFilters || activeFilterLabels.length > 0;
+  const activeStatusLabel = activeFilterLabels.length
+    ? `${activeFilterLabels.length} activo${activeFilterLabels.length === 1 ? "" : "s"}`
+    : hasAnyFilters
+      ? "Activos"
+      : "Sin filtros";
+  const shouldOpenMoreOptions =
+    showDisabled ||
+    effectiveCategoryScope !== "all" ||
+    Boolean(showCategoryDomain && categoryDomain);
+  const shouldShowSupplier = !isAssetCatalogTab && (effectiveViewMode === "compras" || effectiveSupplierId);
 
   return (
-    <div className="mt-4 ui-panel">
-      <div className="ui-h3">
-        {isAssetCatalogTab ? "Filtros de modelos patrimoniales" : "Filtros operativos"}
+    <div className="mt-4 rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="ui-h3">
+            {isAssetCatalogTab ? "Afinar modelos" : "Afinar catálogo"}
+          </div>
+          <p className="ui-caption mt-1">
+            Usa solo lo operativo: vista, stock, proveedor y categoría.
+          </p>
+        </div>
+        <span className="rounded-full border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-1 text-xs font-semibold text-[var(--ui-muted)]">
+          {activeStatusLabel}
+        </span>
       </div>
-      <form method="get" className="mt-4 grid gap-3">
+
+      {activeFilterLabels.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {activeFilterLabels.map((label) => (
+            <span
+              key={label}
+              className="rounded-full border border-[color:var(--ui-brand)]/25 bg-[color:var(--ui-brand)]/10 px-2.5 py-1 text-xs font-semibold text-[var(--ui-brand)]"
+            >
+              {label}
+            </span>
+          ))}
+        </div>
+      ) : null}
+
+      <form method="get" className="mt-4 grid gap-4">
         <input type="hidden" name="tab" value={activeTab} />
         <input type="hidden" name="site_id" value={isAssetCatalogTab ? "" : siteId} />
         <input type="hidden" name="category_kind" value={categoryKind} />
-
         <input type="hidden" name="q" value={searchQuery} />
 
-        <label className="inline-flex items-center gap-2 text-sm text-[var(--ui-text)]">
-          <input
-            type="checkbox"
-            name="show_disabled"
-            value="1"
-            defaultChecked={showDisabled}
-          />
-          Mostrar deshabilitados
-        </label>
+        {isAssetCatalogTab ? (
+          <>
+            <input type="hidden" name="stock_alert" value="all" />
+            <input type="hidden" name="view_mode" value="catalogo" />
+            <input type="hidden" name="supplier_id" value="" />
+          </>
+        ) : (
+          <div className="grid gap-3 lg:grid-cols-2">
+            <FilterRadioGroup
+              label="Vista"
+              name="view_mode"
+              value={effectiveViewMode}
+              options={[
+                { value: "catalogo", label: "Catálogo" },
+                { value: "compras", label: "Compras", caption: "ORIGO" },
+              ]}
+            />
 
-        <div className="flex flex-wrap gap-2">
-          <button className="ui-btn ui-btn--brand">Aplicar filtros</button>
-          <Link href={clearHref} className="ui-btn ui-btn--ghost">
-            Limpiar
-          </Link>
+            <FilterRadioGroup
+              label="Stock"
+              name="stock_alert"
+              value={effectiveStockAlert}
+              options={[
+                { value: "all", label: "Todos" },
+                { value: "low", label: "Bajo mínimo" },
+              ]}
+            />
+          </div>
+        )}
+
+        {shouldShowSupplier ? (
+          <label className="grid gap-1 lg:max-w-md">
+            <span className="ui-label">Proveedor</span>
+            <select name="supplier_id" defaultValue={effectiveSupplierId} className="ui-input">
+              <option value="">Todos los proveedores</option>
+              {suppliers.map((supplier) => (
+                <option key={supplier.id} value={supplier.id}>
+                  {supplier.name ?? supplier.id}
+                </option>
+              ))}
+            </select>
+          </label>
+        ) : isAssetCatalogTab ? null : (
+          <input type="hidden" name="supplier_id" value="" />
+        )}
+
+        <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-3">
+          <CategoryTreeFilter
+            categories={categoryRows}
+            selectedCategoryId={effectiveCategoryId}
+            siteNamesById={siteNamesById}
+            label={isAssetCatalogTab ? "Categoría patrimonial" : "Categoría"}
+            emptyOptionLabel={isAssetCatalogTab ? "Todas las categorías patrimoniales" : "Todas"}
+            maxVisibleOptions={6}
+          />
         </div>
 
-        <details className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-3">
-          <summary className="flex cursor-pointer items-center justify-between gap-2 rounded-lg border border-[var(--ui-border)] bg-white/80 px-3 py-2">
-            <span className="text-sm font-semibold text-[var(--ui-text)]">
-              {isAssetCatalogTab ? "Filtros de catálogo patrimonial" : "Filtros avanzados"}
-            </span>
-            <span className="ui-caption">{hasAdvancedFilters ? "Activos" : "Mostrar"}</span>
+        <details
+          open={shouldOpenMoreOptions}
+          className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)]"
+        >
+          <summary className="flex cursor-pointer items-center justify-between gap-3 px-3 py-2 text-sm font-semibold text-[var(--ui-text)]">
+            <span>Más opciones</span>
+            <span className="ui-caption">Alcance, sede, dominio y deshabilitados</span>
           </summary>
 
-          <div className="mt-3 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <label className="flex flex-col gap-1">
-              <span className="ui-label">
-                {isAssetCatalogTab ? "Alcance de categoría patrimonial" : "Alcance de categoría operativa"}
-              </span>
-              <select name="category_scope" defaultValue={categoryScope} className="ui-input">
-                <option value="all">Todas</option>
-                <option value="global">Globales</option>
-                <option value="site">{isAssetCatalogTab ? "Por sede" : "Sede activa"}</option>
-              </select>
-            </label>
+          <div className="grid gap-3 border-t border-[var(--ui-border)] p-3 lg:grid-cols-2">
+            <FilterRadioGroup
+              label={isAssetCatalogTab ? "Alcance patrimonial" : "Alcance de categorías"}
+              name="category_scope"
+              value={effectiveCategoryScope}
+              options={[
+                { value: "all", label: "Todas" },
+                { value: "global", label: "Globales" },
+                { value: "site", label: isAssetCatalogTab ? "Por sede" : "Sede activa" },
+              ]}
+              className="lg:col-span-2"
+            />
 
-            {isAssetCatalogTab ? (
-              <>
-                <input type="hidden" name="stock_alert" value="all" />
-                <input type="hidden" name="view_mode" value="catalogo" />
-                <input type="hidden" name="supplier_id" value="" />
-
-                <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-3 text-sm text-cyan-950 sm:col-span-2 lg:col-span-3">
-                  <div className="font-semibold">Los modelos patrimoniales no usan estos filtros</div>
-                  <p className="mt-1 leading-6">
-                    Stock bajo, compras ORIGO y proveedor aplican a insumos o productos de reventa.
-                    Para unidades reales, ubicación, QR, mantenimiento y conteo usa Activos físicos.
-                  </p>
-                </div>
-              </>
-            ) : (
-              <>
-                <label className="flex flex-col gap-1">
-                  <span className="ui-label">Alerta de stock (sede activa)</span>
-                  <select name="stock_alert" defaultValue={stockAlert} className="ui-input">
-                    <option value="all">Todos</option>
-                    <option value="low">Solo bajo mínimo</option>
-                  </select>
-                  <span className="ui-caption">
-                    Usa el stock de la sede activa para compras del centro de producción.
-                  </span>
-                </label>
-
-                <label className="flex flex-col gap-1">
-                  <span className="ui-label">Vista</span>
-                  <select name="view_mode" defaultValue={viewMode} className="ui-input">
-                    <option value="catalogo">Catálogo</option>
-                    <option value="compras">Compras (ORIGO)</option>
-                  </select>
-                </label>
-
-                <label className="flex flex-col gap-1">
-                  <span className="ui-label">Proveedor</span>
-                  <select name="supplier_id" defaultValue={effectiveSupplierId} className="ui-input">
-                    <option value="">Todos</option>
-                    {suppliers.map((supplier) => (
-                      <option key={supplier.id} value={supplier.id}>
-                        {supplier.name ?? supplier.id}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </>
-            )}
-
-            {categoryScope === "site" ? (
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">
-                  {isAssetCatalogTab ? "Sede para categoría patrimonial" : "Sede para categoría operativa"}
-                </span>
+            {effectiveCategoryScope === "site" ? (
+              <label className="grid gap-1">
+                <span className="ui-label">Sede de categoría</span>
                 <select name="category_site_id" defaultValue={categorySiteId} className="ui-input">
                   <option value="">Seleccionar sede</option>
                   {sites.map((site) => (
@@ -171,18 +293,13 @@ export function CatalogFiltersPanel({
                     </option>
                   ))}
                 </select>
-                <span className="ui-caption">
-                  {isAssetCatalogTab
-                    ? "Solo aplica si estás organizando modelos patrimoniales por sede."
-                    : "Solo aplica cuando el alcance es Sede activa."}
-                </span>
               </label>
             ) : (
               <input type="hidden" name="category_site_id" value="" />
             )}
 
             {showCategoryDomain ? (
-              <label className="flex flex-col gap-1">
+              <label className="grid gap-1">
                 <span className="ui-label">
                   {isAssetCatalogTab ? "Dominio patrimonial" : "Dominio operativo"}
                 </span>
@@ -199,17 +316,24 @@ export function CatalogFiltersPanel({
               <input type="hidden" name="category_domain" value="" />
             )}
 
-            <CategoryTreeFilter
-              categories={categoryRows}
-              selectedCategoryId={effectiveCategoryId}
-              siteNamesById={siteNamesById}
-              className="sm:col-span-2 lg:col-span-4"
-              label={isAssetCatalogTab ? "Categoría patrimonial" : "Categoría operativa"}
-              emptyOptionLabel={isAssetCatalogTab ? "Todas las categorías patrimoniales" : "Todas"}
-              maxVisibleOptions={10}
-            />
+            <label className="inline-flex cursor-pointer items-center gap-2 rounded-full border border-[var(--ui-border)] bg-white px-3 py-2 text-sm font-semibold text-[var(--ui-text)] lg:self-end lg:justify-self-start">
+              <input
+                type="checkbox"
+                name="show_disabled"
+                value="1"
+                defaultChecked={showDisabled}
+              />
+              Mostrar deshabilitados
+            </label>
           </div>
         </details>
+
+        <div className="flex flex-wrap items-center justify-end gap-2 border-t border-[var(--ui-border)] pt-3">
+          <Link href={clearHref} className="ui-btn ui-btn--ghost">
+            Limpiar
+          </Link>
+          <button className="ui-btn ui-btn--brand">Aplicar</button>
+        </div>
       </form>
     </div>
   );
