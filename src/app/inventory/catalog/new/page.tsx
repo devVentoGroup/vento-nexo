@@ -1841,7 +1841,7 @@ export default async function NewProductPage({
 
       <RequiredFieldsGuardForm
         action={createProduct}
-        className="space-y-8 pb-28"
+        className="space-y-8 pb-48 md:pb-36"
         persistKey={`catalog-new-${typeKey}`}
       >
         <input type="hidden" name="_type_key" value={typeKey} />
@@ -2112,16 +2112,16 @@ export default async function NewProductPage({
           />
         ) : null}
 
-        <div className="rounded-2xl border border-[var(--ui-border)] bg-white p-4 shadow-sm">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div>
-              <p className="text-sm font-semibold text-[var(--ui-text)]">Finalizar creación</p>
+        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 px-4 sm:bottom-6 sm:px-6">
+          <div className="pointer-events-auto mx-auto flex max-w-6xl flex-col gap-3 rounded-2xl border border-[var(--ui-border)] bg-white/95 p-3 shadow-xl shadow-black/10 backdrop-blur md:flex-row md:items-center md:justify-between">
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-[var(--ui-text)]">Carga en bloque</p>
               <p className="mt-1 text-xs text-[var(--ui-muted)]">
-                Elige qué quieres hacer después de guardar para evitar clics innecesarios.
+                La acción principal guarda este registro y deja listo el formulario para crear el siguiente.
               </p>
             </div>
 
-            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+            <div className="grid gap-2 sm:grid-cols-2 lg:flex lg:items-center lg:justify-end">
               <Link href={catalogHref} className="ui-btn ui-btn--ghost justify-center">
                 Volver a {catalogLabel}
               </Link>
@@ -2130,34 +2130,24 @@ export default async function NewProductPage({
                 formAction={createProductAndView}
                 className="ui-btn ui-btn--ghost justify-center"
               >
-                {createSubmitLabel} y ver ficha
+                Crear y ver ficha
               </button>
               <button
                 type="submit"
                 formAction={createProductAndReturnToCatalog}
                 className="ui-btn ui-btn--ghost justify-center"
               >
-                {createSubmitLabel} y volver
+                Crear y volver
               </button>
               <button
                 type="submit"
                 formAction={createProductAndCreateAnother}
                 className="ui-btn ui-btn--brand justify-center"
               >
-                {createSubmitLabel} y crear otro
+                {createSubmitLabel} y seguir
               </button>
             </div>
           </div>
-        </div>
-
-        <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 flex justify-end px-4 sm:bottom-6 sm:px-6">
-          <button
-            type="submit"
-            formAction={createProductAndCreateAnother}
-            className="ui-btn ui-btn--brand pointer-events-auto h-12 min-w-[180px] justify-center rounded-full px-5 text-base font-semibold shadow-xl shadow-black/20"
-          >
-            {createSubmitLabel}
-          </button>
         </div>
       </RequiredFieldsGuardForm>
     </div>
