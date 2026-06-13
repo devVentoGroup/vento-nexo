@@ -1496,6 +1496,77 @@ async function updateProduct(formData: FormData) {
       redirectWithError("No se pudo leer la ruta operativa. Recarga la pagina e intenta de nuevo.");
     }
 
+    const routeSiteIds = Array.from(
+      new Set(routeLines.map((line) => String(line.site_id ?? "").trim()).filter(Boolean))
+    );
+    const routeLocationIds = Array.from(
+      new Set(
+        routeLines
+          .flatMap((line) => [
+            String(line.input_location_id ?? "").trim(),
+            String(line.output_location_id ?? "").trim(),
+          ])
+          .filter(Boolean)
+      )
+    );
+
+    const { data: routeSiteLocationsData, error: routeSiteLocationsError } =
+      routeSiteIds.length > 0
+        ? await supabase
+          .from("inventory_locations")
+          .select("id,site_id,area:areas(kind)")
+          .eq("is_active", true)
+          .in("site_id", routeSiteIds)
+        : { data: [] as Array<{ id: string; site_id: string | null; area?: { kind: string | null } | { kind: string | null }[] | null }>, error: null };
+
+    if (routeSiteLocationsError) redirectWithError(routeSiteLocationsError.message);
+
+    const activeLocationCountBySite = ((routeSiteLocationsData ?? []) as Array<{
+      id: string;
+      site_id: string | null;
+      area?: { kind: string | null } | { kind: string | null }[] | null;
+    }>).reduce(
+      (acc, location) => {
+        const siteId = String(location.site_id ?? "").trim();
+        if (!siteId) return acc;
+        acc[siteId] = (acc[siteId] ?? 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>
+    );
+
+    const routeLocationAreaById = new Map<string, string>();
+    for (const location of (routeSiteLocationsData ?? []) as Array<{
+      id: string;
+      area?: { kind: string | null } | { kind: string | null }[] | null;
+    }>) {
+      const areaValue = Array.isArray(location.area) ? location.area[0] : location.area;
+      const areaKind = String(areaValue?.kind ?? "").trim();
+      if (location.id && areaKind) routeLocationAreaById.set(String(location.id), areaKind);
+    }
+
+    if (routeLocationIds.length > 0) {
+      const missingRouteLocationIds = routeLocationIds.filter((locationId) => !routeLocationAreaById.has(locationId));
+      if (missingRouteLocationIds.length > 0) {
+        const { data: missingLocationsData, error: missingLocationsError } = await supabase
+          .from("inventory_locations")
+          .select("id,area:areas(kind)")
+          .eq("is_active", true)
+          .in("id", missingRouteLocationIds);
+
+        if (missingLocationsError) redirectWithError(missingLocationsError.message);
+
+        for (const location of (missingLocationsData ?? []) as Array<{
+          id: string;
+          area?: { kind: string | null } | { kind: string | null }[] | null;
+        }>) {
+          const areaValue = Array.isArray(location.area) ? location.area[0] : location.area;
+          const areaKind = String(areaValue?.kind ?? "").trim();
+          if (location.id && areaKind) routeLocationAreaById.set(String(location.id), areaKind);
+        }
+      }
+    }
+
     const submittedSiteIds = new Set<string>();
     const keepRouteIds = new Set<string>();
 
@@ -1515,11 +1586,25 @@ async function updateProduct(formData: FormData) {
         redirectWithError("Completa el LOC de salida del terminado en la ruta operativa.");
       }
 
+      const siteUsesSingleOperationalLoc = (activeLocationCountBySite[siteId] ?? 0) <= 1;
+      const inputLocationAreaKind = routeLocationAreaById.get(inputLocationId) ?? "";
+      const outputLocationAreaKind =
+        outputMode === "order_fulfillment" ? "" : routeLocationAreaById.get(outputLocationId) ?? "";
+
+      // Sedes de operación simple como Saudo usan un único LOC operativo: remisión entra,
+      // venta descuenta y producción consume/recibe en el mismo LOC. En ese caso la ruta
+      // debe guardarse con el área real del LOC para pasar las validaciones de integridad,
+      // sin obligar a crear LOCs artificiales por cada área productiva.
+      const routeAreaKind =
+        siteUsesSingleOperationalLoc
+          ? inputLocationAreaKind || outputLocationAreaKind || areaKind
+          : areaKind;
+
       submittedSiteIds.add(siteId);
       const payload = {
         product_id: productId,
         site_id: siteId,
-        area_kind: areaKind,
+        area_kind: routeAreaKind,
         route_name: "Ruta principal",
         input_location_id: inputLocationId,
         output_mode: outputMode,
