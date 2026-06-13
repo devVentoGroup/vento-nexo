@@ -126,13 +126,35 @@ function normalizeInventoryKind(value: unknown): string {
   return String(value ?? "").trim().toLowerCase();
 }
 
+function inventoryKindKey(value: unknown): string {
+  return normalizeInventoryKind(value).replace(/[\s-]+/g, "_");
+}
+
+function isResaleInventoryKind(value: unknown): boolean {
+  const key = inventoryKindKey(value);
+  return [
+    "resale",
+    "reventa",
+    "purchased_resale",
+    "resale_purchase",
+    "purchase_resale",
+    "bought_for_resale",
+    "comprado_para_reventa",
+  ].includes(key);
+}
+
 function isManualPresentationEligible(params: {
   productType: unknown;
   inventoryKind: unknown;
 }): boolean {
   const productType = normalizeProductType(params.productType);
   const inventoryKind = normalizeInventoryKind(params.inventoryKind);
-  return productType === "insumo" && inventoryKind !== "asset";
+
+  if (inventoryKind === "asset") return false;
+  if (productType === "insumo") return true;
+  if (productType === "venta" && isResaleInventoryKind(inventoryKind)) return true;
+
+  return false;
 }
 
 function productTypeLabel(params: { productType: unknown; inventoryKind: unknown }): string {
@@ -349,7 +371,7 @@ async function saveProductPresentations(formData: FormData) {
     })
   ) {
     redirectWithError(
-      "Las presentaciones manuales solo aplican a insumos comprados. Las preparaciones y productos producidos usan empaques reales de lote desde FOGO; los modelos patrimoniales se gestionan en Activos físicos."
+      "Las presentaciones manuales solo aplican a insumos comprados y productos de reventa. Las preparaciones y productos producidos usan empaques reales de lote desde FOGO; los modelos patrimoniales se gestionan en Activos físicos."
     );
   }
 
@@ -662,7 +684,8 @@ export default async function ProductPresentationsPage({
   const inventoryKind = normalizeInventoryKind(profile?.inventory_kind);
   const productType = normalizeProductType(product.product_type);
   const isPreparation = productType === "preparacion";
-  const isProducedProduct = productType === "preparacion" || (productType === "venta" && inventoryKind !== "resale");
+  const isResaleProduct = productType === "venta" && isResaleInventoryKind(inventoryKind);
+  const isProducedProduct = productType === "preparacion" || (productType === "venta" && !isResaleProduct);
   const isAssetModel = inventoryKind === "asset";
   const canEditManualPresentations = isManualPresentationEligible({
     productType: product.product_type,
