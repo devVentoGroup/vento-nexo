@@ -300,6 +300,15 @@ type ProductionLocationRow = {
   location_type: string | null;
   area?: { kind: string | null } | { kind: string | null }[] | null;
 };
+type ProductionRouteRow = {
+  id?: string;
+  site_id: string | null;
+  area_kind: string | null;
+  input_location_id: string | null;
+  output_mode: "inventory_stock" | "sellable_stock" | "order_fulfillment" | string | null;
+  output_location_id: string | null;
+  is_active: boolean | null;
+};
 type SiteAreaPurposeRuleRow = {
   site_id: string | null;
   area_kind: string | null;
@@ -1470,6 +1479,92 @@ async function updateProduct(formData: FormData) {
     }
   }
 
+  const productionRoutesRaw = formData.get("production_route_lines");
+  if (typeof productionRoutesRaw === "string" && productionRoutesRaw) {
+    let routeLines: Array<{
+      id?: string;
+      site_id?: string;
+      area_kind?: string;
+      input_location_id?: string;
+      output_mode?: string;
+      output_location_id?: string;
+      is_active?: boolean;
+    }> = [];
+    try {
+      routeLines = JSON.parse(productionRoutesRaw) as typeof routeLines;
+    } catch {
+      redirectWithError("No se pudo leer la ruta operativa. Recarga la pagina e intenta de nuevo.");
+    }
+
+    const submittedSiteIds = new Set<string>();
+    const keepRouteIds = new Set<string>();
+
+    for (const line of routeLines) {
+      const siteId = String(line.site_id ?? "").trim();
+      const areaKind = String(line.area_kind ?? "").trim();
+      const inputLocationId = String(line.input_location_id ?? "").trim();
+      const outputModeRaw = String(line.output_mode ?? "inventory_stock").trim();
+      const outputMode =
+        outputModeRaw === "sellable_stock" || outputModeRaw === "order_fulfillment"
+          ? outputModeRaw
+          : "inventory_stock";
+      const outputLocationId = String(line.output_location_id ?? "").trim();
+
+      if (!siteId || !areaKind || !inputLocationId) continue;
+      if (outputMode !== "order_fulfillment" && !outputLocationId) {
+        redirectWithError("Completa el LOC de salida del terminado en la ruta operativa.");
+      }
+
+      submittedSiteIds.add(siteId);
+      const payload = {
+        product_id: productId,
+        site_id: siteId,
+        area_kind: areaKind,
+        route_name: "Ruta principal",
+        input_location_id: inputLocationId,
+        output_mode: outputMode,
+        output_location_id: outputMode === "order_fulfillment" ? null : outputLocationId,
+        output_position_id: null,
+        is_default: true,
+        is_active: line.is_active !== false,
+        updated_by: user.id,
+      };
+
+      if (line.id) {
+        const { error: routeUpdateError } = await supabase
+          .from("product_site_production_routes")
+          .update(payload)
+          .eq("id", line.id)
+          .eq("product_id", productId)
+          .select("id")
+          .maybeSingle();
+        if (routeUpdateError) redirectWithError(routeUpdateError.message);
+        keepRouteIds.add(line.id);
+      } else {
+        const { data: insertedRoute, error: routeInsertError } = await supabase
+          .from("product_site_production_routes")
+          .insert({ ...payload, created_by: user.id })
+          .select("id")
+          .single();
+        if (routeInsertError) redirectWithError(routeInsertError.message);
+        if (insertedRoute?.id) keepRouteIds.add(String(insertedRoute.id));
+      }
+    }
+
+    for (const siteId of submittedSiteIds) {
+      let deactivateQuery = supabase
+        .from("product_site_production_routes")
+        .update({ is_active: false, is_default: false, updated_by: user.id })
+        .eq("product_id", productId)
+        .eq("site_id", siteId);
+      if (keepRouteIds.size > 0) {
+        deactivateQuery = deactivateQuery.not("id", "in", `(${Array.from(keepRouteIds).join(",")})`);
+      }
+      const { error: deactivateRoutesError } = await deactivateQuery;
+      if (deactivateRoutesError) redirectWithError(deactivateRoutesError.message);
+    }
+  }
+
   const normalizedKind = String(inventoryKindValue ?? "").trim().toLowerCase();
   const shouldPersistAssetProfile =
     normalizedKind === "asset" && asText(formData.get("asset_profile_enabled")) === "1";
@@ -1797,6 +1892,15 @@ export default async function ProductCatalogDetailPage({
     }
   }
   const siteRows = Array.from(siteRowsBySite.values());
+
+  const { data: productionRoutesData } = await supabase
+    .from("product_site_production_routes")
+    .select("id,site_id,area_kind,input_location_id,output_mode,output_location_id,is_active")
+    .eq("product_id", id)
+    .eq("is_active", true)
+    .order("is_default", { ascending: false })
+    .order("updated_at", { ascending: false });
+  const productionRouteRows = (productionRoutesData ?? []) as ProductionRouteRow[];
 
   const { data: sitesData } = await supabase
     .from("sites")
@@ -2600,6 +2704,18 @@ export default async function ProductCatalogDetailPage({
                   sales_enabled:
                     typeof r.sales_enabled === "boolean" ? r.sales_enabled : null,
                 }))}
+                initialProductionRoutes={productionRouteRows.map((route) => ({
+                  id: route.id,
+                  site_id: String(route.site_id ?? ""),
+                  area_kind: String(route.area_kind ?? ""),
+                  input_location_id: String(route.input_location_id ?? ""),
+                  output_mode:
+                    route.output_mode === "sellable_stock" || route.output_mode === "order_fulfillment"
+                      ? route.output_mode
+                      : "inventory_stock",
+                  output_location_id: route.output_location_id ?? undefined,
+                  is_active: route.is_active !== false,
+                }))}
                 sites={sitesList.map((s) => ({ id: s.id, name: s.name, site_type: s.site_type }))}
                 siteCapabilities={Array.from(capabilitiesBySite.values())}
                 areaKinds={areaKindsList.map((a) => ({
@@ -2613,6 +2729,9 @@ export default async function ProductCatalogDetailPage({
                   site_id: location.site_id,
                   code: location.code,
                   zone: location.zone,
+                  area_kind: Array.isArray(location.area)
+                    ? location.area[0]?.kind ?? null
+                    : location.area?.kind ?? null,
                 }))}
                 remissionAreaKindsBySite={remissionAreaKindsBySite}
                 stockUnitCode={stockUnitCode}

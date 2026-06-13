@@ -1,6 +1,7 @@
 import { CatalogSection } from "@/features/inventory/catalog/catalog-ui";
 import {
   ProductSiteSettingsEditor,
+  type ProductionRouteLine,
   type SiteSettingLine,
 } from "@/features/inventory/catalog/product-site-settings-editor";
 
@@ -23,6 +24,7 @@ type ProductionLocationOption = {
   site_id: string;
   code: string;
   zone?: string | null;
+  area_kind?: string | null;
 };
 type UnitHint = {
   label: string;
@@ -33,6 +35,7 @@ type UnitHint = {
 
 type ProductSiteAvailabilitySectionProps = {
   initialRows: SiteSettingLine[];
+  initialProductionRoutes?: ProductionRouteLine[];
   sites: SiteOption[];
   areaKinds: AreaKindOption[];
   siteAreaKinds: SiteAreaKindOption[];
@@ -50,6 +53,7 @@ type ProductSiteAvailabilitySectionProps = {
 
 export function ProductSiteAvailabilitySection({
   initialRows,
+  initialProductionRoutes = [],
   sites,
   areaKinds,
   siteAreaKinds,
@@ -71,7 +75,9 @@ export function ProductSiteAvailabilitySection({
     >
       <ProductSiteSettingsEditor
         name="site_settings_lines"
+        routesName="production_route_lines"
         initialRows={initialRows}
+        initialProductionRoutes={initialProductionRoutes}
         sites={sites}
         areaKinds={areaKinds}
         siteAreaKinds={siteAreaKinds}

@@ -23,6 +23,16 @@ export type SiteSettingLine = {
   _delete?: boolean;
 };
 
+export type ProductionRouteLine = {
+  id?: string;
+  site_id: string;
+  area_kind: string;
+  input_location_id: string;
+  output_mode: "inventory_stock" | "sellable_stock" | "order_fulfillment";
+  output_location_id?: string;
+  is_active: boolean;
+};
+
 type SiteOption = { id: string; name: string | null; site_type?: string | null };
 type SiteCapabilities = {
   site_id: string;
@@ -42,11 +52,14 @@ type ProductionLocationOption = {
   site_id: string;
   code: string;
   zone?: string | null;
+  area_kind?: string | null;
 };
 
 type Props = {
   name?: string;
+  routesName?: string;
   initialRows: SiteSettingLine[];
+  initialProductionRoutes?: ProductionRouteLine[];
   sites: SiteOption[];
   areaKinds: AreaKindOption[];
   siteAreaKinds: SiteAreaKindOption[];
@@ -167,7 +180,9 @@ function formatProductionLocationLabel(location: ProductionLocationOption): stri
 
 export function ProductSiteSettingsEditor({
   name = "site_settings_lines",
+  routesName = "production_route_lines",
   initialRows,
+  initialProductionRoutes = [],
   sites,
   areaKinds,
   siteAreaKinds,
@@ -205,6 +220,15 @@ export function ProductSiteSettingsEditor({
     }
     return map;
   }, [initialRows]);
+  const initialRouteBySite = useMemo(() => {
+    const map = new Map<string, ProductionRouteLine>();
+    for (const row of initialProductionRoutes) {
+      const siteId = String(row.site_id ?? "").trim();
+      if (!siteId || map.has(siteId)) continue;
+      map.set(siteId, row);
+    }
+    return map;
+  }, [initialProductionRoutes]);
 
   const productionSites = useMemo(
     () =>
@@ -304,6 +328,16 @@ export function ProductSiteSettingsEditor({
   const [centerProductionLocationId, setCenterProductionLocationId] = useState(
     existingCenter?.production_location_id ?? ""
   );
+  const existingCenterRoute = centerSiteId ? initialRouteBySite.get(centerSiteId) : undefined;
+  const [centerRouteInputLocationId, setCenterRouteInputLocationId] = useState(
+    existingCenterRoute?.input_location_id ?? existingCenter?.production_location_id ?? ""
+  );
+  const [centerRouteOutputMode, setCenterRouteOutputMode] = useState<ProductionRouteLine["output_mode"]>(
+    existingCenterRoute?.output_mode ?? "inventory_stock"
+  );
+  const [centerRouteOutputLocationId, setCenterRouteOutputLocationId] = useState(
+    existingCenterRoute?.output_location_id ?? existingCenter?.production_location_id ?? ""
+  );
   const [centerMinStockInputMode, setCenterMinStockInputMode] = useState<"base" | "purchase">(
     existingCenter?.min_stock_input_mode === "purchase" && purchaseUnitHint ? "purchase" : "base"
   );
@@ -356,12 +390,38 @@ export function ProductSiteSettingsEditor({
   );
   const getProductionLocationsForSite = (siteId: string) =>
     productionLocations.filter((location) => String(location.site_id ?? "").trim() === siteId);
+  const getProductionLocationsForSiteArea = (siteId: string, areaKind: string) =>
+    getProductionLocationsForSite(siteId).filter(
+      (location) => String(location.area_kind ?? "").trim() === areaKind
+    );
   const centerProductionLocationOptions = getProductionLocationsForSite(centerSiteId);
+  const centerRouteAreaKind =
+    centerDefaultAreaKind ||
+    centerProductionLocationOptions.find((location) => location.id === centerProductionLocationId)?.area_kind ||
+    "";
+  const centerRouteInputOptions = centerRouteAreaKind
+    ? getProductionLocationsForSiteArea(centerSiteId, centerRouteAreaKind)
+    : [];
+  const centerRouteOutputOptions = centerRouteAreaKind
+    ? centerProductionLocationOptions
+    : [];
   const validCenterProductionLocationId = centerProductionLocationOptions.some(
     (location) => location.id === centerProductionLocationId
   )
     ? centerProductionLocationId
     : "";
+  const validCenterRouteInputLocationId = centerRouteInputOptions.some(
+    (location) => location.id === centerRouteInputLocationId
+  )
+    ? centerRouteInputLocationId
+    : centerRouteInputOptions[0]?.id ?? "";
+  const validCenterRouteOutputLocationId = centerRouteOutputOptions.some(
+    (location) => location.id === centerRouteOutputLocationId
+  )
+    ? centerRouteOutputLocationId
+    : centerRouteOutputOptions.some((location) => location.id === validCenterProductionLocationId)
+      ? validCenterProductionLocationId
+      : centerRouteOutputOptions[0]?.id ?? "";
 
   const shouldShowProductionLocationUi =
     hasRecipe ||
@@ -488,6 +548,58 @@ export function ProductSiteSettingsEditor({
     return next;
   })();
 
+  const productionRouteLines = (() => {
+    const next: ProductionRouteLine[] = [];
+
+    if (
+      centerSiteId &&
+      centerRouteAreaKind &&
+      validCenterRouteInputLocationId &&
+      (centerRouteOutputMode === "order_fulfillment" || validCenterRouteOutputLocationId)
+    ) {
+      const current = initialRouteBySite.get(centerSiteId);
+      next.push({
+        id: current?.area_kind === centerRouteAreaKind ? current.id : undefined,
+        site_id: centerSiteId,
+        area_kind: centerRouteAreaKind,
+        input_location_id: validCenterRouteInputLocationId,
+        output_mode: centerRouteOutputMode,
+        output_location_id:
+          centerRouteOutputMode === "order_fulfillment" ? undefined : validCenterRouteOutputLocationId,
+        is_active: centerIsActive,
+      });
+    }
+
+    for (const site of satelliteSites) {
+      const state = satelliteState.get(site.id);
+      if (!state?.enabled || !state.localProductionEnabled) continue;
+      const current = initialRouteBySite.get(site.id);
+      const areaKind =
+        state.areaKinds[0] ||
+        getProductionLocationsForSite(site.id).find((location) => location.id === state.productionLocationId)
+          ?.area_kind ||
+        "";
+      if (!areaKind || !state.productionLocationId) continue;
+      next.push({
+        id: current?.area_kind === areaKind ? current.id : undefined,
+        site_id: site.id,
+        area_kind: areaKind,
+        input_location_id: state.productionLocationId,
+        output_mode: "inventory_stock",
+        output_location_id: state.productionLocationId,
+        is_active: Boolean(state.isActive),
+      });
+    }
+
+    const activeIds = new Set(next.map((line) => line.id).filter(Boolean));
+    for (const route of initialProductionRoutes) {
+      if (!route.id || activeIds.has(route.id)) continue;
+      next.push({ ...route, is_active: false });
+    }
+
+    return next;
+  })();
+
   const updateSatellite = (siteId: string, patch: Partial<SatelliteState>) => {
     setSatelliteState((prev) => {
       const next = new Map(prev);
@@ -508,6 +620,7 @@ export function ProductSiteSettingsEditor({
   return (
     <div className="space-y-4">
       <input type="hidden" name={name} value={JSON.stringify(lines)} />
+      <input type="hidden" name={routesName} value={JSON.stringify(productionRouteLines)} />
 
       <div className="rounded-2xl border border-[var(--ui-border)] bg-white/80 p-4 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
@@ -546,6 +659,8 @@ export function ProductSiteSettingsEditor({
                     const nextSiteId = event.target.value;
                     setCenterSiteId(nextSiteId);
                     setCenterProductionLocationId("");
+                    setCenterRouteInputLocationId("");
+                    setCenterRouteOutputLocationId("");
                   }}
                   className="ui-input h-10 min-w-[220px]"
                 >
@@ -630,6 +745,72 @@ export function ProductSiteSettingsEditor({
                 </p>
               </div>
             )}
+
+            {shouldShowProductionLocationUi && centerRouteAreaKind ? (
+              <div className="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
+                <div className="flex flex-wrap items-start justify-between gap-2">
+                  <div>
+                    <div className="ui-label">Ruta operativa</div>
+                    <p className="mt-1 text-xs text-[var(--ui-muted)]">
+                      Define de dónde salen los insumos y dónde queda el terminado.
+                    </p>
+                  </div>
+                  <span className="rounded-full border border-amber-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-800">
+                    {areaKinds.find((area) => area.code === centerRouteAreaKind)?.name ?? centerRouteAreaKind}
+                  </span>
+                </div>
+
+                <div className="mt-3 grid gap-3 md:grid-cols-3">
+                  <label className="flex flex-col gap-1">
+                    <span className="ui-label">Consume insumos desde</span>
+                    <select
+                      value={validCenterRouteInputLocationId}
+                      onChange={(event) => setCenterRouteInputLocationId(event.target.value)}
+                      className="ui-input"
+                    >
+                      <option value="">Sin LOC</option>
+                      {centerRouteInputOptions.map((location) => (
+                        <option key={location.id} value={location.id}>
+                          {formatProductionLocationLabel(location)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <label className="flex flex-col gap-1">
+                    <span className="ui-label">Qué pasa con lo producido</span>
+                    <select
+                      value={centerRouteOutputMode}
+                      onChange={(event) =>
+                        setCenterRouteOutputMode(event.target.value as ProductionRouteLine["output_mode"])
+                      }
+                      className="ui-input"
+                    >
+                      <option value="inventory_stock">Guardar como inventario</option>
+                      <option value="sellable_stock">Dejar disponible para venta</option>
+                      <option value="order_fulfillment">Sale directo a pedido</option>
+                    </select>
+                  </label>
+
+                  <label className="flex flex-col gap-1">
+                    <span className="ui-label">Salida del terminado</span>
+                    <select
+                      value={centerRouteOutputMode === "order_fulfillment" ? "" : validCenterRouteOutputLocationId}
+                      onChange={(event) => setCenterRouteOutputLocationId(event.target.value)}
+                      className="ui-input"
+                      disabled={centerRouteOutputMode === "order_fulfillment"}
+                    >
+                      <option value="">Sin LOC</option>
+                      {centerRouteOutputOptions.map((location) => (
+                        <option key={location.id} value={location.id}>
+                          {formatProductionLocationLabel(location)}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </div>
+            ) : null}
 
             <label className="flex flex-col gap-1">
               {purchaseUnitHint && purchaseFactorToStock ? (
