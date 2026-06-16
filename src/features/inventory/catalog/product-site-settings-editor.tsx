@@ -325,9 +325,6 @@ export function ProductSiteSettingsEditor({
   const [centerSiteId, setCenterSiteId] = useState(existingCenter?.site_id ?? fallbackCenter);
   const [centerIsActive, setCenterIsActive] = useState(Boolean(existingCenter?.is_active ?? true));
   const [centerDefaultAreaKind, setCenterDefaultAreaKind] = useState(existingCenter?.default_area_kind ?? "");
-  const [centerProductionLocationId, setCenterProductionLocationId] = useState(
-    existingCenter?.production_location_id ?? ""
-  );
   const existingCenterRoute = centerSiteId ? initialRouteBySite.get(centerSiteId) : undefined;
   const [centerRouteInputLocationId, setCenterRouteInputLocationId] = useState(
     existingCenterRoute?.input_location_id ?? existingCenter?.production_location_id ?? ""
@@ -395,9 +392,14 @@ export function ProductSiteSettingsEditor({
       (location) => String(location.area_kind ?? "").trim() === areaKind
     );
   const centerProductionLocationOptions = getProductionLocationsForSite(centerSiteId);
+  const centerRouteAnchorLocationId =
+    centerRouteInputLocationId ||
+    centerRouteOutputLocationId ||
+    existingCenter?.production_location_id ||
+    "";
   const centerRouteAreaKind =
     centerDefaultAreaKind ||
-    centerProductionLocationOptions.find((location) => location.id === centerProductionLocationId)?.area_kind ||
+    centerProductionLocationOptions.find((location) => location.id === centerRouteAnchorLocationId)?.area_kind ||
     "";
   const centerRouteInputOptions = centerRouteAreaKind
     ? getProductionLocationsForSiteArea(centerSiteId, centerRouteAreaKind)
@@ -405,11 +407,6 @@ export function ProductSiteSettingsEditor({
   const centerRouteOutputOptions = centerRouteAreaKind
     ? centerProductionLocationOptions
     : [];
-  const validCenterProductionLocationId = centerProductionLocationOptions.some(
-    (location) => location.id === centerProductionLocationId
-  )
-    ? centerProductionLocationId
-    : "";
   const validCenterRouteInputLocationId = centerRouteInputOptions.some(
     (location) => location.id === centerRouteInputLocationId
   )
@@ -419,9 +416,10 @@ export function ProductSiteSettingsEditor({
     (location) => location.id === centerRouteOutputLocationId
   )
     ? centerRouteOutputLocationId
-    : centerRouteOutputOptions.some((location) => location.id === validCenterProductionLocationId)
-      ? validCenterProductionLocationId
+    : centerRouteOutputOptions.some((location) => location.id === validCenterRouteInputLocationId)
+      ? validCenterRouteInputLocationId
       : centerRouteOutputOptions[0]?.id ?? "";
+  const validCenterProductionLocationId = validCenterRouteInputLocationId || validCenterRouteOutputLocationId;
 
   const shouldShowProductionLocationUi =
     hasRecipe ||
@@ -658,7 +656,6 @@ export function ProductSiteSettingsEditor({
                   onChange={(event) => {
                     const nextSiteId = event.target.value;
                     setCenterSiteId(nextSiteId);
-                    setCenterProductionLocationId("");
                     setCenterRouteInputLocationId("");
                     setCenterRouteOutputLocationId("");
                   }}
@@ -715,26 +712,7 @@ export function ProductSiteSettingsEditor({
               </p>
             </label>
 
-            {shouldShowProductionLocationUi ? (
-              <label className="flex flex-col gap-1">
-                <span className="ui-label">LOC de producción</span>
-                <select
-                  value={validCenterProductionLocationId}
-                  onChange={(event) => setCenterProductionLocationId(event.target.value)}
-                  className="ui-input"
-                >
-                  <option value="">Sin definir</option>
-                  {centerProductionLocationOptions.map((location) => (
-                    <option key={location.id} value={location.id}>
-                      {formatProductionLocationLabel(location)}
-                    </option>
-                  ))}
-                </select>
-                <p className="text-xs text-[var(--ui-muted)]">
-                  Ubicación para productos producidos con receta.
-                </p>
-              </label>
-            ) : (
+            {!shouldShowProductionLocationUi ? (
               <div className="rounded-xl border border-slate-200 bg-slate-50 p-3">
                 <div className="ui-caption">Producción</div>
                 <div className="mt-1 text-sm font-semibold text-slate-700">
@@ -744,7 +722,7 @@ export function ProductSiteSettingsEditor({
                   Este ítem no requiere LOC de producción.
                 </p>
               </div>
-            )}
+            ) : null}
 
             {shouldShowProductionLocationUi && centerRouteAreaKind ? (
               <div className="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
