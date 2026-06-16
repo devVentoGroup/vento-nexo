@@ -198,9 +198,15 @@ function buildRemissionFromRecipePortion(params: {
 
   const status = String(recipe.status ?? "").trim().toLowerCase();
   const isActive = recipe.is_active !== false;
-  const portionSize = Number(recipe.portion_size ?? 0);
+  const explicitPortionSize = Number(recipe.portion_size ?? 0);
+  const yieldQty = Number(recipe.yield_qty ?? 0);
+  const portionSize =
+    Number.isFinite(explicitPortionSize) && explicitPortionSize > 0
+      ? explicitPortionSize
+      : yieldQty;
   const portionUnitCode = normalizeUnitCode(recipe.portion_unit || recipe.yield_unit || "");
   const stockUnitCode = normalizeUnitCode(params.stockUnitCode || "");
+  const isStockCountUnit = ["un", "und", "unidad", "unit"].includes(stockUnitCode);
 
   if (
     status !== "published" ||
@@ -222,14 +228,24 @@ function buildRemissionFromRecipePortion(params: {
     });
     if (!Number.isFinite(quantity) || quantity <= 0) return null;
     return {
-      label: "Porción de receta",
+      label:
+        Number.isFinite(explicitPortionSize) && explicitPortionSize > 0
+          ? "Porción de receta"
+          : "Rendimiento de receta",
       inputUnitCode: portionUnitCode,
       qtyInInputUnit: 1,
       qtyInStockUnit: quantity,
       source: "recipe_portion",
     };
   } catch {
-    return null;
+    if (!isStockCountUnit) return null;
+    return {
+      label: "Porción de receta",
+      inputUnitCode: stockUnitCode,
+      qtyInInputUnit: 1,
+      qtyInStockUnit: 1,
+      source: "recipe_portion",
+    };
   }
 }
 
@@ -1275,8 +1291,6 @@ async function updateProduct(formData: FormData) {
           .eq("product_id", productId)
           .eq("status", "published")
           .eq("is_active", true)
-          .not("portion_size", "is", null)
-          .not("portion_unit", "is", null)
           .order("updated_at", { ascending: false })
           .limit(1)
           .maybeSingle();
@@ -2149,8 +2163,6 @@ export default async function ProductCatalogDetailPage({
         .eq("product_id", id)
         .eq("status", "published")
         .eq("is_active", true)
-        .not("portion_size", "is", null)
-        .not("portion_unit", "is", null)
         .order("updated_at", { ascending: false })
         .limit(1)
         .maybeSingle()
