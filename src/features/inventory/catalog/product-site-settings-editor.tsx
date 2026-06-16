@@ -329,9 +329,6 @@ export function ProductSiteSettingsEditor({
   const [centerRouteInputLocationId, setCenterRouteInputLocationId] = useState(
     existingCenterRoute?.input_location_id ?? existingCenter?.production_location_id ?? ""
   );
-  const [centerRouteOutputMode, setCenterRouteOutputMode] = useState<ProductionRouteLine["output_mode"]>(
-    existingCenterRoute?.output_mode ?? "inventory_stock"
-  );
   const [centerRouteOutputLocationId, setCenterRouteOutputLocationId] = useState(
     existingCenterRoute?.output_location_id ?? existingCenter?.production_location_id ?? ""
   );
@@ -553,7 +550,7 @@ export function ProductSiteSettingsEditor({
       centerSiteId &&
       centerRouteAreaKind &&
       validCenterRouteInputLocationId &&
-      (centerRouteOutputMode === "order_fulfillment" || validCenterRouteOutputLocationId)
+      validCenterRouteOutputLocationId
     ) {
       const current = initialRouteBySite.get(centerSiteId);
       next.push({
@@ -561,9 +558,8 @@ export function ProductSiteSettingsEditor({
         site_id: centerSiteId,
         area_kind: centerRouteAreaKind,
         input_location_id: validCenterRouteInputLocationId,
-        output_mode: centerRouteOutputMode,
-        output_location_id:
-          centerRouteOutputMode === "order_fulfillment" ? undefined : validCenterRouteOutputLocationId,
+        output_mode: "inventory_stock",
+        output_location_id: validCenterRouteOutputLocationId,
         is_active: centerIsActive,
       });
     }
@@ -676,7 +672,7 @@ export function ProductSiteSettingsEditor({
                   checked={centerIsActive}
                   onChange={(event) => setCenterIsActive(event.target.checked)}
                 />
-                <span className="ui-label">Disponible</span>
+                <span className="ui-label">Produce para remisión</span>
               </label>
             </div>
           </div>
@@ -728,9 +724,9 @@ export function ProductSiteSettingsEditor({
               <div className="md:col-span-2 rounded-xl border border-amber-200 bg-amber-50/50 p-3">
                 <div className="flex flex-wrap items-start justify-between gap-2">
                   <div>
-                    <div className="ui-label">Ruta operativa</div>
+                    <div className="ui-label">Ruta de producción del centro</div>
                     <p className="mt-1 text-xs text-[var(--ui-muted)]">
-                      Define de dónde salen los insumos y dónde queda el terminado.
+                      Define de dónde salen los insumos y dónde queda el terminado para remisión.
                     </p>
                   </div>
                   <span className="rounded-full border border-amber-200 bg-white px-2.5 py-1 text-[11px] font-semibold text-amber-800">
@@ -757,26 +753,17 @@ export function ProductSiteSettingsEditor({
 
                   <label className="flex flex-col gap-1">
                     <span className="ui-label">Qué pasa con lo producido</span>
-                    <select
-                      value={centerRouteOutputMode}
-                      onChange={(event) =>
-                        setCenterRouteOutputMode(event.target.value as ProductionRouteLine["output_mode"])
-                      }
-                      className="ui-input"
-                    >
-                      <option value="inventory_stock">Guardar como inventario</option>
-                      <option value="sellable_stock">Dejar disponible para venta</option>
-                      <option value="order_fulfillment">Sale directo a pedido</option>
-                    </select>
+                    <div className="ui-input flex items-center bg-slate-50 text-slate-700">
+                      Queda para remisión
+                    </div>
                   </label>
 
                   <label className="flex flex-col gap-1">
-                    <span className="ui-label">Salida del terminado</span>
+                    <span className="ui-label">Dónde queda terminado</span>
                     <select
-                      value={centerRouteOutputMode === "order_fulfillment" ? "" : validCenterRouteOutputLocationId}
+                      value={validCenterRouteOutputLocationId}
                       onChange={(event) => setCenterRouteOutputLocationId(event.target.value)}
                       className="ui-input"
-                      disabled={centerRouteOutputMode === "order_fulfillment"}
                     >
                       <option value="">Sin LOC</option>
                       {centerRouteOutputOptions.map((location) => (
