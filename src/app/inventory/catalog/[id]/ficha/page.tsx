@@ -586,9 +586,9 @@ export default async function ProductTechnicalSheetPage({
       .maybeSingle(),
     supabase
       .from("sites")
-      .select("id,name,is_active")
+      .select("id,name,is_active,operational_visibility")
       .eq("is_active", true)
-      .neq("name", "App Review (Demo)")
+      .eq("operational_visibility", "operational")
       .order("name", { ascending: true }),
     supabase
       .from("product_site_settings")

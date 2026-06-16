@@ -26,6 +26,13 @@ function parseNumber(value: string) {
   return Number.isFinite(n) ? n : 0;
 }
 
+function buildLocDisplayName(location: LocRow | null | undefined) {
+  if (!location) return "Área seleccionada";
+  const description = String(location.description ?? "").trim();
+  const zone = String(location.zone ?? "").trim();
+  return description || zone || "Área seleccionada";
+}
+
 async function submitWithdraw(formData: FormData) {
   "use server";
 
@@ -137,7 +144,7 @@ async function submitWithdraw(formData: FormData) {
     redirect(
       "/inventory/withdraw?error=" +
         encodeURIComponent(
-          error instanceof Error ? error.message : "Error en conversion de unidades."
+          error instanceof Error ? error.message : "Error en conversión de unidades."
         )
     );
   }
@@ -254,7 +261,13 @@ async function submitWithdraw(formData: FormData) {
 }
 
 type LocRow = { id: string; code: string | null; zone: string | null; description?: string | null };
-type ProductRow = { id: string; name: string | null; unit: string | null; stock_unit_code: string | null };
+type ProductRow = {
+  id: string;
+  name: string | null;
+  unit: string | null;
+  stock_unit_code: string | null;
+  available_qty?: number | null;
+};
 type SiteRow = { id: string; name: string | null; site_type: string | null };
 type EmployeePageRow = { site_id: string | null; role: string | null };
 
@@ -302,7 +315,7 @@ export default async function WithdrawPage({
       .select("id,code,zone,description")
       .eq("site_id", siteId)
       .eq("is_active", true)
-      .order("code", { ascending: true })
+      .order("description", { ascending: true })
       .limit(200);
 
     const { data: locData } = await locQuery;
@@ -337,7 +350,7 @@ export default async function WithdrawPage({
         .select("id,code,zone,description")
         .eq("site_id", siteId)
         .eq("is_active", true)
-        .order("code", { ascending: true })
+        .order("description", { ascending: true })
         .limit(200);
       locations = (locData ?? []) as LocRow[];
     }
@@ -347,48 +360,40 @@ export default async function WithdrawPage({
     ? defaultLocationId
       ? await supabase
           .from("inventory_stock_by_location")
-          .select("product_id, products(id,name,unit,stock_unit_code)")
+          .select("product_id,current_qty,products(id,name,unit,stock_unit_code)")
           .eq("location_id", defaultLocationId)
           .gt("current_qty", 0)
           .limit(400)
       : await supabase
           .from("inventory_stock_by_site")
-          .select("product_id, products(id,name,unit,stock_unit_code)")
+          .select("product_id,current_qty,products(id,name,unit,stock_unit_code)")
           .eq("site_id", siteId)
           .gt("current_qty", 0)
           .limit(400)
-    : { data: [] as { product_id: string; products: ProductRow | null }[] };
+    : { data: [] as { product_id: string; current_qty: number; products: ProductRow | null }[] };
 
-  let productRows: ProductRow[] = [];
-  const stocked = (productsWithStock ?? []) as unknown as { product_id: string; products: ProductRow | null }[];
-  productRows = stocked
-    .map((r) => r.products)
-    .filter((p): p is ProductRow => Boolean(p));
+  const stocked = (productsWithStock ?? []) as unknown as {
+    product_id: string;
+    current_qty: number | null;
+    products: ProductRow | null;
+  }[];
 
-  if (productRows.length === 0) {
-    const { data: products } = await supabase
-      .from("product_inventory_profiles")
-      .select("product_id, products(id,name,unit,stock_unit_code)")
-      .eq("track_inventory", true)
-      .in("inventory_kind", ["ingredient", "finished", "resale", "packaging"])
-      .order("name", { foreignTable: "products", ascending: true })
-      .limit(400);
+  const productRows: ProductRow[] = [];
+  for (const row of stocked) {
+    const product = row.products;
+    if (!product) continue;
 
-    const raw = (products ?? []) as unknown as { product_id: string; products: ProductRow | null }[];
-    productRows = raw
-      .map((r) => r.products)
-      .filter((p): p is ProductRow => Boolean(p));
+    productRows.push({
+      id: product.id,
+      name: product.name,
+      unit: product.unit,
+      stock_unit_code: product.stock_unit_code,
+      available_qty: Number(row.current_qty ?? 0),
+    });
   }
 
-  if (productRows.length === 0) {
-    const { data: fallback } = await supabase
-      .from("products")
-      .select("id,name,unit,stock_unit_code")
-      .eq("is_active", true)
-      .order("name", { ascending: true })
-      .limit(400);
-    productRows = (fallback ?? []) as unknown as ProductRow[];
-  }
+  productRows.sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? ""), "es"));
+
   const productIds = productRows.map((row) => row.id);
   const { data: uomProfilesDataForPage } = productIds.length
     ? await supabase
@@ -402,6 +407,7 @@ export default async function WithdrawPage({
     : { data: [] as ProductUomProfile[] };
   const defaultUomProfiles = (uomProfilesDataForPage ?? []) as ProductUomProfile[];
   const selectedLocation = locations.find((location) => location.id === defaultLocationId) ?? null;
+  const selectedLocationLabel = buildLocDisplayName(selectedLocation);
   const returnTo = selectedLocation ? `/inventory/locations/${encodeURIComponent(selectedLocation.id)}` : "/inventory/stock";
   const normalizedRole = String(employee?.role ?? "").toLowerCase();
   const isManagementRole = ["propietario", "gerente_general", "admin", "manager", "gerente"].includes(
@@ -421,66 +427,54 @@ export default async function WithdrawPage({
     : !isManagementRole && siteType === "production_center"
       ? "center"
       : "general";
-  const heroModeLabel = mode === "satellite" ? "Modo satelite" : mode === "center" ? "Modo Centro" : "Modo retiro";
-  const heroTitle =
-    mode === "satellite"
-      ? "Registra salida desde el área activa"
-      : mode === "center"
-        ? "Registra salida desde Centro"
-        : "Registrar salida de insumos";
-  const heroSubtitle =
-    mode === "satellite"
-      ? "Confirma el área, revisa qué sale y registra la salida sin mezclarte con otras pantallas."
-      : mode === "center"
-        ? "Usa este flujo para descontar consumos reales desde un área y seguir rápido con la operación."
-        : "Registra la salida real desde un área. Si abriste el formulario desde el QR, el origen ya queda listo para capturar.";
+  const heroModeLabel = openedFromQr ? "QR móvil" : mode === "satellite" ? "Modo satélite" : mode === "center" ? "Modo Centro" : "Modo retiro";
+  const heroTitle = "Retirar insumos";
+  const heroSubtitle = selectedLocation
+    ? `Área: ${selectedLocationLabel}. Solo se muestran insumos con stock registrado en esta ubicación.`
+    : "Selecciona un área para ver solo los insumos con stock disponible.";
 
   return (
-    <div className="ui-scene w-full space-y-6">
+    <div className="ui-scene w-full space-y-5">
       <section className="ui-remission-hero ui-fade-up">
-        <div className="ui-remission-hero-grid lg:grid-cols-[1.45fr_1fr] lg:items-start">
-          <div className="space-y-4">
+        <div className="space-y-4">
           <div className="space-y-2">
-              <Link href={returnTo} className="ui-caption underline">
-                {openedFromQr ? "Volver al área" : "Volver a stock"}
-              </Link>
-              <div className="ui-caption">{heroModeLabel}</div>
-              <h1 className="ui-h1">{heroTitle}</h1>
-              <p className="ui-body-muted">{heroSubtitle}</p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
-                {siteId ? "Sede activa lista" : "Sin sede activa"}
-              </span>
-              {selectedLocation ? (
-                <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-900">
-                  Área {selectedLocation.description ?? selectedLocation.zone ?? selectedLocation.code ?? selectedLocation.id}
-                </span>
-              ) : null}
-              <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
-                {productRows.length} productos disponibles
-              </span>
-            </div>
+            <Link href={returnTo} className="ui-caption underline">
+              {openedFromQr ? "Volver al área" : "Volver a stock"}
+            </Link>
+            <div className="ui-caption">{heroModeLabel}</div>
+            <h1 className="ui-h1">{heroTitle}</h1>
+            <p className="ui-body-muted">{heroSubtitle}</p>
           </div>
-          <div className="ui-remission-kpis sm:grid-cols-3 lg:grid-cols-1">
-            <article className="ui-remission-kpi" data-tone="warm">
-              <div className="ui-remission-kpi-label">Área activa</div>
-              <div className="ui-remission-kpi-value">
-                {selectedLocation?.description ?? selectedLocation?.zone ?? selectedLocation?.code ?? "Sin área"}
-              </div>
-              <div className="ui-remission-kpi-note">
-                {selectedLocation?.code || "La salida se descuenta del área seleccionada"}
-              </div>
+
+          <div className="flex flex-wrap gap-2">
+            <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
+              {siteId ? "Sede activa" : "Sin sede activa"}
+            </span>
+            {selectedLocation ? (
+              <span className="rounded-full border border-cyan-200 bg-cyan-50 px-3 py-1 text-xs font-semibold text-cyan-900">
+                {selectedLocationLabel}
+              </span>
+            ) : null}
+            <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
+              {productRows.length} insumos con stock
+            </span>
+          </div>
+
+          <div className="grid gap-3 sm:grid-cols-3">
+            <article className="rounded-2xl border border-[var(--ui-border)] bg-white/85 p-4 shadow-sm">
+              <div className="ui-caption font-semibold">Área</div>
+              <div className="mt-1 text-xl font-semibold text-[var(--ui-text)]">{selectedLocationLabel}</div>
+              <div className="mt-1 text-sm text-[var(--ui-muted)]">Origen del retiro</div>
             </article>
-            <article className="ui-remission-kpi" data-tone="cool">
-              <div className="ui-remission-kpi-label">Productos cargados</div>
-              <div className="ui-remission-kpi-value">{productRows.length}</div>
-              <div className="ui-remission-kpi-note">Lista disponible para capturar salida rápida</div>
+            <article className="rounded-2xl border border-[var(--ui-border)] bg-white/85 p-4 shadow-sm">
+              <div className="ui-caption font-semibold">Insumos disponibles</div>
+              <div className="mt-1 text-xl font-semibold text-[var(--ui-text)]">{productRows.length}</div>
+              <div className="mt-1 text-sm text-[var(--ui-muted)]">Solo stock del área</div>
             </article>
-            <article className="ui-remission-kpi" data-tone="success">
-              <div className="ui-remission-kpi-label">Modo</div>
-              <div className="ui-remission-kpi-value">QR + móvil</div>
-              <div className="ui-remission-kpi-note">Optimizado para tablet o celular en operación</div>
+            <article className="rounded-2xl border border-[var(--ui-border)] bg-white/85 p-4 shadow-sm">
+              <div className="ui-caption font-semibold">Modo</div>
+              <div className="mt-1 text-xl font-semibold text-[var(--ui-text)]">Celular</div>
+              <div className="mt-1 text-sm text-[var(--ui-muted)]">Cantidad rápida y resumen</div>
             </article>
           </div>
         </div>

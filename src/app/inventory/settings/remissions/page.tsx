@@ -268,9 +268,9 @@ export default async function RemissionsSettingsPage({
   ] = await Promise.all([
     supabase
       .from("sites")
-      .select("id,name,site_type")
+      .select("id,name,site_type,operational_visibility")
       .eq("is_active", true)
-      .neq("name", "App Review (Demo)")
+      .eq("operational_visibility", "operational")
       .order("name", { ascending: true }),
     supabase
       .from("area_kinds")

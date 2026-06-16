@@ -1989,9 +1989,9 @@ export default async function ProductCatalogDetailPage({
 
   const { data: sitesData } = await supabase
     .from("sites")
-    .select("id,name,site_type")
+    .select("id,name,site_type,operational_visibility")
     .eq("is_active", true)
-    .neq("name", "App Review (Demo)")
+    .eq("operational_visibility", "operational")
     .order("name", { ascending: true });
   const sitesList = (sitesData ?? []) as SiteOptionRow[];
   const siteIds = sitesList.map((site) => site.id);

@@ -1604,9 +1604,9 @@ export default async function NewProductPage({
       .maybeSingle(),
     supabase
       .from("sites")
-      .select("id,name,site_type")
+      .select("id,name,site_type,operational_visibility")
       .eq("is_active", true)
-      .neq("name", "App Review (Demo)")
+      .eq("operational_visibility", "operational")
       .order("name"),
   ]);
   const role = String((emp as { role?: string } | null)?.role ?? "").toLowerCase();
