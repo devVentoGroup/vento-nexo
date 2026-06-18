@@ -230,6 +230,89 @@ function buildRedirect(params: URLSearchParams) {
   return query ? `${PAGE_PATH}?${query}` : PAGE_PATH;
 }
 
+const SUPABASE_PAGE_SIZE = 1000;
+
+async function loadAllActiveProducts(
+  supabase: Awaited<ReturnType<typeof createClient>>
+): Promise<ProductRow[]> {
+  const rows: ProductRow[] = [];
+  let from = 0;
+
+  while (true) {
+    const to = from + SUPABASE_PAGE_SIZE - 1;
+    const { data, error } = await supabase
+      .from("products")
+      .select("id,name,sku,product_type,unit,stock_unit_code,is_active,product_inventory_profiles(measurement_mode,inventory_kind)")
+      .eq("is_active", true)
+      .order("name", { ascending: true })
+      .range(from, to);
+
+    if (error) throw new Error(error.message);
+
+    const batch = (data ?? []) as ProductRow[];
+    rows.push(...batch);
+
+    if (batch.length < SUPABASE_PAGE_SIZE) break;
+    from += SUPABASE_PAGE_SIZE;
+  }
+
+  return rows;
+}
+
+async function loadAllProductSiteSettings(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  siteId: string
+): Promise<ProductSiteSettingRow[]> {
+  const rows: ProductSiteSettingRow[] = [];
+  let from = 0;
+
+  while (true) {
+    const to = from + SUPABASE_PAGE_SIZE - 1;
+    const { data, error } = await supabase
+      .from("product_site_settings")
+      .select("id,product_id,site_id,is_active,default_area_kind,area_kinds,remission_enabled,local_production_enabled,production_location_id,sales_enabled,min_stock_qty,remission_category_id")
+      .eq("site_id", siteId)
+      .range(from, to);
+
+    if (error) throw new Error(error.message);
+
+    const batch = (data ?? []) as ProductSiteSettingRow[];
+    rows.push(...batch);
+
+    if (batch.length < SUPABASE_PAGE_SIZE) break;
+    from += SUPABASE_PAGE_SIZE;
+  }
+
+  return rows;
+}
+
+async function loadAllActiveRemissionUomProfiles(
+  supabase: Awaited<ReturnType<typeof createClient>>
+): Promise<UomProfileRow[]> {
+  const rows: UomProfileRow[] = [];
+  let from = 0;
+
+  while (true) {
+    const to = from + SUPABASE_PAGE_SIZE - 1;
+    const { data, error } = await supabase
+      .from("product_uom_profiles")
+      .select("product_id,is_active,qty_in_stock_unit")
+      .eq("usage_context", "remission")
+      .eq("is_active", true)
+      .range(from, to);
+
+    if (error) throw new Error(error.message);
+
+    const batch = (data ?? []) as UomProfileRow[];
+    rows.push(...batch);
+
+    if (batch.length < SUPABASE_PAGE_SIZE) break;
+    from += SUPABASE_PAGE_SIZE;
+  }
+
+  return rows;
+}
+
 async function requireManager(returnTo: string) {
   const supabase = await createClient();
   const { data: authRes } = await supabase.auth.getUser();
@@ -620,19 +703,14 @@ export default async function RemissionProductsPage({
   const role = String((emp as { role?: string } | null)?.role ?? "").toLowerCase();
   const canManage = ["propietario", "gerente_general"].includes(role);
 
-  const [{ data: sitesData }, { data: productsData }] = await Promise.all([
+  const [{ data: sitesData }, productsData] = await Promise.all([
     supabase
       .from("sites")
       .select("id,name,operational_visibility")
       .eq("is_active", true)
       .eq("operational_visibility", "operational")
       .order("name", { ascending: true }),
-    supabase
-      .from("products")
-      .select("id,name,sku,product_type,unit,stock_unit_code,is_active,product_inventory_profiles(measurement_mode,inventory_kind)")
-      .eq("is_active", true)
-      .order("name", { ascending: true })
-      .limit(500),
+    loadAllActiveProducts(supabase),
   ]);
 
   const sites = (sitesData ?? []) as SiteRow[];
@@ -664,23 +742,16 @@ export default async function RemissionProductsPage({
     : "input_from_origin";
 
   const [
-    { data: settingsData },
-    { data: profilesData },
+    settingsData,
+    profilesData,
     { data: locationsData },
     { data: areaRulesData },
     { data: remissionCategoriesData },
   ] = await Promise.all([
     destinationSiteId
-      ? supabase
-        .from("product_site_settings")
-        .select("id,product_id,site_id,is_active,default_area_kind,area_kinds,remission_enabled,local_production_enabled,production_location_id,sales_enabled,min_stock_qty,remission_category_id")
-        .eq("site_id", destinationSiteId)
-      : { data: [] as ProductSiteSettingRow[] },
-    supabase
-      .from("product_uom_profiles")
-      .select("product_id,is_active,qty_in_stock_unit")
-      .eq("usage_context", "remission")
-      .eq("is_active", true),
+      ? loadAllProductSiteSettings(supabase, destinationSiteId)
+      : Promise.resolve([] as ProductSiteSettingRow[]),
+    loadAllActiveRemissionUomProfiles(supabase),
     originSiteId
       ? supabase
         .from("inventory_locations")

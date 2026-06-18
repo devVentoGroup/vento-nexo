@@ -85,6 +85,9 @@ function statusChipClass(status: ProductDiagnostics["status"]) {
   return "ui-chip ui-chip--danger";
 }
 
+const stickyHeaderCellClass =
+  "sticky top-0 z-20 border-b border-[var(--ui-border)] bg-[var(--ui-surface)] shadow-sm";
+
 export function RemissionProductsClientTable({
   rows,
   remissionCategories,
@@ -243,20 +246,24 @@ export function RemissionProductsClientTable({
           <input type="hidden" name="origin_site_id" value={originSiteId} />
           <input type="hidden" name="bulk_profile" value={bulkProfile} />
 
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableHeaderCell>Sel.</TableHeaderCell>
-                  <TableHeaderCell>Producto</TableHeaderCell>
-                  <TableHeaderCell>Tipo</TableHeaderCell>
-                  <TableHeaderCell>Medición</TableHeaderCell>
-                  <TableHeaderCell>Categoría remisión</TableHeaderCell>
-                  <TableHeaderCell>Base</TableHeaderCell>
-                  <TableHeaderCell>Estado</TableHeaderCell>
-                  <TableHeaderCell>Diagnóstico</TableHeaderCell>
-                </TableRow>
-              </TableHead>
+          <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface)]">
+            <div className="border-b border-[var(--ui-border)] px-4 py-2 text-xs text-[var(--ui-muted)]">
+              Mostrando {visibleRows.length} producto(s) en esta vista. Usa el scroll interno para recorrer la lista sin alargar la página.
+            </div>
+            <div className="max-h-[58vh] min-h-[280px] overflow-auto">
+              <Table className="min-w-[980px]">
+                <TableHead>
+                  <TableRow>
+                    <TableHeaderCell className={stickyHeaderCellClass}>Sel.</TableHeaderCell>
+                    <TableHeaderCell className={stickyHeaderCellClass}>Producto</TableHeaderCell>
+                    <TableHeaderCell className={stickyHeaderCellClass}>Tipo</TableHeaderCell>
+                    <TableHeaderCell className={stickyHeaderCellClass}>Medición</TableHeaderCell>
+                    <TableHeaderCell className={stickyHeaderCellClass}>Categoría remisión</TableHeaderCell>
+                    <TableHeaderCell className={stickyHeaderCellClass}>Base</TableHeaderCell>
+                    <TableHeaderCell className={stickyHeaderCellClass}>Estado</TableHeaderCell>
+                    <TableHeaderCell className={stickyHeaderCellClass}>Diagnóstico</TableHeaderCell>
+                  </TableRow>
+                </TableHead>
               <TableBody>
                 {visibleRows.map(({ product, setting, diagnostics }) => (
                   <TableRow key={product.id} className="border-t border-zinc-200/70 align-top">
@@ -322,7 +329,8 @@ export function RemissionProductsClientTable({
                   </TableRow>
                 ) : null}
               </TableBody>
-            </Table>
+              </Table>
+            </div>
           </div>
         </form>
       </div>
