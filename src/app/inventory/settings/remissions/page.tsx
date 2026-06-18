@@ -363,6 +363,9 @@ export default async function RemissionsSettingsPage({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
+          <Link href="/inventory/settings/remissions/products" className="ui-btn ui-btn--brand">
+            Productos por sede
+          </Link>
           <Link href="/inventory/remissions" className="ui-btn ui-btn--ghost">
             Ir a remisiones
           </Link>

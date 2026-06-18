@@ -1133,6 +1133,7 @@ async function createProduct(formData: FormData) {
           product_id: productId,
           supplier_id: line.supplier_id as string,
           supplier_sku: (line.supplier_sku as string) || null,
+          supplier_product_alias: (line.supplier_product_alias as string) || null,
           purchase_unit: (line.purchase_unit as string) || null,
           purchase_unit_size: purchaseUnitSizeLegacy,
           purchase_pack_qty: packQty > 0 ? packQty : null,

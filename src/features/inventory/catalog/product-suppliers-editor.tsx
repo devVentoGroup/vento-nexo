@@ -7,6 +7,7 @@ export type SupplierLine = {
   id?: string;
   supplier_id: string;
   supplier_sku?: string;
+  supplier_product_alias?: string;
   purchase_unit?: string;
   purchase_unit_size?: number;
   purchase_pack_qty?: number;
@@ -58,6 +59,7 @@ function buildEmptyLine(stockUnitCode?: string): SupplierLine {
   return {
     supplier_id: "",
     supplier_sku: "",
+    supplier_product_alias: "",
     purchase_unit: "",
     purchase_unit_size: undefined,
     purchase_pack_qty: undefined,
@@ -649,6 +651,19 @@ export function ProductSuppliersEditor({
                         }
                         className="ui-input"
                         placeholder="SKU"
+                      />
+                    </label>
+
+                    <label className="flex flex-col gap-1">
+                      <span className="ui-label">Alias proveedor</span>
+                      <input
+                        type="text"
+                        value={line.supplier_product_alias ?? ""}
+                        onChange={(event) =>
+                          updateLine(realIndex, { supplier_product_alias: event.target.value })
+                        }
+                        className="ui-input"
+                        placeholder="Pack de 5 tabletas"
                       />
                     </label>
 

@@ -337,6 +337,7 @@ type SupplierRow = {
   id: string;
   supplier_id: string;
   supplier_sku: string | null;
+  supplier_product_alias: string | null;
   purchase_unit: string | null;
   purchase_unit_size: number | null;
   purchase_pack_qty: number | null;
@@ -942,6 +943,7 @@ async function updateProduct(formData: FormData) {
       id?: string;
       supplier_id?: string;
       supplier_sku?: string;
+      supplier_product_alias?: string;
       purchase_unit?: string;
       purchase_unit_size?: number;
       purchase_pack_qty?: number;
@@ -1105,6 +1107,7 @@ async function updateProduct(formData: FormData) {
         product_id: productId,
         supplier_id: line.supplier_id,
         supplier_sku: line.supplier_sku || null,
+        supplier_product_alias: line.supplier_product_alias || null,
         purchase_unit: line.purchase_unit || null,
         purchase_unit_size: purchaseUnitSizeLegacy,
         purchase_pack_qty: packQty > 0 ? packQty : null,
@@ -2126,7 +2129,7 @@ export default async function ProductCatalogDetailPage({
 
   const { data: supplierLinks } = await supabase
     .from("product_suppliers")
-    .select("id,supplier_id,supplier_sku,purchase_unit,purchase_unit_size,purchase_pack_qty,purchase_pack_unit_code,purchase_price,purchase_price_net,purchase_price_includes_tax,purchase_tax_rate,purchase_price_includes_icui,purchase_icui_rate,currency,lead_time_days,min_order_qty,is_primary")
+    .select("id,supplier_id,supplier_sku,supplier_product_alias,purchase_unit,purchase_unit_size,purchase_pack_qty,purchase_pack_unit_code,purchase_price,purchase_price_net,purchase_price_includes_tax,purchase_tax_rate,purchase_price_includes_icui,purchase_icui_rate,currency,lead_time_days,min_order_qty,is_primary")
     .eq("product_id", id)
     .order("is_primary", { ascending: false });
   const supplierRows = (supplierLinks ?? []) as SupplierRow[];
@@ -2303,6 +2306,7 @@ export default async function ProductCatalogDetailPage({
     id: r.id,
     supplier_id: r.supplier_id,
     supplier_sku: r.supplier_sku ?? "",
+    supplier_product_alias: r.supplier_product_alias ?? "",
     purchase_unit: r.purchase_unit ?? "",
     purchase_unit_size: r.purchase_unit_size ?? undefined,
     purchase_pack_qty: r.purchase_pack_qty ?? r.purchase_unit_size ?? undefined,

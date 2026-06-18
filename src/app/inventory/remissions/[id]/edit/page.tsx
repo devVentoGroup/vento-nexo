@@ -59,6 +59,7 @@ type ProductSiteRow = {
   is_active: boolean | null;
   default_area_kind: string | null;
   area_kinds?: string[] | null;
+  remission_category_id?: string | null;
   remission_enabled?: boolean | null;
   updated_at?: string | null;
   created_at?: string | null;
@@ -125,7 +126,7 @@ async function loadProductSiteRows(
 ): Promise<ProductSiteRow[]> {
   const withAudience = await supabase
     .from("product_site_settings")
-    .select("product_id,is_active,default_area_kind,area_kinds,remission_enabled,updated_at,created_at")
+    .select("product_id,is_active,default_area_kind,area_kinds,remission_category_id,remission_enabled,updated_at,created_at")
     .eq("site_id", siteId)
     .eq("is_active", true);
 
@@ -148,7 +149,7 @@ async function loadProductSiteRows(
 
   const fallback = await supabase
     .from("product_site_settings")
-    .select("product_id,is_active,default_area_kind,area_kinds,updated_at,created_at")
+    .select("product_id,is_active,default_area_kind,area_kinds,remission_category_id,updated_at,created_at")
     .eq("site_id", siteId)
     .eq("is_active", true);
 
@@ -677,8 +678,42 @@ export default async function EditOwnPendingRemissionPage({
   }
 
   const productIds = productRows.map((row) => row.id);
+  const remissionCategoryIdByProductId = new Map(
+    productSiteRows
+      .map((row) => [
+        String(row.product_id ?? "").trim(),
+        String(row.remission_category_id ?? "").trim(),
+      ] as const)
+      .filter(([productId, categoryId]) => Boolean(productId && categoryId))
+  );
+  const remissionCategoryIds = Array.from(new Set(remissionCategoryIdByProductId.values()));
+  const { data: remissionCategoryData } = remissionCategoryIds.length
+    ? await supabase
+      .from("remission_product_categories")
+      .select("id,name")
+      .in("id", remissionCategoryIds)
+      .eq("is_active", true)
+    : { data: [] as Array<{ id: string; name: string | null }> };
+  const remissionCategoryNameById = new Map(
+    ((remissionCategoryData ?? []) as Array<{ id: string; name: string | null }>).map((row) => [
+      row.id,
+      String(row.name ?? "").trim() || "Sin categoría de remisión",
+    ])
+  );
+  productRows = productRows.map((row) => {
+    const remissionCategoryId = remissionCategoryIdByProductId.get(row.id);
+    if (!remissionCategoryId || !remissionCategoryNameById.has(remissionCategoryId)) return row;
+    return {
+      ...row,
+      category_id: `remission:${remissionCategoryId}`,
+    };
+  });
   const categoryIds = Array.from(
-    new Set(productRows.map((row) => String(row.category_id ?? "").trim()).filter(Boolean))
+    new Set(
+      productRows
+        .map((row) => String(row.category_id ?? "").trim())
+        .filter((categoryId) => Boolean(categoryId && !categoryId.startsWith("remission:")))
+    )
   );
   const { data: categoryData } = categoryIds.length
     ? await supabase
@@ -693,6 +728,9 @@ export default async function EditOwnPendingRemissionPage({
       String(row.name ?? "").trim() || "Sin categoría",
     ])
   );
+  for (const [categoryId, categoryName] of remissionCategoryNameById.entries()) {
+    categoryNameById.set(`remission:${categoryId}`, categoryName);
+  }
 
   const { data: uomProfilesData } = productIds.length
     ? await supabase
