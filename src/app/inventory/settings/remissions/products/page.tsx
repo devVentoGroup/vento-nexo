@@ -127,12 +127,98 @@ function profileLabel(value: BulkProfile) {
   }
 }
 
+function profileHelp(value: BulkProfile) {
+  switch (value) {
+    case "input_from_origin":
+      return "Muestra solo insumos. Los deja disponibles y remitibles hacia la sede destino, sin venta y sin producción local.";
+    case "sellable_from_origin":
+      return "Muestra solo productos vendibles/reventa. Los deja disponibles, remitibles y vendibles en la sede destino, sin producción local.";
+    case "preparation_from_origin":
+      return "Muestra solo preparaciones. Las deja disponibles y remitibles hacia la sede destino, sin producción local.";
+    case "available_not_remission":
+      return "Muestra insumos, preparaciones y productos vendibles. Los deja disponibles en la sede, pero fuera de solicitudes de remisión.";
+    case "disable_remission":
+      return "Muestra productos configurados como remitibles en esta sede. Solo apaga la remisión y conserva la configuración existente.";
+  }
+}
+
+function normalizeCatalogToken(value: string | null | undefined) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function normalizeProductType(value: string | null | undefined) {
+  const normalized = normalizeCatalogToken(value);
+  if (["preparacion", "preparation"].includes(normalized)) return "preparacion";
+  if (["venta", "sellable", "product", "producto"].includes(normalized)) return "venta";
+  if (["reventa", "resale"].includes(normalized)) return "reventa";
+  if (["activo", "asset", "equipo", "equipment", "modelo_patrimonial", "modelo patrimonial"].includes(normalized)) {
+    return "asset";
+  }
+  return normalized || "insumo";
+}
+
 function productTypeLabel(value: string | null | undefined) {
-  const normalized = String(value ?? "").trim().toLowerCase();
+  const normalized = normalizeProductType(value);
   if (normalized === "preparacion") return "Preparación";
   if (normalized === "venta") return "Venta";
-  if (normalized === "activo") return "Activo";
+  if (normalized === "reventa") return "Reventa";
+  if (normalized === "asset") return "Modelo patrimonial";
   return "Insumo";
+}
+
+const PROFILE_ALLOWED_PRODUCT_TYPES: Record<BulkProfile, string[]> = {
+  input_from_origin: ["insumo"],
+  sellable_from_origin: ["venta", "reventa"],
+  preparation_from_origin: ["preparacion"],
+  available_not_remission: ["insumo", "preparacion", "venta", "reventa"],
+  disable_remission: ["insumo", "preparacion", "venta", "reventa"],
+};
+
+const PRODUCT_TYPE_OPTIONS = [
+  { value: "insumo", label: "Insumo" },
+  { value: "preparacion", label: "Preparación" },
+  { value: "venta", label: "Venta" },
+  { value: "reventa", label: "Reventa" },
+];
+
+function profileTypeOptions(profile: BulkProfile) {
+  const allowedTypes = new Set(PROFILE_ALLOWED_PRODUCT_TYPES[profile]);
+  return PRODUCT_TYPE_OPTIONS.filter((option) => allowedTypes.has(option.value));
+}
+
+function isAssetLikeProduct(product: ProductRow) {
+  const productType = normalizeProductType(product.product_type);
+  const inventoryKind = normalizeCatalogToken(product.product_inventory_profiles?.[0]?.inventory_kind);
+  const sku = normalizeCatalogToken(product.sku);
+
+  return (
+    productType === "asset" ||
+    ["asset", "assets", "activo", "activos", "equipment", "equipo", "equipos", "fixed_asset", "fixed asset"].includes(
+      inventoryKind
+    ) ||
+    sku.startsWith("eqp-")
+  );
+}
+
+function profileAllowsProduct(params: {
+  product: ProductRow;
+  setting?: ProductSiteSettingRow;
+  profile: BulkProfile;
+}) {
+  if (isAssetLikeProduct(params.product)) return false;
+
+  const productType = normalizeProductType(params.product.product_type);
+  if (!PROFILE_ALLOWED_PRODUCT_TYPES[params.profile].includes(productType)) return false;
+
+  if (params.profile === "disable_remission") {
+    return params.setting?.remission_enabled === true;
+  }
+
+  return true;
 }
 
 function measurementModeLabel(value: string | null | undefined) {
@@ -259,29 +345,38 @@ async function applyBulkProductSettings(formData: FormData) {
   }
 
   const { supabase } = await requireManager(buildRedirect(returnParams));
-  const [{ data: capabilityRows }, { data: profilesData }, { data: locationsData }, { data: settingsData }] =
-    await Promise.all([
-      supabase
-        .from("site_operational_capabilities")
-        .select("site_id,can_request_remissions,can_fulfill_remissions,can_receive_remissions,can_sell,can_produce,can_hold_inventory,is_commercial_business,show_in_product_setup")
-        .in("site_id", [destinationSiteId, originSiteId]),
-      supabase
-        .from("product_uom_profiles")
-        .select("product_id,is_active,qty_in_stock_unit")
-        .eq("usage_context", "remission")
-        .eq("is_active", true)
-        .in("product_id", productIds),
-      supabase
-        .from("inventory_locations")
-        .select("id,site_id,is_active")
-        .eq("site_id", originSiteId)
-        .eq("is_active", true),
-      supabase
-        .from("product_site_settings")
-        .select("id,product_id,site_id,is_active,default_area_kind,area_kinds,remission_enabled,local_production_enabled,production_location_id,sales_enabled,min_stock_qty,remission_category_id")
-        .eq("site_id", destinationSiteId)
-        .in("product_id", productIds),
-    ]);
+  const [
+    { data: capabilityRows },
+    { data: productsData },
+    { data: profilesData },
+    { data: locationsData },
+    { data: settingsData },
+  ] = await Promise.all([
+    supabase
+      .from("site_operational_capabilities")
+      .select("site_id,can_request_remissions,can_fulfill_remissions,can_receive_remissions,can_sell,can_produce,can_hold_inventory,is_commercial_business,show_in_product_setup")
+      .in("site_id", [destinationSiteId, originSiteId]),
+    supabase
+      .from("products")
+      .select("id,name,sku,product_type,unit,stock_unit_code,is_active,product_inventory_profiles(measurement_mode,inventory_kind)")
+      .in("id", productIds),
+    supabase
+      .from("product_uom_profiles")
+      .select("product_id,is_active,qty_in_stock_unit")
+      .eq("usage_context", "remission")
+      .eq("is_active", true)
+      .in("product_id", productIds),
+    supabase
+      .from("inventory_locations")
+      .select("id,site_id,is_active")
+      .eq("site_id", originSiteId)
+      .eq("is_active", true),
+    supabase
+      .from("product_site_settings")
+      .select("id,product_id,site_id,is_active,default_area_kind,area_kinds,remission_enabled,local_production_enabled,production_location_id,sales_enabled,min_stock_qty,remission_category_id")
+      .eq("site_id", destinationSiteId)
+      .in("product_id", productIds),
+  ]);
 
   const capabilitiesBySite = getSiteCapabilitiesMap(
     [destinationSiteId, originSiteId],
@@ -316,9 +411,18 @@ async function applyBulkProductSettings(formData: FormData) {
       row,
     ])
   );
+  const productsById = new Map(
+    ((productsData ?? []) as ProductRow[]).map((product) => [product.id, product])
+  );
 
   const rows = productIds
-    .filter((productId) => disablesRemission || (hasOriginLocation && productsWithRemissionProfile.has(productId)))
+    .filter((productId) => {
+      const product = productsById.get(productId);
+      const current = settingsByProduct.get(productId);
+      if (!product || product.is_active === false) return false;
+      if (!profileAllowsProduct({ product, setting: current, profile: rawProfile })) return false;
+      return disablesRemission || (hasOriginLocation && productsWithRemissionProfile.has(productId));
+    })
     .map((productId) => {
       const current = settingsByProduct.get(productId);
       const base = {
@@ -631,7 +735,10 @@ export default async function RemissionProductsPage({
   );
   const remissionCategories = (remissionCategoriesData ?? []) as RemissionCategoryRow[];
   const query = String(sp.q ?? "").trim().toLowerCase();
-  const typeFilter = String(sp.type ?? "").trim().toLowerCase();
+  const allowedTypeOptions = profileTypeOptions(bulkProfile);
+  const allowedTypeValues = new Set(allowedTypeOptions.map((option) => option.value));
+  const requestedTypeFilter = normalizeProductType(String(sp.type ?? ""));
+  const typeFilter = allowedTypeValues.has(requestedTypeFilter) ? requestedTypeFilter : "";
   const measurementFilter = String(sp.measurement ?? "").trim().toLowerCase();
   const statusFilter = String(sp.status ?? "").trim().toLowerCase();
 
@@ -647,12 +754,13 @@ export default async function RemissionProductsPage({
       });
       return { product, setting, diagnostics };
     })
-    .filter(({ product, diagnostics }) => {
+    .filter(({ product, setting, diagnostics }) => {
       const haystack = `${product.name ?? ""} ${product.sku ?? ""}`.toLowerCase();
       const measurementMode = String(
         product.product_inventory_profiles?.[0]?.measurement_mode ?? "fixed_presentation"
       ).toLowerCase();
-      const productType = String(product.product_type ?? "insumo").toLowerCase();
+      const productType = normalizeProductType(product.product_type);
+      if (!profileAllowsProduct({ product, setting, profile: bulkProfile })) return false;
       if (query && !haystack.includes(query)) return false;
       if (typeFilter && productType !== typeFilter) return false;
       if (measurementFilter && measurementMode !== measurementFilter) return false;
@@ -725,12 +833,13 @@ export default async function RemissionProductsPage({
           </label>
           <label className="flex flex-col gap-1">
             <span className="ui-label">Tipo</span>
-            <select name="type" defaultValue={sp.type ?? ""} className="ui-input">
-              <option value="">Todos</option>
-              <option value="insumo">Insumo</option>
-              <option value="preparacion">Preparación</option>
-              <option value="venta">Venta</option>
-              <option value="activo">Activo</option>
+            <select name="type" defaultValue={typeFilter} className="ui-input">
+              <option value="">Todos los compatibles</option>
+              {allowedTypeOptions.map((option) => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
             </select>
           </label>
           <label className="flex flex-col gap-1">
@@ -763,6 +872,7 @@ export default async function RemissionProductsPage({
         <div className="ui-panel">
           <div className="ui-caption">Perfil</div>
           <div className="mt-1 text-sm font-semibold">{profileLabel(bulkProfile)}</div>
+          <p className="mt-2 text-xs leading-relaxed text-[var(--ui-muted)]">{profileHelp(bulkProfile)}</p>
         </div>
         <div className="ui-panel">
           <div className="ui-caption">Productos visibles</div>
@@ -851,7 +961,7 @@ export default async function RemissionProductsPage({
           <div>
             <div className="ui-h3">Productos</div>
             <p className="mt-1 text-sm text-[var(--ui-muted)]">
-              Solo se guardan los seleccionados que pasen validación para el perfil elegido.
+              Solo aparecen productos compatibles con el perfil elegido. Activos, equipos y modelos patrimoniales se excluyen.
             </p>
           </div>
           <button
