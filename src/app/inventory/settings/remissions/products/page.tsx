@@ -895,9 +895,6 @@ export default async function RemissionProductsPage({
             <button className="ui-btn ui-btn--brand w-full">Actualizar</button>
           </div>
         </form>
-        <p className="mt-3 text-xs text-[var(--ui-muted)]">
-          Sede, origen y perfil recalculan datos operativos. La búsqueda y los filtros de tabla funcionan en vivo.
-        </p>
       </div>
 
       {!destinationSites.length || !originSites.length ? (

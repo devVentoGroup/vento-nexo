@@ -86,7 +86,7 @@ function statusChipClass(status: ProductDiagnostics["status"]) {
 }
 
 const stickyHeaderCellClass =
-  "sticky top-0 z-20 border-b border-[var(--ui-border)] bg-[var(--ui-surface)] shadow-sm";
+  "sticky top-0 z-20 border-b border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-left text-xs font-semibold text-[var(--ui-muted)] shadow-sm";
 
 export function RemissionProductsClientTable({
   rows,
@@ -237,37 +237,39 @@ export function RemissionProductsClientTable({
           </div>
         </div>
 
-        <div className="mt-2 text-xs text-[var(--ui-muted)]">
-          Filtros instantáneos: no recargan la página ni cambian la sede/perfil.
-        </div>
-
         <form id="apply-remission-products-form" action={applyAction} className="mt-4">
           <input type="hidden" name="destination_site_id" value={destinationSiteId} />
           <input type="hidden" name="origin_site_id" value={originSiteId} />
           <input type="hidden" name="bulk_profile" value={bulkProfile} />
 
-          <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface)]">
-            <div className="border-b border-[var(--ui-border)] px-4 py-2 text-xs text-[var(--ui-muted)]">
-              Mostrando {visibleRows.length} producto(s) en esta vista. Usa el scroll interno para recorrer la lista sin alargar la página.
-            </div>
-            <div className="max-h-[58vh] min-h-[280px] overflow-auto">
-              <Table className="min-w-[980px]">
-                <TableHead>
-                  <TableRow>
-                    <TableHeaderCell className={stickyHeaderCellClass}>Sel.</TableHeaderCell>
-                    <TableHeaderCell className={stickyHeaderCellClass}>Producto</TableHeaderCell>
-                    <TableHeaderCell className={stickyHeaderCellClass}>Tipo</TableHeaderCell>
-                    <TableHeaderCell className={stickyHeaderCellClass}>Medición</TableHeaderCell>
-                    <TableHeaderCell className={stickyHeaderCellClass}>Categoría remisión</TableHeaderCell>
-                    <TableHeaderCell className={stickyHeaderCellClass}>Base</TableHeaderCell>
-                    <TableHeaderCell className={stickyHeaderCellClass}>Estado</TableHeaderCell>
-                    <TableHeaderCell className={stickyHeaderCellClass}>Diagnóstico</TableHeaderCell>
-                  </TableRow>
-                </TableHead>
+          <div className="max-h-[560px] min-h-[320px] overflow-y-auto overflow-x-hidden rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface)]">
+            <Table className="w-full table-fixed">
+              <colgroup>
+                <col className="w-[44px]" />
+                <col className="w-[24%]" />
+                <col className="w-[10%]" />
+                <col className="w-[12%]" />
+                <col className="w-[20%]" />
+                <col className="w-[7%]" />
+                <col className="w-[14%]" />
+                <col className="w-[13%]" />
+              </colgroup>
+              <TableHead>
+                <TableRow>
+                  <TableHeaderCell className={stickyHeaderCellClass}>Sel.</TableHeaderCell>
+                  <TableHeaderCell className={stickyHeaderCellClass}>Producto</TableHeaderCell>
+                  <TableHeaderCell className={stickyHeaderCellClass}>Tipo</TableHeaderCell>
+                  <TableHeaderCell className={stickyHeaderCellClass}>Medición</TableHeaderCell>
+                  <TableHeaderCell className={stickyHeaderCellClass}>Categoría</TableHeaderCell>
+                  <TableHeaderCell className={stickyHeaderCellClass}>Base</TableHeaderCell>
+                  <TableHeaderCell className={stickyHeaderCellClass}>Estado</TableHeaderCell>
+                  <TableHeaderCell className={stickyHeaderCellClass}>Diagnóstico</TableHeaderCell>
+                </TableRow>
+              </TableHead>
               <TableBody>
                 {visibleRows.map(({ product, setting, diagnostics }) => (
                   <TableRow key={product.id} className="border-t border-zinc-200/70 align-top">
-                    <TableCell>
+                    <TableCell className="px-3 py-3 align-top">
                       <input
                         type="checkbox"
                         name="product_id"
@@ -275,13 +277,17 @@ export function RemissionProductsClientTable({
                         disabled={!diagnostics.canApply || !canManage}
                       />
                     </TableCell>
-                    <TableCell>
-                      <div className="font-semibold text-[var(--ui-text)]">{product.name}</div>
-                      <div className="mt-1 text-xs text-[var(--ui-muted)]">{product.sku}</div>
+                    <TableCell className="px-3 py-3 align-top">
+                      <div className="truncate font-semibold text-[var(--ui-text)]" title={product.name}>
+                        {product.name}
+                      </div>
+                      <div className="mt-1 truncate text-xs text-[var(--ui-muted)]" title={product.sku}>
+                        {product.sku}
+                      </div>
                     </TableCell>
-                    <TableCell>{product.productTypeLabel}</TableCell>
-                    <TableCell>{product.measurementLabel}</TableCell>
-                    <TableCell>
+                    <TableCell className="px-3 py-3 align-top">{product.productTypeLabel}</TableCell>
+                    <TableCell className="px-3 py-3 align-top">{product.measurementLabel}</TableCell>
+                    <TableCell className="px-3 py-3 align-top">
                       <input
                         type="hidden"
                         name="category_product_id"
@@ -291,7 +297,7 @@ export function RemissionProductsClientTable({
                       <select
                         name={`remission_category_${product.id}`}
                         defaultValue={setting.remissionCategoryId}
-                        className="ui-input min-w-[180px]"
+                        className="ui-input w-full min-w-0"
                         form="remission-category-form"
                         disabled={!canManage}
                       >
@@ -303,15 +309,15 @@ export function RemissionProductsClientTable({
                         ))}
                       </select>
                     </TableCell>
-                    <TableCell>{product.stockUnitLabel}</TableCell>
-                    <TableCell>
+                    <TableCell className="px-3 py-3 align-top">{product.stockUnitLabel}</TableCell>
+                    <TableCell className="px-3 py-3 align-top">
                       <span className={statusChipClass(diagnostics.status)}>{diagnostics.label}</span>
                       {setting.remissionEnabled ? (
                         <div className="mt-2 text-xs text-[var(--ui-muted)]">Remisión activa</div>
                       ) : null}
                     </TableCell>
-                    <TableCell>
-                      <div className="flex max-w-[420px] flex-wrap gap-1">
+                    <TableCell className="px-3 py-3 align-top">
+                      <div className="flex flex-wrap gap-1">
                         {diagnostics.issues.map((issue) => (
                           <span key={`${product.id}-${issue}`} className="ui-chip">
                             {issue}
@@ -329,8 +335,7 @@ export function RemissionProductsClientTable({
                   </TableRow>
                 ) : null}
               </TableBody>
-              </Table>
-            </div>
+            </Table>
           </div>
         </form>
       </div>
