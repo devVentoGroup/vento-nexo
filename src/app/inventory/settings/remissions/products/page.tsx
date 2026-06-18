@@ -166,6 +166,37 @@ function productTypeLabel(value: string | null | undefined) {
   return "Insumo";
 }
 
+type MeasurementMode =
+  | "fixed_presentation"
+  | "variable_weight"
+  | "count_with_weight"
+  | "bulk_volume";
+
+function normalizeMeasurementMode(value: string | null | undefined): MeasurementMode {
+  const normalized = String(value ?? "").trim().toLowerCase();
+
+  if (normalized === "variable_weight") return "variable_weight";
+  if (normalized === "count_with_weight") return "count_with_weight";
+  if (normalized === "bulk_volume") return "bulk_volume";
+
+  return "fixed_presentation";
+}
+
+function productMeasurementMode(product: ProductRow): MeasurementMode {
+  return normalizeMeasurementMode(product.product_inventory_profiles?.[0]?.measurement_mode);
+}
+
+function requiresRemissionProfile(product: ProductRow) {
+  return productMeasurementMode(product) === "fixed_presentation";
+}
+
+function measurementModeNote(value: MeasurementMode) {
+  if (value === "variable_weight") return "Solicita por cantidad real";
+  if (value === "count_with_weight") return "Solicita por conteo y peso real";
+  if (value === "bulk_volume") return "Solicita por cantidad real";
+  return "";
+}
+
 const PROFILE_ALLOWED_PRODUCT_TYPES: Record<BulkProfile, string[]> = {
   input_from_origin: ["insumo"],
   sellable_from_origin: ["venta", "reventa"],
@@ -218,7 +249,7 @@ function profileAllowsProduct(params: {
 }
 
 function measurementModeLabel(value: string | null | undefined) {
-  const normalized = String(value ?? "").trim().toLowerCase();
+  const normalized = normalizeMeasurementMode(value);
   if (normalized === "variable_weight") return "Peso variable";
   if (normalized === "count_with_weight") return "Conteo + peso";
   if (normalized === "bulk_volume") return "Granel";
@@ -338,34 +369,30 @@ function diagnoseProduct(params: {
   hasOriginLocation: boolean;
   profile: BulkProfile;
 }): ProductDiagnostics {
-  const issues: string[] = [];
+  const blockingIssues: string[] = [];
+  const notes: string[] = [];
   const stockUnit = normalizeUnitCode(params.product.stock_unit_code || params.product.unit || "");
-  const measurementMode =
-    params.product.product_inventory_profiles?.[0]?.measurement_mode ?? "fixed_presentation";
+  const measurementMode = productMeasurementMode(params.product);
+  const note = measurementModeNote(measurementMode);
   const disablesRemission =
     params.profile === "available_not_remission" || params.profile === "disable_remission";
 
-  if (params.product.is_active === false) issues.push("Producto inactivo");
-  if (!stockUnit) issues.push("Falta unidad base");
-  if (!disablesRemission && !params.hasRemissionProfile) issues.push("Falta presentación remitible");
-  if (!disablesRemission && !params.hasOriginLocation) issues.push("Falta LOC origen");
-  if (params.setting?.local_production_enabled === true && !disablesRemission) {
-    issues.push("Tiene producción local marcada");
+  if (note) notes.push(note);
+  if (params.product.is_active === false) blockingIssues.push("Producto inactivo");
+  if (!stockUnit) blockingIssues.push("Falta unidad base");
+  if (!disablesRemission && measurementMode === "fixed_presentation" && !params.hasRemissionProfile) {
+    blockingIssues.push("Falta presentación remitible");
   }
-  if (
-    measurementMode === "variable_weight" ||
-    measurementMode === "count_with_weight" ||
-    measurementMode === "bulk_volume"
-  ) {
-    issues.push("Medición requiere revisión manual");
+  if (!disablesRemission && !params.hasOriginLocation) blockingIssues.push("Falta LOC origen");
+  if (params.setting?.local_production_enabled === true && !disablesRemission) {
+    blockingIssues.push("Tiene producción local marcada");
   }
 
-  if (issues.length > 0) {
-    const manualOnly = issues.every((issue) => issue === "Medición requiere revisión manual");
+  if (blockingIssues.length > 0) {
     return {
-      status: manualOnly ? "warning" : "blocked",
-      label: manualOnly ? "Revisar" : "Bloqueado",
-      issues,
+      status: "blocked",
+      label: "Bloqueado",
+      issues: [...blockingIssues, ...notes],
       canApply: disablesRemission,
     };
   }
@@ -374,7 +401,7 @@ function diagnoseProduct(params: {
     return {
       status: "configured",
       label: "Listo",
-      issues: ["Ya está remitible"],
+      issues: ["Ya está remitible", ...notes],
       canApply: true,
     };
   }
@@ -382,7 +409,7 @@ function diagnoseProduct(params: {
   return {
     status: "ready",
     label: "Puede configurarse",
-    issues: ["Completo para aplicar"],
+    issues: notes.length ? notes : ["Completo para aplicar"],
     canApply: true,
   };
 }
@@ -493,7 +520,11 @@ async function applyBulkProductSettings(formData: FormData) {
       const current = settingsByProduct.get(productId);
       if (!product || product.is_active === false) return false;
       if (!profileAllowsProduct({ product, setting: current, profile: rawProfile })) return false;
-      return disablesRemission || (hasOriginLocation && productsWithRemissionProfile.has(productId));
+      return (
+        disablesRemission ||
+        (hasOriginLocation &&
+          (!requiresRemissionProfile(product) || productsWithRemissionProfile.has(productId)))
+      );
     })
     .map((productId) => {
       const current = settingsByProduct.get(productId);
@@ -810,9 +841,7 @@ export default async function RemissionProductsPage({
     })
     .filter(({ product, setting }) => profileAllowsProduct({ product, setting, profile: bulkProfile }))
     .map(({ product, setting, diagnostics }) => {
-      const measurementMode = String(
-        product.product_inventory_profiles?.[0]?.measurement_mode ?? "fixed_presentation"
-      ).toLowerCase();
+      const measurementMode = productMeasurementMode(product);
       const productType = normalizeProductType(product.product_type);
       return {
         product: {
