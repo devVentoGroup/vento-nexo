@@ -2,14 +2,6 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeaderCell,
-  TableRow,
-} from "@/components/vento/standard/table";
 import { requireAppAccess } from "@/lib/auth/guard";
 import {
   getSiteCapabilitiesMap,
@@ -18,6 +10,10 @@ import {
 import { normalizeUnitCode } from "@/lib/inventory/uom";
 import { createClient } from "@/lib/supabase/server";
 import { safeDecodeURIComponent } from "@/lib/url";
+import {
+  RemissionProductsClientTable,
+  type RemissionProductsClientRow,
+} from "./remission-products-client-table";
 
 export const dynamic = "force-dynamic";
 
@@ -227,13 +223,6 @@ function measurementModeLabel(value: string | null | undefined) {
   if (normalized === "count_with_weight") return "Conteo + peso";
   if (normalized === "bulk_volume") return "Granel";
   return "Presentación fija";
-}
-
-function statusChipClass(status: ProductDiagnostics["status"]) {
-  if (status === "configured") return "ui-chip ui-chip--success";
-  if (status === "ready") return "ui-chip ui-chip--info";
-  if (status === "warning") return "ui-chip ui-chip--warn";
-  return "ui-chip ui-chip--danger";
 }
 
 function buildRedirect(params: URLSearchParams) {
@@ -734,15 +723,9 @@ export default async function RemissionProductsPage({
     (location) => location.is_active !== false
   );
   const remissionCategories = (remissionCategoriesData ?? []) as RemissionCategoryRow[];
-  const query = String(sp.q ?? "").trim().toLowerCase();
   const allowedTypeOptions = profileTypeOptions(bulkProfile);
-  const allowedTypeValues = new Set(allowedTypeOptions.map((option) => option.value));
-  const requestedTypeFilter = normalizeProductType(String(sp.type ?? ""));
-  const typeFilter = allowedTypeValues.has(requestedTypeFilter) ? requestedTypeFilter : "";
-  const measurementFilter = String(sp.measurement ?? "").trim().toLowerCase();
-  const statusFilter = String(sp.status ?? "").trim().toLowerCase();
 
-  const productRows = ((productsData ?? []) as ProductRow[])
+  const productRows: RemissionProductsClientRow[] = ((productsData ?? []) as ProductRow[])
     .map((product) => {
       const setting = settingsByProduct.get(product.id);
       const diagnostics = diagnoseProduct({
@@ -754,22 +737,32 @@ export default async function RemissionProductsPage({
       });
       return { product, setting, diagnostics };
     })
-    .filter(({ product, setting, diagnostics }) => {
-      const haystack = `${product.name ?? ""} ${product.sku ?? ""}`.toLowerCase();
+    .filter(({ product, setting }) => profileAllowsProduct({ product, setting, profile: bulkProfile }))
+    .map(({ product, setting, diagnostics }) => {
       const measurementMode = String(
         product.product_inventory_profiles?.[0]?.measurement_mode ?? "fixed_presentation"
       ).toLowerCase();
       const productType = normalizeProductType(product.product_type);
-      if (!profileAllowsProduct({ product, setting, profile: bulkProfile })) return false;
-      if (query && !haystack.includes(query)) return false;
-      if (typeFilter && productType !== typeFilter) return false;
-      if (measurementFilter && measurementMode !== measurementFilter) return false;
-      if (statusFilter && diagnostics.status !== statusFilter) return false;
-      return true;
+      return {
+        product: {
+          id: product.id,
+          name: product.name ?? "Sin nombre",
+          sku: product.sku ?? "Sin SKU",
+          productType,
+          productTypeLabel: productTypeLabel(product.product_type),
+          measurementMode,
+          measurementLabel: measurementModeLabel(measurementMode),
+          stockUnitLabel: normalizeUnitCode(product.stock_unit_code || product.unit || "") || "Sin unidad",
+          searchText: normalizeCatalogToken(`${product.name ?? ""} ${product.sku ?? ""}`),
+        },
+        setting: {
+          remissionCategoryId: setting?.remission_category_id ?? "",
+          remissionEnabled: setting?.remission_enabled ?? false,
+        },
+        diagnostics,
+      };
     });
 
-  const readyCount = productRows.filter((row) => row.diagnostics.canApply).length;
-  const blockedCount = productRows.length - readyCount;
   const okMsg = sp.ok ? safeDecodeURIComponent(sp.ok) : "";
   const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
 
@@ -796,7 +789,7 @@ export default async function RemissionProductsPage({
       {okMsg ? <div className="mt-6 ui-alert ui-alert--success">{okMsg}</div> : null}
 
       <div className="mt-6 ui-panel">
-        <form method="get" className="grid gap-3 lg:grid-cols-6">
+        <form method="get" className="grid gap-3 lg:grid-cols-7">
           <label className="flex flex-col gap-1 lg:col-span-2">
             <span className="ui-label">Sede destino</span>
             <select name="destination_site_id" defaultValue={destinationSiteId} className="ui-input">
@@ -827,65 +820,13 @@ export default async function RemissionProductsPage({
               <option value="disable_remission">{profileLabel("disable_remission")}</option>
             </select>
           </label>
-          <label className="flex flex-col gap-1 lg:col-span-2">
-            <span className="ui-label">Buscar</span>
-            <input name="q" defaultValue={sp.q ?? ""} className="ui-input" placeholder="Nombre o SKU" />
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Tipo</span>
-            <select name="type" defaultValue={typeFilter} className="ui-input">
-              <option value="">Todos los compatibles</option>
-              {allowedTypeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Medición</span>
-            <select name="measurement" defaultValue={sp.measurement ?? ""} className="ui-input">
-              <option value="">Todas</option>
-              <option value="fixed_presentation">Presentación fija</option>
-              <option value="variable_weight">Peso variable</option>
-              <option value="count_with_weight">Conteo + peso</option>
-              <option value="bulk_volume">Granel</option>
-            </select>
-          </label>
-          <label className="flex flex-col gap-1">
-            <span className="ui-label">Estado</span>
-            <select name="status" defaultValue={sp.status ?? ""} className="ui-input">
-              <option value="">Todos</option>
-              <option value="configured">Listos</option>
-              <option value="ready">Puede configurarse</option>
-              <option value="blocked">Bloqueado</option>
-              <option value="warning">Revisar</option>
-            </select>
-          </label>
           <div className="flex items-end">
-            <button className="ui-btn ui-btn--brand w-full">Filtrar</button>
+            <button className="ui-btn ui-btn--brand w-full">Actualizar</button>
           </div>
         </form>
-      </div>
-
-      <div className="mt-6 grid gap-3 md:grid-cols-4">
-        <div className="ui-panel">
-          <div className="ui-caption">Perfil</div>
-          <div className="mt-1 text-sm font-semibold">{profileLabel(bulkProfile)}</div>
-          <p className="mt-2 text-xs leading-relaxed text-[var(--ui-muted)]">{profileHelp(bulkProfile)}</p>
-        </div>
-        <div className="ui-panel">
-          <div className="ui-caption">Productos visibles</div>
-          <div className="mt-1 text-sm font-semibold">{productRows.length}</div>
-        </div>
-        <div className="ui-panel">
-          <div className="ui-caption">Aplicables</div>
-          <div className="mt-1 text-sm font-semibold">{readyCount}</div>
-        </div>
-        <div className="ui-panel">
-          <div className="ui-caption">Bloqueados / revisar</div>
-          <div className="mt-1 text-sm font-semibold">{blockedCount}</div>
-        </div>
+        <p className="mt-3 text-xs text-[var(--ui-muted)]">
+          Sede, origen y perfil recalculan datos operativos. La búsqueda y los filtros de tabla funcionan en vivo.
+        </p>
       </div>
 
       {!destinationSites.length || !originSites.length ? (
@@ -947,124 +888,23 @@ export default async function RemissionProductsPage({
         </div>
       </div>
 
-      <form id="remission-category-form" action={saveProductRemissionCategories}>
-        <input type="hidden" name="destination_site_id" value={destinationSiteId} />
-        <input type="hidden" name="origin_site_id" value={originSiteId} />
-        <input type="hidden" name="bulk_profile" value={bulkProfile} />
-      </form>
-
-      <form action={applyBulkProductSettings} className="mt-6 ui-panel">
-        <input type="hidden" name="destination_site_id" value={destinationSiteId} />
-        <input type="hidden" name="origin_site_id" value={originSiteId} />
-        <input type="hidden" name="bulk_profile" value={bulkProfile} />
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="ui-h3">Productos</div>
-            <p className="mt-1 text-sm text-[var(--ui-muted)]">
-              Solo aparecen productos compatibles con el perfil elegido. Activos, equipos y modelos patrimoniales se excluyen.
-            </p>
-          </div>
-          <button
-            type="submit"
-            className="ui-btn ui-btn--brand"
-            disabled={!canManage || readyCount === 0}
-          >
-            Aplicar a seleccionados
-          </button>
-          <button
-            type="submit"
-            form="remission-category-form"
-            className="ui-btn ui-btn--ghost"
-            disabled={!canManage || productRows.length === 0}
-          >
-            Guardar categorías
-          </button>
-        </div>
-
-        <div className="mt-4 overflow-x-auto">
-          <Table>
-            <TableHead>
-              <TableRow>
-                <TableHeaderCell>Sel.</TableHeaderCell>
-                <TableHeaderCell>Producto</TableHeaderCell>
-                <TableHeaderCell>Tipo</TableHeaderCell>
-                <TableHeaderCell>Medición</TableHeaderCell>
-                <TableHeaderCell>Categoría remisión</TableHeaderCell>
-                <TableHeaderCell>Base</TableHeaderCell>
-                <TableHeaderCell>Estado</TableHeaderCell>
-                <TableHeaderCell>Diagnóstico</TableHeaderCell>
-              </TableRow>
-            </TableHead>
-            <TableBody>
-              {productRows.map(({ product, setting, diagnostics }) => (
-                <TableRow key={product.id} className="border-t border-zinc-200/70 align-top">
-                  <TableCell>
-                    <input
-                      type="checkbox"
-                      name="product_id"
-                      value={product.id}
-                      disabled={!diagnostics.canApply || !canManage}
-                    />
-                  </TableCell>
-                  <TableCell>
-                    <div className="font-semibold text-[var(--ui-text)]">{product.name ?? "Sin nombre"}</div>
-                    <div className="mt-1 text-xs text-[var(--ui-muted)]">{product.sku ?? "Sin SKU"}</div>
-                  </TableCell>
-                  <TableCell>{productTypeLabel(product.product_type)}</TableCell>
-                  <TableCell>
-                    {measurementModeLabel(product.product_inventory_profiles?.[0]?.measurement_mode)}
-                  </TableCell>
-                  <TableCell>
-                    <input
-                      type="hidden"
-                      name="category_product_id"
-                      value={product.id}
-                      form="remission-category-form"
-                    />
-                    <select
-                      name={`remission_category_${product.id}`}
-                      defaultValue={setting?.remission_category_id ?? ""}
-                      className="ui-input min-w-[180px]"
-                      form="remission-category-form"
-                      disabled={!canManage}
-                    >
-                      <option value="">Sin categoría</option>
-                      {remissionCategories.map((category) => (
-                        <option key={category.id} value={category.id}>
-                          {category.name ?? category.id}
-                        </option>
-                      ))}
-                    </select>
-                  </TableCell>
-                  <TableCell>{normalizeUnitCode(product.stock_unit_code || product.unit || "") || "Sin unidad"}</TableCell>
-                  <TableCell>
-                    <span className={statusChipClass(diagnostics.status)}>{diagnostics.label}</span>
-                    {setting?.remission_enabled === true ? (
-                      <div className="mt-2 text-xs text-[var(--ui-muted)]">Remisión activa</div>
-                    ) : null}
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex max-w-[420px] flex-wrap gap-1">
-                      {diagnostics.issues.map((issue) => (
-                        <span key={`${product.id}-${issue}`} className="ui-chip">
-                          {issue}
-                        </span>
-                      ))}
-                    </div>
-                  </TableCell>
-                </TableRow>
-              ))}
-              {productRows.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={8} className="ui-empty">
-                    No hay productos con esos filtros.
-                  </TableCell>
-                </TableRow>
-              ) : null}
-            </TableBody>
-          </Table>
-        </div>
-      </form>
+      <RemissionProductsClientTable
+        key={`${destinationSiteId}:${originSiteId}:${bulkProfile}`}
+        rows={productRows}
+        remissionCategories={remissionCategories.map((category) => ({
+          id: category.id,
+          name: category.name ?? "Sin nombre",
+        }))}
+        allowedTypeOptions={allowedTypeOptions}
+        canManage={canManage}
+        destinationSiteId={destinationSiteId}
+        originSiteId={originSiteId}
+        bulkProfile={bulkProfile}
+        profileLabel={profileLabel(bulkProfile)}
+        profileHelp={profileHelp(bulkProfile)}
+        applyAction={applyBulkProductSettings}
+        saveCategoriesAction={saveProductRemissionCategories}
+      />
     </div>
   );
 }
