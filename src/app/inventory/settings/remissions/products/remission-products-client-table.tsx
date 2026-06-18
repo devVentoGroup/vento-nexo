@@ -105,6 +105,11 @@ export function RemissionProductsClientTable({
   const [typeFilter, setTypeFilter] = useState("");
   const [measurementFilter, setMeasurementFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
+  const [categoryByProduct, setCategoryByProduct] = useState<Record<string, string>>(() =>
+    Object.fromEntries(
+      rows.map((row) => [row.product.id, row.setting.remissionCategoryId])
+    )
+  );
 
   const visibleRows = useMemo(() => {
     const normalizedQuery = normalizeSearch(query);
@@ -120,6 +125,11 @@ export function RemissionProductsClientTable({
 
   const readyCount = visibleRows.filter((row) => row.diagnostics.canApply).length;
   const blockedCount = visibleRows.length - readyCount;
+  const changedCategoryRows = rows.filter((row) => {
+    const currentCategoryId = categoryByProduct[row.product.id] ?? "";
+    return currentCategoryId !== row.setting.remissionCategoryId;
+  });
+  const changedCategoryCount = changedCategoryRows.length;
 
   return (
     <>
@@ -127,6 +137,16 @@ export function RemissionProductsClientTable({
         <input type="hidden" name="destination_site_id" value={destinationSiteId} />
         <input type="hidden" name="origin_site_id" value={originSiteId} />
         <input type="hidden" name="bulk_profile" value={bulkProfile} />
+        {changedCategoryRows.map((row) => (
+          <div key={row.product.id} hidden>
+            <input type="hidden" name="category_product_id" value={row.product.id} />
+            <input
+              type="hidden"
+              name={`remission_category_${row.product.id}`}
+              value={categoryByProduct[row.product.id] ?? ""}
+            />
+          </div>
+        ))}
       </form>
 
       <div className="mt-6 ui-panel">
@@ -159,9 +179,9 @@ export function RemissionProductsClientTable({
               type="submit"
               form="remission-category-form"
               className="ui-btn ui-btn--ghost"
-              disabled={!canManage || visibleRows.length === 0}
+              disabled={!canManage || changedCategoryCount === 0}
             >
-              Guardar categorías
+              {changedCategoryCount > 0 ? `Guardar categorías (${changedCategoryCount})` : "Guardar categorías"}
             </button>
           </div>
         </div>
@@ -288,17 +308,16 @@ export function RemissionProductsClientTable({
                     <TableCell className="px-3 py-3 align-top">{product.productTypeLabel}</TableCell>
                     <TableCell className="px-3 py-3 align-top">{product.measurementLabel}</TableCell>
                     <TableCell className="px-3 py-3 align-top">
-                      <input
-                        type="hidden"
-                        name="category_product_id"
-                        value={product.id}
-                        form="remission-category-form"
-                      />
                       <select
-                        name={`remission_category_${product.id}`}
-                        defaultValue={setting.remissionCategoryId}
+                        value={categoryByProduct[product.id] ?? ""}
+                        onChange={(event) => {
+                          const categoryId = event.target.value;
+                          setCategoryByProduct((current) => ({
+                            ...current,
+                            [product.id]: categoryId,
+                          }));
+                        }}
                         className="ui-input w-full min-w-0"
-                        form="remission-category-form"
                         disabled={!canManage}
                       >
                         <option value="">Sin categoría</option>
