@@ -446,6 +446,53 @@ async function updateAssetLocation(formData: FormData) {
   redirect(`/inventory/assets/items/${assetId}`);
 }
 
+async function updateAssetIdentity(formData: FormData) {
+  "use server";
+
+  const assetId = asText(formData.get("asset_id"));
+  if (!assetId) {
+    redirect("/inventory/assets");
+  }
+
+  const { supabase, user } = await requireAppAccess({
+    appId: APP_ID,
+    returnTo: `/inventory/assets/items/${assetId}`,
+    permissionCode: PERMISSION,
+  });
+
+  const { data: current } = await supabase
+    .from("asset_items")
+    .select("id")
+    .eq("id", assetId)
+    .maybeSingle();
+
+  if (!current) {
+    redirect("/inventory/assets");
+  }
+
+  const { error } = await supabase
+    .from("asset_items")
+    .update({
+      display_name: asText(formData.get("display_name")) || null,
+      asset_code: asText(formData.get("asset_code")) || null,
+      internal_plate: asText(formData.get("internal_plate")) || null,
+      serial_number: asText(formData.get("serial_number")) || null,
+      brand: asText(formData.get("brand")) || null,
+      model: asText(formData.get("model")) || null,
+      main_image_url: asText(formData.get("main_image_url")) || null,
+      updated_by: user.id,
+    })
+    .eq("id", assetId);
+
+  if (error) {
+    redirect(buildAssetReturn(assetId, error.message || "No se pudo actualizar la identificacion."));
+  }
+
+  revalidatePath("/inventory/assets");
+  revalidatePath(`/inventory/assets/items/${assetId}`);
+  redirect(`/inventory/assets/items/${assetId}`);
+}
+
 async function registerAssetMaintenance(formData: FormData) {
   "use server";
 
@@ -651,6 +698,9 @@ export default async function AssetItemTechnicalSheetPage({
               </Link>
               <a href="#asset-location-action" className="ui-btn ui-btn--ghost ui-btn--sm">
                 Editar ubicación
+              </a>
+              <a href="#asset-identity-action" className="ui-btn ui-btn--ghost ui-btn--sm">
+                Editar identificacion
               </a>
               <a href="#asset-maintenance-action" className="ui-btn ui-btn--ghost ui-btn--sm">
                 Registrar mantenimiento
@@ -879,6 +929,59 @@ export default async function AssetItemTechnicalSheetPage({
             ) : null}
           </div>
         </div>
+      </section>
+
+      <section className="ui-panel space-y-4">
+        <form id="asset-identity-action" action={updateAssetIdentity} className="space-y-4">
+          <input type="hidden" name="asset_id" value={item.id} />
+          <div>
+            <h2 className="ui-h2">Editar identificacion</h2>
+            <p className="mt-2 ui-body-muted">
+              Corrige codigo, placa, serial y datos visibles de esta unidad fisica.
+            </p>
+          </div>
+
+          <div className="grid gap-4 md:grid-cols-3">
+            <label className="flex flex-col gap-1 md:col-span-2">
+              <span className="ui-label">Nombre visible</span>
+              <input name="display_name" defaultValue={item.display_name ?? ""} className="ui-input" />
+            </label>
+
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Codigo activo</span>
+              <input name="asset_code" defaultValue={item.asset_code ?? ""} className="ui-input" />
+            </label>
+
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Placa interna</span>
+              <input name="internal_plate" defaultValue={item.internal_plate ?? ""} className="ui-input" />
+            </label>
+
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Serial</span>
+              <input name="serial_number" defaultValue={item.serial_number ?? ""} className="ui-input" />
+            </label>
+
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Marca</span>
+              <input name="brand" defaultValue={item.brand ?? ""} className="ui-input" />
+            </label>
+
+            <label className="flex flex-col gap-1">
+              <span className="ui-label">Modelo</span>
+              <input name="model" defaultValue={item.model ?? ""} className="ui-input" />
+            </label>
+
+            <label className="flex flex-col gap-1 md:col-span-2">
+              <span className="ui-label">Imagen principal URL</span>
+              <input name="main_image_url" type="url" defaultValue={item.main_image_url ?? ""} className="ui-input" />
+            </label>
+          </div>
+
+          <button type="submit" className="ui-btn ui-btn--brand">
+            Guardar identificacion
+          </button>
+        </form>
       </section>
 
       <section className="grid gap-6 xl:grid-cols-2">

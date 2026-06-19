@@ -36,6 +36,17 @@ export const PRESETS: Preset[] = [
     defaultDmModuleDots: 4,
     defaultType: "PROD",
   },
+  {
+    id: "ASSET_50x30_QR",
+    label: "Equipo 50x30 QR",
+    widthMm: 50,
+    heightMm: 30,
+    columns: 1,
+    defaultBarcodeKind: "code128",
+    defaultCode128HeightDots: 60,
+    defaultDmModuleDots: 4,
+    defaultType: "ASSET",
+  },
 ];
 
 export const BROWSERPRINT_CORE = "/zebra/BrowserPrint.min.js";

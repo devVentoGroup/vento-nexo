@@ -1,3 +1,5 @@
+export type LabelType = "LOC" | "SKU" | "PROD" | "ASSET";
+
 export type BarcodeKind = "datamatrix" | "code128";
 export type BarcodeVisualKind = "code128" | "datamatrix" | "qrcode";
 
@@ -37,7 +39,7 @@ export type Preset = {
   defaultBarcodeKind: BarcodeKind;
   defaultCode128HeightDots: number;
   defaultDmModuleDots: number;
-  defaultType: "LOC" | "SKU" | "PROD";
+  defaultType: LabelType;
 };
 
 export type LocRow = {

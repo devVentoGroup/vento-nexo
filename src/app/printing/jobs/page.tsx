@@ -154,6 +154,7 @@ function PrintingJobsContent() {
     if (preset.defaultType === "LOC") setTitle("VENTO · LOC");
     if (preset.defaultType === "SKU") setTitle("VENTO · SKU");
     if (preset.defaultType === "PROD") setTitle("VENTO · PROD");
+    if (preset.defaultType === "ASSET") setTitle("EQUIPO");
   }, [presetId, preset.defaultType, preset.defaultBarcodeKind, preset.defaultCode128HeightDots, preset.defaultDmModuleDots]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
@@ -166,10 +167,17 @@ function PrintingJobsContent() {
       .map((l) => l.trim())
       .filter(Boolean);
     return lines.map((line) => {
-      const [codeRaw, ...rest] = line.split("|");
+      const [codeRaw, noteRaw, assetUrlRaw, serialRaw] = line.split("|");
       const code = safeText(codeRaw ?? "");
-      const note = safeText(rest.join("|") ?? "");
-      return { code, note: note || undefined };
+      const note = safeText(noteRaw ?? "");
+      const assetUrl = safeText(assetUrlRaw ?? "");
+      const serial = safeText(serialRaw ?? "");
+      return {
+        code,
+        note: note || undefined,
+        assetUrl: assetUrl || undefined,
+        serial: serial || undefined,
+      };
     });
   }, [queueText]);
 
@@ -386,6 +394,8 @@ function PrintingJobsContent() {
             code: it.code,
             note: it.note,
             baseUrlForQr,
+            assetUrl: it.assetUrl,
+            serial: it.serial,
           })
         );
       });

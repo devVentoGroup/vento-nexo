@@ -109,6 +109,17 @@ export function ConfigPanel({
             >
               PROD
             </button>
+            <button
+              type="button"
+              onClick={() => setPresetId("ASSET_50x30_QR")}
+              className={`px-4 py-2 text-sm font-semibold ${
+                preset.defaultType === "ASSET"
+                  ? "bg-[var(--ui-brand)] text-[var(--ui-on-primary)]"
+                  : "bg-[var(--ui-surface)] text-[var(--ui-text)]"
+              }`}
+            >
+              Equipo
+            </button>
           </div>
           <div className="mt-2 ui-caption">El preset cambia tamaño y formato recomendados. Para LOC, el estándar operativo es QR.</div>
         </div>
@@ -280,6 +291,12 @@ export function ConfigPanel({
               </div>
             ) : null}
           </>
+        ) : null}
+
+        {preset.defaultType === "ASSET" ? (
+          <div className="mt-2 ui-caption">
+            Para equipos, cada linea usa: codigo|nombre|url ficha|serial. Puedes pegar varias lineas y mandarlas como lote.
+          </div>
         ) : null}
 
         {preset.defaultType === "SKU" ? (

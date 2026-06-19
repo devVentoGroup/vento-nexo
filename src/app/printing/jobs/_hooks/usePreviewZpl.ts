@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import type { Preset } from "../_lib/types";
 import { buildSingleLabelZpl, buildThreeUpRowZpl } from "../_lib/zpl";
 
-type PreviewItem = { code: string; note?: string };
+type PreviewItem = { code: string; note?: string; assetUrl?: string; serial?: string };
 
 export function usePreviewZpl(
   preset: Preset | null,
@@ -38,6 +38,8 @@ export function usePreviewZpl(
           title: opts.title,
           code: first.code,
           note: first.note,
+          assetUrl: first.assetUrl,
+          serial: first.serial,
           baseUrlForQr:
             preset.id === "LOC_50x70_QR" && preset.defaultType === "LOC" ? opts.baseUrl : undefined,
         });

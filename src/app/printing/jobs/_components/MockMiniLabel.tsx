@@ -1,7 +1,7 @@
 "use client";
 
 import { encodeVento } from "../_lib/zpl";
-import type { BarcodeKind } from "../_lib/types";
+import type { BarcodeKind, LabelType } from "../_lib/types";
 import { BarcodeImage } from "./BarcodeImage";
 
 export function MockMiniLabel(props: {
@@ -11,7 +11,7 @@ export function MockMiniLabel(props: {
   note?: string;
   code: string;
   barcodeKind: BarcodeKind;
-  type: "LOC" | "SKU" | "PROD";
+  type: LabelType;
   locVariant?: "dm" | "qr" | null;
   qrData?: string;
   renderScale?: number;
@@ -43,6 +43,42 @@ export function MockMiniLabel(props: {
   const encoded = encodeVento(type, code);
   const dmText = encoded;
   const qrText = qrData || code;
+
+  if (type === "ASSET") {
+    const qrSizeMm = Math.min(21, heightMm - 8);
+    return (
+      <div
+        style={{
+          position: "relative",
+          width: `${widthMm}mm`,
+          height: `${heightMm}mm`,
+          background: "#fff",
+          border: "1px solid #d1d5db",
+          borderRadius: "2mm",
+          boxShadow: "0 1px 2px rgba(0,0,0,0.08)",
+          overflow: "hidden",
+        }}
+      >
+        <div style={{ position: "absolute", left: "3mm", top: "4mm" }}>
+          <BarcodeImage kind="qrcode" text={qrText} widthMm={qrSizeMm} heightMm={qrSizeMm} scale={renderScale} />
+        </div>
+        <div
+          style={{
+            position: "absolute",
+            left: "23mm",
+            top: "3mm",
+            right: "2mm",
+            color: "#111827",
+            overflow: "hidden",
+          }}
+        >
+          <div style={{ fontSize: "2.4mm", fontWeight: 800 }}>EQUIPO</div>
+          <div style={{ marginTop: "1mm", fontSize: "3.2mm", fontWeight: 800, lineHeight: 1.05 }}>{code}</div>
+          <div style={{ marginTop: "1mm", fontSize: "2.5mm", fontWeight: 700, lineHeight: 1.1 }}>{safeNote || title}</div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

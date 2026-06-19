@@ -40,6 +40,25 @@ function shortAssetFallback(assetId: string | null | undefined, assetTitle: stri
   return safeText(assetTitle).slice(0, 18).toUpperCase() || "ACTIVO";
 }
 
+function buildAssetPrintQueueUrl(opts: {
+  assetCode: string | null;
+  assetId?: string | null;
+  assetTitle: string;
+  assetUrl: string;
+  serialNumber?: string | null;
+}) {
+  const code = safeText(opts.assetCode) || shortAssetFallback(opts.assetId, opts.assetTitle);
+  const title = safeText(opts.assetTitle) || "Activo fisico";
+  const serial = safeText(opts.serialNumber);
+  const queue = [code, title, safeText(opts.assetUrl), serial].join("|");
+  const params = new URLSearchParams({
+    preset: "ASSET_50x30_QR",
+    title: "EQUIPO",
+    queue,
+  });
+  return `/printing/jobs?${params.toString()}`;
+}
+
 export function AssetQrActions({
   qrUrl,
   assetUrl,
@@ -240,8 +259,19 @@ export function AssetQrActions({
     }
   };
 
+  const assetPrintQueueUrl = buildAssetPrintQueueUrl({
+    assetCode,
+    assetId,
+    assetTitle,
+    assetUrl,
+    serialNumber,
+  });
+
   return (
     <div className="mt-4 grid gap-2">
+      <a href={assetPrintQueueUrl} className="ui-btn ui-btn--ghost ui-btn--sm w-full">
+        Enviar a cola Zebra
+      </a>
       <button type="button" onClick={printLabel} className="ui-btn ui-btn--brand ui-btn--sm w-full">
         Imprimir etiqueta 50×30
       </button>

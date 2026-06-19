@@ -1,4 +1,4 @@
-import type { BarcodeKind, BrowserPrintDevice, BrowserPrintDevices, Preset } from "./types";
+import type { BarcodeKind, BrowserPrintDevice, BrowserPrintDevices, LabelType, Preset } from "./types";
 
 export function mmToDots(mm: number, dpi: number): number {
   return Math.round((mm / 25.4) * dpi);
@@ -8,7 +8,7 @@ export function safeText(s: string): string {
   return String(s ?? "").replace(/[\r\n]+/g, " ").trim();
 }
 
-export function encodeVento(type: "LOC" | "SKU" | "PROD", code: string): string {
+export function encodeVento(type: LabelType, code: string): string {
   return `VENTO|${type}|${safeText(code)}`;
 }
 
@@ -149,11 +149,13 @@ export function buildSingleLabelZpl(opts: {
   barcodeKind: BarcodeKind;
   code128HeightDots: number;
   dmModuleDots: number;
-  type: "LOC" | "SKU" | "PROD";
+  type: LabelType;
   title: string;
   code: string;
   note?: string;
   baseUrlForQr?: string;
+  assetUrl?: string;
+  serial?: string;
 }): string {
   const { preset, dpi, offsetXDots, offsetYDots, barcodeKind, code128HeightDots, dmModuleDots, type } = opts;
 
@@ -182,7 +184,23 @@ export function buildSingleLabelZpl(opts: {
   const parts: string[] = [];
   parts.push(header);
 
-  if (isLoc70Qr) {
+  if (type === "ASSET") {
+    const qrData = safeText(opts.assetUrl ?? opts.baseUrlForQr ?? code);
+    const serial = safeText(opts.serial ?? "");
+    const qrX = mmToDots(3, dpi);
+    const qrY = mmToDots(4, dpi);
+    const textX = mmToDots(23, dpi);
+    const textWidth = widthDots - textX - mmToDots(2, dpi);
+    const qrMagnification = dpi >= 300 ? 5 : 4;
+
+    parts.push(buildQRField({ x: qrX, y: qrY, magnification: qrMagnification, data: qrData }));
+    parts.push(buildTextBlock({ x: textX, y: 18, h: 22, w: 20, maxWidthDots: textWidth, lines: 1, align: "L", text: "EQUIPO" }));
+    parts.push(buildTextBlock({ x: textX, y: 46, h: 29, w: 24, maxWidthDots: textWidth, lines: 1, align: "L", text: code }));
+    parts.push(buildTextBlock({ x: textX, y: 82, h: 21, w: 18, maxWidthDots: textWidth, lines: 2, align: "L", text: note || titleStr }));
+    if (serial) {
+      parts.push(buildTextBlock({ x: textX, y: 146, h: 18, w: 15, maxWidthDots: textWidth, lines: 1, align: "L", text: `SER: ${serial}` }));
+    }
+  } else if (isLoc70Qr) {
     // --- LOC 50×70 QR fijo: layout determinista para Zebra 203 dpi ---
     const baseUrl = (opts.baseUrlForQr ?? "").replace(/\/$/, "");
     const withdrawUrl = buildLocQrUrl(baseUrl, code);
@@ -234,7 +252,7 @@ export function buildThreeUpRowZpl(opts: {
   barcodeKind: BarcodeKind;
   code128HeightDots: number;
   dmModuleDots: number;
-  type: "LOC" | "SKU" | "PROD";
+  type: LabelType;
   title: string;
   items: Array<{ code: string; note?: string }>;
 }): string {

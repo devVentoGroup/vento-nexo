@@ -20,7 +20,9 @@ export function QueuePanel({
       ? "Formato: LOC|DESCRIPCIÓN (o solo LOC)\nEj:\nLOC-VGR-OFI-01-N0|TODA LA NAVIDAD"
       : preset.defaultType === "PROD"
         ? "Formato: LOTE|PRODUCTO - Prod YYYY-MM-DD - Exp YYYY-MM-DD\nEj:\nPB-20260118-0001|PAN BURGER - Prod 2026-01-18 - Exp 2026-01-20"
-        : "Formato: CODE|NOTA (o solo CODE)\nEj (3-up):\nSKU-0001|PIZZA\nSKU-0002|PIZZA\nSKU-0003|PIZZA";
+        : preset.defaultType === "ASSET"
+          ? "Formato: CODIGO|NOMBRE|URL FICHA|SERIAL\nEj:\nVTO-EQ-RAD-001|Radio Motorola DEP450|https://nexo.ventogroup.co/inventory/assets/items/...|123456"
+          : "Formato: CODE|NOTA (o solo CODE)\nEj (3-up):\nSKU-0001|PIZZA\nSKU-0002|PIZZA\nSKU-0003|PIZZA";
 
   return (
     <div className="ui-panel ui-remission-section">

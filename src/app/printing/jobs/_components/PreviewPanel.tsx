@@ -24,7 +24,7 @@ export type PreviewPanelProps = {
   previewColGapMm: number;
   previewBarcodeScale: number;
   previewQrUrl: string;
-  previewItems: Array<{ code: string; note?: string }>;
+  previewItems: Array<{ code: string; note?: string; assetUrl?: string; serial?: string }>;
   hasQueue: boolean;
   activeLayoutPreview?: LabelTemplate | null;
 };
@@ -234,7 +234,7 @@ export function PreviewPanel({
                   barcodeKind={barcodeKind}
                   type={preset.defaultType}
                   locVariant={previewLocVariant}
-                  qrData={previewLocVariant === "qr" ? previewQrUrl : undefined}
+                  qrData={preset.defaultType === "ASSET" ? previewItems[0]?.assetUrl : previewLocVariant === "qr" ? previewQrUrl : undefined}
                   renderScale={previewBarcodeScale}
                 />
               ) : (

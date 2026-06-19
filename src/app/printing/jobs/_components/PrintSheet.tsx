@@ -127,7 +127,7 @@ export function PrintSheet({
   barcodeKind: BarcodeKind;
   previewLocVariant: "dm" | "qr" | null;
   previewBarcodeScale: number;
-  previewItems: Array<{ code: string; note?: string }>;
+  previewItems: Array<{ code: string; note?: string; assetUrl?: string; serial?: string }>;
   previewQrBase: string;
   activeLayoutSheets: LabelTemplate[] | null;
 }) {
@@ -152,7 +152,9 @@ export function PrintSheet({
                   type={preset.defaultType}
                   locVariant={previewLocVariant}
                   qrData={
-                    previewLocVariant === "qr"
+                    preset.defaultType === "ASSET"
+                      ? item.assetUrl
+                      : previewLocVariant === "qr"
                       ? `${previewQrBase.replace(/\/$/, "")}/inventory/locations/open?loc=${encodeURIComponent(item.code)}`
                       : undefined
                   }
