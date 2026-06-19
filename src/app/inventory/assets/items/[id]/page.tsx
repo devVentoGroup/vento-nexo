@@ -710,6 +710,10 @@ export default async function AssetItemTechnicalSheetPage({
                 assetUrl={absoluteUrl}
                 assetTitle={title}
                 assetCode={item.asset_code}
+                assetId={item.id}
+                serialNumber={item.serial_number}
+                brand={item.brand}
+                model={item.model}
               />
             </div>
 
