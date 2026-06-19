@@ -45,7 +45,7 @@ export function MockMiniLabel(props: {
   const qrText = qrData || code;
 
   if (type === "ASSET") {
-    const qrSizeMm = Math.min(21, heightMm - 8);
+    const qrSizeMm = Math.min(18, heightMm - 10);
     return (
       <div
         style={{
@@ -59,22 +59,22 @@ export function MockMiniLabel(props: {
           overflow: "hidden",
         }}
       >
-        <div style={{ position: "absolute", left: "3mm", top: "4mm" }}>
+        <div style={{ position: "absolute", left: "2.5mm", top: "5mm" }}>
           <BarcodeImage kind="qrcode" text={qrText} widthMm={qrSizeMm} heightMm={qrSizeMm} scale={renderScale} />
         </div>
         <div
           style={{
             position: "absolute",
-            left: "23mm",
+            left: "25mm",
             top: "3mm",
             right: "2mm",
             color: "#111827",
             overflow: "hidden",
           }}
         >
-          <div style={{ fontSize: "2.4mm", fontWeight: 800 }}>EQUIPO</div>
-          <div style={{ marginTop: "1mm", fontSize: "3.2mm", fontWeight: 800, lineHeight: 1.05 }}>{code}</div>
-          <div style={{ marginTop: "1mm", fontSize: "2.5mm", fontWeight: 700, lineHeight: 1.1 }}>{safeNote || title}</div>
+          <div style={{ fontSize: "2.2mm", fontWeight: 800 }}>EQUIPO</div>
+          <div style={{ marginTop: "0.8mm", fontSize: "2.8mm", fontWeight: 800, lineHeight: 1.05, wordBreak: "break-word" }}>{code}</div>
+          <div style={{ marginTop: "0.8mm", fontSize: "2.2mm", fontWeight: 700, lineHeight: 1.1 }}>{safeNote || title}</div>
         </div>
       </div>
     );

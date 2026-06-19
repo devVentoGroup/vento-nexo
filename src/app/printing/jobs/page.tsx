@@ -33,6 +33,7 @@ import { templateToZplBatch } from "../designer/_lib/template-to-zpl";
 function PrintingJobsContent() {
   const searchParams = useSearchParams();
   const presets = PRESETS;
+  const queueStorageKey = "vento-nexo:printing:queue:v1";
 
   const [enablePrinting, setEnablePrinting] = useState(true);
   const [dpi, setDpi] = useState(203);
@@ -54,7 +55,10 @@ function PrintingJobsContent() {
   const [dmModuleDots, setDmModuleDots] = useState(preset.defaultDmModuleDots);
 
   const [status, setStatus] = useState("");
-  const [queueText, setQueueText] = useState("");
+  const [queueText, setQueueText] = useState(() => {
+    if (typeof window === "undefined") return "";
+    return window.localStorage.getItem(queueStorageKey) ?? "";
+  });
   const [previewZpl, setPreviewZpl] = useState("");
   const [previewMode, setPreviewMode] = useState<PreviewMode>("mock");
   const [previewScale, setPreviewScale] = useState(1);
@@ -103,10 +107,31 @@ function PrintingJobsContent() {
     const presetParam = searchParams.get("preset");
     const queueParam = searchParams.get("queue");
     const titleParam = searchParams.get("title");
+    const appendParam = searchParams.get("append") === "1";
     if (presetParam) setPresetId(presetParam);
-    if (queueParam) setQueueText(queueParam.replace(/\r/g, ""));
+    if (queueParam) {
+      const nextQueue = queueParam.replace(/\r/g, "").trim();
+      setQueueText((prev) => {
+        if (!appendParam) return nextQueue;
+        const current = prev.trim();
+        if (!current) return nextQueue;
+        const lines = new Set(current.split("\n").map((line) => line.trim()).filter(Boolean));
+        if (lines.has(nextQueue)) return current;
+        return `${current}\n${nextQueue}`;
+      });
+    }
     if (titleParam) setTitle(titleParam);
-  }, [searchParams]);
+  }, [queueStorageKey, searchParams]);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const next = queueText.trim();
+    if (next) {
+      window.localStorage.setItem(queueStorageKey, next);
+    } else {
+      window.localStorage.removeItem(queueStorageKey);
+    }
+  }, [queueStorageKey, queueText]);
 
   useEffect(() => {
     const layoutId = String(searchParams.get("layout") ?? "").trim();

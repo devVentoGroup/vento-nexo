@@ -55,6 +55,7 @@ function buildAssetPrintQueueUrl(opts: {
     preset: "ASSET_50x30_QR",
     title: "EQUIPO",
     queue,
+    append: "1",
   });
   return `/printing/jobs?${params.toString()}`;
 }
@@ -269,11 +270,11 @@ export function AssetQrActions({
 
   return (
     <div className="mt-4 grid gap-2">
-      <a href={assetPrintQueueUrl} className="ui-btn ui-btn--ghost ui-btn--sm w-full">
+      <a href={assetPrintQueueUrl} className="ui-btn ui-btn--brand ui-btn--sm w-full">
         Enviar a cola Zebra
       </a>
-      <button type="button" onClick={printLabel} className="ui-btn ui-btn--brand ui-btn--sm w-full">
-        Imprimir etiqueta 50×30
+      <button type="button" onClick={printLabel} className="ui-btn ui-btn--ghost ui-btn--sm w-full">
+        Imprimir en navegador
       </button>
       <button type="button" onClick={printQr} className="ui-btn ui-btn--brand ui-btn--sm w-full">
         Imprimir QR

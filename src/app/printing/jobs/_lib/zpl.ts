@@ -187,18 +187,18 @@ export function buildSingleLabelZpl(opts: {
   if (type === "ASSET") {
     const qrData = safeText(opts.assetUrl ?? opts.baseUrlForQr ?? code);
     const serial = safeText(opts.serial ?? "");
-    const qrX = mmToDots(3, dpi);
-    const qrY = mmToDots(4, dpi);
-    const textX = mmToDots(23, dpi);
+    const qrX = mmToDots(2.5, dpi);
+    const qrY = mmToDots(5, dpi);
+    const textX = mmToDots(25, dpi);
     const textWidth = widthDots - textX - mmToDots(2, dpi);
-    const qrMagnification = dpi >= 300 ? 5 : 4;
+    const qrMagnification = fitQrMagnification(qrData, mmToDots(20, dpi), dpi >= 300 ? 5 : 3);
 
     parts.push(buildQRField({ x: qrX, y: qrY, magnification: qrMagnification, data: qrData }));
-    parts.push(buildTextBlock({ x: textX, y: 18, h: 22, w: 20, maxWidthDots: textWidth, lines: 1, align: "L", text: "EQUIPO" }));
-    parts.push(buildTextBlock({ x: textX, y: 46, h: 29, w: 24, maxWidthDots: textWidth, lines: 1, align: "L", text: code }));
-    parts.push(buildTextBlock({ x: textX, y: 82, h: 21, w: 18, maxWidthDots: textWidth, lines: 2, align: "L", text: note || titleStr }));
+    parts.push(buildTextBlock({ x: textX, y: 18, h: 19, w: 17, maxWidthDots: textWidth, lines: 1, align: "L", text: "EQUIPO" }));
+    parts.push(buildTextBlock({ x: textX, y: 44, h: 24, w: 20, maxWidthDots: textWidth, lines: 2, align: "L", text: code }));
+    parts.push(buildTextBlock({ x: textX, y: 96, h: 18, w: 15, maxWidthDots: textWidth, lines: 2, align: "L", text: note || titleStr }));
     if (serial) {
-      parts.push(buildTextBlock({ x: textX, y: 146, h: 18, w: 15, maxWidthDots: textWidth, lines: 1, align: "L", text: `SER: ${serial}` }));
+      parts.push(buildTextBlock({ x: textX, y: 156, h: 16, w: 13, maxWidthDots: textWidth, lines: 1, align: "L", text: `SER: ${serial}` }));
     }
   } else if (isLoc70Qr) {
     // --- LOC 50×70 QR fijo: layout determinista para Zebra 203 dpi ---
