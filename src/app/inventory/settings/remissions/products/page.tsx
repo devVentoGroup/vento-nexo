@@ -186,8 +186,27 @@ function productMeasurementMode(product: ProductRow): MeasurementMode {
   return normalizeMeasurementMode(product.product_inventory_profiles?.[0]?.measurement_mode);
 }
 
+function isResaleInventoryKind(value: string | null | undefined) {
+  const normalized = normalizeCatalogToken(value);
+  return ["resale", "reventa", "retail", "finished_good_resale"].includes(normalized);
+}
+
+function isManualRemissionPresentationProduct(product: ProductRow) {
+  const productType = normalizeProductType(product.product_type);
+  const inventoryKind = product.product_inventory_profiles?.[0]?.inventory_kind;
+
+  return (
+    productType === "insumo" ||
+    productType === "reventa" ||
+    (productType === "venta" && isResaleInventoryKind(inventoryKind))
+  );
+}
+
 function requiresRemissionProfile(product: ProductRow) {
-  return productMeasurementMode(product) === "fixed_presentation";
+  return (
+    productMeasurementMode(product) === "fixed_presentation" &&
+    isManualRemissionPresentationProduct(product)
+  );
 }
 
 function measurementModeNote(value: MeasurementMode) {
@@ -380,8 +399,8 @@ function diagnoseProduct(params: {
   if (note) notes.push(note);
   if (params.product.is_active === false) blockingIssues.push("Producto inactivo");
   if (!stockUnit) blockingIssues.push("Falta unidad base");
-  if (!disablesRemission && measurementMode === "fixed_presentation" && !params.hasRemissionProfile) {
-    blockingIssues.push("Falta presentación remitible");
+  if (!disablesRemission && requiresRemissionProfile(params.product) && !params.hasRemissionProfile) {
+    blockingIssues.push("Falta presentación de remisión");
   }
   if (!disablesRemission && !params.hasOriginLocation) blockingIssues.push("Falta LOC origen");
   if (params.setting?.local_production_enabled === true && !disablesRemission) {
