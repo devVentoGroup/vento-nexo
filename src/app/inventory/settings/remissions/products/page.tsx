@@ -33,10 +33,16 @@ type ProductRow = {
   unit: string | null;
   stock_unit_code: string | null;
   is_active: boolean | null;
-  product_inventory_profiles?: Array<{
-    measurement_mode?: string | null;
-    inventory_kind?: string | null;
-  }> | null;
+  product_inventory_profiles?:
+    | {
+        measurement_mode?: string | null;
+        inventory_kind?: string | null;
+      }
+    | Array<{
+        measurement_mode?: string | null;
+        inventory_kind?: string | null;
+      }>
+    | null;
 };
 
 type ProductSiteSettingRow = {
@@ -183,7 +189,12 @@ function normalizeMeasurementMode(value: string | null | undefined): Measurement
 }
 
 function productMeasurementMode(product: ProductRow): MeasurementMode {
-  return normalizeMeasurementMode(product.product_inventory_profiles?.[0]?.measurement_mode);
+  return normalizeMeasurementMode(getProductInventoryProfile(product)?.measurement_mode);
+}
+
+function getProductInventoryProfile(product: ProductRow) {
+  const profile = product.product_inventory_profiles;
+  return Array.isArray(profile) ? profile[0] ?? null : profile ?? null;
 }
 
 function isResaleInventoryKind(value: string | null | undefined) {
@@ -193,7 +204,7 @@ function isResaleInventoryKind(value: string | null | undefined) {
 
 function isManualRemissionPresentationProduct(product: ProductRow) {
   const productType = normalizeProductType(product.product_type);
-  const inventoryKind = product.product_inventory_profiles?.[0]?.inventory_kind;
+  const inventoryKind = getProductInventoryProfile(product)?.inventory_kind;
 
   return (
     productType === "insumo" ||
@@ -238,7 +249,7 @@ function profileTypeOptions(profile: BulkProfile) {
 
 function isAssetLikeProduct(product: ProductRow) {
   const productType = normalizeProductType(product.product_type);
-  const inventoryKind = normalizeCatalogToken(product.product_inventory_profiles?.[0]?.inventory_kind);
+  const inventoryKind = normalizeCatalogToken(getProductInventoryProfile(product)?.inventory_kind);
   const sku = normalizeCatalogToken(product.sku);
 
   return (
