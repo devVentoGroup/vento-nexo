@@ -104,6 +104,7 @@ export function RemissionProductsClientTable({
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [measurementFilter, setMeasurementFilter] = useState("");
+  const [categoryFilter, setCategoryFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [categoryByProduct, setCategoryByProduct] = useState<Record<string, string>>(() =>
     Object.fromEntries(
@@ -118,10 +119,18 @@ export function RemissionProductsClientTable({
       if (normalizedQuery && !row.product.searchText.includes(normalizedQuery)) return false;
       if (typeFilter && row.product.productType !== typeFilter) return false;
       if (measurementFilter && row.product.measurementMode !== measurementFilter) return false;
+      if (categoryFilter) {
+        const rowCategoryId = categoryByProduct[row.product.id] ?? "";
+        if (categoryFilter === "__none__") {
+          if (rowCategoryId) return false;
+        } else if (rowCategoryId !== categoryFilter) {
+          return false;
+        }
+      }
       if (statusFilter && row.diagnostics.status !== statusFilter) return false;
       return true;
     });
-  }, [measurementFilter, query, rows, statusFilter, typeFilter]);
+  }, [categoryByProduct, categoryFilter, measurementFilter, query, rows, statusFilter, typeFilter]);
 
   const readyCount = visibleRows.filter((row) => row.diagnostics.canApply).length;
   const blockedCount = visibleRows.length - readyCount;
@@ -186,7 +195,7 @@ export function RemissionProductsClientTable({
           </div>
         </div>
 
-        <div className="mt-4 grid gap-3 lg:grid-cols-6">
+        <div className="mt-4 grid gap-3 lg:grid-cols-7">
           <label className="flex flex-col gap-1 lg:col-span-2">
             <span className="ui-label">Buscar</span>
             <input
@@ -240,6 +249,22 @@ export function RemissionProductsClientTable({
               <option value="warning">Revisar</option>
             </select>
           </label>
+          <label className="flex flex-col gap-1">
+            <span className="ui-label">Categoría</span>
+            <select
+              value={categoryFilter}
+              onChange={(event) => setCategoryFilter(event.target.value)}
+              className="ui-input"
+            >
+              <option value="">Todas</option>
+              <option value="__none__">Sin categoría</option>
+              {remissionCategories.map((category) => (
+                <option key={category.id} value={category.id}>
+                  {category.name}
+                </option>
+              ))}
+            </select>
+          </label>
           <div className="flex items-end">
             <button
               type="button"
@@ -248,9 +273,10 @@ export function RemissionProductsClientTable({
                 setQuery("");
                 setTypeFilter("");
                 setMeasurementFilter("");
+                setCategoryFilter("");
                 setStatusFilter("");
               }}
-              disabled={!query && !typeFilter && !measurementFilter && !statusFilter}
+              disabled={!query && !typeFilter && !measurementFilter && !categoryFilter && !statusFilter}
             >
               Limpiar
             </button>
