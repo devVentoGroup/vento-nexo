@@ -533,7 +533,7 @@ export function RemissionsCreateForm({
                       ) : null}
                       {item.requiresPresentationProfile && !item.hasPresentationProfile ? (
                         <div className="mt-2 text-xs font-semibold text-amber-800">
-                          Revisa presentación mínima: esta línea no tiene perfil de remisión asociado.
+                          Revisa presentación de remisión: esta línea no tiene perfil de remisión asociado.
                         </div>
                       ) : null}
                       {item.requiresPackagePlan ? (

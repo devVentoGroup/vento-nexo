@@ -7,7 +7,7 @@ import {
   convertByProductProfile,
   normalizeUnitCode,
   roundQuantity,
-  selectProductUomProfileForContext,
+  selectRemissionRequestUomProfile,
   type ProductUomProfile,
 } from "@/lib/inventory/uom";
 
@@ -208,7 +208,7 @@ function getInputModeHelperText(product: Option | null | undefined): string {
     return "Se arma con empaques reales de lote. Si la cantidad es intermedia, debes aceptar fraccionamiento.";
   }
   if (measurementMode === "fixed_presentation") {
-    return "El satélite pide en la presentación mínima. Centro podrá despachar una combinación equivalente.";
+    return "El satélite pide en la presentación de remisión. Centro podrá despachar una combinación equivalente.";
   }
   if (measurementMode === "count_with_weight") {
     return "Solicita por peso real. El conteo físico se confirma al preparar, despachar o recibir.";
@@ -381,11 +381,7 @@ export function RemissionsItems({
     }
     const selected = new Map<string, ProductUomProfile>();
     for (const [productId, profiles] of profilesByProduct.entries()) {
-      const preferred = selectProductUomProfileForContext({
-        profiles,
-        productId,
-        context: "remission",
-      });
+      const preferred = selectRemissionRequestUomProfile({ profiles, productId });
       if (preferred) selected.set(productId, preferred);
     }
     return selected;
@@ -528,7 +524,7 @@ export function RemissionsItems({
           productUsesPackages
             ? `${groupLabel} · Empaques FOGO`
             : productUsesFixedPresentation && !hasPresentation
-              ? `${groupLabel} · Sin presentación mínima`
+              ? `${groupLabel} · Sin presentación remisión`
               : `${groupLabel} · ${modeLabel}`,
       };
     });
@@ -790,7 +786,7 @@ export function RemissionsItems({
 
                 {missingPresentation ? (
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 md:col-span-12">
-                    Este insumo es de presentación fija y no tiene presentación mínima para solicitud/remisión. Configúrala en la ficha del producto antes de usarlo en operación real.
+                    Este item no tiene presentación de remisión para solicitud/remisión. Configúrala en la ficha del producto antes de usarlo en operación real.
                   </div>
                 ) : null}
 

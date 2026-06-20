@@ -13,6 +13,7 @@ import {
   createUnitMap,
   normalizeUnitCode,
   selectProductUomProfileForContext,
+  selectRemissionRequestUomProfile,
   type ProductUomProfile,
 } from "@/lib/inventory/uom";
 
@@ -781,10 +782,9 @@ export default async function ProductTechnicalSheetPage({
       context: "purchase",
     }) as ProductUomProfile | null) ?? null;
   const remissionProfile =
-    (selectProductUomProfileForContext({
+    (selectRemissionRequestUomProfile({
       profiles: mappedProfiles,
       productId: id,
-      context: "remission",
     }) as ProductUomProfile | null) ?? null;
   const purchaseProfileDisplay = resolveProfileDisplay({
     profile: purchaseProfile,

@@ -29,6 +29,19 @@ export type ProductUomProfile = {
 
 export type ProductUomUsageContext = "general" | "purchase" | "remission";
 
+type ProductUomProfileLike = {
+  id: string;
+  product_id: string | null;
+  label: string | null;
+  input_unit_code: string | null;
+  qty_in_input_unit: number | null;
+  qty_in_stock_unit: number | null;
+  is_default: boolean | null;
+  is_active: boolean | null;
+  source?: string | null;
+  usage_context?: string | null;
+};
+
 export function normalizeProductUomUsageContext(
   value: string | null | undefined
 ): ProductUomUsageContext {
@@ -82,6 +95,41 @@ export function selectProductUomProfileForContext(params: {
     (profile) => normalizeProductUomUsageContext(profile.usage_context) !== "general"
   );
   return anyOperational ?? null;
+}
+
+export function selectRemissionRequestUomProfile<T extends ProductUomProfileLike>(params: {
+  profiles: T[];
+  productId: string;
+}): T | null {
+  const productId = String(params.productId).trim();
+  if (!productId) return null;
+
+  const candidates = params.profiles.filter((profile) => {
+    if (!profile.is_active || String(profile.product_id).trim() !== productId) return false;
+
+    const qtyInInputUnit = Number(profile.qty_in_input_unit);
+    const qtyInStockUnit = Number(profile.qty_in_stock_unit);
+    return (
+      Number.isFinite(qtyInInputUnit) &&
+      Number.isFinite(qtyInStockUnit) &&
+      qtyInInputUnit > 0 &&
+      qtyInStockUnit > 0
+    );
+  });
+
+  const remissionProfiles = candidates.filter(
+    (profile) => normalizeProductUomUsageContext(profile.usage_context) === "remission"
+  );
+  if (remissionProfiles.length) {
+    return [...remissionProfiles].sort((a, b) => {
+      if (a.is_default !== b.is_default) return a.is_default ? -1 : 1;
+      return String(a.label ?? "").localeCompare(String(b.label ?? ""), "es", {
+        sensitivity: "base",
+      });
+    })[0] ?? null;
+  }
+
+  return null;
 }
 
 export function normalizeUnitCode(code: string | null | undefined): string {

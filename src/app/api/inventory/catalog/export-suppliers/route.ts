@@ -3,6 +3,8 @@ import { cookies } from "next/headers";
 import { createServerClient } from "@supabase/ssr";
 import ExcelJS from "exceljs";
 
+import { selectRemissionRequestUomProfile } from "@/lib/inventory/uom";
+
 export const runtime = "nodejs";
 
 const QUERY_CHUNK_SIZE = 250;
@@ -651,36 +653,6 @@ function resolvePurchasePriceNet(supplierRow: ProductSupplierRow): number | null
   return gross / (1 + taxRate / 100);
 }
 
-function getDefaultRemissionProfile(
-  profiles: ProductUomProfileRow[],
-  productId: string
-): ProductUomProfileRow | null {
-  const candidates = profiles.filter(
-    (profile) =>
-      String(profile.product_id ?? "") === productId &&
-      profile.is_active !== false &&
-      profile.is_default === true
-  );
-
-  if (!candidates.length) return null;
-
-  return [...candidates].sort((a, b) => {
-    const aUsage = String(a.usage_context ?? "");
-    const bUsage = String(b.usage_context ?? "");
-    const aRank = aUsage === "remission" ? 0 : aUsage === "general" ? 1 : 2;
-    const bRank = bUsage === "remission" ? 0 : bUsage === "general" ? 1 : 2;
-    if (aRank !== bRank) return aRank - bRank;
-
-    const aSource = String(a.source ?? "");
-    const bSource = String(b.source ?? "");
-    const aSourceRank = aSource === "manual" ? 0 : aSource === "recipe_portion" ? 1 : 2;
-    const bSourceRank = bSource === "manual" ? 0 : bSource === "recipe_portion" ? 1 : 2;
-    if (aSourceRank !== bSourceRank) return aSourceRank - bSourceRank;
-
-    return String(a.label ?? "").localeCompare(String(b.label ?? ""), "es");
-  })[0];
-}
-
 function resolveRemissionDiagnostic(params: {
   product: ProductRow;
   setting: ProductSiteSettingRow;
@@ -692,7 +664,7 @@ function resolveRemissionDiagnostic(params: {
   if (setting.is_active === false) return "No aparece: configuración por sede inactiva";
   if (setting.remission_enabled !== true) return "No aparece: remisión deshabilitada para la sede";
   if (!isOperationalRemissionType(product)) return "No deberia aparecer: activo/equipo";
-  if (!remissionProfile) return "Revisar: falta presentación minima activa";
+  if (!remissionProfile) return "Revisar: falta presentación de remisión";
   if (
     !String(setting.default_area_kind ?? "").trim() &&
     (!Array.isArray(setting.area_kinds) || setting.area_kinds.length === 0)
@@ -1185,7 +1157,10 @@ export async function GET() {
     const supplier = primarySupplierId ? supplierById.get(primarySupplierId) : null;
     const supplierName = supplier?.name ?? supplierNameById.get(primarySupplierId) ?? primarySupplierId;
     const supplierPaymentTerms = primarySupplier ? supplierPaymentTermsLabel(supplier) : "";
-    const remissionProfile = getDefaultRemissionProfile(uomProfiles, product.id);
+    const remissionProfile = selectRemissionRequestUomProfile({
+      profiles: uomProfiles,
+      productId: product.id,
+    });
 
     catalogRows.push([
       product.name ?? "",
@@ -1333,7 +1308,10 @@ export async function GET() {
     if (!product) continue;
 
     const site = siteById.get(String(setting.site_id ?? ""));
-    const remissionProfile = getDefaultRemissionProfile(uomProfiles, product.id);
+    const remissionProfile = selectRemissionRequestUomProfile({
+      profiles: uomProfiles,
+      productId: product.id,
+    });
     const location = setting.production_location_id
       ? locationById.get(setting.production_location_id)
       : null;
@@ -1648,7 +1626,10 @@ export async function GET() {
   for (const setting of productSiteSettings) {
     const product = productById.get(setting.product_id);
     if (!product) continue;
-    const profile = getDefaultRemissionProfile(uomProfiles, product.id);
+    const profile = selectRemissionRequestUomProfile({
+      profiles: uomProfiles,
+      productId: product.id,
+    });
     const diagnostic = resolveRemissionDiagnostic({ product, setting, remissionProfile: profile });
 
     if (diagnostic !== "Deberia aparecer en solicitud") {
@@ -1846,7 +1827,7 @@ export async function GET() {
         { header: "Remisión activa", width: 14 },
         { header: "Config sede activa", width: 16 },
         { header: "Producto activo", width: 15 },
-        { header: "Presentación mínima", width: 26 },
+        { header: "Presentación remisión", width: 26 },
         { header: "Cantidad presentación", width: 17, numFmt: "#,##0.###" },
         { header: "Unidad presentación", width: 16 },
         { header: "Cantidad base", width: 14, numFmt: "#,##0.###" },
