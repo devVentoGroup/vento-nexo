@@ -77,6 +77,8 @@ type VentoChromeProps = {
   email?: string | null;
   sites: SiteOption[];
   activeSiteId: string;
+  activeWorkContextLabel?: string | null;
+  activeWorkContextDescription?: string | null;
   appSwitcherItems: AppSwitcherItem[];
   navGroups: NavGroup[];
 };
@@ -383,6 +385,48 @@ function SidebarToggleIcon() {
   );
 }
 
+function SidebarContextCard({
+  eyebrow,
+  value,
+  description,
+  collapsed,
+  tone = "default",
+}: {
+  eyebrow: string;
+  value: string;
+  description?: string | null;
+  collapsed: boolean;
+  tone?: "default" | "active";
+}) {
+  const isActiveTone = tone === "active";
+
+  return (
+    <div
+      className={`rounded-2xl border px-4 py-3 shadow-[var(--ui-shadow-soft)] ${
+        collapsed ? "lg:!hidden" : ""
+      } ${
+        isActiveTone
+          ? "border-[color-mix(in_srgb,var(--ui-accent)_34%,var(--ui-border))] bg-[color-mix(in_srgb,var(--ui-accent)_8%,var(--ui-surface))]"
+          : "border-[var(--ui-border)] bg-[var(--ui-surface)]"
+      }`}
+    >
+      <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
+        {eyebrow}
+      </div>
+
+      <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">
+        {value}
+      </div>
+
+      {description ? (
+        <div className="mt-1 text-xs leading-snug text-[var(--ui-muted)]">
+          {description}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function SidebarLink({
   item,
   active,
@@ -427,6 +471,8 @@ export function VentoChrome({
   email,
   sites,
   activeSiteId,
+  activeWorkContextLabel,
+  activeWorkContextDescription,
   appSwitcherItems,
   navGroups,
 }: VentoChromeProps) {
@@ -456,6 +502,10 @@ export function VentoChrome({
   const currentSiteId = activeSiteId ?? "";
   const currentSite = sites.find((site) => site.id === currentSiteId);
   const currentSiteLabel = currentSite?.name ?? currentSiteId ?? "Sin sede";
+  const cleanActiveWorkContextLabel = String(activeWorkContextLabel ?? "").trim();
+  const cleanActiveWorkContextDescription = String(
+    activeWorkContextDescription ?? ""
+  ).trim();
 
   const isActive = (href: string) => {
     if (href === "/") return pathname === "/";
@@ -532,14 +582,22 @@ export function VentoChrome({
             </button>
           </div>
 
-          <div className={`rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface)] px-4 py-3 shadow-[var(--ui-shadow-soft)] ${sidebarCollapsed ? "lg:!hidden" : ""}`}>
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
-              Sede activa
-            </div>
+          <div className="space-y-3">
+            <SidebarContextCard
+              eyebrow="Sede activa"
+              value={currentSiteLabel}
+              collapsed={sidebarCollapsed}
+            />
 
-            <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">
-              {currentSiteLabel}
-            </div>
+            {cleanActiveWorkContextLabel ? (
+              <SidebarContextCard
+                eyebrow="Contexto operativo"
+                value={cleanActiveWorkContextLabel}
+                description={cleanActiveWorkContextDescription || null}
+                collapsed={sidebarCollapsed}
+                tone="active"
+              />
+            ) : null}
           </div>
 
           <nav className={`flex flex-1 flex-col gap-4 overflow-y-auto pr-1 ${sidebarCollapsed ? "lg:items-center lg:pr-0" : ""}`}>
