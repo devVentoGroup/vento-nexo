@@ -478,18 +478,21 @@ export default async function InventoryAssetsPage({
               >
                 ← Volver a equipos del catálogo
               </Link>
-              <h1 className="ui-h1">Activos físicos</h1>
+              <h1 className="ui-h1">Inventario de activos</h1>
               <p className="ui-body-muted">
-                Inventario patrimonial real: unidades físicas, grupos contables, ubicación operativa, QR y ficha técnica por activo.
+                Control simple de activos: objetos por cantidad, equipos individuales, ubicación, conteo y mantenimiento cuando aplique.
               </p>
             </div>
 
             <div className="flex flex-wrap gap-2">
-              <Link href="/inventory/assets/new" className="ui-btn ui-btn--brand">
-                + Crear activo físico
+              <Link href="/inventory/assets/quick" className="ui-btn ui-btn--brand">
+                + Cargar varios
+              </Link>
+              <Link href="/inventory/assets/new" className="ui-btn ui-btn--ghost">
+                Registro avanzado
               </Link>
               <Link href="/inventory/assets/counts" className="ui-btn ui-btn--ghost">
-                Conteo patrimonial
+                Conteo de activos
               </Link>
               <Link href={buildHref({ view: "all" })} className={view === "all" ? "ui-btn ui-btn--brand" : "ui-btn ui-btn--ghost"}>
                 Todo
@@ -510,7 +513,7 @@ export default async function InventoryAssetsPage({
               <div className="ui-remission-kpi-note">Unidades con QR y ficha propia</div>
             </article>
             <article className="ui-remission-kpi" data-tone="cool">
-              <div className="ui-remission-kpi-label">Grupos contables</div>
+              <div className="ui-remission-kpi-label">Por cantidad</div>
               <div className="ui-remission-kpi-value">{groupCount}</div>
               <div className="ui-remission-kpi-note">{fmtQty(groupedExpectedQty)} unidades esperadas</div>
             </article>
@@ -551,7 +554,7 @@ export default async function InventoryAssetsPage({
             <div>
               <h2 className="ui-h2">Resumen operativo de activos</h2>
               <p className="mt-2 ui-body-muted">
-                Acciones rápidas para mantener el inventario patrimonial limpio, ubicado y con mantenimientos controlados.
+                Acciones rápidas para crear, contar y ubicar activos sin entrar a configuración técnica.
               </p>
             </div>
             <span className="ui-chip ui-chip--brand">
@@ -561,13 +564,13 @@ export default async function InventoryAssetsPage({
 
           <div className="mt-5 grid gap-3 md:grid-cols-2">
             <Link
-              href="/inventory/assets/new"
+              href="/inventory/assets/quick"
               className="rounded-[1.5rem] border border-cyan-200 bg-cyan-50 p-4 transition hover:-translate-y-0.5 hover:bg-cyan-100 hover:shadow-sm"
             >
               <div className="text-2xl">➕</div>
-              <div className="mt-3 text-base font-black text-cyan-950">Crear activo físico</div>
+              <div className="mt-3 text-base font-black text-cyan-950">Cargar varios</div>
               <p className="mt-1 text-sm leading-6 text-cyan-900">
-                Registra una unidad individual con QR o un grupo contable por cantidad.
+                Crea moldes, bandejas, sillas o menaje por cantidad desde una tabla.
               </p>
             </Link>
 
@@ -576,9 +579,9 @@ export default async function InventoryAssetsPage({
               className="rounded-[1.5rem] border border-indigo-200 bg-indigo-50 p-4 transition hover:-translate-y-0.5 hover:bg-indigo-100 hover:shadow-sm"
             >
               <div className="text-2xl">📋</div>
-              <div className="mt-3 text-base font-black text-indigo-950">Conteo patrimonial</div>
+              <div className="mt-3 text-base font-black text-indigo-950">Conteo de activos</div>
               <p className="mt-1 text-sm leading-6 text-indigo-900">
-                Valida activos y grupos por sede, área, LOC o ubicación interna.
+                Revisa lo esperado contra lo encontrado por sede o ubicación.
               </p>
             </Link>
 
@@ -744,7 +747,7 @@ export default async function InventoryAssetsPage({
             href="/inventory/assets/counts"
             className="rounded-2xl border border-cyan-200 bg-cyan-50 p-3 text-sm font-semibold text-cyan-900 transition hover:bg-cyan-100"
           >
-            Abrir conteo patrimonial → valida activos individuales y grupos por sede, área, LOC o ubicación interna.
+            Abrir conteo de activos → valida activos individuales y activos por cantidad por sede o ubicación.
           </Link>
         </div>
       </section>
@@ -898,7 +901,7 @@ export default async function InventoryAssetsPage({
         <section className="ui-panel">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h2 className="ui-h2">Grupos contables</h2>
+              <h2 className="ui-h2">Activos por cantidad</h2>
               <p className="mt-2 ui-body-muted">
                 Activos repetidos que se cuentan por cantidad, sin serial individual obligatorio.
               </p>
@@ -938,7 +941,7 @@ export default async function InventoryAssetsPage({
                           )}
                           <div>
                             <div className="font-semibold text-[var(--ui-text)]">
-                              {group.name || "Grupo de activos"}
+                              {group.name || "Activo por cantidad"}
                             </div>
                             <div className="mt-1 text-xs text-[var(--ui-muted)]">
                               {group.group_code ?? "Sin código"}

@@ -581,7 +581,7 @@ export default async function AssetGroupTechnicalSheetPage({
                   {title}
                 </h1>
                 <p className="mt-2 text-base text-[var(--ui-muted)]">
-                  Grupo contable para activos repetidos que se controlan por cantidad.
+                  Activo repetido que se controla por cantidad.
                 </p>
 
                 <div className="mt-5 grid gap-3 sm:grid-cols-3">
@@ -778,7 +778,7 @@ export default async function AssetGroupTechnicalSheetPage({
         <div>
           <h2 className="ui-h2">Historial de movimientos</h2>
           <p className="mt-2 ui-body-muted">
-            Traslados y ajustes patrimoniales del grupo contable.
+            Traslados y ajustes del activo por cantidad.
           </p>
         </div>
 

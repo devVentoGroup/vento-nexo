@@ -277,7 +277,7 @@ function lineSubjectLabel(line: CountLineRow) {
   return group?.name ||
     product?.name ||
     group?.group_code ||
-    "Grupo contable";
+    "Por cantidad";
 }
 
 function lineSubjectCode(line: CountLineRow) {
@@ -706,9 +706,9 @@ export default async function AssetCountSessionDetailPage({
                 href="/inventory/assets/counts"
                 className="ui-btn ui-btn--ghost inline-flex h-12 items-center px-5 text-base font-semibold"
               >
-                ← Sesiones de conteo
+                ← Conteos
               </Link>
-              <h1 className="ui-h1">{session.name || "Conteo patrimonial"}</h1>
+              <h1 className="ui-h1">{session.name || "Conteo de activos"}</h1>
               <p className="ui-body-muted">
                 Revisa cada activo esperado y marca si fue encontrado, faltante, dañado o encontrado en otra ubicación.
               </p>
@@ -814,7 +814,7 @@ export default async function AssetCountSessionDetailPage({
           <div>
             <h2 className="ui-h2">Líneas de conteo</h2>
             <p className="mt-2 ui-body-muted">
-              Activos individuales se cuentan por unidad. Grupos contables se cuentan por cantidad.
+              Activos individuales se cuentan por unidad. Los activos repetidos se cuentan por cantidad.
             </p>
           </div>
           <span className="ui-chip">{lines.length} líneas</span>

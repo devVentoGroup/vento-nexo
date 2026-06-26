@@ -40,7 +40,7 @@ const TAB_OPTIONS = [
   { value: "insumos", label: "Insumos" },
   { value: "preparaciones", label: "Preparaciones" },
   { value: "productos", label: "Productos" },
-  { value: "equipos", label: "Modelos patrimoniales" },
+  { value: "equipos", label: "Tipos de activos" },
 ] as const;
 
 type TabValue = (typeof TAB_OPTIONS)[number]["value"];
@@ -848,8 +848,9 @@ export default async function InventoryCatalogPage({
       : [
         ...(activeTab === "equipos"
           ? [
-            { href: "/inventory/assets", label: "Activos físicos", tone: "ghost" as const },
-            { href: "/inventory/assets/counts", label: "Conteo patrimonial", tone: "ghost" as const },
+            { href: "/inventory/assets", label: "Inventario de activos", tone: "ghost" as const },
+            { href: "/inventory/assets/quick", label: "Carga rápida", tone: "ghost" as const },
+            { href: "/inventory/assets/counts", label: "Conteo de activos", tone: "ghost" as const },
           ]
           : []),
         {
@@ -863,7 +864,7 @@ export default async function InventoryCatalogPage({
             ? "insumo"
             : activeTab === "preparaciones"
               ? "preparación"
-              : "modelo patrimonial"
+              : "tipo de activo"
             }`,
           tone: "brand" as const,
         },
@@ -878,7 +879,7 @@ export default async function InventoryCatalogPage({
           : []),
       ]
     : activeTab === "equipos"
-      ? [{ href: "/inventory/assets", label: "Ver activos físicos", tone: "ghost" as const }]
+      ? [{ href: "/inventory/assets", label: "Ver inventario de activos", tone: "ghost" as const }]
       : [];
 
   const catalogResultRows: CatalogResultRow[] = visibleProducts.map((product) => {
@@ -974,16 +975,16 @@ export default async function InventoryCatalogPage({
       sku: product.sku ?? "-",
       categoryPath,
       categoryLabel,
-      inventoryLabel: isAssetCatalogTab ? "Modelo patrimonial" : inventoryLabel,
+      inventoryLabel: isAssetCatalogTab ? "Tipo de activo" : inventoryLabel,
       unitLabel: isAssetCatalogTab ? "Modelo base" : product.unit ?? "-",
-      currentQtyLabel: isAssetCatalogTab ? "Activos físicos" : formatQty(stockMetrics.currentQty),
+      currentQtyLabel: isAssetCatalogTab ? "Activos en inventario" : formatQty(stockMetrics.currentQty),
       currentQtyIsLow: isAssetCatalogTab ? false : stockMetrics.isLow,
       minStockLabel: isAssetCatalogTab ? "No aplica" : formatQty(stockMetrics.minStock),
       shortageLabel: isAssetCatalogTab ? "Modelo" : shortageLabel,
       shortageTone: isAssetCatalogTab ? "muted" : shortageTone,
       autoCostLabel: isAssetCatalogTab ? "Catálogo" : autoCostLabel,
       autoCostTone: isAssetCatalogTab ? "default" : autoCostTone,
-      autoCostDetail: isAssetCatalogTab ? "La operación real vive en Activos físicos." : autoCostDetail,
+      autoCostDetail: isAssetCatalogTab ? "La operación real vive en Inventario de activos." : autoCostDetail,
       statusLabel: product.is_active === false ? "Inactivo" : "Activo",
       primarySupplierName: isAssetCatalogTab ? "No aplica" : primarySupplierName,
       fichaHref: `/inventory/catalog/${product.id}/ficha?from=${encodeURIComponent(catalogReturnUrl)}`,
@@ -1008,7 +1009,7 @@ export default async function InventoryCatalogPage({
               <h1 className="ui-h1">Catálogo maestro</h1>
               <p className="ui-body-muted">
                 {isAssetCatalogTab
-                  ? "Modelos base de equipos, mobiliario, herramientas y activos. El inventario real, QR, ubicación, mantenimiento y conteo viven en Activos físicos."
+                  ? "Tipos base de equipos, mobiliario, herramientas y activos. El inventario real, QR, ubicación, mantenimiento y conteo viven en Inventario de activos."
                   : "Productos maestros, salud operativa por sede y continuidad de compra sin mezclar lógica comercial."}
               </p>
             </div>
@@ -1029,10 +1030,13 @@ export default async function InventoryCatalogPage({
               {isAssetCatalogTab ? (
                 <>
                   <Link href="/inventory/assets" className="ui-btn ui-btn--brand">
-                    Ver activos físicos
+                    Inventario de activos
+                  </Link>
+                  <Link href="/inventory/assets/quick" className="ui-btn ui-btn--ghost">
+                    Carga rápida
                   </Link>
                   <Link href="/inventory/assets/counts" className="ui-btn ui-btn--ghost">
-                    Conteo patrimonial
+                    Conteo de activos
                   </Link>
                 </>
               ) : (
@@ -1047,14 +1051,14 @@ export default async function InventoryCatalogPage({
               <div className="ui-remission-kpi-label">{isAssetCatalogTab ? "Modelos visibles" : "Items visibles"}</div>
               <div className="ui-remission-kpi-value">{visibleProducts.length}</div>
               <div className="ui-remission-kpi-note">
-                {isAssetCatalogTab ? "Modelos base del catálogo patrimonial" : "Aplicando filtros y tab actual"}
+                {isAssetCatalogTab ? "Tipos base de activos" : "Aplicando filtros y tab actual"}
               </div>
             </article>
             <article className="ui-remission-kpi" data-tone="cool">
               <div className="ui-remission-kpi-label">{isAssetCatalogTab ? "Inventario real" : "Stock bajo"}</div>
               <div className="ui-remission-kpi-value">{isAssetCatalogTab ? "Assets" : lowStockCount}</div>
               <div className="ui-remission-kpi-note">
-                {isAssetCatalogTab ? "Se controla desde Activos físicos" : "Alertas dentro de la vista actual"}
+                {isAssetCatalogTab ? "Se controla desde Inventario de activos" : "Alertas dentro de la vista actual"}
               </div>
             </article>
             <article className="ui-remission-kpi" data-tone="success">
@@ -1078,8 +1082,8 @@ export default async function InventoryCatalogPage({
             <div className="text-sm font-black text-cyan-950">Esta pestaña es catálogo de modelos</div>
             <p className="mt-2 text-sm leading-6 text-cyan-900">
               Aquí se definen modelos como “Aire acondicionado”, “Silla terraza” o “Licuadora industrial”.
-              No representa cuántas unidades existen ni dónde están. Para unidades reales, grupos contables,
-              QR, responsables, mantenimiento y conteo usa Activos físicos.
+              No representa cuántas unidades existen ni dónde están. Para unidades reales, activos por cantidad,
+              QR, responsables, mantenimiento y conteo usa Inventario de activos.
             </p>
           </div>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-1">
@@ -1087,7 +1091,7 @@ export default async function InventoryCatalogPage({
               Abrir inventario real →
             </Link>
             <Link href="/inventory/assets/counts" className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm font-semibold text-amber-950 transition hover:bg-amber-100">
-              Abrir conteo patrimonial →
+              Abrir conteo de activos →
             </Link>
           </div>
         </section>

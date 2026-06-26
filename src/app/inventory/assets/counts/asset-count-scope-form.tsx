@@ -120,15 +120,15 @@ export function AssetCountScopeForm({
   return (
     <form action={action} className="space-y-5">
       <div>
-        <h2 className="ui-h2">Nueva sesión de conteo</h2>
+        <h2 className="ui-h2">Nuevo conteo</h2>
         <p className="mt-2 ui-body-muted">
-          Elige el alcance. Al crear la sesión se generarán automáticamente las líneas esperadas de activos individuales y grupos.
+          Elige dónde se va a contar. El sistema prepara la lista de activos esperados automáticamente.
         </p>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-2">
         <label className="flex flex-col gap-1">
-          <span className="ui-label">Nombre de la sesión</span>
+          <span className="ui-label">Nombre del conteo</span>
           <input
             name="name"
             className="ui-input"
@@ -244,20 +244,20 @@ export function AssetCountScopeForm({
 
       <div className="grid gap-3">
         <div className="ui-alert ui-alert--warn">
-          La sesión se crea con estado abierto y con líneas esperadas según los activos actualmente activos dentro del alcance.
+          El conteo se crea abierto y con la lista esperada según los activos activos dentro del alcance.
         </div>
 
         <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
           <div className="font-black">Importante antes de crear</div>
           <p className="mt-1 leading-6">
-            Si este alcance no tiene activos individuales ni grupos contables activos asignados, la sesión no se creará.
+            Si este alcance no tiene activos activos asignados, el conteo no se creará.
             Ajusta sede, área, LOC o ubicación interna, o asigna activos antes de abrir el conteo.
           </p>
         </div>
       </div>
 
       <button type="submit" className="ui-btn ui-btn--brand w-full">
-        Crear sesión de conteo
+        Crear conteo
       </button>
     </form>
   );

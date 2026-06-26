@@ -232,9 +232,9 @@ export function PhysicalAssetForm({
     <form action={action} className="grid gap-6 xl:grid-cols-[1fr_0.78fr]">
       <section className="ui-panel space-y-5">
         <div>
-          <h2 className="ui-h2">1. Modelo base</h2>
+          <h2 className="ui-h2">1. Tipo de activo</h2>
           <p className="mt-2 ui-body-muted">
-            El producto del catálogo funciona como modelo. Aquí creas la unidad física real o el grupo contable.
+            Elige qué activo estás registrando. Para cargar muchos iguales, usa la carga rápida.
           </p>
         </div>
 
@@ -254,7 +254,7 @@ export function PhysicalAssetForm({
             ))}
           </select>
           <span className="text-xs text-[var(--ui-muted)]">
-            Solo aparecen productos con inventario tipo activo.
+            Solo aparecen tipos marcados como activos.
           </span>
         </label>
 
@@ -293,7 +293,7 @@ export function PhysicalAssetForm({
                 onChange={() => setAssetMode("item")}
               />
               <div>
-                <div className="font-semibold text-[var(--ui-text)]">Activo individual</div>
+                <div className="font-semibold text-[var(--ui-text)]">Se identifica uno por uno</div>
                 <p className="mt-1 text-sm text-[var(--ui-muted)]">
                   Unidad física con serial, placa, QR, ficha técnica y mantenimiento propio.
                 </p>
@@ -310,7 +310,7 @@ export function PhysicalAssetForm({
                 onChange={() => setAssetMode("group")}
               />
               <div>
-                <div className="font-semibold text-[var(--ui-text)]">Grupo contable</div>
+                <div className="font-semibold text-[var(--ui-text)]">Se cuenta por cantidad</div>
                 <p className="mt-1 text-sm text-[var(--ui-muted)]">
                   Muchos iguales que se cuentan por cantidad, como sillas, bandejas o canastillas.
                 </p>
@@ -359,7 +359,7 @@ export function PhysicalAssetForm({
           </div>
         ) : (
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <h3 className="text-sm font-semibold text-[var(--ui-text)]">Datos del grupo contable</h3>
+            <h3 className="text-sm font-semibold text-[var(--ui-text)]">Datos del activo por cantidad</h3>
             <p className="mt-1 text-xs text-[var(--ui-muted)]">
               Para activos repetidos que se cuentan por cantidad.
             </p>
@@ -693,7 +693,7 @@ export function PhysicalAssetForm({
           </label>
 
           <button type="submit" className="ui-btn ui-btn--brand w-full">
-            {assetMode === "group" ? "Crear grupo contable" : "Crear activo físico"}
+            {assetMode === "group" ? "Crear activo por cantidad" : "Crear activo individual"}
           </button>
         </section>
       </aside>

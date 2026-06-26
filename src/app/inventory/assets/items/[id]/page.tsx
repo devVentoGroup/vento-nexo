@@ -733,7 +733,7 @@ export default async function AssetItemTechnicalSheetPage({
                   {title}
                 </h1>
                 <p className="mt-2 text-base text-[var(--ui-muted)]">
-                  {identitySubtitle || "Activo físico individual con ficha técnica patrimonial."}
+                  {identitySubtitle || "Activo individual con ficha técnica."}
                 </p>
 
                 <div className="mt-5 grid gap-3 sm:grid-cols-3">
@@ -1094,7 +1094,7 @@ export default async function AssetItemTechnicalSheetPage({
         <div>
           <h2 className="ui-h2">Historial de movimientos</h2>
           <p className="mt-2 ui-body-muted">
-            Traslados y cambios patrimoniales del activo físico.
+            Traslados y cambios del activo individual.
           </p>
         </div>
 

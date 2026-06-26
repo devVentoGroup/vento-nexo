@@ -445,11 +445,11 @@ export default async function NewPhysicalAssetPage({
                 href="/inventory/assets"
                 className="ui-btn ui-btn--ghost inline-flex h-12 items-center px-5 text-base font-semibold"
               >
-                ← Activos físicos
+                ← Inventario de activos
               </Link>
-              <h1 className="ui-h1">Crear activo físico</h1>
+              <h1 className="ui-h1">Registro avanzado de activo</h1>
               <p className="ui-body-muted">
-                Convierte un equipo existente del catálogo en una unidad física con QR o en un grupo contable por cantidad.
+                Usa esta pantalla para equipos con serial, placa, QR, mantenimiento, garantía o ficha técnica propia.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -457,7 +457,7 @@ export default async function NewPhysicalAssetPage({
                 {products.length} modelos disponibles
               </span>
               <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-xs font-semibold text-amber-900">
-                Individual o grupo
+                Individual o por cantidad
               </span>
             </div>
           </div>
@@ -465,8 +465,7 @@ export default async function NewPhysicalAssetPage({
           <div className="ui-panel bg-white/90">
             <h2 className="ui-h2">Regla práctica</h2>
             <p className="mt-2 ui-body-muted">
-              Usa activo individual para equipos con serial, mantenimiento, garantía, alto valor o QR propio.
-              Usa grupo para objetos repetidos que se cuentan por cantidad.
+              Para moldes, bandejas, sillas o menaje usa la carga rápida. Esta pantalla queda para activos que necesitan trazabilidad propia.
             </p>
           </div>
         </div>

@@ -447,17 +447,17 @@ export default async function AssetCountSessionsPage({
                 href="/inventory/assets"
                 className="ui-btn ui-btn--ghost inline-flex h-12 items-center px-5 text-base font-semibold"
               >
-                ← Activos físicos
+                ← Inventario de activos
               </Link>
-              <h1 className="ui-h1">Conteo patrimonial</h1>
+              <h1 className="ui-h1">Conteo de activos</h1>
               <p className="ui-body-muted">
-                Sesiones de conteo separadas del inventario consumible. Sirven para confirmar activos individuales y grupos contables por ubicación.
+                Revisa lo que debería existir contra lo que el equipo encuentra en cada sede o ubicación.
               </p>
             </div>
 
             <div className="flex flex-wrap gap-2">
               <a href="#new-asset-count-session" className="ui-btn ui-btn--brand">
-                + Nueva sesión
+                + Nuevo conteo
               </a>
               <Link href={buildHref({ status: "open" })} className={selectedStatus === "open" ? "ui-btn ui-btn--brand" : "ui-btn ui-btn--ghost"}>
                 Abiertas
@@ -543,9 +543,9 @@ export default async function AssetCountSessionsPage({
       <section className="ui-panel">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="ui-h2">Sesiones de conteo</h2>
+            <h2 className="ui-h2">Conteos</h2>
             <p className="mt-2 ui-body-muted">
-              Cada sesión nace con líneas esperadas según activos y grupos activos dentro del alcance elegido.
+              Cada conteo nace con una lista esperada según los activos activos dentro del alcance elegido.
             </p>
           </div>
           <span className="ui-chip">{sessions.length} visibles</span>
@@ -573,7 +573,7 @@ export default async function AssetCountSessionsPage({
                   <tr key={session.id} className="border-t border-zinc-200/60 align-top">
                     <td className="ui-td">
                       <div className="font-semibold text-[var(--ui-text)]">
-                        {session.name || "Conteo patrimonial"}
+                        {session.name || "Conteo de activos"}
                       </div>
                       <div className="mt-1 text-xs text-[var(--ui-muted)]">{session.id}</div>
                       {session.notes ? (
