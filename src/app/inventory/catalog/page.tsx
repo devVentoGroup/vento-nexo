@@ -843,6 +843,7 @@ export default async function InventoryCatalogPage({
       ? [
         { href: "/inventory/catalog/new?type=venta", label: "+ Producto de venta", tone: "brand" as const },
         { href: "/inventory/catalog/new?type=reventa", label: "+ Producto de reventa", tone: "ghost" as const },
+        { href: "/inventory/catalog/presentations?product_type=venta", label: "Editar presentaciones", tone: "ghost" as const },
       ]
       : [
         ...(activeTab === "equipos"
@@ -870,7 +871,10 @@ export default async function InventoryCatalogPage({
           ? [{ href: "/inventory/catalog/new?type=preparacion_vendible", label: "+ Preparación vendible", tone: "ghost" as const }]
           : []),
         ...(activeTab === "insumos"
-          ? [{ href: "/api/inventory/catalog/export-suppliers", label: "Descargar Excel de insumos", tone: "ghost" as const }]
+          ? [
+            { href: "/inventory/catalog/presentations?product_type=insumo", label: "Editar presentaciones", tone: "ghost" as const },
+            { href: "/api/inventory/catalog/export-suppliers", label: "Descargar Excel de insumos", tone: "ghost" as const },
+          ]
           : []),
       ]
     : activeTab === "equipos"

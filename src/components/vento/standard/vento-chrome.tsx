@@ -532,7 +532,7 @@ export function VentoChrome({
         />
 
         <aside
-          className={`ui-sidebar fixed left-0 top-0 z-50 flex h-full w-72 flex-col gap-4 overflow-hidden px-4 py-5 transition-[width,padding,transform] duration-200 ease-out lg:static lg:translate-x-0 lg:shadow-none ${
+          className={`ui-sidebar fixed left-0 top-0 z-50 flex h-full w-72 flex-col gap-4 overflow-hidden px-4 py-5 transition-[width,padding,transform] duration-200 ease-out lg:sticky lg:top-0 lg:h-screen lg:translate-x-0 lg:shadow-none ${
             menuOpen ? "translate-x-0" : "-translate-x-full"
           } ${
             sidebarCollapsed
