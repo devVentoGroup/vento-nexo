@@ -12,7 +12,7 @@ export const dynamic = "force-dynamic";
 const APP_ID = "nexo";
 const PERMISSION = "inventory.stock";
 const PAGE_PATH = "/inventory/catalog/presentations";
-const MAX_ROWS = 800;
+const MAX_ROWS = 160;
 const PRESENTATION_REFERENCE_CHECKS = [
   { table: "inventory_entry_items", column: "input_uom_profile_id", label: "entradas de inventario" },
   { table: "inventory_transfer_items", column: "input_uom_profile_id", label: "traslados" },
@@ -426,9 +426,9 @@ export default async function CatalogPresentationsPage({
               <div className="ui-remission-kpi-note">No cambia cálculos ni conversiones</div>
             </article>
             <article className="ui-remission-kpi" data-tone="cool">
-              <div className="ui-remission-kpi-label">Límite</div>
+              <div className="ui-remission-kpi-label">Filas visibles</div>
               <div className="ui-remission-kpi-value">{MAX_ROWS}</div>
-              <div className="ui-remission-kpi-note">Usa filtros si necesitas menos ruido</div>
+              <div className="ui-remission-kpi-note">Filtra para editar por tandas rápidas</div>
             </article>
           </div>
         </div>
@@ -523,9 +523,9 @@ export default async function CatalogPresentationsPage({
           </div>
         ) : null}
 
-        <div className="overflow-x-auto rounded-2xl border border-[var(--ui-border)]">
+        <div className="max-h-[62vh] overflow-auto rounded-2xl border border-[var(--ui-border)]">
           <table className="min-w-[1180px] w-full text-left text-sm">
-            <thead className="bg-[var(--ui-surface-2)] text-xs uppercase tracking-wide text-[var(--ui-muted)]">
+            <thead className="sticky top-0 z-10 bg-[var(--ui-surface-2)] text-xs uppercase tracking-wide text-[var(--ui-muted)] shadow-sm">
               <tr>
                 <th className="px-3 py-3">Sacar de uso</th>
                 <th className="px-3 py-3">Producto</th>
@@ -564,7 +564,7 @@ export default async function CatalogPresentationsPage({
                       <input
                         name="presentation_label"
                         defaultValue={String(profile.label ?? "").trim()}
-                        className="ui-input min-w-[260px]"
+                        className="ui-input min-w-[240px]"
                         disabled={!canEdit}
                         required
                       />
