@@ -219,6 +219,22 @@ export async function POST(req: Request) {
   const newLocationQty = locationId ? currentLocationQty + quantityDelta : null;
   const newPositionQty = locationPositionId ? currentPositionQty + quantityDelta : null;
 
+  const zeroPositionStockForLocationProduct = async () => {
+    if (!locationId || locationPositionId) return null;
+
+    const { error: reconcileErr } = await supabase.rpc(
+      "reconcile_zero_internal_positions_for_location_product",
+      {
+        p_location_id: locationId,
+        p_product_id: productId,
+      }
+    );
+
+    return reconcileErr
+      ? `reconcile_zero_internal_positions_for_location_product: ${reconcileErr.message}`
+      : null;
+  };
+
   const isZeroingStaleScopedStock =
     Boolean(locationId) &&
     hasCountedQuantity &&
@@ -310,6 +326,11 @@ export async function POST(req: Request) {
           { error: `inventory_stock_by_location (upsert): ${locationStockUpsertErr.message}` },
           { status: 500 }
         );
+      }
+
+      const positionZeroErr = await zeroPositionStockForLocationProduct();
+      if (positionZeroErr) {
+        return NextResponse.json({ error: positionZeroErr }, { status: 500 });
       }
     }
 
@@ -458,6 +479,13 @@ export async function POST(req: Request) {
         { error: `inventory_stock_by_location (upsert): ${locationStockUpsertErr.message}` },
         { status: 500 }
       );
+    }
+
+    if (!locationPositionId && hasCountedQuantity && Number(rawCountedQuantity) === 0) {
+      const positionZeroErr = await zeroPositionStockForLocationProduct();
+      if (positionZeroErr) {
+        return NextResponse.json({ error: positionZeroErr }, { status: 500 });
+      }
     }
   }
 
