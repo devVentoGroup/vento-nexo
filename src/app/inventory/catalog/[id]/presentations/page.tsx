@@ -322,6 +322,7 @@ async function saveProductPresentations(formData: FormData) {
   const returnTo =
     sanitizeCatalogReturnPath(asText(formData.get("return_to"))) ||
     `/inventory/catalog/${encodeURIComponent(productId)}/presentations`;
+  const productReferenceImageUrl = asText(formData.get("product_reference_image_url"));
 
   const redirectWithError = (message: string) => {
     redirect(appendQueryParam(returnTo, "error", message));
@@ -373,6 +374,15 @@ async function saveProductPresentations(formData: FormData) {
     redirectWithError(
       "Las presentaciones manuales solo aplican a insumos comprados y productos de reventa. Las preparaciones y productos producidos usan empaques reales de lote desde FOGO; los modelos patrimoniales se gestionan en Activos físicos."
     );
+  }
+
+  const { error: productImageUpdateError } = await supabase
+    .from("products")
+    .update({ image_url: productReferenceImageUrl || null })
+    .eq("id", productId);
+
+  if (productImageUpdateError) {
+    redirectWithError(productImageUpdateError.message);
   }
 
   const measurementMode = normalizeMeasurementMode(
@@ -731,6 +741,8 @@ export default async function ProductPresentationsPage({
             initialRows={presentationRows}
             suggestedRows={supplierPresentationSuggestions}
             existingImageUrls={existingImageUrls}
+            productImageUrl={product.image_url}
+            productCatalogImageUrl={product.catalog_image_url}
             returnHref={returnHref}
             requiresRemissionDefault={requiresRemissionDefault}
             measurementMode={measurementMode}

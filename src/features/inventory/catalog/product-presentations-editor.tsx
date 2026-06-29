@@ -51,6 +51,8 @@ type Props = {
   initialRows: ProductPresentationEditorRow[];
   suggestedRows?: ProductPresentationSuggestion[];
   existingImageUrls?: string[];
+  productImageUrl?: string | null;
+  productCatalogImageUrl?: string | null;
   returnHref: string;
   requiresRemissionDefault?: boolean;
   measurementMode?: ProductMeasurementMode | string | null;
@@ -160,6 +162,8 @@ export function ProductPresentationsEditor({
   initialRows,
   suggestedRows = [],
   existingImageUrls = [],
+  productImageUrl = "",
+  productCatalogImageUrl = "",
   returnHref,
   requiresRemissionDefault = false,
   measurementMode = "fixed_presentation",
@@ -442,6 +446,28 @@ export function ProductPresentationsEditor({
           </p>
         </div>
       ) : null}
+
+      <div className="rounded-[28px] border border-slate-200 bg-white p-4 shadow-sm">
+        <div className="grid gap-4 lg:grid-cols-[1fr_1fr] lg:items-start">
+          <div>
+            <div className="text-sm font-bold text-[var(--ui-text)]">Foto de referencia del insumo</div>
+            <p className="mt-1 text-sm text-[var(--ui-muted)]">
+              {usesFixedPresentation
+                ? "Se usa como respaldo visual cuando una presentación física no tenga foto propia. No reemplaza las fotos específicas por presentación."
+                : `Se usa como imagen principal en quiosco y consultas. El inventario real sigue controlándose por cantidad real en ${stockUnitCode}.`}
+            </p>
+          </div>
+
+          <ProductImageUpload
+            name="product_reference_image_url"
+            label="Foto de referencia"
+            currentUrl={productImageUrl || productCatalogImageUrl || ""}
+            existingImageUrls={existingImageUrls}
+            productId={productId}
+            kind="product"
+          />
+        </div>
+      </div>
 
       <input type="hidden" name="presentation_keys" value={JSON.stringify(rowKeys)} readOnly />
       <input type="hidden" name="deleted_presentation_ids" value={JSON.stringify(deletedIds)} readOnly />

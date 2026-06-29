@@ -630,11 +630,16 @@ export default async function LocationBoardPage({
     const measurementMode = measurementModeByProduct.get(row.product_id) ?? "fixed_presentation";
     const presentationImageUrl =
       presentationParts.find((part) => String(part.imageUrl ?? "").trim())?.imageUrl ?? "";
+    const productReferenceImageUrl = product?.image_url || product?.catalog_image_url || "";
+    const imageUrl =
+      measurementMode === "fixed_presentation"
+        ? presentationImageUrl || productReferenceImageUrl
+        : productReferenceImageUrl;
 
     return {
       productId: row.product_id,
       name: product?.name ?? row.product_id,
-      imageUrl: presentationImageUrl || product?.image_url || product?.catalog_image_url || "",
+      imageUrl,
       qty,
       unit,
       categoryId,
