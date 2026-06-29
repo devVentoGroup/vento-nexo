@@ -169,6 +169,7 @@ export function AdjustForm({
   const [productId, setProductId] = useState<string>("");
   const [productSearch, setProductSearch] = useState("");
   const [isProductPickerOpen, setIsProductPickerOpen] = useState(false);
+  const [showOnlyScopeStock, setShowOnlyScopeStock] = useState(true);
   const [selectedPositionId, setSelectedPositionId] = useState("");
   const [adjustMode, setAdjustMode] = useState<AdjustMode>("count");
   const [quantityValue, setQuantityValue] = useState<string>("");
@@ -231,6 +232,7 @@ export function AdjustForm({
         .filter((row) => Number.isFinite(row.qty) && row.qty > 0),
     [getScopeQtyForProduct, products]
   );
+  const scopeStockCount = bulkZeroCandidates.length;
 
   const rawQuantityNum = (() => {
     const value = quantityValue.trim();
@@ -272,8 +274,15 @@ export function AdjustForm({
 
   const visibleProducts = useMemo(() => {
     const query = normalizeSearch(productSearch);
-    const rows = query
-      ? products.filter((product) => {
+    const rows = products
+      .map((product) => ({
+        product,
+        scopeQty: getScopeQtyForProduct(product.id),
+      }))
+      .filter(({ product, scopeQty }) => {
+        if (showOnlyScopeStock && scopeQty <= 0) return false;
+        if (!query) return true;
+
           const label = [
             product.name,
             product.sku,
@@ -287,12 +296,27 @@ export function AdjustForm({
             .filter(Boolean)
             .join(" ");
 
-          return normalizeSearch(label).includes(query);
-        })
-      : products;
+        return normalizeSearch(label).includes(query);
+      })
+      .sort((a, b) => {
+        if (a.scopeQty !== b.scopeQty) return b.scopeQty - a.scopeQty;
+        return a.product.name.localeCompare(b.product.name, "es", {
+          numeric: true,
+          sensitivity: "base",
+        });
+      });
 
-    return rows.slice(0, 24);
-  }, [currentLocationStock, currentPositionStock, currentStock, productSearch, products, selectedPositionId]);
+    return rows.slice(0, 40);
+  }, [
+    currentLocationStock,
+    currentPositionStock,
+    currentStock,
+    getScopeQtyForProduct,
+    productSearch,
+    products,
+    selectedPositionId,
+    showOnlyScopeStock,
+  ]);
 
   const resetConfirmation = () => {
     if (pendingConfirmation) setPendingConfirmation(false);
@@ -568,7 +592,19 @@ export function AdjustForm({
 
             {isProductPickerOpen ? (
               <div className="max-h-80 w-full overflow-y-auto rounded-2xl border border-[var(--ui-border)] bg-white p-2 shadow-sm">
-                {visibleProducts.map((product) => {
+                <div className="sticky top-0 z-10 mb-2 flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[var(--ui-border)] bg-white/95 px-3 py-2 backdrop-blur">
+                  <div className="text-xs font-semibold text-[var(--ui-muted)]">
+                    {showOnlyScopeStock ? `${scopeStockCount} con stock en ${currentScopeLabel}` : "Catálogo completo"}
+                  </div>
+                  <button
+                    type="button"
+                    className="ui-btn ui-btn--ghost h-8 px-3 text-xs"
+                    onClick={() => setShowOnlyScopeStock((current) => !current)}
+                  >
+                    {showOnlyScopeStock ? "Ver todos" : "Solo con stock"}
+                  </button>
+                </div>
+                {visibleProducts.map(({ product, scopeQty }) => {
                   const siteQty = currentStock[product.id] ?? 0;
                   const locQty = selectedLocationId ? currentLocationStock[product.id] ?? 0 : null;
                   const posQty = selectedPositionId
@@ -593,6 +629,9 @@ export function AdjustForm({
                           </div>
                         </div>
                         <div className="text-right text-xs text-[var(--ui-muted)]">
+                          <div className="font-semibold text-[var(--ui-text)]">
+                            {currentScopeLabel}: {formatQty(scopeQty)} {product.unit ?? "un"}
+                          </div>
                           <div>Sede: {formatQty(siteQty)} {product.unit ?? "un"}</div>
                           {locQty != null ? <div>LOC: {formatQty(locQty)} {product.unit ?? "un"}</div> : null}
                           {posQty != null ? <div>Ubicación: {formatQty(posQty)} {product.unit ?? "un"}</div> : null}
@@ -604,7 +643,9 @@ export function AdjustForm({
 
                 {!visibleProducts.length ? (
                   <div className="rounded-2xl border border-dashed border-[var(--ui-border)] p-4 text-sm text-[var(--ui-muted)]">
-                    No encontramos ese producto. Prueba por nombre o SKU.
+                    {showOnlyScopeStock
+                      ? "No hay productos con stock en este alcance. Usa Ver todos para buscar en el catálogo completo."
+                      : "No encontramos ese producto. Prueba por nombre o SKU."}
                   </div>
                 ) : null}
 

@@ -219,20 +219,28 @@ export async function POST(req: Request) {
   const newLocationQty = locationId ? currentLocationQty + quantityDelta : null;
   const newPositionQty = locationPositionId ? currentPositionQty + quantityDelta : null;
 
-  const isZeroingStalePositionStock =
-    Boolean(locationPositionId) &&
+  const isZeroingStaleScopedStock =
+    Boolean(locationId) &&
     hasCountedQuantity &&
     Number(rawCountedQuantity) === 0 &&
     ((newSiteQty < 0) || (newLocationQty != null && newLocationQty < 0));
 
-  if (isZeroingStalePositionStock) {
+  if (isZeroingStaleScopedStock) {
+    const reconcileMovementType = locationPositionId
+      ? "stock_reconcile_position_count"
+      : MOVEMENT_TYPE;
     const noteParts = [
       reason,
-      "Saneamiento de ubicación interna: el stock padre ya estaba por debajo de la posición.",
+      locationPositionId
+        ? "Saneamiento de ubicación interna: el stock padre ya estaba por debajo de la posición."
+        : "Saneamiento de LOC: el stock de sede ya estaba por debajo del LOC.",
       `Conteo fisico: ${rawCountedQuantity}`,
       `LOC: ${locationId}`,
-      `Ubicación interna: ${locationPositionId}`,
     ];
+
+    if (locationPositionId) {
+      noteParts.push(`Ubicación interna: ${locationPositionId}`);
+    }
 
     if (evidence) {
       noteParts.push(`Evidencia: ${evidence}`);
@@ -241,7 +249,7 @@ export async function POST(req: Request) {
     const { error: movErr } = await supabase.from("inventory_movements").insert({
       site_id: siteId,
       product_id: productId,
-      movement_type: "stock_reconcile_position_count",
+      movement_type: reconcileMovementType,
       quantity: quantityDelta,
       input_qty: Math.abs(quantityDelta),
       input_unit_code: "un",
@@ -260,28 +268,49 @@ export async function POST(req: Request) {
       );
     }
 
-    const { error: positionStockUpsertErr } = await supabase
-      .from("inventory_stock_by_position")
-      .upsert(
-        {
-          position_id: locationPositionId,
-          product_id: productId,
-          current_qty: 0,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "position_id,product_id" }
-      );
+    if (locationPositionId) {
+      const { error: positionStockUpsertErr } = await supabase
+        .from("inventory_stock_by_position")
+        .upsert(
+          {
+            position_id: locationPositionId,
+            product_id: productId,
+            current_qty: 0,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "position_id,product_id" }
+        );
 
-    if (positionStockUpsertErr) {
-      return NextResponse.json(
-        { error: `inventory_stock_by_position (upsert): ${positionStockUpsertErr.message}` },
-        { status: 500 }
-      );
+      if (positionStockUpsertErr) {
+        return NextResponse.json(
+          { error: `inventory_stock_by_position (upsert): ${positionStockUpsertErr.message}` },
+          { status: 500 }
+        );
+      }
+    } else {
+      const { error: locationStockUpsertErr } = await supabase
+        .from("inventory_stock_by_location")
+        .upsert(
+          {
+            location_id: locationId,
+            product_id: productId,
+            current_qty: 0,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "location_id,product_id" }
+        );
+
+      if (locationStockUpsertErr) {
+        return NextResponse.json(
+          { error: `inventory_stock_by_location (upsert): ${locationStockUpsertErr.message}` },
+          { status: 500 }
+        );
+      }
     }
 
     return NextResponse.json({
       ok: true,
-      mode: "position_reconcile",
+      mode: locationPositionId ? "position_reconcile" : "location_reconcile",
       product_id: productId,
       location_id: locationId || null,
       location_position_id: locationPositionId || null,
@@ -291,9 +320,9 @@ export async function POST(req: Request) {
       previous_site_qty: currentSiteQty,
       new_site_qty: currentSiteQty,
       previous_location_qty: currentLocationQty,
-      new_location_qty: currentLocationQty,
+      new_location_qty: locationPositionId ? currentLocationQty : 0,
       previous_position_qty: currentPositionQty,
-      new_position_qty: 0,
+      new_position_qty: locationPositionId ? 0 : null,
     });
   }
 
