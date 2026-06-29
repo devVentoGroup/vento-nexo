@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 
 type ProductRow = {
   id: string;
@@ -181,52 +181,26 @@ export function PhysicalAssetForm({
     return sameSite.length > 0 ? sameSite : employees;
   }, [employees, siteId]);
 
-  useEffect(() => {
-    if (!selectedProduct) return;
-
-    const nextProfile = profileByProductId(productAssetProfiles, selectedProduct.id);
-    setDisplayName(selectedProduct.name ?? "");
-    setGroupName(selectedProduct.name ?? "");
-    setSerialNumber(nextProfile?.serial_number ?? "");
-    setBrand(nextProfile?.brand ?? "");
-    setModel(nextProfile?.model ?? "");
-    setCommercialValue(nextProfile?.commercial_value != null ? String(nextProfile.commercial_value) : "");
-    setMainImageUrl(productImageUrl(selectedProduct));
-    setNotes(nextProfile?.technical_description ?? "");
-  }, [productAssetProfiles, selectedProduct]);
-
-  useEffect(() => {
-    if (areaId && !filteredAreas.some((area) => area.id === areaId)) {
-      setAreaId("");
-    }
-  }, [areaId, filteredAreas]);
-
-  useEffect(() => {
-    if (locationId && !filteredLocations.some((location) => location.id === locationId)) {
-      setLocationId("");
-    }
-  }, [filteredLocations, locationId]);
-
-  useEffect(() => {
-    if (locationPositionId && !filteredPositions.some((position) => position.id === locationPositionId)) {
-      setLocationPositionId("");
-    }
-  }, [filteredPositions, locationPositionId]);
-
-  useEffect(() => {
-    if (
-      responsibleEmployeeId &&
-      !filteredEmployees.some((employee) => employee.id === responsibleEmployeeId)
-    ) {
-      setResponsibleEmployeeId("");
-    }
-  }, [filteredEmployees, responsibleEmployeeId]);
-
   const selectedImageUrl = productImageUrl(selectedProduct);
   const selectedLocation = locationId ? locationById.get(locationId) ?? null : null;
   const selectedPosition = locationPositionId
     ? positions.find((position) => position.id === locationPositionId) ?? null
     : null;
+
+  const handleProductChange = (productId: string) => {
+    const nextProduct = products.find((product) => product.id === productId) ?? null;
+    const nextProfile = nextProduct ? profileByProductId(productAssetProfiles, nextProduct.id) : null;
+
+    setSelectedProductId(productId);
+    setDisplayName(nextProduct?.name ?? "");
+    setGroupName(nextProduct?.name ?? "");
+    setSerialNumber(nextProfile?.serial_number ?? "");
+    setBrand(nextProfile?.brand ?? "");
+    setModel(nextProfile?.model ?? "");
+    setCommercialValue(nextProfile?.commercial_value != null ? String(nextProfile.commercial_value) : "");
+    setMainImageUrl(productImageUrl(nextProduct));
+    setNotes(nextProfile?.technical_description ?? "");
+  };
 
   return (
     <form action={action} className="grid gap-6 xl:grid-cols-[1fr_0.78fr]">
@@ -234,16 +208,16 @@ export function PhysicalAssetForm({
         <div>
           <h2 className="ui-h2">1. Tipo de activo</h2>
           <p className="mt-2 ui-body-muted">
-            Elige qué activo estás registrando. Para cargar muchos iguales, usa la carga rápida.
+            Elige cómo se controla físicamente. Usa pieza con QR propio para moldes únicos, o grupo/contenedor para cajas y bolsas de moldes iguales.
           </p>
         </div>
 
         <label className="flex flex-col gap-1">
-          <span className="ui-label">Equipo del catálogo</span>
+          <span className="ui-label">Tipo de activo del catálogo</span>
           <select
             name="product_id"
             value={selectedProductId}
-            onChange={(event) => setSelectedProductId(event.target.value)}
+            onChange={(event) => handleProductChange(event.target.value)}
             className="ui-input"
             required
           >
@@ -293,9 +267,9 @@ export function PhysicalAssetForm({
                 onChange={() => setAssetMode("item")}
               />
               <div>
-                <div className="font-semibold text-[var(--ui-text)]">Se identifica uno por uno</div>
+                <div className="font-semibold text-[var(--ui-text)]">Pieza con QR propio</div>
                 <p className="mt-1 text-sm text-[var(--ui-muted)]">
-                  Unidad física con serial, placa, QR, ficha técnica y mantenimiento propio.
+                  Un molde, equipo o herramienta que se quiere rastrear individualmente.
                 </p>
               </div>
             </div>
@@ -310,9 +284,9 @@ export function PhysicalAssetForm({
                 onChange={() => setAssetMode("group")}
               />
               <div>
-                <div className="font-semibold text-[var(--ui-text)]">Se cuenta por cantidad</div>
+                <div className="font-semibold text-[var(--ui-text)]">Caja, bolsa o grupo con QR</div>
                 <p className="mt-1 text-sm text-[var(--ui-muted)]">
-                  Muchos iguales que se cuentan por cantidad, como sillas, bandejas o canastillas.
+                  Varios moldes o piezas iguales guardados juntos. El QR abre el contenido y su ubicación.
                 </p>
               </div>
             </div>
@@ -359,9 +333,9 @@ export function PhysicalAssetForm({
           </div>
         ) : (
           <div className="rounded-2xl border border-slate-200 bg-white p-4">
-            <h3 className="text-sm font-semibold text-[var(--ui-text)]">Datos del activo por cantidad</h3>
+            <h3 className="text-sm font-semibold text-[var(--ui-text)]">Contenido del grupo</h3>
             <p className="mt-1 text-xs text-[var(--ui-muted)]">
-              Para activos repetidos que se cuentan por cantidad.
+              Úsalo para cajas, bolsas, estuches o lotes de moldes iguales. El grupo tendrá un QR imprimible.
             </p>
             <div className="mt-3 grid gap-4 md:grid-cols-3">
               <label className="flex flex-col gap-1">
@@ -371,7 +345,7 @@ export function PhysicalAssetForm({
                   value={groupName}
                   onChange={(event) => setGroupName(event.target.value)}
                   className="ui-input"
-                  placeholder="Ej. Sillas negras terraza"
+                  placeholder="Ej. Bolsa moldes esfera 6 cm"
                   required={assetMode === "group"}
                 />
               </label>
@@ -392,7 +366,7 @@ export function PhysicalAssetForm({
                 />
               </label>
               <label className="flex flex-col gap-1 md:col-span-1">
-                <span className="ui-label">Unidad grupo</span>
+                <span className="ui-label">Unidad</span>
                 <input name="group_unit_code" defaultValue="un" className="ui-input" />
               </label>
             </div>

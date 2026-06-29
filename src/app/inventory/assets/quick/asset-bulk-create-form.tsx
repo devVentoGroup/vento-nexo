@@ -31,6 +31,15 @@ type LocationRow = {
   description: string | null;
 };
 
+type PositionRow = {
+  id: string;
+  site_id: string;
+  location_id: string;
+  code: string | null;
+  name: string | null;
+  kind: string | null;
+};
+
 type BulkRow = {
   key: string;
   productId: string;
@@ -38,6 +47,7 @@ type BulkRow = {
   siteId: string;
   areaId: string;
   locationId: string;
+  locationPositionId: string;
   qty: string;
   unitCode: string;
   conditionStatus: string;
@@ -50,6 +60,7 @@ type AssetBulkCreateFormProps = {
   sites: SiteRow[];
   areas: AreaRow[];
   locations: LocationRow[];
+  positions: PositionRow[];
 };
 
 function newRow(products: ProductRow[], sites: SiteRow[]): BulkRow {
@@ -60,6 +71,7 @@ function newRow(products: ProductRow[], sites: SiteRow[]): BulkRow {
     siteId: sites[0]?.id ?? "",
     areaId: "",
     locationId: "",
+    locationPositionId: "",
     qty: "",
     unitCode: "un",
     conditionStatus: "bueno",
@@ -75,6 +87,10 @@ function locationLabel(location: LocationRow) {
   return [location.code, location.zone, location.description].filter(Boolean).join(" - ") || location.id;
 }
 
+function positionLabel(position: PositionRow) {
+  return [position.name, position.code, position.kind].filter(Boolean).join(" - ") || position.id;
+}
+
 function rowsForSubmit(rows: BulkRow[]) {
   return rows
     .map((row) => ({
@@ -83,6 +99,7 @@ function rowsForSubmit(rows: BulkRow[]) {
       site_id: row.siteId,
       area_id: row.areaId || null,
       location_id: row.locationId || null,
+      location_position_id: row.locationPositionId || null,
       expected_qty: Number(row.qty),
       unit_code: row.unitCode.trim() || "un",
       condition_status: row.conditionStatus,
@@ -97,6 +114,7 @@ export function AssetBulkCreateForm({
   sites,
   areas,
   locations,
+  positions,
 }: AssetBulkCreateFormProps) {
   const [rows, setRows] = useState<BulkRow[]>(() => [newRow(products, sites), newRow(products, sites), newRow(products, sites)]);
 
@@ -109,6 +127,16 @@ export function AssetBulkCreateForm({
     }
     return map;
   }, [areas]);
+
+  const positionsByLocation = useMemo(() => {
+    const map = new Map<string, PositionRow[]>();
+    for (const position of positions) {
+      const list = map.get(position.location_id) ?? [];
+      list.push(position);
+      map.set(position.location_id, list);
+    }
+    return map;
+  }, [positions]);
 
   const updateRow = (key: string, patch: Partial<BulkRow>) => {
     setRows((current) =>
@@ -125,9 +153,14 @@ export function AssetBulkCreateForm({
         if (patch.siteId) {
           next.areaId = "";
           next.locationId = "";
+          next.locationPositionId = "";
         }
         if (patch.areaId) {
           next.locationId = "";
+          next.locationPositionId = "";
+        }
+        if (patch.locationId) {
+          next.locationPositionId = "";
         }
         return next;
       })
@@ -150,23 +183,24 @@ export function AssetBulkCreateForm({
 
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="ui-h2">Cargar varios activos por cantidad</h2>
+          <h2 className="ui-h2">Cargar cajas, bolsas o grupos</h2>
           <p className="mt-2 ui-body-muted">
-            Para moldes, bandejas, sillas, canastillas y objetos repetidos. Cada fila crea un activo que se cuenta por cantidad.
+            Para lotes de moldes y objetos repetidos. Cada fila crea un grupo con QR que se cuenta por cantidad.
           </p>
         </div>
         <span className="ui-chip ui-chip--brand">{validRows.length} filas listas</span>
       </div>
 
       <div className="overflow-x-auto rounded-2xl border border-[var(--ui-border)]">
-        <table className="ui-table min-w-[1280px]">
+        <table className="ui-table min-w-[1460px]">
           <thead>
             <tr>
               <th className="ui-th">Tipo de activo</th>
               <th className="ui-th">Nombre visible</th>
               <th className="ui-th">Sede</th>
-              <th className="ui-th">Area</th>
-              <th className="ui-th">Ubicación</th>
+              <th className="ui-th">Área</th>
+              <th className="ui-th">LOC</th>
+              <th className="ui-th">Ubicación interna</th>
               <th className="ui-th">Cantidad</th>
               <th className="ui-th">Estado</th>
               <th className="ui-th">Nota</th>
@@ -181,6 +215,7 @@ export function AssetBulkCreateForm({
                 if (row.areaId && location.area_id !== row.areaId) return false;
                 return true;
               });
+              const rowPositions = row.locationId ? positionsByLocation.get(row.locationId) ?? [] : [];
 
               return (
                 <tr key={row.key} className="border-t border-zinc-200/60 align-top">
@@ -202,7 +237,7 @@ export function AssetBulkCreateForm({
                       value={row.name}
                       onChange={(event) => updateRow(row.key, { name: event.target.value })}
                       className="ui-input min-w-[220px]"
-                      placeholder="Ej. Moldes redondos 20 cm"
+                      placeholder="Ej. Bolsa moldes esfera 6 cm"
                     />
                   </td>
                   <td className="ui-td">
@@ -226,7 +261,7 @@ export function AssetBulkCreateForm({
                       className="ui-input min-w-[170px]"
                       disabled={!row.siteId || rowAreas.length === 0}
                     >
-                      <option value="">Sin area</option>
+                      <option value="">Sin área</option>
                       {rowAreas.map((area) => (
                         <option key={area.id} value={area.id}>
                           {area.name ?? area.kind ?? area.id}
@@ -241,10 +276,25 @@ export function AssetBulkCreateForm({
                       className="ui-input min-w-[220px]"
                       disabled={!row.siteId || rowLocations.length === 0}
                     >
-                      <option value="">Sin ubicación</option>
+                      <option value="">Sin LOC</option>
                       {rowLocations.map((location) => (
                         <option key={location.id} value={location.id}>
                           {locationLabel(location)}
+                        </option>
+                      ))}
+                    </select>
+                  </td>
+                  <td className="ui-td">
+                    <select
+                      value={row.locationPositionId}
+                      onChange={(event) => updateRow(row.key, { locationPositionId: event.target.value })}
+                      className="ui-input min-w-[220px]"
+                      disabled={!row.locationId || rowPositions.length === 0}
+                    >
+                      <option value="">{!row.locationId ? "Elige LOC primero" : "Sin ubicación interna"}</option>
+                      {rowPositions.map((position) => (
+                        <option key={position.id} value={position.id}>
+                          {positionLabel(position)}
                         </option>
                       ))}
                     </select>
@@ -277,7 +327,7 @@ export function AssetBulkCreateForm({
                       <option value="bueno">Bueno</option>
                       <option value="regular">Regular</option>
                       <option value="malo">Malo</option>
-                      <option value="critico">Critico</option>
+                      <option value="critico">Crítico</option>
                     </select>
                   </td>
                   <td className="ui-td">
@@ -305,7 +355,7 @@ export function AssetBulkCreateForm({
           Agregar 3 filas
         </button>
         <button type="submit" className="ui-btn ui-btn--brand" disabled={validRows.length === 0}>
-          Crear activos por cantidad
+          Crear grupos con QR
         </button>
       </div>
     </form>

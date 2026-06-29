@@ -48,12 +48,22 @@ type LocationRow = {
   description: string | null;
 };
 
+type PositionRow = {
+  id: string;
+  site_id: string;
+  location_id: string;
+  code: string | null;
+  name: string | null;
+  kind: string | null;
+};
+
 type BulkAssetRow = {
   product_id: string;
   name: string;
   site_id: string;
   area_id: string | null;
   location_id: string | null;
+  location_position_id: string | null;
   expected_qty: number;
   unit_code: string;
   condition_status: string;
@@ -126,6 +136,7 @@ function parseRows(value: string): BulkAssetRow[] {
         site_id: String(row.site_id ?? "").trim(),
         area_id: row.area_id ? String(row.area_id).trim() : null,
         location_id: row.location_id ? String(row.location_id).trim() : null,
+        location_position_id: row.location_position_id ? String(row.location_position_id).trim() : null,
         expected_qty: qty,
         unit_code: String(row.unit_code ?? "un").trim() || "un",
         condition_status: condition,
@@ -153,8 +164,9 @@ async function createBulkAssetGroups(formData: FormData) {
   const siteIds = Array.from(new Set(rows.map((row) => row.site_id)));
   const areaIds = Array.from(new Set(rows.map((row) => row.area_id).filter((value): value is string => Boolean(value))));
   const locationIds = Array.from(new Set(rows.map((row) => row.location_id).filter((value): value is string => Boolean(value))));
+  const positionIds = Array.from(new Set(rows.map((row) => row.location_position_id).filter((value): value is string => Boolean(value))));
 
-  const [productsRes, sitesRes, areasRes, locationsRes] = await Promise.all([
+  const [productsRes, sitesRes, areasRes, locationsRes, positionsRes] = await Promise.all([
     supabase
       .from("products")
       .select("id,name,sku,product_type,product_inventory_profiles!inner(inventory_kind)")
@@ -166,12 +178,16 @@ async function createBulkAssetGroups(formData: FormData) {
     locationIds.length
       ? supabase.from("inventory_locations").select("id,site_id,area_id").in("id", locationIds).eq("is_active", true)
       : { data: [] },
+    positionIds.length
+      ? supabase.from("inventory_location_positions").select("id,site_id,location_id").in("id", positionIds).eq("is_active", true)
+      : { data: [] },
   ]);
 
   if (productsRes.error) redirect(buildReturn(productsRes.error.message));
   if (sitesRes.error) redirect(buildReturn(sitesRes.error.message));
   if ("error" in areasRes && areasRes.error) redirect(buildReturn(areasRes.error.message));
   if ("error" in locationsRes && locationsRes.error) redirect(buildReturn(locationsRes.error.message));
+  if ("error" in positionsRes && positionsRes.error) redirect(buildReturn(positionsRes.error.message));
 
   const products = (productsRes.data ?? []) as Array<{
     id: string;
@@ -183,27 +199,40 @@ async function createBulkAssetGroups(formData: FormData) {
   const siteIdsFound = new Set(((sitesRes.data ?? []) as Array<{ id: string }>).map((site) => site.id));
   const areaById = new Map(((areasRes.data ?? []) as Array<{ id: string; site_id: string }>).map((area) => [area.id, area]));
   const locationById = new Map(((locationsRes.data ?? []) as Array<{ id: string; site_id: string; area_id: string }>).map((location) => [location.id, location]));
+  const positionById = new Map(((positionsRes.data ?? []) as Array<{ id: string; site_id: string; location_id: string }>).map((position) => [position.id, position]));
 
   for (const row of rows) {
     if (!productById.has(row.product_id)) {
-      redirect(buildReturn(`El tipo de activo "${row.name}" no existe o no esta marcado como activo.`));
+      redirect(buildReturn(`El tipo de activo "${row.name}" no existe o no está marcado como activo.`));
     }
     if (!siteIdsFound.has(row.site_id)) {
-      redirect(buildReturn(`La sede de "${row.name}" no existe o esta inactiva.`));
+      redirect(buildReturn(`La sede de "${row.name}" no existe o está inactiva.`));
     }
     if (row.area_id) {
       const area = areaById.get(row.area_id);
       if (!area || area.site_id !== row.site_id) {
-        redirect(buildReturn(`El area de "${row.name}" no pertenece a la sede elegida.`));
+        redirect(buildReturn(`El área de "${row.name}" no pertenece a la sede elegida.`));
       }
     }
     if (row.location_id) {
       const location = locationById.get(row.location_id);
       if (!location || location.site_id !== row.site_id) {
-        redirect(buildReturn(`La ubicación de "${row.name}" no pertenece a la sede elegida.`));
+        redirect(buildReturn(`El LOC de "${row.name}" no pertenece a la sede elegida.`));
       }
       if (row.area_id && location.area_id !== row.area_id) {
-        redirect(buildReturn(`La ubicación de "${row.name}" no pertenece al área elegida.`));
+        redirect(buildReturn(`El LOC de "${row.name}" no pertenece al área elegida.`));
+      }
+    }
+    if (row.location_position_id) {
+      const position = positionById.get(row.location_position_id);
+      if (!position) {
+        redirect(buildReturn(`La ubicación interna de "${row.name}" no existe o está inactiva.`));
+      }
+      if (!row.location_id || position.location_id !== row.location_id) {
+        redirect(buildReturn(`La ubicación interna de "${row.name}" no pertenece al LOC elegido.`));
+      }
+      if (position.site_id !== row.site_id) {
+        redirect(buildReturn(`La ubicación interna de "${row.name}" no pertenece a la sede elegida.`));
       }
     }
   }
@@ -219,6 +248,7 @@ async function createBulkAssetGroups(formData: FormData) {
       site_id: row.site_id,
       area_id: row.area_id,
       location_id: row.location_id,
+      location_position_id: row.location_position_id,
       condition_status: row.condition_status,
       lifecycle_status: "activo",
       main_image_url: null,
@@ -231,9 +261,9 @@ async function createBulkAssetGroups(formData: FormData) {
   const { data: inserted, error } = await supabase
     .from("asset_groups")
     .insert(inserts)
-    .select("id,expected_qty,site_id,area_id,location_id");
+    .select("id,expected_qty,site_id,area_id,location_id,location_position_id");
 
-  if (error) redirect(buildReturn(error.message || "No se pudieron crear los activos por cantidad."));
+  if (error) redirect(buildReturn(error.message || "No se pudieron crear los grupos de activos."));
 
   const movements = ((inserted ?? []) as Array<{
     id: string;
@@ -241,6 +271,7 @@ async function createBulkAssetGroups(formData: FormData) {
     site_id: string | null;
     area_id: string | null;
     location_id: string | null;
+    location_position_id: string | null;
   }>).map((group) => ({
     asset_group_id: group.id,
     movement_type: "initial_location",
@@ -248,7 +279,7 @@ async function createBulkAssetGroups(formData: FormData) {
     to_site_id: group.site_id,
     to_area_id: group.area_id,
     to_location_id: group.location_id,
-    to_location_position_id: null,
+    to_location_position_id: group.location_position_id,
     responsible_employee_id: null,
     notes: "Ubicación inicial desde carga rápida de activos.",
     created_by: user.id,
@@ -278,7 +309,7 @@ export default async function AssetQuickCreatePage({
     permissionCode: PERMISSION,
   });
 
-  const [productsRes, sitesRes, areasRes, locationsRes] = await Promise.all([
+  const [productsRes, sitesRes, areasRes, locationsRes, positionsRes] = await Promise.all([
     supabase
       .from("products")
       .select("id,name,sku,product_inventory_profiles!inner(inventory_kind)")
@@ -302,6 +333,11 @@ export default async function AssetQuickCreatePage({
       .select("id,site_id,area_id,code,zone,description")
       .eq("is_active", true)
       .order("code", { ascending: true }),
+    supabase
+      .from("inventory_location_positions")
+      .select("id,site_id,location_id,code,name,kind")
+      .eq("is_active", true)
+      .order("name", { ascending: true }),
   ]);
 
   const products = ((productsRes.data ?? []) as unknown as Array<
@@ -323,6 +359,7 @@ export default async function AssetQuickCreatePage({
   const sites = (sitesRes.data ?? []) as SiteRow[];
   const areas = (areasRes.data ?? []) as AreaRow[];
   const locations = (locationsRes.data ?? []) as LocationRow[];
+  const positions = (positionsRes.data ?? []) as PositionRow[];
 
   return (
     <div className="ui-scene w-full space-y-6">
@@ -336,14 +373,14 @@ export default async function AssetQuickCreatePage({
               >
                 Volver al inventario de activos
               </Link>
-              <h1 className="ui-h1">Carga rapida de activos</h1>
+              <h1 className="ui-h1">Cargar cajas, bolsas o grupos</h1>
               <p className="ui-body-muted">
-                Crea en una sola tabla los activos que se cuentan por cantidad: moldes, bandejas, sillas, canastillas y menaje.
+                Crea grupos contables con QR para moldes, bandejas, canastillas y menaje repetido.
               </p>
             </div>
             <div className="flex flex-wrap gap-2">
               <span className="ui-chip ui-chip--brand">{products.length} tipos disponibles</span>
-              <span className="ui-chip">Sin serial individual</span>
+              <span className="ui-chip">QR por grupo</span>
               <span className="ui-chip">Listo para conteo</span>
             </div>
           </div>
@@ -351,7 +388,7 @@ export default async function AssetQuickCreatePage({
           <div className="ui-panel bg-white/90">
             <h2 className="ui-h2">Regla simple</h2>
             <p className="mt-2 ui-body-muted">
-              Si el trabajador cuenta varias unidades iguales, cargalo aqui. Si el activo tiene serial, placa o mantenimiento propio, usa registro avanzado.
+              Usa esta pantalla cuando varias piezas iguales viven juntas en una caja, bolsa o lote. Si una pieza necesita serial, placa o mantenimiento propio, usa registro avanzado.
             </p>
             <div className="mt-4">
               <Link href="/inventory/assets/new" className="ui-btn ui-btn--ghost w-full">
@@ -363,12 +400,12 @@ export default async function AssetQuickCreatePage({
       </section>
 
       {errorMsg ? <div className="ui-alert ui-alert--error">Error: {errorMsg}</div> : null}
-      {created ? <div className="ui-alert ui-alert--success">Se crearon {created} activos por cantidad.</div> : null}
+      {created ? <div className="ui-alert ui-alert--success">Se crearon {created} grupos.</div> : null}
 
       {products.length === 0 ? (
         <section className="ui-panel">
           <div className="ui-empty">
-            No hay tipos de activos disponibles. Primero crea un tipo de activo desde el catalogo.
+            No hay tipos de activos disponibles. Primero crea un tipo de activo desde el catálogo.
           </div>
           <div className="mt-4">
             <Link href="/inventory/catalog/new?type=asset" className="ui-btn ui-btn--brand">
@@ -383,6 +420,7 @@ export default async function AssetQuickCreatePage({
           sites={sites}
           areas={areas}
           locations={locations}
+          positions={positions}
         />
       )}
     </div>
