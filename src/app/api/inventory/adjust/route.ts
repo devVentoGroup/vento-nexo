@@ -246,7 +246,7 @@ export async function POST(req: Request) {
       noteParts.push(`Evidencia: ${evidence}`);
     }
 
-    const { error: movErr } = await supabase.from("inventory_movements").insert({
+    const movementPayload: Record<string, unknown> = {
       site_id: siteId,
       product_id: productId,
       movement_type: reconcileMovementType,
@@ -256,10 +256,15 @@ export async function POST(req: Request) {
       conversion_factor_to_stock: 1,
       stock_unit_code: "un",
       location_id: locationId,
-      location_position_id: locationPositionId,
       note: noteParts.join(". "),
       created_by: user.id,
-    });
+    };
+
+    if (locationPositionId) {
+      movementPayload.location_position_id = locationPositionId;
+    }
+
+    const { error: movErr } = await supabase.from("inventory_movements").insert(movementPayload);
 
     if (movErr) {
       return NextResponse.json(
