@@ -219,6 +219,84 @@ export async function POST(req: Request) {
   const newLocationQty = locationId ? currentLocationQty + quantityDelta : null;
   const newPositionQty = locationPositionId ? currentPositionQty + quantityDelta : null;
 
+  const isZeroingStalePositionStock =
+    Boolean(locationPositionId) &&
+    hasCountedQuantity &&
+    Number(rawCountedQuantity) === 0 &&
+    ((newSiteQty < 0) || (newLocationQty != null && newLocationQty < 0));
+
+  if (isZeroingStalePositionStock) {
+    const noteParts = [
+      reason,
+      "Saneamiento de ubicación interna: el stock padre ya estaba por debajo de la posición.",
+      `Conteo fisico: ${rawCountedQuantity}`,
+      `LOC: ${locationId}`,
+      `Ubicación interna: ${locationPositionId}`,
+    ];
+
+    if (evidence) {
+      noteParts.push(`Evidencia: ${evidence}`);
+    }
+
+    const { error: movErr } = await supabase.from("inventory_movements").insert({
+      site_id: siteId,
+      product_id: productId,
+      movement_type: "stock_reconcile_position_count",
+      quantity: quantityDelta,
+      input_qty: Math.abs(quantityDelta),
+      input_unit_code: "un",
+      conversion_factor_to_stock: 1,
+      stock_unit_code: "un",
+      location_id: locationId,
+      location_position_id: locationPositionId,
+      note: noteParts.join(". "),
+      created_by: user.id,
+    });
+
+    if (movErr) {
+      return NextResponse.json(
+        { error: `inventory_movements: ${movErr.message}` },
+        { status: 500 }
+      );
+    }
+
+    const { error: positionStockUpsertErr } = await supabase
+      .from("inventory_stock_by_position")
+      .upsert(
+        {
+          position_id: locationPositionId,
+          product_id: productId,
+          current_qty: 0,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "position_id,product_id" }
+      );
+
+    if (positionStockUpsertErr) {
+      return NextResponse.json(
+        { error: `inventory_stock_by_position (upsert): ${positionStockUpsertErr.message}` },
+        { status: 500 }
+      );
+    }
+
+    return NextResponse.json({
+      ok: true,
+      mode: "position_reconcile",
+      product_id: productId,
+      location_id: locationId || null,
+      location_position_id: locationPositionId || null,
+      quantity_delta: quantityDelta,
+      previous_qty: currentQty,
+      new_qty: 0,
+      previous_site_qty: currentSiteQty,
+      new_site_qty: currentSiteQty,
+      previous_location_qty: currentLocationQty,
+      new_location_qty: currentLocationQty,
+      previous_position_qty: currentPositionQty,
+      new_position_qty: 0,
+    });
+  }
+
   if (newQty < 0) {
     return NextResponse.json(
       { error: "El ajuste deja el stock del alcance seleccionado en negativo." },
