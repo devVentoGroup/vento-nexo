@@ -194,20 +194,16 @@ export default async function InventoryAdjustPage({
   }
 
   const { data: products, error: productError } = await productsQuery;
-  const productRows = (products ?? []) as unknown as ProductRow[];
+  let productRows = (products ?? []) as unknown as ProductRow[];
 
-  // Obtener stock actual para los productos
-  const { data: stockData } =
-    productRows.length > 0
-      ? await supabase
-        .from("inventory_stock_by_site")
-        .select("product_id,current_qty")
-        .eq("site_id", siteId)
-        .in("product_id", productRows.map((p) => p.id))
-      : { data: [] as StockRow[] };
+  // Obtener todo el stock visible de la sede; no debe depender del corte inicial del catalogo.
+  const { data: stockData } = await supabase
+    .from("inventory_stock_by_site")
+    .select("product_id,current_qty")
+    .eq("site_id", siteId);
 
   const stockRows = (stockData ?? []) as StockRow[];
-  const currentStock = Object.fromEntries(
+  let currentStock = Object.fromEntries(
     stockRows.map((r) => [r.product_id, r.current_qty ?? 0])
   );
 
@@ -226,12 +222,11 @@ export default async function InventoryAdjustPage({
     : "";
 
   const { data: locationStockData } =
-    safeLocationId && productRows.length > 0
+    safeLocationId
       ? await supabase
         .from("inventory_stock_by_location")
         .select("product_id,current_qty")
         .eq("location_id", safeLocationId)
-        .in("product_id", productRows.map((p) => p.id))
       : { data: [] as LocationStockRow[] };
 
   const locationStockRows = (locationStockData ?? []) as LocationStockRow[];
@@ -260,12 +255,11 @@ export default async function InventoryAdjustPage({
   const locationPositionIds = locationPositions.map((position) => position.id).filter(Boolean);
 
   const { data: positionStockData } =
-    locationPositionIds.length > 0 && productRows.length > 0
+    locationPositionIds.length > 0
       ? await supabase
         .from("inventory_stock_by_position")
         .select("product_id,position_id,current_qty")
         .in("position_id", locationPositionIds)
-        .in("product_id", productRows.map((p) => p.id))
       : { data: [] as PositionStockRow[] };
 
   const positionStockRows = (positionStockData ?? []) as PositionStockRow[];
@@ -278,6 +272,55 @@ export default async function InventoryAdjustPage({
       })
       .filter(([key]) => !String(key).startsWith("|") && !String(key).endsWith("|"))
   );
+
+  const loadedProductIds = new Set(productRows.map((product) => product.id));
+  const stockScopeProductIds = Array.from(
+    new Set([
+      ...stockRows
+        .filter((row) => Number(row.current_qty ?? 0) > 0)
+        .map((row) => String(row.product_id ?? "").trim())
+        .filter(Boolean),
+      ...locationStockRows
+        .filter((row) => Number(row.current_qty ?? 0) > 0)
+        .map((row) => String(row.product_id ?? "").trim())
+        .filter(Boolean),
+      ...positionStockRows
+        .filter((row) => Number(row.current_qty ?? 0) > 0)
+        .map((row) => String(row.product_id ?? "").trim())
+        .filter(Boolean),
+    ])
+  );
+  const missingStockProductIds = stockScopeProductIds.filter((productId) => !loadedProductIds.has(productId));
+
+  if (missingStockProductIds.length > 0) {
+    const { data: missingProducts } = await supabase
+      .from("products")
+      .select("id,name,sku,unit")
+      .in("id", missingStockProductIds)
+      .order("name", { ascending: true });
+
+    const missingProductRows = (missingProducts ?? []) as ProductRow[];
+    productRows = [...productRows, ...missingProductRows];
+
+    const { data: missingSiteStockData } =
+      missingProductRows.length > 0
+        ? await supabase
+          .from("inventory_stock_by_site")
+          .select("product_id,current_qty")
+          .eq("site_id", siteId)
+          .in("product_id", missingProductRows.map((product) => product.id))
+        : { data: [] as StockRow[] };
+
+    currentStock = {
+      ...currentStock,
+      ...Object.fromEntries(
+        ((missingSiteStockData ?? []) as StockRow[]).map((row) => [
+          row.product_id,
+          row.current_qty ?? 0,
+        ])
+      ),
+    };
+  }
 
   const siteName = siteNameMap.get(siteId) ?? siteId;
 
