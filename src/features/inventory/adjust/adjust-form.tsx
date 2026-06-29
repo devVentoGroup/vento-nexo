@@ -461,7 +461,7 @@ export function AdjustForm({
             </label>
           </div>
 
-          <div className="relative">
+          <div className="space-y-2">
             <label className="flex flex-col gap-1">
               <span className="ui-label">
                 Producto <span className="text-[var(--ui-danger)]">*</span>
@@ -484,7 +484,7 @@ export function AdjustForm({
             </label>
 
             {isProductPickerOpen ? (
-              <div className="absolute z-30 mt-2 max-h-96 w-full overflow-y-auto rounded-2xl border border-[var(--ui-border)] bg-white p-2 shadow-xl">
+              <div className="max-h-80 w-full overflow-y-auto rounded-2xl border border-[var(--ui-border)] bg-white p-2 shadow-sm">
                 {visibleProducts.map((product) => {
                   const siteQty = currentStock[product.id] ?? 0;
                   const locQty = selectedLocationId ? currentLocationStock[product.id] ?? 0 : null;

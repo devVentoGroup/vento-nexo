@@ -20,7 +20,7 @@ type SiteRow = { id: string; name: string | null };
 type ProductRow = { id: string; name: string; sku: string | null; unit: string | null };
 type ProductSiteRow = { product_id: string; is_active: boolean | null };
 type StockRow = { product_id: string; current_qty: number | null };
-type LocationRow = { id: string; name: string | null; code: string | null; };
+type LocationRow = { id: string; description: string | null; code: string | null; };
 type LocationStockRow = { product_id: string | null; current_qty: number | null; };
 type LocationPositionRow = {
   id: string;
@@ -211,12 +211,13 @@ export default async function InventoryAdjustPage({
     stockRows.map((r) => [r.product_id, r.current_qty ?? 0])
   );
 
-  const { data: locationsData } = await supabase
+  const { data: locationsData, error: locationsError } = await supabase
     .from("inventory_locations")
-    .select("id,name,code")
+    .select("id,description,code")
     .eq("site_id", siteId)
     .eq("is_active", true)
-    .order("name", { ascending: true });
+    .order("description", { ascending: true, nullsFirst: false })
+    .order("code", { ascending: true });
 
   const locationRows = (locationsData ?? []) as LocationRow[];
 
@@ -320,6 +321,10 @@ export default async function InventoryAdjustPage({
         <div className="ui-alert ui-alert--error">
           Error al cargar productos: {productError.message}
         </div>
+      ) : locationsError ? (
+        <div className="ui-alert ui-alert--error">
+          Error al cargar LOCs: {locationsError.message}
+        </div>
       ) : productRows.length === 0 ? (
         <div className="ui-alert ui-alert--warn">
           No hay productos con inventario trackeado para esta sede. Revisa el catálogo y
@@ -331,7 +336,11 @@ export default async function InventoryAdjustPage({
           siteId={siteId}
           siteName={siteName}
           currentStock={currentStock}
-          locations={locationRows.map((location) => ({ id: location.id, name: location.name, code: location.code, }))}
+          locations={locationRows.map((location) => ({
+            id: location.id,
+            name: location.description,
+            code: location.code,
+          }))}
           selectedLocationId={safeLocationId}
           currentLocationStock={currentLocationStock}
           locationPositions={locationPositions}
