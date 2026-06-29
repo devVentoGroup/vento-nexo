@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 
 type StockPart = {
   qty: number;
@@ -11,6 +11,8 @@ type StockPart = {
   uomProfileId: string;
   imageUrl?: string;
 };
+
+type MeasurementMode = "fixed_presentation" | "variable_weight" | "count_with_weight" | "bulk_volume";
 
 export type KioskBoardStockItem = {
   productId: string;
@@ -22,6 +24,7 @@ export type KioskBoardStockItem = {
   categoryLabel: string;
   categoryPath: string;
   internalLocationLabel: string;
+  measurementMode: MeasurementMode;
   presentationParts: StockPart[];
 };
 
@@ -58,8 +61,19 @@ function stockStatusLabel(value: number) {
   return "Disponible";
 }
 
+function isFixedPresentation(item: KioskBoardStockItem) {
+  return item.measurementMode === "fixed_presentation";
+}
+
 function StockAmount({ item, size = "lg" }: { item: KioskBoardStockItem; size?: "lg" | "sm" }) {
-  const presentationParts = Number(item.qty ?? 0) > 0 ? item.presentationParts : [];
+  const presentationParts = Number(item.qty ?? 0) > 0 && isFixedPresentation(item) ? item.presentationParts : [];
+  const showBaseQty = presentationParts.length === 0;
+  const variableLabel =
+    item.measurementMode === "bulk_volume"
+      ? "Granel / volumen variable"
+      : item.measurementMode === "variable_weight" || item.measurementMode === "count_with_weight"
+        ? "Granel / peso variable"
+        : "Sin desglose por presentación";
 
   return (
     <div className={size === "lg" ? "min-h-[3.75rem] space-y-1" : "min-h-[3.25rem] space-y-1"}>
@@ -78,13 +92,14 @@ function StockAmount({ item, size = "lg" }: { item: KioskBoardStockItem; size?: 
             </span>
           ))}
         </div>
-      ) : (
+      ) : null}
+      {showBaseQty ? (
         <div className={size === "lg" ? "text-2xl font-semibold text-[var(--ui-text)]" : "text-lg font-semibold text-[var(--ui-text)]"}>
           {formatQty(item.qty)} {item.unit}
         </div>
-      )}
-      {presentationParts.length === 0 ? (
-        <div className="text-xs font-semibold text-[var(--ui-muted)]">Sin desglose por presentación</div>
+      ) : null}
+      {showBaseQty ? (
+        <div className="text-xs font-semibold text-[var(--ui-muted)]">{variableLabel}</div>
       ) : null}
     </div>
   );
@@ -144,6 +159,10 @@ function normalizeViewMode(value: string | undefined, isKiosk: boolean): ViewMod
   return isKiosk ? "compact" : "cards";
 }
 
+function defaultVisibleLimit(isKiosk: boolean) {
+  return isKiosk ? 48 : Number.MAX_SAFE_INTEGER;
+}
+
 function HideZeroStockButton({
   action,
   item,
@@ -192,17 +211,21 @@ export function KioskBoardStockView({
   const totalCount = typeof totalItemsCount === "number" ? totalItemsCount : items.length;
   const stockTab: StockTab = searchParams.get("stock_tab") === "out" ? "out" : "available";
   const [viewMode, setViewMode] = useState<ViewMode>(() => normalizeViewMode(initialViewMode, isKiosk));
-  const [visibleLimit, setVisibleLimit] = useState(() => (isKiosk ? 48 : Number.MAX_SAFE_INTEGER));
+  const visibleLimitKey = `${isKiosk ? "kiosk" : "board"}:${stockTab}:${searchQuery}`;
+  const [visibleLimitState, setVisibleLimitState] = useState(() => ({
+    key: visibleLimitKey,
+    limit: defaultVisibleLimit(isKiosk),
+  }));
   const [openingProductId, setOpeningProductId] = useState("");
   const [hidingProductId, setHidingProductId] = useState("");
-
-  useEffect(() => {
-    setVisibleLimit(isKiosk ? 48 : Number.MAX_SAFE_INTEGER);
-  }, [isKiosk, stockTab, searchQuery]);
 
   const availableItems = items.filter((item) => Number(item.qty ?? 0) > 0);
   const outOfStockItems = items.filter((item) => Number(item.qty ?? 0) <= 0);
   const filteredItems = stockTab === "out" ? outOfStockItems : availableItems;
+  const visibleLimit =
+    visibleLimitState.key === visibleLimitKey
+      ? visibleLimitState.limit
+      : defaultVisibleLimit(isKiosk);
   const visibleItems = filteredItems.slice(0, visibleLimit);
   const hasMoreItems = visibleItems.length < filteredItems.length;
   const currentBoardHref = buildBoardHref({
@@ -469,7 +492,12 @@ export function KioskBoardStockView({
           <button
             type="button"
             className="ui-btn ui-btn--ghost h-12 px-5 text-base"
-            onClick={() => setVisibleLimit((current) => current + 48)}
+            onClick={() =>
+              setVisibleLimitState((current) => ({
+                key: visibleLimitKey,
+                limit: (current.key === visibleLimitKey ? current.limit : defaultVisibleLimit(isKiosk)) + 48,
+              }))
+            }
           >
             Mostrar más productos
           </button>

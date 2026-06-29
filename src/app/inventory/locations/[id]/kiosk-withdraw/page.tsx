@@ -36,6 +36,10 @@ type ProductRow = {
   name: string | null;
   unit: string | null;
   stock_unit_code: string | null;
+  product_inventory_profiles?:
+  | { measurement_mode?: string | null }
+  | Array<{ measurement_mode?: string | null }>
+  | null;
 };
 
 type StockRow = {
@@ -103,6 +107,17 @@ function parseNumber(value: string) {
 function normalizeProduct(value: StockRow["products"]): ProductRow | null {
   if (Array.isArray(value)) return value[0] ?? null;
   return value ?? null;
+}
+
+function productMeasurementMode(product: ProductRow | null | undefined) {
+  const relation = product?.product_inventory_profiles;
+  const profile = Array.isArray(relation) ? relation[0] : relation;
+  const normalized = String(profile?.measurement_mode ?? "").trim().toLowerCase();
+
+  if (normalized === "variable_weight") return "variable_weight";
+  if (normalized === "count_with_weight") return "count_with_weight";
+  if (normalized === "bulk_volume") return "bulk_volume";
+  return "fixed_presentation";
 }
 
 function normalizeUomProfileRelation(value: PresentationStockRow["product_uom_profiles"]) {
@@ -953,7 +968,7 @@ export default async function KioskWithdrawPage({
       .maybeSingle(),
     supabase
       .from("inventory_stock_by_location")
-      .select("product_id,current_qty,products(id,name,unit,stock_unit_code)")
+      .select("product_id,current_qty,products(id,name,unit,stock_unit_code,product_inventory_profiles(measurement_mode))")
       .eq("location_id", id)
       .eq("product_id", initialProductId)
       .gt("current_qty", 0)
@@ -973,6 +988,7 @@ export default async function KioskWithdrawPage({
   const selectedProduct = {
     ...selectedProductBase,
     available_qty: Number(selectedStockRow.current_qty ?? 0),
+    measurementMode: productMeasurementMode(selectedProductBase),
     presentationParts: [] as PresentationStockPart[],
   };
 

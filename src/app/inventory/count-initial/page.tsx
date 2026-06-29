@@ -4,7 +4,7 @@ import { requireAppAccess } from "@/lib/auth/guard";
 import { formatHistoryDateTime } from "@/lib/formatters";
 import { CatalogOptionalDetails } from "@/features/inventory/catalog/catalog-ui";
 import { createClient } from "@/lib/supabase/server";
-import { convertQuantity, createUnitMap, normalizeUnitCode } from "@/lib/inventory/uom";
+import { normalizeUnitCode } from "@/lib/inventory/uom";
 
 import { CountInitialForm } from "@/features/inventory/count-initial/count-initial-form";
 
@@ -23,6 +23,10 @@ type ProductRow = {
   sku: string | null;
   unit: string | null;
   stock_unit_code: string | null;
+  product_inventory_profiles?:
+    | { measurement_mode?: string | null; track_inventory?: boolean | null }
+    | Array<{ measurement_mode?: string | null; track_inventory?: boolean | null }>
+    | null;
 };
 type ProductSiteRow = { product_id: string; is_active: boolean | null };
 type ProductUomProfileRow = {
@@ -37,27 +41,6 @@ type ProductUomProfileRow = {
   source: "manual" | "supplier_primary" | "recipe_portion" | null;
   usage_context: "general" | "purchase" | "remission" | null;
 };
-type ProductSupplierRow = {
-  id: string;
-  product_id: string;
-  supplier_id: string | null;
-  purchase_unit: string | null;
-  purchase_unit_size: number | null;
-  purchase_pack_qty: number | null;
-  purchase_pack_unit_code: string | null;
-  is_primary: boolean | null;
-};
-type SupplierRow = { id: string; name: string | null };
-type UnitRow = {
-  code: string;
-  name: string;
-  family: "volume" | "mass" | "count";
-  factor_to_base: number;
-  symbol: string | null;
-  display_decimals: number | null;
-  is_active: boolean;
-};
-
 const PRODUCT_PAGE_SIZE = 1000;
 const IN_CHUNK_SIZE = 150;
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
@@ -80,7 +63,7 @@ async function fetchProductRowsForInitialCount(
   for (let from = 0; ; from += PRODUCT_PAGE_SIZE) {
     let query = supabase
       .from("products")
-      .select("id,name,sku,unit,stock_unit_code,product_inventory_profiles(track_inventory)")
+      .select("id,name,sku,unit,stock_unit_code,product_inventory_profiles(track_inventory,measurement_mode)")
       .eq("product_inventory_profiles.track_inventory", true)
       .order("name", { ascending: true })
       .range(from, from + PRODUCT_PAGE_SIZE - 1);
@@ -118,45 +101,6 @@ async function fetchProductProfilesForInitialCount(
   return rows;
 }
 
-async function fetchProductSuppliersForInitialCount(
-  supabase: SupabaseClient,
-  productIds: string[]
-) {
-  const rows: ProductSupplierRow[] = [];
-
-  for (const productIdChunk of chunkArray(productIds, IN_CHUNK_SIZE)) {
-    const { data } = await supabase
-      .from("product_suppliers")
-      .select("id,product_id,supplier_id,purchase_unit,purchase_unit_size,purchase_pack_qty,purchase_pack_unit_code,is_primary")
-      .in("product_id", productIdChunk);
-
-    rows.push(...((data ?? []) as unknown as ProductSupplierRow[]));
-  }
-
-  return rows;
-}
-
-async function fetchSupplierNameMap(
-  supabase: SupabaseClient,
-  supplierIds: string[]
-) {
-  const ids = Array.from(new Set(supplierIds.map((id) => id.trim()).filter(Boolean)));
-  const map = new Map<string, string>();
-
-  for (const supplierIdChunk of chunkArray(ids, IN_CHUNK_SIZE)) {
-    const { data } = await supabase
-      .from("suppliers")
-      .select("id,name")
-      .in("id", supplierIdChunk);
-
-    for (const supplier of (data ?? []) as SupplierRow[]) {
-      map.set(supplier.id, supplier.name ?? supplier.id);
-    }
-  }
-
-  return map;
-}
-
 function shouldShowProfileInInitialCount(
   profile: ProductUomProfileRow,
   stockUnitCode: string
@@ -164,8 +108,8 @@ function shouldShowProfileInInitialCount(
   const usageContext = profile.usage_context ?? "general";
   const source = profile.source ?? "manual";
 
-  if (usageContext !== "remission") return true;
   if (source !== "manual") return false;
+  if (usageContext !== "general") return false;
 
   const inputUnitCode = normalizeUnitCode(profile.input_unit_code ?? "");
   const normalizedStockUnitCode = normalizeUnitCode(stockUnitCode);
@@ -178,6 +122,14 @@ function shouldShowProfileInInitialCount(
     qtyInStockUnit === 1;
 
   return !isSameAsBaseUnit;
+}
+
+function getProductMeasurementMode(product: ProductRow) {
+  const relation = product.product_inventory_profiles;
+  const profile = Array.isArray(relation) ? relation[0] : relation;
+  const mode = String(profile?.measurement_mode ?? "").trim();
+
+  return mode || "fixed_presentation";
 }
 
 export default async function InventoryCountInitialPage({
@@ -336,73 +288,10 @@ export default async function InventoryCountInitialPage({
   const { rows: productRows, error: productError } = await fetchProductRowsForInitialCount(supabase, productSiteIds);
   const productIdsForProfiles = productRows.map((product) => product.id);
 
-  const [productProfiles, supplierRows, unitsData] =
+  const productProfiles =
     productIdsForProfiles.length > 0
-      ? await Promise.all([
-        fetchProductProfilesForInitialCount(supabase, productIdsForProfiles),
-        fetchProductSuppliersForInitialCount(supabase, productIdsForProfiles),
-        supabase
-          .from("inventory_units")
-          .select("code,name,family,factor_to_base,symbol,display_decimals,is_active")
-          .eq("is_active", true),
-      ])
-      : [[], [], { data: [] as UnitRow[] }];
-  const unitMap = createUnitMap((unitsData.data ?? []) as UnitRow[]);
-  const productsById = new Map(productRows.map((product) => [product.id, product]));
-  const supplierNameMap = await fetchSupplierNameMap(
-    supabase,
-    supplierRows
-      .map((supplier) => supplier.supplier_id ?? "")
-      .filter((id): id is string => Boolean(id))
-  );
-  const secondarySupplierProfiles: ProductUomProfileRow[] = [];
-
-  for (const supplier of supplierRows) {
-    if (supplier.is_primary === true) continue;
-    const product = productsById.get(supplier.product_id);
-    if (!product) continue;
-
-    const stockUnitCode = normalizeUnitCode(product.stock_unit_code ?? product.unit ?? "un");
-    const packUnitCode = normalizeUnitCode(supplier.purchase_pack_unit_code ?? stockUnitCode);
-    const packQty = Number(supplier.purchase_pack_qty ?? supplier.purchase_unit_size ?? 0);
-    if (!stockUnitCode || !packUnitCode || !Number.isFinite(packQty) || packQty <= 0) continue;
-
-    let qtyInStockUnit = packQty;
-    try {
-      qtyInStockUnit = convertQuantity({
-        quantity: packQty,
-        fromUnitCode: packUnitCode,
-        toUnitCode: stockUnitCode,
-        unitMap,
-      }).quantity;
-    } catch {
-      continue;
-    }
-
-    const supplierName = supplier.supplier_id ? supplierNameMap.get(supplier.supplier_id) ?? "" : "";
-    const packLabel = String(supplier.purchase_unit ?? "").trim() || "Empaque";
-    const packSizeLabel = `${packQty.toLocaleString("es-CO", {
-      maximumFractionDigits: 3,
-    })} ${packUnitCode}`;
-    const label = supplierName
-      ? `${packLabel} ${packSizeLabel} ${supplierName}`
-      : `${packLabel} ${packSizeLabel}`;
-
-    secondarySupplierProfiles.push({
-      id: `supplier:${supplier.id}`,
-      product_id: supplier.product_id,
-      label,
-      input_unit_code: packUnitCode,
-      qty_in_input_unit: 1,
-      qty_in_stock_unit: qtyInStockUnit,
-      is_default: false,
-      is_active: true,
-      source: "manual",
-      usage_context: "purchase",
-    });
-  }
-
-  const allProductProfiles = [...productProfiles, ...secondarySupplierProfiles];
+      ? await fetchProductProfilesForInitialCount(supabase, productIdsForProfiles)
+      : [];
 
   type PositionRow = {
     id: string;
@@ -663,7 +552,8 @@ export default async function InventoryCountInitialPage({
               sku: p.sku,
               unit: p.stock_unit_code ?? p.unit,
               stockUnitCode: p.stock_unit_code ?? p.unit,
-              profiles: allProductProfiles
+              measurementMode: getProductMeasurementMode(p),
+              profiles: productProfiles
                 .filter((profile) => {
                   const stockUnitCode = p.stock_unit_code ?? p.unit ?? "";
                   return (

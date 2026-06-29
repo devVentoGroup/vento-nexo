@@ -52,6 +52,13 @@ type PresentationStockRow = {
   | null;
 };
 
+type MeasurementMode = "fixed_presentation" | "variable_weight" | "count_with_weight" | "bulk_volume";
+
+type ProductInventoryProfileRow = {
+  product_id: string;
+  measurement_mode: string | null;
+};
+
 function formatQty(value: number | null | undefined) {
   const n = Number(value ?? 0);
   if (!Number.isFinite(n)) return "-";
@@ -61,6 +68,14 @@ function formatQty(value: number | null | undefined) {
 function roundBoardQty(value: number) {
   if (!Number.isFinite(value)) return 0;
   return Math.round((value + Number.EPSILON) * 1000) / 1000;
+}
+
+function normalizeMeasurementMode(value: string | null | undefined): MeasurementMode {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "variable_weight") return "variable_weight";
+  if (normalized === "count_with_weight") return "count_with_weight";
+  if (normalized === "bulk_volume") return "bulk_volume";
+  return "fixed_presentation";
 }
 
 function buildLocTitle(loc: {
@@ -478,27 +493,45 @@ export default async function LocationBoardPage({
       products: normalizeProductRelation(row.products),
     }));
   const productIds = stockRows.map((row) => row.product_id);
-  const { data: presentationStockData } = productIds.length
+  const [{ data: presentationStockData }, { data: inventoryProfilesData }] = productIds.length
     ? selectedPosition
-      ? await supabase
-        .from("inventory_stock_by_uom_profile")
-        .select(
-          "product_id,uom_profile_id,presentation_qty,base_qty,location_position_id,product_uom_profiles(id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context,image_url,catalog_image_url)"
-        )
-        .eq("location_id", id)
-        .in("location_position_id", selectedPositionIds)
-        .in("product_id", productIds)
-        .gt("presentation_qty", 0)
-      : await supabase
-        .from("inventory_stock_by_uom_profile")
-        .select(
-          "product_id,uom_profile_id,presentation_qty,base_qty,location_position_id,product_uom_profiles(id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context,image_url,catalog_image_url)"
-        )
-        .eq("location_id", id)
-        .in("product_id", productIds)
-        .gt("presentation_qty", 0)
-    : { data: [] as PresentationStockRow[] };
+      ? await Promise.all([
+        supabase
+          .from("inventory_stock_by_uom_profile")
+          .select(
+            "product_id,uom_profile_id,presentation_qty,base_qty,location_position_id,product_uom_profiles(id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context,image_url,catalog_image_url)"
+          )
+          .eq("location_id", id)
+          .in("location_position_id", selectedPositionIds)
+          .in("product_id", productIds)
+          .gt("presentation_qty", 0),
+        supabase
+          .from("product_inventory_profiles")
+          .select("product_id,measurement_mode")
+          .in("product_id", productIds),
+      ])
+      : await Promise.all([
+        supabase
+          .from("inventory_stock_by_uom_profile")
+          .select(
+            "product_id,uom_profile_id,presentation_qty,base_qty,location_position_id,product_uom_profiles(id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context,image_url,catalog_image_url)"
+          )
+          .eq("location_id", id)
+          .in("product_id", productIds)
+          .gt("presentation_qty", 0),
+        supabase
+          .from("product_inventory_profiles")
+          .select("product_id,measurement_mode")
+          .in("product_id", productIds),
+      ])
+    : [{ data: [] as PresentationStockRow[] }, { data: [] as ProductInventoryProfileRow[] }];
   const presentationRows = (presentationStockData ?? []) as unknown as PresentationStockRow[];
+  const measurementModeByProduct = new Map(
+    ((inventoryProfilesData ?? []) as ProductInventoryProfileRow[]).map((profile) => [
+      profile.product_id,
+      normalizeMeasurementMode(profile.measurement_mode),
+    ])
+  );
 
   const stockQtyByProduct = new Map<string, number>();
   for (const row of stockRows) {
@@ -603,6 +636,7 @@ export default async function LocationBoardPage({
     const categoryPath = getCategoryPath(categoryId, categoryMap);
     const categoryLabel = categoryPath.split(" / ").at(-1) || "Sin categoría";
     const presentationParts = presentationPartsByProduct.get(row.product_id) ?? [];
+    const measurementMode = measurementModeByProduct.get(row.product_id) ?? "fixed_presentation";
     const presentationImageUrl =
       presentationParts.find((part) => String(part.imageUrl ?? "").trim())?.imageUrl ?? "";
 
@@ -616,7 +650,8 @@ export default async function LocationBoardPage({
       categoryLabel,
       categoryPath,
       internalLocationLabel: compactLocationLabel(internalLocationLabelsByProduct.get(row.product_id) ?? []),
-      presentationParts,
+      measurementMode,
+      presentationParts: measurementMode === "fixed_presentation" ? presentationParts : [],
     };
   });
 

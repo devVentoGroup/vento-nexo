@@ -29,7 +29,7 @@ async function closeCountAction(formData: FormData) {
     .eq("id", sessionId)
     .single();
   if (!session || (session as { status?: string }).status !== "open") {
-    redirect(`/inventory/count-initial/session/${sessionId}?error=` + encodeURIComponent("Sesion no encontrada o ya cerrada"));
+    redirect(`/inventory/count-initial/session/${sessionId}?error=` + encodeURIComponent("Sesión no encontrada o ya cerrada"));
   }
 
   const { error: closeErr } = await supabase.rpc("close_inventory_count_session", {
@@ -58,7 +58,7 @@ async function approveAdjustmentsAction(formData: FormData) {
     .eq("id", sessionId)
     .single();
   if (!session || (session as { status?: string }).status !== "closed") {
-    redirect(`/inventory/count-initial/session/${sessionId}?error=` + encodeURIComponent("Sesion debe estar cerrada"));
+    redirect(`/inventory/count-initial/session/${sessionId}?error=` + encodeURIComponent("Sesión debe estar cerrada"));
   }
 
   const { error: applyErr } = await supabase.rpc("apply_inventory_count_adjustments", {
@@ -98,9 +98,44 @@ type LineRow = {
   adjustment_applied_at: string | null;
   product: { name: string | null; unit: string | null; stock_unit_code?: string | null } | null;
 };
+type LineEntryRow = {
+  id: string;
+  count_line_id: string;
+  input_quantity: number | null;
+  input_unit_code: string | null;
+  input_uom_profile_id: string | null;
+  quantity_counted: number | null;
+  stock_unit_code: string | null;
+  entry_order: number | null;
+};
 type PositionRow = { id: string; code: string | null; name: string | null; parent_position_id: string | null; sort_order: number | null };
+type UomProfileRow = { id: string; label: string | null; input_unit_code: string | null };
 type SiteRow = { id: string; name: string | null };
 type LocRow = { id: string; code: string | null };
+
+function formatQty(value: number) {
+  return new Intl.NumberFormat("es-CO", {
+    maximumFractionDigits: 6,
+  }).format(Number.isFinite(value) ? value : 0);
+}
+
+function basePositionLabel(position: PositionRow) {
+  return String(position.name || position.code || position.id).trim();
+}
+
+function positionPathLabel(position: PositionRow, positionById: Map<string, PositionRow>) {
+  const path: string[] = [];
+  const visited = new Set<string>();
+  let current: PositionRow | undefined = position;
+
+  while (current && !visited.has(current.id)) {
+    visited.add(current.id);
+    path.unshift(basePositionLabel(current));
+    current = current.parent_position_id ? positionById.get(current.parent_position_id) : undefined;
+  }
+
+  return path.join(" / ");
+}
 
 export default async function CountSessionPage({
   params,
@@ -130,7 +165,7 @@ export default async function CountSessionPage({
           Volver a conteos
         </Link>
         <div className="mt-4 ui-alert ui-alert--error">
-          Sesion no encontrada o sin acceso.
+          Sesión no encontrada o sin acceso.
         </div>
       </div>
     );
@@ -154,25 +189,55 @@ export default async function CountSessionPage({
     .order("product_id", { ascending: true });
   const lineRows = (lines ?? []) as unknown as LineRow[];
 
-  const positionIds = Array.from(
-    new Set(lineRows.map((line) => String(line.location_position_id ?? "").trim()).filter(Boolean))
-  );
+  const { data: lineEntries } =
+    lineRows.length > 0
+      ? await supabase
+        .from("inventory_count_line_entries")
+        .select("id,count_line_id,input_quantity,input_unit_code,input_uom_profile_id,quantity_counted,stock_unit_code,entry_order")
+        .eq("session_id", id)
+        .order("entry_order", { ascending: true })
+      : { data: [] as LineEntryRow[] };
+  const lineEntryRows = (lineEntries ?? []) as LineEntryRow[];
 
   const { data: positionsData } =
-    positionIds.length > 0
+    sess.scope_location_id
       ? await supabase
         .from("inventory_location_positions")
         .select("id,code,name,parent_position_id,sort_order")
-        .in("id", positionIds)
+        .eq("location_id", sess.scope_location_id)
       : { data: [] as PositionRow[] };
 
   const positionRows = (positionsData ?? []) as PositionRow[];
+  const positionById = new Map(positionRows.map((position) => [position.id, position]));
   const positionLabelById = new Map(
     positionRows.map((position) => [
       position.id,
-      String(position.name || position.code || position.id).trim(),
+      positionPathLabel(position, positionById),
     ])
   );
+
+  const uomProfileIds = Array.from(
+    new Set([
+      ...lineRows.map((line) => String(line.input_uom_profile_id ?? "").trim()).filter(Boolean),
+      ...lineEntryRows.map((entry) => String(entry.input_uom_profile_id ?? "").trim()).filter(Boolean),
+    ])
+  );
+  const { data: uomProfilesData } =
+    uomProfileIds.length > 0
+      ? await supabase
+        .from("product_uom_profiles")
+        .select("id,label,input_unit_code")
+        .in("id", uomProfileIds)
+      : { data: [] as UomProfileRow[] };
+  const uomProfileById = new Map(
+    ((uomProfilesData ?? []) as UomProfileRow[]).map((profile) => [profile.id, profile])
+  );
+  const entriesByLineId = new Map<string, LineEntryRow[]>();
+  for (const entry of lineEntryRows) {
+    const entries = entriesByLineId.get(entry.count_line_id) ?? [];
+    entries.push(entry);
+    entriesByLineId.set(entry.count_line_id, entries);
+  }
 
   const scopeLabel =
     sess.scope_type === "loc" && sess.scope_location_id
@@ -191,6 +256,76 @@ export default async function CountSessionPage({
     locCode = (locRow as LocRow | null)?.code ?? null;
   }
 
+  const displayRows = lineRows
+    .map((line) => {
+      const current = isOpen
+        ? Number(line.current_qty_at_open ?? 0)
+        : Number(line.current_qty_at_close ?? 0);
+      const counted = Number(line.quantity_counted ?? 0);
+      const delta = isOpen ? counted - current : Number(line.quantity_delta ?? 0);
+      const applied = Boolean(line.adjustment_applied_at);
+      const positionLabel = line.location_position_id
+        ? positionLabelById.get(line.location_position_id) ?? line.location_position_id.slice(0, 8)
+        : "Sin ubicación interna";
+      const stockUnit = line.stock_unit_code ?? line.product?.stock_unit_code ?? line.product?.unit ?? "-";
+      const profile = line.input_uom_profile_id ? uomProfileById.get(line.input_uom_profile_id) : null;
+      const physicalEntries = entriesByLineId.get(line.id) ?? [];
+      const inputUnitLabel = physicalEntries.length > 1
+        ? "Varias presentaciones"
+        : String(profile?.label ?? "").trim() ||
+          String(profile?.input_unit_code ?? line.input_unit_code ?? stockUnit).trim();
+      const inputQty = Number(line.input_quantity ?? line.quantity_counted ?? 0);
+      const physicalEntryLabels = physicalEntries.map((entry) => {
+        const entryProfile = entry.input_uom_profile_id
+          ? uomProfileById.get(entry.input_uom_profile_id)
+          : null;
+        const entryUnitLabel =
+          String(entryProfile?.label ?? "").trim() ||
+          String(entryProfile?.input_unit_code ?? entry.input_unit_code ?? stockUnit).trim();
+
+        return {
+          id: entry.id,
+          inputQty: Number(entry.input_quantity ?? 0),
+          inputUnitLabel: entryUnitLabel,
+          baseQty: Number(entry.quantity_counted ?? 0),
+          stockUnit: entry.stock_unit_code ?? stockUnit,
+        };
+      });
+
+      return {
+        line,
+        productName: line.product?.name ?? line.product_id,
+        stockUnit,
+        positionLabel,
+        counted,
+        current,
+        delta,
+        applied,
+        inputQty,
+        inputUnitLabel,
+        physicalEntryLabels,
+      };
+    })
+    .sort((a, b) => {
+      const positionDiff = a.positionLabel.localeCompare(b.positionLabel, "es", {
+        numeric: true,
+        sensitivity: "base",
+      });
+      if (positionDiff !== 0) return positionDiff;
+
+      return a.productName.localeCompare(b.productName, "es", {
+        numeric: true,
+        sensitivity: "base",
+      });
+    });
+
+  const pendingLines = displayRows.filter((row) => row.delta !== 0 && !row.applied).length;
+  const appliedLines = displayRows.filter((row) => row.applied).length;
+  const zeroDiffLines = displayRows.filter((row) => row.delta === 0).length;
+  const totalPositiveDelta = displayRows.reduce((sum, row) => sum + Math.max(row.delta, 0), 0);
+  const totalNegativeDelta = displayRows.reduce((sum, row) => sum + Math.min(row.delta, 0), 0);
+  const statusLabel = isOpen ? "Abierta" : pendingLines > 0 ? "Cerrada, pendiente de aprobar" : "Cerrada sin pendientes";
+
   return (
     <div className="w-full space-y-6">
       <div>
@@ -198,12 +333,12 @@ export default async function CountSessionPage({
           Volver a conteos
         </Link>
         <h1 className="mt-2 ui-h1">
-          Sesion de conteo - {sess.name ?? sess.id.slice(0, 8)}
+          Sesión de conteo - {sess.name ?? sess.id.slice(0, 8)}
         </h1>
         <p className="mt-2 ui-body-muted">
-          Sede: {siteName} - Ambito: {scopeLabel}
+          Sede: {siteName} - Ámbito: {scopeLabel}
           {locCode ? ` (${locCode})` : ""} - Estado:{" "}
-          <strong>{isOpen ? "Abierta" : "Cerrada"}</strong>
+          <strong>{statusLabel}</strong>
         </p>
         <p className="mt-1 ui-caption">
           Creada: {formatHistoryDateTime(sess.created_at)}
@@ -223,51 +358,99 @@ export default async function CountSessionPage({
         </div>
       ) : null}
 
+      <section className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
+        <div className="ui-panel">
+          <div className="ui-h3">Cómo leer este conteo</div>
+          <div className="mt-3 grid gap-3 sm:grid-cols-3">
+            <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
+              <div className="text-xs font-bold uppercase tracking-wide text-[var(--ui-muted)]">Abierta</div>
+              <p className="mt-1 text-sm text-[var(--ui-text)]">Se capturó el conteo, pero todavía no recalcula contra el sistema.</p>
+            </div>
+            <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
+              <div className="text-xs font-bold uppercase tracking-wide text-[var(--ui-muted)]">Cerrada</div>
+              <p className="mt-1 text-sm text-[var(--ui-text)]">Congela el saldo actual y muestra diferencias por producto y ubicación.</p>
+            </div>
+            <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
+              <div className="text-xs font-bold uppercase tracking-wide text-[var(--ui-muted)]">Aprobada</div>
+              <p className="mt-1 text-sm text-[var(--ui-text)]">Aplica los ajustes y crea movimientos de inventario trazables.</p>
+            </div>
+          </div>
+          <p className="mt-3 ui-caption">
+            Hoy el permiso <span className="font-mono">inventory.counts</span> permite crear, cerrar y aprobar. Si necesitas separación real, hay que crear permisos distintos para capturar, cerrar y aprobar.
+          </p>
+        </div>
+
+        <div className="ui-panel">
+          <div className="ui-h3">Resumen de diferencias</div>
+          <div className="mt-3 grid grid-cols-2 gap-3">
+            <div>
+              <div className="ui-caption">Pendientes</div>
+              <div className="text-2xl font-black text-[var(--ui-text)]">{pendingLines}</div>
+            </div>
+            <div>
+              <div className="ui-caption">Aplicadas</div>
+              <div className="text-2xl font-black text-[var(--ui-text)]">{appliedLines}</div>
+            </div>
+            <div>
+              <div className="ui-caption">Sin diferencia</div>
+              <div className="text-2xl font-black text-[var(--ui-text)]">{zeroDiffLines}</div>
+            </div>
+            <div>
+              <div className="ui-caption">Delta neto</div>
+              <div className="text-2xl font-black text-[var(--ui-text)]">{formatQty(totalPositiveDelta + totalNegativeDelta)}</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
       <div className="ui-panel">
         <div className="ui-h3">Líneas del conteo</div>
+        <p className="mt-1 ui-caption">
+          Ordenado por ubicación interna y luego por producto. La columna “Conteo físico” muestra el total base y, cuando aplica, el desglose físico capturado por presentación.
+        </p>
         <div className="mt-4 overflow-x-auto">
           <Table>
             <thead>
               <tr>
+                <TableHeaderCell>Ubicación interna</TableHeaderCell>
                 <TableHeaderCell>Producto</TableHeaderCell>
                 <TableHeaderCell>Unidad</TableHeaderCell>
-                <TableHeaderCell>Ubicación interna</TableHeaderCell>
-                <TableHeaderCell>Conteo fisico</TableHeaderCell>
+                <TableHeaderCell>Conteo físico</TableHeaderCell>
                 <TableHeaderCell>Actual en sistema</TableHeaderCell>
                 <TableHeaderCell>Diferencia</TableHeaderCell>
                 <TableHeaderCell>Ajuste</TableHeaderCell>
               </tr>
             </thead>
             <tbody>
-              {lineRows.map((line) => {
-                const current = isOpen
-                  ? Number(line.current_qty_at_open ?? 0)
-                  : Number(line.current_qty_at_close ?? 0);
-                const counted = Number(line.quantity_counted ?? 0);
-                const delta = isOpen ? counted - current : Number(line.quantity_delta ?? 0);
-                const applied = Boolean(line.adjustment_applied_at);
+              {displayRows.map((row) => {
                 return (
-                  <tr key={line.id} className="ui-body">
-                    <TableCell>{line.product?.name ?? line.product_id}</TableCell>
-                    <TableCell>{line.stock_unit_code ?? line.product?.stock_unit_code ?? line.product?.unit ?? "-"}</TableCell>
+                  <tr key={row.line.id} className="ui-body">
+                    <TableCell>{row.positionLabel}</TableCell>
+                    <TableCell>{row.productName}</TableCell>
+                    <TableCell>{row.stockUnit}</TableCell>
                     <TableCell>
-                      {line.location_position_id
-                        ? positionLabelById.get(line.location_position_id) ?? line.location_position_id.slice(0, 8)
-                        : "-"}
-                    </TableCell>
-                    <TableCell className="font-mono">
-                      {counted}
-                      {line.input_unit_code && line.input_quantity != null ? (
+                      <span className="font-mono">{formatQty(row.counted)} {row.stockUnit}</span>
+                      {row.physicalEntryLabels.length > 0 ? (
+                        <div className="mt-1 space-y-0.5 text-xs text-[var(--ui-muted)]">
+                          {row.physicalEntryLabels.map((entry) => (
+                            <div key={entry.id}>
+                              {formatQty(entry.inputQty)} {entry.inputUnitLabel}
+                              {" = "}
+                              {formatQty(entry.baseQty)} {entry.stockUnit}
+                            </div>
+                          ))}
+                        </div>
+                      ) : row.inputUnitLabel ? (
                         <span className="ml-2 text-xs text-[var(--ui-muted)]">
-                          ({line.input_quantity} {line.input_unit_code})
+                          ({formatQty(row.inputQty)} {row.inputUnitLabel})
                         </span>
                       ) : null}
                     </TableCell>
-                    <TableCell className="font-mono">{current}</TableCell>
+                    <TableCell className="font-mono">{formatQty(row.current)} {row.stockUnit}</TableCell>
                     <TableCell className="font-mono">
-                      {delta !== 0 ? (delta > 0 ? `+${delta}` : delta) : "0"}
+                      {row.delta !== 0 ? (row.delta > 0 ? `+${formatQty(row.delta)}` : formatQty(row.delta)) : "0"} {row.stockUnit}
                     </TableCell>
-                    <TableCell>{applied ? "Aplicado" : delta !== 0 ? "Pendiente" : "-"}</TableCell>
+                    <TableCell>{row.applied ? "Aplicado" : row.delta !== 0 ? "Pendiente" : "-"}</TableCell>
                   </tr>
                 );
               })}

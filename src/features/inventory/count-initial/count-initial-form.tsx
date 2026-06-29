@@ -8,6 +8,7 @@ import { Table, TableCell, TableHeaderCell } from "@/components/vento/standard/t
 import {
   convertByProductProfile,
   normalizeUnitCode,
+  normalizeProductUomUsageContext,
   selectProductUomProfileForContext,
   type ProductUomProfile,
 } from "@/lib/inventory/uom";
@@ -18,6 +19,7 @@ type Product = {
   sku: string | null;
   unit: string | null;
   stockUnitCode?: string | null;
+  measurementMode?: string | null;
   profiles?: ProductUomProfile[];
 };
 
@@ -40,6 +42,7 @@ type CountLine = {
   quantity: number;
   input_quantity: number;
   input_unit_code: string;
+  input_unit_label: string;
   uom_profile_id?: string;
   stock_unit_code: string;
   position_id?: string;
@@ -77,6 +80,7 @@ type Props = {
 
 type CountRowProps = {
   product: Product;
+  measurementMode: string;
   capture: CaptureConfig;
   unitOptions: UnitOption[];
   compactMode: boolean;
@@ -118,6 +122,44 @@ function formatProfileQty(value: number) {
   return value.toLocaleString("es-CO", { maximumFractionDigits: 3 });
 }
 
+function normalizeMeasurementMode(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "variable_weight") return "variable_weight";
+  if (normalized === "count_with_weight") return "count_with_weight";
+  if (normalized === "bulk_volume") return "bulk_volume";
+  return "fixed_presentation";
+}
+
+function baseCaptureLabel(stockUnitCode: string, measurementMode: string) {
+  if (["g", "kg", "lb", "oz"].includes(stockUnitCode)) return `Peso real (${stockUnitCode})`;
+  if (["ml", "l", "lt"].includes(stockUnitCode)) return `Volumen real (${stockUnitCode})`;
+  if (measurementMode !== "fixed_presentation") return `Cantidad real (${stockUnitCode})`;
+  return `${stockUnitCode} base`;
+}
+
+function isManualPhysicalPresentation(profile: ProductUomProfile) {
+  if (!profile.is_active || profile.source !== "manual") return false;
+  if (normalizeProductUomUsageContext(profile.usage_context) !== "general") return false;
+
+  const inputQty = Number(profile.qty_in_input_unit);
+  const stockQty = Number(profile.qty_in_stock_unit);
+  return Number.isFinite(inputQty) && Number.isFinite(stockQty) && inputQty > 0 && stockQty > 0;
+}
+
+function physicalPresentationLabel(profile: ProductUomProfile, stockUnitCode: string) {
+  const label = String(profile.label || profile.input_unit_code || "Presentación").trim();
+  const inputQty = Number(profile.qty_in_input_unit);
+  const stockQty = Number(profile.qty_in_stock_unit);
+  const factor =
+    Number.isFinite(inputQty) && Number.isFinite(stockQty) && inputQty > 0
+      ? stockQty / inputQty
+      : null;
+
+  return factor && Number.isFinite(factor)
+    ? `${label} - 1 ${label} = ${formatProfileQty(factor)} ${stockUnitCode}`
+    : label;
+}
+
 function makeDefaultEntry(productId: string): CountEntry {
   return {
     id: `${productId}:base`,
@@ -147,26 +189,29 @@ const SAVE_TIMEOUT_MS = 45_000;
 
 function getCaptureConfig(product: Product): CaptureConfig {
   const stockUnitCode = normalizeUnitCode(product.stockUnitCode ?? product.unit ?? "un") || "un";
-  const profile = selectProductUomProfileForContext({
-    profiles: product.profiles ?? [],
-    productId: product.id,
-    context: "remission",
-  });
+  const measurementMode = normalizeMeasurementMode(product.measurementMode);
+  const manualProfiles = (product.profiles ?? []).filter(isManualPhysicalPresentation);
+  const profile =
+    measurementMode === "fixed_presentation"
+      ? manualProfiles.find((candidate) => candidate.is_default) ?? manualProfiles[0] ?? null
+      : selectProductUomProfileForContext({
+        profiles: product.profiles ?? [],
+        productId: product.id,
+        context: "remission",
+      });
   const inputUnitCode = normalizeUnitCode(profile?.input_unit_code ?? stockUnitCode) || stockUnitCode;
-  const label = String(profile?.label ?? inputUnitCode).trim();
+  const label = profile
+    ? String(profile.label ?? inputUnitCode).trim()
+    : baseCaptureLabel(stockUnitCode, measurementMode);
   const conversionLabel = profile
-    ? `${profile.qty_in_input_unit} ${inputUnitCode} = ${profile.qty_in_stock_unit} ${stockUnitCode}`
+    ? physicalPresentationLabel(profile, stockUnitCode)
     : `Unidad base: ${stockUnitCode}`;
 
   return { stockUnitCode, profile: profile ?? null, inputUnitCode, label, conversionLabel };
 }
 
 function getUnitOptions(product: Product, capture = getCaptureConfig(product)): UnitOption[] {
-  const contextLabelMap: Record<string, string> = {
-    purchase: "compra",
-    remission: "remisión",
-    general: "general",
-  };
+  const measurementMode = normalizeMeasurementMode(product.measurementMode);
   const options: Array<{
     value: string;
     inputUnitCode: string;
@@ -178,37 +223,41 @@ function getUnitOptions(product: Product, capture = getCaptureConfig(product)): 
         value: `stock:${capture.stockUnitCode}`,
         inputUnitCode: capture.stockUnitCode,
         profile: null,
-        label: `${capture.stockUnitCode} base`,
+        label: baseCaptureLabel(capture.stockUnitCode, measurementMode),
         conversionLabel: `Unidad base: ${capture.stockUnitCode}`,
       },
     ];
 
+  if (measurementMode !== "fixed_presentation") {
+    return options;
+  }
+
   const seenProfileIds = new Set<string>();
-  for (const profile of product.profiles ?? []) {
-    if (!profile.is_active || seenProfileIds.has(profile.id)) continue;
+  const seenPresentationKeys = new Set<string>();
+  for (const profile of (product.profiles ?? []).filter(isManualPhysicalPresentation)) {
+    if (seenProfileIds.has(profile.id)) continue;
     seenProfileIds.add(profile.id);
 
     const inputUnitCode = normalizeUnitCode(profile.input_unit_code);
     if (!inputUnitCode) continue;
 
-    const baseLabel = String(profile.label || inputUnitCode).trim();
-    const contextLabel = contextLabelMap[String(profile.usage_context ?? "general")] ?? "general";
     const stockQty = Number(profile.qty_in_stock_unit);
     const inputQty = Number(profile.qty_in_input_unit);
-    const factorLabel =
-      Number.isFinite(inputQty) && Number.isFinite(stockQty) && inputQty > 0
-        ? `${formatProfileQty(inputQty)} ${inputUnitCode} = ${formatProfileQty(stockQty)} ${capture.stockUnitCode}`
-        : `? ${capture.stockUnitCode}`;
+    const factor = Number.isFinite(inputQty) && inputQty > 0 ? stockQty / inputQty : 0;
+    const presentationKey = `${String(profile.label ?? "").trim().toLowerCase()}:${Math.round(factor * 1_000_000)}`;
+    if (seenPresentationKeys.has(presentationKey)) continue;
+    seenPresentationKeys.add(presentationKey);
+
     options.push({
       value: `profile:${profile.id}`,
       inputUnitCode,
       profile,
-      label: `${baseLabel} ${contextLabel} - ${factorLabel}`,
-      conversionLabel: `${profile.qty_in_input_unit} ${inputUnitCode} = ${profile.qty_in_stock_unit} ${capture.stockUnitCode}`,
+      label: physicalPresentationLabel(profile, capture.stockUnitCode),
+      conversionLabel: physicalPresentationLabel(profile, capture.stockUnitCode),
     });
   }
 
-  return options;
+  return options.length > 1 ? options.slice(1) : options;
 }
 
 function resolveEntryUnit(capture: CaptureConfig, options: UnitOption[], entry: CountEntry) {
@@ -223,6 +272,7 @@ function resolveEntryUnit(capture: CaptureConfig, options: UnitOption[], entry: 
 
 const CountRow = memo(function CountRow({
   product,
+  measurementMode,
   capture,
   unitOptions,
   compactMode,
@@ -244,6 +294,7 @@ const CountRow = memo(function CountRow({
   onQtyKeyDown,
   registerInputRef,
 }: CountRowProps) {
+  const usesFreePieces = measurementMode !== "fixed_presentation";
   const entryGridClass =
     internalPositions.length > 0
       ? "grid min-w-0 gap-2 xl:grid-cols-[minmax(110px,0.7fr)_minmax(150px,0.75fr)_minmax(190px,1fr)_auto_auto] xl:items-center"
@@ -349,9 +400,9 @@ const CountRow = memo(function CountRow({
           })}
 
           <div className="flex flex-wrap gap-2">
-            {internalPositions.length > 0 ? (
+            {internalPositions.length > 0 || usesFreePieces ? (
               <button type="button" onClick={() => onAddEntry(product.id)} className="ui-btn ui-btn--ghost h-9 px-3 text-xs">
-                + Otra ubicacion
+                {usesFreePieces ? "+ Otra pieza" : "+ Otra ubicación"}
               </button>
             ) : null}
             <button type="button" onClick={() => onClear(product.id)} className="ui-btn ui-btn--ghost h-9 px-3 text-xs">
@@ -461,6 +512,7 @@ export function CountInitialForm({
           quantity: converted.quantityInStock,
           input_quantity: inputQty,
           input_unit_code: selectedUnit.inputUnitCode,
+          input_unit_label: selectedUnit.label,
           uom_profile_id: selectedUnit.profile?.id,
           stock_unit_code: capture.stockUnitCode,
           position_id: entry.positionId || undefined,
@@ -468,8 +520,27 @@ export function CountInitialForm({
       }
     }
 
-    return next;
-  }, [getProductEntries, productRuntimeById, products]);
+    return next.sort((a, b) => {
+      const aPosition = internalPositions.find((position) => position.id === a.position_id);
+      const bPosition = internalPositions.find((position) => position.id === b.position_id);
+      const aPositionLabel = aPosition?.selectedLabel ?? aPosition?.label ?? "Sin ubicación interna";
+      const bPositionLabel = bPosition?.selectedLabel ?? bPosition?.label ?? "Sin ubicación interna";
+      const positionDiff = aPositionLabel.localeCompare(bPositionLabel, "es", {
+        numeric: true,
+        sensitivity: "base",
+      });
+
+      if (positionDiff !== 0) return positionDiff;
+
+      const aProduct = products.find((product) => product.id === a.product_id);
+      const bProduct = products.find((product) => product.id === b.product_id);
+
+      return String(aProduct?.name ?? a.product_id).localeCompare(String(bProduct?.name ?? b.product_id), "es", {
+        numeric: true,
+        sensitivity: "base",
+      });
+    });
+  }, [getProductEntries, internalPositions, productRuntimeById, products]);
 
   const filteredProducts = useMemo(() => {
     const query = search.trim().toLowerCase();
@@ -812,8 +883,9 @@ export function CountInitialForm({
                   return (
                     <CountRow
                       key={product.id}
-                      product={product}
-                      capture={runtime.capture}
+                    product={product}
+                    measurementMode={normalizeMeasurementMode(product.measurementMode)}
+                    capture={runtime.capture}
                       unitOptions={runtime.unitOptions}
                       compactMode={compactMode}
                       entries={getProductEntries(product.id)}
@@ -885,7 +957,7 @@ export function CountInitialForm({
                 <thead>
                   <tr>
                     <TableHeaderCell>Producto</TableHeaderCell>
-                    <TableHeaderCell>Conteo fisico</TableHeaderCell>
+                    <TableHeaderCell>Conteo físico</TableHeaderCell>
                     <TableHeaderCell>Base</TableHeaderCell>
                     {internalPositions.length > 0 ? <TableHeaderCell>Ubicación interna</TableHeaderCell> : null}
                   </tr>
@@ -897,13 +969,18 @@ export function CountInitialForm({
                       <tr key={`${line.product_id}:${line.position_id ?? "sin-ubicacion"}:${index}`} className="ui-body">
                         <TableCell>{product?.name ?? line.product_id}</TableCell>
                         <TableCell className="font-mono">
-                          {line.input_quantity} {line.input_unit_code}
+                          {line.input_quantity} {line.input_unit_label || line.input_unit_code}
                         </TableCell>
                         <TableCell className="font-mono">
                           {line.quantity} {line.stock_unit_code}
                         </TableCell>
                         {internalPositions.length > 0 ? (
-                          <TableCell>{internalPositions.find((position) => position.id === line.position_id)?.label ?? "-"}</TableCell>
+                          <TableCell>
+                            {(() => {
+                              const position = internalPositions.find((item) => item.id === line.position_id);
+                              return position?.selectedLabel ?? position?.label ?? "-";
+                            })()}
+                          </TableCell>
                         ) : null}
                       </tr>
                     );

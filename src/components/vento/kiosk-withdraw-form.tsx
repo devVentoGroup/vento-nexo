@@ -14,6 +14,7 @@ type ProductOption = {
   unit: string | null;
   stock_unit_code: string | null;
   available_qty: number;
+  measurementMode?: string | null;
   presentationParts: PresentationPart[];
 };
 
@@ -69,20 +70,12 @@ function unitLabel(value: string) {
   return clean.toLowerCase() === "un" ? "Unidad" : clean;
 }
 
-function presentationChipLabel(part: PresentationPart) {
-  const label = String(part.label ?? "").trim();
-  const qtyLabel = formatQty(Number(part.qty ?? 0));
-
-  if (!label) return qtyLabel;
-
-  const normalizedLabel = label.toLowerCase();
-  const normalizedQty = qtyLabel.toLowerCase();
-
-  if (normalizedLabel === normalizedQty || normalizedLabel.startsWith(`${normalizedQty} `)) {
-    return label;
-  }
-
-  return `${qtyLabel} ${label}`;
+function normalizeMeasurementMode(value: string | null | undefined) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "variable_weight") return "variable_weight";
+  if (normalized === "count_with_weight") return "count_with_weight";
+  if (normalized === "bulk_volume") return "bulk_volume";
+  return "fixed_presentation";
 }
 
 function presentationDisplayLabel(part: PresentationPart) {
@@ -173,6 +166,8 @@ export function KioskWithdrawForm({
     [initialProductId, products]
   );
   const stockUnitCode = normalizeUnitCode(product?.stock_unit_code ?? product?.unit ?? "un");
+  const measurementMode = normalizeMeasurementMode(product?.measurementMode);
+  const usesFixedPresentation = measurementMode === "fixed_presentation";
   const profiles = useMemo(
     () => activeProfilesForProduct(uomProfiles, product?.id ?? ""),
     [product?.id, uomProfiles]
@@ -181,7 +176,7 @@ export function KioskWithdrawForm({
     () => new Set((product?.presentationParts ?? []).map((part) => part.uomProfileId)),
     [product?.presentationParts]
   );
-  const hasPhysicalBreakdown = Boolean(product && product.presentationParts.length > 0);
+  const hasPhysicalBreakdown = Boolean(usesFixedPresentation && product && product.presentationParts.length > 0);
   const defaultProfile = useMemo(
     () => {
       if (!product) return null;
@@ -252,7 +247,7 @@ export function KioskWithdrawForm({
       add({ value: `unit:${stockUnitCode}`, label: unitLabel(stockUnitCode), inputUnitCode: stockUnitCode, profileId: "" });
     }
 
-    const orderedProfiles = hasPhysicalBreakdown
+    const orderedProfiles = usesFixedPresentation && hasPhysicalBreakdown
       ? profiles
         .filter((profile) => physicalPresentationIds.has(profile.id))
         .sort((a, b) => {
@@ -261,7 +256,9 @@ export function KioskWithdrawForm({
 
           return String(a.label ?? "").localeCompare(String(b.label ?? ""), "es", { sensitivity: "base" });
         })
-      : profiles;
+      : usesFixedPresentation
+        ? profiles
+        : [];
 
     for (const profile of orderedProfiles) {
       add({
@@ -273,7 +270,7 @@ export function KioskWithdrawForm({
     }
 
     return options;
-  }, [hasPhysicalBreakdown, physicalPresentationIds, profiles, stockUnitCode]);
+  }, [hasPhysicalBreakdown, physicalPresentationIds, profiles, stockUnitCode, usesFixedPresentation]);
 
   const unitValue = selectedProfile ? `profile:${selectedProfile.id}` : inputUnitCode ? `unit:${inputUnitCode}` : "";
   const selectedUnitLabel = selectedProfile
@@ -366,7 +363,7 @@ export function KioskWithdrawForm({
             <div className="mt-1 text-sm text-[var(--ui-muted)]">
               Base: {formatQty(product.available_qty)} {product.stock_unit_code ?? product.unit ?? "un"}
             </div>
-            {product.presentationParts.length > 0 ? (
+            {usesFixedPresentation && product.presentationParts.length > 0 ? (
               <div className="mt-4 space-y-2">
                 <div className="text-xs font-bold uppercase tracking-[0.08em] text-amber-900">
                   Presentaciones disponibles
@@ -419,7 +416,9 @@ export function KioskWithdrawForm({
                 </div>
               </div>
             ) : (
-              <div className="mt-2 text-xs font-semibold text-amber-900">Sin desglose por presentación</div>
+              <div className="mt-2 text-xs font-semibold text-amber-900">
+                {usesFixedPresentation ? "Sin desglose por presentación" : "Retiro por peso/cantidad real"}
+              </div>
             )}
           </div>
         ) : (
