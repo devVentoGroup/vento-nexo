@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 type StockPart = {
   qty: number;
@@ -163,6 +163,31 @@ function defaultVisibleLimit(isKiosk: boolean) {
   return isKiosk ? 48 : Number.MAX_SAFE_INTEGER;
 }
 
+function normalizeSearchText(value: string | null | undefined) {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .trim();
+}
+
+function itemMatchesSearch(item: KioskBoardStockItem, normalizedQuery: string) {
+  if (!normalizedQuery) return true;
+
+  const haystack = normalizeSearchText(
+    [
+      item.name,
+      item.unit,
+      item.categoryLabel,
+      item.categoryPath,
+      item.internalLocationLabel,
+      ...item.presentationParts.map((part) => part.label),
+    ].join(" ")
+  );
+
+  return haystack.includes(normalizedQuery);
+}
+
 function HideZeroStockButton({
   action,
   item,
@@ -207,21 +232,32 @@ export function KioskBoardStockView({
   hideZeroStockAction,
 }: Props) {
   const searchParams = useSearchParams();
-  const searchQuery = String(initialSearchQuery ?? "").trim();
   const totalCount = typeof totalItemsCount === "number" ? totalItemsCount : items.length;
-  const stockTab: StockTab = searchParams.get("stock_tab") === "out" ? "out" : "available";
+  const [searchQuery, setSearchQuery] = useState(() => String(initialSearchQuery ?? "").trim());
+  const [stockTab, setStockTab] = useState<StockTab>(() =>
+    searchParams.get("stock_tab") === "out" ? "out" : "available"
+  );
   const [viewMode, setViewMode] = useState<ViewMode>(() => normalizeViewMode(initialViewMode, isKiosk));
-  const visibleLimitKey = `${isKiosk ? "kiosk" : "board"}:${stockTab}:${searchQuery}`;
   const [visibleLimitState, setVisibleLimitState] = useState(() => ({
-    key: visibleLimitKey,
+    key: `${isKiosk ? "kiosk" : "board"}:available:${normalizeSearchText(initialSearchQuery)}`,
     limit: defaultVisibleLimit(isKiosk),
   }));
   const [openingProductId, setOpeningProductId] = useState("");
   const [hidingProductId, setHidingProductId] = useState("");
 
-  const availableItems = items.filter((item) => Number(item.qty ?? 0) > 0);
-  const outOfStockItems = items.filter((item) => Number(item.qty ?? 0) <= 0);
-  const filteredItems = stockTab === "out" ? outOfStockItems : availableItems;
+  const normalizedSearchQuery = useMemo(() => normalizeSearchText(searchQuery), [searchQuery]);
+  const availableItems = useMemo(() => items.filter((item) => Number(item.qty ?? 0) > 0), [items]);
+  const outOfStockItems = useMemo(() => items.filter((item) => Number(item.qty ?? 0) <= 0), [items]);
+  const filteredAvailableItems = useMemo(
+    () => availableItems.filter((item) => itemMatchesSearch(item, normalizedSearchQuery)),
+    [availableItems, normalizedSearchQuery]
+  );
+  const filteredOutOfStockItems = useMemo(
+    () => outOfStockItems.filter((item) => itemMatchesSearch(item, normalizedSearchQuery)),
+    [outOfStockItems, normalizedSearchQuery]
+  );
+  const filteredItems = stockTab === "out" ? filteredOutOfStockItems : filteredAvailableItems;
+  const visibleLimitKey = `${isKiosk ? "kiosk" : "board"}:${stockTab}:${normalizedSearchQuery}`;
   const visibleLimit =
     visibleLimitState.key === visibleLimitKey
       ? visibleLimitState.limit
@@ -245,34 +281,22 @@ export function KioskBoardStockView({
         <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-4">
           <div className="grid gap-3 lg:grid-cols-[1fr_auto] lg:items-end">
             <form
-              action={`/inventory/locations/${encodeURIComponent(locationId)}/board`}
-              method="get"
+              onSubmit={(event) => event.preventDefault()}
               className="flex flex-col gap-1"
             >
-              {isKiosk ? <input type="hidden" name="kiosk" value="1" /> : null}
-              {positionId ? <input type="hidden" name="position_id" value={positionId} /> : null}
-              {viewMode ? <input type="hidden" name="view" value={viewMode} /> : null}
-              <input type="hidden" name="stock_tab" value={stockTab} />
-
               <div className="flex items-center justify-between gap-3">
                 <label htmlFor="kiosk-board-search" className="ui-label">
                   Buscar producto
                 </label>
 
                 {searchQuery ? (
-                  <Link
-                    href={buildBoardHref({
-                      locationId,
-                      isKiosk,
-                      positionId,
-                      viewMode,
-                      stockTab,
-                      searchQuery: "",
-                    })}
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
                     className="text-xs font-semibold text-[var(--ui-muted)] underline underline-offset-4"
                   >
                     Limpiar
-                  </Link>
+                  </button>
                 ) : null}
               </div>
 
@@ -287,17 +311,22 @@ export function KioskBoardStockView({
                   autoCorrect="off"
                   autoCapitalize="none"
                   spellCheck={false}
-                  defaultValue={searchQuery}
+                  value={searchQuery}
+                  onChange={(event) => setSearchQuery(event.target.value)}
                   className="min-h-11 flex-1 bg-transparent text-base font-semibold text-[var(--ui-text)] outline-none placeholder:text-[var(--ui-muted)]"
-                  placeholder="Buscar por nombre o unidad"
+                  placeholder="Buscar por nombre, unidad o ubicación"
                 />
 
-                <button
-                  type="submit"
-                  className="ui-btn ui-btn--brand h-10 px-4 text-sm"
-                >
-                  Buscar
-                </button>
+                {searchQuery ? (
+                  <button
+                    type="button"
+                    onClick={() => setSearchQuery("")}
+                    aria-label="Limpiar búsqueda"
+                    className="inline-flex h-10 w-10 items-center justify-center rounded-full text-xl font-bold text-[var(--ui-muted)] transition hover:bg-slate-50 hover:text-[var(--ui-text)]"
+                  >
+                    ×
+                  </button>
+                ) : null}
               </div>
             </form>
             <div className="flex rounded-2xl border border-[var(--ui-border)] bg-white p-1 shadow-sm">
@@ -306,24 +335,17 @@ export function KioskBoardStockView({
                 ["compact", "Compactas"],
                 ["list", "Lista"],
               ].map(([value, label]) => (
-                <Link
+                <button
                   key={value}
+                  type="button"
                   onClick={() => setViewMode(value as ViewMode)}
-                  href={buildBoardHref({
-                    locationId,
-                    isKiosk,
-                    positionId,
-                    viewMode: value as ViewMode,
-                    stockTab,
-                    searchQuery,
-                  })}
                   className={`rounded-xl px-3 py-2 text-sm font-semibold transition ${viewMode === value
                     ? "bg-amber-100 text-amber-950"
                     : "text-[var(--ui-muted)] hover:bg-slate-50 hover:text-[var(--ui-text)]"
                     }`}
                 >
                   {label}
-                </Link>
+                </button>
               ))}
             </div>
           </div>
@@ -332,22 +354,16 @@ export function KioskBoardStockView({
           <div className="flex flex-col items-center justify-center gap-2 sm:flex-row sm:justify-between">
             <div className="inline-flex rounded-full border border-[var(--ui-border)] bg-white p-0.5 shadow-sm">
               {([
-                ["available", `Disponible (${availableItems.length})`],
-                ["out", `Sin stock (${outOfStockItems.length})`],
+                ["available", `Disponible (${filteredAvailableItems.length})`],
+                ["out", `Sin stock (${filteredOutOfStockItems.length})`],
               ] as Array<[StockTab, string]>).map(([value, label]) => {
                 const isActive = stockTab === value;
 
                 return (
-                  <Link
+                  <button
                     key={value}
-                    href={buildBoardHref({
-                      locationId,
-                      isKiosk,
-                      positionId,
-                      viewMode,
-                      stockTab: value,
-                      searchQuery,
-                    })}
+                    type="button"
+                    onClick={() => setStockTab(value)}
                     aria-current={isActive ? "page" : undefined}
                     className={`inline-flex min-h-9 items-center justify-center rounded-full px-3.5 py-1.5 text-xs font-bold leading-none transition ${isActive
                       ? "bg-amber-100 text-amber-950"
@@ -355,17 +371,17 @@ export function KioskBoardStockView({
                       }`}
                   >
                     {label}
-                  </Link>
+                  </button>
                 );
               })}
             </div>
 
             <div className="text-center text-sm text-[var(--ui-muted)] sm:text-right">
-              {searchQuery
-                ? `Mostrando ${visibleItems.length} de ${filteredItems.length} resultados.`
+              {normalizedSearchQuery
+                ? `Mostrando ${visibleItems.length} de ${filteredItems.length} resultado(s).`
                 : stockTab === "out"
                   ? `Mostrando ${visibleItems.length} producto(s) sin stock.`
-                  : `Mostrando ${visibleItems.length} de ${availableItems.length} producto(s) disponibles.`}
+                  : `Mostrando ${visibleItems.length} de ${filteredAvailableItems.length} producto(s) disponibles.`}
             </div>
           </div>
         </div>
@@ -517,19 +533,13 @@ export function KioskBoardStockView({
                 : "Ajusta la búsqueda o revisa la pestaña Sin stock."}
           </p>
           {searchQuery ? (
-            <Link
-              href={buildBoardHref({
-                locationId,
-                isKiosk,
-                positionId,
-                viewMode,
-                stockTab,
-                searchQuery: "",
-              })}
+            <button
+              type="button"
+              onClick={() => setSearchQuery("")}
               className="ui-btn ui-btn--brand mt-4"
             >
               Limpiar búsqueda
-            </Link>
+            </button>
           ) : null}
         </div>
       ) : null}

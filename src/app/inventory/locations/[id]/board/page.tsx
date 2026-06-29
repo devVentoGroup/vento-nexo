@@ -186,14 +186,6 @@ function compactLocationLabel(labels: string[]) {
   return `${unique.slice(0, 2).join(" / ")} + ${unique.length - 2}`;
 }
 
-function normalizeBoardSearch(value: string | null | undefined) {
-  return String(value ?? "")
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "")
-    .toLowerCase()
-    .trim();
-}
-
 function normalizeUomProfileRelation(value: PresentationStockRow["product_uom_profiles"]) {
   if (Array.isArray(value)) return value[0] ?? null;
   return value ?? null;
@@ -324,7 +316,6 @@ export default async function LocationBoardPage({
   const viewMode = String(sp.view ?? "").trim();
   const searchQuery = String(sp.search ?? "").trim();
   const stockTab = String(sp.stock_tab ?? "").trim() === "out" ? "out" : "available";
-  const normalizedSearchQuery = normalizeBoardSearch(searchQuery);
   const successMessage =
     String(sp.ok ?? "").trim() === "kiosk_withdraw"
       ? safeDecodeBoardParam(sp.success_message) || "Retiro registrado correctamente."
@@ -655,24 +646,10 @@ export default async function LocationBoardPage({
     };
   });
 
-  const stockItems: KioskBoardStockItem[] = normalizedSearchQuery
-    ? allStockItems.filter((item) => {
-      const haystack = normalizeBoardSearch(
-        [
-          item.name,
-          item.unit,
-          item.productId,
-          item.internalLocationLabel,
-          ...item.presentationParts.map((part) => part.label),
-        ].join(" ")
-      );
-
-      return haystack.includes(normalizedSearchQuery);
-    })
-    : allStockItems;
+  const stockItems: KioskBoardStockItem[] = allStockItems;
 
   const title = buildLocTitle(location);
-  const totalQty = stockItems.reduce((sum, item) => sum + Number(item.qty ?? 0), 0);
+  const totalQty = allStockItems.reduce((sum, item) => sum + Number(item.qty ?? 0), 0);
   const lastUpdatedAt = stockRows.reduce<string | null>((latest, row) => {
     const current = String(row.updated_at ?? "").trim();
     if (!current) return latest;
@@ -705,7 +682,7 @@ export default async function LocationBoardPage({
             </div>
             {isKiosk ? (
               <div className="flex flex-wrap items-center gap-3">
-                <LocationBoardAutoRefresh intervalSeconds={30} />
+                <LocationBoardAutoRefresh intervalSeconds={60} />
                 <div className="rounded-2xl border border-slate-200 bg-white/90 px-4 py-3 text-sm text-[var(--ui-muted)] shadow-sm">
                   Ultima actualizacion: <span className="font-semibold text-[var(--ui-text)]">{formatDateTime(lastUpdatedAt)}</span>
                 </div>
@@ -757,9 +734,7 @@ export default async function LocationBoardPage({
             <article className="ui-remission-kpi" data-tone="warm">
               <div className="ui-remission-kpi-label">Productos</div>
               <div className="ui-remission-kpi-value">{stockItems.length}</div>
-              <div className="ui-remission-kpi-note">
-                {searchQuery ? `Filtrados de ${allStockItems.length}` : "Activos en esta area"}
-              </div>
+              <div className="ui-remission-kpi-note">Activos en esta area</div>
             </article>
             <article className="ui-remission-kpi" data-tone="cool">
               <div className="ui-remission-kpi-label">Qty total</div>
@@ -854,7 +829,7 @@ export default async function LocationBoardPage({
 
       {allStockItems.length > 0 ? (
         <KioskBoardStockView
-          key={`${isKiosk ? "kiosk" : "board"}:${positionId}:${viewMode}:${stockTab}:${searchQuery}`}
+          key={`${isKiosk ? "kiosk" : "board"}:${positionId}:${viewMode}:${stockTab}`}
           items={stockItems}
           isKiosk={isKiosk}
           locationId={location.id}

@@ -1,108 +1,189 @@
+"use client";
+
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+
 type Props = {
   intervalSeconds?: number;
+  staleAfterSeconds?: number;
 };
 
-export function LocationBoardAutoRefresh({ intervalSeconds = 30 }: Props) {
-  const safeInterval = Math.max(10, Math.floor(intervalSeconds));
-  const script = `
-(() => {
-  const id = "vento-location-board-refresh";
-  const el = document.getElementById(id);
-  if (!el) return;
+function isEditableElement(element: Element | null) {
+  if (!element) return false;
+  const tagName = String(element.tagName || "").toLowerCase();
+  return (
+    tagName === "input" ||
+    tagName === "textarea" ||
+    tagName === "select" ||
+    (element as HTMLElement).isContentEditable === true
+  );
+}
 
-  const intervalMs = ${safeInterval} * 1000;
+function hasKioskSearchValue() {
+  const input = document.getElementById("kiosk-board-search") as HTMLInputElement | null;
+  return String(input?.value ?? "").trim().length > 0;
+}
 
-  if (window.__ventoLocationBoardRefreshTimer) {
-    window.clearInterval(window.__ventoLocationBoardRefreshTimer);
-  }
+function interactionLabel() {
+  if (document.hidden) return "Pausado por pantalla apagada";
+  if (hasKioskSearchValue()) return "Pausado por busqueda";
+  if (isEditableElement(document.activeElement)) return "Pausado por interaccion";
+  if (document.documentElement.dataset.nexoKioskUserInteracting === "1") return "Pausado por operacion";
+  return "";
+}
 
-  window.__ventoLocationBoardRefreshDeadline = Date.now() + intervalMs;
-  window.__ventoLocationBoardRefreshIsNavigating = false;
+function isUserInteracting() {
+  return Boolean(interactionLabel());
+}
 
-  const isEditableElement = (element) => {
-    if (!element) return false;
-    const tagName = String(element.tagName || "").toLowerCase();
-    return (
-      tagName === "input" ||
-      tagName === "textarea" ||
-      tagName === "select" ||
-      element.isContentEditable === true
-    );
-  };
+export function LocationBoardAutoRefresh({ intervalSeconds = 60, staleAfterSeconds = 15 }: Props) {
+  const router = useRouter();
+  const safeInterval = Math.max(30, Math.floor(intervalSeconds));
+  const safeStaleAfter = Math.max(5, Math.floor(staleAfterSeconds));
+  const intervalMs = safeInterval * 1000;
+  const staleAfterMs = safeStaleAfter * 1000;
+  const [status, setStatus] = useState(`Actualiza en ${safeInterval}s`);
+  const [isPending, startTransition] = useTransition();
+  const deadlineRef = useRef(Date.now() + intervalMs);
+  const lastRefreshRef = useRef(Date.now());
+  const isRefreshingRef = useRef(false);
+  const pendingRefreshRef = useRef(false);
+  const releaseTimerRef = useRef<number | null>(null);
 
-  const hasActiveSearch = () => {
-    try {
-      const url = new URL(window.location.href);
-      return String(url.searchParams.get("search") || "").trim().length > 0;
-    } catch {
-      return false;
-    }
-  };
-
-  const isUserInteracting = () => {
-    if (document.hidden) return true;
-    if (hasActiveSearch()) return true;
-    if (isEditableElement(document.activeElement)) return true;
-    if (document.documentElement.dataset.nexoKioskUserInteracting === "1") return true;
-    return false;
-  };
-
-  const postpone = (label) => {
-    window.__ventoLocationBoardRefreshDeadline = Date.now() + intervalMs;
-    el.textContent = label;
-  };
-
-  const tick = () => {
-    const currentEl = document.getElementById(id);
-    if (!currentEl) {
-      if (window.__ventoLocationBoardRefreshTimer) {
-        window.clearInterval(window.__ventoLocationBoardRefreshTimer);
-      }
-      return;
+  const releaseRefreshing = useCallback(() => {
+    if (releaseTimerRef.current) {
+      window.clearTimeout(releaseTimerRef.current);
+      releaseTimerRef.current = null;
     }
 
-    if (window.__ventoLocationBoardRefreshIsNavigating) {
-      currentEl.textContent = "Actualizando...";
-      return;
-    }
+    releaseTimerRef.current = window.setTimeout(() => {
+      isRefreshingRef.current = false;
+      deadlineRef.current = Date.now() + intervalMs;
+      setStatus(`Actualiza en ${safeInterval}s`);
+    }, 1200);
+  }, [intervalMs, safeInterval]);
 
+  const refreshNow = useCallback((label: string) => {
+    if (isRefreshingRef.current) return;
+
+    isRefreshingRef.current = true;
+    pendingRefreshRef.current = false;
+    lastRefreshRef.current = Date.now();
+    deadlineRef.current = Date.now() + intervalMs;
+    setStatus(label);
+
+    startTransition(() => {
+      router.refresh();
+    });
+
+    releaseRefreshing();
+  }, [intervalMs, releaseRefreshing, router]);
+
+  const requestRefresh = useCallback((label: string) => {
     if (isUserInteracting()) {
-      postpone(hasActiveSearch() ? "Pausado por búsqueda" : "Pausado por interacción");
+      pendingRefreshRef.current = true;
+      deadlineRef.current = Date.now();
+      setStatus("Actualizacion pendiente");
       return;
     }
 
-    const remainingMs = Number(window.__ventoLocationBoardRefreshDeadline || 0) - Date.now();
-    const remaining = Math.max(0, Math.ceil(remainingMs / 1000));
+    refreshNow(label);
+  }, [refreshNow]);
 
-    currentEl.textContent = remaining > 0 ? "Actualiza en " + remaining + "s" : "Actualizando...";
-
-    if (remaining > 0) return;
-
-    window.__ventoLocationBoardRefreshIsNavigating = true;
-
-    if (window.__ventoLocationBoardRefreshTimer) {
-      window.clearInterval(window.__ventoLocationBoardRefreshTimer);
+  useEffect(() => {
+    if (!isPending && isRefreshingRef.current) {
+      releaseRefreshing();
     }
+  }, [isPending, releaseRefreshing]);
 
-    const nextUrl = new URL(window.location.href);
-    nextUrl.searchParams.set("_refresh", String(Date.now()));
-    window.location.replace(nextUrl.toString());
-  };
+  useEffect(() => {
+    const maybeRefreshAfterResume = () => {
+      if (Date.now() - lastRefreshRef.current < staleAfterMs) return;
+      requestRefresh("Actualizando al reactivar...");
+    };
 
-  tick();
-  window.__ventoLocationBoardRefreshTimer = window.setInterval(tick, 1000);
-})();
-`;
+    const onVisibilityChange = () => {
+      if (!document.hidden) maybeRefreshAfterResume();
+    };
+
+    const onPageShow = () => {
+      maybeRefreshAfterResume();
+    };
+
+    const onFocus = () => {
+      maybeRefreshAfterResume();
+    };
+
+    const onOnline = () => {
+      requestRefresh("Actualizando conexion...");
+    };
+
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    window.addEventListener("pageshow", onPageShow);
+    window.addEventListener("focus", onFocus);
+    window.addEventListener("online", onOnline);
+
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+      window.removeEventListener("pageshow", onPageShow);
+      window.removeEventListener("focus", onFocus);
+      window.removeEventListener("online", onOnline);
+    };
+  }, [requestRefresh, staleAfterMs]);
+
+  useEffect(() => {
+    deadlineRef.current = Date.now() + intervalMs;
+
+    const tick = () => {
+      if (isRefreshingRef.current || isPending) {
+        setStatus("Actualizando...");
+        return;
+      }
+
+      const pausedLabel = interactionLabel();
+      if (pausedLabel) {
+        setStatus(pausedLabel);
+        if (!pendingRefreshRef.current) {
+          deadlineRef.current = Date.now() + intervalMs;
+        }
+        return;
+      }
+
+      if (pendingRefreshRef.current) {
+        refreshNow("Actualizando cambios...");
+        return;
+      }
+
+      const remainingMs = deadlineRef.current - Date.now();
+      const remaining = Math.max(0, Math.ceil(remainingMs / 1000));
+
+      if (remaining > 0) {
+        setStatus(`Actualiza en ${remaining}s`);
+        return;
+      }
+
+      refreshNow("Actualizando inventario...");
+    };
+
+    tick();
+    const timer = window.setInterval(tick, 1000);
+
+    return () => {
+      window.clearInterval(timer);
+      if (releaseTimerRef.current) {
+        window.clearTimeout(releaseTimerRef.current);
+        releaseTimerRef.current = null;
+      }
+    };
+  }, [intervalMs, isPending, refreshNow]);
 
   return (
-    <>
-      <div
-        id="vento-location-board-refresh"
-        className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900 shadow-sm"
-      >
-        Actualiza en {safeInterval}s
-      </div>
-      <script dangerouslySetInnerHTML={{ __html: script }} />
-    </>
+    <div
+      id="vento-location-board-refresh"
+      aria-live="polite"
+      className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-900 shadow-sm"
+    >
+      {status}
+    </div>
   );
 }
