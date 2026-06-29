@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 
 type Product = {
   id: string;
@@ -176,7 +176,9 @@ export function AdjustForm({
   const [evidence, setEvidence] = useState<string>("");
   const [unitCostForAdjust, setUnitCostForAdjust] = useState<string>("");
   const [pendingConfirmation, setPendingConfirmation] = useState(false);
+  const [pendingBulkZeroConfirmation, setPendingBulkZeroConfirmation] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [bulkZeroLoading, setBulkZeroLoading] = useState(false);
   const [submitError, setSubmitError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<{
     productId?: string;
@@ -206,6 +208,29 @@ export function AdjustForm({
         ? currentLocQty
         : currentSiteQty
     : 0;
+
+  const getScopeQtyForProduct = useCallback((nextProductId: string) => {
+    if (isPositionMode) {
+      return currentPositionStock[positionStockKey(selectedPositionId, nextProductId)] ?? 0;
+    }
+
+    if (isLocationMode) {
+      return currentLocationStock[nextProductId] ?? 0;
+    }
+
+    return currentStock[nextProductId] ?? 0;
+  }, [currentLocationStock, currentPositionStock, currentStock, isLocationMode, isPositionMode, selectedPositionId]);
+
+  const bulkZeroCandidates = useMemo(
+    () =>
+      products
+        .map((product) => ({
+          product,
+          qty: getScopeQtyForProduct(product.id),
+        }))
+        .filter((row) => Number.isFinite(row.qty) && row.qty > 0),
+    [getScopeQtyForProduct, products]
+  );
 
   const rawQuantityNum = (() => {
     const value = quantityValue.trim();
@@ -271,6 +296,7 @@ export function AdjustForm({
 
   const resetConfirmation = () => {
     if (pendingConfirmation) setPendingConfirmation(false);
+    if (pendingBulkZeroConfirmation) setPendingBulkZeroConfirmation(false);
   };
 
   const selectProduct = (product: Product) => {
@@ -302,6 +328,63 @@ export function AdjustForm({
       );
     }
     setPendingConfirmation(false);
+  };
+
+  const handleBulkZero = async () => {
+    if (!selectedLocationId) {
+      setSubmitError("Selecciona un LOC antes de vaciar inventario en bloque.");
+      setPendingBulkZeroConfirmation(false);
+      return;
+    }
+
+    if (bulkZeroCandidates.length === 0) {
+      setSubmitError(`No hay productos con stock positivo en ${currentScopeLabel}.`);
+      setPendingBulkZeroConfirmation(false);
+      return;
+    }
+
+    if (!pendingBulkZeroConfirmation) {
+      setSubmitError("");
+      setPendingBulkZeroConfirmation(true);
+      return;
+    }
+
+    setSubmitError("");
+    setBulkZeroLoading(true);
+
+    const reasonText = isPositionMode
+      ? "Saneamiento: ubicación interna vacía físicamente."
+      : "Saneamiento: LOC vacío físicamente.";
+
+    try {
+      for (const { product } of bulkZeroCandidates) {
+        const res = await fetch("/api/inventory/adjust", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            site_id: siteId,
+            location_id: selectedLocationId,
+            location_position_id: selectedPositionId || undefined,
+            product_id: product.id,
+            counted_quantity: 0,
+            reason: reasonText,
+          }),
+        });
+
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) {
+          throw new Error(data?.error ?? `Error ajustando ${product.name}.`);
+        }
+      }
+
+      setPendingBulkZeroConfirmation(false);
+      setBulkZeroLoading(false);
+      router.refresh();
+    } catch (err) {
+      setSubmitError(err instanceof Error ? err.message : "Error al vaciar el alcance seleccionado.");
+      setPendingBulkZeroConfirmation(false);
+      setBulkZeroLoading(false);
+    }
   };
 
   const handleSubmit = async (event: React.FormEvent) => {
@@ -614,9 +697,28 @@ export function AdjustForm({
                 disabled={!productId || currentQty <= 0}
                 onClick={handleQuickZero}
               >
-                Ajustar {currentScopeLabel} a 0
+                Ajustar producto a 0
               </button>
+              {selectedLocationId ? (
+                <button
+                  type="button"
+                  className="ui-btn ui-btn--ghost"
+                  disabled={bulkZeroLoading || bulkZeroCandidates.length === 0}
+                  onClick={handleBulkZero}
+                >
+                  {bulkZeroLoading
+                    ? "Vaciando..."
+                    : pendingBulkZeroConfirmation
+                      ? `Confirmar vaciado (${bulkZeroCandidates.length})`
+                      : `Vaciar ${currentScopeLabel}`}
+                </button>
+              ) : null}
             </div>
+            {pendingBulkZeroConfirmation ? (
+              <div className="mt-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm font-medium text-amber-950">
+                Esto ajustará a 0 todos los productos con stock positivo en {currentScopeLabel}. Se crearán {bulkZeroCandidates.length} movimiento(s) de ajuste.
+              </div>
+            ) : null}
           </details>
         </section>
 
