@@ -433,6 +433,20 @@ export default async function InventoryCountInitialPage({
     return String(position.name || position.code || position.id).trim();
   }
 
+  function getPositionPathLabel(position: PositionRow): string {
+    const path: string[] = [];
+    const visited = new Set<string>();
+    let current: PositionRow | undefined = position;
+
+    while (current && !visited.has(current.id)) {
+      visited.add(current.id);
+      path.unshift(getPositionName(current));
+      current = current.parent_position_id ? positionById.get(current.parent_position_id) : undefined;
+    }
+
+    return path.join(" / ");
+  }
+
   function getPositionSortValue(position: PositionRow): number {
     return typeof position.sort_order === "number" && Number.isFinite(position.sort_order)
       ? position.sort_order
@@ -463,7 +477,7 @@ export default async function InventoryCountInitialPage({
     children.sort(comparePositions);
   }
 
-  const internalPositionOptions: Array<{ id: string; label: string }> = [];
+  const internalPositionOptions: Array<{ id: string; label: string; selectedLabel: string }> = [];
 
   function pushPositionOptions(parentId: string | null, depth = 0) {
     const children = positionChildrenByParentId.get(parentId) ?? [];
@@ -471,12 +485,13 @@ export default async function InventoryCountInitialPage({
     for (const position of children) {
       const childCount = positionChildrenByParentId.get(position.id)?.length ?? 0;
       const indent = depth > 0 ? "\u00A0".repeat(depth * 4) : "";
-      const marker = depth > 0 ? "↳ " : childCount > 0 ? "▾ " : "";
+      const marker = depth > 0 ? "-> " : childCount > 0 ? "v " : "";
       const label = `${indent}${marker}${getPositionName(position)}`;
 
       internalPositionOptions.push({
         id: position.id,
         label,
+        selectedLabel: getPositionPathLabel(position),
       });
 
       pushPositionOptions(position.id, depth + 1);

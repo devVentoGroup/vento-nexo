@@ -24,6 +24,7 @@ type Product = {
 type InternalPositionOption = {
   id: string;
   label: string;
+  selectedLabel?: string;
 };
 
 type CountEntry = {
@@ -83,7 +84,10 @@ type CountRowProps = {
   qtyPositive: boolean;
   internalPositions: InternalPositionOption[];
   activeUnitEntryId: string | null;
+  activePositionEntryId: string | null;
   onActivateUnitEntry: (productId: string, entryId: string) => void;
+  onActivatePositionEntry: (productId: string, entryId: string) => void;
+  onDeactivatePositionEntry: () => void;
   onEntryQtyChange: (productId: string, entryId: string, rawValue: string) => void;
   onEntryUnitChange: (productId: string, entryId: string, rawValue: string) => void;
   onEntryPositionChange: (productId: string, entryId: string, positionId: string) => void;
@@ -226,7 +230,10 @@ const CountRow = memo(function CountRow({
   qtyPositive,
   internalPositions,
   activeUnitEntryId,
+  activePositionEntryId,
   onActivateUnitEntry,
+  onActivatePositionEntry,
+  onDeactivatePositionEntry,
   onEntryQtyChange,
   onEntryUnitChange,
   onEntryPositionChange,
@@ -269,6 +276,7 @@ const CountRow = memo(function CountRow({
           {entries.map((entry, index) => {
             const selectedUnit = resolveEntryUnit(capture, unitOptions, entry);
             const unitSelectIsActive = activeUnitEntryId === entry.id;
+            const positionSelectIsActive = activePositionEntryId === entry.id;
 
             return (
               <div key={entry.id} className={entryGridClass}>
@@ -306,13 +314,16 @@ const CountRow = memo(function CountRow({
                 {internalPositions.length > 0 ? (
                   <select
                     value={entry.positionId}
+                    onPointerDown={() => onActivatePositionEntry(product.id, entry.id)}
+                    onFocus={() => onActivatePositionEntry(product.id, entry.id)}
+                    onBlur={onDeactivatePositionEntry}
                     onChange={(event) => onEntryPositionChange(product.id, entry.id, event.target.value)}
                     className="ui-input min-w-0"
                   >
                     <option value="">Sin ubicación interna</option>
                     {internalPositions.map((position) => (
                       <option key={position.id} value={position.id}>
-                        {position.label}
+                        {positionSelectIsActive ? position.label : position.selectedLabel ?? position.label}
                       </option>
                     ))}
                   </select>
@@ -366,6 +377,7 @@ export function CountInitialForm({
   const [search, setSearch] = useState("");
   const [visibleLimit, setVisibleLimit] = useState(80);
   const [activeUnitEntry, setActiveUnitEntry] = useState<{ productId: string; entryId: string } | null>(null);
+  const [activePositionEntry, setActivePositionEntry] = useState<{ productId: string; entryId: string } | null>(null);
   const [onlyWithQty, setOnlyWithQty] = useState(false);
   const [compactMode, setCompactMode] = useState(true);
   const [showConfirm, setShowConfirm] = useState(false);
@@ -404,6 +416,14 @@ export function CountInitialForm({
     },
     [defaultEntriesByProductId, entriesByProductId]
   );
+
+  const activatePositionEntry = useCallback((productId: string, entryId: string) => {
+    setActivePositionEntry({ productId, entryId });
+  }, []);
+
+  const deactivatePositionEntry = useCallback(() => {
+    setActivePositionEntry(null);
+  }, []);
 
   const qtyByProductId = useMemo(() => {
     const next: Record<string, number> = {};
@@ -800,7 +820,10 @@ export function CountInitialForm({
                       qtyPositive={(qtyByProductId[product.id] ?? 0) > 0}
                       internalPositions={internalPositions}
                       activeUnitEntryId={activeUnitEntry?.productId === product.id ? activeUnitEntry.entryId : null}
+                      activePositionEntryId={activePositionEntry?.productId === product.id ? activePositionEntry.entryId : null}
                       onActivateUnitEntry={handleActivateUnitEntry}
+                      onActivatePositionEntry={activatePositionEntry}
+                      onDeactivatePositionEntry={deactivatePositionEntry}
                       onEntryQtyChange={handleEntryQtyChange}
                       onEntryUnitChange={handleEntryUnitChange}
                       onEntryPositionChange={handleEntryPositionChange}
