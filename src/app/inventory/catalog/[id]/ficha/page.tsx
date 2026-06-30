@@ -169,16 +169,16 @@ type PurchaseOrderItemTraceRow = {
   qty: number | null;
   purchase_orders?:
   | {
-    number: string | null;
+    id: string | null;
     status: string | null;
-    expected_date: string | null;
+    expected_at: string | null;
     created_at: string | null;
     suppliers?: { name: string | null } | { name: string | null }[] | null;
   }
   | Array<{
-    number: string | null;
+    id: string | null;
     status: string | null;
-    expected_date: string | null;
+    expected_at: string | null;
     created_at: string | null;
     suppliers?: { name: string | null } | { name: string | null }[] | null;
   }>
@@ -189,16 +189,18 @@ type InventoryReceiptItemTraceRow = {
   qty_base: number | null;
   inventory_entries?:
   | {
-    entry_no: string | null;
+    id: string | null;
+    invoice_number: string | null;
     status: string | null;
-    entry_date: string | null;
+    received_at: string | null;
     created_at: string | null;
     sites?: { name: string | null } | { name: string | null }[] | null;
   }
   | Array<{
-    entry_no: string | null;
+    id: string | null;
+    invoice_number: string | null;
     status: string | null;
-    entry_date: string | null;
+    received_at: string | null;
     created_at: string | null;
     sites?: { name: string | null } | { name: string | null }[] | null;
   }>
@@ -622,14 +624,14 @@ export default async function ProductTechnicalSheetPage({
     supabase
       .from("purchase_order_items")
       .select(
-        "qty,purchase_orders(number,status,expected_date,created_at,suppliers(name))"
+        "qty,purchase_orders(id,status,expected_at,created_at,suppliers(name))"
       )
       .eq("product_id", id)
       .order("created_at", { foreignTable: "purchase_orders", ascending: false })
       .limit(8),
     supabase
       .from("inventory_entry_items")
-      .select("qty_base,inventory_entries(entry_no,status,entry_date,created_at,sites(name))")
+      .select("qty_base,inventory_entries(id,invoice_number,status,received_at,created_at,sites(name))")
       .eq("product_id", id)
       .order("created_at", { foreignTable: "inventory_entries", ascending: false })
       .limit(8),
@@ -1077,12 +1079,13 @@ export default async function ProductTechnicalSheetPage({
       const supplier = Array.isArray(order?.suppliers)
         ? order?.suppliers[0]?.name ?? null
         : order?.suppliers?.name ?? null;
+      const orderNo = order?.id ? `OC ${order.id.slice(0, 8)}` : "-";
       return {
-        key: `po-${idx}-${order?.number ?? "sin-numero"}`,
-        orderNo: order?.number ?? "-",
+        key: `po-${idx}-${order?.id ?? "sin-numero"}`,
+        orderNo,
         supplierName: supplier ?? "Sin proveedor",
         status: order?.status ?? "-",
-        date: order?.expected_date ?? order?.created_at ?? null,
+        date: order?.expected_at ?? order?.created_at ?? null,
         qty: Number(row.qty ?? 0) || 0,
       };
     })
@@ -1096,12 +1099,14 @@ export default async function ProductTechnicalSheetPage({
       const siteName = Array.isArray(receipt?.sites)
         ? receipt?.sites[0]?.name ?? null
         : receipt?.sites?.name ?? null;
+      const receiptNo =
+        receipt?.invoice_number ?? (receipt?.id ? `Entrada ${receipt.id.slice(0, 8)}` : "-");
       return {
-        key: `re-${idx}-${receipt?.entry_no ?? "sin-numero"}`,
-        receiptNo: receipt?.entry_no ?? "-",
+        key: `re-${idx}-${receipt?.id ?? "sin-numero"}`,
+        receiptNo,
         siteName: siteName ?? "Sin sede",
         status: receipt?.status ?? "-",
-        date: receipt?.entry_date ?? receipt?.created_at ?? null,
+        date: receipt?.received_at ?? receipt?.created_at ?? null,
         qtyBase: Number(row.qty_base ?? 0) || 0,
       };
     })
