@@ -181,6 +181,13 @@ type ProductSiteRow = {
   created_at?: string | null;
 };
 
+type ProductSiteAreaRemissionCategoryRow = {
+  product_id: string | null;
+  site_id: string | null;
+  area_kind: string | null;
+  remission_category_id: string | null;
+};
+
 /** Filas de product_inventory_profiles con el join a products(id,name,unit) */
 type ProductProfileWithProduct = {
   product_id: string;
@@ -1621,13 +1628,46 @@ export default async function RemissionsPage({
     }
   }
   const productIds = productRows.map((row) => row.id);
-  const remissionCategoryIdByProductId = new Map(
+  const categoryAreaOptions = areaOptions.filter((option) => option.value !== "general");
+  const selectedRemissionCategoryAreaKind =
+    requestedAreaKind ||
+    (categoryAreaOptions.length === 1 ? categoryAreaOptions[0]?.value ?? "" : "");
+
+  const { data: areaRemissionCategoryRows } =
+    productFilterSiteId && selectedRemissionCategoryAreaKind && productIds.length > 0
+      ? await supabase
+        .from("product_site_area_remission_categories")
+        .select("product_id,site_id,area_kind,remission_category_id")
+        .eq("site_id", productFilterSiteId)
+        .eq("area_kind", selectedRemissionCategoryAreaKind)
+        .in("product_id", productIds)
+      : { data: [] as ProductSiteAreaRemissionCategoryRow[] };
+
+  const areaRemissionCategoryIdByProductId = new Map(
+    ((areaRemissionCategoryRows ?? []) as ProductSiteAreaRemissionCategoryRow[])
+      .map((row) => [
+        String(row.product_id ?? "").trim(),
+        String(row.remission_category_id ?? "").trim(),
+      ] as const)
+      .filter(([productId, categoryId]) => Boolean(productId && categoryId))
+  );
+  const legacyRemissionCategoryIdByProductId = new Map(
     productSiteRows
       .map((row) => [
         String(row.product_id ?? "").trim(),
         String(row.remission_category_id ?? "").trim(),
       ] as const)
       .filter(([productId, categoryId]) => Boolean(productId && categoryId))
+  );
+  const remissionCategoryIdByProductId = new Map(
+    productIds
+      .map((productId) => [
+        productId,
+        areaRemissionCategoryIdByProductId.get(productId) ||
+          legacyRemissionCategoryIdByProductId.get(productId) ||
+          "",
+      ] as const)
+      .filter(([, categoryId]) => Boolean(categoryId))
   );
   const remissionCategoryIds = Array.from(new Set(remissionCategoryIdByProductId.values()));
   const { data: remissionCategoryData } = remissionCategoryIds.length

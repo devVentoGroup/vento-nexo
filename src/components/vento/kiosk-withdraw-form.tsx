@@ -59,6 +59,28 @@ type UnitOption = {
   profileId: string;
 };
 
+function optimizedCatalogImageUrl(value: string | null | undefined, width: number, quality = 62) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+
+  try {
+    const url = new URL(raw);
+    const marker = "/storage/v1/object/public/";
+    const markerIndex = url.pathname.indexOf(marker);
+    const ext = url.pathname.split(".").pop()?.toLowerCase() ?? "";
+
+    if (markerIndex < 0 || ext === "gif" || ext === "svg") return raw;
+
+    url.pathname = url.pathname.replace(marker, "/storage/v1/render/image/public/");
+    url.searchParams.set("width", String(width));
+    url.searchParams.set("quality", String(quality));
+    url.searchParams.set("resize", "cover");
+    return url.toString();
+  } catch {
+    return raw;
+  }
+}
+
 function formatQty(value: number) {
   if (!Number.isFinite(value)) return "0";
   return new Intl.NumberFormat("es-CO", { maximumFractionDigits: 3 }).format(value);
@@ -388,9 +410,18 @@ export function KioskWithdrawForm({
                           {part.imageUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
-                              src={part.imageUrl}
+                              src={optimizedCatalogImageUrl(part.imageUrl, 128, 60)}
                               alt=""
                               className="h-full w-full object-cover"
+                              loading="eager"
+                              decoding="async"
+                              fetchPriority="high"
+                              onError={(event) => {
+                                const fallback = String(part.imageUrl ?? "").trim();
+                                if (fallback && event.currentTarget.src !== fallback) {
+                                  event.currentTarget.src = fallback;
+                                }
+                              }}
                             />
                           ) : (
                             <span className="px-1 text-center text-[10px] font-bold text-slate-400">
@@ -511,7 +542,7 @@ export function KioskWithdrawForm({
         </div>
         <button
           type="submit"
-          className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold"
+          className="ui-btn ui-btn--brand h-12 px-5 text-base font-semibold transition active:scale-[0.98]"
           disabled={isSubmitting}
         >
           {isSubmitting ? "Retirando..." : "Retirar"}

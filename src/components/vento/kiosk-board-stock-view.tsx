@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useDeferredValue, useMemo, useState } from "react";
 
 type StockPart = {
   qty: number;
@@ -42,6 +42,31 @@ type Props = {
 type ViewMode = "cards" | "compact" | "list";
 type StockTab = "available" | "out";
 
+const KIOSK_INITIAL_LIMIT = 36;
+const BOARD_PAGE_SIZE = 36;
+const EAGER_IMAGE_COUNT = 12;
+
+function optimizedCatalogImageUrl(value: string | null | undefined, width: number, quality = 62) {
+  const raw = String(value ?? "").trim();
+  if (!raw) return "";
+
+  try {
+    const url = new URL(raw);
+    const marker = "/storage/v1/object/public/";
+    const markerIndex = url.pathname.indexOf(marker);
+    const ext = url.pathname.split(".").pop()?.toLowerCase() ?? "";
+
+    if (markerIndex < 0 || ext === "gif" || ext === "svg") return raw;
+
+    url.pathname = url.pathname.replace(marker, "/storage/v1/render/image/public/");
+    url.searchParams.set("width", String(width));
+    url.searchParams.set("quality", String(quality));
+    url.searchParams.set("resize", "cover");
+    return url.toString();
+  } catch {
+    return raw;
+  }
+}
 
 function formatQty(value: number | null | undefined) {
   const n = Number(value ?? 0);
@@ -86,7 +111,20 @@ function StockAmount({ item, size = "lg" }: { item: KioskBoardStockItem; size?: 
             >
               {part.imageUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
-                <img src={part.imageUrl} alt="" className="h-6 w-6 rounded-full object-cover" loading="lazy" />
+                <img
+                  src={optimizedCatalogImageUrl(part.imageUrl, 64, 58)}
+                  alt=""
+                  className="h-6 w-6 rounded-full object-cover"
+                  loading="lazy"
+                  decoding="async"
+                  fetchPriority="low"
+                  onError={(event) => {
+                    const fallback = String(part.imageUrl ?? "").trim();
+                    if (fallback && event.currentTarget.src !== fallback) {
+                      event.currentTarget.src = fallback;
+                    }
+                  }}
+                />
               ) : null}
               {formatQty(part.qty)} {part.label}
             </span>
@@ -105,19 +143,35 @@ function StockAmount({ item, size = "lg" }: { item: KioskBoardStockItem; size?: 
   );
 }
 
-function ProductImage({ item, compact = false }: { item: KioskBoardStockItem; compact?: boolean }) {
+function ProductImage({
+  item,
+  compact = false,
+  priority = false,
+}: {
+  item: KioskBoardStockItem;
+  compact?: boolean;
+  priority?: boolean;
+}) {
   const sizeClass = compact ? "h-16 w-16 rounded-2xl" : "aspect-[4/3] w-full";
+  const width = compact ? 160 : 420;
+  const src = optimizedCatalogImageUrl(item.imageUrl, width);
   return (
     <div className={`${sizeClass} overflow-hidden bg-[linear-gradient(135deg,rgba(245,158,11,0.14)_0%,rgba(255,255,255,1)_100%)]`}>
-      {item.imageUrl ? (
+      {src ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
-          src={item.imageUrl}
+          src={src}
           alt={item.name}
           className="h-full w-full object-cover"
-          loading="lazy"
+          loading={priority ? "eager" : "lazy"}
           decoding="async"
-          fetchPriority="low"
+          fetchPriority={priority ? "high" : "low"}
+          onError={(event) => {
+            const fallback = String(item.imageUrl ?? "").trim();
+            if (fallback && event.currentTarget.src !== fallback) {
+              event.currentTarget.src = fallback;
+            }
+          }}
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-[var(--ui-muted)]">
@@ -160,7 +214,7 @@ function normalizeViewMode(value: string | undefined, isKiosk: boolean): ViewMod
 }
 
 function defaultVisibleLimit(isKiosk: boolean) {
-  return isKiosk ? 48 : Number.MAX_SAFE_INTEGER;
+  return isKiosk ? KIOSK_INITIAL_LIMIT : Number.MAX_SAFE_INTEGER;
 }
 
 function normalizeSearchText(value: string | null | undefined) {
@@ -169,23 +223,6 @@ function normalizeSearchText(value: string | null | undefined) {
     .replace(/[\u0300-\u036f]/g, "")
     .toLowerCase()
     .trim();
-}
-
-function itemMatchesSearch(item: KioskBoardStockItem, normalizedQuery: string) {
-  if (!normalizedQuery) return true;
-
-  const haystack = normalizeSearchText(
-    [
-      item.name,
-      item.unit,
-      item.categoryLabel,
-      item.categoryPath,
-      item.internalLocationLabel,
-      ...item.presentationParts.map((part) => part.label),
-    ].join(" ")
-  );
-
-  return haystack.includes(normalizedQuery);
 }
 
 function HideZeroStockButton({
@@ -234,6 +271,7 @@ export function KioskBoardStockView({
   const searchParams = useSearchParams();
   const totalCount = typeof totalItemsCount === "number" ? totalItemsCount : items.length;
   const [searchQuery, setSearchQuery] = useState(() => String(initialSearchQuery ?? "").trim());
+  const deferredSearchQuery = useDeferredValue(searchQuery);
   const [stockTab, setStockTab] = useState<StockTab>(() =>
     searchParams.get("stock_tab") === "out" ? "out" : "available"
   );
@@ -245,15 +283,44 @@ export function KioskBoardStockView({
   const [openingProductId, setOpeningProductId] = useState("");
   const [hidingProductId, setHidingProductId] = useState("");
 
-  const normalizedSearchQuery = useMemo(() => normalizeSearchText(searchQuery), [searchQuery]);
-  const availableItems = useMemo(() => items.filter((item) => Number(item.qty ?? 0) > 0), [items]);
-  const outOfStockItems = useMemo(() => items.filter((item) => Number(item.qty ?? 0) <= 0), [items]);
+  const searchableItems = useMemo(
+    () =>
+      items.map((item) => ({
+        item,
+        searchText: normalizeSearchText(
+          [
+            item.name,
+            item.unit,
+            item.categoryLabel,
+            item.categoryPath,
+            item.internalLocationLabel,
+            ...item.presentationParts.map((part) => part.label),
+          ].join(" ")
+        ),
+      })),
+    [items]
+  );
+  const normalizedSearchQuery = useMemo(() => normalizeSearchText(deferredSearchQuery), [deferredSearchQuery]);
+  const availableItems = useMemo(
+    () => searchableItems.filter(({ item }) => Number(item.qty ?? 0) > 0),
+    [searchableItems]
+  );
+  const outOfStockItems = useMemo(
+    () => searchableItems.filter(({ item }) => Number(item.qty ?? 0) <= 0),
+    [searchableItems]
+  );
   const filteredAvailableItems = useMemo(
-    () => availableItems.filter((item) => itemMatchesSearch(item, normalizedSearchQuery)),
+    () =>
+      availableItems
+        .filter(({ item, searchText }) => !normalizedSearchQuery || searchText.includes(normalizedSearchQuery))
+        .map(({ item }) => item),
     [availableItems, normalizedSearchQuery]
   );
   const filteredOutOfStockItems = useMemo(
-    () => outOfStockItems.filter((item) => itemMatchesSearch(item, normalizedSearchQuery)),
+    () =>
+      outOfStockItems
+        .filter(({ item, searchText }) => !normalizedSearchQuery || searchText.includes(normalizedSearchQuery))
+        .map(({ item }) => item),
     [outOfStockItems, normalizedSearchQuery]
   );
   const filteredItems = stockTab === "out" ? filteredOutOfStockItems : filteredAvailableItems;
@@ -391,10 +458,10 @@ export function KioskBoardStockView({
         viewMode === "list" ? (
           <div className="overflow-hidden rounded-3xl border border-[var(--ui-border)] bg-white shadow-sm">
             <div className="divide-y divide-slate-200">
-              {visibleItems.map((item) => (
+              {visibleItems.map((item, index) => (
                 <article key={item.productId} className="grid gap-3 p-4 sm:grid-cols-[1fr_auto] sm:items-center">
                   <div className="flex min-w-0 items-center gap-3">
-                    <ProductImage item={item} compact />
+                    <ProductImage item={item} compact priority={index < EAGER_IMAGE_COUNT} />
                     <div className="min-w-0">
                       <div className="truncate text-base font-semibold text-[var(--ui-text)]">{item.name}</div>
                       <div className="mt-1 text-sm text-[var(--ui-muted)]">{item.categoryLabel}</div>
@@ -412,8 +479,9 @@ export function KioskBoardStockView({
                       item.qty > 0 ? (
                         <Link
                           href={buildKioskWithdrawHref(locationId, item.productId)}
+                          prefetch={false}
                           onClick={() => setOpeningProductId(item.productId)}
-                          className={`ui-btn ui-btn--brand mt-3 h-14 px-4 text-base ${openingProductId === item.productId ? "pointer-events-none opacity-80" : ""
+                          className={`ui-btn ui-btn--brand mt-3 h-14 px-4 text-base transition active:scale-[0.98] ${openingProductId === item.productId ? "pointer-events-none opacity-80" : ""
                             }`}
                           aria-disabled={openingProductId === item.productId}
                         >
@@ -442,16 +510,20 @@ export function KioskBoardStockView({
           </div>
         ) : (
           <div className={viewMode === "compact" ? "grid auto-rows-fr gap-3 sm:grid-cols-2 xl:grid-cols-3" : "grid auto-rows-fr gap-4 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"}>
-            {visibleItems.map((item) => (
+            {visibleItems.map((item, index) => (
               <article
                 key={item.productId}
                 className={
                   viewMode === "compact"
-                    ? "grid h-full grid-cols-[72px_1fr] gap-3 overflow-hidden rounded-3xl border border-[var(--ui-border)] bg-white p-3 shadow-sm"
-                    : "flex h-full flex-col overflow-hidden rounded-[28px] border border-[var(--ui-border)] bg-white shadow-sm"
+                    ? "grid h-full grid-cols-[72px_1fr] gap-3 overflow-hidden rounded-3xl border border-[var(--ui-border)] bg-white p-3 shadow-sm [content-visibility:auto] [contain-intrinsic-size:180px]"
+                    : "flex h-full flex-col overflow-hidden rounded-[28px] border border-[var(--ui-border)] bg-white shadow-sm [content-visibility:auto] [contain-intrinsic-size:360px]"
                 }
               >
-                {viewMode === "compact" ? <ProductImage item={item} compact /> : <ProductImage item={item} />}
+                {viewMode === "compact" ? (
+                  <ProductImage item={item} compact priority={index < EAGER_IMAGE_COUNT} />
+                ) : (
+                  <ProductImage item={item} priority={index < EAGER_IMAGE_COUNT} />
+                )}
                 <div className={viewMode === "compact" ? "flex h-full min-w-0 flex-col gap-2" : "flex flex-1 flex-col gap-3 p-4"}>
                   <div className="line-clamp-2 min-h-10 text-base font-semibold leading-5 text-[var(--ui-text)]">{item.name}</div>
                   <div className="grid min-h-7 grid-cols-[minmax(0,1fr)_auto] items-start gap-2">
@@ -472,8 +544,9 @@ export function KioskBoardStockView({
                       item.qty > 0 ? (
                         <Link
                           href={buildKioskWithdrawHref(locationId, item.productId)}
+                          prefetch={false}
                           onClick={() => setOpeningProductId(item.productId)}
-                          className={`ui-btn ui-btn--brand h-14 w-full px-4 text-base ${openingProductId === item.productId ? "pointer-events-none opacity-80" : ""
+                          className={`ui-btn ui-btn--brand h-14 w-full px-4 text-base transition active:scale-[0.98] ${openingProductId === item.productId ? "pointer-events-none opacity-80" : ""
                             }`}
                           aria-disabled={openingProductId === item.productId}
                         >
@@ -511,7 +584,7 @@ export function KioskBoardStockView({
             onClick={() =>
               setVisibleLimitState((current) => ({
                 key: visibleLimitKey,
-                limit: (current.key === visibleLimitKey ? current.limit : defaultVisibleLimit(isKiosk)) + 48,
+                limit: (current.key === visibleLimitKey ? current.limit : defaultVisibleLimit(isKiosk)) + BOARD_PAGE_SIZE,
               }))
             }
           >
