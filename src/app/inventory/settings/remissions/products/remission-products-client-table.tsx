@@ -40,6 +40,8 @@ export type RemissionProductsClientRow = {
   setting: {
     remissionCategoryId: string;
     remissionEnabled: boolean;
+    areaKinds: string[];
+    isRemissionEnabledForSelectedArea: boolean;
   };
   diagnostics: ProductDiagnostics;
 };
@@ -64,6 +66,8 @@ type Props = {
   destinationSiteId: string;
   originSiteId: string;
   bulkProfile: BulkProfile;
+  selectedAreaKind: string;
+  selectedAreaLabel: string;
   profileLabel: string;
   profileHelp: string;
   applyAction: ServerAction;
@@ -96,6 +100,8 @@ export function RemissionProductsClientTable({
   destinationSiteId,
   originSiteId,
   bulkProfile,
+  selectedAreaKind,
+  selectedAreaLabel,
   profileLabel,
   profileHelp,
   applyAction,
@@ -146,6 +152,7 @@ export function RemissionProductsClientTable({
         <input type="hidden" name="destination_site_id" value={destinationSiteId} />
         <input type="hidden" name="origin_site_id" value={originSiteId} />
         <input type="hidden" name="bulk_profile" value={bulkProfile} />
+        <input type="hidden" name="area_kind" value={selectedAreaKind} />
         {changedCategoryRows.map((row) => (
           <div key={row.product.id} hidden>
             <input type="hidden" name="category_product_id" value={row.product.id} />
@@ -164,6 +171,7 @@ export function RemissionProductsClientTable({
             <div className="flex flex-wrap items-center gap-2">
               <div className="ui-h3">Productos</div>
               <span className="ui-chip">Perfil: {profileLabel}</span>
+              {selectedAreaLabel ? <span className="ui-chip">Área: {selectedAreaLabel}</span> : null}
               <span className="ui-chip">{visibleRows.length} visibles</span>
               <span className="ui-chip ui-chip--success">{readyCount} aplicables</span>
               <span className={blockedCount > 0 ? "ui-chip ui-chip--warn" : "ui-chip"}>
@@ -287,6 +295,7 @@ export function RemissionProductsClientTable({
           <input type="hidden" name="destination_site_id" value={destinationSiteId} />
           <input type="hidden" name="origin_site_id" value={originSiteId} />
           <input type="hidden" name="bulk_profile" value={bulkProfile} />
+          <input type="hidden" name="area_kind" value={selectedAreaKind} />
 
           <div className="max-h-[560px] min-h-[320px] overflow-y-auto overflow-x-hidden rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface)]">
             <Table className="w-full table-fixed">

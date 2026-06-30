@@ -2098,6 +2098,9 @@ export default async function NewProductPage({
               site_id: location.site_id,
               code: location.code,
               zone: location.zone,
+              area_kind: Array.isArray(location.area)
+                ? location.area[0]?.kind ?? null
+                : location.area?.kind ?? null,
             }))}
             remissionAreaKindsBySite={remissionAreaKindsBySite}
             stockUnitCode={defaultStockUnitCode}

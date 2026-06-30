@@ -81,9 +81,17 @@ type AreaRuleRow = {
 type RemissionCategoryRow = {
   id: string;
   site_id: string | null;
+  area_kind: string | null;
   name: string | null;
   sort_order: number | null;
   is_active: boolean | null;
+};
+
+type ProductSiteAreaRemissionCategoryRow = {
+  product_id: string | null;
+  site_id: string | null;
+  area_kind: string | null;
+  remission_category_id: string | null;
 };
 
 type BulkProfile =
@@ -102,6 +110,51 @@ type ProductDiagnostics = {
 
 function asText(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function normalizeAreaKind(value: string | null | undefined) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[\s-]+/g, "_");
+}
+
+function areaKindLabel(value: string | null | undefined) {
+  const normalized = normalizeAreaKind(value);
+  if (normalized === "cocina") return "Cocina";
+  if (normalized === "barra") return "Barra";
+  if (normalized === "mostrador") return "Mostrador";
+  if (normalized === "salon") return "Salón";
+  if (normalized === "recepcion") return "Recepción";
+  return normalized
+    ? normalized
+        .split("_")
+        .filter(Boolean)
+        .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+        .join(" ")
+    : "";
+}
+
+function settingAreaKinds(setting: ProductSiteSettingRow | undefined) {
+  return Array.from(
+    new Set(
+      (setting?.area_kinds ?? [])
+        .map((value) => normalizeAreaKind(value))
+        .filter(Boolean)
+    )
+  );
+}
+
+function isSettingEnabledForArea(
+  setting: ProductSiteSettingRow | undefined,
+  areaKind: string
+) {
+  if (!setting?.remission_enabled) return false;
+  if (!areaKind) return true;
+  const areaKinds = settingAreaKinds(setting);
+  return areaKinds.length === 0 || areaKinds.includes(areaKind);
 }
 
 function isBulkProfile(value: string): value is BulkProfile {
@@ -397,6 +450,7 @@ function diagnoseProduct(params: {
   setting?: ProductSiteSettingRow;
   hasRemissionProfile: boolean;
   hasOriginLocation: boolean;
+  selectedAreaKind: string;
   profile: BulkProfile;
 }): ProductDiagnostics {
   const blockingIssues: string[] = [];
@@ -428,10 +482,19 @@ function diagnoseProduct(params: {
   }
 
   if (params.setting?.is_active === true && params.setting.remission_enabled === true) {
+    if (params.selectedAreaKind && !isSettingEnabledForArea(params.setting, params.selectedAreaKind)) {
+      return {
+        status: "ready",
+        label: "Puede configurarse",
+        issues: ["Remitible en otra área", ...notes],
+        canApply: true,
+      };
+    }
+
     return {
       status: "configured",
       label: "Listo",
-      issues: ["Ya está remitible", ...notes],
+      issues: [params.selectedAreaKind ? "Ya está remitible en esta área" : "Ya está remitible", ...notes],
       canApply: true,
     };
   }
@@ -450,6 +513,7 @@ async function applyBulkProductSettings(formData: FormData) {
   const destinationSiteId = asText(formData.get("destination_site_id"));
   const originSiteId = asText(formData.get("origin_site_id"));
   const rawProfile = asText(formData.get("bulk_profile"));
+  const selectedAreaKind = normalizeAreaKind(asText(formData.get("area_kind")));
   const productIds = Array.from(
     new Set(
       formData
@@ -463,6 +527,7 @@ async function applyBulkProductSettings(formData: FormData) {
   if (destinationSiteId) returnParams.set("destination_site_id", destinationSiteId);
   if (originSiteId) returnParams.set("origin_site_id", originSiteId);
   if (rawProfile) returnParams.set("bulk_profile", rawProfile);
+  if (selectedAreaKind) returnParams.set("area_kind", selectedAreaKind);
 
   if (!destinationSiteId || !originSiteId || !isBulkProfile(rawProfile)) {
     returnParams.set("error", "Selecciona sede destino, origen y perfil.");
@@ -473,6 +538,7 @@ async function applyBulkProductSettings(formData: FormData) {
     redirect(buildRedirect(returnParams));
   }
 
+  const bulkProfile = rawProfile as BulkProfile;
   const { supabase } = await requireManager(buildRedirect(returnParams));
   const [
     { data: capabilityRows },
@@ -514,7 +580,7 @@ async function applyBulkProductSettings(formData: FormData) {
   const destinationCapabilities = capabilitiesBySite.get(destinationSiteId);
   const originCapabilities = capabilitiesBySite.get(originSiteId);
   const disablesRemission =
-    rawProfile === "available_not_remission" || rawProfile === "disable_remission";
+    bulkProfile === "available_not_remission" || bulkProfile === "disable_remission";
 
   if (!disablesRemission && !destinationCapabilities?.can_request_remissions) {
     returnParams.set("error", "La sede destino no solicita remisiones.");
@@ -549,7 +615,7 @@ async function applyBulkProductSettings(formData: FormData) {
       const product = productsById.get(productId);
       const current = settingsByProduct.get(productId);
       if (!product || product.is_active === false) return false;
-      if (!profileAllowsProduct({ product, setting: current, profile: rawProfile })) return false;
+      if (!profileAllowsProduct({ product, setting: current, profile: bulkProfile })) return false;
       return (
         disablesRemission ||
         (hasOriginLocation &&
@@ -558,18 +624,26 @@ async function applyBulkProductSettings(formData: FormData) {
     })
     .map((productId) => {
       const current = settingsByProduct.get(productId);
+      const currentAreaKinds = settingAreaKinds(current);
+      const nextAreaKinds =
+        !disablesRemission && selectedAreaKind
+          ? Array.from(new Set([...currentAreaKinds, selectedAreaKind]))
+          : currentAreaKinds;
       const base = {
         product_id: productId,
         site_id: destinationSiteId,
-        default_area_kind: current?.default_area_kind ?? null,
-        area_kinds: current?.area_kinds ?? null,
+        default_area_kind:
+          !disablesRemission && selectedAreaKind && !current?.default_area_kind
+            ? selectedAreaKind
+            : current?.default_area_kind ?? null,
+        area_kinds: nextAreaKinds.length > 0 ? nextAreaKinds : null,
         local_production_enabled: false,
         production_location_id: null,
         min_stock_qty: current?.min_stock_qty ?? null,
         remission_category_id: current?.remission_category_id ?? null,
       };
 
-      if (rawProfile === "available_not_remission") {
+      if (bulkProfile === "available_not_remission") {
         return {
           ...base,
           is_active: true,
@@ -578,7 +652,7 @@ async function applyBulkProductSettings(formData: FormData) {
         };
       }
 
-      if (rawProfile === "disable_remission") {
+      if (bulkProfile === "disable_remission") {
         return {
           ...base,
           is_active: current?.is_active ?? false,
@@ -591,7 +665,7 @@ async function applyBulkProductSettings(formData: FormData) {
         ...base,
         is_active: true,
         remission_enabled: true,
-        sales_enabled: rawProfile === "sellable_from_origin",
+        sales_enabled: bulkProfile === "sellable_from_origin",
       };
     });
 
@@ -623,14 +697,16 @@ async function createRemissionCategory(formData: FormData) {
   const destinationSiteId = asText(formData.get("destination_site_id"));
   const originSiteId = asText(formData.get("origin_site_id"));
   const rawProfile = asText(formData.get("bulk_profile"));
+  const selectedAreaKind = normalizeAreaKind(asText(formData.get("area_kind")));
   const name = asText(formData.get("category_name"));
   const returnParams = new URLSearchParams();
   if (destinationSiteId) returnParams.set("destination_site_id", destinationSiteId);
   if (originSiteId) returnParams.set("origin_site_id", originSiteId);
   if (rawProfile) returnParams.set("bulk_profile", rawProfile);
+  if (selectedAreaKind) returnParams.set("area_kind", selectedAreaKind);
 
-  if (!destinationSiteId || !name) {
-    returnParams.set("error", "Selecciona sede destino y escribe el nombre de la categoría.");
+  if (!destinationSiteId || !selectedAreaKind || !name) {
+    returnParams.set("error", "Selecciona sede destino, área solicitante y escribe el nombre de la categoría.");
     redirect(buildRedirect(returnParams));
   }
 
@@ -638,10 +714,12 @@ async function createRemissionCategory(formData: FormData) {
   const { count } = await supabase
     .from("remission_product_categories")
     .select("id", { count: "exact", head: true })
-    .eq("site_id", destinationSiteId);
+    .eq("site_id", destinationSiteId)
+    .eq("area_kind", selectedAreaKind);
 
   const { error } = await supabase.from("remission_product_categories").insert({
     site_id: destinationSiteId,
+    area_kind: selectedAreaKind,
     name,
     sort_order: count ?? 0,
     is_active: true,
@@ -663,6 +741,7 @@ async function saveProductRemissionCategories(formData: FormData) {
   const destinationSiteId = asText(formData.get("destination_site_id"));
   const originSiteId = asText(formData.get("origin_site_id"));
   const rawProfile = asText(formData.get("bulk_profile"));
+  const selectedAreaKind = normalizeAreaKind(asText(formData.get("area_kind")));
   const productIds = Array.from(
     new Set(
       formData
@@ -675,54 +754,40 @@ async function saveProductRemissionCategories(formData: FormData) {
   if (destinationSiteId) returnParams.set("destination_site_id", destinationSiteId);
   if (originSiteId) returnParams.set("origin_site_id", originSiteId);
   if (rawProfile) returnParams.set("bulk_profile", rawProfile);
+  if (selectedAreaKind) returnParams.set("area_kind", selectedAreaKind);
 
-  if (!destinationSiteId || productIds.length === 0) {
-    returnParams.set("error", "No hay productos para guardar categorías.");
+  if (!destinationSiteId || !selectedAreaKind || productIds.length === 0) {
+    returnParams.set("error", "Selecciona área solicitante y al menos un producto para guardar categorías.");
     redirect(buildRedirect(returnParams));
   }
 
   const { supabase } = await requireManager(buildRedirect(returnParams));
   const { data: categoryRows } = await supabase
     .from("remission_product_categories")
-    .select("id")
+    .select("id,area_kind")
     .eq("site_id", destinationSiteId)
     .eq("is_active", true);
-  const { data: currentSettings } = await supabase
-    .from("product_site_settings")
-    .select("product_id,is_active,remission_enabled,local_production_enabled,production_location_id")
-    .eq("site_id", destinationSiteId)
-    .in("product_id", productIds);
   const validCategoryIds = new Set(
-    ((categoryRows ?? []) as Array<{ id: string | null }>)
+    ((categoryRows ?? []) as Array<{ id: string | null; area_kind: string | null }>)
+      .filter((row) => {
+        const categoryAreaKind = normalizeAreaKind(row.area_kind);
+        return !categoryAreaKind || categoryAreaKind === selectedAreaKind;
+      })
       .map((row) => String(row.id ?? "").trim())
       .filter(Boolean)
   );
-  const currentByProduct = new Map(
-    ((currentSettings ?? []) as Array<{
-      product_id: string | null;
-      is_active: boolean | null;
-      remission_enabled: boolean | null;
-      local_production_enabled: boolean | null;
-      production_location_id: string | null;
-    }>).map((row) => [String(row.product_id ?? ""), row])
-  );
-
   const rows = productIds.map((productId) => {
     const categoryId = asText(formData.get(`remission_category_${productId}`));
-    const current = currentByProduct.get(productId);
     return {
       product_id: productId,
       site_id: destinationSiteId,
-      is_active: current?.is_active ?? false,
-      remission_enabled: current?.remission_enabled ?? false,
-      local_production_enabled: current?.local_production_enabled ?? false,
-      production_location_id: current?.production_location_id ?? null,
+      area_kind: selectedAreaKind,
       remission_category_id: validCategoryIds.has(categoryId) ? categoryId : null,
     };
   });
 
-  const { error } = await supabase.from("product_site_settings").upsert(rows, {
-    onConflict: "product_id,site_id",
+  const { error } = await supabase.from("product_site_area_remission_categories").upsert(rows, {
+    onConflict: "product_id,site_id,area_kind",
   });
   if (error) {
     returnParams.set("error", error.message);
@@ -742,6 +807,7 @@ export default async function RemissionProductsPage({
     destination_site_id?: string;
     origin_site_id?: string;
     bulk_profile?: string;
+    area_kind?: string;
     q?: string;
     type?: string;
     measurement?: string;
@@ -801,6 +867,7 @@ export default async function RemissionProductsPage({
   const bulkProfile = isBulkProfile(String(sp.bulk_profile ?? ""))
     ? (sp.bulk_profile as BulkProfile)
     : "input_from_origin";
+  const requestedAreaKind = normalizeAreaKind(String(sp.area_kind ?? ""));
 
   const [
     settingsData,
@@ -808,6 +875,7 @@ export default async function RemissionProductsPage({
     { data: locationsData },
     { data: areaRulesData },
     { data: remissionCategoriesData },
+    { data: areaCategoryData },
   ] = await Promise.all([
     destinationSiteId
       ? loadAllProductSiteSettings(supabase, destinationSiteId)
@@ -831,12 +899,18 @@ export default async function RemissionProductsPage({
     destinationSiteId
       ? supabase
         .from("remission_product_categories")
-        .select("id,site_id,name,sort_order,is_active")
+        .select("id,site_id,area_kind,name,sort_order,is_active")
         .eq("site_id", destinationSiteId)
         .eq("is_active", true)
         .order("sort_order", { ascending: true })
         .order("name", { ascending: true })
       : { data: [] as RemissionCategoryRow[] },
+    destinationSiteId
+      ? supabase
+        .from("product_site_area_remission_categories")
+        .select("product_id,site_id,area_kind,remission_category_id")
+        .eq("site_id", destinationSiteId)
+      : { data: [] as ProductSiteAreaRemissionCategoryRow[] },
   ]);
 
   const settingsByProduct = new Map(
@@ -854,7 +928,31 @@ export default async function RemissionProductsPage({
   const originLocations = ((locationsData ?? []) as LocationRow[]).filter(
     (location) => location.is_active !== false
   );
-  const remissionCategories = (remissionCategoriesData ?? []) as RemissionCategoryRow[];
+  const requesterAreaOptions = Array.from(
+    new Set(
+      ((areaRulesData ?? []) as AreaRuleRow[])
+        .map((row) => normalizeAreaKind(row.area_kind))
+        .filter(Boolean)
+    )
+  ).map((value) => ({ value, label: areaKindLabel(value) }));
+  const selectedAreaKind =
+    requestedAreaKind && requesterAreaOptions.some((option) => option.value === requestedAreaKind)
+      ? requestedAreaKind
+      : requesterAreaOptions[0]?.value ?? "";
+  const selectedAreaLabel = areaKindLabel(selectedAreaKind);
+  const remissionCategories = ((remissionCategoriesData ?? []) as RemissionCategoryRow[])
+    .filter((category) => {
+      const categoryAreaKind = normalizeAreaKind(category.area_kind);
+      return !selectedAreaKind || !categoryAreaKind || categoryAreaKind === selectedAreaKind;
+    });
+  const areaCategoryByProduct = new Map(
+    ((areaCategoryData ?? []) as ProductSiteAreaRemissionCategoryRow[])
+      .filter((row) => normalizeAreaKind(row.area_kind) === selectedAreaKind)
+      .map((row) => [
+        String(row.product_id ?? ""),
+        String(row.remission_category_id ?? ""),
+      ])
+  );
   const allowedTypeOptions = profileTypeOptions(bulkProfile);
 
   const productRows: RemissionProductsClientRow[] = ((productsData ?? []) as ProductRow[])
@@ -865,6 +963,7 @@ export default async function RemissionProductsPage({
         setting,
         hasRemissionProfile: remissionProfileProductIds.has(product.id),
         hasOriginLocation: originLocations.length > 0,
+        selectedAreaKind,
         profile: bulkProfile,
       });
       return { product, setting, diagnostics };
@@ -886,8 +985,11 @@ export default async function RemissionProductsPage({
           searchText: normalizeCatalogToken(`${product.name ?? ""} ${product.sku ?? ""}`),
         },
         setting: {
-          remissionCategoryId: setting?.remission_category_id ?? "",
+          remissionCategoryId:
+            areaCategoryByProduct.get(product.id) ?? setting?.remission_category_id ?? "",
           remissionEnabled: setting?.remission_enabled ?? false,
+          areaKinds: settingAreaKinds(setting),
+          isRemissionEnabledForSelectedArea: isSettingEnabledForArea(setting, selectedAreaKind),
         },
         diagnostics,
       };
@@ -919,7 +1021,7 @@ export default async function RemissionProductsPage({
       {okMsg ? <div className="mt-6 ui-alert ui-alert--success">{okMsg}</div> : null}
 
       <div className="mt-6 ui-panel">
-        <form method="get" className="grid gap-3 lg:grid-cols-7">
+        <form method="get" className="grid gap-3 lg:grid-cols-9">
           <label className="flex flex-col gap-1 lg:col-span-2">
             <span className="ui-label">Sede destino</span>
             <select name="destination_site_id" defaultValue={destinationSiteId} className="ui-input">
@@ -930,6 +1032,18 @@ export default async function RemissionProductsPage({
               ))}
             </select>
           </label>
+          {requesterAreaOptions.length > 0 ? (
+            <label className="flex flex-col gap-1 lg:col-span-2">
+              <span className="ui-label">Área solicitante</span>
+              <select name="area_kind" defaultValue={selectedAreaKind} className="ui-input">
+                {requesterAreaOptions.map((area) => (
+                  <option key={area.value} value={area.value}>
+                    {area.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          ) : null}
           <label className="flex flex-col gap-1 lg:col-span-2">
             <span className="ui-label">Origen</span>
             <select name="origin_site_id" defaultValue={originSiteId} className="ui-input">
@@ -977,25 +1091,26 @@ export default async function RemissionProductsPage({
       <div className="mt-6 ui-panel">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
-            <div className="ui-h3">Categorías de esta sede</div>
+            <div className="ui-h3">Categorías de {selectedAreaLabel || "esta sede"}</div>
             <p className="mt-1 text-sm text-[var(--ui-muted)]">
-              Solo ordenan la selección en solicitudes de remisión. No cambian la categoría del catálogo.
+              Solo ordenan la selección para el área solicitante seleccionada. No cambian la categoría del catálogo.
             </p>
           </div>
           <form action={createRemissionCategory} className="flex flex-wrap items-end gap-2">
             <input type="hidden" name="destination_site_id" value={destinationSiteId} />
             <input type="hidden" name="origin_site_id" value={originSiteId} />
             <input type="hidden" name="bulk_profile" value={bulkProfile} />
+            <input type="hidden" name="area_kind" value={selectedAreaKind} />
             <label className="flex flex-col gap-1">
               <span className="ui-label">Nueva categoría</span>
               <input
                 name="category_name"
                 className="ui-input min-w-[220px]"
-                placeholder="Ej. Panadería"
-                disabled={!canManage || !destinationSiteId}
+                placeholder="Ej. Harinas"
+                disabled={!canManage || !destinationSiteId || !selectedAreaKind}
               />
             </label>
-            <button className="ui-btn ui-btn--brand" disabled={!canManage || !destinationSiteId}>
+            <button className="ui-btn ui-btn--brand" disabled={!canManage || !destinationSiteId || !selectedAreaKind}>
               Crear
             </button>
           </form>
@@ -1009,14 +1124,14 @@ export default async function RemissionProductsPage({
             ))
           ) : (
             <span className="text-sm text-[var(--ui-muted)]">
-              Esta sede todavía no tiene categorías visuales de remisión.
+              Esta área todavía no tiene categorías visuales de remisión.
             </span>
           )}
         </div>
       </div>
 
       <RemissionProductsClientTable
-        key={`${destinationSiteId}:${originSiteId}:${bulkProfile}`}
+        key={`${destinationSiteId}:${originSiteId}:${bulkProfile}:${selectedAreaKind}`}
         rows={productRows}
         remissionCategories={remissionCategories.map((category) => ({
           id: category.id,
@@ -1027,6 +1142,8 @@ export default async function RemissionProductsPage({
         destinationSiteId={destinationSiteId}
         originSiteId={originSiteId}
         bulkProfile={bulkProfile}
+        selectedAreaKind={selectedAreaKind}
+        selectedAreaLabel={selectedAreaLabel}
         profileLabel={profileLabel(bulkProfile)}
         profileHelp={profileHelp(bulkProfile)}
         applyAction={applyBulkProductSettings}
