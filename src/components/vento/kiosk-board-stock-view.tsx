@@ -61,7 +61,7 @@ function optimizedCatalogImageUrl(value: string | null | undefined, width: numbe
     url.pathname = url.pathname.replace(marker, "/storage/v1/render/image/public/");
     url.searchParams.set("width", String(width));
     url.searchParams.set("quality", String(quality));
-    url.searchParams.set("resize", "cover");
+    url.searchParams.set("resize", "contain");
     return url.toString();
   } catch {
     return raw;
@@ -156,13 +156,13 @@ function ProductImage({
   const width = compact ? 160 : 420;
   const src = optimizedCatalogImageUrl(item.imageUrl, width);
   return (
-    <div className={`${sizeClass} overflow-hidden bg-[linear-gradient(135deg,rgba(245,158,11,0.14)_0%,rgba(255,255,255,1)_100%)]`}>
+    <div className={`${sizeClass} overflow-hidden bg-white`}>
       {src ? (
         // eslint-disable-next-line @next/next/no-img-element
         <img
           src={src}
           alt={item.name}
-          className="h-full w-full object-cover"
+          className="h-full w-full object-contain p-2"
           loading={priority ? "eager" : "lazy"}
           decoding="async"
           fetchPriority={priority ? "high" : "low"}
