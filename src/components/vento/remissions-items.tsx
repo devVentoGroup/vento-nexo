@@ -228,6 +228,18 @@ function getRequestUnitLabel(unitCode: string | null | undefined) {
   return normalized || "un";
 }
 
+function getQuantityContextLabel(
+  product: Option | null | undefined,
+  presentationLabel: string,
+  unitCode: string | null | undefined,
+) {
+  const normalizedPresentation = String(presentationLabel ?? "").trim();
+  if (product && normalizedPresentation && normalizedPresentation !== "Selecciona producto") {
+    return normalizedPresentation;
+  }
+  return getRequestUnitLabel(unitCode);
+}
+
 function getInputModeHelperText(product: Option | null | undefined): string {
   const measurementMode = getProductMeasurementMode(product);
   if (isProducedPackagedProduct(product)) {
@@ -746,7 +758,7 @@ export function RemissionsItems({
                     Cantidad
                     {row.productId ? (
                       <span className="ml-1 font-semibold text-[var(--ui-muted)]">
-                        ({getRequestUnitLabel(effectiveInputUnitCode)})
+                        ({getQuantityContextLabel(product, remissionPresentationLabel, effectiveInputUnitCode)})
                       </span>
                     ) : null}
                   </span>
