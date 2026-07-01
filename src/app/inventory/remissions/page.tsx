@@ -1,13 +1,21 @@
 ﻿import Link from "next/link";
-import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
+import {
+  Table,
+  TableHeaderCell,
+  TableCell,
+} from "@/components/vento/standard/table";
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 
 import { requireAppAccess } from "@/lib/auth/guard";
 import { checkPermissionWithRoleOverride } from "@/lib/auth/role-override";
-import { PRIVILEGED_ROLE_OVERRIDES, ROLE_OVERRIDE_COOKIE } from "@/lib/auth/role-override-config";
+import {
+  PRIVILEGED_ROLE_OVERRIDES,
+  ROLE_OVERRIDE_COOKIE,
+} from "@/lib/auth/role-override-config";
 import {
   buildOperationalBlockMessage,
+  checkOperationalPermission,
   getOperationalContext,
 } from "@/lib/auth/operational-context";
 import { createClient } from "@/lib/supabase/server";
@@ -58,7 +66,9 @@ type MeasurementMode =
   | "bulk_volume";
 
 function normalizeMeasurementMode(value: unknown): MeasurementMode {
-  const raw = String(value ?? "").trim().toLowerCase();
+  const raw = String(value ?? "")
+    .trim()
+    .toLowerCase();
   if (
     raw === "variable_weight" ||
     raw === "count_with_weight" ||
@@ -77,10 +87,19 @@ function usesActualQuantityMode(value: unknown): boolean {
   return normalizeMeasurementMode(value) !== "fixed_presentation";
 }
 
-function isProducedPackagedProduct(product: ProductRow | null | undefined): boolean {
-  const productType = String(product?.product_type ?? "").trim().toLowerCase();
-  const inventoryKind = String(product?.inventory_kind ?? "").trim().toLowerCase();
-  return productType === "preparacion" || (productType === "venta" && inventoryKind !== "resale");
+function isProducedPackagedProduct(
+  product: ProductRow | null | undefined,
+): boolean {
+  const productType = String(product?.product_type ?? "")
+    .trim()
+    .toLowerCase();
+  const inventoryKind = String(product?.inventory_kind ?? "")
+    .trim()
+    .toLowerCase();
+  return (
+    productType === "preparacion" ||
+    (productType === "venta" && inventoryKind !== "resale")
+  );
 }
 
 function parseProductionPackagePlan(raw: string): ProductionPackagePlanItem[] {
@@ -100,13 +119,16 @@ function parseProductionPackagePlan(raw: string): ProductionPackagePlanItem[] {
         const batchId = String(entry?.batchId ?? "").trim() || null;
         const fractional = Boolean(entry?.fractional);
 
-        if (!packageId || !Number.isFinite(dispatchQty) || dispatchQty <= 0) return null;
+        if (!packageId || !Number.isFinite(dispatchQty) || dispatchQty <= 0)
+          return null;
 
         return {
           packageId,
           dispatchQty: roundQuantity(dispatchQty),
           unitCode,
-          remainingQty: Number.isFinite(remainingQty) ? roundQuantity(remainingQty) : 0,
+          remainingQty: Number.isFinite(remainingQty)
+            ? roundQuantity(remainingQty)
+            : 0,
           label,
           batchId,
           fractional,
@@ -273,12 +295,23 @@ function normalizeText(value: string | null | undefined): string {
     .toLowerCase();
 }
 
-function getDefaultRemissionAreaForRole(role: string | null | undefined): string {
+function getDefaultRemissionAreaForRole(
+  role: string | null | undefined,
+): string {
   const normalized = normalizeText(role);
-  if (normalized === "cajero") return "mostrador";
+  if (normalized === "cajero") return "cajero";
   if (normalized === "barista") return "bar";
   if (normalized === "cocinero") return "cocina";
   return "";
+}
+
+function getDefaultRemissionAreaCandidatesForRole(
+  role: string | null | undefined,
+): string[] {
+  const primary = getDefaultRemissionAreaForRole(role);
+  if (primary === "cajero") return ["cajero", "mostrador"];
+  if (primary === "bar") return ["bar", "barra"];
+  return primary ? [primary] : [];
 }
 
 function normalizeProductSiteAreaKinds(row: ProductSiteRow): string[] {
@@ -296,17 +329,22 @@ function supportsRemission(row: ProductSiteRow): boolean {
   return row.remission_enabled !== false;
 }
 
-function supportsRequestedArea(row: ProductSiteRow, requestedAreaKind: string): boolean {
+function supportsRequestedArea(
+  row: ProductSiteRow,
+  requestedAreaKind: string,
+): boolean {
   const areaKind = String(requestedAreaKind ?? "").trim();
   if (!areaKind) return true;
   const configuredKinds = normalizeProductSiteAreaKinds(row);
-  return configuredKinds.includes(areaKind) || configuredKinds.includes("general");
+  return (
+    configuredKinds.includes(areaKind) || configuredKinds.includes("general")
+  );
 }
 
 async function readBooleanAppSetting(
   supabase: Awaited<ReturnType<typeof createClient>>,
   settingKey: string,
-  fallback: boolean
+  fallback: boolean,
 ): Promise<boolean> {
   const { data, error } = await supabase
     .from("app_runtime_settings")
@@ -321,19 +359,25 @@ async function readBooleanAppSetting(
 
 async function loadProductSiteRows(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  siteId: string
+  siteId: string,
 ): Promise<ProductSiteRow[]> {
   const withAudience = await supabase
     .from("product_site_settings")
-    .select("product_id,is_active,default_area_kind,area_kinds,remission_category_id,audience,remission_enabled,updated_at,created_at")
+    .select(
+      "product_id,is_active,default_area_kind,area_kinds,remission_category_id,audience,remission_enabled,updated_at,created_at",
+    )
     .eq("site_id", siteId)
     .eq("is_active", true);
 
   if (!withAudience.error) {
     const rows = (withAudience.data ?? []) as ProductSiteRow[];
     const ordered = [...rows].sort((a, b) => {
-      const aTs = new Date(String(a.updated_at ?? a.created_at ?? "")).getTime();
-      const bTs = new Date(String(b.updated_at ?? b.created_at ?? "")).getTime();
+      const aTs = new Date(
+        String(a.updated_at ?? a.created_at ?? ""),
+      ).getTime();
+      const bTs = new Date(
+        String(b.updated_at ?? b.created_at ?? ""),
+      ).getTime();
       const safeA = Number.isFinite(aTs) ? aTs : 0;
       const safeB = Number.isFinite(bTs) ? bTs : 0;
       return safeB - safeA;
@@ -348,7 +392,9 @@ async function loadProductSiteRows(
 
   const fallback = await supabase
     .from("product_site_settings")
-    .select("product_id,is_active,default_area_kind,area_kinds,remission_category_id,updated_at,created_at")
+    .select(
+      "product_id,is_active,default_area_kind,area_kinds,remission_category_id,updated_at,created_at",
+    )
     .eq("site_id", siteId)
     .eq("is_active", true);
 
@@ -372,11 +418,72 @@ async function loadProductSiteRows(
   return Array.from(byProduct.values());
 }
 
+async function resolveRoleScopedRemissionAreaKind(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  siteId: string,
+  role: string | null | undefined,
+) {
+  const roleAreaKinds = getDefaultRemissionAreaCandidatesForRole(role);
+  if (!siteId || roleAreaKinds.length === 0) return "";
+
+  const { data: siteAreaPurposeRulesData } = await supabase
+    .from("site_area_purpose_rules")
+    .select("area_kind,is_enabled")
+    .eq("site_id", siteId)
+    .eq("purpose", "remission");
+
+  const siteOverrideKinds = new Set(
+    ((siteAreaPurposeRulesData ?? []) as SiteAreaPurposeRuleRow[])
+      .filter((row) => Boolean(row.is_enabled))
+      .map((row) => String(row.area_kind ?? "").trim())
+      .filter((kind) => kind && kind !== "general"),
+  );
+
+  if (siteOverrideKinds.size > 0) {
+    return siteOverrideKinds.size > 1
+      ? (roleAreaKinds.find((kind) => siteOverrideKinds.has(kind)) ?? "")
+      : "";
+  }
+
+  const [
+    { data: areas },
+    { data: areaKindsPurposeData, error: areaKindsPurposeError },
+  ] = await Promise.all([
+    supabase.from("areas").select("kind").eq("site_id", siteId),
+    supabase.from("area_kinds").select("code,use_for_remission"),
+  ]);
+
+  const remissionAreaKindCodes = !areaKindsPurposeError
+    ? new Set(
+        ((areaKindsPurposeData ?? []) as AreaKindPurposeRow[])
+          .filter((row) => Boolean(row.use_for_remission))
+          .map((row) => String(row.code ?? "").trim())
+          .filter(Boolean),
+      )
+    : new Set(["cajero", "mostrador", "bar", "barra", "cocina"]);
+
+  const availableKinds = new Set(
+    ((areas ?? []) as Array<{ kind: string | null }>)
+      .map((row) => String(row.kind ?? "").trim())
+      .filter(
+        (kind) =>
+          kind && kind !== "general" && remissionAreaKindCodes.has(kind),
+      ),
+  );
+
+  return availableKinds.size > 1
+    ? (roleAreaKinds.find((kind) => availableKinds.has(kind)) ?? "")
+    : "";
+}
+
 function formatStatus(status?: string | null) {
   const value = String(status ?? "").trim();
   switch (value) {
     case "dispatch_ready":
-      return { label: "Lista para despacho", className: "ui-chip ui-chip--success" };
+      return {
+        label: "Lista para despacho",
+        className: "ui-chip ui-chip--success",
+      };
     case "pending":
       return { label: "Pendiente", className: "ui-chip ui-chip--warn" };
     case "preparing":
@@ -398,7 +505,7 @@ function formatStatus(status?: string | null) {
 
 function getEffectiveRemissionStatus(
   row: RemissionRow,
-  canTransitByRequestId: Map<string, boolean>
+  canTransitByRequestId: Map<string, boolean>,
 ): string {
   const baseStatus = String(row.status ?? "").trim();
   if (baseStatus === "preparing" && canTransitByRequestId.get(row.id)) {
@@ -423,12 +530,15 @@ function formatDateTime(value: string | null | undefined): string {
 
 function displayEmployeeName(employee?: EmployeeNameRow | null): string {
   if (!employee) return "-";
-  return String(employee.alias ?? employee.full_name ?? employee.id).trim() || employee.id;
+  return (
+    String(employee.alias ?? employee.full_name ?? employee.id).trim() ||
+    employee.id
+  );
 }
 
 function buildRemissionTraceSummary(
   row: RemissionRow,
-  employeeNameMap: Map<string, string>
+  employeeNameMap: Map<string, string>,
 ): string {
   const steps: string[] = [];
   const requestedBy = employeeNameMap.get(String(row.created_by ?? ""));
@@ -442,7 +552,8 @@ function buildRemissionTraceSummary(
   return steps.length ? steps.join(" · ") : "Sin trazabilidad visible todavía";
 }
 
-type RemissionListAction = "view" | "edit" | "cancel" | "delete" | "reverse_cancel";
+type RemissionListAction =
+  "view" | "edit" | "cancel" | "delete" | "reverse_cancel";
 
 function hasReversalMarker(notes: string | null | undefined): boolean {
   return String(notes ?? "").includes("[REVERSA_APLICADA");
@@ -453,7 +564,7 @@ function getListActionsForRemission(
   notes: string | null | undefined,
   canManage: boolean,
   canReverse: boolean,
-  canEditOwnPending: boolean
+  canEditOwnPending: boolean,
 ): RemissionListAction[] {
   const normalizedStatus = String(status ?? "").trim();
   const actions: RemissionListAction[] = ["view"];
@@ -469,7 +580,10 @@ function getListActionsForRemission(
     return actions;
   }
 
-  if (canReverse && ["in_transit", "partial", "received", "closed"].includes(normalizedStatus)) {
+  if (
+    canReverse &&
+    ["in_transit", "partial", "received", "closed"].includes(normalizedStatus)
+  ) {
     actions.push("reverse_cancel");
     return actions;
   }
@@ -491,7 +605,10 @@ function toFriendlyRemissionActionError(rawMessage: string): string {
   ) {
     return "No se pudo eliminar porque la remisión aún tiene ítems relacionados.";
   }
-  if (msg.includes("related_restock_request_id") || msg.includes("inventory_movements")) {
+  if (
+    msg.includes("related_restock_request_id") ||
+    msg.includes("inventory_movements")
+  ) {
     return "No se puede eliminar porque ya tiene movimientos de inventario asociados. Se canceló para conservar trazabilidad.";
   }
   if (msg.includes("already_reversed")) {
@@ -503,7 +620,11 @@ function toFriendlyRemissionActionError(rawMessage: string): string {
   if (msg.includes("permission_denied_reverse")) {
     return "No tienes permisos para anular con reversa esta remisión.";
   }
-  if (msg.includes("permission denied") || msg.includes("row-level security") || msg.includes("rls")) {
+  if (
+    msg.includes("permission denied") ||
+    msg.includes("row-level security") ||
+    msg.includes("rls")
+  ) {
     return "No tienes permisos para ejecutar esta acción sobre la remisión.";
   }
   return "No se pudo completar la acción sobre la remisión. Intenta nuevamente.";
@@ -524,7 +645,7 @@ async function runRemissionListAction(formData: FormData) {
   if (!requestId || !["cancel", "delete", "reverse_cancel"].includes(action)) {
     redirect(
       "/inventory/remissions?error=" +
-      encodeURIComponent("Acción inválida para la remisión.")
+        encodeURIComponent("Acción inválida para la remisión."),
     );
   }
 
@@ -544,27 +665,27 @@ async function runRemissionListAction(formData: FormData) {
   if (!request) {
     redirect(
       "/inventory/remissions?error=" +
-      encodeURIComponent("La remisión no existe o no está disponible.")
+        encodeURIComponent("La remisión no existe o no está disponible."),
     );
   }
 
   const canFrom = request.from_site_id
     ? await checkPermissionWithRoleOverride({
-      supabase,
-      appId: APP_ID,
-      code: PERMISSIONS.remissionsCancel,
-      context: { siteId: request.from_site_id },
-      actualRole,
-    })
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.remissionsCancel,
+        context: { siteId: request.from_site_id },
+        actualRole,
+      })
     : false;
   const canTo = request.to_site_id
     ? await checkPermissionWithRoleOverride({
-      supabase,
-      appId: APP_ID,
-      code: PERMISSIONS.remissionsCancel,
-      context: { siteId: request.to_site_id },
-      actualRole,
-    })
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.remissionsCancel,
+        context: { siteId: request.to_site_id },
+        actualRole,
+      })
     : false;
   const canGlobal = await checkPermissionWithRoleOverride({
     supabase,
@@ -576,15 +697,16 @@ async function runRemissionListAction(formData: FormData) {
   if (!canCancel) {
     redirect(
       "/inventory/remissions?error=" +
-      encodeURIComponent("No tienes permisos para esta acción.")
+        encodeURIComponent("No tienes permisos para esta acción."),
     );
   }
   const inventoryPostingEnabled = await readBooleanAppSetting(
     supabase,
     REMISSIONS_INVENTORY_POSTING_SETTING_KEY,
-    false
+    false,
   );
-  const canReverseScope = inventoryPostingEnabled && (canGlobal || (canFrom && canTo));
+  const canReverseScope =
+    inventoryPostingEnabled && (canGlobal || (canFrom && canTo));
   const canEditOwnPending =
     String(request.created_by ?? "") === user.id &&
     String(request.status ?? "") === "pending" &&
@@ -602,12 +724,14 @@ async function runRemissionListAction(formData: FormData) {
     request.notes,
     true,
     canReverseScope,
-    canEditOwnPending
+    canEditOwnPending,
   );
   if (!actionMatrix.includes(action as RemissionListAction)) {
     redirect(
       "/inventory/remissions?error=" +
-      encodeURIComponent("Esa acción no aplica para el estado actual de la remisión.")
+        encodeURIComponent(
+          "Esa acción no aplica para el estado actual de la remisión.",
+        ),
     );
   }
 
@@ -623,25 +747,34 @@ async function runRemissionListAction(formData: FormData) {
     if (error) {
       redirect(
         "/inventory/remissions?error=" +
-        encodeURIComponent(toFriendlyRemissionActionError(error.message))
+          encodeURIComponent(toFriendlyRemissionActionError(error.message)),
       );
     }
-    redirect("/inventory/remissions?ok=" + encodeURIComponent("Remisión cancelada."));
+    redirect(
+      "/inventory/remissions?ok=" + encodeURIComponent("Remisión cancelada."),
+    );
   }
 
   if (action === "reverse_cancel") {
-    const { error: reverseError } = await supabase.rpc("reverse_restock_request", {
-      p_request_id: requestId,
-    });
+    const { error: reverseError } = await supabase.rpc(
+      "reverse_restock_request",
+      {
+        p_request_id: requestId,
+      },
+    );
     if (reverseError) {
       redirect(
         "/inventory/remissions?error=" +
-        encodeURIComponent(toFriendlyRemissionActionError(reverseError.message))
+          encodeURIComponent(
+            toFriendlyRemissionActionError(reverseError.message),
+          ),
       );
     }
     redirect(
       "/inventory/remissions?ok=" +
-      encodeURIComponent("Remisión anulada con reversa de inventario aplicada.")
+        encodeURIComponent(
+          "Remisión anulada con reversa de inventario aplicada.",
+        ),
     );
   }
 
@@ -680,7 +813,9 @@ async function runRemissionListAction(formData: FormData) {
       if (!cancelErr) {
         redirect(
           "/inventory/remissions?ok=" +
-          encodeURIComponent("No se pudo eliminar por trazabilidad. Se canceló la remisión.")
+            encodeURIComponent(
+              "No se pudo eliminar por trazabilidad. Se canceló la remisión.",
+            ),
         );
       }
     }
@@ -688,7 +823,7 @@ async function runRemissionListAction(formData: FormData) {
     if (error) {
       redirect(
         "/inventory/remissions?error=" +
-        encodeURIComponent(toFriendlyRemissionActionError(error.message))
+          encodeURIComponent(toFriendlyRemissionActionError(error.message)),
       );
     }
   }
@@ -696,11 +831,13 @@ async function runRemissionListAction(formData: FormData) {
   if (!deletedRows || deletedRows.length === 0) {
     redirect(
       "/inventory/remissions?error=" +
-      encodeURIComponent("No se pudo eliminar la remisión.")
+        encodeURIComponent("No se pudo eliminar la remisión."),
     );
   }
 
-  redirect("/inventory/remissions?ok=" + encodeURIComponent("Remisión eliminada."));
+  redirect(
+    "/inventory/remissions?ok=" + encodeURIComponent("Remisión eliminada."),
+  );
 }
 
 async function createRemission(formData: FormData) {
@@ -719,14 +856,21 @@ async function createRemission(formData: FormData) {
     .maybeSingle();
   const actualRole = String(employee?.role ?? "");
   const cookieStore = await cookies();
-  const roleOverride = String(cookieStore.get(ROLE_OVERRIDE_COOKIE)?.value ?? "").trim().toLowerCase();
+  const roleOverride = String(
+    cookieStore.get(ROLE_OVERRIDE_COOKIE)?.value ?? "",
+  )
+    .trim()
+    .toLowerCase();
   const canUseRoleOverride =
-    Boolean(roleOverride) && PRIVILEGED_ROLE_OVERRIDES.has(actualRole.toLowerCase());
-  const effectiveRole = (canUseRoleOverride ? roleOverride : actualRole).toLowerCase();
+    Boolean(roleOverride) &&
+    PRIVILEGED_ROLE_OVERRIDES.has(actualRole.toLowerCase());
+  const effectiveRole = (
+    canUseRoleOverride ? roleOverride : actualRole
+  ).toLowerCase();
   const inventoryPostingEnabled = await readBooleanAppSetting(
     supabase,
     REMISSIONS_INVENTORY_POSTING_SETTING_KEY,
-    false
+    false,
   );
 
   const fromSiteId = asText(formData.get("from_site_id"));
@@ -734,8 +878,12 @@ async function createRemission(formData: FormData) {
   const expectedDate = asText(formData.get("expected_date"));
   const notes = asText(formData.get("notes"));
 
-  const productIds = formData.getAll("item_product_id").map((v) => String(v).trim());
-  const quantities = formData.getAll("item_quantity").map((v) => String(v).trim());
+  const productIds = formData
+    .getAll("item_product_id")
+    .map((v) => String(v).trim());
+  const quantities = formData
+    .getAll("item_quantity")
+    .map((v) => String(v).trim());
   const inputUnits = formData
     .getAll("item_input_unit_code")
     .map((v) => normalizeUnitCode(String(v).trim()));
@@ -745,7 +893,9 @@ async function createRemission(formData: FormData) {
   const inputQuantities = formData
     .getAll("item_quantity_in_input")
     .map((v) => String(v).trim());
-  const areaKinds = formData.getAll("item_area_kind").map((v) => String(v).trim());
+  const areaKinds = formData
+    .getAll("item_area_kind")
+    .map((v) => String(v).trim());
   const productionPackagePlans = formData
     .getAll("item_production_package_plan")
     .map((v) => parseProductionPackagePlan(String(v ?? "")));
@@ -753,14 +903,16 @@ async function createRemission(formData: FormData) {
   const productIdsForLookup = Array.from(new Set(productIds.filter(Boolean)));
   const { data: productProfileLookupData } = productIdsForLookup.length
     ? await supabase
-      .from("product_inventory_profiles")
-      .select(
-        "product_id,inventory_kind,measurement_mode,default_tolerance_percent,requires_actual_dispatch_qty,requires_count_alongside_weight,products(id,unit,stock_unit_code,product_type)"
-      )
-      .in("product_id", productIdsForLookup)
+        .from("product_inventory_profiles")
+        .select(
+          "product_id,inventory_kind,measurement_mode,default_tolerance_percent,requires_actual_dispatch_qty,requires_count_alongside_weight,products(id,unit,stock_unit_code,product_type)",
+        )
+        .in("product_id", productIdsForLookup)
     : { data: [] as ProductProfileWithProduct[] };
 
-  const productRowsFromProfiles = ((productProfileLookupData ?? []) as unknown as ProductProfileWithProduct[])
+  const productRowsFromProfiles = (
+    (productProfileLookupData ?? []) as unknown as ProductProfileWithProduct[]
+  )
     .map<ProductRow | null>((row) => {
       if (!row.products) return null;
 
@@ -776,18 +928,23 @@ async function createRemission(formData: FormData) {
         requires_count_alongside_weight:
           typeof row.requires_count_alongside_weight === "boolean"
             ? row.requires_count_alongside_weight
-            : normalizeMeasurementMode(row.measurement_mode) === "count_with_weight",
+            : normalizeMeasurementMode(row.measurement_mode) ===
+              "count_with_weight",
       };
     })
     .filter((row): row is ProductRow => row !== null);
 
-  const profileLookupIds = new Set(productRowsFromProfiles.map((product) => product.id));
-  const missingProductIdsForLookup = productIdsForLookup.filter((productId) => !profileLookupIds.has(productId));
+  const profileLookupIds = new Set(
+    productRowsFromProfiles.map((product) => product.id),
+  );
+  const missingProductIdsForLookup = productIdsForLookup.filter(
+    (productId) => !profileLookupIds.has(productId),
+  );
   const { data: fallbackProductsData } = missingProductIdsForLookup.length
     ? await supabase
-      .from("products")
-      .select("id,unit,stock_unit_code,product_type")
-      .in("id", missingProductIdsForLookup)
+        .from("products")
+        .select("id,unit,stock_unit_code,product_type")
+        .in("id", missingProductIdsForLookup)
     : { data: [] as ProductRow[] };
 
   const productMap = new Map(
@@ -801,20 +958,25 @@ async function createRemission(formData: FormData) {
         requires_actual_dispatch_qty: false,
         requires_count_alongside_weight: false,
       })),
-    ].map((product) => [product.id, product])
+    ].map((product) => [product.id, product]),
   );
 
-  const requestedUomProfileIds = Array.from(new Set(inputUomProfileIds.filter(Boolean)));
+  const requestedUomProfileIds = Array.from(
+    new Set(inputUomProfileIds.filter(Boolean)),
+  );
   const { data: uomProfilesData } = requestedUomProfileIds.length
     ? await supabase
-      .from("product_uom_profiles")
-      .select(
-        "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
-      )
-      .in("id", requestedUomProfileIds)
+        .from("product_uom_profiles")
+        .select(
+          "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context",
+        )
+        .in("id", requestedUomProfileIds)
     : { data: [] as ProductUomProfile[] };
   const uomProfileById = new Map(
-    ((uomProfilesData ?? []) as ProductUomProfile[]).map((profile) => [profile.id, profile])
+    ((uomProfilesData ?? []) as ProductUomProfile[]).map((profile) => [
+      profile.id,
+      profile,
+    ]),
   );
 
   let items: Array<{
@@ -834,25 +996,46 @@ async function createRemission(formData: FormData) {
     items = productIds
       .map((productId, idx) => {
         const product = productMap.get(productId);
-        const stockUnitCode = normalizeUnitCode(product?.stock_unit_code || product?.unit || "un");
-        const measurementMode = normalizeMeasurementMode(product?.measurement_mode);
+        const stockUnitCode = normalizeUnitCode(
+          product?.stock_unit_code || product?.unit || "un",
+        );
+        const measurementMode = normalizeMeasurementMode(
+          product?.measurement_mode,
+        );
         const productUsesPackages = isProducedPackagedProduct(product);
         const quantityInInput = roundQuantity(
-          parseNumber(inputQuantities[idx] ?? quantities[idx] ?? "0")
+          parseNumber(inputQuantities[idx] ?? quantities[idx] ?? "0"),
         );
-        const inputUomProfileId = productUsesPackages ? "" : inputUomProfileIds[idx] || "";
-        const productionPackagePlan = productUsesPackages ? productionPackagePlans[idx] ?? [] : [];
+        const inputUomProfileId = productUsesPackages
+          ? ""
+          : inputUomProfileIds[idx] || "";
+        const productionPackagePlan = productUsesPackages
+          ? (productionPackagePlans[idx] ?? [])
+          : [];
         const selectedProfile =
-          !productUsesPackages && measurementMode === "fixed_presentation" && inputUomProfileId
-            ? uomProfileById.get(inputUomProfileId) ?? null
+          !productUsesPackages &&
+          measurementMode === "fixed_presentation" &&
+          inputUomProfileId
+            ? (uomProfileById.get(inputUomProfileId) ?? null)
             : null;
 
-        if (!productUsesPackages && measurementMode === "fixed_presentation" && inputUomProfileId) {
+        if (
+          !productUsesPackages &&
+          measurementMode === "fixed_presentation" &&
+          inputUomProfileId
+        ) {
           if (!selectedProfile) {
-            throw new Error("La presentación seleccionada no existe o no está disponible.");
+            throw new Error(
+              "La presentación seleccionada no existe o no está disponible.",
+            );
           }
-          if (selectedProfile.product_id !== productId || selectedProfile.is_active === false) {
-            throw new Error("La presentación seleccionada no corresponde al producto solicitado.");
+          if (
+            selectedProfile.product_id !== productId ||
+            selectedProfile.is_active === false
+          ) {
+            throw new Error(
+              "La presentación seleccionada no corresponde al producto solicitado.",
+            );
           }
         }
 
@@ -860,8 +1043,8 @@ async function createRemission(formData: FormData) {
           productUsesPackages
             ? stockUnitCode
             : inputUnits[idx] ||
-              selectedProfile?.input_unit_code ||
-              stockUnitCode
+                selectedProfile?.input_unit_code ||
+                stockUnitCode,
         );
         const conversion = convertByProductProfile({
           quantityInInput,
@@ -877,7 +1060,9 @@ async function createRemission(formData: FormData) {
           unit: stockUnitCode,
           input_unit_code: inputUnitCode,
           input_uom_profile_id:
-            !productUsesPackages && measurementMode === "fixed_presentation" ? selectedProfile?.id ?? null : null,
+            !productUsesPackages && measurementMode === "fixed_presentation"
+              ? (selectedProfile?.id ?? null)
+              : null,
           conversion_factor_to_stock: conversion.factorToStock,
           stock_unit_code: stockUnitCode,
           production_area_kind: areaKinds[idx] || null,
@@ -889,26 +1074,34 @@ async function createRemission(formData: FormData) {
   } catch (error) {
     redirect(
       "/inventory/remissions?error=" +
-      encodeURIComponent(
-        error instanceof Error ? error.message : "Error en conversion de unidades."
-      )
+        encodeURIComponent(
+          error instanceof Error
+            ? error.message
+            : "Error en conversion de unidades.",
+        ),
     );
   }
 
-  const packageDispatchItems = items.filter((item) => item.requires_package_dispatch);
+  const packageDispatchItems = items.filter(
+    (item) => item.requires_package_dispatch,
+  );
   if (packageDispatchItems.length > 0) {
     const packageIds = Array.from(
       new Set(
         packageDispatchItems
-          .flatMap((item) => item.production_package_plan.map((entry) => entry.packageId))
-          .filter(Boolean)
-      )
+          .flatMap((item) =>
+            item.production_package_plan.map((entry) => entry.packageId),
+          )
+          .filter(Boolean),
+      ),
     );
 
     if (packageIds.length === 0) {
       redirect(
         "/inventory/remissions?error=" +
-        encodeURIComponent("Selecciona empaques reales de lote para los productos producidos.")
+          encodeURIComponent(
+            "Selecciona empaques reales de lote para los productos producidos.",
+          ),
       );
     }
 
@@ -920,31 +1113,38 @@ async function createRemission(formData: FormData) {
     if (packagesErr) {
       redirect(
         "/inventory/remissions?error=" +
-        encodeURIComponent(packagesErr.message)
+          encodeURIComponent(packagesErr.message),
       );
     }
 
     const packagesById = new Map(
-      ((selectedPackagesData ?? []) as Array<{
-        id: string;
-        site_id: string | null;
-        product_id: string | null;
-        remaining_qty: number | null;
-        unit_code: string | null;
-        status: string | null;
-      }>).map((row) => [row.id, row])
+      (
+        (selectedPackagesData ?? []) as Array<{
+          id: string;
+          site_id: string | null;
+          product_id: string | null;
+          remaining_qty: number | null;
+          unit_code: string | null;
+          status: string | null;
+        }>
+      ).map((row) => [row.id, row]),
     );
 
     const requestedByPackage = new Map<string, number>();
 
     for (const item of packageDispatchItems) {
       const planTotal = roundQuantity(
-        item.production_package_plan.reduce((sum, entry) => sum + Number(entry.dispatchQty ?? 0), 0)
+        item.production_package_plan.reduce(
+          (sum, entry) => sum + Number(entry.dispatchQty ?? 0),
+          0,
+        ),
       );
       if (Math.abs(planTotal - item.quantity) > 0.001) {
         redirect(
           "/inventory/remissions?error=" +
-          encodeURIComponent("La suma de empaques seleccionados no coincide con la cantidad solicitada.")
+            encodeURIComponent(
+              "La suma de empaques seleccionados no coincide con la cantidad solicitada.",
+            ),
         );
       }
 
@@ -953,25 +1153,40 @@ async function createRemission(formData: FormData) {
         if (!packageRow) {
           redirect(
             "/inventory/remissions?error=" +
-            encodeURIComponent("Uno de los empaques seleccionados ya no existe.")
+              encodeURIComponent(
+                "Uno de los empaques seleccionados ya no existe.",
+              ),
           );
         }
 
-        const status = String(packageRow.status ?? "available").trim().toLowerCase();
-        const availableStatus = ["available", "opened", "reserved"].includes(status);
+        const status = String(packageRow.status ?? "available")
+          .trim()
+          .toLowerCase();
+        const availableStatus = ["available", "opened", "reserved"].includes(
+          status,
+        );
         const packageSiteId = String(packageRow.site_id ?? "").trim();
         const packageProductId = String(packageRow.product_id ?? "").trim();
 
-        if (!availableStatus || packageSiteId !== fromSiteId || packageProductId !== item.product_id) {
+        if (
+          !availableStatus ||
+          packageSiteId !== fromSiteId ||
+          packageProductId !== item.product_id
+        ) {
           redirect(
             "/inventory/remissions?error=" +
-            encodeURIComponent("Uno de los empaques seleccionados no pertenece al origen/producto solicitado.")
+              encodeURIComponent(
+                "Uno de los empaques seleccionados no pertenece al origen/producto solicitado.",
+              ),
           );
         }
 
         requestedByPackage.set(
           entry.packageId,
-          roundQuantity((requestedByPackage.get(entry.packageId) ?? 0) + Number(entry.dispatchQty ?? 0))
+          roundQuantity(
+            (requestedByPackage.get(entry.packageId) ?? 0) +
+              Number(entry.dispatchQty ?? 0),
+          ),
         );
       }
     }
@@ -979,17 +1194,25 @@ async function createRemission(formData: FormData) {
     for (const [packageId, requestedQty] of requestedByPackage.entries()) {
       const packageRow = packagesById.get(packageId);
       const remainingQty = Number(packageRow?.remaining_qty ?? 0);
-      if (!Number.isFinite(remainingQty) || requestedQty > remainingQty + 0.001) {
+      if (
+        !Number.isFinite(remainingQty) ||
+        requestedQty > remainingQty + 0.001
+      ) {
         redirect(
           "/inventory/remissions?error=" +
-          encodeURIComponent("Uno de los empaques seleccionados ya no tiene cantidad suficiente.")
+            encodeURIComponent(
+              "Uno de los empaques seleccionados ya no tiene cantidad suficiente.",
+            ),
         );
       }
     }
   }
 
   if (!toSiteId || !fromSiteId) {
-    redirect("/inventory/remissions?error=" + encodeURIComponent("Debes definir origen y destino."));
+    redirect(
+      "/inventory/remissions?error=" +
+        encodeURIComponent("Debes definir origen y destino."),
+    );
   }
   const opContext = await getOperationalContext({
     supabase,
@@ -1000,26 +1223,26 @@ async function createRemission(formData: FormData) {
   if (!opContext?.can_operate) {
     redirect(
       "/inventory/remissions?error=" +
-      encodeURIComponent(
-        buildOperationalBlockMessage(
-          opContext,
-          "No puedes solicitar remisiones en este momento para esta sede."
-        )
-      )
+        encodeURIComponent(
+          buildOperationalBlockMessage(
+            opContext,
+            "No puedes solicitar remisiones en este momento para esta sede.",
+          ),
+        ),
     );
   }
 
-  const canRequest = await checkPermissionWithRoleOverride({
+  const canRequest = await checkOperationalPermission({
     supabase,
-    appId: APP_ID,
-    code: PERMISSIONS.remissionsRequest,
-    context: { siteId: toSiteId },
-    actualRole,
+    permissionCode: `${APP_ID}.${PERMISSIONS.remissionsRequest}`,
+    siteId: toSiteId,
+    areaId: opContext.active_area_id,
+    appCode: APP_ID,
   });
   if (!canRequest) {
     redirect(
       "/inventory/remissions?error=" +
-      encodeURIComponent("No tienes permiso para solicitar remisiones.")
+        encodeURIComponent("No tienes permiso para solicitar remisiones."),
     );
   }
 
@@ -1032,7 +1255,7 @@ async function createRemission(formData: FormData) {
   if (toSite?.can_request_remissions === false) {
     redirect(
       "/inventory/remissions?error=" +
-      encodeURIComponent("Esta sede no solicita remisiones.")
+        encodeURIComponent("Esta sede no solicita remisiones."),
     );
   }
 
@@ -1046,7 +1269,7 @@ async function createRemission(formData: FormData) {
     if (String(legacyToSite?.site_type ?? "") !== "satellite") {
       redirect(
         "/inventory/remissions?error=" +
-        encodeURIComponent("Esta sede no solicita remisiones.")
+          encodeURIComponent("Esta sede no solicita remisiones."),
       );
     }
   }
@@ -1054,62 +1277,69 @@ async function createRemission(formData: FormData) {
   if (items.length === 0) {
     redirect(
       "/inventory/remissions?error=" +
-      encodeURIComponent("Agrega al menos un producto con cantidad mayor a 0.")
+        encodeURIComponent(
+          "Agrega al menos un producto con cantidad mayor a 0.",
+        ),
     );
   }
 
-  const requestedRoleAreaKind = getDefaultRemissionAreaForRole(effectiveRole);
   const configuredRows = await loadProductSiteRows(supabase, toSiteId);
   if (configuredRows.length === 0) {
     redirect(
       "/inventory/remissions?error=" +
-      encodeURIComponent(
-        "Esta sede no tiene productos habilitados. Configura disponibilidad por sede en catálogo."
-      )
+        encodeURIComponent(
+          "Esta sede no tiene productos habilitados. Configura disponibilidad por sede en catálogo.",
+        ),
     );
   }
 
   const allowedProductIds = new Set(
     configuredRows
-      .filter(
-        (row) =>
-          supportsRemission(row) &&
-          supportsRequestedArea(row, requestedRoleAreaKind)
-      )
-      .map((row) => row.product_id)
+      .filter((row) => supportsRemission(row))
+      .map((row) => row.product_id),
   );
   if (allowedProductIds.size === 0) {
     redirect(
       "/inventory/remissions?error=" +
-      encodeURIComponent(
-        "Esta sede no tiene productos habilitados para su uso operativo. Ajusta Uso en sede en catálogo."
-      )
+        encodeURIComponent(
+          "Esta sede no tiene productos habilitados para su uso operativo. Ajusta Uso en sede en catálogo.",
+        ),
     );
   }
-  const invalidItems = items.filter((item) => !allowedProductIds.has(item.product_id));
+  const invalidItems = items.filter(
+    (item) => !allowedProductIds.has(item.product_id),
+  );
   if (invalidItems.length > 0) {
     redirect(
       "/inventory/remissions?error=" +
-      encodeURIComponent(
-        "Algunos productos no estan habilitados para esta sede o flujo operativo. Revisa disponibilidad por sede."
-      )
+        encodeURIComponent(
+          "Algunos productos no estan habilitados para esta sede o flujo operativo. Revisa disponibilidad por sede.",
+        ),
     );
   }
 
-  const configuredByProductId = new Map(configuredRows.map((row) => [row.product_id, row]));
+  const configuredByProductId = new Map(
+    configuredRows.map((row) => [row.product_id, row]),
+  );
+  const requestedRoleAreaKind = await resolveRoleScopedRemissionAreaKind(
+    supabase,
+    toSiteId,
+    effectiveRole,
+  );
   const invalidAreaItems = items.filter((item) => {
     const row = configuredByProductId.get(item.product_id);
     if (!row) return true;
     const itemAreaKind = String(item.production_area_kind ?? "").trim();
-    if (requestedRoleAreaKind && itemAreaKind !== requestedRoleAreaKind) return true;
+    if (requestedRoleAreaKind && itemAreaKind !== requestedRoleAreaKind)
+      return true;
     return itemAreaKind ? !supportsRequestedArea(row, itemAreaKind) : false;
   });
   if (invalidAreaItems.length > 0) {
     redirect(
       "/inventory/remissions?error=" +
-      encodeURIComponent(
-        "Algunos productos no corresponden al area de solicitud de tu rol o sede."
-      )
+        encodeURIComponent(
+          "Algunos productos no corresponden al area de solicitud de tu rol o sede.",
+        ),
     );
   }
 
@@ -1133,7 +1363,9 @@ async function createRemission(formData: FormData) {
   if (requestErr || !request) {
     redirect(
       "/inventory/remissions?error=" +
-      encodeURIComponent(requestErr?.message ?? "No se pudo crear la remisión.")
+        encodeURIComponent(
+          requestErr?.message ?? "No se pudo crear la remisión.",
+        ),
     );
   }
 
@@ -1152,11 +1384,15 @@ async function createRemission(formData: FormData) {
     requires_package_dispatch: item.requires_package_dispatch,
   }));
 
-  const { error: itemsErr } = await supabase.from("restock_request_items").insert(payload);
+  const { error: itemsErr } = await supabase
+    .from("restock_request_items")
+    .insert(payload);
   if (itemsErr) {
     redirect(
       "/inventory/remissions?error=" +
-      encodeURIComponent(itemsErr.message ?? "No se pudieron crear los items.")
+        encodeURIComponent(
+          itemsErr.message ?? "No se pudieron crear los items.",
+        ),
     );
   }
 
@@ -1167,13 +1403,18 @@ async function createRemission(formData: FormData) {
       .from("inventory_stock_by_site")
       .select("product_id,current_qty")
       .eq("site_id", fromSiteId)
-      .in("product_id", items.map((i) => i.product_id));
+      .in(
+        "product_id",
+        items.map((i) => i.product_id),
+      );
 
     const stockMap = new Map(
-      (stockRows ?? []).map((r: { product_id: string; current_qty: number | null }) => [
-        r.product_id,
-        Number(r.current_qty ?? 0),
-      ])
+      (stockRows ?? []).map(
+        (r: { product_id: string; current_qty: number | null }) => [
+          r.product_id,
+          Number(r.current_qty ?? 0),
+        ],
+      ),
     );
 
     for (const item of items) {
@@ -1210,7 +1451,7 @@ export default async function RemissionsPage({
   const inventoryPostingEnabled = await readBooleanAppSetting(
     supabase,
     REMISSIONS_INVENTORY_POSTING_SETTING_KEY,
-    false
+    false,
   );
 
   const { data: employee } = await supabase
@@ -1226,10 +1467,17 @@ export default async function RemissionsPage({
   const cookieStore = await cookies();
 
   const actualRole = String(employee?.role ?? "");
-  const roleOverride = String(cookieStore.get(ROLE_OVERRIDE_COOKIE)?.value ?? "").trim().toLowerCase();
+  const roleOverride = String(
+    cookieStore.get(ROLE_OVERRIDE_COOKIE)?.value ?? "",
+  )
+    .trim()
+    .toLowerCase();
   const canUseRoleOverride =
-    Boolean(roleOverride) && PRIVILEGED_ROLE_OVERRIDES.has(actualRole.toLowerCase());
-  const effectiveRole = (canUseRoleOverride ? roleOverride : actualRole).toLowerCase();
+    Boolean(roleOverride) &&
+    PRIVILEGED_ROLE_OVERRIDES.has(actualRole.toLowerCase());
+  const effectiveRole = (
+    canUseRoleOverride ? roleOverride : actualRole
+  ).toLowerCase();
   const canViewAll = await checkPermissionWithRoleOverride({
     supabase,
     appId: APP_ID,
@@ -1247,7 +1495,9 @@ export default async function RemissionsPage({
 
   const employeeSiteRows = (sitesRows ?? []) as EmployeeSiteRow[];
   const defaultSiteId = employeeSiteRows[0]?.site_id ?? employee?.site_id ?? "";
-  const siteOverrideId = String(cookieStore.get(SITE_OVERRIDE_COOKIE)?.value ?? "").trim();
+  const siteOverrideId = String(
+    cookieStore.get(SITE_OVERRIDE_COOKIE)?.value ?? "",
+  ).trim();
   const selectedSiteId = String(settings?.selected_site_id ?? "").trim();
   let activeSiteId =
     sp.site_id !== undefined
@@ -1263,25 +1513,27 @@ export default async function RemissionsPage({
 
   const { data: sites } = siteIds.length
     ? await supabase
-      .from("sites")
-      .select("id,name,site_type")
-      .in("id", siteIds)
-      .order("name", { ascending: true })
+        .from("sites")
+        .select("id,name,site_type")
+        .in("id", siteIds)
+        .order("name", { ascending: true })
     : { data: [] as SiteRow[] };
 
   const siteRows = (sites ?? []) as SiteRow[];
-  const capabilitySiteIds = Array.from(new Set([...siteIds, activeSiteId].filter(Boolean)));
+  const capabilitySiteIds = Array.from(
+    new Set([...siteIds, activeSiteId].filter(Boolean)),
+  );
   const { data: capabilityRows } = capabilitySiteIds.length
     ? await supabase
-      .from("site_operational_capabilities")
-      .select(
-        "site_id,can_request_remissions,can_fulfill_remissions,can_receive_remissions,can_sell,can_produce,can_hold_inventory,is_commercial_business,show_in_product_setup"
-      )
-      .in("site_id", capabilitySiteIds)
+        .from("site_operational_capabilities")
+        .select(
+          "site_id,can_request_remissions,can_fulfill_remissions,can_receive_remissions,can_sell,can_produce,can_hold_inventory,is_commercial_business,show_in_product_setup",
+        )
+        .in("site_id", capabilitySiteIds)
     : { data: [] as SiteCapabilityRow[] };
   const capabilitiesBySite = getSiteCapabilitiesMap(
     capabilitySiteIds,
-    (capabilityRows ?? []) as SiteCapabilityRow[]
+    (capabilityRows ?? []) as SiteCapabilityRow[],
   );
   const siteMap = new Map(siteRows.map((site) => [site.id, site]));
   if (activeSiteId && !siteMap.has(activeSiteId)) {
@@ -1289,34 +1541,46 @@ export default async function RemissionsPage({
   }
   const activeSite = activeSiteId ? siteMap.get(activeSiteId) : undefined;
   const isAllSites = !activeSiteId && canViewAll;
-  const activeSiteName = isAllSites ? "Todas las sedes" : activeSite?.name ?? activeSiteId;
+  const activeSiteName = isAllSites
+    ? "Todas las sedes"
+    : (activeSite?.name ?? activeSiteId);
   const activeSiteType = String(activeSite?.site_type ?? "");
-  const activeCapabilities = activeSiteId ? capabilitiesBySite.get(activeSiteId) : undefined;
-  const isProductionCenter = activeCapabilities?.can_fulfill_remissions ?? activeSiteType === "production_center";
+  const activeCapabilities = activeSiteId
+    ? capabilitiesBySite.get(activeSiteId)
+    : undefined;
+  const isProductionCenter =
+    activeCapabilities?.can_fulfill_remissions ??
+    activeSiteType === "production_center";
 
   const canRequestPermission = activeSiteId
     ? await checkPermissionWithRoleOverride({
-      supabase,
-      appId: APP_ID,
-      code: PERMISSIONS.remissionsRequest,
-      context: { siteId: activeSiteId },
-      actualRole,
-    })
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.remissionsRequest,
+        context: { siteId: activeSiteId },
+        actualRole,
+      })
     : false;
   const canTransitPermission = activeSiteId
     ? await checkPermissionWithRoleOverride({
-      supabase,
-      appId: APP_ID,
-      code: PERMISSIONS.remissionsTransit,
-      context: { siteId: activeSiteId },
-      actualRole,
-    })
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.remissionsTransit,
+        context: { siteId: activeSiteId },
+        actualRole,
+      })
     : false;
 
-  const viewMode = isAllSites ? "all" : isProductionCenter ? "bodega" : "satélite";
+  const viewMode = isAllSites
+    ? "all"
+    : isProductionCenter
+      ? "bodega"
+      : "satélite";
   const canCreate =
-    Boolean(activeCapabilities?.can_request_remissions ?? activeSiteType === "satellite") &&
-    canRequestPermission;
+    Boolean(
+      activeCapabilities?.can_request_remissions ??
+      activeSiteType === "satellite",
+    ) && canRequestPermission;
   const canCancelPermission = await checkPermissionWithRoleOverride({
     supabase,
     appId: APP_ID,
@@ -1326,12 +1590,12 @@ export default async function RemissionsPage({
   const canManageRemissionActions = canCancelPermission;
   const canEditOwnPendingPermission = activeSiteId
     ? await checkPermissionWithRoleOverride({
-      supabase,
-      appId: APP_ID,
-      code: PERMISSIONS.remissionsEditOwnPending,
-      context: { siteId: activeSiteId },
-      actualRole,
-    })
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.remissionsEditOwnPending,
+        context: { siteId: activeSiteId },
+        actualRole,
+      })
     : false;
   if (effectiveRole === "conductor" && canTransitPermission) {
     const params = new URLSearchParams();
@@ -1342,7 +1606,7 @@ export default async function RemissionsPage({
   const employeeAccessibleSiteIds = new Set(
     employeeSiteRows
       .map((row) => String(row.site_id ?? "").trim())
-      .filter(Boolean)
+      .filter(Boolean),
   );
 
   const { data: routes } = await supabase
@@ -1353,15 +1617,18 @@ export default async function RemissionsPage({
     .limit(1);
 
   const fulfillmentSiteIds = (routes ?? [])
-    .map((route: { fulfillment_site_id: string | null }) => route.fulfillment_site_id)
+    .map(
+      (route: { fulfillment_site_id: string | null }) =>
+        route.fulfillment_site_id,
+    )
     .filter((id: string | null): id is string => Boolean(id));
 
   const { data: fulfillmentSites } = fulfillmentSiteIds.length
     ? await supabase
-      .from("sites")
-      .select("id,name,site_type")
-      .in("id", fulfillmentSiteIds)
-      .order("name", { ascending: true })
+        .from("sites")
+        .select("id,name,site_type")
+        .in("id", fulfillmentSiteIds)
+        .order("name", { ascending: true })
     : { data: [] as SiteRow[] };
 
   let fulfillmentSiteRows = (fulfillmentSites ?? []) as SiteRow[];
@@ -1369,22 +1636,32 @@ export default async function RemissionsPage({
     const fulfillmentCapabilityRows = await supabase
       .from("site_operational_capabilities")
       .select("site_id,can_fulfill_remissions")
-      .in("site_id", fulfillmentSiteRows.map((site) => site.id));
+      .in(
+        "site_id",
+        fulfillmentSiteRows.map((site) => site.id),
+      );
     const fulfillmentCapabilities = new Map(
-      ((fulfillmentCapabilityRows.data ?? []) as Array<{ site_id: string; can_fulfill_remissions: boolean }>)
-        .map((row) => [row.site_id, row.can_fulfill_remissions])
+      (
+        (fulfillmentCapabilityRows.data ?? []) as Array<{
+          site_id: string;
+          can_fulfill_remissions: boolean;
+        }>
+      ).map((row) => [row.site_id, row.can_fulfill_remissions]),
     );
     fulfillmentSiteRows = fulfillmentSiteRows.filter((site) =>
       fulfillmentCapabilities.has(site.id)
         ? fulfillmentCapabilities.get(site.id) === true
-        : site.site_type === "production_center"
+        : site.site_type === "production_center",
     );
   }
-  const requestedFromSiteId = sp.from_site_id ? String(sp.from_site_id).trim() : "";
+  const requestedFromSiteId = sp.from_site_id
+    ? String(sp.from_site_id).trim()
+    : "";
   const selectedFromSiteId =
-    requestedFromSiteId && fulfillmentSiteRows.some((site) => site.id === requestedFromSiteId)
+    requestedFromSiteId &&
+    fulfillmentSiteRows.some((site) => site.id === requestedFromSiteId)
       ? requestedFromSiteId
-      : fulfillmentSiteRows[0]?.id ?? "";
+      : (fulfillmentSiteRows[0]?.id ?? "");
   const requestedCreateParam = String(sp.new ?? "")
     .trim()
     .toLowerCase();
@@ -1404,7 +1681,7 @@ export default async function RemissionsPage({
   let remissionsQuery = supabase
     .from("restock_requests")
     .select(
-      "id, created_at, status, from_site_id, to_site_id, notes, created_by, prepared_by, prepared_at, in_transit_by, in_transit_at, received_by, received_at"
+      "id, created_at, status, from_site_id, to_site_id, notes, created_by, prepared_by, prepared_at, in_transit_by, in_transit_at, received_by, received_at",
     )
     .order("created_at", { ascending: false })
     .limit(50);
@@ -1420,12 +1697,13 @@ export default async function RemissionsPage({
   const remissionIds = remissionRows.map((row) => row.id).filter(Boolean);
   const { data: operationalSummaryData } = remissionIds.length
     ? await supabase
-      .from("restock_operational_summary")
-      .select("request_id,can_transit")
-      .in("request_id", remissionIds)
+        .from("restock_operational_summary")
+        .select("request_id,can_transit")
+        .in("request_id", remissionIds)
     : { data: [] as RemissionOperationalSummaryRow[] };
   const canTransitByRequestId = new Map<string, boolean>();
-  for (const row of (operationalSummaryData ?? []) as RemissionOperationalSummaryRow[]) {
+  for (const row of (operationalSummaryData ??
+    []) as RemissionOperationalSummaryRow[]) {
     const requestId = String(row.request_id ?? "").trim();
     if (!requestId) continue;
     canTransitByRequestId.set(requestId, Boolean(row.can_transit));
@@ -1433,7 +1711,9 @@ export default async function RemissionsPage({
   // Fallback: calcular "lista para despacho" desde ítems cuando la vista
   // operacional no devuelve filas (RLS/contexto), para mantener consistencia
   // con el detalle de la remisión.
-  const missingOperationalIds = remissionIds.filter((id) => !canTransitByRequestId.has(id));
+  const missingOperationalIds = remissionIds.filter(
+    (id) => !canTransitByRequestId.has(id),
+  );
   if (missingOperationalIds.length) {
     const { data: itemMetricsData } = await supabase
       .from("restock_request_items")
@@ -1462,7 +1742,10 @@ export default async function RemissionsPage({
         if (preparedQty > 0) hasDispatchReady = true;
         else hasDispatchBlocked = true;
       }
-      canTransitByRequestId.set(requestId, hasDispatchReady && !hasDispatchBlocked);
+      canTransitByRequestId.set(
+        requestId,
+        hasDispatchReady && !hasDispatchBlocked,
+      );
     }
   }
   const remissionActorIds = Array.from(
@@ -1474,56 +1757,55 @@ export default async function RemissionsPage({
           String(row.in_transit_by ?? ""),
           String(row.received_by ?? ""),
         ])
-        .filter(Boolean)
-    )
+        .filter(Boolean),
+    ),
   );
   const { data: remissionEmployeesData } = remissionActorIds.length
     ? await supabase
-      .from("employees")
-      .select("id,full_name,alias")
-      .in("id", remissionActorIds)
+        .from("employees")
+        .select("id,full_name,alias")
+        .in("id", remissionActorIds)
     : { data: [] as EmployeeNameRow[] };
   const remissionEmployeeMap = new Map(
     ((remissionEmployeesData ?? []) as EmployeeNameRow[]).map((employee) => [
       employee.id,
       displayEmployeeName(employee),
-    ])
+    ]),
   );
 
   const areaFilterSiteId = canCreate ? activeSiteId : selectedFromSiteId;
   const { data: areas } = areaFilterSiteId
     ? await supabase
-      .from("areas")
-      .select("id,name,kind,site_id")
-      .eq("site_id", areaFilterSiteId)
-      .order("name", { ascending: true })
+        .from("areas")
+        .select("id,name,kind,site_id")
+        .eq("site_id", areaFilterSiteId)
+        .order("name", { ascending: true })
     : { data: [] as AreaRow[] };
 
   const areaRows = (areas ?? []) as AreaRow[];
-  const { data: areaKindsPurposeData, error: areaKindsPurposeError } = await supabase
-    .from("area_kinds")
-    .select("code,use_for_remission");
+  const { data: areaKindsPurposeData, error: areaKindsPurposeError } =
+    await supabase.from("area_kinds").select("code,use_for_remission");
   const { data: siteAreaPurposeRulesData } = areaFilterSiteId
     ? await supabase
-      .from("site_area_purpose_rules")
-      .select("site_id,area_kind,purpose,is_enabled")
-      .eq("site_id", areaFilterSiteId)
-      .eq("purpose", "remission")
+        .from("site_area_purpose_rules")
+        .select("site_id,area_kind,purpose,is_enabled")
+        .eq("site_id", areaFilterSiteId)
+        .eq("purpose", "remission")
     : { data: [] as SiteAreaPurposeRuleRow[] };
   const siteOverrideKinds = new Set(
     ((siteAreaPurposeRulesData ?? []) as SiteAreaPurposeRuleRow[])
       .filter((row) => Boolean(row.is_enabled))
       .map((row) => String(row.area_kind ?? "").trim())
-      .filter(Boolean)
+      .filter(Boolean),
   );
   const hasSiteOverride = siteOverrideKinds.size > 0;
   const remissionAreaKindCodes = !areaKindsPurposeError
     ? new Set(
-      ((areaKindsPurposeData ?? []) as AreaKindPurposeRow[])
-        .filter((row) => Boolean(row.use_for_remission))
-        .map((row) => String(row.code ?? "").trim())
-        .filter(Boolean)
-    )
+        ((areaKindsPurposeData ?? []) as AreaKindPurposeRow[])
+          .filter((row) => Boolean(row.use_for_remission))
+          .map((row) => String(row.code ?? "").trim())
+          .filter(Boolean),
+      )
     : new Set(["mostrador", "bar", "cocina", "general"]);
   remissionAreaKindCodes.add("general");
   const areaOptionsMap = Array.from(
@@ -1535,11 +1817,11 @@ export default async function RemissionsPage({
       if (!map.has(key)) {
         map.set(key, {
           value: key,
-          label: key === "general" ? "Todos" : row.name ?? key,
+          label: key === "general" ? "Todos" : (row.name ?? key),
         });
       }
       return map;
-    }, new Map<string, { value: string; label: string }>())
+    }, new Map<string, { value: string; label: string }>()),
   ).map(([, value]) => value);
 
   const areaOptions = (() => {
@@ -1556,12 +1838,17 @@ export default async function RemissionsPage({
       return a.label.localeCompare(b.label, "es", { sensitivity: "base" });
     });
   })();
-  const roleDefaultAreaKind = canCreate ? getDefaultRemissionAreaForRole(effectiveRole) : "";
-  const requestedAreaKind = roleDefaultAreaKind;
-
   // Insumos por satélite: filtrar por sede DESTINO (Saudo), no por sede origen (Centro).
   // Cuando el satélite solicita, solo debe ver productos configurados para su sede.
   const productFilterSiteId = canCreate ? activeSiteId : selectedFromSiteId;
+  const requestedAreaKind =
+    canCreate && productFilterSiteId
+      ? await resolveRoleScopedRemissionAreaKind(
+          supabase,
+          productFilterSiteId,
+          effectiveRole,
+        )
+      : "";
   const productSiteRows = productFilterSiteId
     ? await loadProductSiteRows(supabase, productFilterSiteId)
     : [];
@@ -1569,8 +1856,7 @@ export default async function RemissionsPage({
   const productSiteIds = productSiteRows
     .filter(
       (row) =>
-        supportsRemission(row) &&
-        supportsRequestedArea(row, requestedAreaKind)
+        supportsRemission(row) && supportsRequestedArea(row, requestedAreaKind),
     )
     .map((row) => row.product_id);
   const hasAudienceProducts = productSiteIds.length > 0;
@@ -1580,7 +1866,7 @@ export default async function RemissionsPage({
     const productsQuery = await supabase
       .from("product_inventory_profiles")
       .select(
-        "product_id,inventory_kind,measurement_mode,default_tolerance_percent,requires_actual_dispatch_qty,requires_count_alongside_weight,products(id,name,unit,stock_unit_code,product_type,category_id)"
+        "product_id,inventory_kind,measurement_mode,default_tolerance_percent,requires_actual_dispatch_qty,requires_count_alongside_weight,products(id,name,unit,stock_unit_code,product_type,category_id)",
       )
       .eq("track_inventory", true)
       .in("inventory_kind", ["ingredient", "finished", "resale", "packaging"])
@@ -1588,7 +1874,9 @@ export default async function RemissionsPage({
       .order("name", { foreignTable: "products", ascending: true })
       .limit(400);
 
-    productRows = ((productsQuery.data ?? []) as unknown as ProductProfileWithProduct[])
+    productRows = (
+      (productsQuery.data ?? []) as unknown as ProductProfileWithProduct[]
+    )
       .map<ProductRow | null>((row) => {
         if (!row.products) return null;
 
@@ -1604,7 +1892,8 @@ export default async function RemissionsPage({
           requires_count_alongside_weight:
             typeof row.requires_count_alongside_weight === "boolean"
               ? row.requires_count_alongside_weight
-              : normalizeMeasurementMode(row.measurement_mode) === "count_with_weight",
+              : normalizeMeasurementMode(row.measurement_mode) ===
+                "count_with_weight",
         };
       })
       .filter((row): row is ProductRow => row !== null);
@@ -1617,75 +1906,103 @@ export default async function RemissionsPage({
         .in("id", productSiteIds)
         .order("name", { ascending: true })
         .limit(400);
-      productRows = ((fallbackProducts ?? []) as unknown as ProductRow[]).map((row) => ({
-        ...row,
-        inventory_kind: null,
-        measurement_mode: "fixed_presentation",
-        default_tolerance_percent: null,
-        requires_actual_dispatch_qty: false,
-        requires_count_alongside_weight: false,
-      }));
+      productRows = ((fallbackProducts ?? []) as unknown as ProductRow[]).map(
+        (row) => ({
+          ...row,
+          inventory_kind: null,
+          measurement_mode: "fixed_presentation",
+          default_tolerance_percent: null,
+          requires_actual_dispatch_qty: false,
+          requires_count_alongside_weight: false,
+        }),
+      );
     }
   }
   const productIds = productRows.map((row) => row.id);
-  const categoryAreaOptions = areaOptions.filter((option) => option.value !== "general");
+  const categoryAreaOptions = areaOptions.filter(
+    (option) => option.value !== "general",
+  );
   const selectedRemissionCategoryAreaKind =
     requestedAreaKind ||
-    (categoryAreaOptions.length === 1 ? categoryAreaOptions[0]?.value ?? "" : "");
+    (categoryAreaOptions.length === 1
+      ? (categoryAreaOptions[0]?.value ?? "")
+      : "");
 
   const { data: areaRemissionCategoryRows } =
-    productFilterSiteId && selectedRemissionCategoryAreaKind && productIds.length > 0
+    productFilterSiteId &&
+    selectedRemissionCategoryAreaKind &&
+    productIds.length > 0
       ? await supabase
-        .from("product_site_area_remission_categories")
-        .select("product_id,site_id,area_kind,remission_category_id")
-        .eq("site_id", productFilterSiteId)
-        .eq("area_kind", selectedRemissionCategoryAreaKind)
-        .in("product_id", productIds)
+          .from("product_site_area_remission_categories")
+          .select("product_id,site_id,area_kind,remission_category_id")
+          .eq("site_id", productFilterSiteId)
+          .eq("area_kind", selectedRemissionCategoryAreaKind)
+          .in("product_id", productIds)
       : { data: [] as ProductSiteAreaRemissionCategoryRow[] };
 
   const areaRemissionCategoryIdByProductId = new Map(
     ((areaRemissionCategoryRows ?? []) as ProductSiteAreaRemissionCategoryRow[])
-      .map((row) => [
-        String(row.product_id ?? "").trim(),
-        String(row.remission_category_id ?? "").trim(),
-      ] as const)
-      .filter(([productId, categoryId]) => Boolean(productId && categoryId))
+      .map(
+        (row) =>
+          [
+            String(row.product_id ?? "").trim(),
+            String(row.remission_category_id ?? "").trim(),
+          ] as const,
+      )
+      .filter(([productId, categoryId]) => Boolean(productId && categoryId)),
   );
   const legacyRemissionCategoryIdByProductId = new Map(
     productSiteRows
-      .map((row) => [
-        String(row.product_id ?? "").trim(),
-        String(row.remission_category_id ?? "").trim(),
-      ] as const)
-      .filter(([productId, categoryId]) => Boolean(productId && categoryId))
+      .map(
+        (row) =>
+          [
+            String(row.product_id ?? "").trim(),
+            String(row.remission_category_id ?? "").trim(),
+          ] as const,
+      )
+      .filter(([productId, categoryId]) => Boolean(productId && categoryId)),
   );
   const remissionCategoryIdByProductId = new Map(
     productIds
-      .map((productId) => [
-        productId,
-        areaRemissionCategoryIdByProductId.get(productId) ||
-          legacyRemissionCategoryIdByProductId.get(productId) ||
-          "",
-      ] as const)
-      .filter(([, categoryId]) => Boolean(categoryId))
+      .map(
+        (productId) =>
+          [
+            productId,
+            areaRemissionCategoryIdByProductId.get(productId) ||
+              legacyRemissionCategoryIdByProductId.get(productId) ||
+              "",
+          ] as const,
+      )
+      .filter(([, categoryId]) => Boolean(categoryId)),
   );
-  const remissionCategoryIds = Array.from(new Set(remissionCategoryIdByProductId.values()));
+  const remissionCategoryIds = Array.from(
+    new Set(remissionCategoryIdByProductId.values()),
+  );
   const { data: remissionCategoryData } = remissionCategoryIds.length
     ? await supabase
-      .from("remission_product_categories")
-      .select("id,name")
-      .in("id", remissionCategoryIds)
-      .eq("is_active", true)
+        .from("remission_product_categories")
+        .select("id,name")
+        .in("id", remissionCategoryIds)
+        .eq("is_active", true)
     : { data: [] as Array<{ id: string; name: string | null }> };
   const remissionCategoryNameById = new Map(
-    ((remissionCategoryData ?? []) as Array<{ id: string; name: string | null }>).map((row) => [
+    (
+      (remissionCategoryData ?? []) as Array<{
+        id: string;
+        name: string | null;
+      }>
+    ).map((row) => [
       row.id,
       String(row.name ?? "").trim() || "Sin categoría de remisión",
-    ])
+    ]),
   );
   productRows = productRows.map((row) => {
     const remissionCategoryId = remissionCategoryIdByProductId.get(row.id);
-    if (!remissionCategoryId || !remissionCategoryNameById.has(remissionCategoryId)) return row;
+    if (
+      !remissionCategoryId ||
+      !remissionCategoryNameById.has(remissionCategoryId)
+    )
+      return row;
     return {
       ...row,
       category_id: `remission:${remissionCategoryId}`,
@@ -1695,22 +2012,32 @@ export default async function RemissionsPage({
     new Set(
       productRows
         .map((row) => String(row.category_id ?? "").trim())
-        .filter((categoryId) => Boolean(categoryId && !categoryId.startsWith("remission:")))
-    )
+        .filter((categoryId) =>
+          Boolean(categoryId && !categoryId.startsWith("remission:")),
+        ),
+    ),
   );
   const { data: categoryData } = categoryIds.length
     ? await supabase
-      .from("product_categories")
-      .select("id,name,parent_id")
-      .in("id", categoryIds)
-    : { data: [] as Array<{ id: string; name: string | null; parent_id: string | null }> };
+        .from("product_categories")
+        .select("id,name,parent_id")
+        .in("id", categoryIds)
+    : {
+        data: [] as Array<{
+          id: string;
+          name: string | null;
+          parent_id: string | null;
+        }>,
+      };
   const categoryNameById = new Map(
-    ((categoryData ?? []) as Array<{ id: string; name: string | null }>).map((row) => [
-      row.id,
-      String(row.name ?? "").trim() || "Sin categoría",
-    ])
+    ((categoryData ?? []) as Array<{ id: string; name: string | null }>).map(
+      (row) => [row.id, String(row.name ?? "").trim() || "Sin categoría"],
+    ),
   );
-  for (const [categoryId, categoryName] of remissionCategoryNameById.entries()) {
+  for (const [
+    categoryId,
+    categoryName,
+  ] of remissionCategoryNameById.entries()) {
     categoryNameById.set(`remission:${categoryId}`, categoryName);
   }
   const fixedPresentationProductIds = productRows
@@ -1718,33 +2045,35 @@ export default async function RemissionsPage({
     .map((row) => row.id);
   const { data: uomProfilesData } = fixedPresentationProductIds.length
     ? await supabase
-      .from("product_uom_profiles")
-      .select(
-        "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
-      )
-      .in("product_id", fixedPresentationProductIds)
-      .eq("is_active", true)
+        .from("product_uom_profiles")
+        .select(
+          "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context",
+        )
+        .in("product_id", fixedPresentationProductIds)
+        .eq("is_active", true)
     : { data: [] as ProductUomProfile[] };
   const defaultUomProfiles = (uomProfilesData ?? []) as ProductUomProfile[];
   const canCreateWithConfiguredCatalog =
     canCreate && hasActiveSiteProductConfig && hasAudienceProducts;
   const pendingCount = remissionRows.filter((row) =>
-    ["pending", "preparing"].includes(String(row.status ?? ""))
+    ["pending", "preparing"].includes(String(row.status ?? "")),
   ).length;
   const transitCount = remissionRows.filter((row) =>
-    ["in_transit", "partial"].includes(String(row.status ?? ""))
+    ["in_transit", "partial"].includes(String(row.status ?? "")),
   ).length;
   const receivedCount = remissionRows.filter((row) =>
-    ["received", "closed"].includes(String(row.status ?? ""))
+    ["received", "closed"].includes(String(row.status ?? "")),
   ).length;
   const openRemissionRows = remissionRows.filter((row) =>
-    ["pending", "preparing", "in_transit", "partial"].includes(String(row.status ?? ""))
+    ["pending", "preparing", "in_transit", "partial"].includes(
+      String(row.status ?? ""),
+    ),
   );
   const nextReceiveRow = remissionRows.find((row) =>
-    ["in_transit", "partial"].includes(String(row.status ?? ""))
+    ["in_transit", "partial"].includes(String(row.status ?? "")),
   );
   const nextPrepareRow = remissionRows.find((row) =>
-    ["pending", "preparing"].includes(String(row.status ?? ""))
+    ["pending", "preparing"].includes(String(row.status ?? "")),
   );
   const heroViewLabel =
     viewMode === "all"
@@ -1753,7 +2082,11 @@ export default async function RemissionsPage({
         ? "Centro operando"
         : activeSiteName;
   const heroContextTone =
-    viewMode === "bodega" ? "center" : viewMode === "satélite" ? "satellite" : "all";
+    viewMode === "bodega"
+      ? "center"
+      : viewMode === "satélite"
+        ? "satellite"
+        : "all";
   const heroTitle =
     viewMode === "bodega"
       ? "Preparar solicitudes"
@@ -1797,23 +2130,25 @@ export default async function RemissionsPage({
       : `/inventory/remissions/${rowId}`;
   const actionRows = openRemissionRows;
   const historyRows = remissionRows.filter((row) =>
-    ["received", "closed", "cancelled"].includes(String(row.status ?? ""))
+    ["received", "closed", "cancelled"].includes(String(row.status ?? "")),
   );
   const fulfillmentSiteIdsForStock = fulfillmentSiteRows
     .map((site) => site.id)
     .filter((id): id is string => Boolean(id));
   const { data: stockReferenceData } =
     inventoryPostingEnabled &&
-      canCreateWithConfiguredCatalog &&
-      fulfillmentSiteIdsForStock.length > 0 &&
-      productIds.length > 0
+    canCreateWithConfiguredCatalog &&
+    fulfillmentSiteIdsForStock.length > 0 &&
+    productIds.length > 0
       ? await supabase
-        .from("inventory_stock_by_site")
-        .select("site_id,product_id,current_qty,updated_at")
-        .in("site_id", fulfillmentSiteIdsForStock)
-        .in("product_id", productIds)
+          .from("inventory_stock_by_site")
+          .select("site_id,product_id,current_qty,updated_at")
+          .in("site_id", fulfillmentSiteIdsForStock)
+          .in("product_id", productIds)
       : { data: [] as StockReferenceRow[] };
-  const originStockRows = ((stockReferenceData ?? []) as StockReferenceRow[]).map((row) => ({
+  const originStockRows = (
+    (stockReferenceData ?? []) as StockReferenceRow[]
+  ).map((row) => ({
     siteId: row.site_id,
     productId: row.product_id,
     currentQty: Number(row.current_qty ?? 0),
@@ -1826,25 +2161,33 @@ export default async function RemissionsPage({
 
   const { data: productionPackageData } =
     canCreateWithConfiguredCatalog &&
-      fulfillmentSiteIdsForStock.length > 0 &&
-      producedProductIds.length > 0
+    fulfillmentSiteIdsForStock.length > 0 &&
+    producedProductIds.length > 0
       ? await supabase
-        .from("production_batch_packages")
-        .select(
-          "id,batch_id,site_id,location_id,product_id,package_index,package_label,original_qty,remaining_qty,reserved_qty,unit_code,status,created_at"
-        )
-        .in("site_id", fulfillmentSiteIdsForStock)
-        .in("product_id", producedProductIds)
-        .gt("remaining_qty", 0)
-        .order("created_at", { ascending: false })
-        .limit(400)
+          .from("production_batch_packages")
+          .select(
+            "id,batch_id,site_id,location_id,product_id,package_index,package_label,original_qty,remaining_qty,reserved_qty,unit_code,status,created_at",
+          )
+          .in("site_id", fulfillmentSiteIdsForStock)
+          .in("product_id", producedProductIds)
+          .gt("remaining_qty", 0)
+          .order("created_at", { ascending: false })
+          .limit(400)
       : { data: [] as ProductionBatchPackageRow[] };
 
-  const productionPackageRows = ((productionPackageData ?? []) as ProductionBatchPackageRow[])
+  const productionPackageRows = (
+    (productionPackageData ?? []) as ProductionBatchPackageRow[]
+  )
     .filter((row) => {
-      const status = String(row.status ?? "available").trim().toLowerCase();
+      const status = String(row.status ?? "available")
+        .trim()
+        .toLowerCase();
       const remainingQty = Number(row.remaining_qty ?? 0);
-      return ["available", "opened", "reserved"].includes(status) && Number.isFinite(remainingQty) && remainingQty > 0;
+      return (
+        ["available", "opened", "reserved"].includes(status) &&
+        Number.isFinite(remainingQty) &&
+        remainingQty > 0
+      );
     })
     .map((row) => ({
       id: row.id,
@@ -1863,7 +2206,10 @@ export default async function RemissionsPage({
 
   return (
     <div className="ui-scene w-full space-y-6">
-      <section className="ui-remission-hero ui-fade-up" data-context={heroContextTone}>
+      <section
+        className="ui-remission-hero ui-fade-up"
+        data-context={heroContextTone}
+      >
         <div className="ui-remission-hero-grid">
           <div className="flex flex-wrap items-start justify-between gap-4">
             <div>
@@ -1873,7 +2219,9 @@ export default async function RemissionsPage({
                   <span className="ui-chip ui-chip--ops-center">Centro</span>
                 ) : null}
                 {viewMode === "satélite" ? (
-                  <span className="ui-chip ui-chip--ops-satellite">Satelite</span>
+                  <span className="ui-chip ui-chip--ops-satellite">
+                    Satelite
+                  </span>
                 ) : null}
               </div>
               <h2 className="mt-4 text-3xl font-semibold tracking-[-0.03em] text-[var(--ui-text)]">
@@ -1896,7 +2244,9 @@ export default async function RemissionsPage({
             <div className="ui-remission-kpi">
               <div className="ui-remission-kpi-label">Por preparar</div>
               <div className="ui-remission-kpi-value">{pendingCount}</div>
-              <div className="ui-remission-kpi-note">Pendientes o preparando</div>
+              <div className="ui-remission-kpi-note">
+                Pendientes o preparando
+              </div>
             </div>
             <div className="ui-remission-kpi" data-tone="cool">
               <div className="ui-remission-kpi-label">En movimiento</div>
@@ -1919,7 +2269,9 @@ export default async function RemissionsPage({
       ) : null}
 
       {okMsg ? (
-        <div className="ui-alert ui-alert--success ui-fade-up ui-delay-1">{okMsg}</div>
+        <div className="ui-alert ui-alert--success ui-fade-up ui-delay-1">
+          {okMsg}
+        </div>
       ) : null}
 
       {inventoryPostingEnabled && sp.warning === "low_stock" ? (
@@ -1946,13 +2298,18 @@ export default async function RemissionsPage({
               <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
                 Cambiar sede
               </summary>
-              <form method="get" className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+              <form
+                method="get"
+                className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center"
+              >
                 <select
                   name="site_id"
                   defaultValue={activeSiteId}
                   className="ui-input"
                 >
-                  {canViewAll ? <option value="">Todas las sedes</option> : null}
+                  {canViewAll ? (
+                    <option value="">Todas las sedes</option>
+                  ) : null}
                   {employeeSiteRows.map((row) => {
                     const siteId = row.site_id ?? "";
                     if (!siteId) return null;
@@ -1992,9 +2349,7 @@ export default async function RemissionsPage({
                   );
                 })}
               </select>
-              <button className="ui-btn ui-btn--ghost">
-                Cambiar
-              </button>
+              <button className="ui-btn ui-btn--ghost">Cambiar</button>
             </form>
           )}
         </div>
@@ -2020,7 +2375,9 @@ export default async function RemissionsPage({
                     : "ui-chip"
                 }
               >
-                {inventoryPostingEnabled ? "Inventario conectado" : "Inventario desconectado"}
+                {inventoryPostingEnabled
+                  ? "Inventario conectado"
+                  : "Inventario desconectado"}
               </span>
 
               {canManageRemissionActions ? (
@@ -2045,22 +2402,26 @@ export default async function RemissionsPage({
 
         {!canCreate && viewMode === "satélite" ? (
           <div className="mt-4 ui-alert ui-alert--neutral">
-            {activeSiteId && !canRequestPermission && effectiveRole === "conductor" ? (
+            {activeSiteId &&
+            !canRequestPermission &&
+            effectiveRole === "conductor" ? (
               <>
-                El rol <strong>conductor</strong> no puede solicitar remisiones en sede satélite.
-                Este rol opera remisiones en tránsito/recepción.
-                Cambia a <code>cajero</code>, <code>barista</code>, <code>cocinero</code> o{" "}
+                El rol <strong>conductor</strong> no puede solicitar remisiones
+                en sede satélite. Este rol opera remisiones en
+                tránsito/recepción. Cambia a <code>cajero</code>,{" "}
+                <code>barista</code>, <code>cocinero</code> o{" "}
                 <code>propietario</code> para crear solicitudes.
               </>
             ) : activeSiteId && !canRequestPermission ? (
               <>
                 No puedes crear remisiones en esta sede porque falta el permiso{" "}
-                <code>nexo.inventory.remissions.request</code> para tu rol actual.
-                Verifica rol/sede activa y permisos en BD.
+                <code>nexo.inventory.remissions.request</code> para tu rol
+                actual. Verifica rol/sede activa y permisos en BD.
               </>
             ) : (
               <>
-                Esta vista queda en modo recepción. Cuando una remisión salga desde Centro, aquí podrás abrirla y recibirla.
+                Esta vista queda en modo recepción. Cuando una remisión salga
+                desde Centro, aquí podrás abrirla y recibirla.
               </>
             )}
           </div>
@@ -2068,8 +2429,12 @@ export default async function RemissionsPage({
 
         {canCreate && activeSiteId && fulfillmentSiteIds.length === 0 ? (
           <div className="mt-4 ui-alert ui-alert--warn">
-            No hay rutas de abastecimiento para {activeSiteName}. Configúralas en{" "}
-            <Link href="/inventory/settings/supply-routes" className="font-semibold underline">
+            No hay rutas de abastecimiento para {activeSiteName}. Configúralas
+            en{" "}
+            <Link
+              href="/inventory/settings/supply-routes"
+              className="font-semibold underline"
+            >
               Configuración → Rutas de abastecimiento
             </Link>
             .
@@ -2078,7 +2443,8 @@ export default async function RemissionsPage({
 
         {canCreate && !hasActiveSiteProductConfig ? (
           <div className="mt-4 ui-alert ui-alert--warn">
-            Esta sede no tiene productos habilitados. Configura disponibilidad por sede en{" "}
+            Esta sede no tiene productos habilitados. Configura disponibilidad
+            por sede en{" "}
             <Link href="/inventory/catalog" className="font-semibold underline">
               Catalogo
             </Link>
@@ -2088,7 +2454,8 @@ export default async function RemissionsPage({
 
         {canCreate && hasActiveSiteProductConfig && !hasAudienceProducts ? (
           <div className="mt-4 ui-alert ui-alert--warn">
-            Esta sede no tiene productos habilitados para su uso operativo. Ajusta Uso en sede en{" "}
+            Esta sede no tiene productos habilitados para su uso operativo.
+            Ajusta Uso en sede en{" "}
             <Link href="/inventory/catalog" className="font-semibold underline">
               Catalogo
             </Link>
@@ -2096,7 +2463,10 @@ export default async function RemissionsPage({
           </div>
         ) : null}
 
-        {canCreate && hasActiveSiteProductConfig && hasAudienceProducts && productRows.length === 0 ? (
+        {canCreate &&
+        hasActiveSiteProductConfig &&
+        hasAudienceProducts &&
+        productRows.length === 0 ? (
           <div className="mt-4 ui-alert ui-alert--warn">
             No hay insumos configurados para {activeSiteName}. Añade la sede en{" "}
             <Link href="/inventory/catalog" className="font-semibold underline">
@@ -2105,10 +2475,12 @@ export default async function RemissionsPage({
             → ficha del producto → Sedes.
           </div>
         ) : null}
-
       </div>
 
-      <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2" id="solicitudes-abiertas">
+      <div
+        className="ui-panel ui-remission-section ui-fade-up ui-delay-2"
+        id="solicitudes-abiertas"
+      >
         <div className="flex flex-wrap items-end justify-between gap-3">
           <div>
             <div className="ui-h3">
@@ -2121,13 +2493,18 @@ export default async function RemissionsPage({
                     : "Remisiones abiertas"}
             </div>
             <div className="mt-1 ui-caption">
-              {actionRows.length} remision(es) pendientes, preparando, en transito o parciales
+              {actionRows.length} remision(es) pendientes, preparando, en
+              transito o parciales
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
             <span className="ui-chip">{pendingCount} activas</span>
-            <span className="ui-chip ui-chip--warn">{transitCount} en curso</span>
-            <span className="ui-chip ui-chip--success">{receivedCount} recibidas</span>
+            <span className="ui-chip ui-chip--warn">
+              {transitCount} en curso
+            </span>
+            <span className="ui-chip ui-chip--success">
+              {receivedCount} recibidas
+            </span>
           </div>
         </div>
 
@@ -2137,20 +2514,35 @@ export default async function RemissionsPage({
               <tr>
                 <TableHeaderCell>Fecha</TableHeaderCell>
                 <TableHeaderCell>Estado</TableHeaderCell>
-                {viewMode !== "bodega" ? <TableHeaderCell>Origen</TableHeaderCell> : null}
-                {viewMode !== "satélite" ? <TableHeaderCell>Destino</TableHeaderCell> : null}
-                {!compactOperatorView ? <TableHeaderCell>Trazabilidad</TableHeaderCell> : null}
+                {viewMode !== "bodega" ? (
+                  <TableHeaderCell>Origen</TableHeaderCell>
+                ) : null}
+                {viewMode !== "satélite" ? (
+                  <TableHeaderCell>Destino</TableHeaderCell>
+                ) : null}
+                {!compactOperatorView ? (
+                  <TableHeaderCell>Trazabilidad</TableHeaderCell>
+                ) : null}
                 <TableHeaderCell>Acciones</TableHeaderCell>
               </tr>
             </thead>
             <tbody>
               {actionRows.map((row) => {
-                const effectiveStatus = getEffectiveRemissionStatus(row, canTransitByRequestId);
+                const effectiveStatus = getEffectiveRemissionStatus(
+                  row,
+                  canTransitByRequestId,
+                );
                 const fromSiteId = row.from_site_id ?? "";
                 const toSiteId = row.to_site_id ?? "";
-                const rowCanFrom = canCancelPermission && employeeAccessibleSiteIds.has(fromSiteId);
-                const rowCanTo = canCancelPermission && employeeAccessibleSiteIds.has(toSiteId);
-                const rowCanManageBasic = canManageRemissionActions && (canViewAll || rowCanFrom || rowCanTo);
+                const rowCanFrom =
+                  canCancelPermission &&
+                  employeeAccessibleSiteIds.has(fromSiteId);
+                const rowCanTo =
+                  canCancelPermission &&
+                  employeeAccessibleSiteIds.has(toSiteId);
+                const rowCanManageBasic =
+                  canManageRemissionActions &&
+                  (canViewAll || rowCanFrom || rowCanTo);
                 const rowCanReverse =
                   inventoryPostingEnabled &&
                   canManageRemissionActions &&
@@ -2166,7 +2558,7 @@ export default async function RemissionsPage({
                   row.notes,
                   rowCanManageBasic,
                   rowCanReverse,
-                  rowCanEditOwnPending
+                  rowCanEditOwnPending,
                 );
                 return (
                   <tr key={row.id} className="ui-body">
@@ -2191,9 +2583,16 @@ export default async function RemissionsPage({
                     {!compactOperatorView ? (
                       <TableCell>
                         <div className="font-medium text-[var(--ui-text)]">
-                          {buildRemissionTraceSummary(row, remissionEmployeeMap)}
+                          {buildRemissionTraceSummary(
+                            row,
+                            remissionEmployeeMap,
+                          )}
                         </div>
-                        {row.notes ? <div className="ui-caption mt-1">Nota: {row.notes}</div> : null}
+                        {row.notes ? (
+                          <div className="ui-caption mt-1">
+                            Nota: {row.notes}
+                          </div>
+                        ) : null}
                       </TableCell>
                     ) : null}
                     <TableCell>
@@ -2203,10 +2602,13 @@ export default async function RemissionsPage({
                           className="ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
                         >
                           {viewMode === "bodega"
-                            ? canTransitPermission && String(row.status ?? "") === "preparing"
+                            ? canTransitPermission &&
+                              String(row.status ?? "") === "preparing"
                               ? "Checklist tránsito"
                               : "Preparar"
-                            : ["in_transit", "partial"].includes(String(row.status ?? ""))
+                            : ["in_transit", "partial"].includes(
+                                  String(row.status ?? ""),
+                                )
                               ? "Recibir"
                               : "Ver"}
                         </Link>
@@ -2224,7 +2626,11 @@ export default async function RemissionsPage({
                         ) : null}
                         {rowActions.includes("cancel") ? (
                           <form action={runRemissionListAction}>
-                            <input type="hidden" name="request_id" value={row.id} />
+                            <input
+                              type="hidden"
+                              name="request_id"
+                              value={row.id}
+                            />
                             <input type="hidden" name="action" value="cancel" />
                             <button className="ui-btn ui-btn--ghost ui-btn--compact px-3 text-sm font-semibold">
                               Cancelar
@@ -2233,8 +2639,16 @@ export default async function RemissionsPage({
                         ) : null}
                         {rowActions.includes("reverse_cancel") ? (
                           <form action={runRemissionListAction}>
-                            <input type="hidden" name="request_id" value={row.id} />
-                            <input type="hidden" name="action" value="reverse_cancel" />
+                            <input
+                              type="hidden"
+                              name="request_id"
+                              value={row.id}
+                            />
+                            <input
+                              type="hidden"
+                              name="action"
+                              value="reverse_cancel"
+                            />
                             <button className="ui-btn ui-btn--action ui-btn--compact px-3 text-sm font-semibold">
                               Anular + reversa
                             </button>
@@ -2242,7 +2656,11 @@ export default async function RemissionsPage({
                         ) : null}
                         {rowActions.includes("delete") ? (
                           <form action={runRemissionListAction}>
-                            <input type="hidden" name="request_id" value={row.id} />
+                            <input
+                              type="hidden"
+                              name="request_id"
+                              value={row.id}
+                            />
                             <input type="hidden" name="action" value="delete" />
                             <button className="ui-btn ui-btn--danger ui-btn--compact px-3 text-sm font-semibold">
                               Eliminar
@@ -2257,7 +2675,10 @@ export default async function RemissionsPage({
 
               {!actionRows.length ? (
                 <tr>
-                  <TableCell colSpan={compactOperatorView ? 4 : 6} className="ui-empty">
+                  <TableCell
+                    colSpan={compactOperatorView ? 4 : 6}
+                    className="ui-empty"
+                  >
                     No hay remisiones que requieran accion en este momento.
                   </TableCell>
                 </tr>
@@ -2268,7 +2689,10 @@ export default async function RemissionsPage({
       </div>
 
       {canCreateWithConfiguredCatalog && !showCreatePanel ? (
-        <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2" id="nueva-remisión">
+        <div
+          className="ui-panel ui-remission-section ui-fade-up ui-delay-2"
+          id="nueva-remisión"
+        >
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <div className="ui-h3">Nueva remisión</div>
@@ -2287,7 +2711,10 @@ export default async function RemissionsPage({
       ) : null}
 
       {canCreateWithConfiguredCatalog && showCreatePanel ? (
-        <div className="ui-panel ui-remission-section ui-fade-up ui-delay-2" id="nueva-remisión">
+        <div
+          className="ui-panel ui-remission-section ui-fade-up ui-delay-2"
+          id="nueva-remisión"
+        >
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <div className="ui-h3">Nueva remisión</div>
@@ -2316,7 +2743,7 @@ export default async function RemissionsPage({
               categoryNameById={Object.fromEntries(categoryNameById)}
               defaultUomProfiles={defaultUomProfiles}
               areaOptions={areaOptions}
-              defaultAreaKind={requestedAreaKind}
+              defaultAreaKind=""
               originStockRows={inventoryPostingEnabled ? originStockRows : []}
               productionPackageRows={productionPackageRows}
               inventoryPostingEnabled={inventoryPostingEnabled}
@@ -2334,7 +2761,9 @@ export default async function RemissionsPage({
             </div>
           </div>
           <div className="flex flex-wrap gap-2">
-            <span className="ui-chip ui-chip--success">{receivedCount} recibidas</span>
+            <span className="ui-chip ui-chip--success">
+              {receivedCount} recibidas
+            </span>
           </div>
         </div>
 
@@ -2344,20 +2773,35 @@ export default async function RemissionsPage({
               <tr>
                 <TableHeaderCell>Fecha</TableHeaderCell>
                 <TableHeaderCell>Estado</TableHeaderCell>
-                {viewMode !== "bodega" ? <TableHeaderCell>Origen</TableHeaderCell> : null}
-                {viewMode !== "satélite" ? <TableHeaderCell>Destino</TableHeaderCell> : null}
-                {!compactOperatorView ? <TableHeaderCell>Trazabilidad</TableHeaderCell> : null}
+                {viewMode !== "bodega" ? (
+                  <TableHeaderCell>Origen</TableHeaderCell>
+                ) : null}
+                {viewMode !== "satélite" ? (
+                  <TableHeaderCell>Destino</TableHeaderCell>
+                ) : null}
+                {!compactOperatorView ? (
+                  <TableHeaderCell>Trazabilidad</TableHeaderCell>
+                ) : null}
                 <TableHeaderCell>Acciones</TableHeaderCell>
               </tr>
             </thead>
             <tbody>
               {historyRows.slice(0, 20).map((row) => {
-                const effectiveStatus = getEffectiveRemissionStatus(row, canTransitByRequestId);
+                const effectiveStatus = getEffectiveRemissionStatus(
+                  row,
+                  canTransitByRequestId,
+                );
                 const fromSiteId = row.from_site_id ?? "";
                 const toSiteId = row.to_site_id ?? "";
-                const rowCanFrom = canCancelPermission && employeeAccessibleSiteIds.has(fromSiteId);
-                const rowCanTo = canCancelPermission && employeeAccessibleSiteIds.has(toSiteId);
-                const rowCanManageBasic = canManageRemissionActions && (canViewAll || rowCanFrom || rowCanTo);
+                const rowCanFrom =
+                  canCancelPermission &&
+                  employeeAccessibleSiteIds.has(fromSiteId);
+                const rowCanTo =
+                  canCancelPermission &&
+                  employeeAccessibleSiteIds.has(toSiteId);
+                const rowCanManageBasic =
+                  canManageRemissionActions &&
+                  (canViewAll || rowCanFrom || rowCanTo);
                 const rowCanReverse =
                   inventoryPostingEnabled &&
                   canManageRemissionActions &&
@@ -2373,7 +2817,7 @@ export default async function RemissionsPage({
                   row.notes,
                   rowCanManageBasic,
                   rowCanReverse,
-                  rowCanEditOwnPending
+                  rowCanEditOwnPending,
                 );
                 return (
                   <tr key={row.id} className="ui-body">
@@ -2386,17 +2830,28 @@ export default async function RemissionsPage({
                       </span>
                     </TableCell>
                     {viewMode !== "bodega" ? (
-                      <TableCell>{siteMap.get(fromSiteId)?.name ?? fromSiteId}</TableCell>
+                      <TableCell>
+                        {siteMap.get(fromSiteId)?.name ?? fromSiteId}
+                      </TableCell>
                     ) : null}
                     {viewMode !== "satélite" ? (
-                      <TableCell>{siteMap.get(toSiteId)?.name ?? toSiteId}</TableCell>
+                      <TableCell>
+                        {siteMap.get(toSiteId)?.name ?? toSiteId}
+                      </TableCell>
                     ) : null}
                     {!compactOperatorView ? (
                       <TableCell>
                         <div className="font-medium text-[var(--ui-text)]">
-                          {buildRemissionTraceSummary(row, remissionEmployeeMap)}
+                          {buildRemissionTraceSummary(
+                            row,
+                            remissionEmployeeMap,
+                          )}
                         </div>
-                        {row.notes ? <div className="ui-caption mt-1">Nota: {row.notes}</div> : null}
+                        {row.notes ? (
+                          <div className="ui-caption mt-1">
+                            Nota: {row.notes}
+                          </div>
+                        ) : null}
                       </TableCell>
                     ) : null}
                     <TableCell>
@@ -2421,7 +2876,11 @@ export default async function RemissionsPage({
                         ) : null}
                         {rowActions.includes("cancel") ? (
                           <form action={runRemissionListAction}>
-                            <input type="hidden" name="request_id" value={row.id} />
+                            <input
+                              type="hidden"
+                              name="request_id"
+                              value={row.id}
+                            />
                             <input type="hidden" name="action" value="cancel" />
                             <button className="ui-btn ui-btn--ghost ui-btn--compact px-3 text-sm font-semibold">
                               Cancelar
@@ -2430,8 +2889,16 @@ export default async function RemissionsPage({
                         ) : null}
                         {rowActions.includes("reverse_cancel") ? (
                           <form action={runRemissionListAction}>
-                            <input type="hidden" name="request_id" value={row.id} />
-                            <input type="hidden" name="action" value="reverse_cancel" />
+                            <input
+                              type="hidden"
+                              name="request_id"
+                              value={row.id}
+                            />
+                            <input
+                              type="hidden"
+                              name="action"
+                              value="reverse_cancel"
+                            />
                             <button className="ui-btn ui-btn--action ui-btn--compact px-3 text-sm font-semibold">
                               Anular + reversa
                             </button>
@@ -2439,7 +2906,11 @@ export default async function RemissionsPage({
                         ) : null}
                         {rowActions.includes("delete") ? (
                           <form action={runRemissionListAction}>
-                            <input type="hidden" name="request_id" value={row.id} />
+                            <input
+                              type="hidden"
+                              name="request_id"
+                              value={row.id}
+                            />
                             <input type="hidden" name="action" value="delete" />
                             <button className="ui-btn ui-btn--danger ui-btn--compact px-3 text-sm font-semibold">
                               Eliminar
@@ -2454,7 +2925,10 @@ export default async function RemissionsPage({
 
               {!historyRows.length ? (
                 <tr>
-                  <TableCell colSpan={compactOperatorView ? 4 : 6} className="ui-empty">
+                  <TableCell
+                    colSpan={compactOperatorView ? 4 : 6}
+                    className="ui-empty"
+                  >
                     Todavia no hay historial reciente.
                   </TableCell>
                 </tr>
@@ -2466,4 +2940,3 @@ export default async function RemissionsPage({
     </div>
   );
 }
-

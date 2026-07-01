@@ -1,5 +1,6 @@
 ﻿import { cookies } from "next/headers";
 
+import { checkOperationalPermission } from "@/lib/auth/operational-context";
 import { checkPermissionWithRoleOverride } from "@/lib/auth/role-override";
 import { createClient } from "@/lib/supabase/server";
 import { VentoChrome } from "./vento-chrome";
@@ -305,6 +306,15 @@ function splitPermissionCode(permissionCode: string, fallbackAppId: string) {
   };
 }
 
+function shouldUseOperationalPermission(permissionCode: string) {
+  return new Set([
+    "nexo.inventory.remissions.request",
+    "nexo.inventory.remissions.prepare",
+    "nexo.inventory.remissions.receive",
+    "nexo.inventory.remissions.transit",
+  ]).has(permissionCode.trim());
+}
+
 function buildNavGroups(rows: NavigationRow[]): NavGroup[] {
   const groups = new Map<string, NavItem[]>();
 
@@ -469,6 +479,16 @@ async function resolveNavigationItems({
       const { appId, code } = splitPermissionCode(permissionCode, appCode);
 
       if (!code) return false;
+
+      if (shouldUseOperationalPermission(permissionCode)) {
+        return checkOperationalPermission({
+          supabase,
+          permissionCode,
+          siteId: activeSiteId || null,
+          areaId: activeAreaId || null,
+          appCode: appId,
+        });
+      }
 
       return checkPermissionWithRoleOverride({
         supabase,

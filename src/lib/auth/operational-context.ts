@@ -10,9 +10,14 @@ export type OperationalContextRow = {
   employee_default_site_id: string | null;
   active_shift_id: string | null;
   active_shift_site_id: string | null;
+  active_shift_area_id: string | null;
+  active_operational_role: string | null;
   on_shift_now: boolean | null;
   active_checkin_id: string | null;
   active_checkin_site_id: string | null;
+  active_checkin_area_id: string | null;
+  active_area_id: string | null;
+  active_area_kind: string | null;
   checked_in_now: boolean | null;
   policy_requires_shift: boolean | null;
   policy_requires_checkin: boolean | null;
@@ -38,6 +43,85 @@ export async function getOperationalContext(params: {
   const first = Array.isArray(data) ? data[0] : data;
   if (!first) return null;
   return first as OperationalContextRow;
+}
+
+export async function checkOperationalPermission(params: {
+  supabase: SupabaseClient;
+  permissionCode: string;
+  siteId?: string | null;
+  areaId?: string | null;
+  appCode?: string | null;
+}): Promise<boolean> {
+  const {
+    supabase,
+    permissionCode,
+    siteId = null,
+    areaId = null,
+    appCode = null,
+  } = params;
+
+  const { data, error } = await supabase.rpc("has_operational_permission", {
+    p_permission_code: permissionCode,
+    p_site_id: siteId,
+    p_area_id: areaId,
+    p_app_code: appCode,
+  });
+
+  if (error) return false;
+  return Boolean(data);
+}
+
+export async function requireOperationalPermission(params: {
+  supabase: SupabaseClient;
+  employeeId: string;
+  permissionCode: string;
+  siteId?: string | null;
+  areaId?: string | null;
+  appCode?: string | null;
+  fallback?: string;
+}): Promise<{
+  allowed: boolean;
+  context: OperationalContextRow | null;
+  message: string;
+}> {
+  const {
+    supabase,
+    employeeId,
+    permissionCode,
+    siteId = null,
+    areaId = null,
+    appCode = null,
+    fallback = "Tu turno activo no tiene permiso para esta acción.",
+  } = params;
+
+  const context = await getOperationalContext({
+    supabase,
+    employeeId,
+    siteId,
+    appCode: appCode ?? permissionCode.split(".")[0] ?? "nexo",
+  });
+
+  if (!context?.can_operate) {
+    return {
+      allowed: false,
+      context,
+      message: buildOperationalBlockMessage(context, fallback),
+    };
+  }
+
+  const allowed = await checkOperationalPermission({
+    supabase,
+    permissionCode,
+    siteId,
+    areaId: areaId ?? context.active_area_id,
+    appCode,
+  });
+
+  return {
+    allowed,
+    context,
+    message: allowed ? "" : fallback,
+  };
 }
 
 function hasReason(row: OperationalContextRow | null, reason: string): boolean {

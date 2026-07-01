@@ -1,11 +1,7 @@
 import Link from "next/link";
 
 import { requireAppAccess } from "@/lib/auth/guard";
-import {
-  canUseRoleOverride,
-  checkPermissionWithRoleOverride,
-  getRoleOverrideFromCookies,
-} from "@/lib/auth/role-override";
+import { checkOperationalPermission } from "@/lib/auth/operational-context";
 import type { SiteOperationalCapabilities } from "@/lib/inventory/site-capabilities";
 
 export const dynamic = "force-dynamic";
@@ -39,15 +35,9 @@ export default async function RemissionsTransitQueuePage() {
 
   const { data: employee } = await supabase
     .from("employees")
-    .select("site_id,role")
+    .select("site_id")
     .eq("id", user.id)
     .single();
-  const actualRole = String(employee?.role ?? "");
-  const overrideRole = await getRoleOverrideFromCookies();
-  const effectiveRole = canUseRoleOverride(actualRole, overrideRole)
-    ? String(overrideRole ?? "")
-    : actualRole;
-  const normalizedEffectiveRole = effectiveRole.trim().toLowerCase();
 
   const { data: employeeSiteRows } = await supabase
     .from("employee_sites")
@@ -63,18 +53,13 @@ export default async function RemissionsTransitQueuePage() {
     )
   );
 
-  const candidateSites =
-    normalizedEffectiveRole === "conductor"
-      ? (((await supabase
-          .from("sites")
-          .select("id,name,site_type")
-          .order("name", { ascending: true })).data ?? []) as SiteRow[])
-      : (((candidateSiteIds.length
-          ? await supabase
-              .from("sites")
-              .select("id,name,site_type")
-              .in("id", candidateSiteIds)
-          : { data: [] as SiteRow[] }).data ?? []) as SiteRow[]);
+  const candidateSites = (((await supabase
+    .from("sites")
+    .select("id,name,site_type")
+    .order("name", { ascending: true })).data ?? []) as SiteRow[]).filter((site) => {
+      if (!candidateSiteIds.length) return true;
+      return candidateSiteIds.includes(site.id);
+    });
   const capabilitySiteIds = candidateSites.map((site) => site.id).filter(Boolean);
   const { data: capabilityRows } = capabilitySiteIds.length
     ? await supabase
@@ -98,12 +83,11 @@ export default async function RemissionsTransitQueuePage() {
   const transitSiteIds = (
     await Promise.all(
       productionCenterSites.map(async (site) => {
-        const canTransit = await checkPermissionWithRoleOverride({
+        const canTransit = await checkOperationalPermission({
           supabase,
-          appId: "nexo",
-          code: PERMISSIONS.remissionsTransit,
-          context: { siteId: site.id },
-          actualRole,
+          permissionCode: `nexo.${PERMISSIONS.remissionsTransit}`,
+          siteId: site.id,
+          appCode: "nexo",
         });
         return canTransit ? site.id : "";
       })

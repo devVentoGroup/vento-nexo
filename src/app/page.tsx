@@ -2,6 +2,7 @@
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 
 import { requireAppAccess } from "@/lib/auth/guard";
+import { checkOperationalPermission } from "@/lib/auth/operational-context";
 import {
   canUseRoleOverride,
   checkPermissionWithRoleOverride,
@@ -416,26 +417,23 @@ export default async function Home({
         context: { siteId: activeSiteId },
         actualRole: role,
       }),
-      checkPermissionWithRoleOverride({
+      checkOperationalPermission({
         supabase,
-        appId: APP_ID,
-        code: PERMISSIONS.remissionsRequest,
-        context: { siteId: activeSiteId },
-        actualRole: role,
+        permissionCode: `${APP_ID}.${PERMISSIONS.remissionsRequest}`,
+        siteId: activeSiteId,
+        appCode: APP_ID,
       }),
-      checkPermissionWithRoleOverride({
+      checkOperationalPermission({
         supabase,
-        appId: APP_ID,
-        code: PERMISSIONS.remissionsPrepare,
-        context: { siteId: activeSiteId },
-        actualRole: role,
+        permissionCode: `${APP_ID}.${PERMISSIONS.remissionsPrepare}`,
+        siteId: activeSiteId,
+        appCode: APP_ID,
       }),
-      checkPermissionWithRoleOverride({
+      checkOperationalPermission({
         supabase,
-        appId: APP_ID,
-        code: PERMISSIONS.remissionsReceive,
-        context: { siteId: activeSiteId },
-        actualRole: role,
+        permissionCode: `${APP_ID}.${PERMISSIONS.remissionsReceive}`,
+        siteId: activeSiteId,
+        appCode: APP_ID,
       }),
       checkPermissionWithRoleOverride({
         supabase,

@@ -1,7 +1,11 @@
 ﻿import Link from "next/link";
 
 import { requireAppAccess } from "@/lib/auth/guard";
-import { checkPermissionWithRoleOverride } from "@/lib/auth/role-override";
+import {
+  buildOperationalBlockMessage,
+  checkOperationalPermission,
+  getOperationalContext,
+} from "@/lib/auth/operational-context";
 
 export const dynamic = "force-dynamic";
 
@@ -331,19 +335,35 @@ export default async function RemissionsPreparePage({
     );
   }
 
-  const { data: employeeRow } = await supabase
-    .from("employees")
-    .select("role")
-    .eq("id", user.id)
-    .single();
-
-  const role = String((employeeRow as { role?: string } | null)?.role ?? "");
-  const canPreparePermission = await checkPermissionWithRoleOverride({
+  const opContext = await getOperationalContext({
     supabase,
-    appId: "nexo",
-    code: "inventory.remissions.prepare",
-    context: { siteId },
-    actualRole: role,
+    employeeId: user.id,
+    siteId,
+    appCode: "nexo",
+  });
+
+  if (!opContext?.can_operate) {
+    return (
+      <div className="w-full">
+        <Link href="/inventory/remissions" className="ui-caption underline">
+          Volver al hub de remisiones
+        </Link>
+        <div className="mt-4 ui-alert ui-alert--neutral">
+          {buildOperationalBlockMessage(
+            opContext,
+            "No puedes preparar remisiones en este momento para esta sede."
+          )}
+        </div>
+      </div>
+    );
+  }
+
+  const canPreparePermission = await checkOperationalPermission({
+    supabase,
+    permissionCode: "nexo.inventory.remissions.prepare",
+    siteId,
+    areaId: opContext.active_area_id,
+    appCode: "nexo",
   });
 
   if (!canPreparePermission) {
@@ -353,7 +373,7 @@ export default async function RemissionsPreparePage({
           Volver al hub de remisiones
         </Link>
         <div className="mt-4 ui-alert ui-alert--neutral">
-          Tu rol actual no tiene permiso para preparar remisiones en esta sede.
+          Tu turno activo no tiene permiso para preparar remisiones en esta sede.
         </div>
       </div>
     );

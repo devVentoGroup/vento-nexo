@@ -126,7 +126,7 @@ const SALE_CATEGORY_PRIORITY = [
 ];
 
 const saleCategoryPriorityMap = new Map(
-  SALE_CATEGORY_PRIORITY.map((label, index) => [label.toLowerCase(), index])
+  SALE_CATEGORY_PRIORITY.map((label, index) => [label.toLowerCase(), index]),
 );
 
 function formatQuantity(value: number | null | undefined) {
@@ -142,7 +142,9 @@ function getStockUnitCode(product: Option | null | undefined) {
 }
 
 function normalizeMeasurementMode(value: unknown): MeasurementMode {
-  const raw = String(value ?? "").trim().toLowerCase();
+  const raw = String(value ?? "")
+    .trim()
+    .toLowerCase();
   if (
     raw === "variable_weight" ||
     raw === "count_with_weight" ||
@@ -153,22 +155,36 @@ function normalizeMeasurementMode(value: unknown): MeasurementMode {
   return "fixed_presentation";
 }
 
-function getProductMeasurementMode(product: Option | null | undefined): MeasurementMode {
+function getProductMeasurementMode(
+  product: Option | null | undefined,
+): MeasurementMode {
   return normalizeMeasurementMode(product?.measurement_mode);
 }
 
-function isProducedPackagedProduct(product: Option | null | undefined): boolean {
-  const productType = String(product?.product_type ?? "").trim().toLowerCase();
-  const inventoryKind = String(product?.inventory_kind ?? "").trim().toLowerCase();
-  return productType === "preparacion" || (productType === "venta" && inventoryKind !== "resale");
+function isProducedPackagedProduct(
+  product: Option | null | undefined,
+): boolean {
+  const productType = String(product?.product_type ?? "")
+    .trim()
+    .toLowerCase();
+  const inventoryKind = String(product?.inventory_kind ?? "")
+    .trim()
+    .toLowerCase();
+  return (
+    productType === "preparacion" ||
+    (productType === "venta" && inventoryKind !== "resale")
+  );
 }
 
 function usesFixedPresentation(product: Option | null | undefined): boolean {
-  return !isProducedPackagedProduct(product) && getProductMeasurementMode(product) === "fixed_presentation";
+  return (
+    !isProducedPackagedProduct(product) &&
+    getProductMeasurementMode(product) === "fixed_presentation"
+  );
 }
 
 function getMeasurementModeLabel(product: Option | null | undefined): string {
-  if (isProducedPackagedProduct(product)) return "Empaques FOGO";
+  if (isProducedPackagedProduct(product)) return "Empaques disponibles";
 
   switch (getProductMeasurementMode(product)) {
     case "variable_weight":
@@ -179,15 +195,20 @@ function getMeasurementModeLabel(product: Option | null | undefined): string {
       return "Cantidad real";
     case "fixed_presentation":
     default:
-      return "Presentación fija";
+      return "Pedir por presentación";
   }
 }
 
-function getActualQuantityDisplayLabel(product: Option | null | undefined, stockUnitCode: string): string {
+function getActualQuantityDisplayLabel(
+  product: Option | null | undefined,
+  stockUnitCode: string,
+): string {
   const measurementMode = getProductMeasurementMode(product);
   const unitCode = stockUnitCode || "un";
-  if (isProducedPackagedProduct(product)) return `${unitCode} por empaques FOGO`;
-  if (measurementMode === "count_with_weight") return `${unitCode} real + conteo físico`;
+  if (isProducedPackagedProduct(product))
+    return `${unitCode} por empaques disponibles`;
+  if (measurementMode === "count_with_weight")
+    return `${unitCode} real + conteo físico`;
   if (measurementMode === "bulk_volume") return `${unitCode} real`;
   if (measurementMode === "variable_weight") return `${unitCode} real`;
   return unitCode;
@@ -208,7 +229,7 @@ function getInputModeHelperText(product: Option | null | undefined): string {
     return "Se arma con empaques reales de lote. Si la cantidad es intermedia, debes aceptar fraccionamiento.";
   }
   if (measurementMode === "fixed_presentation") {
-    return "El satélite pide en la presentación de remisión. Centro podrá despachar una combinación equivalente.";
+    return "La sede pide en una presentación clara. Centro podrá despachar una combinación equivalente.";
   }
   if (measurementMode === "count_with_weight") {
     return "Solicita por peso real. El conteo físico se confirma al preparar, despachar o recibir.";
@@ -264,23 +285,30 @@ function getOperationalEquivalenceLabel(params: {
 
 function getRemissionPresentationLabel(
   profile: ProductUomProfile | null | undefined,
-  stockUnitCode: string
+  stockUnitCode: string,
 ) {
   const label = String(profile?.label ?? "").trim();
   if (label) return label;
-  return stockUnitCode || "Sin presentación definida";
+  return stockUnitCode || "Unidad base";
 }
 
 function getRemissionInputUnitCode(
   profile: ProductUomProfile | null | undefined,
-  stockUnitCode: string
+  stockUnitCode: string,
 ) {
-  return normalizeUnitCode(profile?.input_unit_code ?? "") || stockUnitCode || "un";
+  return (
+    normalizeUnitCode(profile?.input_unit_code ?? "") || stockUnitCode || "un"
+  );
 }
 
-function productionPackageLabel(row: ProductionPackageOption, stockUnitCode: string): string {
+function productionPackageLabel(
+  row: ProductionPackageOption,
+  stockUnitCode: string,
+): string {
   const unitCode = normalizeUnitCode(row.unitCode || stockUnitCode || "un");
-  const label = String(row.packageLabel ?? "").trim() || `Empaque ${row.packageIndex ?? ""}`.trim();
+  const label =
+    String(row.packageLabel ?? "").trim() ||
+    `Empaque ${row.packageIndex ?? ""}`.trim();
   return `${label} · ${formatQuantity(row.remainingQty)} ${unitCode}`;
 }
 
@@ -314,7 +342,7 @@ function buildPackagePlan(params: {
       return productionPackageLabel(a, stockUnitCode).localeCompare(
         productionPackageLabel(b, stockUnitCode),
         "es",
-        { numeric: true, sensitivity: "base" }
+        { numeric: true, sensitivity: "base" },
       );
     });
 
@@ -343,7 +371,9 @@ function buildPackagePlan(params: {
     pendingQty = roundQuantity(pendingQty - dispatchQty);
   }
 
-  const total = roundQuantity(items.reduce((sum, item) => sum + Number(item.dispatchQty ?? 0), 0));
+  const total = roundQuantity(
+    items.reduce((sum, item) => sum + Number(item.dispatchQty ?? 0), 0),
+  );
   const shortage = roundQuantity(Math.max(requestedQty - total, 0));
 
   return {
@@ -381,7 +411,10 @@ export function RemissionsItems({
     }
     const selected = new Map<string, ProductUomProfile>();
     for (const [productId, profiles] of profilesByProduct.entries()) {
-      const preferred = selectRemissionRequestUomProfile({ profiles, productId });
+      const preferred = selectRemissionRequestUomProfile({
+        profiles,
+        productId,
+      });
       if (preferred) selected.set(productId, preferred);
     }
     return selected;
@@ -395,7 +428,9 @@ export function RemissionsItems({
       const siteId = String(row.siteId ?? "").trim();
       if (!productId || !siteId) continue;
 
-      const status = String(row.status ?? "available").trim().toLowerCase();
+      const status = String(row.status ?? "available")
+        .trim()
+        .toLowerCase();
       if (!["available", "opened", "reserved"].includes(status)) continue;
 
       const remainingQty = Number(row.remainingQty ?? 0);
@@ -412,17 +447,20 @@ export function RemissionsItems({
 
   const getAvailablePackages = (productId: string) => {
     if (!selectedFromSiteId || !productId) return [];
-    return packagesByProductAndSite.get(`${selectedFromSiteId}|${productId}`) ?? [];
+    return (
+      packagesByProductAndSite.get(`${selectedFromSiteId}|${productId}`) ?? []
+    );
   };
 
   const productsById = useMemo(
     () => new Map(products.map((product) => [product.id, product])),
-    [products]
+    [products],
   );
 
   const initialRowsSource = useMemo(() => initialRows ?? [], [initialRows]);
   const normalizedInitialRows = useMemo<RemissionDraftRow[]>(() => {
-    if (!initialRowsSource.length) return [{ ...EMPTY_ROW, areaKind: defaultAreaKind }];
+    if (!initialRowsSource.length)
+      return [{ ...EMPTY_ROW, areaKind: defaultAreaKind }];
 
     return initialRowsSource.map((row, index) => {
       const productId = String(row.productId ?? "").trim();
@@ -432,7 +470,7 @@ export function RemissionsItems({
       const productUsesPackages = isProducedPackagedProduct(product);
       const profile =
         productId && productUsesFixedPresentation
-          ? defaultProfileByProduct.get(productId) ?? null
+          ? (defaultProfileByProduct.get(productId) ?? null)
           : null;
       const inputUnitCode = productUsesPackages
         ? stockUnitCode || "un"
@@ -444,13 +482,20 @@ export function RemissionsItems({
         productId,
         quantity: String(row.quantity ?? "").trim(),
         inputUnitCode,
-        inputUomProfileId: productUsesFixedPresentation ? profile?.id ?? "" : "",
+        inputUomProfileId: productUsesFixedPresentation
+          ? (profile?.id ?? "")
+          : "",
         areaKind: String(row.areaKind ?? "").trim() || defaultAreaKind,
         productionPackagePlan: row.productionPackagePlan ?? [],
         acceptPackageFraction: Boolean(row.acceptPackageFraction),
       };
     });
-  }, [defaultAreaKind, defaultProfileByProduct, initialRowsSource, productsById]);
+  }, [
+    defaultAreaKind,
+    defaultProfileByProduct,
+    initialRowsSource,
+    productsById,
+  ]);
 
   const [rows, setRows] = useState<Row[]>(normalizedInitialRows);
 
@@ -493,21 +538,29 @@ export function RemissionsItems({
   };
 
   const removeRow = (rowId: number) => {
-    setRows((prev) => (prev.length === 1 ? prev : prev.filter((row) => row.id !== rowId)));
+    setRows((prev) =>
+      prev.length === 1 ? prev : prev.filter((row) => row.id !== rowId),
+    );
   };
 
   const productOptions = useMemo(() => {
     const options = products.map((item) => {
-      const groupLabel = categoryNameById[String(item.category_id ?? "").trim()] ?? "Sin categoría";
+      const groupLabel =
+        categoryNameById[String(item.category_id ?? "").trim()] ??
+        "Sin categoría";
       const stockUnitCode = getStockUnitCode(item);
       const productUsesPackages = isProducedPackagedProduct(item);
       const measurementMode = getProductMeasurementMode(item);
       const productUsesFixedPresentation = usesFixedPresentation(item);
-      const profile = productUsesFixedPresentation ? defaultProfileByProduct.get(item.id) ?? null : null;
-      const availablePackages = selectedFromSiteId ? getAvailablePackages(item.id) : [];
+      const profile = productUsesFixedPresentation
+        ? (defaultProfileByProduct.get(item.id) ?? null)
+        : null;
+      const availablePackages = selectedFromSiteId
+        ? getAvailablePackages(item.id)
+        : [];
       const availablePackageQty = availablePackages.reduce(
         (sum, row) => sum + Number(row.remainingQty ?? 0),
-        0
+        0,
       );
       const presentationLabel = productUsesPackages
         ? `${availablePackages.length} empaque(s) · ${formatQuantity(availablePackageQty)} ${stockUnitCode}`
@@ -520,30 +573,41 @@ export function RemissionsItems({
         value: item.id,
         label: `${item.name ?? item.id} — ${presentationLabel}`,
         searchText: `${item.name ?? ""} ${item.unit ?? ""} ${item.stock_unit_code ?? ""} ${presentationLabel} ${modeLabel} ${groupLabel}`,
-        groupLabel:
-          productUsesPackages
-            ? `${groupLabel} · Empaques FOGO`
-            : productUsesFixedPresentation && !hasPresentation
-              ? `${groupLabel} · Sin presentación remisión`
-              : `${groupLabel} · ${modeLabel}`,
+        groupLabel: productUsesPackages
+          ? `${groupLabel} · Empaques disponibles`
+          : productUsesFixedPresentation && !hasPresentation
+            ? `${groupLabel} · Pedir por unidad base`
+            : `${groupLabel} · ${modeLabel}`,
       };
     });
 
     options.sort((a, b) => {
       const groupA = String(a.groupLabel ?? "").trim();
       const groupB = String(b.groupLabel ?? "").trim();
-      const rankA = saleCategoryPriorityMap.get(groupA.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
-      const rankB = saleCategoryPriorityMap.get(groupB.toLowerCase()) ?? Number.MAX_SAFE_INTEGER;
+      const rankA =
+        saleCategoryPriorityMap.get(groupA.toLowerCase()) ??
+        Number.MAX_SAFE_INTEGER;
+      const rankB =
+        saleCategoryPriorityMap.get(groupB.toLowerCase()) ??
+        Number.MAX_SAFE_INTEGER;
       if (rankA !== rankB) return rankA - rankB;
 
-      const groupCompare = groupA.localeCompare(groupB, "es", { sensitivity: "base" });
+      const groupCompare = groupA.localeCompare(groupB, "es", {
+        sensitivity: "base",
+      });
       if (groupCompare !== 0) return groupCompare;
 
       return a.label.localeCompare(b.label, "es", { sensitivity: "base" });
     });
 
     return options;
-  }, [products, categoryNameById, defaultProfileByProduct, packagesByProductAndSite, selectedFromSiteId]);
+  }, [
+    products,
+    categoryNameById,
+    defaultProfileByProduct,
+    packagesByProductAndSite,
+    selectedFromSiteId,
+  ]);
 
   return (
     <div className="space-y-3">
@@ -556,14 +620,16 @@ export function RemissionsItems({
         const productUsesFixedPresentation = usesFixedPresentation(product);
         const defaultProfile =
           row.productId && productUsesFixedPresentation
-            ? defaultProfileByProduct.get(row.productId) ?? null
+            ? (defaultProfileByProduct.get(row.productId) ?? null)
             : null;
         const effectiveInputUnitCode = productUsesPackages
           ? stockUnitCode || "un"
           : productUsesFixedPresentation
             ? getRemissionInputUnitCode(defaultProfile, stockUnitCode)
             : stockUnitCode || "un";
-        const effectiveInputUomProfileId = productUsesFixedPresentation ? defaultProfile?.id ?? "" : "";
+        const effectiveInputUomProfileId = productUsesFixedPresentation
+          ? (defaultProfile?.id ?? "")
+          : "";
         const remissionPresentationLabel = productUsesPackages
           ? "Empaques reales FOGO"
           : productUsesFixedPresentation
@@ -579,15 +645,18 @@ export function RemissionsItems({
         });
         const packagePlanReady =
           !productUsesPackages ||
-          (packagePlan.covered && (!packagePlan.hasFractional || Boolean(row.acceptPackageFraction)));
+          (packagePlan.covered &&
+            (!packagePlan.hasFractional || Boolean(row.acceptPackageFraction)));
         const rowReady = Boolean(
           row.productId &&
           Number.isFinite(quantityValue) &&
           quantityValue > 0 &&
           effectiveInputUnitCode &&
-          packagePlanReady
+          packagePlanReady,
         );
-        const missingPresentation = Boolean(row.productId && productUsesFixedPresentation && !defaultProfile);
+        const missingPresentation = Boolean(
+          row.productId && productUsesFixedPresentation && !defaultProfile,
+        );
         const conversionLabel = getOperationalEquivalenceLabel({
           product,
           profile: defaultProfile,
@@ -595,39 +664,53 @@ export function RemissionsItems({
           stockUnitCode,
           packagePlan,
         });
-        const referenceMeta = row.productId ? referenceStockByProduct[row.productId] ?? null : null;
+        const referenceMeta = row.productId
+          ? (referenceStockByProduct[row.productId] ?? null)
+          : null;
         const selectedAreaLabel =
-          areaOptions.find((option) => option.value === (row.areaKind || defaultAreaKind))?.label ??
+          areaOptions.find(
+            (option) => option.value === (row.areaKind || defaultAreaKind),
+          )?.label ??
           (row.areaKind || defaultAreaKind);
-        const normalizedSelectedAreaLabel = String(selectedAreaLabel ?? "").trim();
+        const normalizedSelectedAreaLabel = String(
+          selectedAreaLabel ?? "",
+        ).trim();
         const areaDestinationDisplay =
-          lockAreaKind && normalizedSelectedAreaLabel && normalizedSelectedAreaLabel.toLowerCase() !== "todos"
+          lockAreaKind &&
+          normalizedSelectedAreaLabel &&
+          normalizedSelectedAreaLabel.toLowerCase() !== "todos"
             ? normalizedSelectedAreaLabel
             : "Recepción global";
         const availableReference = Number(referenceMeta?.currentQty ?? 0);
         const referenceComparison =
           row.productId && referenceSiteName
             ? (() => {
-              try {
-                const requestedInStock = rowReady || (Number.isFinite(quantityValue) && quantityValue > 0)
-                  ? productUsesPackages
-                    ? roundQuantity(quantityValue)
-                    : convertByProductProfile({
-                      quantityInInput: Number.isFinite(quantityValue) ? quantityValue : 0,
-                      inputUnitCode: effectiveInputUnitCode,
-                      stockUnitCode,
-                      profile: defaultProfile,
-                    }).quantityInStock
-                  : null;
-                const shortage =
-                  requestedInStock !== null
-                    ? roundQuantity(Math.max(requestedInStock - availableReference, 0))
-                    : 0;
-                return { requestedInStock, shortage };
-              } catch {
-                return { requestedInStock: null, shortage: 0 };
-              }
-            })()
+                try {
+                  const requestedInStock =
+                    rowReady ||
+                    (Number.isFinite(quantityValue) && quantityValue > 0)
+                      ? productUsesPackages
+                        ? roundQuantity(quantityValue)
+                        : convertByProductProfile({
+                            quantityInInput: Number.isFinite(quantityValue)
+                              ? quantityValue
+                              : 0,
+                            inputUnitCode: effectiveInputUnitCode,
+                            stockUnitCode,
+                            profile: defaultProfile,
+                          }).quantityInStock
+                      : null;
+                  const shortage =
+                    requestedInStock !== null
+                      ? roundQuantity(
+                          Math.max(requestedInStock - availableReference, 0),
+                        )
+                      : 0;
+                  return { requestedInStock, shortage };
+                } catch {
+                  return { requestedInStock: null, shortage: 0 };
+                }
+              })()
             : null;
 
         return (
@@ -639,7 +722,9 @@ export function RemissionsItems({
                     {product?.name ?? `Item ${idx + 1}`}
                   </div>
                   <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                    {rowReady ? "Línea lista para solicitud" : "Completa producto, cantidad y empaques"}
+                    {rowReady
+                      ? "Línea lista para solicitud"
+                      : "Completa producto, cantidad y empaques"}
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
@@ -648,11 +733,13 @@ export function RemissionsItems({
                       {getMeasurementModeLabel(product)}
                     </span>
                   ) : null}
-                  <span className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
-                    rowReady
-                      ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
-                      : "border border-slate-200 bg-white text-slate-600"
-                  }`}>
+                  <span
+                    className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
+                      rowReady
+                        ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
+                        : "border border-slate-200 bg-white text-slate-600"
+                    }`}
+                  >
                     {rowReady ? "Completo" : "Pendiente"}
                   </span>
                   {referenceComparison?.shortage ? (
@@ -670,29 +757,37 @@ export function RemissionsItems({
                     name="item_product_id"
                     value={row.productId}
                     onValueChange={(nextProductId) => {
-                      const nextProduct = productsById.get(nextProductId) ?? null;
+                      const nextProduct =
+                        productsById.get(nextProductId) ?? null;
                       const nextStockUnitCode = getStockUnitCode(nextProduct);
-                      const nextUsesFixedPresentation = usesFixedPresentation(nextProduct);
-                      const nextUsesPackages = isProducedPackagedProduct(nextProduct);
+                      const nextUsesFixedPresentation =
+                        usesFixedPresentation(nextProduct);
+                      const nextUsesPackages =
+                        isProducedPackagedProduct(nextProduct);
                       const nextProfile = nextUsesFixedPresentation
-                        ? defaultProfileByProduct.get(nextProductId) ?? null
+                        ? (defaultProfileByProduct.get(nextProductId) ?? null)
                         : null;
                       setRows((prev) =>
                         prev.map((current) =>
                           current.id === row.id
                             ? {
-                              ...current,
-                              productId: nextProductId,
-                              inputUnitCode: nextUsesPackages
-                                ? nextStockUnitCode || "un"
-                                : nextUsesFixedPresentation
-                                  ? getRemissionInputUnitCode(nextProfile, nextStockUnitCode)
-                                  : nextStockUnitCode || "un",
-                              inputUomProfileId: nextUsesFixedPresentation ? nextProfile?.id ?? "" : "",
-                              acceptPackageFraction: false,
-                            }
-                            : current
-                        )
+                                ...current,
+                                productId: nextProductId,
+                                inputUnitCode: nextUsesPackages
+                                  ? nextStockUnitCode || "un"
+                                  : nextUsesFixedPresentation
+                                    ? getRemissionInputUnitCode(
+                                        nextProfile,
+                                        nextStockUnitCode,
+                                      )
+                                    : nextStockUnitCode || "un",
+                                inputUomProfileId: nextUsesFixedPresentation
+                                  ? (nextProfile?.id ?? "")
+                                  : "",
+                                acceptPackageFraction: false,
+                              }
+                            : current,
+                        ),
                       );
                     }}
                     options={productOptions}
@@ -708,7 +803,9 @@ export function RemissionsItems({
                 </label>
 
                 <label className="flex flex-col gap-1 md:col-span-2">
-                  <span className="ui-label">{getQuantityFieldLabel(product)}</span>
+                  <span className="ui-label">
+                    {getQuantityFieldLabel(product)}
+                  </span>
                   <input
                     type="number"
                     inputMode="decimal"
@@ -727,21 +824,45 @@ export function RemissionsItems({
                                 quantity: event.target.value,
                                 acceptPackageFraction: false,
                               }
-                            : current
-                        )
+                            : current,
+                        ),
                       )
                     }
                   />
                 </label>
 
                 <label className="flex flex-col gap-1 md:col-span-2">
-                  <span className="ui-label">{productUsesPackages ? "Empaque de solicitud" : productUsesFixedPresentation ? "Presentación de solicitud" : "Unidad real de solicitud"}</span>
+                  <span className="ui-label">
+                    {productUsesPackages
+                      ? "Empaque de solicitud"
+                      : productUsesFixedPresentation
+                        ? "Presentación de solicitud"
+                        : "Unidad real de solicitud"}
+                  </span>
                   <div className="ui-input flex h-10 items-center bg-[linear-gradient(180deg,rgba(255,251,235,0.9)_0%,rgba(255,255,255,0.92)_100%)] font-semibold text-[var(--ui-text)]">
-                    {row.productId ? remissionPresentationLabel : "Selecciona producto"}
+                    {row.productId
+                      ? remissionPresentationLabel
+                      : "Selecciona producto"}
                   </div>
-                  <input type="hidden" name="item_input_unit_code" value={effectiveInputUnitCode} />
-                  <input type="hidden" name="item_input_uom_profile_id" value={effectiveInputUomProfileId} />
-                  <input type="hidden" name="item_production_package_plan" value={productUsesPackages ? JSON.stringify(packagePlan.items) : "[]"} />
+                  <input
+                    type="hidden"
+                    name="item_input_unit_code"
+                    value={effectiveInputUnitCode}
+                  />
+                  <input
+                    type="hidden"
+                    name="item_input_uom_profile_id"
+                    value={effectiveInputUomProfileId}
+                  />
+                  <input
+                    type="hidden"
+                    name="item_production_package_plan"
+                    value={
+                      productUsesPackages
+                        ? JSON.stringify(packagePlan.items)
+                        : "[]"
+                    }
+                  />
                   <span className="text-xs text-[var(--ui-muted)]">
                     {getInputModeHelperText(product)}
                   </span>
@@ -754,7 +875,11 @@ export function RemissionsItems({
                       <div className="ui-input flex h-10 items-center bg-[linear-gradient(180deg,rgba(255,251,235,0.9)_0%,rgba(255,255,255,0.92)_100%)] font-semibold text-[var(--ui-text)]">
                         {areaDestinationDisplay}
                       </div>
-                      <input type="hidden" name="item_area_kind" value={row.areaKind || defaultAreaKind} />
+                      <input
+                        type="hidden"
+                        name="item_area_kind"
+                        value={row.areaKind || defaultAreaKind}
+                      />
                     </>
                   ) : (
                     <select
@@ -764,29 +889,40 @@ export function RemissionsItems({
                       onChange={(event) =>
                         setRows((prev) =>
                           prev.map((current) =>
-                            current.id === row.id ? { ...current, areaKind: event.target.value } : current
-                          )
+                            current.id === row.id
+                              ? { ...current, areaKind: event.target.value }
+                              : current,
+                          ),
                         )
                       }
                     >
                       <option value="">Área destino (opcional)</option>
                       {areaOptions.map((option) => (
                         <option key={option.value} value={option.value}>
-                          {option.value === "general" ? "Recepción global" : option.label}
+                          {option.value === "general"
+                            ? "Recepción global"
+                            : option.label}
                         </option>
                       ))}
                     </select>
                   )}
                   <span className="text-xs text-[var(--ui-muted)]">
-                    Indica dónde se recibe en la sede solicitante. El área/LOC de preparación se define en la ficha del producto y en despacho.
+                    Indica dónde se recibe en la sede solicitante. El área/LOC
+                    de preparación se define en la ficha del producto y en
+                    despacho.
                   </span>
                 </label>
 
-                <input type="hidden" name="item_quantity_in_input" value={row.quantity} />
+                <input
+                  type="hidden"
+                  name="item_quantity_in_input"
+                  value={row.quantity}
+                />
 
                 {missingPresentation ? (
                   <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 md:col-span-12">
-                    Este item no tiene presentación de remisión para solicitud/remisión. Configúrala en la ficha del producto antes de usarlo en operación real.
+                    Este producto se pedirá en su unidad base porque aún no
+                    tiene una presentación de solicitud configurada.
                   </div>
                 ) : null}
 
@@ -797,7 +933,11 @@ export function RemissionsItems({
                         Empaques reales disponibles: {availablePackages.length}
                       </div>
                       <div className="font-semibold">
-                        Plan: {formatQuantity(packagePlan.total)} / {Number.isFinite(quantityValue) ? formatQuantity(quantityValue) : "0"} {stockUnitCode || "un"}
+                        Plan: {formatQuantity(packagePlan.total)} /{" "}
+                        {Number.isFinite(quantityValue)
+                          ? formatQuantity(quantityValue)
+                          : "0"}{" "}
+                        {stockUnitCode || "un"}
                       </div>
                     </div>
 
@@ -809,7 +949,9 @@ export function RemissionsItems({
                           </span>
                         ))}
                         {availablePackages.length > 8 ? (
-                          <span className="ui-chip">+{availablePackages.length - 8}</span>
+                          <span className="ui-chip">
+                            +{availablePackages.length - 8}
+                          </span>
                         ) : null}
                       </div>
                     ) : (
@@ -821,8 +963,13 @@ export function RemissionsItems({
                     {packagePlan.items.length > 0 ? (
                       <div className="mt-3 space-y-1">
                         {packagePlan.items.map((item) => (
-                          <div key={`${row.id}-${item.packageId}`} className="rounded-xl border border-sky-100 bg-white px-3 py-2">
-                            {item.fractional ? "Fracción" : "Completo"} · {item.label} → {formatQuantity(item.dispatchQty)} {item.unitCode || stockUnitCode}
+                          <div
+                            key={`${row.id}-${item.packageId}`}
+                            className="rounded-xl border border-sky-100 bg-white px-3 py-2"
+                          >
+                            {item.fractional ? "Fracción" : "Completo"} ·{" "}
+                            {item.label} → {formatQuantity(item.dispatchQty)}{" "}
+                            {item.unitCode || stockUnitCode}
                           </div>
                         ))}
                       </div>
@@ -830,7 +977,9 @@ export function RemissionsItems({
 
                     {packagePlan.shortage > 0 ? (
                       <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 font-semibold text-amber-900">
-                        Faltan {formatQuantity(packagePlan.shortage)} {stockUnitCode || "un"} en empaques disponibles del origen.
+                        Faltan {formatQuantity(packagePlan.shortage)}{" "}
+                        {stockUnitCode || "un"} en empaques disponibles del
+                        origen.
                       </div>
                     ) : null}
 
@@ -844,14 +993,19 @@ export function RemissionsItems({
                             setRows((prev) =>
                               prev.map((current) =>
                                 current.id === row.id
-                                  ? { ...current, acceptPackageFraction: event.target.checked }
-                                  : current
-                              )
+                                  ? {
+                                      ...current,
+                                      acceptPackageFraction:
+                                        event.target.checked,
+                                    }
+                                  : current,
+                              ),
                             )
                           }
                         />
                         <span>
-                          Acepto fraccionar un empaque. El despacho deberá dejar remanente físico del empaque abierto.
+                          Acepto fraccionar un empaque. El despacho deberá dejar
+                          remanente físico del empaque abierto.
                         </span>
                       </label>
                     ) : null}
@@ -873,9 +1027,11 @@ export function RemissionsItems({
                         : "border-emerald-200 bg-emerald-50 text-emerald-800"
                     }`}
                   >
-                    Stock referencial en {referenceSiteName}: {availableReference} {stockUnitCode || "un"}
+                    Stock referencial en {referenceSiteName}:{" "}
+                    {availableReference} {stockUnitCode || "un"}
                     {referenceComparison.requestedInStock !== null
-                      ? referenceComparison.requestedInStock > availableReference
+                      ? referenceComparison.requestedInStock >
+                        availableReference
                         ? ` · supera por ${referenceComparison.shortage} ${stockUnitCode || "un"}`
                         : ""
                       : ""}
@@ -897,7 +1053,11 @@ export function RemissionsItems({
             </div>
 
             {isLast ? (
-              <button type="button" className="ui-btn ui-btn--ghost w-fit shadow-sm" onClick={addRow}>
+              <button
+                type="button"
+                className="ui-btn ui-btn--ghost w-fit shadow-sm"
+                onClick={addRow}
+              >
                 + Agregar otro item
               </button>
             ) : null}

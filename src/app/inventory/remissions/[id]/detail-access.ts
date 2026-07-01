@@ -8,6 +8,7 @@ import {
 } from "@/lib/auth/role-override";
 import {
   buildOperationalBlockMessage,
+  checkOperationalPermission,
   getOperationalContext,
 } from "@/lib/auth/operational-context";
 import type { SiteOperationalCapabilities } from "@/lib/inventory/site-capabilities";
@@ -86,12 +87,11 @@ export async function loadAccessContext(
     if (remissionSimulateRoleOverride) {
       return isPermissionAllowedForRole(supabase, effectiveRole, APP_ID, code, { siteId: sid });
     }
-    return checkPermissionWithRoleOverride({
+    return checkOperationalPermission({
       supabase,
-      appId: APP_ID,
-      code,
-      context: { siteId: sid },
-      actualRole: role,
+      permissionCode: `${APP_ID}.${code}`,
+      siteId: sid,
+      appCode: APP_ID,
     });
   }
   const { data: settings } = await supabase
