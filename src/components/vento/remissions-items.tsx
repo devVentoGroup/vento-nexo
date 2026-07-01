@@ -223,6 +223,11 @@ function getQuantityFieldLabel(product: Option | null | undefined): string {
   return "Cantidad real solicitada";
 }
 
+function getRequestUnitLabel(unitCode: string | null | undefined) {
+  const normalized = normalizeUnitCode(unitCode ?? "");
+  return normalized || "un";
+}
+
 function getInputModeHelperText(product: Option | null | undefined): string {
   const measurementMode = getProductMeasurementMode(product);
   if (isProducedPackagedProduct(product)) {
@@ -737,7 +742,14 @@ export function RemissionsItems({
                 </label>
 
                 <label className="flex flex-col gap-1 md:col-span-4">
-                  <span className="ui-label">Cantidad</span>
+                  <span className="ui-label">
+                    Cantidad
+                    {row.productId ? (
+                      <span className="ml-1 font-semibold text-[var(--ui-muted)]">
+                        ({getRequestUnitLabel(effectiveInputUnitCode)})
+                      </span>
+                    ) : null}
+                  </span>
                   <input
                     type="number"
                     inputMode="decimal"
