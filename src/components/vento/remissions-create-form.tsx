@@ -230,21 +230,11 @@ export function RemissionsCreateForm({
           row.inputUnitCode.trim() ||
           row.areaKind.trim()
         );
-        const isProducedPackaged = isProducedPackagedProduct(product);
-        const packagePlanTotal = sumProductionPackagePlan(row);
-        const packagePlanMatches =
-          !isProducedPackaged || Math.abs(packagePlanTotal - qty) <= 0.001;
-        const hasAcceptedFraction =
-          !isProducedPackaged ||
-          !(row.productionPackagePlan ?? []).some((entry) => Boolean(entry.fractional)) ||
-          Boolean(row.acceptPackageFraction);
         const valid = Boolean(
           row.productId &&
           product?.name &&
           Number.isFinite(qty) &&
-          qty > 0 &&
-          packagePlanMatches &&
-          hasAcceptedFraction
+          qty > 0
         );
 
         if (row.areaKind && areaMap.has(row.areaKind)) {
@@ -322,10 +312,10 @@ export function RemissionsCreateForm({
             hasReferenceShortage,
             hasPresentationProfile: Boolean(selectedProfile?.id),
             requiresPresentationProfile: isFixedPresentation,
-            requiresPackagePlan: isProducedPackaged,
+            requiresPackagePlan: false,
             packagePlanCount: row.productionPackagePlan?.length ?? 0,
-            packagePlanTotal,
-            packagePlanMatches,
+            packagePlanTotal: 0,
+            packagePlanMatches: true,
             hasPackageFraction:
               row.productionPackagePlan?.some((entry) => Boolean(entry.fractional)) ?? false,
             acceptPackageFraction: Boolean(row.acceptPackageFraction),
@@ -562,32 +552,7 @@ export function RemissionsCreateForm({
       </section>
 
       <section className="rounded-[28px] border border-[rgba(200,210,220,0.95)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(244,248,252,0.98)_100%)] p-5 shadow-[0_18px_48px_rgba(15,23,42,0.08)]">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="ui-h3">Productos</div>
-            <div className="mt-1 ui-caption">
-              {siteMode === "simple"
-                ? "Insumos usan presentación manual; preparaciones usan empaques reales FOGO; variables se solicitan por cantidad real."
-                : "Insumos usan presentación manual; preparaciones usan empaques reales FOGO; variables se solicitan por cantidad real y área."}
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <span className="ui-chip">{selectedItems.length} item(s)</span>
-            {inventoryPostingEnabled ? (
-              draftSummary.referenceShortageRows > 0 ? (
-                <span className="ui-chip ui-chip--warn">
-                  {draftSummary.referenceShortageRows} con faltante
-                </span>
-              ) : (
-                <span className="ui-chip ui-chip--success">
-                  {draftSummary.referenceCoveredRows} cubiertos
-                </span>
-              )
-            ) : (
-              <span className="ui-chip">Sin impacto en inventario</span>
-            )}
-          </div>
-        </div>
+        <div className="ui-h3">Productos</div>
 
         <div className="mt-4">
           <RemissionsItems
@@ -616,12 +581,6 @@ export function RemissionsCreateForm({
         {draftSummary.incompleteRows > 0 ? (
           <div className="ui-alert ui-alert--warn mt-4">
             Hay {draftSummary.incompleteRows} fila(s) incompleta(s).
-          </div>
-        ) : null}
-
-        {inventoryPostingEnabled && selectedFromSite && draftSummary.referenceShortageRows > 0 ? (
-          <div className="ui-alert ui-alert--warn mt-4">
-            {draftSummary.referenceShortageRows} item(s) superan el stock referencial de {selectedFromSite.name}.
           </div>
         ) : null}
 

@@ -1082,132 +1082,6 @@ async function createRemission(formData: FormData) {
     );
   }
 
-  const packageDispatchItems = items.filter(
-    (item) => item.requires_package_dispatch,
-  );
-  if (packageDispatchItems.length > 0) {
-    const packageIds = Array.from(
-      new Set(
-        packageDispatchItems
-          .flatMap((item) =>
-            item.production_package_plan.map((entry) => entry.packageId),
-          )
-          .filter(Boolean),
-      ),
-    );
-
-    if (packageIds.length === 0) {
-      redirect(
-        "/inventory/remissions?error=" +
-          encodeURIComponent(
-            "Selecciona empaques reales de lote para los productos producidos.",
-          ),
-      );
-    }
-
-    const { data: selectedPackagesData, error: packagesErr } = await supabase
-      .from("production_batch_packages")
-      .select("id,site_id,product_id,remaining_qty,unit_code,status")
-      .in("id", packageIds);
-
-    if (packagesErr) {
-      redirect(
-        "/inventory/remissions?error=" +
-          encodeURIComponent(packagesErr.message),
-      );
-    }
-
-    const packagesById = new Map(
-      (
-        (selectedPackagesData ?? []) as Array<{
-          id: string;
-          site_id: string | null;
-          product_id: string | null;
-          remaining_qty: number | null;
-          unit_code: string | null;
-          status: string | null;
-        }>
-      ).map((row) => [row.id, row]),
-    );
-
-    const requestedByPackage = new Map<string, number>();
-
-    for (const item of packageDispatchItems) {
-      const planTotal = roundQuantity(
-        item.production_package_plan.reduce(
-          (sum, entry) => sum + Number(entry.dispatchQty ?? 0),
-          0,
-        ),
-      );
-      if (Math.abs(planTotal - item.quantity) > 0.001) {
-        redirect(
-          "/inventory/remissions?error=" +
-            encodeURIComponent(
-              "La suma de empaques seleccionados no coincide con la cantidad solicitada.",
-            ),
-        );
-      }
-
-      for (const entry of item.production_package_plan) {
-        const packageRow = packagesById.get(entry.packageId);
-        if (!packageRow) {
-          redirect(
-            "/inventory/remissions?error=" +
-              encodeURIComponent(
-                "Uno de los empaques seleccionados ya no existe.",
-              ),
-          );
-        }
-
-        const status = String(packageRow.status ?? "available")
-          .trim()
-          .toLowerCase();
-        const availableStatus = ["available", "opened", "reserved"].includes(
-          status,
-        );
-        const packageSiteId = String(packageRow.site_id ?? "").trim();
-        const packageProductId = String(packageRow.product_id ?? "").trim();
-
-        if (
-          !availableStatus ||
-          packageSiteId !== fromSiteId ||
-          packageProductId !== item.product_id
-        ) {
-          redirect(
-            "/inventory/remissions?error=" +
-              encodeURIComponent(
-                "Uno de los empaques seleccionados no pertenece al origen/producto solicitado.",
-              ),
-          );
-        }
-
-        requestedByPackage.set(
-          entry.packageId,
-          roundQuantity(
-            (requestedByPackage.get(entry.packageId) ?? 0) +
-              Number(entry.dispatchQty ?? 0),
-          ),
-        );
-      }
-    }
-
-    for (const [packageId, requestedQty] of requestedByPackage.entries()) {
-      const packageRow = packagesById.get(packageId);
-      const remainingQty = Number(packageRow?.remaining_qty ?? 0);
-      if (
-        !Number.isFinite(remainingQty) ||
-        requestedQty > remainingQty + 0.001
-      ) {
-        redirect(
-          "/inventory/remissions?error=" +
-            encodeURIComponent(
-              "Uno de los empaques seleccionados ya no tiene cantidad suficiente.",
-            ),
-        );
-      }
-    }
-  }
-
   if (!toSiteId || !fromSiteId) {
     redirect(
       "/inventory/remissions?error=" +
@@ -1996,44 +1870,21 @@ export default async function RemissionsPage({
       String(row.name ?? "").trim() || "Sin categoría de remisión",
     ]),
   );
-  productRows = productRows.map((row) => {
-    const remissionCategoryId = remissionCategoryIdByProductId.get(row.id);
-    if (
-      !remissionCategoryId ||
-      !remissionCategoryNameById.has(remissionCategoryId)
-    )
-      return row;
-    return {
-      ...row,
-      category_id: `remission:${remissionCategoryId}`,
-    };
-  });
-  const categoryIds = Array.from(
-    new Set(
-      productRows
-        .map((row) => String(row.category_id ?? "").trim())
-        .filter((categoryId) =>
-          Boolean(categoryId && !categoryId.startsWith("remission:")),
-        ),
-    ),
-  );
-  const { data: categoryData } = categoryIds.length
-    ? await supabase
-        .from("product_categories")
-        .select("id,name,parent_id")
-        .in("id", categoryIds)
-    : {
-        data: [] as Array<{
-          id: string;
-          name: string | null;
-          parent_id: string | null;
-        }>,
+  productRows = productRows
+    .map<ProductRow | null>((row) => {
+      const remissionCategoryId = remissionCategoryIdByProductId.get(row.id);
+      if (
+        !remissionCategoryId ||
+        !remissionCategoryNameById.has(remissionCategoryId)
+      )
+        return null;
+      return {
+        ...row,
+        category_id: `remission:${remissionCategoryId}`,
       };
-  const categoryNameById = new Map(
-    ((categoryData ?? []) as Array<{ id: string; name: string | null }>).map(
-      (row) => [row.id, String(row.name ?? "").trim() || "Sin categoría"],
-    ),
-  );
+    })
+    .filter((row): row is ProductRow => row !== null);
+  const categoryNameById = new Map<string, string>();
   for (const [
     categoryId,
     categoryName,

@@ -548,36 +548,11 @@ export function RemissionsItems({
       const groupLabel =
         categoryNameById[String(item.category_id ?? "").trim()] ??
         "Sin categoría";
-      const stockUnitCode = getStockUnitCode(item);
-      const productUsesPackages = isProducedPackagedProduct(item);
-      const measurementMode = getProductMeasurementMode(item);
-      const productUsesFixedPresentation = usesFixedPresentation(item);
-      const profile = productUsesFixedPresentation
-        ? (defaultProfileByProduct.get(item.id) ?? null)
-        : null;
-      const availablePackages = selectedFromSiteId
-        ? getAvailablePackages(item.id)
-        : [];
-      const availablePackageQty = availablePackages.reduce(
-        (sum, row) => sum + Number(row.remainingQty ?? 0),
-        0,
-      );
-      const presentationLabel = productUsesPackages
-        ? `${availablePackages.length} empaque(s) · ${formatQuantity(availablePackageQty)} ${stockUnitCode}`
-        : productUsesFixedPresentation
-          ? getRemissionPresentationLabel(profile, stockUnitCode)
-          : getActualQuantityDisplayLabel(item, stockUnitCode);
-      const modeLabel = getMeasurementModeLabel(item);
-      const hasPresentation = Boolean(profile?.id);
       return {
         value: item.id,
-        label: `${item.name ?? item.id} — ${presentationLabel}`,
-        searchText: `${item.name ?? ""} ${item.unit ?? ""} ${item.stock_unit_code ?? ""} ${presentationLabel} ${modeLabel} ${groupLabel}`,
-        groupLabel: productUsesPackages
-          ? `${groupLabel} · Empaques disponibles`
-          : productUsesFixedPresentation && !hasPresentation
-            ? `${groupLabel} · Pedir por unidad base`
-            : `${groupLabel} · ${modeLabel}`,
+        label: item.name ?? item.id,
+        searchText: `${item.name ?? ""} ${groupLabel}`,
+        groupLabel,
       };
     });
 
@@ -604,9 +579,6 @@ export function RemissionsItems({
   }, [
     products,
     categoryNameById,
-    defaultProfileByProduct,
-    packagesByProductAndSite,
-    selectedFromSiteId,
   ]);
 
   return (
@@ -643,27 +615,15 @@ export function RemissionsItems({
           requestedQty: Number.isFinite(quantityValue) ? quantityValue : 0,
           stockUnitCode,
         });
-        const packagePlanReady =
-          !productUsesPackages ||
-          (packagePlan.covered &&
-            (!packagePlan.hasFractional || Boolean(row.acceptPackageFraction)));
         const rowReady = Boolean(
           row.productId &&
           Number.isFinite(quantityValue) &&
           quantityValue > 0 &&
-          effectiveInputUnitCode &&
-          packagePlanReady,
+          effectiveInputUnitCode,
         );
         const missingPresentation = Boolean(
           row.productId && productUsesFixedPresentation && !defaultProfile,
         );
-        const conversionLabel = getOperationalEquivalenceLabel({
-          product,
-          profile: defaultProfile,
-          presentationLabel: remissionPresentationLabel,
-          stockUnitCode,
-          packagePlan,
-        });
         const referenceMeta = row.productId
           ? (referenceStockByProduct[row.productId] ?? null)
           : null;
@@ -721,37 +681,11 @@ export function RemissionsItems({
                   <div className="text-sm font-semibold text-[var(--ui-text)]">
                     {product?.name ?? `Item ${idx + 1}`}
                   </div>
-                  <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                    {rowReady
-                      ? "Línea lista para solicitud"
-                      : "Completa producto, cantidad y empaques"}
-                  </div>
-                </div>
-                <div className="flex items-center gap-2">
-                  {row.productId ? (
-                    <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[11px] font-semibold text-sky-800">
-                      {getMeasurementModeLabel(product)}
-                    </span>
-                  ) : null}
-                  <span
-                    className={`rounded-full px-3 py-1 text-[11px] font-semibold ${
-                      rowReady
-                        ? "border border-emerald-200 bg-emerald-50 text-emerald-800"
-                        : "border border-slate-200 bg-white text-slate-600"
-                    }`}
-                  >
-                    {rowReady ? "Completo" : "Pendiente"}
-                  </span>
-                  {referenceComparison?.shortage ? (
-                    <span className="rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold text-amber-800">
-                      Falta referencia
-                    </span>
-                  ) : null}
                 </div>
               </div>
 
               <div className="grid gap-3 p-4 md:grid-cols-12 md:items-start">
-                <label className="flex min-w-0 flex-col gap-1 md:col-span-5">
+                <label className="flex min-w-0 flex-col gap-1 md:col-span-8">
                   <span className="ui-label">Producto</span>
                   <SearchableSingleSelect
                     name="item_product_id"
@@ -802,10 +736,8 @@ export function RemissionsItems({
                   />
                 </label>
 
-                <label className="flex flex-col gap-1 md:col-span-2">
-                  <span className="ui-label">
-                    {getQuantityFieldLabel(product)}
-                  </span>
+                <label className="flex flex-col gap-1 md:col-span-4">
+                  <span className="ui-label">Cantidad</span>
                   <input
                     type="number"
                     inputMode="decimal"
@@ -831,87 +763,26 @@ export function RemissionsItems({
                   />
                 </label>
 
-                <label className="flex flex-col gap-1 md:col-span-2">
-                  <span className="ui-label">
-                    {productUsesPackages
-                      ? "Empaque de solicitud"
-                      : productUsesFixedPresentation
-                        ? "Presentación de solicitud"
-                        : "Unidad real de solicitud"}
-                  </span>
-                  <div className="ui-input flex h-10 items-center bg-[linear-gradient(180deg,rgba(255,251,235,0.9)_0%,rgba(255,255,255,0.92)_100%)] font-semibold text-[var(--ui-text)]">
-                    {row.productId
-                      ? remissionPresentationLabel
-                      : "Selecciona producto"}
-                  </div>
-                  <input
-                    type="hidden"
-                    name="item_input_unit_code"
-                    value={effectiveInputUnitCode}
-                  />
-                  <input
-                    type="hidden"
-                    name="item_input_uom_profile_id"
-                    value={effectiveInputUomProfileId}
-                  />
-                  <input
-                    type="hidden"
-                    name="item_production_package_plan"
-                    value={
-                      productUsesPackages
-                        ? JSON.stringify(packagePlan.items)
-                        : "[]"
-                    }
-                  />
-                  <span className="text-xs text-[var(--ui-muted)]">
-                    {getInputModeHelperText(product)}
-                  </span>
-                </label>
-
-                <label className="flex flex-col gap-1 md:col-span-3">
-                  <span className="ui-label">Área destino en sede</span>
-                  {siteMode === "simple" || lockAreaKind ? (
-                    <>
-                      <div className="ui-input flex h-10 items-center bg-[linear-gradient(180deg,rgba(255,251,235,0.9)_0%,rgba(255,255,255,0.92)_100%)] font-semibold text-[var(--ui-text)]">
-                        {areaDestinationDisplay}
-                      </div>
-                      <input
-                        type="hidden"
-                        name="item_area_kind"
-                        value={row.areaKind || defaultAreaKind}
-                      />
-                    </>
-                  ) : (
-                    <select
-                      name="item_area_kind"
-                      className="ui-input h-10"
-                      value={row.areaKind}
-                      onChange={(event) =>
-                        setRows((prev) =>
-                          prev.map((current) =>
-                            current.id === row.id
-                              ? { ...current, areaKind: event.target.value }
-                              : current,
-                          ),
-                        )
-                      }
-                    >
-                      <option value="">Área destino (opcional)</option>
-                      {areaOptions.map((option) => (
-                        <option key={option.value} value={option.value}>
-                          {option.value === "general"
-                            ? "Recepción global"
-                            : option.label}
-                        </option>
-                      ))}
-                    </select>
-                  )}
-                  <span className="text-xs text-[var(--ui-muted)]">
-                    Indica dónde se recibe en la sede solicitante. El área/LOC
-                    de preparación se define en la ficha del producto y en
-                    despacho.
-                  </span>
-                </label>
+                <input
+                  type="hidden"
+                  name="item_input_unit_code"
+                  value={effectiveInputUnitCode}
+                />
+                <input
+                  type="hidden"
+                  name="item_input_uom_profile_id"
+                  value={effectiveInputUomProfileId}
+                />
+                <input
+                  type="hidden"
+                  name="item_production_package_plan"
+                  value="[]"
+                />
+                <input
+                  type="hidden"
+                  name="item_area_kind"
+                  value={row.areaKind || defaultAreaKind}
+                />
 
                 <input
                   type="hidden"
@@ -919,124 +790,6 @@ export function RemissionsItems({
                   value={row.quantity}
                 />
 
-                {missingPresentation ? (
-                  <div className="rounded-2xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900 md:col-span-12">
-                    Este producto se pedirá en su unidad base porque aún no
-                    tiene una presentación de solicitud configurada.
-                  </div>
-                ) : null}
-
-                {productUsesPackages ? (
-                  <div className="rounded-2xl border border-[rgba(14,116,144,0.14)] bg-[linear-gradient(180deg,rgba(240,249,255,0.88)_0%,rgba(255,255,255,0.92)_100%)] px-3 py-3 text-xs text-sky-950 md:col-span-12">
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="font-semibold text-[var(--ui-text)]">
-                        Empaques reales disponibles: {availablePackages.length}
-                      </div>
-                      <div className="font-semibold">
-                        Plan: {formatQuantity(packagePlan.total)} /{" "}
-                        {Number.isFinite(quantityValue)
-                          ? formatQuantity(quantityValue)
-                          : "0"}{" "}
-                        {stockUnitCode || "un"}
-                      </div>
-                    </div>
-
-                    {availablePackages.length > 0 ? (
-                      <div className="mt-2 flex flex-wrap gap-2">
-                        {availablePackages.slice(0, 8).map((entry) => (
-                          <span key={entry.id} className="ui-chip">
-                            {productionPackageLabel(entry, stockUnitCode)}
-                          </span>
-                        ))}
-                        {availablePackages.length > 8 ? (
-                          <span className="ui-chip">
-                            +{availablePackages.length - 8}
-                          </span>
-                        ) : null}
-                      </div>
-                    ) : (
-                      <div className="mt-2 font-semibold text-amber-800">
-                        No hay empaques disponibles en el origen seleccionado.
-                      </div>
-                    )}
-
-                    {packagePlan.items.length > 0 ? (
-                      <div className="mt-3 space-y-1">
-                        {packagePlan.items.map((item) => (
-                          <div
-                            key={`${row.id}-${item.packageId}`}
-                            className="rounded-xl border border-sky-100 bg-white px-3 py-2"
-                          >
-                            {item.fractional ? "Fracción" : "Completo"} ·{" "}
-                            {item.label} → {formatQuantity(item.dispatchQty)}{" "}
-                            {item.unitCode || stockUnitCode}
-                          </div>
-                        ))}
-                      </div>
-                    ) : null}
-
-                    {packagePlan.shortage > 0 ? (
-                      <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 font-semibold text-amber-900">
-                        Faltan {formatQuantity(packagePlan.shortage)}{" "}
-                        {stockUnitCode || "un"} en empaques disponibles del
-                        origen.
-                      </div>
-                    ) : null}
-
-                    {packagePlan.hasFractional ? (
-                      <label className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-amber-950">
-                        <input
-                          type="checkbox"
-                          className="mt-0.5"
-                          checked={Boolean(row.acceptPackageFraction)}
-                          onChange={(event) =>
-                            setRows((prev) =>
-                              prev.map((current) =>
-                                current.id === row.id
-                                  ? {
-                                      ...current,
-                                      acceptPackageFraction:
-                                        event.target.checked,
-                                    }
-                                  : current,
-                              ),
-                            )
-                          }
-                        />
-                        <span>
-                          Acepto fraccionar un empaque. El despacho deberá dejar
-                          remanente físico del empaque abierto.
-                        </span>
-                      </label>
-                    ) : null}
-                  </div>
-                ) : null}
-
-                {conversionLabel ? (
-                  <div className="rounded-2xl border border-[rgba(14,116,144,0.14)] bg-[linear-gradient(180deg,rgba(240,249,255,0.88)_0%,rgba(255,255,255,0.92)_100%)] px-3 py-2 text-xs text-sky-900 md:col-span-12">
-                    Equivalencia operativa: {conversionLabel}
-                  </div>
-                ) : null}
-
-                {referenceComparison ? (
-                  <div
-                    className={`rounded-2xl border px-3 py-2 text-xs md:col-span-12 ${
-                      referenceComparison.requestedInStock !== null &&
-                      referenceComparison.requestedInStock > availableReference
-                        ? "border-amber-200 bg-amber-50 text-amber-800"
-                        : "border-emerald-200 bg-emerald-50 text-emerald-800"
-                    }`}
-                  >
-                    Stock referencial en {referenceSiteName}:{" "}
-                    {availableReference} {stockUnitCode || "un"}
-                    {referenceComparison.requestedInStock !== null
-                      ? referenceComparison.requestedInStock >
-                        availableReference
-                        ? ` · supera por ${referenceComparison.shortage} ${stockUnitCode || "un"}`
-                        : ""
-                      : ""}
-                  </div>
-                ) : null}
               </div>
 
               {rows.length > 1 ? (
