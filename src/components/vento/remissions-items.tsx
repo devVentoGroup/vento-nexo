@@ -182,7 +182,10 @@ function usesProductionPackageDispatch(
   profile: ProductUomProfile | null | undefined,
   stockUnitCode: string,
 ): boolean {
-  return isProducedPackagedProduct(product) && !isTemporaryOperationUnitProfile(profile, stockUnitCode);
+  return (
+    isProducedPackagedProduct(product) &&
+    !isTemporaryOperationUnitProfile(profile, stockUnitCode)
+  );
 }
 
 function usesFixedPresentation(product: Option | null | undefined): boolean {
@@ -243,7 +246,11 @@ function getQuantityContextLabel(
   unitCode: string | null | undefined,
 ) {
   const normalizedPresentation = String(presentationLabel ?? "").trim();
-  if (product && normalizedPresentation && normalizedPresentation !== "Selecciona producto") {
+  if (
+    product &&
+    normalizedPresentation &&
+    normalizedPresentation !== "Selecciona producto"
+  ) {
     return normalizedPresentation;
   }
   return getRequestUnitLabel(unitCode);
@@ -492,10 +499,17 @@ export function RemissionsItems({
       const productId = String(row.productId ?? "").trim();
       const product = productsById.get(productId) ?? null;
       const stockUnitCode = getStockUnitCode(product);
-      const profile = productId ? (defaultProfileByProduct.get(productId) ?? null) : null;
-      const productUsesPackages = usesProductionPackageDispatch(product, profile, stockUnitCode);
+      const profile = productId
+        ? (defaultProfileByProduct.get(productId) ?? null)
+        : null;
+      const productUsesPackages = usesProductionPackageDispatch(
+        product,
+        profile,
+        stockUnitCode,
+      );
       const productUsesFixedPresentation =
-        usesFixedPresentation(product) || isTemporaryOperationUnitProfile(profile, stockUnitCode);
+        usesFixedPresentation(product) ||
+        isTemporaryOperationUnitProfile(profile, stockUnitCode);
       const inputUnitCode = productUsesPackages
         ? stockUnitCode || "un"
         : productUsesFixedPresentation
@@ -522,6 +536,7 @@ export function RemissionsItems({
   ]);
 
   const [rows, setRows] = useState<Row[]>(normalizedInitialRows);
+  const [entryMode, setEntryMode] = useState<"table" | "cards">("table");
 
   useEffect(() => {
     setRows(normalizedInitialRows);
@@ -600,254 +615,550 @@ export function RemissionsItems({
     });
 
     return options;
-  }, [
-    products,
-    categoryNameById,
-  ]);
+  }, [products, categoryNameById]);
+
+  const tableProductsByCategory = useMemo(() => {
+    const groups = new Map<string, Option[]>();
+    for (const product of products) {
+      const groupLabel =
+        categoryNameById[String(product.category_id ?? "").trim()] ??
+        "Sin categoría";
+      const current = groups.get(groupLabel) ?? [];
+      current.push(product);
+      groups.set(groupLabel, current);
+    }
+
+    const sortedGroups = Array.from(groups.entries()).sort(
+      ([groupA], [groupB]) => {
+        const rankA =
+          saleCategoryPriorityMap.get(groupA.toLowerCase()) ??
+          Number.MAX_SAFE_INTEGER;
+        const rankB =
+          saleCategoryPriorityMap.get(groupB.toLowerCase()) ??
+          Number.MAX_SAFE_INTEGER;
+        if (rankA !== rankB) return rankA - rankB;
+        return groupA.localeCompare(groupB, "es", { sensitivity: "base" });
+      },
+    );
+
+    return sortedGroups.map(([groupLabel, groupProducts]) => ({
+      groupLabel,
+      products: groupProducts.sort((a, b) =>
+        String(a.name ?? a.id).localeCompare(String(b.name ?? b.id), "es", {
+          sensitivity: "base",
+        }),
+      ),
+    }));
+  }, [categoryNameById, products]);
+
+  const rowByProductId = useMemo(() => {
+    const map = new Map<string, Row>();
+    for (const row of rows) {
+      if (row.productId) map.set(row.productId, row);
+    }
+    return map;
+  }, [rows]);
+
+  const setTableQuantity = (product: Option, nextQuantity: string) => {
+    const productId = String(product.id ?? "").trim();
+    if (!productId) return;
+
+    const normalizedQuantity = String(nextQuantity ?? "").trim();
+    const hasQuantity =
+      normalizedQuantity !== "" &&
+      Number.isFinite(Number(normalizedQuantity)) &&
+      Number(normalizedQuantity) > 0;
+
+    setRows((prev) => {
+      const existing = prev.find((row) => row.productId === productId);
+      if (!hasQuantity) {
+        const next = prev.filter((row) => row.productId !== productId);
+        return next.length
+          ? next
+          : [{ ...EMPTY_ROW, areaKind: defaultAreaKind }];
+      }
+
+      const stockUnitCode = getStockUnitCode(product);
+      const profile = defaultProfileByProduct.get(productId) ?? null;
+      const productUsesPackages = usesProductionPackageDispatch(
+        product,
+        profile,
+        stockUnitCode,
+      );
+      const productUsesFixedPresentation =
+        usesFixedPresentation(product) ||
+        isTemporaryOperationUnitProfile(profile, stockUnitCode);
+      const nextRow: Row = {
+        ...(existing ?? {
+          ...EMPTY_ROW,
+          id: prev.length ? Math.max(...prev.map((row) => row.id)) + 1 : 0,
+        }),
+        productId,
+        quantity: normalizedQuantity,
+        inputUnitCode: productUsesPackages
+          ? stockUnitCode || "un"
+          : productUsesFixedPresentation
+            ? getRemissionInputUnitCode(profile, stockUnitCode)
+            : stockUnitCode || "un",
+        inputUomProfileId: productUsesFixedPresentation
+          ? (profile?.id ?? "")
+          : "",
+        areaKind: existing?.areaKind || defaultAreaKind,
+        acceptPackageFraction: false,
+      };
+
+      if (existing) {
+        return prev.map((row) => (row.id === existing.id ? nextRow : row));
+      }
+      return [...prev.filter((row) => row.productId || row.quantity), nextRow];
+    });
+  };
+
+  const selectedTableRows = rowsWithDerivedPackagePlans.filter((row) => {
+    const quantity = Number(row.quantity);
+    return row.productId && Number.isFinite(quantity) && quantity > 0;
+  });
+
+  const hiddenInputsForRow = (row: RemissionDraftRow) => {
+    const product = productsById.get(row.productId) ?? null;
+    const stockUnitCode = getStockUnitCode(product);
+    const defaultProfile = row.productId
+      ? (defaultProfileByProduct.get(row.productId) ?? null)
+      : null;
+    const productUsesPackages = usesProductionPackageDispatch(
+      product,
+      defaultProfile,
+      stockUnitCode,
+    );
+    const productUsesFixedPresentation =
+      usesFixedPresentation(product) ||
+      isTemporaryOperationUnitProfile(defaultProfile, stockUnitCode);
+    const effectiveInputUnitCode = productUsesPackages
+      ? stockUnitCode || "un"
+      : productUsesFixedPresentation
+        ? getRemissionInputUnitCode(defaultProfile, stockUnitCode)
+        : stockUnitCode || "un";
+    const effectiveInputUomProfileId = productUsesFixedPresentation
+      ? (defaultProfile?.id ?? "")
+      : "";
+
+    return (
+      <div key={`hidden-${row.id}`}>
+        <input type="hidden" name="item_product_id" value={row.productId} />
+        <input type="hidden" name="item_quantity" value={row.quantity} />
+        <input
+          type="hidden"
+          name="item_input_unit_code"
+          value={effectiveInputUnitCode}
+        />
+        <input
+          type="hidden"
+          name="item_input_uom_profile_id"
+          value={effectiveInputUomProfileId}
+        />
+        <input
+          type="hidden"
+          name="item_production_package_plan"
+          value={JSON.stringify(row.productionPackagePlan ?? [])}
+        />
+        <input
+          type="hidden"
+          name="item_area_kind"
+          value={row.areaKind || defaultAreaKind}
+        />
+        <input
+          type="hidden"
+          name="item_quantity_in_input"
+          value={row.quantity}
+        />
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-3">
-      {rows.map((row, idx) => {
-        const isLast = idx === rows.length - 1;
-        const product = productsById.get(row.productId) ?? null;
-        const stockUnitCode = getStockUnitCode(product);
-        const measurementMode = getProductMeasurementMode(product);
-        const defaultProfile = row.productId ? (defaultProfileByProduct.get(row.productId) ?? null) : null;
-        const productUsesPackages = usesProductionPackageDispatch(product, defaultProfile, stockUnitCode);
-        const productUsesFixedPresentation =
-          usesFixedPresentation(product) || isTemporaryOperationUnitProfile(defaultProfile, stockUnitCode);
-        const effectiveInputUnitCode = productUsesPackages
-          ? stockUnitCode || "un"
-          : productUsesFixedPresentation
-            ? getRemissionInputUnitCode(defaultProfile, stockUnitCode)
-            : stockUnitCode || "un";
-        const effectiveInputUomProfileId = productUsesFixedPresentation
-          ? (defaultProfile?.id ?? "")
-          : "";
-        const remissionPresentationLabel = productUsesPackages
-          ? "Empaques reales FOGO"
-          : productUsesFixedPresentation
-            ? getRemissionPresentationLabel(defaultProfile, stockUnitCode)
-            : getActualQuantityDisplayLabel(product, stockUnitCode);
-        const quantityValue = Number(row.quantity);
-        const availablePackages = getAvailablePackages(row.productId);
-        const packagePlan = buildPackagePlan({
-          product,
-          packages: availablePackages,
-          requestedQty: Number.isFinite(quantityValue) ? quantityValue : 0,
-          stockUnitCode,
-        });
-        const rowReady = Boolean(
-          row.productId &&
-          Number.isFinite(quantityValue) &&
-          quantityValue > 0 &&
-          effectiveInputUnitCode,
-        );
-        const missingPresentation = Boolean(
-          row.productId && productUsesFixedPresentation && !defaultProfile,
-        );
-        const referenceMeta = row.productId
-          ? (referenceStockByProduct[row.productId] ?? null)
-          : null;
-        const selectedAreaLabel =
-          areaOptions.find(
-            (option) => option.value === (row.areaKind || defaultAreaKind),
-          )?.label ??
-          (row.areaKind || defaultAreaKind);
-        const normalizedSelectedAreaLabel = String(
-          selectedAreaLabel ?? "",
-        ).trim();
-        const areaDestinationDisplay =
-          lockAreaKind &&
-          normalizedSelectedAreaLabel &&
-          normalizedSelectedAreaLabel.toLowerCase() !== "todos"
-            ? normalizedSelectedAreaLabel
-            : "Recepción global";
-        const availableReference = Number(referenceMeta?.currentQty ?? 0);
-        const referenceComparison =
-          row.productId && referenceSiteName
-            ? (() => {
-                try {
-                  const requestedInStock =
-                    rowReady ||
-                    (Number.isFinite(quantityValue) && quantityValue > 0)
-                      ? productUsesPackages
-                        ? roundQuantity(quantityValue)
-                        : convertByProductProfile({
-                            quantityInInput: Number.isFinite(quantityValue)
-                              ? quantityValue
-                              : 0,
-                            inputUnitCode: effectiveInputUnitCode,
+      <div className="flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-[rgba(200,210,220,0.95)] bg-white p-3 shadow-sm">
+        <div>
+          <div className="text-sm font-semibold text-[var(--ui-text)]">
+            Productos
+          </div>
+        </div>
+        <div className="flex rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-1">
+          <button
+            type="button"
+            className={`rounded-lg px-3 py-2 text-sm font-semibold ${
+              entryMode === "table"
+                ? "bg-white text-[var(--ui-text)] shadow-sm"
+                : "text-[var(--ui-muted)]"
+            }`}
+            onClick={() => setEntryMode("table")}
+          >
+            Tabla
+          </button>
+          <button
+            type="button"
+            className={`rounded-lg px-3 py-2 text-sm font-semibold ${
+              entryMode === "cards"
+                ? "bg-white text-[var(--ui-text)] shadow-sm"
+                : "text-[var(--ui-muted)]"
+            }`}
+            onClick={() => setEntryMode("cards")}
+          >
+            Producto a producto
+          </button>
+        </div>
+      </div>
+
+      {entryMode === "table" ? (
+        <div className="overflow-hidden rounded-2xl border border-[rgba(200,210,220,0.95)] bg-white shadow-[0_12px_30px_rgba(15,23,42,0.07)]">
+          {selectedTableRows.map(hiddenInputsForRow)}
+          <div className="overflow-x-auto">
+            <div className="min-w-[520px]">
+              <div className="grid grid-cols-[minmax(260px,1fr)_96px_132px] border-b border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
+                <div>Producto</div>
+                <div className="text-center">Unidad</div>
+                <div className="text-right">Requisición</div>
+              </div>
+              <div className="max-h-[68vh] overflow-auto">
+                {tableProductsByCategory.map((group) => (
+                  <div key={group.groupLabel}>
+                    <div className="sticky top-0 z-10 border-y border-[rgba(212,164,58,0.28)] bg-[rgb(255,239,184)] px-3 py-1.5 text-center text-xs font-bold uppercase text-slate-900">
+                      {group.groupLabel}
+                    </div>
+                    {group.products.map((product) => {
+                      const row = rowByProductId.get(product.id);
+                      const productProfile =
+                        defaultProfileByProduct.get(product.id) ?? null;
+                      const stockUnitCode = getStockUnitCode(product);
+                      const productUsesPackages = usesProductionPackageDispatch(
+                        product,
+                        productProfile,
+                        stockUnitCode,
+                      );
+                      const unitLabel = productUsesPackages
+                        ? stockUnitCode
+                        : getRemissionPresentationLabel(
+                            productProfile,
                             stockUnitCode,
-                            profile: defaultProfile,
-                          }).quantityInStock
-                      : null;
-                  const shortage =
-                    requestedInStock !== null
-                      ? roundQuantity(
-                          Math.max(requestedInStock - availableReference, 0),
-                        )
-                      : 0;
-                  return { requestedInStock, shortage };
-                } catch {
-                  return { requestedInStock: null, shortage: 0 };
-                }
-              })()
-            : null;
+                          );
+                      const hasQuantity = Boolean(row?.quantity);
 
-        return (
-          <div key={row.id} className="space-y-3">
-            <div className="overflow-hidden rounded-[24px] border border-[rgba(200,210,220,0.95)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(243,247,251,0.98)_100%)] shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
-              <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[rgba(200,210,220,0.75)] bg-[linear-gradient(90deg,rgba(212,164,58,0.12)_0%,rgba(14,116,144,0.08)_100%)] px-4 py-3">
-                <div>
-                  <div className="text-sm font-semibold text-[var(--ui-text)]">
-                    {product?.name ?? `Item ${idx + 1}`}
+                      return (
+                        <div
+                          key={product.id}
+                          className={`grid grid-cols-[minmax(260px,1fr)_96px_132px] items-center border-b border-[rgba(200,210,220,0.65)] px-3 py-1.5 text-sm ${
+                            hasQuantity ? "bg-yellow-50" : "bg-white"
+                          }`}
+                        >
+                          <div className="min-w-0 truncate font-medium text-[var(--ui-text)]">
+                            {product.name ?? product.id}
+                          </div>
+                          <div className="text-center text-xs font-semibold uppercase text-[var(--ui-muted)]">
+                            {unitLabel}
+                          </div>
+                          <input
+                            type="number"
+                            inputMode="decimal"
+                            min="0"
+                            step="any"
+                            value={row?.quantity ?? ""}
+                            onChange={(event) =>
+                              setTableQuantity(product, event.target.value)
+                            }
+                            className="h-9 rounded-lg border border-[var(--ui-border)] bg-white px-2 text-right text-sm font-semibold text-[var(--ui-text)] shadow-inner outline-none focus:border-[var(--ui-brand-500)]"
+                            placeholder="0"
+                          />
+                        </div>
+                      );
+                    })}
                   </div>
-                </div>
+                ))}
               </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-3 py-3">
+            <div className="text-sm font-semibold text-[var(--ui-text)]">
+              {selectedTableRows.length} producto(s) con cantidad
+            </div>
+            <button
+              type="button"
+              className="ui-btn ui-btn--ghost ui-btn--sm"
+              onClick={() =>
+                setRows([{ ...EMPTY_ROW, areaKind: defaultAreaKind }])
+              }
+            >
+              Limpiar tabla
+            </button>
+          </div>
+        </div>
+      ) : null}
 
-              <div className="grid gap-3 p-4 md:grid-cols-12 md:items-start">
-                <label className="flex min-w-0 flex-col gap-1 md:col-span-8">
-                  <span className="ui-label">Producto</span>
-                  <SearchableSingleSelect
-                    name="item_product_id"
-                    value={row.productId}
-                    onValueChange={(nextProductId) => {
-                      const nextProduct =
-                        productsById.get(nextProductId) ?? null;
-                      const nextStockUnitCode = getStockUnitCode(nextProduct);
-                      const nextProfile = defaultProfileByProduct.get(nextProductId) ?? null;
-                      const nextUsesPackages = usesProductionPackageDispatch(
-                        nextProduct,
-                        nextProfile,
-                        nextStockUnitCode,
-                      );
-                      const nextUsesFixedPresentation =
-                        usesFixedPresentation(nextProduct) ||
-                        isTemporaryOperationUnitProfile(nextProfile, nextStockUnitCode);
-                      setRows((prev) =>
-                        prev.map((current) =>
-                          current.id === row.id
-                            ? {
-                                ...current,
-                                productId: nextProductId,
-                                inputUnitCode: nextUsesPackages
-                                  ? nextStockUnitCode || "un"
-                                  : nextUsesFixedPresentation
-                                    ? getRemissionInputUnitCode(
-                                        nextProfile,
-                                        nextStockUnitCode,
-                                      )
-                                    : nextStockUnitCode || "un",
-                                inputUomProfileId: nextUsesFixedPresentation
-                                  ? (nextProfile?.id ?? "")
-                                  : "",
-                                acceptPackageFraction: false,
-                              }
-                            : current,
-                        ),
-                      );
-                    }}
-                    options={productOptions}
-                    allowEmptySelection={false}
-                    placeholder="Selecciona producto"
-                    searchPlaceholder="Buscar producto..."
-                    sheetTitle="Productos"
-                    mobilePresentation="sheet"
-                    mobileBreakpointPx={1024}
-                    dropdownMode="inline"
-                    className="min-w-0"
-                  />
-                </label>
-
-                <label className="flex flex-col gap-1 md:col-span-4">
-                  <span className="ui-label">
-                    Cantidad
-                    {row.productId ? (
-                      <span className="ml-1 font-semibold text-[var(--ui-muted)]">
-                        ({getQuantityContextLabel(product, remissionPresentationLabel, effectiveInputUnitCode)})
-                      </span>
-                    ) : null}
-                  </span>
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    min="0"
-                    step="any"
-                    name="item_quantity"
-                    placeholder="0"
-                    className="ui-input h-10"
-                    value={row.quantity}
-                    onChange={(event) =>
-                      setRows((prev) =>
-                        prev.map((current) =>
-                          current.id === row.id
-                            ? {
-                                ...current,
-                                quantity: event.target.value,
-                                acceptPackageFraction: false,
-                              }
-                            : current,
-                        ),
-                      )
+      {entryMode === "cards" ? (
+        <>
+          {rows.map((row, idx) => {
+            const isLast = idx === rows.length - 1;
+            const product = productsById.get(row.productId) ?? null;
+            const stockUnitCode = getStockUnitCode(product);
+            const measurementMode = getProductMeasurementMode(product);
+            const defaultProfile = row.productId
+              ? (defaultProfileByProduct.get(row.productId) ?? null)
+              : null;
+            const productUsesPackages = usesProductionPackageDispatch(
+              product,
+              defaultProfile,
+              stockUnitCode,
+            );
+            const productUsesFixedPresentation =
+              usesFixedPresentation(product) ||
+              isTemporaryOperationUnitProfile(defaultProfile, stockUnitCode);
+            const effectiveInputUnitCode = productUsesPackages
+              ? stockUnitCode || "un"
+              : productUsesFixedPresentation
+                ? getRemissionInputUnitCode(defaultProfile, stockUnitCode)
+                : stockUnitCode || "un";
+            const effectiveInputUomProfileId = productUsesFixedPresentation
+              ? (defaultProfile?.id ?? "")
+              : "";
+            const remissionPresentationLabel = productUsesPackages
+              ? "Empaques reales FOGO"
+              : productUsesFixedPresentation
+                ? getRemissionPresentationLabel(defaultProfile, stockUnitCode)
+                : getActualQuantityDisplayLabel(product, stockUnitCode);
+            const quantityValue = Number(row.quantity);
+            const availablePackages = getAvailablePackages(row.productId);
+            const packagePlan = buildPackagePlan({
+              product,
+              packages: availablePackages,
+              requestedQty: Number.isFinite(quantityValue) ? quantityValue : 0,
+              stockUnitCode,
+            });
+            const rowReady = Boolean(
+              row.productId &&
+              Number.isFinite(quantityValue) &&
+              quantityValue > 0 &&
+              effectiveInputUnitCode,
+            );
+            const missingPresentation = Boolean(
+              row.productId && productUsesFixedPresentation && !defaultProfile,
+            );
+            const referenceMeta = row.productId
+              ? (referenceStockByProduct[row.productId] ?? null)
+              : null;
+            const selectedAreaLabel =
+              areaOptions.find(
+                (option) => option.value === (row.areaKind || defaultAreaKind),
+              )?.label ??
+              (row.areaKind || defaultAreaKind);
+            const normalizedSelectedAreaLabel = String(
+              selectedAreaLabel ?? "",
+            ).trim();
+            const areaDestinationDisplay =
+              lockAreaKind &&
+              normalizedSelectedAreaLabel &&
+              normalizedSelectedAreaLabel.toLowerCase() !== "todos"
+                ? normalizedSelectedAreaLabel
+                : "Recepción global";
+            const availableReference = Number(referenceMeta?.currentQty ?? 0);
+            const referenceComparison =
+              row.productId && referenceSiteName
+                ? (() => {
+                    try {
+                      const requestedInStock =
+                        rowReady ||
+                        (Number.isFinite(quantityValue) && quantityValue > 0)
+                          ? productUsesPackages
+                            ? roundQuantity(quantityValue)
+                            : convertByProductProfile({
+                                quantityInInput: Number.isFinite(quantityValue)
+                                  ? quantityValue
+                                  : 0,
+                                inputUnitCode: effectiveInputUnitCode,
+                                stockUnitCode,
+                                profile: defaultProfile,
+                              }).quantityInStock
+                          : null;
+                      const shortage =
+                        requestedInStock !== null
+                          ? roundQuantity(
+                              Math.max(
+                                requestedInStock - availableReference,
+                                0,
+                              ),
+                            )
+                          : 0;
+                      return { requestedInStock, shortage };
+                    } catch {
+                      return { requestedInStock: null, shortage: 0 };
                     }
-                  />
-                </label>
+                  })()
+                : null;
 
-                <input
-                  type="hidden"
-                  name="item_input_unit_code"
-                  value={effectiveInputUnitCode}
-                />
-                <input
-                  type="hidden"
-                  name="item_input_uom_profile_id"
-                  value={effectiveInputUomProfileId}
-                />
-                <input
-                  type="hidden"
-                  name="item_production_package_plan"
-                  value="[]"
-                />
-                <input
-                  type="hidden"
-                  name="item_area_kind"
-                  value={row.areaKind || defaultAreaKind}
-                />
+            return (
+              <div key={row.id} className="space-y-3">
+                <div className="overflow-hidden rounded-[24px] border border-[rgba(200,210,220,0.95)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(243,247,251,0.98)_100%)] shadow-[0_12px_30px_rgba(15,23,42,0.08)]">
+                  <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[rgba(200,210,220,0.75)] bg-[linear-gradient(90deg,rgba(212,164,58,0.12)_0%,rgba(14,116,144,0.08)_100%)] px-4 py-3">
+                    <div>
+                      <div className="text-sm font-semibold text-[var(--ui-text)]">
+                        {product?.name ?? `Item ${idx + 1}`}
+                      </div>
+                    </div>
+                  </div>
 
-                <input
-                  type="hidden"
-                  name="item_quantity_in_input"
-                  value={row.quantity}
-                />
+                  <div className="grid gap-3 p-4 md:grid-cols-12 md:items-start">
+                    <label className="flex min-w-0 flex-col gap-1 md:col-span-8">
+                      <span className="ui-label">Producto</span>
+                      <SearchableSingleSelect
+                        name="item_product_id"
+                        value={row.productId}
+                        onValueChange={(nextProductId) => {
+                          const nextProduct =
+                            productsById.get(nextProductId) ?? null;
+                          const nextStockUnitCode =
+                            getStockUnitCode(nextProduct);
+                          const nextProfile =
+                            defaultProfileByProduct.get(nextProductId) ?? null;
+                          const nextUsesPackages =
+                            usesProductionPackageDispatch(
+                              nextProduct,
+                              nextProfile,
+                              nextStockUnitCode,
+                            );
+                          const nextUsesFixedPresentation =
+                            usesFixedPresentation(nextProduct) ||
+                            isTemporaryOperationUnitProfile(
+                              nextProfile,
+                              nextStockUnitCode,
+                            );
+                          setRows((prev) =>
+                            prev.map((current) =>
+                              current.id === row.id
+                                ? {
+                                    ...current,
+                                    productId: nextProductId,
+                                    inputUnitCode: nextUsesPackages
+                                      ? nextStockUnitCode || "un"
+                                      : nextUsesFixedPresentation
+                                        ? getRemissionInputUnitCode(
+                                            nextProfile,
+                                            nextStockUnitCode,
+                                          )
+                                        : nextStockUnitCode || "un",
+                                    inputUomProfileId: nextUsesFixedPresentation
+                                      ? (nextProfile?.id ?? "")
+                                      : "",
+                                    acceptPackageFraction: false,
+                                  }
+                                : current,
+                            ),
+                          );
+                        }}
+                        options={productOptions}
+                        allowEmptySelection={false}
+                        placeholder="Selecciona producto"
+                        searchPlaceholder="Buscar producto..."
+                        sheetTitle="Productos"
+                        mobilePresentation="sheet"
+                        mobileBreakpointPx={1024}
+                        dropdownMode="inline"
+                        className="min-w-0"
+                      />
+                    </label>
 
-              </div>
+                    <label className="flex flex-col gap-1 md:col-span-4">
+                      <span className="ui-label">
+                        Cantidad
+                        {row.productId ? (
+                          <span className="ml-1 font-semibold text-[var(--ui-muted)]">
+                            (
+                            {getQuantityContextLabel(
+                              product,
+                              remissionPresentationLabel,
+                              effectiveInputUnitCode,
+                            )}
+                            )
+                          </span>
+                        ) : null}
+                      </span>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        min="0"
+                        step="any"
+                        name="item_quantity"
+                        placeholder="0"
+                        className="ui-input h-10"
+                        value={row.quantity}
+                        onChange={(event) =>
+                          setRows((prev) =>
+                            prev.map((current) =>
+                              current.id === row.id
+                                ? {
+                                    ...current,
+                                    quantity: event.target.value,
+                                    acceptPackageFraction: false,
+                                  }
+                                : current,
+                            ),
+                          )
+                        }
+                      />
+                    </label>
 
-              {rows.length > 1 ? (
-                <div className="flex justify-end border-t border-[rgba(200,210,220,0.75)] bg-white/70 px-4 py-3">
+                    <input
+                      type="hidden"
+                      name="item_input_unit_code"
+                      value={effectiveInputUnitCode}
+                    />
+                    <input
+                      type="hidden"
+                      name="item_input_uom_profile_id"
+                      value={effectiveInputUomProfileId}
+                    />
+                    <input
+                      type="hidden"
+                      name="item_production_package_plan"
+                      value="[]"
+                    />
+                    <input
+                      type="hidden"
+                      name="item_area_kind"
+                      value={row.areaKind || defaultAreaKind}
+                    />
+
+                    <input
+                      type="hidden"
+                      name="item_quantity_in_input"
+                      value={row.quantity}
+                    />
+                  </div>
+
+                  {rows.length > 1 ? (
+                    <div className="flex justify-end border-t border-[rgba(200,210,220,0.75)] bg-white/70 px-4 py-3">
+                      <button
+                        type="button"
+                        className="ui-btn ui-btn--ghost ui-btn--sm"
+                        onClick={() => removeRow(row.id)}
+                      >
+                        Quitar item
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+
+                {isLast ? (
                   <button
                     type="button"
-                    className="ui-btn ui-btn--ghost ui-btn--sm"
-                    onClick={() => removeRow(row.id)}
+                    className="ui-btn ui-btn--ghost w-fit shadow-sm"
+                    onClick={addRow}
                   >
-                    Quitar item
+                    + Agregar otro item
                   </button>
-                </div>
-              ) : null}
-            </div>
-
-            {isLast ? (
-              <button
-                type="button"
-                className="ui-btn ui-btn--ghost w-fit shadow-sm"
-                onClick={addRow}
-              >
-                + Agregar otro item
-              </button>
-            ) : null}
-          </div>
-        );
-      })}
+                ) : null}
+              </div>
+            );
+          })}
+        </>
+      ) : null}
     </div>
   );
 }
