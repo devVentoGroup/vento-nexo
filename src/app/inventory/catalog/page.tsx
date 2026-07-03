@@ -1,6 +1,4 @@
-﻿import Link from "next/link";
-import { redirect } from "next/navigation";
-import { revalidatePath } from "next/cache";
+import Link from "next/link";
 
 import { CatalogFiltersPanel } from "@/features/inventory/catalog/catalog-filters-panel";
 import {
@@ -12,10 +10,8 @@ import { CatalogToolbar } from "@/features/inventory/catalog/catalog-toolbar";
 import { CatalogOptionalDetails } from "@/features/inventory/catalog/catalog-ui";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { checkPermission } from "@/lib/auth/permissions";
-import { buildShellLoginUrl } from "@/lib/auth/sso";
 import { getCategoryDomainOptions } from "@/lib/constants";
 import { getAutoCostReadinessReason, resolveNetSupplierPackPrice } from "@/lib/inventory/costing";
-import { createClient } from "@/lib/supabase/server";
 import { safeDecodeURIComponent } from "@/lib/url";
 import {
   categoryKindFromCatalogTab,
@@ -27,338 +23,40 @@ import {
   normalizeCategoryDomain,
   normalizeCategoryScope,
   shouldShowCategoryDomain,
-  type InventoryCategoryRow,
 } from "@/lib/inventory/categories";
-import { convertQuantity, createUnitMap, normalizeUnitCode, type InventoryUnit } from "@/lib/inventory/uom";
+import { convertQuantity, createUnitMap, normalizeUnitCode } from "@/lib/inventory/uom";
+import {
+  deleteProductFromListAction,
+  toggleProductActiveFromListAction,
+} from "./actions";
+import {
+  TAB_OPTIONS,
+  asFiniteNumber,
+  buildCatalogListReturnUrl,
+  formatQty,
+  getLastCategorySegment,
+  loadCategoryRows,
+  profileImageRank,
+  profileImageUrl,
+  siteSettingRank,
+  tabTypeValue,
+  toBase64UrlJson,
+  type ProductPresentationImageRow,
+  type ProductRow,
+  type ProductSiteSettingRow,
+  type ProductSupplierCostRow,
+  type SearchParams,
+  type SiteRow,
+  type StockBySiteRow,
+  type SupplierRow,
+  type TabValue,
+  type UnitRow,
+} from "./helpers";
 
 export const dynamic = "force-dynamic";
 
 const APP_ID = "nexo";
 const PERMISSION = "inventory.stock";
-
-const TAB_OPTIONS = [
-  { value: "insumos", label: "Insumos" },
-  { value: "preparaciones", label: "Preparaciones" },
-  { value: "productos", label: "Productos" },
-  { value: "equipos", label: "Tipos de activos" },
-] as const;
-
-type TabValue = (typeof TAB_OPTIONS)[number]["value"];
-
-type SearchParams = {
-  q?: string;
-  tab?: string;
-  show_disabled?: string;
-  site_id?: string;
-  stock_alert?: string;
-  view_mode?: string;
-  supplier_id?: string;
-  category_kind?: string;
-  category_domain?: string;
-  category_scope?: string;
-  category_site_id?: string;
-  category_id?: string;
-  ok?: string;
-  error?: string;
-};
-
-type ProductRow = {
-  id: string;
-  name: string;
-  sku: string | null;
-  cost: number | null;
-  unit: string | null;
-  stock_unit_code: string | null;
-  product_type: string;
-  category_id: string | null;
-  is_active: boolean | null;
-  image_url: string | null;
-  catalog_image_url: string | null;
-  product_inventory_profiles?: {
-    track_inventory: boolean;
-    inventory_kind: string;
-    costing_mode: "auto_primary_supplier" | "manual" | null;
-  } | null;
-};
-
-type SiteRow = {
-  id: string;
-  name: string | null;
-};
-
-type ProductSupplierCostRow = {
-  product_id: string;
-  supplier_id: string | null;
-  is_primary: boolean | null;
-  purchase_pack_qty: number | null;
-  purchase_pack_unit_code: string | null;
-  purchase_unit: string | null;
-  purchase_price: number | null;
-  purchase_price_net: number | null;
-  purchase_price_includes_tax: boolean | null;
-  purchase_tax_rate: number | null;
-};
-
-type ProductSiteSettingRow = {
-  product_id: string;
-  is_active: boolean | null;
-  min_stock_qty: number | null;
-};
-
-type ProductPresentationImageRow = {
-  product_id: string;
-  image_url: string | null;
-  catalog_image_url: string | null;
-  is_default: boolean | null;
-  is_active: boolean | null;
-  usage_context: string | null;
-  source: string | null;
-  updated_at: string | null;
-};
-
-type StockBySiteRow = {
-  product_id: string;
-  current_qty: number | null;
-};
-
-type SupplierRow = {
-  id: string;
-  name: string | null;
-};
-
-type UnitRow = InventoryUnit;
-
-async function loadCategoryRows(
-  supabase: Awaited<ReturnType<typeof requireAppAccess>>["supabase"]
-): Promise<InventoryCategoryRow[]> {
-  const query = await supabase
-    .from("product_categories")
-    .select("id,name,parent_id,domain,site_id,is_active,applies_to_kinds")
-    .order("name", { ascending: true });
-
-  if (!query.error) {
-    return (query.data ?? []) as InventoryCategoryRow[];
-  }
-
-  const fallback = await supabase
-    .from("product_categories")
-    .select("id,name,parent_id,domain,site_id,is_active")
-    .order("name", { ascending: true });
-
-  return ((fallback.data ?? []) as Array<Omit<InventoryCategoryRow, "applies_to_kinds">>).map(
-    (row) => ({ ...row, applies_to_kinds: [] })
-  );
-}
-
-function tabTypeValue(tab: TabValue): string {
-  if (tab === "preparaciones") return "preparacion";
-  if (tab === "productos") return "venta";
-  return "insumo";
-}
-
-function asFiniteNumber(value: unknown): number | null {
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function formatQty(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return "-";
-  return new Intl.NumberFormat("es-CO", { maximumFractionDigits: 3 }).format(value);
-}
-
-function siteSettingRank(row: ProductSiteSettingRow): number {
-  const activeScore = row.is_active === false ? 0 : 2;
-  const minScore = row.min_stock_qty == null ? 0 : 1;
-  return activeScore + minScore;
-}
-
-function getLastCategorySegment(path: string): string {
-  const normalized = String(path ?? "").trim();
-  if (!normalized) return "-";
-  const segments = normalized.split("/").map((segment) => segment.trim()).filter(Boolean);
-  return segments[segments.length - 1] ?? normalized;
-}
-
-function profileImageUrl(row: ProductPresentationImageRow): string {
-  return String(row.image_url ?? row.catalog_image_url ?? "").trim();
-}
-
-function profileImageRank(row: ProductPresentationImageRow): number {
-  const usageContext = String(row.usage_context ?? "").trim().toLowerCase();
-  const source = String(row.source ?? "").trim().toLowerCase();
-
-  let rank = 0;
-
-  if (row.is_active !== false) rank += 100;
-  if (row.is_default === true) rank += 50;
-  if (usageContext === "general") rank += 20;
-  if (source === "manual") rank += 10;
-  if (profileImageUrl(row)) rank += 5;
-
-  return rank;
-}
-
-function toBase64UrlJson(value: unknown): string {
-  return Buffer.from(JSON.stringify(value), "utf-8").toString("base64url");
-}
-
-function sanitizeCatalogListReturnPath(value: string): string {
-  const trimmed = value.trim();
-  return trimmed.startsWith("/inventory/catalog") ? trimmed : "/inventory/catalog";
-}
-
-function buildCatalogListReturnUrl(
-  basePath: string,
-  status: { ok?: string; error?: string }
-): string {
-  const [pathname, qs] = basePath.split("?");
-  const params = new URLSearchParams(qs ?? "");
-  if (status.ok) params.set("ok", status.ok);
-  if (status.error) params.set("error", status.error);
-  const query = params.toString();
-  return query ? `${pathname}?${query}` : pathname;
-}
-
-async function requireCatalogManager() {
-  const supabase = await createClient();
-  const { data: authRes } = await supabase.auth.getUser();
-  const user = authRes.user ?? null;
-  if (!user) {
-    redirect(await buildShellLoginUrl("/inventory/catalog"));
-  }
-
-  const { data: employee } = await supabase
-    .from("employees")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-  const role = String(employee?.role ?? "").toLowerCase();
-  if (!["propietario", "gerente_general"].includes(role)) {
-    redirect(
-      buildCatalogListReturnUrl("/inventory/catalog", {
-        error: "No tienes permisos para editar productos.",
-      })
-    );
-  }
-
-  return { supabase };
-}
-
-async function toggleProductActiveFromListAction(formData: FormData) {
-  "use server";
-
-  const { supabase } = await requireCatalogManager();
-  const productId = String(formData.get("product_id") ?? "").trim();
-  const nextIsActive = String(formData.get("next_is_active") ?? "") === "1";
-  const returnTo = sanitizeCatalogListReturnPath(String(formData.get("return_to") ?? ""));
-
-  if (!productId) {
-    redirect(buildCatalogListReturnUrl(returnTo, { error: "Producto inválido." }));
-  }
-
-  const { error } = await supabase
-    .from("products")
-    .update({
-      is_active: nextIsActive,
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", productId);
-
-  if (error) {
-    redirect(buildCatalogListReturnUrl(returnTo, { error: error.message }));
-  }
-
-  revalidatePath("/inventory/catalog");
-  revalidatePath("/inventory/stock");
-  redirect(buildCatalogListReturnUrl(returnTo, { ok: "product_status_updated" }));
-}
-
-async function deleteProductFromListAction(formData: FormData) {
-  "use server";
-
-  const { supabase } = await requireCatalogManager();
-  const productId = String(formData.get("product_id") ?? "").trim();
-  const returnTo = sanitizeCatalogListReturnPath(String(formData.get("return_to") ?? ""));
-
-  if (!productId) {
-    redirect(buildCatalogListReturnUrl(returnTo, { error: "Producto inválido." }));
-  }
-
-  const { count: ingredientUsageCount } = await supabase
-    .from("recipes")
-    .select("id", { head: true, count: "exact" })
-    .eq("ingredient_product_id", productId);
-  if ((ingredientUsageCount ?? 0) > 0) {
-    redirect(
-      buildCatalogListReturnUrl(returnTo, {
-        error: "No se puede eliminar: este producto se usa como ingrediente en recetas.",
-      })
-    );
-  }
-
-  const { count: movementCount } = await supabase
-    .from("inventory_movements")
-    .select("id", { head: true, count: "exact" })
-    .eq("product_id", productId);
-  if ((movementCount ?? 0) > 0) {
-    redirect(
-      buildCatalogListReturnUrl(returnTo, {
-        error: "No se puede eliminar: el producto tiene historial de movimientos. Deshabilitalo.",
-      })
-    );
-  }
-
-  const { count: stockCount } = await supabase
-    .from("inventory_stock_by_site")
-    .select("product_id", { head: true, count: "exact" })
-    .eq("product_id", productId)
-    .gt("current_qty", 0);
-  if ((stockCount ?? 0) > 0) {
-    redirect(
-      buildCatalogListReturnUrl(returnTo, {
-        error: "No se puede eliminar: el producto tiene stock disponible. Dejalo en 0 o deshabilitalo.",
-      })
-    );
-  }
-
-  const { data: recipeCards } = await supabase
-    .from("recipe_cards")
-    .select("id")
-    .eq("product_id", productId);
-  const recipeCardIds = (recipeCards ?? []).map((row) => row.id as string);
-  if (recipeCardIds.length > 0) {
-    const { error: stepsDeleteError } = await supabase
-      .from("recipe_steps")
-      .delete()
-      .in("recipe_card_id", recipeCardIds);
-    if (stepsDeleteError) {
-      redirect(buildCatalogListReturnUrl(returnTo, { error: stepsDeleteError.message }));
-    }
-  }
-
-  const cleanupStatements = [
-    supabase.from("recipe_cards").delete().eq("product_id", productId),
-    supabase.from("recipes").delete().eq("product_id", productId),
-    supabase.from("product_suppliers").delete().eq("product_id", productId),
-    supabase.from("product_site_settings").delete().eq("product_id", productId),
-    supabase.from("product_inventory_profiles").delete().eq("product_id", productId),
-  ];
-  for (const statement of cleanupStatements) {
-    const { error } = await statement;
-    if (error) {
-      redirect(buildCatalogListReturnUrl(returnTo, { error: error.message }));
-    }
-  }
-
-  const { error: deleteError } = await supabase.from("products").delete().eq("id", productId);
-  if (deleteError) {
-    redirect(buildCatalogListReturnUrl(returnTo, { error: deleteError.message }));
-  }
-
-  revalidatePath("/inventory/catalog");
-  revalidatePath("/inventory/stock");
-  redirect(buildCatalogListReturnUrl(returnTo, { ok: "product_deleted" }));
-}
 
 export default async function InventoryCatalogPage({
   searchParams,
