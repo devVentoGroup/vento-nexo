@@ -132,6 +132,20 @@ export function selectRemissionRequestUomProfile<T extends ProductUomProfileLike
   return null;
 }
 
+export function isTemporaryOperationUnitProfile(
+  profile: ProductUomProfileLike | null | undefined,
+  stockUnitCode: string,
+): boolean {
+  return (
+    Boolean(profile) &&
+    String(profile?.source ?? "").trim().toLowerCase() === "manual" &&
+    normalizeUnitCode(profile?.input_unit_code ?? "") === normalizeUnitCode(stockUnitCode) &&
+    Number(profile?.qty_in_input_unit ?? 0) === 1 &&
+    Number(profile?.qty_in_stock_unit ?? 0) === 1 &&
+    String(profile?.label ?? "").trim().toLowerCase().includes("temporal")
+  );
+}
+
 export function normalizeUnitCode(code: string | null | undefined): string {
   return String(code ?? "")
     .trim()

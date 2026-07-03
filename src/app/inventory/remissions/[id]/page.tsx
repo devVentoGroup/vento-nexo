@@ -2,7 +2,7 @@
 import { redirect } from "next/navigation";
 
 import { requireAppAccess } from "@/lib/auth/guard";
-import { roundQuantity } from "@/lib/inventory/uom";
+import { isTemporaryOperationUnitProfile, roundQuantity, type ProductUomProfile } from "@/lib/inventory/uom";
 import { safeDecodeURIComponent } from "@/lib/url";
 import { loadAccessContext } from "./detail-access";
 import {
@@ -355,8 +355,29 @@ export default async function RemissionDetailPage({
       .filter(([productId]) => Boolean(productId))
   );
 
+  const inputUomProfileIds = Array.from(
+    new Set(
+      baseItemRows
+        .map((item) => String((item as { input_uom_profile_id?: string | null }).input_uom_profile_id ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+  const { data: inputUomProfileRows } = inputUomProfileIds.length
+    ? await supabase
+      .from("product_uom_profiles")
+      .select("id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context")
+      .in("id", inputUomProfileIds)
+    : { data: [] as ProductUomProfile[] };
+  const inputUomProfileById = new Map(
+    ((inputUomProfileRows ?? []) as ProductUomProfile[]).map((profile) => [profile.id, profile])
+  );
+
   const itemRows = baseItemRows.map((item) => {
     const profile = profileByProductId.get(String(item.product_id ?? "").trim()) ?? null;
+    const inputUomProfileId = String((item as { input_uom_profile_id?: string | null }).input_uom_profile_id ?? "").trim();
+    const inputUomProfile = inputUomProfileId ? (inputUomProfileById.get(inputUomProfileId) ?? null) : null;
+    const stockUnitCode = String(item.stock_unit_code ?? item.unit ?? item.product?.stock_unit_code ?? item.product?.unit ?? "").trim();
+    const usesTemporaryOperationUnit = isTemporaryOperationUnitProfile(inputUomProfile, stockUnitCode);
     const measurementMode = normalizeMeasurementMode(profile?.measurement_mode);
     const product = item.product
       ? ({
@@ -367,6 +388,9 @@ export default async function RemissionDetailPage({
 
     return {
       ...item,
+      requires_package_dispatch: usesTemporaryOperationUnit
+        ? false
+        : (item as RestockItemRow & { requires_package_dispatch?: boolean | null }).requires_package_dispatch,
       measurement_mode: measurementMode,
       default_tolerance_percent: profile?.default_tolerance_percent ?? null,
       aux_count_unit_code: String(profile?.aux_count_unit_code ?? "").trim() || null,

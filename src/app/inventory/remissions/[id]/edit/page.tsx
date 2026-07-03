@@ -747,7 +747,7 @@ export default async function EditOwnPendingRemissionPage({
 
   const { data: requestItems } = await supabase
     .from("restock_request_items")
-    .select("id,product_id,quantity,input_qty,input_unit_code,stock_unit_code,production_area_kind")
+    .select("id,product_id,quantity,input_qty,input_unit_code,input_uom_profile_id,stock_unit_code,production_area_kind")
     .eq("request_id", id)
     .order("created_at", { ascending: true });
 
@@ -763,7 +763,7 @@ export default async function EditOwnPendingRemissionPage({
       productId: String(item.product_id ?? "").trim(),
       quantity: initialQuantity > 0 ? String(initialQuantity) : "",
       inputUnitCode: initialInputUnitCode,
-      inputUomProfileId: "",
+      inputUomProfileId: String((item as { input_uom_profile_id?: string | null }).input_uom_profile_id ?? "").trim(),
       areaKind: String(item.production_area_kind ?? "").trim(),
     };
   });

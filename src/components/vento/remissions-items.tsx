@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from "react";
 import { SearchableSingleSelect } from "@/components/inventory/forms/SearchableSingleSelect";
 import {
   convertByProductProfile,
+  isTemporaryOperationUnitProfile,
   normalizeUnitCode,
   roundQuantity,
   selectRemissionRequestUomProfile,
@@ -174,6 +175,14 @@ function isProducedPackagedProduct(
     productType === "preparacion" ||
     (productType === "venta" && inventoryKind !== "resale")
   );
+}
+
+function usesProductionPackageDispatch(
+  product: Option | null | undefined,
+  profile: ProductUomProfile | null | undefined,
+  stockUnitCode: string,
+): boolean {
+  return isProducedPackagedProduct(product) && !isTemporaryOperationUnitProfile(profile, stockUnitCode);
 }
 
 function usesFixedPresentation(product: Option | null | undefined): boolean {
@@ -483,12 +492,10 @@ export function RemissionsItems({
       const productId = String(row.productId ?? "").trim();
       const product = productsById.get(productId) ?? null;
       const stockUnitCode = getStockUnitCode(product);
-      const productUsesFixedPresentation = usesFixedPresentation(product);
-      const productUsesPackages = isProducedPackagedProduct(product);
-      const profile =
-        productId && productUsesFixedPresentation
-          ? (defaultProfileByProduct.get(productId) ?? null)
-          : null;
+      const profile = productId ? (defaultProfileByProduct.get(productId) ?? null) : null;
+      const productUsesPackages = usesProductionPackageDispatch(product, profile, stockUnitCode);
+      const productUsesFixedPresentation =
+        usesFixedPresentation(product) || isTemporaryOperationUnitProfile(profile, stockUnitCode);
       const inputUnitCode = productUsesPackages
         ? stockUnitCode || "un"
         : productUsesFixedPresentation
@@ -605,12 +612,10 @@ export function RemissionsItems({
         const product = productsById.get(row.productId) ?? null;
         const stockUnitCode = getStockUnitCode(product);
         const measurementMode = getProductMeasurementMode(product);
-        const productUsesPackages = isProducedPackagedProduct(product);
-        const productUsesFixedPresentation = usesFixedPresentation(product);
-        const defaultProfile =
-          row.productId && productUsesFixedPresentation
-            ? (defaultProfileByProduct.get(row.productId) ?? null)
-            : null;
+        const defaultProfile = row.productId ? (defaultProfileByProduct.get(row.productId) ?? null) : null;
+        const productUsesPackages = usesProductionPackageDispatch(product, defaultProfile, stockUnitCode);
+        const productUsesFixedPresentation =
+          usesFixedPresentation(product) || isTemporaryOperationUnitProfile(defaultProfile, stockUnitCode);
         const effectiveInputUnitCode = productUsesPackages
           ? stockUnitCode || "un"
           : productUsesFixedPresentation
@@ -711,13 +716,15 @@ export function RemissionsItems({
                       const nextProduct =
                         productsById.get(nextProductId) ?? null;
                       const nextStockUnitCode = getStockUnitCode(nextProduct);
+                      const nextProfile = defaultProfileByProduct.get(nextProductId) ?? null;
+                      const nextUsesPackages = usesProductionPackageDispatch(
+                        nextProduct,
+                        nextProfile,
+                        nextStockUnitCode,
+                      );
                       const nextUsesFixedPresentation =
-                        usesFixedPresentation(nextProduct);
-                      const nextUsesPackages =
-                        isProducedPackagedProduct(nextProduct);
-                      const nextProfile = nextUsesFixedPresentation
-                        ? (defaultProfileByProduct.get(nextProductId) ?? null)
-                        : null;
+                        usesFixedPresentation(nextProduct) ||
+                        isTemporaryOperationUnitProfile(nextProfile, nextStockUnitCode);
                       setRows((prev) =>
                         prev.map((current) =>
                           current.id === row.id
