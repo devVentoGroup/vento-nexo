@@ -320,9 +320,16 @@ function getRemissionPresentationLabel(
   profile: ProductUomProfile | null | undefined,
   stockUnitCode: string,
 ) {
+  const normalizedStockUnitCode = normalizeUnitCode(stockUnitCode || "un");
+
+  if (isTemporaryOperationUnitProfile(profile, normalizedStockUnitCode)) {
+    return normalizedStockUnitCode || "un";
+  }
+
   const label = String(profile?.label ?? "").trim();
   if (label) return label;
-  return stockUnitCode || "Unidad base";
+
+  return normalizedStockUnitCode || "Unidad base";
 }
 
 function getRemissionInputUnitCode(
@@ -786,22 +793,20 @@ export function RemissionsItems({
         <div className="flex rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-1">
           <button
             type="button"
-            className={`rounded-lg px-3 py-2 text-sm font-semibold ${
-              entryMode === "table"
+            className={`rounded-lg px-3 py-2 text-sm font-semibold ${entryMode === "table"
                 ? "bg-white text-[var(--ui-text)] shadow-sm"
                 : "text-[var(--ui-muted)]"
-            }`}
+              }`}
             onClick={() => setEntryMode("table")}
           >
             Tabla
           </button>
           <button
             type="button"
-            className={`rounded-lg px-3 py-2 text-sm font-semibold ${
-              entryMode === "cards"
+            className={`rounded-lg px-3 py-2 text-sm font-semibold ${entryMode === "cards"
                 ? "bg-white text-[var(--ui-text)] shadow-sm"
                 : "text-[var(--ui-muted)]"
-            }`}
+              }`}
             onClick={() => setEntryMode("cards")}
           >
             Producto a producto
@@ -838,17 +843,16 @@ export function RemissionsItems({
                       const unitLabel = productUsesPackages
                         ? stockUnitCode
                         : getRemissionPresentationLabel(
-                            productProfile,
-                            stockUnitCode,
-                          );
+                          productProfile,
+                          stockUnitCode,
+                        );
                       const hasQuantity = Boolean(row?.quantity);
 
                       return (
                         <div
                           key={product.id}
-                          className={`grid grid-cols-[minmax(260px,1fr)_96px_132px] items-center border-b border-[rgba(200,210,220,0.65)] px-3 py-1.5 text-sm ${
-                            hasQuantity ? "bg-yellow-50" : "bg-white"
-                          }`}
+                          className={`grid grid-cols-[minmax(260px,1fr)_96px_132px] items-center border-b border-[rgba(200,210,220,0.65)] px-3 py-1.5 text-sm ${hasQuantity ? "bg-yellow-50" : "bg-white"
+                            }`}
                         >
                           <div className="min-w-0 truncate font-medium text-[var(--ui-text)]">
                             {product.name ?? product.id}
@@ -954,43 +958,43 @@ export function RemissionsItems({
             ).trim();
             const areaDestinationDisplay =
               lockAreaKind &&
-              normalizedSelectedAreaLabel &&
-              normalizedSelectedAreaLabel.toLowerCase() !== "todos"
+                normalizedSelectedAreaLabel &&
+                normalizedSelectedAreaLabel.toLowerCase() !== "todos"
                 ? normalizedSelectedAreaLabel
                 : "Recepción global";
             const availableReference = Number(referenceMeta?.currentQty ?? 0);
             const referenceComparison =
               row.productId && referenceSiteName
                 ? (() => {
-                    try {
-                      const requestedInStock =
-                        rowReady ||
+                  try {
+                    const requestedInStock =
+                      rowReady ||
                         (Number.isFinite(quantityValue) && quantityValue > 0)
-                          ? productUsesPackages
-                            ? roundQuantity(quantityValue)
-                            : convertByProductProfile({
-                                quantityInInput: Number.isFinite(quantityValue)
-                                  ? quantityValue
-                                  : 0,
-                                inputUnitCode: effectiveInputUnitCode,
-                                stockUnitCode,
-                                profile: defaultProfile,
-                              }).quantityInStock
-                          : null;
-                      const shortage =
-                        requestedInStock !== null
-                          ? roundQuantity(
-                              Math.max(
-                                requestedInStock - availableReference,
-                                0,
-                              ),
-                            )
-                          : 0;
-                      return { requestedInStock, shortage };
-                    } catch {
-                      return { requestedInStock: null, shortage: 0 };
-                    }
-                  })()
+                        ? productUsesPackages
+                          ? roundQuantity(quantityValue)
+                          : convertByProductProfile({
+                            quantityInInput: Number.isFinite(quantityValue)
+                              ? quantityValue
+                              : 0,
+                            inputUnitCode: effectiveInputUnitCode,
+                            stockUnitCode,
+                            profile: defaultProfile,
+                          }).quantityInStock
+                        : null;
+                    const shortage =
+                      requestedInStock !== null
+                        ? roundQuantity(
+                          Math.max(
+                            requestedInStock - availableReference,
+                            0,
+                          ),
+                        )
+                        : 0;
+                    return { requestedInStock, shortage };
+                  } catch {
+                    return { requestedInStock: null, shortage: 0 };
+                  }
+                })()
                 : null;
 
             return (
@@ -1033,21 +1037,21 @@ export function RemissionsItems({
                             prev.map((current) =>
                               current.id === row.id
                                 ? {
-                                    ...current,
-                                    productId: nextProductId,
-                                    inputUnitCode: nextUsesPackages
-                                      ? nextStockUnitCode || "un"
-                                      : nextUsesFixedPresentation
-                                        ? getRemissionInputUnitCode(
-                                            nextProfile,
-                                            nextStockUnitCode,
-                                          )
-                                        : nextStockUnitCode || "un",
-                                    inputUomProfileId: nextUsesFixedPresentation
-                                      ? (nextProfile?.id ?? "")
-                                      : "",
-                                    acceptPackageFraction: false,
-                                  }
+                                  ...current,
+                                  productId: nextProductId,
+                                  inputUnitCode: nextUsesPackages
+                                    ? nextStockUnitCode || "un"
+                                    : nextUsesFixedPresentation
+                                      ? getRemissionInputUnitCode(
+                                        nextProfile,
+                                        nextStockUnitCode,
+                                      )
+                                      : nextStockUnitCode || "un",
+                                  inputUomProfileId: nextUsesFixedPresentation
+                                    ? (nextProfile?.id ?? "")
+                                    : "",
+                                  acceptPackageFraction: false,
+                                }
                                 : current,
                             ),
                           );
@@ -1093,10 +1097,10 @@ export function RemissionsItems({
                             prev.map((current) =>
                               current.id === row.id
                                 ? {
-                                    ...current,
-                                    quantity: event.target.value,
-                                    acceptPackageFraction: false,
-                                  }
+                                  ...current,
+                                  quantity: event.target.value,
+                                  acceptPackageFraction: false,
+                                }
                                 : current,
                             ),
                           )
