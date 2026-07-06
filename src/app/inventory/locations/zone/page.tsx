@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 
 import { LocationBoardAutoRefresh } from "@/features/inventory/locations/location-board-auto-refresh";
 import { requireAppAccess } from "@/lib/auth/guard";
@@ -75,7 +75,9 @@ export default async function LocationZoneBoardPage({
     returnTo: "/inventory/locations/zone",
   });
 
-  if (!siteId || !zone) notFound();
+  if (!siteId || !zone) {
+    redirect("/inventory/locations/zones");
+  }
 
   const { data: siteData } = await supabase
     .from("sites")
@@ -258,44 +260,47 @@ export default async function LocationZoneBoardPage({
                     {rows.length > 0 ? "Con stock" : "Vacío"}
                   </span>
                 </div>
-                <div className="mt-3 flex items-center justify-between gap-3">
-                  <div className="text-sm text-[var(--ui-muted)]">Qty total</div>
-                  <div className="text-2xl font-semibold tracking-[-0.03em] text-[var(--ui-text)]">
-                    {formatQty(totalQty)}
-                  </div>
-                </div>
               </div>
+
               <div className="space-y-3 p-4">
-                {topRows.length > 0 ? (
-                  topRows.map((row) => {
-                    const product = row.products;
-                    return (
-                      <div key={`${location.id}-${row.product_id}`} className="flex items-center justify-between gap-3">
-                        <div className="min-w-0">
-                          <div className="line-clamp-1 text-sm font-semibold text-[var(--ui-text)]">
-                            {product?.name ?? row.product_id}
-                          </div>
-                          <div className="text-xs text-[var(--ui-muted)]">
-                            {product?.stock_unit_code ?? product?.unit ?? "un"}
-                          </div>
-                        </div>
-                        <div className="text-right text-sm font-semibold text-[var(--ui-text)]">
-                          {formatQty(row.current_qty)}
-                        </div>
-                      </div>
-                    );
-                  })
-                ) : (
-                  <div className="text-sm text-[var(--ui-muted)]">Sin contenido visible en esta área.</div>
-                )}
-                <div className="pt-2">
-                  <Link
-                    href={`/inventory/locations/${encodeURIComponent(location.id)}/board${isKiosk ? "?kiosk=1" : ""}`}
-                    className="ui-btn ui-btn--ghost w-full"
-                  >
-                    Ver área
-                  </Link>
+                <div className="flex items-center justify-between rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-3 py-2 text-sm">
+                  <span className="text-[var(--ui-muted)]">Qty visible</span>
+                  <span className="font-bold text-[var(--ui-text)]">{formatQty(totalQty)}</span>
                 </div>
+
+                {topRows.length > 0 ? (
+                  <div className="space-y-2">
+                    {topRows.map((row) => {
+                      const product = row.products;
+                      const imageUrl = product?.catalog_image_url || product?.image_url || null;
+                      const unit = product?.stock_unit_code || product?.unit || "un";
+
+                      return (
+                        <div key={`${row.location_id}-${row.product_id}`} className="flex items-center gap-3 rounded-2xl border border-[var(--ui-border)] bg-white p-3">
+                          <div className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-2)] text-xs font-semibold text-[var(--ui-muted)]">
+                            {imageUrl ? (
+                              <img src={imageUrl} alt="" className="h-full w-full object-cover" />
+                            ) : (
+                              "IMG"
+                            )}
+                          </div>
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm font-semibold text-[var(--ui-text)]">
+                              {product?.name ?? row.product_id}
+                            </div>
+                            <div className="text-xs text-[var(--ui-muted)]">
+                              {formatQty(row.current_qty)} {unit}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="rounded-2xl border border-dashed border-[var(--ui-border)] bg-[var(--ui-surface-2)] p-4 text-sm text-[var(--ui-muted)]">
+                    Sin stock visible en esta área.
+                  </div>
+                )}
               </div>
             </article>
           );
