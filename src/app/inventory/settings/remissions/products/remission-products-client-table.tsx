@@ -67,11 +67,13 @@ type ProductTypeOption = {
 
 type LocationOption = {
   id: string;
+  areaId: string;
   label: string;
 };
 
 type AreaOption = {
   value: string;
+  id: string;
   label: string;
 };
 
@@ -150,10 +152,18 @@ export function RemissionProductsClientTable({
   saveAction,
 }: Props) {
   const defaultOriginAreaKind = originAreaOptions[0]?.value ?? "";
-  const defaultOriginLocationId = originLocationOptions[0]?.id ?? "";
+  const defaultOriginAreaId = originAreaOptions[0]?.id ?? "";
+  const defaultOriginLocationId =
+    originLocationOptions.find((location) => location.areaId === defaultOriginAreaId)?.id ??
+    originLocationOptions[0]?.id ??
+    "";
   const disablesRemission = bulkProfile === "available_not_remission" || bulkProfile === "disable_remission";
   const originRouteInputsAvailable =
-    !disablesRemission && originLocationOptions.length > 0 && originAreaOptions.length > 0;
+    !disablesRemission &&
+    originAreaOptions.length > 0 &&
+    originAreaOptions.some((area) =>
+      originLocationOptions.some((location) => location.areaId === area.id)
+    );
 
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
@@ -506,6 +516,23 @@ export function RemissionProductsClientTable({
               };
               const routeEnabled = canRoute && route.enabled;
               const rowBlocked = !diagnostics.canApply || !canManage;
+              const selectedOriginArea =
+                originAreaOptions.find((area) => area.value === route.areaKind) ??
+                originAreaOptions[0] ??
+                null;
+              const availableRouteLocations = selectedOriginArea
+                ? originLocationOptions.filter((location) => location.areaId === selectedOriginArea.id)
+                : [];
+              const resolvedInputLocationId = availableRouteLocations.some(
+                (location) => location.id === route.inputLocationId
+              )
+                ? route.inputLocationId
+                : availableRouteLocations[0]?.id ?? "";
+              const resolvedOutputLocationId = availableRouteLocations.some(
+                (location) => location.id === route.outputLocationId
+              )
+                ? route.outputLocationId
+                : availableRouteLocations[0]?.id ?? "";
               return (
                 <TableRow key={product.id} className="border-t border-zinc-200/70 align-top">
                   <TableCell className="px-3 py-3 align-top">
@@ -601,13 +628,25 @@ export function RemissionProductsClientTable({
                             <label className="flex flex-col gap-1">
                               <span className="text-[11px] font-semibold text-[var(--ui-muted)]">Área</span>
                               <select
-                                value={route.areaKind}
-                                onChange={(event) => updateRoute(product.id, { areaKind: event.target.value })}
+                                value={selectedOriginArea?.value ?? ""}
+                                onChange={(event) => {
+                                  const nextAreaKind = event.target.value;
+                                  const nextArea = originAreaOptions.find((area) => area.value === nextAreaKind) ?? null;
+                                  const nextLocationId = nextArea
+                                    ? originLocationOptions.find((location) => location.areaId === nextArea.id)?.id ?? ""
+                                    : "";
+
+                                  updateRoute(product.id, {
+                                    areaKind: nextAreaKind,
+                                    inputLocationId: nextLocationId,
+                                    outputLocationId: nextLocationId,
+                                  });
+                                }}
                                 className="ui-input h-9 text-sm"
                                 disabled={rowBlocked}
                               >
                                 {originAreaOptions.map((area) => (
-                                  <option key={area.value} value={area.value}>
+                                  <option key={area.id} value={area.value}>
                                     {area.label}
                                   </option>
                                 ))}
@@ -616,12 +655,12 @@ export function RemissionProductsClientTable({
                             <label className="flex flex-col gap-1">
                               <span className="text-[11px] font-semibold text-[var(--ui-muted)]">Consume</span>
                               <select
-                                value={route.inputLocationId}
+                                value={resolvedInputLocationId}
                                 onChange={(event) => updateRoute(product.id, { inputLocationId: event.target.value })}
                                 className="ui-input h-9 text-sm"
-                                disabled={rowBlocked}
+                                disabled={rowBlocked || availableRouteLocations.length === 0}
                               >
-                                {originLocationOptions.map((location) => (
+                                {availableRouteLocations.map((location) => (
                                   <option key={location.id} value={location.id}>
                                     {location.label}
                                   </option>
@@ -631,18 +670,23 @@ export function RemissionProductsClientTable({
                             <label className="flex flex-col gap-1">
                               <span className="text-[11px] font-semibold text-[var(--ui-muted)]">Terminado</span>
                               <select
-                                value={route.outputLocationId}
+                                value={resolvedOutputLocationId}
                                 onChange={(event) => updateRoute(product.id, { outputLocationId: event.target.value })}
                                 className="ui-input h-9 text-sm"
-                                disabled={rowBlocked}
+                                disabled={rowBlocked || availableRouteLocations.length === 0}
                               >
-                                {originLocationOptions.map((location) => (
+                                {availableRouteLocations.map((location) => (
                                   <option key={location.id} value={location.id}>
                                     {location.label}
                                   </option>
                                 ))}
                               </select>
                             </label>
+                            {availableRouteLocations.length === 0 ? (
+                              <div className="text-xs text-amber-700">
+                                El área seleccionada no tiene LOC de producción activo.
+                              </div>
+                            ) : null}
                           </div>
                         ) : null}
                         {!originRouteInputsAvailable ? (

@@ -58,6 +58,7 @@ const APP_ID = "nexo";
 const PAGE_PATH = "/inventory/settings/remissions/products";
 
 type OriginAreaRow = {
+  id: string;
   kind: string | null;
   name: string | null;
 };
@@ -155,7 +156,7 @@ export default async function RemissionProductsPage({
     originSiteId
       ? supabase
         .from("areas")
-        .select("kind,name")
+        .select("id,kind,name")
         .eq("site_id", originSiteId)
         .eq("is_active", true)
         .order("name", { ascending: true })
@@ -200,6 +201,13 @@ export default async function RemissionProductsPage({
   const originLocations = ((locationsData ?? []) as LocationRow[]).filter(
     (location) => location.is_active !== false
   );
+  const productionOriginLocations = originLocations.filter(
+    (location) =>
+      String((location as LocationRow & { location_type?: string | null }).location_type ?? "")
+        .trim()
+        .toLowerCase() === "production" &&
+      Boolean(String((location as LocationRow & { area_id?: string | null }).area_id ?? "").trim())
+  );
   const requesterAreaOptions = Array.from(
     new Set(
       ((areaRulesData ?? []) as AreaRuleRow[])
@@ -212,21 +220,33 @@ export default async function RemissionProductsPage({
       ? requestedAreaKind
       : requesterAreaOptions[0]?.value ?? "";
   const selectedAreaLabel = areaKindLabel(selectedAreaKind);
+  const productionAreaIds = new Set(
+    productionOriginLocations
+      .map((location) =>
+        String((location as LocationRow & { area_id?: string | null }).area_id ?? "").trim()
+      )
+      .filter(Boolean)
+  );
   const originAreaOptions = Array.from(
     new Map(
       ((originAreasData ?? []) as OriginAreaRow[])
         .map((area) => {
           const value = normalizeAreaKind(area.kind);
-          if (!value) return null;
+          const areaId = String(area.id ?? "").trim();
+          if (!value || !areaId) return null;
+          if (value === "bodega") return null;
+          if (!productionAreaIds.has(areaId)) return null;
+
           return [
             value,
             {
               value,
+              id: areaId,
               label: area.name?.trim() || areaKindLabel(value),
             },
           ] as const;
         })
-        .filter((entry): entry is readonly [string, { value: string; label: string }] => Boolean(entry))
+        .filter((entry): entry is readonly [string, { value: string; id: string; label: string }] => Boolean(entry))
     ).values()
   );
   const remissionCategories = ((remissionCategoriesData ?? []) as RemissionCategoryRow[])
@@ -469,9 +489,13 @@ export default async function RemissionProductsPage({
           name: category.name ?? "Sin nombre",
         }))}
         allowedTypeOptions={allowedTypeOptions}
-        originLocationOptions={originLocations.map((location) => ({
+        originLocationOptions={productionOriginLocations.map((location) => ({
           id: location.id,
-          label: locationLabel(location),
+          areaId: String((location as LocationRow & { area_id?: string | null }).area_id ?? ""),
+          label:
+            String(location.description ?? "").trim() ||
+            String(location.zone ?? "").trim() ||
+            locationLabel(location),
         }))}
         originAreaOptions={originAreaOptions}
         canManage={canManage}
