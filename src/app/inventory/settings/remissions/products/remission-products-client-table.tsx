@@ -132,6 +132,26 @@ function canConfigureProductionRoute(productType: string) {
   return ["venta", "preparacion"].includes(normalized);
 }
 
+function firstLocationForArea(areaValue: string, areas: AreaOption[], locations: LocationOption[]) {
+  const area = areas.find((item) => item.value === areaValue) ?? areas[0] ?? null;
+  if (!area) return "";
+  return locations.find((location) => location.areaId === area.id)?.id ?? "";
+}
+
+function resolveRouteLocationId(
+  locationId: string,
+  areaValue: string,
+  areas: AreaOption[],
+  locations: LocationOption[],
+) {
+  const area = areas.find((item) => item.value === areaValue) ?? areas[0] ?? null;
+  if (!area) return "";
+  const areaLocations = locations.filter((location) => location.areaId === area.id);
+  if (areaLocations.some((location) => location.id === locationId)) return locationId;
+  return areaLocations[0]?.id ?? "";
+}
+
+
 const stickyHeaderCellClass =
   "sticky top-0 z-20 border-b border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-left text-xs font-semibold text-[var(--ui-muted)] shadow-sm";
 
@@ -189,8 +209,20 @@ export function RemissionProductsClientTable({
         {
           enabled: Boolean(row.setting.originRoute?.enabled),
           areaKind: row.setting.originRoute?.areaKind || defaultOriginAreaKind,
-          inputLocationId: row.setting.originRoute?.inputLocationId || defaultOriginLocationId,
-          outputLocationId: row.setting.originRoute?.outputLocationId || defaultOriginLocationId,
+          inputLocationId:
+            resolveRouteLocationId(
+              row.setting.originRoute?.inputLocationId || "",
+              row.setting.originRoute?.areaKind || defaultOriginAreaKind,
+              originAreaOptions,
+              originLocationOptions,
+            ) || defaultOriginLocationId,
+          outputLocationId:
+            resolveRouteLocationId(
+              row.setting.originRoute?.outputLocationId || "",
+              row.setting.originRoute?.areaKind || defaultOriginAreaKind,
+              originAreaOptions,
+              originLocationOptions,
+            ) || defaultOriginLocationId,
         },
       ])
     )
@@ -297,6 +329,19 @@ export function RemissionProductsClientTable({
           inputLocationId: defaultOriginLocationId,
           outputLocationId: defaultOriginLocationId,
         };
+        const resolvedAreaKind = route.areaKind || defaultOriginAreaKind;
+        const resolvedInputLocationId = resolveRouteLocationId(
+          route.inputLocationId,
+          resolvedAreaKind,
+          originAreaOptions,
+          originLocationOptions,
+        );
+        const resolvedOutputLocationId = resolveRouteLocationId(
+          route.outputLocationId,
+          resolvedAreaKind,
+          originAreaOptions,
+          originLocationOptions,
+        );
 
         return (
           <div key={`selected-${productId}`} hidden>
@@ -316,9 +361,9 @@ export function RemissionProductsClientTable({
               name={`origin_route_touched_${productId}`}
               value={routeTouchedByProduct[productId] ? "true" : "false"}
             />
-            <input type="hidden" name={`origin_area_kind_${productId}`} value={route.areaKind} />
-            <input type="hidden" name={`origin_input_location_id_${productId}`} value={route.inputLocationId} />
-            <input type="hidden" name={`origin_output_location_id_${productId}`} value={route.outputLocationId} />
+            <input type="hidden" name={`origin_area_kind_${productId}`} value={resolvedAreaKind} />
+            <input type="hidden" name={`origin_input_location_id_${productId}`} value={resolvedInputLocationId} />
+            <input type="hidden" name={`origin_output_location_id_${productId}`} value={resolvedOutputLocationId} />
           </div>
         );
       })}
@@ -617,7 +662,34 @@ export function RemissionProductsClientTable({
                             type="checkbox"
                             checked={routeEnabled}
                             onChange={(event) => {
-                              updateRoute(product.id, { enabled: event.target.checked });
+                              const nextEnabled = event.target.checked;
+                              const nextAreaKind = route.areaKind || defaultOriginAreaKind;
+                              const nextLocationId = firstLocationForArea(
+                                nextAreaKind,
+                                originAreaOptions,
+                                originLocationOptions,
+                              );
+
+                              updateRoute(product.id, {
+                                enabled: nextEnabled,
+                                areaKind: nextAreaKind,
+                                inputLocationId: nextEnabled
+                                  ? resolveRouteLocationId(
+                                      route.inputLocationId,
+                                      nextAreaKind,
+                                      originAreaOptions,
+                                      originLocationOptions,
+                                    ) || nextLocationId
+                                  : route.inputLocationId,
+                                outputLocationId: nextEnabled
+                                  ? resolveRouteLocationId(
+                                      route.outputLocationId,
+                                      nextAreaKind,
+                                      originAreaOptions,
+                                      originLocationOptions,
+                                    ) || nextLocationId
+                                  : route.outputLocationId,
+                              });
                             }}
                             disabled={rowBlocked || !originRouteInputsAvailable}
                           />

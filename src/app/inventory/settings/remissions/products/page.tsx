@@ -63,6 +63,29 @@ type OriginAreaRow = {
   name: string | null;
 };
 
+function normalizeLooseToken(value: unknown) {
+  return String(value ?? "")
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
+function isProductionAreaKind(kind: unknown) {
+  const normalized = normalizeLooseToken(kind);
+  if (!normalized) return false;
+  return !["bodega", "almacen", "almacenamiento", "storage"].includes(normalized);
+}
+
+function isProductionLocation(location: LocationRow) {
+  const normalizedType = normalizeLooseToken(
+    (location as LocationRow & { location_type?: string | null }).location_type
+  );
+  if (!normalizedType) return true;
+  return ["production", "produccion", "prod"].includes(normalizedType);
+}
+
+
 export default async function RemissionProductsPage({
   searchParams,
 }: {
@@ -201,13 +224,10 @@ export default async function RemissionProductsPage({
   const originLocations = ((locationsData ?? []) as LocationRow[]).filter(
     (location) => location.is_active !== false
   );
-  const productionOriginLocations = originLocations.filter(
-    (location) =>
-      String((location as LocationRow & { location_type?: string | null }).location_type ?? "")
-        .trim()
-        .toLowerCase() === "production" &&
-      Boolean(String((location as LocationRow & { area_id?: string | null }).area_id ?? "").trim())
-  );
+  const productionOriginLocations = originLocations.filter((location) => {
+    const areaId = String((location as LocationRow & { area_id?: string | null }).area_id ?? "").trim();
+    return Boolean(areaId) && isProductionLocation(location);
+  });
   const requesterAreaOptions = Array.from(
     new Set(
       ((areaRulesData ?? []) as AreaRuleRow[])
@@ -234,7 +254,7 @@ export default async function RemissionProductsPage({
           const value = normalizeAreaKind(area.kind);
           const areaId = String(area.id ?? "").trim();
           if (!value || !areaId) return null;
-          if (value === "bodega") return null;
+          if (!isProductionAreaKind(value)) return null;
           if (!productionAreaIds.has(areaId)) return null;
 
           return [
