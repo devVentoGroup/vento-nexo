@@ -414,7 +414,13 @@ export async function saveBulkProductConfiguration(formData: FormData) {
         .filter(([productId]) => Boolean(productId))
     );
 
-    const routeRows = routeDrafts.map((draft) => {
+    const existingRouteUpdates: Array<{
+      id: string;
+      row: Record<string, unknown>;
+    }> = [];
+    const routeRowsToInsert: Array<Record<string, unknown>> = [];
+
+    for (const draft of routeDrafts) {
       const existingRoute = existingRouteByProductId.get(draft.productId);
       const row = {
         product_id: draft.productId,
@@ -430,18 +436,44 @@ export async function saveBulkProductConfiguration(formData: FormData) {
         updated_by: userId,
       };
 
-      return existingRoute?.id
-        ? { id: existingRoute.id, ...row }
-        : { ...row, created_by: userId };
-    });
+      if (existingRoute?.id) {
+        existingRouteUpdates.push({
+          id: existingRoute.id,
+          row,
+        });
+      } else {
+        routeRowsToInsert.push({
+          ...row,
+          created_by: userId,
+        });
+      }
+    }
 
-    const { error } = await supabase.from("product_site_production_routes").upsert(routeRows, {
-      onConflict: "id",
-    });
+    if (existingRouteUpdates.length > 0) {
+      const updateResults = await Promise.all(
+        existingRouteUpdates.map((draft) =>
+          supabase
+            .from("product_site_production_routes")
+            .update(draft.row)
+            .eq("id", draft.id)
+        )
+      );
+      const updateError = updateResults.find((result) => result.error)?.error;
+      if (updateError) {
+        returnParams.set("error", updateError.message);
+        redirect(buildRedirect(returnParams));
+      }
+    }
 
-    if (error) {
-      returnParams.set("error", error.message);
-      redirect(buildRedirect(returnParams));
+    if (routeRowsToInsert.length > 0) {
+      const { error: insertError } = await supabase
+        .from("product_site_production_routes")
+        .insert(routeRowsToInsert);
+
+      if (insertError) {
+        returnParams.set("error", insertError.message);
+        redirect(buildRedirect(returnParams));
+      }
     }
 
     savedRouteCount = routeDrafts.length;
@@ -789,10 +821,10 @@ export async function updateRemissionCategory(formData: FormData) {
   }
 
   const sortOrder = sortOrderRaw ? Number(sortOrderRaw) : null;
-if (sortOrder !== null && (!Number.isFinite(sortOrder) || sortOrder < 0)) {
-  returnParams.set("error", "El orden de la categoría no es válido.");
-  redirect(buildRedirect(returnParams));
-}
+  if (sortOrder !== null && (!Number.isFinite(sortOrder) || sortOrder < 0)) {
+    returnParams.set("error", "El orden de la categoría no es válido.");
+    redirect(buildRedirect(returnParams));
+  }
 
   const { supabase, userId } = await requireManager(buildRedirect(returnParams));
   const normalizedName = name.trim();
