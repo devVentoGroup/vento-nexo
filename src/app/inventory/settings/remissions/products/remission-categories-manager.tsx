@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 
 type ServerAction = (formData: FormData) => void | Promise<void>;
 
@@ -62,6 +63,12 @@ export function RemissionCategoriesManager({
   deleteAction,
 }: Props) {
   const [open, setOpen] = useState(false);
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
   const sortedCategories = useMemo(
     () =>
       [...categories].sort((a, b) => {
@@ -105,9 +112,10 @@ export function RemissionCategoriesManager({
         )}
       </div>
 
-      {open ? (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-slate-950/55 px-4 py-8">
-          <div className="w-full max-w-6xl rounded-[28px] border border-[var(--ui-border)] bg-[var(--ui-surface)] shadow-2xl">
+      {mounted && open
+        ? createPortal(
+            <div className="fixed inset-0 z-[1000] flex items-start justify-center overflow-y-auto bg-slate-950/60 px-4 py-8">
+              <div className="w-full max-w-6xl rounded-[28px] border border-[var(--ui-border)] bg-[var(--ui-surface)] shadow-2xl">
             <div className="flex flex-wrap items-start justify-between gap-4 border-b border-[var(--ui-border)] px-5 py-4">
               <div>
                 <div className="ui-h3">Configurar categorías de {selectedAreaLabel || "esta sede"}</div>
@@ -301,9 +309,11 @@ export function RemissionCategoriesManager({
                 </div>
               </div>
             </div>
-          </div>
-        </div>
-      ) : null}
+              </div>
+            </div>,
+            document.body,
+          )
+        : null}
     </div>
   );
 }
