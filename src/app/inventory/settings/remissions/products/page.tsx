@@ -7,13 +7,18 @@ import {
 } from "@/lib/inventory/site-capabilities";
 import { normalizeUnitCode } from "@/lib/inventory/uom";
 import { safeDecodeURIComponent } from "@/lib/url";
+import { RemissionCategoriesManager } from "./remission-categories-manager";
 import {
   RemissionProductsClientTable,
   type RemissionProductsClientRow,
 } from "./remission-products-client-table";
 import {
+  archiveRemissionCategory,
   createRemissionCategory,
+  deleteEmptyRemissionCategory,
+  mergeRemissionCategory,
   saveBulkProductConfiguration,
+  updateRemissionCategory,
 } from "./actions";
 import {
   areaKindLabel,
@@ -412,47 +417,25 @@ export default async function RemissionProductsPage({
         </div>
       ) : null}
 
-      <div className="mt-6 ui-panel">
-        <div className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="ui-h3">Categorías de {selectedAreaLabel || "esta sede"}</div>
-            <p className="mt-1 text-sm text-[var(--ui-muted)]">
-              Solo ordenan la selección para el área solicitante seleccionada. No cambian la categoría del catálogo.
-            </p>
-          </div>
-          <form action={createRemissionCategory} className="flex flex-wrap items-end gap-2">
-            <input type="hidden" name="destination_site_id" value={destinationSiteId} />
-            <input type="hidden" name="origin_site_id" value={originSiteId} />
-            <input type="hidden" name="bulk_profile" value={bulkProfile} />
-            <input type="hidden" name="area_kind" value={selectedAreaKind} />
-            <label className="flex flex-col gap-1">
-              <span className="ui-label">Nueva categoría</span>
-              <input
-                name="category_name"
-                className="ui-input min-w-[220px]"
-                placeholder="Ej. Harinas"
-                disabled={!canManage || !destinationSiteId || !selectedAreaKind}
-              />
-            </label>
-            <button className="ui-btn ui-btn--brand" disabled={!canManage || !destinationSiteId || !selectedAreaKind}>
-              Crear
-            </button>
-          </form>
-        </div>
-        <div className="mt-4 flex flex-wrap gap-2">
-          {remissionCategories.length ? (
-            remissionCategories.map((category) => (
-              <span key={category.id} className="ui-chip">
-                {category.name ?? "Sin nombre"}
-              </span>
-            ))
-          ) : (
-            <span className="text-sm text-[var(--ui-muted)]">
-              Esta área todavía no tiene categorías visuales de remisión.
-            </span>
-          )}
-        </div>
-      </div>
+      <RemissionCategoriesManager
+        categories={remissionCategories.map((category) => ({
+          id: category.id,
+          name: category.name ?? "Sin nombre",
+          sortOrder: category.sort_order ?? 0,
+          productCount: productRows.filter((row) => row.setting.remissionCategoryId === category.id).length,
+        }))}
+        canManage={canManage}
+        destinationSiteId={destinationSiteId}
+        originSiteId={originSiteId}
+        bulkProfile={bulkProfile}
+        selectedAreaKind={selectedAreaKind}
+        selectedAreaLabel={selectedAreaLabel}
+        createAction={createRemissionCategory}
+        updateAction={updateRemissionCategory}
+        mergeAction={mergeRemissionCategory}
+        archiveAction={archiveRemissionCategory}
+        deleteAction={deleteEmptyRemissionCategory}
+      />
 
       <RemissionProductsClientTable
         key={`${destinationSiteId}:${originSiteId}:${bulkProfile}:${selectedAreaKind}`}

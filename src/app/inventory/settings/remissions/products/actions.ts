@@ -662,7 +662,25 @@ export async function createRemissionCategory(formData: FormData) {
     redirect(buildRedirect(returnParams));
   }
 
-  const { supabase } = await requireManager(buildRedirect(returnParams));
+  const { supabase, userId } = await requireManager(buildRedirect(returnParams));
+  const normalizedName = name.trim();
+
+  const { data: duplicateRows } = await supabase
+    .from("remission_product_categories")
+    .select("id,name")
+    .eq("site_id", destinationSiteId)
+    .eq("area_kind", selectedAreaKind)
+    .eq("is_active", true);
+
+  const duplicated = ((duplicateRows ?? []) as Array<{ id: string; name: string | null }>).some(
+    (row) => String(row.name ?? "").trim().toLowerCase() === normalizedName.toLowerCase()
+  );
+
+  if (duplicated) {
+    returnParams.set("error", "Ya existe una categoría activa con ese nombre para esta área.");
+    redirect(buildRedirect(returnParams));
+  }
+
   const { count } = await supabase
     .from("remission_product_categories")
     .select("id", { count: "exact", head: true })
@@ -672,9 +690,10 @@ export async function createRemissionCategory(formData: FormData) {
   const { error } = await supabase.from("remission_product_categories").insert({
     site_id: destinationSiteId,
     area_kind: selectedAreaKind,
-    name,
+    name: normalizedName,
     sort_order: count ?? 0,
     is_active: true,
+    updated_by: userId,
   });
   if (error) {
     returnParams.set("error", error.message);
@@ -743,5 +762,404 @@ export async function saveProductRemissionCategories(formData: FormData) {
   revalidatePath(PAGE_PATH);
   revalidatePath("/inventory/remissions");
   returnParams.set("ok", "Categorías de remisión guardadas.");
+  redirect(buildRedirect(returnParams));
+}
+
+
+export async function updateRemissionCategory(formData: FormData) {
+  "use server";
+
+  const destinationSiteId = asText(formData.get("destination_site_id"));
+  const originSiteId = asText(formData.get("origin_site_id"));
+  const rawProfile = asText(formData.get("bulk_profile"));
+  const selectedAreaKind = normalizeAreaKind(asText(formData.get("area_kind")));
+  const categoryId = asText(formData.get("category_id"));
+  const name = asText(formData.get("category_name"));
+  const sortOrderRaw = asText(formData.get("sort_order"));
+  const returnParams = commonReturnParams({
+    destinationSiteId,
+    originSiteId,
+    rawProfile,
+    selectedAreaKind,
+  });
+
+  if (!destinationSiteId || !selectedAreaKind || !categoryId || !name) {
+    returnParams.set("error", "Selecciona categoría y escribe un nombre válido.");
+    redirect(buildRedirect(returnParams));
+  }
+
+  const sortOrder = sortOrderRaw ? Number(sortOrderRaw) : null;
+if (sortOrder !== null && (!Number.isFinite(sortOrder) || sortOrder < 0)) {
+  returnParams.set("error", "El orden de la categoría no es válido.");
+  redirect(buildRedirect(returnParams));
+}
+
+  const { supabase, userId } = await requireManager(buildRedirect(returnParams));
+  const normalizedName = name.trim();
+
+  const { data: currentCategory } = await supabase
+    .from("remission_product_categories")
+    .select("id,site_id,area_kind,is_active")
+    .eq("id", categoryId)
+    .maybeSingle();
+
+  const current = currentCategory as {
+    id: string;
+    site_id: string | null;
+    area_kind: string | null;
+    is_active: boolean | null;
+  } | null;
+
+  if (
+    !current ||
+    current.site_id !== destinationSiteId ||
+    normalizeAreaKind(current.area_kind) !== selectedAreaKind ||
+    current.is_active === false
+  ) {
+    returnParams.set("error", "La categoría no pertenece a la sede y área seleccionadas.");
+    redirect(buildRedirect(returnParams));
+  }
+
+  const { data: duplicateRows } = await supabase
+    .from("remission_product_categories")
+    .select("id,name")
+    .eq("site_id", destinationSiteId)
+    .eq("area_kind", selectedAreaKind)
+    .eq("is_active", true);
+
+  const duplicated = ((duplicateRows ?? []) as Array<{ id: string; name: string | null }>).some(
+    (row) =>
+      row.id !== categoryId &&
+      String(row.name ?? "").trim().toLowerCase() === normalizedName.toLowerCase()
+  );
+
+  if (duplicated) {
+    returnParams.set("error", "Ya existe otra categoría activa con ese nombre para esta área.");
+    redirect(buildRedirect(returnParams));
+  }
+
+  const patch: Record<string, unknown> = {
+    name: normalizedName,
+    updated_by: userId,
+  };
+
+  if (sortOrder !== null) {
+    patch.sort_order = sortOrder;
+  }
+
+  const { error } = await supabase
+    .from("remission_product_categories")
+    .update(patch)
+    .eq("id", categoryId)
+    .eq("site_id", destinationSiteId)
+    .eq("area_kind", selectedAreaKind);
+
+  if (error) {
+    returnParams.set("error", error.message);
+    redirect(buildRedirect(returnParams));
+  }
+
+  revalidatePath(PAGE_PATH);
+  revalidatePath("/inventory/remissions");
+  returnParams.set("ok", "Categoría actualizada.");
+  redirect(buildRedirect(returnParams));
+}
+
+export async function mergeRemissionCategory(formData: FormData) {
+  "use server";
+
+  const destinationSiteId = asText(formData.get("destination_site_id"));
+  const originSiteId = asText(formData.get("origin_site_id"));
+  const rawProfile = asText(formData.get("bulk_profile"));
+  const selectedAreaKind = normalizeAreaKind(asText(formData.get("area_kind")));
+  const sourceCategoryId = asText(formData.get("source_category_id"));
+  const targetCategoryId = asText(formData.get("target_category_id"));
+  const archiveSource = !["0", "false", "no"].includes(
+    asText(formData.get("archive_source")).toLowerCase()
+  );
+  const returnParams = commonReturnParams({
+    destinationSiteId,
+    originSiteId,
+    rawProfile,
+    selectedAreaKind,
+  });
+
+  if (!destinationSiteId || !selectedAreaKind || !sourceCategoryId || !targetCategoryId) {
+    returnParams.set("error", "Selecciona categoría origen y categoría destino.");
+    redirect(buildRedirect(returnParams));
+  }
+
+  if (sourceCategoryId === targetCategoryId) {
+    returnParams.set("error", "La categoría origen y destino no pueden ser la misma.");
+    redirect(buildRedirect(returnParams));
+  }
+
+  const { supabase, userId } = await requireManager(buildRedirect(returnParams));
+  const { data: categoryRows } = await supabase
+    .from("remission_product_categories")
+    .select("id,site_id,area_kind,is_active")
+    .in("id", [sourceCategoryId, targetCategoryId]);
+
+  const categories = (categoryRows ?? []) as Array<{
+    id: string;
+    site_id: string | null;
+    area_kind: string | null;
+    is_active: boolean | null;
+  }>;
+
+  const source = categories.find((category) => category.id === sourceCategoryId) ?? null;
+  const target = categories.find((category) => category.id === targetCategoryId) ?? null;
+
+  const validCategory = (category: typeof source) =>
+    Boolean(
+      category &&
+      category.site_id === destinationSiteId &&
+      normalizeAreaKind(category.area_kind) === selectedAreaKind &&
+      category.is_active !== false
+    );
+
+  if (!validCategory(source) || !validCategory(target)) {
+    returnParams.set("error", "Las categorías no pertenecen a la sede y área seleccionadas.");
+    redirect(buildRedirect(returnParams));
+  }
+
+  const { error: areaError } = await supabase
+    .from("product_site_area_remission_categories")
+    .update({
+      remission_category_id: targetCategoryId,
+      updated_by: userId,
+    })
+    .eq("site_id", destinationSiteId)
+    .eq("area_kind", selectedAreaKind)
+    .eq("remission_category_id", sourceCategoryId);
+
+  if (areaError) {
+    returnParams.set("error", areaError.message);
+    redirect(buildRedirect(returnParams));
+  }
+
+  const { error: fallbackError } = await supabase
+    .from("product_site_settings")
+    .update({
+      remission_category_id: targetCategoryId,
+    })
+    .eq("site_id", destinationSiteId)
+    .eq("remission_category_id", sourceCategoryId);
+
+  if (fallbackError) {
+    returnParams.set("error", fallbackError.message);
+    redirect(buildRedirect(returnParams));
+  }
+
+  if (archiveSource) {
+    const { error: archiveError } = await supabase
+      .from("remission_product_categories")
+      .update({
+        is_active: false,
+        updated_by: userId,
+      })
+      .eq("id", sourceCategoryId)
+      .eq("site_id", destinationSiteId)
+      .eq("area_kind", selectedAreaKind);
+
+    if (archiveError) {
+      returnParams.set("error", archiveError.message);
+      redirect(buildRedirect(returnParams));
+    }
+  }
+
+  revalidatePath(PAGE_PATH);
+  revalidatePath("/inventory/remissions");
+  returnParams.set("ok", "Categoría fusionada.");
+  redirect(buildRedirect(returnParams));
+}
+
+export async function archiveRemissionCategory(formData: FormData) {
+  "use server";
+
+  const destinationSiteId = asText(formData.get("destination_site_id"));
+  const originSiteId = asText(formData.get("origin_site_id"));
+  const rawProfile = asText(formData.get("bulk_profile"));
+  const selectedAreaKind = normalizeAreaKind(asText(formData.get("area_kind")));
+  const categoryId = asText(formData.get("category_id"));
+  const returnParams = commonReturnParams({
+    destinationSiteId,
+    originSiteId,
+    rawProfile,
+    selectedAreaKind,
+  });
+
+  if (!destinationSiteId || !selectedAreaKind || !categoryId) {
+    returnParams.set("error", "Selecciona una categoría para archivar.");
+    redirect(buildRedirect(returnParams));
+  }
+
+  const { supabase, userId } = await requireManager(buildRedirect(returnParams));
+
+  const [{ count: areaCount }, { count: fallbackCount }] = await Promise.all([
+    supabase
+      .from("product_site_area_remission_categories")
+      .select("product_id", { count: "exact", head: true })
+      .eq("site_id", destinationSiteId)
+      .eq("area_kind", selectedAreaKind)
+      .eq("remission_category_id", categoryId),
+    supabase
+      .from("product_site_settings")
+      .select("product_id", { count: "exact", head: true })
+      .eq("site_id", destinationSiteId)
+      .eq("remission_category_id", categoryId),
+  ]);
+
+  const assignedCount = (areaCount ?? 0) + (fallbackCount ?? 0);
+  if (assignedCount > 0) {
+    returnParams.set("error", "No se puede archivar una categoría con productos. Primero fusiónala con otra categoría.");
+    redirect(buildRedirect(returnParams));
+  }
+
+  const { error } = await supabase
+    .from("remission_product_categories")
+    .update({
+      is_active: false,
+      updated_by: userId,
+    })
+    .eq("id", categoryId)
+    .eq("site_id", destinationSiteId)
+    .eq("area_kind", selectedAreaKind);
+
+  if (error) {
+    returnParams.set("error", error.message);
+    redirect(buildRedirect(returnParams));
+  }
+
+  revalidatePath(PAGE_PATH);
+  revalidatePath("/inventory/remissions");
+  returnParams.set("ok", "Categoría archivada.");
+  redirect(buildRedirect(returnParams));
+}
+
+export async function deleteEmptyRemissionCategory(formData: FormData) {
+  "use server";
+
+  const destinationSiteId = asText(formData.get("destination_site_id"));
+  const originSiteId = asText(formData.get("origin_site_id"));
+  const rawProfile = asText(formData.get("bulk_profile"));
+  const selectedAreaKind = normalizeAreaKind(asText(formData.get("area_kind")));
+  const categoryId = asText(formData.get("category_id"));
+  const returnParams = commonReturnParams({
+    destinationSiteId,
+    originSiteId,
+    rawProfile,
+    selectedAreaKind,
+  });
+
+  if (!destinationSiteId || !selectedAreaKind || !categoryId) {
+    returnParams.set("error", "Selecciona una categoría para eliminar.");
+    redirect(buildRedirect(returnParams));
+  }
+
+  const { supabase } = await requireManager(buildRedirect(returnParams));
+
+  const [{ count: areaCount }, { count: fallbackCount }] = await Promise.all([
+    supabase
+      .from("product_site_area_remission_categories")
+      .select("product_id", { count: "exact", head: true })
+      .eq("site_id", destinationSiteId)
+      .eq("area_kind", selectedAreaKind)
+      .eq("remission_category_id", categoryId),
+    supabase
+      .from("product_site_settings")
+      .select("product_id", { count: "exact", head: true })
+      .eq("site_id", destinationSiteId)
+      .eq("remission_category_id", categoryId),
+  ]);
+
+  const assignedCount = (areaCount ?? 0) + (fallbackCount ?? 0);
+  if (assignedCount > 0) {
+    returnParams.set("error", "No se puede eliminar una categoría con productos. Primero fusiónala con otra categoría.");
+    redirect(buildRedirect(returnParams));
+  }
+
+  const { error } = await supabase
+    .from("remission_product_categories")
+    .delete()
+    .eq("id", categoryId)
+    .eq("site_id", destinationSiteId)
+    .eq("area_kind", selectedAreaKind);
+
+  if (error) {
+    returnParams.set("error", error.message);
+    redirect(buildRedirect(returnParams));
+  }
+
+  revalidatePath(PAGE_PATH);
+  revalidatePath("/inventory/remissions");
+  returnParams.set("ok", "Categoría eliminada.");
+  redirect(buildRedirect(returnParams));
+}
+
+export async function reorderRemissionCategories(formData: FormData) {
+  "use server";
+
+  const destinationSiteId = asText(formData.get("destination_site_id"));
+  const originSiteId = asText(formData.get("origin_site_id"));
+  const rawProfile = asText(formData.get("bulk_profile"));
+  const selectedAreaKind = normalizeAreaKind(asText(formData.get("area_kind")));
+  const categoryIds = uniqueFormValues(formData, "category_id");
+  const returnParams = commonReturnParams({
+    destinationSiteId,
+    originSiteId,
+    rawProfile,
+    selectedAreaKind,
+  });
+
+  if (!destinationSiteId || !selectedAreaKind || categoryIds.length === 0) {
+    returnParams.set("error", "No hay categorías para reordenar.");
+    redirect(buildRedirect(returnParams));
+  }
+
+  const { supabase, userId } = await requireManager(buildRedirect(returnParams));
+
+  const { data: categoryRows } = await supabase
+    .from("remission_product_categories")
+    .select("id,site_id,area_kind")
+    .eq("site_id", destinationSiteId)
+    .eq("area_kind", selectedAreaKind)
+    .eq("is_active", true);
+
+  const validCategoryIds = new Set(
+    ((categoryRows ?? []) as Array<{ id: string | null; site_id: string | null; area_kind: string | null }>)
+      .filter((category) => category.site_id === destinationSiteId && normalizeAreaKind(category.area_kind) === selectedAreaKind)
+      .map((category) => String(category.id ?? "").trim())
+      .filter(Boolean)
+  );
+
+  const invalidCategoryIds = categoryIds.filter((categoryId) => !validCategoryIds.has(categoryId));
+  if (invalidCategoryIds.length > 0) {
+    returnParams.set("error", "Hay categorías inválidas en el orden enviado.");
+    redirect(buildRedirect(returnParams));
+  }
+
+  const updates = categoryIds.map((categoryId, index) =>
+    supabase
+      .from("remission_product_categories")
+      .update({
+        sort_order: index,
+        updated_by: userId,
+      })
+      .eq("id", categoryId)
+      .eq("site_id", destinationSiteId)
+      .eq("area_kind", selectedAreaKind)
+  );
+
+  const results = await Promise.all(updates);
+  const error = results.find((result) => result.error)?.error;
+  if (error) {
+    returnParams.set("error", error.message);
+    redirect(buildRedirect(returnParams));
+  }
+
+  revalidatePath(PAGE_PATH);
+  revalidatePath("/inventory/remissions");
+  returnParams.set("ok", "Orden de categorías actualizado.");
   redirect(buildRedirect(returnParams));
 }
