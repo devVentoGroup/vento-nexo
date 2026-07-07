@@ -13,6 +13,7 @@ import {
   buildRedirect,
   isBulkProfile,
   normalizeAreaKind,
+  normalizeProductType,
   profileAllowsProduct,
   requiresRemissionProfile,
   settingAreaKinds,
@@ -83,11 +84,6 @@ export async function saveBulkProductConfiguration(formData: FormData) {
   const selectedAreaKind = normalizeAreaKind(asText(formData.get("area_kind")));
   const productIds = uniqueFormValues(formData, "product_id");
   const categoryProductIds = uniqueFormValues(formData, "category_product_id");
-  const salesEnabled = checked(formData.get("sales_enabled"));
-  const configureOriginRoute = checked(formData.get("configure_origin_route"));
-  const originAreaKind = normalizeAreaKind(asText(formData.get("origin_area_kind")));
-  const originInputLocationId = asText(formData.get("origin_input_location_id"));
-  const originOutputLocationId = asText(formData.get("origin_output_location_id"));
 
   const returnParams = commonReturnParams({
     destinationSiteId,
@@ -137,7 +133,12 @@ export async function saveBulkProductConfiguration(formData: FormData) {
   }
 
   let settingRows: Array<Record<string, unknown>> = [];
-  let routeProductIds: string[] = [];
+  let routeDrafts: Array<{
+    productId: string;
+    areaKind: string;
+    inputLocationId: string;
+    outputLocationId: string;
+  }> = [];
 
   if (productIds.length > 0) {
     const [
@@ -194,27 +195,6 @@ export async function saveBulkProductConfiguration(formData: FormData) {
     const validOriginLocationIds = new Set(
       originLocations.map((location) => String(location.id ?? "").trim()).filter(Boolean)
     );
-
-    if (configureOriginRoute && !disablesRemission) {
-      if (!originAreaKind || !originInputLocationId || !originOutputLocationId) {
-        returnParams.set("error", "Completa área productora, LOC de consumo y LOC de terminado.");
-        redirect(buildRedirect(returnParams));
-      }
-      if (!validOriginLocationIds.has(originInputLocationId) || !validOriginLocationIds.has(originOutputLocationId)) {
-        returnParams.set("error", "Los LOC seleccionados no pertenecen al origen o no están activos.");
-        redirect(buildRedirect(returnParams));
-      }
-      const { data: areaKindRow } = await supabase
-        .from("area_kinds")
-        .select("code")
-        .eq("code", originAreaKind)
-        .maybeSingle();
-      if (!areaKindRow) {
-        returnParams.set("error", "El área productora no existe en el catálogo de áreas.");
-        redirect(buildRedirect(returnParams));
-      }
-    }
-
     const productsWithRemissionProfile = new Set(
       ((profilesData ?? []) as UomProfileRow[])
         .filter((profile) => Number(profile.qty_in_stock_unit ?? 0) > 0)
@@ -231,81 +211,156 @@ export async function saveBulkProductConfiguration(formData: FormData) {
       ((productsData ?? []) as ProductRow[]).map((product) => [product.id, product])
     );
 
-    settingRows = productIds
-      .filter((productId) => {
-        const product = productsById.get(productId);
-        const current = settingsByProduct.get(productId);
-        if (!product || product.is_active === false) return false;
-        if (!profileAllowsProduct({ product, setting: current, profile: bulkProfile })) return false;
-        return (
-          disablesRemission ||
-          (hasOriginLocation &&
-            (!requiresRemissionProfile(product) || productsWithRemissionProfile.has(productId)))
-        );
-      })
-      .map((productId) => {
-        const current = settingsByProduct.get(productId);
-        const currentAreaKinds = settingAreaKinds(current);
-        const nextAreaKinds =
-          !disablesRemission && selectedAreaKind
-            ? Array.from(new Set([...currentAreaKinds, selectedAreaKind]))
-            : currentAreaKinds;
-        const categoryId = categoryByProduct.has(productId)
-          ? categoryByProduct.get(productId)
-          : current?.remission_category_id ?? null;
-        const base = {
-          product_id: productId,
-          site_id: destinationSiteId,
-          default_area_kind:
-            !disablesRemission && selectedAreaKind && !current?.default_area_kind
-              ? selectedAreaKind
-              : current?.default_area_kind ?? null,
-          area_kinds: nextAreaKinds.length > 0 ? nextAreaKinds : null,
-          local_production_enabled: false,
-          production_location_id: null,
-          inventory_enabled: true,
-          min_stock_qty: current?.min_stock_qty ?? null,
-          remission_category_id: categoryId,
-        };
+    const canSaveSalesForProduct = (product: ProductRow | undefined) => {
+      const productType = normalizeProductType(product?.product_type);
+      return ["venta", "reventa", "preparacion"].includes(productType);
+    };
 
-        if (bulkProfile === "available_not_remission") {
-          return {
-            ...base,
-            is_active: true,
-            remission_enabled: false,
-            sales_enabled: current?.sales_enabled ?? false,
-          };
-        }
+    const canSaveRouteForProduct = (product: ProductRow | undefined) => {
+      const productType = normalizeProductType(product?.product_type);
+      return ["venta", "preparacion"].includes(productType);
+    };
 
-        if (bulkProfile === "disable_remission") {
-          return {
-            ...base,
-            is_active: current?.is_active ?? false,
-            inventory_enabled: current?.inventory_enabled ?? current?.is_active ?? false,
-            remission_enabled: false,
-            sales_enabled: current?.sales_enabled ?? false,
-          };
-        }
+    const validProductIds = productIds.filter((productId) => {
+      const product = productsById.get(productId);
+      const current = settingsByProduct.get(productId);
+      if (!product || product.is_active === false) return false;
+      if (!profileAllowsProduct({ product, setting: current, profile: bulkProfile })) return false;
+      return (
+        disablesRemission ||
+        (hasOriginLocation &&
+          (!requiresRemissionProfile(product) || productsWithRemissionProfile.has(productId)))
+      );
+    });
 
+    settingRows = validProductIds.map((productId) => {
+      const product = productsById.get(productId);
+      const current = settingsByProduct.get(productId);
+      const currentAreaKinds = settingAreaKinds(current);
+      const nextAreaKinds =
+        !disablesRemission && selectedAreaKind
+          ? Array.from(new Set([...currentAreaKinds, selectedAreaKind]))
+          : currentAreaKinds;
+      const categoryId = categoryByProduct.has(productId)
+        ? categoryByProduct.get(productId)
+        : current?.remission_category_id ?? null;
+      const base = {
+        product_id: productId,
+        site_id: destinationSiteId,
+        default_area_kind:
+          !disablesRemission && selectedAreaKind && !current?.default_area_kind
+            ? selectedAreaKind
+            : current?.default_area_kind ?? null,
+        area_kinds: nextAreaKinds.length > 0 ? nextAreaKinds : null,
+        local_production_enabled: false,
+        production_location_id: null,
+        inventory_enabled: true,
+        min_stock_qty: current?.min_stock_qty ?? null,
+        remission_category_id: categoryId,
+      };
+
+      if (bulkProfile === "available_not_remission") {
         return {
           ...base,
           is_active: true,
-          remission_enabled: true,
-          sales_enabled:
-            bulkProfile === "sellable_from_origin" || bulkProfile === "preparation_from_origin"
-              ? salesEnabled
-              : false,
+          remission_enabled: false,
+          sales_enabled: current?.sales_enabled ?? false,
         };
-      });
+      }
+
+      if (bulkProfile === "disable_remission") {
+        return {
+          ...base,
+          is_active: current?.is_active ?? false,
+          inventory_enabled: current?.inventory_enabled ?? current?.is_active ?? false,
+          remission_enabled: false,
+          sales_enabled: current?.sales_enabled ?? false,
+        };
+      }
+
+      return {
+        ...base,
+        is_active: true,
+        remission_enabled: true,
+        sales_enabled: canSaveSalesForProduct(product)
+          ? checked(formData.get(`sales_enabled_${productId}`))
+          : false,
+      };
+    });
 
     if (settingRows.length === 0) {
       returnParams.set("error", "Ningún producto seleccionado está completo para aplicar este perfil.");
       redirect(buildRedirect(returnParams));
     }
 
-    routeProductIds = configureOriginRoute && !disablesRemission
-      ? settingRows.map((row) => String(row.product_id ?? "")).filter(Boolean)
-      : [];
+    const validProductIdSet = new Set(settingRows.map((row) => String(row.product_id ?? "")).filter(Boolean));
+    routeDrafts = productIds
+      .filter((productId) => validProductIdSet.has(productId))
+      .map((productId) => {
+        const product = productsById.get(productId);
+        const canConfigureRoute =
+          !disablesRemission &&
+          canSaveRouteForProduct(product) &&
+          checked(formData.get(`configure_origin_route_${productId}`));
+
+        if (!canConfigureRoute) return null;
+
+        const areaKind = normalizeAreaKind(asText(formData.get(`origin_area_kind_${productId}`)));
+        const inputLocationId = asText(formData.get(`origin_input_location_id_${productId}`));
+        const outputLocationId = asText(formData.get(`origin_output_location_id_${productId}`));
+
+        return {
+          productId,
+          areaKind,
+          inputLocationId,
+          outputLocationId,
+        };
+      })
+      .filter(
+        (
+          draft
+        ): draft is {
+          productId: string;
+          areaKind: string;
+          inputLocationId: string;
+          outputLocationId: string;
+        } => draft !== null
+      );
+
+    const incompleteRoute = routeDrafts.some(
+      (draft) => !draft.areaKind || !draft.inputLocationId || !draft.outputLocationId
+    );
+    if (incompleteRoute) {
+      returnParams.set("error", "Completa área productora, LOC de consumo y LOC de terminado en las filas con producción CP.");
+      redirect(buildRedirect(returnParams));
+    }
+
+    const routeWithInvalidLocation = routeDrafts.some(
+      (draft) =>
+        !validOriginLocationIds.has(draft.inputLocationId) ||
+        !validOriginLocationIds.has(draft.outputLocationId)
+    );
+    if (routeWithInvalidLocation) {
+      returnParams.set("error", "Algún LOC de producción no pertenece al origen o no está activo.");
+      redirect(buildRedirect(returnParams));
+    }
+
+    const routeAreaKinds = Array.from(new Set(routeDrafts.map((draft) => draft.areaKind).filter(Boolean)));
+    if (routeAreaKinds.length > 0) {
+      const { data: areaKindRows } = await supabase
+        .from("area_kinds")
+        .select("code")
+        .in("code", routeAreaKinds);
+      const validAreaKinds = new Set(
+        ((areaKindRows ?? []) as Array<{ code: string | null }>)
+          .map((row) => String(row.code ?? "").trim())
+          .filter(Boolean)
+      );
+      if (routeAreaKinds.some((areaKind) => !validAreaKinds.has(areaKind))) {
+        returnParams.set("error", "Alguna área productora no existe en el catálogo de áreas.");
+        redirect(buildRedirect(returnParams));
+      }
+    }
   }
 
   if (settingRows.length > 0) {
@@ -339,12 +394,12 @@ export async function saveBulkProductConfiguration(formData: FormData) {
   }
 
   let savedRouteCount = 0;
-  if (routeProductIds.length > 0) {
+  if (routeDrafts.length > 0) {
+    const routeProductIds = routeDrafts.map((draft) => draft.productId);
     const { data: existingRoutes, error: existingRoutesError } = await supabase
       .from("product_site_production_routes")
       .select("id,product_id,site_id,area_kind,input_location_id,output_mode,output_location_id,output_position_id,is_default,is_active")
       .eq("site_id", originSiteId)
-      .eq("area_kind", originAreaKind)
       .eq("is_default", true)
       .in("product_id", routeProductIds);
 
@@ -353,60 +408,43 @@ export async function saveBulkProductConfiguration(formData: FormData) {
       redirect(buildRedirect(returnParams));
     }
 
-    const existingRouteRows = (existingRoutes ?? []) as ProductSiteProductionRouteRow[];
-    const existingRouteIds = existingRouteRows
-      .map((row) => String(row.id ?? "").trim())
-      .filter(Boolean);
-    const existingRouteProductIds = new Set(
-      existingRouteRows.map((row) => String(row.product_id ?? "").trim()).filter(Boolean)
+    const existingRouteByProductId = new Map(
+      ((existingRoutes ?? []) as ProductSiteProductionRouteRow[])
+        .map((row) => [String(row.product_id ?? "").trim(), row] as const)
+        .filter(([productId]) => Boolean(productId))
     );
 
-    if (existingRouteIds.length > 0) {
-      const { error } = await supabase
-        .from("product_site_production_routes")
-        .update({
-          route_name: "Ruta de remisión",
-          input_location_id: originInputLocationId,
-          output_mode: "inventory_stock",
-          output_location_id: originOutputLocationId,
-          output_position_id: null,
-          is_active: true,
-          updated_by: userId,
-        })
-        .in("id", existingRouteIds);
-
-      if (error) {
-        returnParams.set("error", error.message);
-        redirect(buildRedirect(returnParams));
-      }
-    }
-
-    const newRouteRows = routeProductIds
-      .filter((productId) => !existingRouteProductIds.has(productId))
-      .map((productId) => ({
-        product_id: productId,
+    const routeRows = routeDrafts.map((draft) => {
+      const existingRoute = existingRouteByProductId.get(draft.productId);
+      const row = {
+        product_id: draft.productId,
         site_id: originSiteId,
-        area_kind: originAreaKind,
+        area_kind: draft.areaKind,
         route_name: "Ruta de remisión",
-        input_location_id: originInputLocationId,
+        input_location_id: draft.inputLocationId,
         output_mode: "inventory_stock",
-        output_location_id: originOutputLocationId,
+        output_location_id: draft.outputLocationId,
         output_position_id: null,
         is_default: true,
         is_active: true,
-        created_by: userId,
         updated_by: userId,
-      }));
+      };
 
-    if (newRouteRows.length > 0) {
-      const { error } = await supabase.from("product_site_production_routes").insert(newRouteRows);
-      if (error) {
-        returnParams.set("error", error.message);
-        redirect(buildRedirect(returnParams));
-      }
+      return existingRoute?.id
+        ? { id: existingRoute.id, ...row }
+        : { ...row, created_by: userId };
+    });
+
+    const { error } = await supabase.from("product_site_production_routes").upsert(routeRows, {
+      onConflict: "id",
+    });
+
+    if (error) {
+      returnParams.set("error", error.message);
+      redirect(buildRedirect(returnParams));
     }
 
-    savedRouteCount = routeProductIds.length;
+    savedRouteCount = routeDrafts.length;
   }
 
   revalidatePath(PAGE_PATH);
@@ -420,7 +458,7 @@ export async function saveBulkProductConfiguration(formData: FormData) {
     savedRouteCount > 0 ? `${savedRouteCount} ruta(s) de origen` : "",
   ].filter(Boolean);
 
-  returnParams.set("ok", `Guardado global: ${summary.join(", ")}.`);
+  returnParams.set("ok", `Guardado: ${summary.join(", ")}.`);
   redirect(buildRedirect(returnParams));
 }
 

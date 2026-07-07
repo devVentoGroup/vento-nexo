@@ -40,6 +40,7 @@ import {
   type LocationRow,
   type ProductRow,
   type ProductSiteAreaRemissionCategoryRow,
+  type ProductSiteProductionRouteRow,
   type ProductSiteSettingRow,
   type RemissionCategoryRow,
   type SiteRow,
@@ -238,7 +239,7 @@ export default async function RemissionProductsPage({
   );
   const allowedTypeOptions = profileTypeOptions(bulkProfile);
 
-  const productRows: RemissionProductsClientRow[] = ((productsData ?? []) as ProductRow[])
+  const productCandidates = ((productsData ?? []) as ProductRow[])
     .map((product) => {
       const setting = settingsByProduct.get(product.id);
       const diagnostics = diagnoseProduct({
@@ -251,10 +252,35 @@ export default async function RemissionProductsPage({
       });
       return { product, setting, diagnostics };
     })
-    .filter(({ product, setting }) => profileAllowsProduct({ product, setting, profile: bulkProfile }))
+    .filter(({ product, setting }) => profileAllowsProduct({ product, setting, profile: bulkProfile }));
+
+  const productCandidateIds = productCandidates.map(({ product }) => product.id).filter(Boolean);
+  const { data: originRoutesData } =
+    originSiteId && productCandidateIds.length > 0
+      ? await supabase
+        .from("product_site_production_routes")
+        .select("id,product_id,site_id,area_kind,input_location_id,output_mode,output_location_id,output_position_id,is_default,is_active")
+        .eq("site_id", originSiteId)
+        .eq("is_default", true)
+        .eq("is_active", true)
+        .in("product_id", productCandidateIds)
+      : { data: [] as ProductSiteProductionRouteRow[] };
+
+  const originRouteByProduct = new Map(
+    ((originRoutesData ?? []) as ProductSiteProductionRouteRow[])
+      .filter((row) => String(row.product_id ?? "").trim())
+      .map((row) => [String(row.product_id ?? "").trim(), row])
+  );
+
+  const productRows: RemissionProductsClientRow[] = productCandidates
     .map(({ product, setting, diagnostics }) => {
       const measurementMode = productMeasurementMode(product);
       const productType = normalizeProductType(product.product_type);
+      const originRoute = originRouteByProduct.get(product.id) ?? null;
+      const originRouteIsForRemission =
+        originRoute?.output_mode === "inventory_stock" &&
+        Boolean(originRoute.output_location_id);
+
       return {
         product: {
           id: product.id,
@@ -273,6 +299,15 @@ export default async function RemissionProductsPage({
           remissionEnabled: setting?.remission_enabled ?? false,
           areaKinds: settingAreaKinds(setting),
           isRemissionEnabledForSelectedArea: isSettingEnabledForArea(setting, selectedAreaKind),
+          salesEnabled: setting?.sales_enabled ?? false,
+          originRoute: originRoute
+            ? {
+              enabled: originRouteIsForRemission,
+              areaKind: normalizeAreaKind(originRoute.area_kind),
+              inputLocationId: String(originRoute.input_location_id ?? ""),
+              outputLocationId: String(originRoute.output_location_id ?? ""),
+            }
+            : null,
         },
         diagnostics,
       };

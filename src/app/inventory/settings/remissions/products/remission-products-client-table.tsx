@@ -25,6 +25,13 @@ type ProductDiagnostics = {
   canApply: boolean;
 };
 
+type OriginRouteState = {
+  enabled?: boolean;
+  areaKind?: string;
+  inputLocationId?: string;
+  outputLocationId?: string;
+};
+
 export type RemissionProductsClientRow = {
   product: {
     id: string;
@@ -42,6 +49,8 @@ export type RemissionProductsClientRow = {
     remissionEnabled: boolean;
     areaKinds: string[];
     isRemissionEnabledForSelectedArea: boolean;
+    salesEnabled?: boolean;
+    originRoute?: OriginRouteState | null;
   };
   diagnostics: ProductDiagnostics;
 };
@@ -85,6 +94,13 @@ type Props = {
   saveAction: ServerAction;
 };
 
+type RowRouteConfig = {
+  enabled: boolean;
+  areaKind: string;
+  inputLocationId: string;
+  outputLocationId: string;
+};
+
 function normalizeSearch(value: string) {
   return value
     .trim()
@@ -98,6 +114,20 @@ function statusChipClass(status: ProductDiagnostics["status"]) {
   if (status === "ready") return "ui-chip ui-chip--info";
   if (status === "warning") return "ui-chip ui-chip--warn";
   return "ui-chip ui-chip--danger";
+}
+
+function normalizeProductType(value: string) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function canSellProductType(productType: string) {
+  const normalized = normalizeProductType(productType);
+  return ["venta", "reventa", "preparacion"].includes(normalized);
+}
+
+function canConfigureProductionRoute(productType: string) {
+  const normalized = normalizeProductType(productType);
+  return ["venta", "preparacion"].includes(normalized);
 }
 
 const stickyHeaderCellClass =
@@ -119,17 +149,43 @@ export function RemissionProductsClientTable({
   profileHelp,
   saveAction,
 }: Props) {
+  const defaultOriginAreaKind = originAreaOptions[0]?.value ?? "";
+  const defaultOriginLocationId = originLocationOptions[0]?.id ?? "";
+  const disablesRemission = bulkProfile === "available_not_remission" || bulkProfile === "disable_remission";
+  const originRouteInputsAvailable =
+    !disablesRemission && originLocationOptions.length > 0 && originAreaOptions.length > 0;
+
   const [query, setQuery] = useState("");
   const [typeFilter, setTypeFilter] = useState("");
   const [measurementFilter, setMeasurementFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
   const [statusFilter, setStatusFilter] = useState("");
   const [selectedByProduct, setSelectedByProduct] = useState<Record<string, boolean>>({});
-  const [salesEnabled, setSalesEnabled] = useState(bulkProfile === "sellable_from_origin");
-  const [configureOriginRoute, setConfigureOriginRoute] = useState(false);
-  const [originAreaKind, setOriginAreaKind] = useState(originAreaOptions[0]?.value ?? "");
-  const [originInputLocationId, setOriginInputLocationId] = useState(originLocationOptions[0]?.id ?? "");
-  const [originOutputLocationId, setOriginOutputLocationId] = useState(originLocationOptions[0]?.id ?? "");
+  const [salesByProduct, setSalesByProduct] = useState<Record<string, boolean>>(() =>
+    Object.fromEntries(
+      rows.map((row) => {
+        const productType = normalizeProductType(row.product.productType);
+        const defaultSales =
+          row.setting.salesEnabled ??
+          (bulkProfile === "sellable_from_origin" && ["venta", "reventa"].includes(productType));
+        return [row.product.id, canSellProductType(productType) ? Boolean(defaultSales) : false];
+      })
+    )
+  );
+  const [routeByProduct, setRouteByProduct] = useState<Record<string, RowRouteConfig>>(() =>
+    Object.fromEntries(
+      rows.map((row) => [
+        row.product.id,
+        {
+          enabled: Boolean(row.setting.originRoute?.enabled),
+          areaKind: row.setting.originRoute?.areaKind || defaultOriginAreaKind,
+          inputLocationId: row.setting.originRoute?.inputLocationId || defaultOriginLocationId,
+          outputLocationId: row.setting.originRoute?.outputLocationId || defaultOriginLocationId,
+        },
+      ])
+    )
+  );
+  const [routeTouchedByProduct, setRouteTouchedByProduct] = useState<Record<string, boolean>>({});
   const [categoryByProduct, setCategoryByProduct] = useState<Record<string, string>>(() =>
     Object.fromEntries(
       rows.map((row) => [row.product.id, row.setting.remissionCategoryId])
@@ -168,22 +224,51 @@ export function RemissionProductsClientTable({
     .filter(([, selected]) => selected)
     .map(([productId]) => productId);
   const selectedCount = selectedProductIds.length;
+  const selectedRows = rows.filter((row) => selectedByProduct[row.product.id] === true);
   const allVisibleSelected =
     selectableVisibleRows.length > 0 &&
     selectableVisibleRows.every((row) => selectedByProduct[row.product.id] === true);
-  const disablesRemission = bulkProfile === "available_not_remission" || bulkProfile === "disable_remission";
-  const canConfigureSales = bulkProfile === "sellable_from_origin" || bulkProfile === "preparation_from_origin";
-  const canConfigureOriginRoute =
-    !disablesRemission && originLocationOptions.length > 0 && originAreaOptions.length > 0;
-  const routeIsIncomplete =
-    configureOriginRoute &&
-    canConfigureOriginRoute &&
-    (!originAreaKind || !originInputLocationId || !originOutputLocationId);
+  const routeIsIncomplete = selectedRows.some((row) => {
+    if (!canConfigureProductionRoute(row.product.productType)) return false;
+    const route = routeByProduct[row.product.id];
+    if (!route?.enabled) return false;
+    return !originRouteInputsAvailable || !route.areaKind || !route.inputLocationId || !route.outputLocationId;
+  });
   const canSave =
     canManage &&
     !routeIsIncomplete &&
     (selectedCount > 0 || changedCategoryCount > 0);
   const pendingCount = selectedCount + changedCategoryCount;
+
+  function markProductSelected(productId: string) {
+    setSelectedByProduct((current) => ({
+      ...current,
+      [productId]: true,
+    }));
+  }
+
+  function updateRoute(productId: string, patch: Partial<RowRouteConfig>) {
+    setRouteByProduct((current) => {
+      const currentRoute = current[productId] ?? {
+        enabled: false,
+        areaKind: defaultOriginAreaKind,
+        inputLocationId: defaultOriginLocationId,
+        outputLocationId: defaultOriginLocationId,
+      };
+      return {
+        ...current,
+        [productId]: {
+          ...currentRoute,
+          ...patch,
+        },
+      };
+    });
+    setRouteTouchedByProduct((current) => ({
+      ...current,
+      [productId]: true,
+    }));
+    markProductSelected(productId);
+  }
 
   return (
     <form id="save-remission-products-form" action={saveAction} className="mt-6 ui-panel">
@@ -191,18 +276,42 @@ export function RemissionProductsClientTable({
       <input type="hidden" name="origin_site_id" value={originSiteId} />
       <input type="hidden" name="bulk_profile" value={bulkProfile} />
       <input type="hidden" name="area_kind" value={selectedAreaKind} />
-      <input type="hidden" name="sales_enabled" value={salesEnabled && canConfigureSales ? "true" : "false"} />
-      <input
-        type="hidden"
-        name="configure_origin_route"
-        value={configureOriginRoute && canConfigureOriginRoute ? "true" : "false"}
-      />
-      <input type="hidden" name="origin_area_kind" value={originAreaKind} />
-      <input type="hidden" name="origin_input_location_id" value={originInputLocationId} />
-      <input type="hidden" name="origin_output_location_id" value={originOutputLocationId} />
-      {selectedProductIds.map((productId) => (
-        <input key={`selected-${productId}`} type="hidden" name="product_id" value={productId} />
-      ))}
+      {selectedProductIds.map((productId) => {
+        const row = rows.find((item) => item.product.id === productId);
+        const productType = row?.product.productType ?? "";
+        const canSell = row ? canSellProductType(productType) && !disablesRemission : false;
+        const canRoute = row ? canConfigureProductionRoute(productType) && !disablesRemission : false;
+        const route = routeByProduct[productId] ?? {
+          enabled: false,
+          areaKind: defaultOriginAreaKind,
+          inputLocationId: defaultOriginLocationId,
+          outputLocationId: defaultOriginLocationId,
+        };
+
+        return (
+          <div key={`selected-${productId}`} hidden>
+            <input type="hidden" name="product_id" value={productId} />
+            <input
+              type="hidden"
+              name={`sales_enabled_${productId}`}
+              value={canSell && salesByProduct[productId] ? "true" : "false"}
+            />
+            <input
+              type="hidden"
+              name={`configure_origin_route_${productId}`}
+              value={canRoute && route.enabled ? "true" : "false"}
+            />
+            <input
+              type="hidden"
+              name={`origin_route_touched_${productId}`}
+              value={routeTouchedByProduct[productId] ? "true" : "false"}
+            />
+            <input type="hidden" name={`origin_area_kind_${productId}`} value={route.areaKind} />
+            <input type="hidden" name={`origin_input_location_id_${productId}`} value={route.inputLocationId} />
+            <input type="hidden" name={`origin_output_location_id_${productId}`} value={route.outputLocationId} />
+          </div>
+        );
+      })}
       {changedCategoryRows.map((row) => (
         <div key={row.product.id} hidden>
           <input type="hidden" name="category_product_id" value={row.product.id} />
@@ -244,100 +353,11 @@ export function RemissionProductsClientTable({
         </button>
       </div>
 
-      <div className="mt-4 grid gap-3 xl:grid-cols-3">
-        <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-muted)] p-3">
-          <div className="text-sm font-semibold text-[var(--ui-text)]">Venta en sede destino</div>
-          <label className="mt-3 flex items-center gap-2 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm">
-            <input
-              type="checkbox"
-              checked={salesEnabled && canConfigureSales}
-              onChange={(event) => setSalesEnabled(event.target.checked)}
-              disabled={!canManage || !canConfigureSales}
-            />
-            <span>Se vende en esta sede</span>
-          </label>
-          <p className="mt-2 text-xs leading-relaxed text-[var(--ui-muted)]">
-            Disponible para productos vendibles o preparaciones remitidas. En insumos se guarda apagado.
-          </p>
+      {routeIsIncomplete ? (
+        <div className="mt-4 ui-alert ui-alert--warn">
+          Hay productos seleccionados con ruta de producción incompleta. Completa área productora, LOC de consumo y LOC de terminado, o desmarca producción CP en esa fila.
         </div>
-
-        <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface-muted)] p-3 xl:col-span-2">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <div className="text-sm font-semibold text-[var(--ui-text)]">Ruta de producción del origen</div>
-              <p className="mt-1 text-xs text-[var(--ui-muted)]">
-                Crea o actualiza la ruta en la sede origen para los productos seleccionados.
-              </p>
-            </div>
-            <label className="flex items-center gap-2 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm">
-              <input
-                type="checkbox"
-                checked={configureOriginRoute && canConfigureOriginRoute}
-                onChange={(event) => setConfigureOriginRoute(event.target.checked)}
-                disabled={!canManage || !canConfigureOriginRoute}
-              />
-              <span>Configurar LOCs</span>
-            </label>
-          </div>
-
-          <div className="mt-3 grid gap-3 lg:grid-cols-3">
-            <label className="flex flex-col gap-1">
-              <span className="ui-label">Área productora</span>
-              <select
-                value={originAreaKind}
-                onChange={(event) => setOriginAreaKind(event.target.value)}
-                className="ui-input"
-                disabled={!canManage || !configureOriginRoute || !canConfigureOriginRoute}
-              >
-                {originAreaOptions.map((area) => (
-                  <option key={area.value} value={area.value}>
-                    {area.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="ui-label">Consume insumos desde</span>
-              <select
-                value={originInputLocationId}
-                onChange={(event) => setOriginInputLocationId(event.target.value)}
-                className="ui-input"
-                disabled={!canManage || !configureOriginRoute || !canConfigureOriginRoute}
-              >
-                {originLocationOptions.map((location) => (
-                  <option key={location.id} value={location.id}>
-                    {location.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <label className="flex flex-col gap-1">
-              <span className="ui-label">Terminado queda en</span>
-              <select
-                value={originOutputLocationId}
-                onChange={(event) => setOriginOutputLocationId(event.target.value)}
-                className="ui-input"
-                disabled={!canManage || !configureOriginRoute || !canConfigureOriginRoute}
-              >
-                {originLocationOptions.map((location) => (
-                  <option key={location.id} value={location.id}>
-                    {location.label}
-                  </option>
-                ))}
-              </select>
-            </label>
-          </div>
-
-          <div className="mt-3 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-sm text-[var(--ui-muted)]">
-            Qué pasa con lo producido: <span className="font-semibold text-[var(--ui-text)]">Queda para remisión</span>.
-          </div>
-          {!canConfigureOriginRoute ? (
-            <div className="mt-3 ui-alert ui-alert--warn">
-              Para configurar LOCs el origen necesita LOCs activos y áreas operativas configuradas.
-            </div>
-          ) : null}
-        </div>
-      </div>
+      ) : null}
 
       <div className="mt-4 grid gap-3 lg:grid-cols-7">
         <label className="flex flex-col gap-1 lg:col-span-2">
@@ -427,17 +447,19 @@ export function RemissionProductsClientTable({
         </div>
       </div>
 
-      <div className="mt-4 max-h-[560px] min-h-[320px] overflow-y-auto overflow-x-hidden rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface)]">
-        <Table className="w-full table-fixed">
+      <div className="mt-4 max-h-[640px] min-h-[320px] overflow-y-auto overflow-x-auto rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface)]">
+        <Table className="min-w-[1320px] w-full table-fixed">
           <colgroup>
             <col className="w-[44px]" />
-            <col className="w-[24%]" />
+            <col className="w-[22%]" />
+            <col className="w-[8%]" />
+            <col className="w-[10%]" />
+            <col className="w-[17%]" />
+            <col className="w-[8%]" />
+            <col className="w-[17%]" />
+            <col className="w-[6%]" />
             <col className="w-[10%]" />
             <col className="w-[12%]" />
-            <col className="w-[20%]" />
-            <col className="w-[7%]" />
-            <col className="w-[14%]" />
-            <col className="w-[13%]" />
           </colgroup>
           <TableHead>
             <TableRow>
@@ -463,6 +485,8 @@ export function RemissionProductsClientTable({
               <TableHeaderCell className={stickyHeaderCellClass}>Tipo</TableHeaderCell>
               <TableHeaderCell className={stickyHeaderCellClass}>Medición</TableHeaderCell>
               <TableHeaderCell className={stickyHeaderCellClass}>Categoría</TableHeaderCell>
+              <TableHeaderCell className={stickyHeaderCellClass}>Venta</TableHeaderCell>
+              <TableHeaderCell className={stickyHeaderCellClass}>Producción CP</TableHeaderCell>
               <TableHeaderCell className={stickyHeaderCellClass}>Base</TableHeaderCell>
               <TableHeaderCell className={stickyHeaderCellClass}>Estado</TableHeaderCell>
               <TableHeaderCell className={stickyHeaderCellClass}>Diagnóstico</TableHeaderCell>
@@ -472,6 +496,16 @@ export function RemissionProductsClientTable({
             {visibleRows.map(({ product, setting, diagnostics }) => {
               const categoryChanged = (categoryByProduct[product.id] ?? "") !== setting.remissionCategoryId;
               const selected = selectedByProduct[product.id] === true;
+              const canSell = canSellProductType(product.productType) && !disablesRemission;
+              const canRoute = canConfigureProductionRoute(product.productType) && !disablesRemission;
+              const route = routeByProduct[product.id] ?? {
+                enabled: false,
+                areaKind: defaultOriginAreaKind,
+                inputLocationId: defaultOriginLocationId,
+                outputLocationId: defaultOriginLocationId,
+              };
+              const routeEnabled = canRoute && route.enabled;
+              const rowBlocked = !diagnostics.canApply || !canManage;
               return (
                 <TableRow key={product.id} className="border-t border-zinc-200/70 align-top">
                   <TableCell className="px-3 py-3 align-top">
@@ -485,7 +519,7 @@ export function RemissionProductsClientTable({
                           [product.id]: nextChecked,
                         }));
                       }}
-                      disabled={!diagnostics.canApply || !canManage}
+                      disabled={rowBlocked}
                     />
                   </TableCell>
                   <TableCell className="px-3 py-3 align-top">
@@ -495,10 +529,12 @@ export function RemissionProductsClientTable({
                     <div className="mt-1 truncate text-xs text-[var(--ui-muted)]" title={product.sku}>
                       {product.sku}
                     </div>
-                    {selected || categoryChanged ? (
+                    {selected || categoryChanged || routeEnabled || (canSell && salesByProduct[product.id]) ? (
                       <div className="mt-2 flex flex-wrap gap-1">
                         {selected ? <span className="ui-chip ui-chip--info">Seleccionado</span> : null}
                         {categoryChanged ? <span className="ui-chip ui-chip--warn">Categoría pendiente</span> : null}
+                        {canSell && salesByProduct[product.id] ? <span className="ui-chip">Vende</span> : null}
+                        {routeEnabled ? <span className="ui-chip">Ruta CP</span> : null}
                       </div>
                     ) : null}
                   </TableCell>
@@ -525,6 +561,100 @@ export function RemissionProductsClientTable({
                       ))}
                     </select>
                   </TableCell>
+                  <TableCell className="px-3 py-3 align-top">
+                    {canSell ? (
+                      <label className="flex items-center gap-2 text-sm">
+                        <input
+                          type="checkbox"
+                          checked={salesByProduct[product.id] === true}
+                          onChange={(event) => {
+                            setSalesByProduct((current) => ({
+                              ...current,
+                              [product.id]: event.target.checked,
+                            }));
+                            markProductSelected(product.id);
+                          }}
+                          disabled={rowBlocked}
+                        />
+                        <span>Vende</span>
+                      </label>
+                    ) : (
+                      <span className="text-xs text-[var(--ui-muted)]">No aplica</span>
+                    )}
+                  </TableCell>
+                  <TableCell className="px-3 py-3 align-top">
+                    {canRoute ? (
+                      <div className="space-y-2">
+                        <label className="flex items-center gap-2 text-sm">
+                          <input
+                            type="checkbox"
+                            checked={routeEnabled}
+                            onChange={(event) => {
+                              updateRoute(product.id, { enabled: event.target.checked });
+                            }}
+                            disabled={rowBlocked || !originRouteInputsAvailable}
+                          />
+                          <span>Ruta CP</span>
+                        </label>
+                        {routeEnabled ? (
+                          <div className="space-y-2 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-muted)] p-2">
+                            <label className="flex flex-col gap-1">
+                              <span className="text-[11px] font-semibold text-[var(--ui-muted)]">Área</span>
+                              <select
+                                value={route.areaKind}
+                                onChange={(event) => updateRoute(product.id, { areaKind: event.target.value })}
+                                className="ui-input h-9 text-sm"
+                                disabled={rowBlocked}
+                              >
+                                {originAreaOptions.map((area) => (
+                                  <option key={area.value} value={area.value}>
+                                    {area.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="flex flex-col gap-1">
+                              <span className="text-[11px] font-semibold text-[var(--ui-muted)]">Consume</span>
+                              <select
+                                value={route.inputLocationId}
+                                onChange={(event) => updateRoute(product.id, { inputLocationId: event.target.value })}
+                                className="ui-input h-9 text-sm"
+                                disabled={rowBlocked}
+                              >
+                                {originLocationOptions.map((location) => (
+                                  <option key={location.id} value={location.id}>
+                                    {location.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                            <label className="flex flex-col gap-1">
+                              <span className="text-[11px] font-semibold text-[var(--ui-muted)]">Terminado</span>
+                              <select
+                                value={route.outputLocationId}
+                                onChange={(event) => updateRoute(product.id, { outputLocationId: event.target.value })}
+                                className="ui-input h-9 text-sm"
+                                disabled={rowBlocked}
+                              >
+                                {originLocationOptions.map((location) => (
+                                  <option key={location.id} value={location.id}>
+                                    {location.label}
+                                  </option>
+                                ))}
+                              </select>
+                            </label>
+                          </div>
+                        ) : null}
+                        {!originRouteInputsAvailable ? (
+                          <div className="text-xs text-amber-700">
+                            Faltan LOCs o áreas del origen.
+                          </div>
+                        ) : null}
+                      </div>
+                    ) : (
+                      <span className="text-xs text-[var(--ui-muted)]">No aplica</span>
+                    )}
+                  </TableCell>
                   <TableCell className="px-3 py-3 align-top">{product.stockUnitLabel}</TableCell>
                   <TableCell className="px-3 py-3 align-top">
                     <span className={statusChipClass(diagnostics.status)}>{diagnostics.label}</span>
@@ -546,7 +676,7 @@ export function RemissionProductsClientTable({
             })}
             {visibleRows.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={8} className="ui-empty">
+                <TableCell colSpan={10} className="ui-empty">
                   No hay productos con esos filtros.
                 </TableCell>
               </TableRow>
