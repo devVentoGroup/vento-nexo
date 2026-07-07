@@ -2,6 +2,7 @@ import { normalizeUnitCode } from "@/lib/inventory/uom";
 import { createClient } from "@/lib/supabase/server";
 
 const PAGE_PATH = "/inventory/settings/remissions/products";
+
 export type SiteRow = {
   id: string;
   name: string | null;
@@ -38,6 +39,7 @@ export type ProductSiteSettingRow = {
   local_production_enabled: boolean | null;
   production_location_id: string | null;
   sales_enabled: boolean | null;
+  inventory_enabled: boolean | null;
   min_stock_qty: number | null;
   remission_category_id?: string | null;
 };
@@ -52,6 +54,12 @@ export type LocationRow = {
   id: string;
   site_id: string | null;
   is_active: boolean | null;
+  code?: string | null;
+  zone?: string | null;
+  aisle?: string | null;
+  level?: string | null;
+  description?: string | null;
+  area_id?: string | null;
 };
 
 export type AreaRuleRow = {
@@ -74,6 +82,19 @@ export type ProductSiteAreaRemissionCategoryRow = {
   site_id: string | null;
   area_kind: string | null;
   remission_category_id: string | null;
+};
+
+export type ProductSiteProductionRouteRow = {
+  id: string;
+  product_id: string | null;
+  site_id: string | null;
+  area_kind: string | null;
+  input_location_id: string | null;
+  output_mode: string | null;
+  output_location_id: string | null;
+  output_position_id: string | null;
+  is_default: boolean | null;
+  is_active: boolean | null;
 };
 
 export type BulkProfile =
@@ -110,6 +131,8 @@ export function areaKindLabel(value: string | null | undefined) {
   if (normalized === "mostrador") return "Mostrador";
   if (normalized === "salon") return "Salón";
   if (normalized === "recepcion") return "Recepción";
+  if (normalized === "reposteria") return "Repostería";
+  if (normalized === "panaderia") return "Panadería";
   return normalized
     ? normalized
         .split("_")
@@ -117,6 +140,17 @@ export function areaKindLabel(value: string | null | undefined) {
         .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
         .join(" ")
     : "";
+}
+
+export function locationLabel(location: LocationRow) {
+  const parts = [location.code, location.zone, location.aisle, location.level]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean);
+
+  if (parts.length > 0) return parts.join(" · ");
+
+  const description = String(location.description ?? "").trim();
+  return description || location.id;
 }
 
 export function settingAreaKinds(setting: ProductSiteSettingRow | undefined) {
@@ -366,7 +400,7 @@ export async function loadAllProductSiteSettings(
     const to = from + SUPABASE_PAGE_SIZE - 1;
     const { data, error } = await supabase
       .from("product_site_settings")
-      .select("id,product_id,site_id,is_active,default_area_kind,area_kinds,remission_enabled,local_production_enabled,production_location_id,sales_enabled,min_stock_qty,remission_category_id")
+      .select("id,product_id,site_id,is_active,default_area_kind,area_kinds,remission_enabled,local_production_enabled,production_location_id,sales_enabled,inventory_enabled,min_stock_qty,remission_category_id")
       .eq("site_id", siteId)
       .range(from, to);
 

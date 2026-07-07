@@ -12,9 +12,8 @@ import {
   type RemissionProductsClientRow,
 } from "./remission-products-client-table";
 import {
-  applyBulkProductSettings,
   createRemissionCategory,
-  saveProductRemissionCategories,
+  saveBulkProductConfiguration,
 } from "./actions";
 import {
   areaKindLabel,
@@ -23,6 +22,7 @@ import {
   loadAllActiveProducts,
   loadAllActiveRemissionUomProfiles,
   loadAllProductSiteSettings,
+  locationLabel,
   measurementModeLabel,
   normalizeAreaKind,
   normalizeCatalogToken,
@@ -33,7 +33,6 @@ import {
   profileHelp,
   profileLabel,
   profileTypeOptions,
-  requiresRemissionProfile,
   isSettingEnabledForArea,
   settingAreaKinds,
   type AreaRuleRow,
@@ -51,6 +50,11 @@ export const dynamic = "force-dynamic";
 
 const APP_ID = "nexo";
 const PAGE_PATH = "/inventory/settings/remissions/products";
+
+type OriginAreaRow = {
+  kind: string | null;
+  name: string | null;
+};
 
 export default async function RemissionProductsPage({
   searchParams,
@@ -125,6 +129,7 @@ export default async function RemissionProductsPage({
     settingsData,
     profilesData,
     { data: locationsData },
+    { data: originAreasData },
     { data: areaRulesData },
     { data: remissionCategoriesData },
     { data: areaCategoryData },
@@ -136,10 +141,19 @@ export default async function RemissionProductsPage({
     originSiteId
       ? supabase
         .from("inventory_locations")
-        .select("id,site_id,is_active")
+        .select("id,site_id,is_active,code,zone,aisle,level,description,area_id")
         .eq("site_id", originSiteId)
         .eq("is_active", true)
+        .order("code", { ascending: true })
       : { data: [] as LocationRow[] },
+    originSiteId
+      ? supabase
+        .from("areas")
+        .select("kind,name")
+        .eq("site_id", originSiteId)
+        .eq("is_active", true)
+        .order("name", { ascending: true })
+      : { data: [] as OriginAreaRow[] },
     destinationSiteId
       ? supabase
         .from("site_area_purpose_rules")
@@ -192,6 +206,23 @@ export default async function RemissionProductsPage({
       ? requestedAreaKind
       : requesterAreaOptions[0]?.value ?? "";
   const selectedAreaLabel = areaKindLabel(selectedAreaKind);
+  const originAreaOptions = Array.from(
+    new Map(
+      ((originAreasData ?? []) as OriginAreaRow[])
+        .map((area) => {
+          const value = normalizeAreaKind(area.kind);
+          if (!value) return null;
+          return [
+            value,
+            {
+              value,
+              label: area.name?.trim() || areaKindLabel(value),
+            },
+          ] as const;
+        })
+        .filter((entry): entry is readonly [string, { value: string; label: string }] => Boolean(entry))
+    ).values()
+  );
   const remissionCategories = ((remissionCategoriesData ?? []) as RemissionCategoryRow[])
     .filter((category) => {
       const categoryAreaKind = normalizeAreaKind(category.area_kind);
@@ -340,6 +371,12 @@ export default async function RemissionProductsPage({
         </div>
       ) : null}
 
+      {originSiteId && originAreaOptions.length === 0 ? (
+        <div className="mt-6 ui-alert ui-alert--warn">
+          El origen seleccionado no tiene áreas operativas activas. La configuración masiva de ruta de producción queda deshabilitada.
+        </div>
+      ) : null}
+
       <div className="mt-6 ui-panel">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
@@ -390,6 +427,11 @@ export default async function RemissionProductsPage({
           name: category.name ?? "Sin nombre",
         }))}
         allowedTypeOptions={allowedTypeOptions}
+        originLocationOptions={originLocations.map((location) => ({
+          id: location.id,
+          label: locationLabel(location),
+        }))}
+        originAreaOptions={originAreaOptions}
         canManage={canManage}
         destinationSiteId={destinationSiteId}
         originSiteId={originSiteId}
@@ -398,8 +440,7 @@ export default async function RemissionProductsPage({
         selectedAreaLabel={selectedAreaLabel}
         profileLabel={profileLabel(bulkProfile)}
         profileHelp={profileHelp(bulkProfile)}
-        applyAction={applyBulkProductSettings}
-        saveCategoriesAction={saveProductRemissionCategories}
+        saveAction={saveBulkProductConfiguration}
       />
     </div>
   );
