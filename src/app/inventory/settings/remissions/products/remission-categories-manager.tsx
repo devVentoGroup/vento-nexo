@@ -162,15 +162,6 @@ export function RemissionCategoriesManager({
                                 className="ui-input h-9 min-w-[220px]"
                                 disabled={!canEditCategories}
                               />
-                              <input
-                                name="sort_order"
-                                type="number"
-                                min="0"
-                                step="1"
-                                defaultValue={category.sortOrder}
-                                className="ui-input h-9 w-20"
-                                disabled={!canEditCategories}
-                              />
                               <button className="ui-btn ui-btn--ghost ui-btn--sm" disabled={!canEditCategories}>
                                 Guardar
                               </button>

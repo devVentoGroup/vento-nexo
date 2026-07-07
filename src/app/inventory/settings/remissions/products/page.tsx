@@ -234,14 +234,38 @@ export default async function RemissionProductsPage({
       const categoryAreaKind = normalizeAreaKind(category.area_kind);
       return !selectedAreaKind || !categoryAreaKind || categoryAreaKind === selectedAreaKind;
     });
+  const selectedAreaCategoryRows = ((areaCategoryData ?? []) as ProductSiteAreaRemissionCategoryRow[])
+    .filter((row) => normalizeAreaKind(row.area_kind) === selectedAreaKind);
+
   const areaCategoryByProduct = new Map(
-    ((areaCategoryData ?? []) as ProductSiteAreaRemissionCategoryRow[])
-      .filter((row) => normalizeAreaKind(row.area_kind) === selectedAreaKind)
-      .map((row) => [
-        String(row.product_id ?? ""),
-        String(row.remission_category_id ?? ""),
-      ])
+    selectedAreaCategoryRows.map((row) => [
+      String(row.product_id ?? ""),
+      String(row.remission_category_id ?? ""),
+    ])
   );
+
+  const categoryProductCountById = new Map<string, Set<string>>();
+  const addCategoryProduct = (categoryId: string, productId: string) => {
+    if (!categoryId || !productId) return;
+    const current = categoryProductCountById.get(categoryId) ?? new Set<string>();
+    current.add(productId);
+    categoryProductCountById.set(categoryId, current);
+  };
+
+  for (const row of selectedAreaCategoryRows) {
+    addCategoryProduct(
+      String(row.remission_category_id ?? ""),
+      String(row.product_id ?? "")
+    );
+  }
+
+  for (const setting of (settingsData ?? []) as ProductSiteSettingRow[]) {
+    const productId = String(setting.product_id ?? "");
+    const categoryId = String(setting.remission_category_id ?? "");
+    if (!productId || !categoryId || areaCategoryByProduct.has(productId)) continue;
+    addCategoryProduct(categoryId, productId);
+  }
+
   const allowedTypeOptions = profileTypeOptions(bulkProfile);
 
   const productCandidates = ((productsData ?? []) as ProductRow[])
@@ -422,7 +446,7 @@ export default async function RemissionProductsPage({
           id: category.id,
           name: category.name ?? "Sin nombre",
           sortOrder: category.sort_order ?? 0,
-          productCount: productRows.filter((row) => row.setting.remissionCategoryId === category.id).length,
+          productCount: categoryProductCountById.get(category.id)?.size ?? 0,
         }))}
         canManage={canManage}
         destinationSiteId={destinationSiteId}
