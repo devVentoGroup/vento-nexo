@@ -1364,7 +1364,7 @@ export default async function RemissionsPage({
               categoryNameById={Object.fromEntries(categoryNameById)}
               defaultUomProfiles={defaultUomProfiles}
               areaOptions={areaOptions}
-              defaultAreaKind=""
+              defaultAreaKind={selectedRemissionCategoryAreaKind}
               originStockRows={inventoryPostingEnabled ? originStockRows : []}
               productionPackageRows={productionPackageRows}
               inventoryPostingEnabled={inventoryPostingEnabled}
