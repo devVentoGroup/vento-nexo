@@ -249,7 +249,11 @@ export function RemissionProductsClientTable({
           return false;
         }
       }
-      if (statusFilter && row.diagnostics.status !== statusFilter) return false;
+      if (statusFilter === "__review__") {
+        if (row.diagnostics.canApply && row.diagnostics.status !== "warning") return false;
+      } else if (statusFilter && row.diagnostics.status !== statusFilter) {
+        return false;
+      }
       return true;
     });
   }, [categoryByProduct, categoryFilter, measurementFilter, query, rows, statusFilter, typeFilter]);
@@ -387,7 +391,7 @@ export function RemissionProductsClientTable({
             <span className="ui-chip">{visibleRows.length} visibles</span>
             <span className="ui-chip ui-chip--success">{readyCount} aplicables</span>
             <span className={blockedCount > 0 ? "ui-chip ui-chip--warn" : "ui-chip"}>
-              {blockedCount} revisar
+              {blockedCount} no aplicables
             </span>
             {selectedCount > 0 ? <span className="ui-chip ui-chip--info">{selectedCount} seleccionados</span> : null}
             {changedCategoryCount > 0 ? (
@@ -464,8 +468,9 @@ export function RemissionProductsClientTable({
             <option value="">Todos</option>
             <option value="configured">Listos</option>
             <option value="ready">Puede configurarse</option>
+            <option value="__review__">Revisar / no aplicables</option>
             <option value="blocked">Bloqueado</option>
-            <option value="warning">Revisar</option>
+            <option value="warning">Advertencia</option>
           </select>
         </label>
         <label className="flex flex-col gap-1">
