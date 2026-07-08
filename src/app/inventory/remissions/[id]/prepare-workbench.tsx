@@ -170,24 +170,11 @@ function formatDisplayQty(value: number | null | undefined): string {
 }
 
 function getLineRequestedDisplayLabel(line: DraftLine): string {
-  const explicit = String(line.requestedDisplayLabel ?? "").trim();
-  if (explicit) return explicit;
-  return `${formatDisplayQty(line.requestedQty)} ${line.unitLabel}`.trim();
+  return getRequestedQtyDisplayLabel(line);
 }
 
 function getLineRequestedBaseLabel(line: DraftLine): string {
-  const explicit = String(line.requestedBaseLabel ?? "").trim();
-  if (explicit) return explicit;
-
-  const presentationQty = getRequestedPresentationQty(line);
-  const presentationLabel = String(line.presentationLabel ?? "").trim();
-  const requestedQty = roundQty(Number(line.requestedQty ?? 0));
-
-  if (presentationQty > 0 && presentationLabel && requestedQty > 0) {
-    return `${formatDisplayQty(requestedQty)} ${line.unitLabel}`.trim();
-  }
-
-  return "";
+  return getRequestedBaseDisplayLabel(line);
 }
 
 function getLineMeasurementLabel(
@@ -199,8 +186,7 @@ function getLineMeasurementLabel(
   if (mode === "variable_weight") return "Peso real";
   if (mode === "count_with_weight") return "Conteo + peso real";
   if (mode === "bulk_volume") return "Cantidad real";
-  const presentationLabel = String(line.presentationLabel ?? "").trim();
-  return presentationLabel || "Presentación";
+  return getPresentationUnitLabel(line);
 }
 
 function getSelectedLocAvailable(line: DraftLine): number {
@@ -406,6 +392,119 @@ function getLineUomProfileId(line: DraftLine): string {
 
 function getRequestedPresentationQty(line: DraftLine): number {
   return roundQty(Number(line.inputQty ?? line.presentationQty ?? 0));
+}
+
+
+function normalizeLabelForComparison(value: unknown): string {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function isGenericPresentationLabel(label: string, stockUnitLabel: string): boolean {
+  const normalized = normalizeLabelForComparison(label);
+  const stockNormalized = normalizeLabelForComparison(stockUnitLabel);
+  if (!normalized) return true;
+  if (stockNormalized && normalized === stockNormalized) return true;
+  return new Set(["un", "und", "uds", "u", "unidad", "unidades", "presentacion fija"]).has(normalized);
+}
+
+function lineUsesPresentationOperationalUnit(line: DraftLine): boolean {
+  if (lineRequiresPackageDispatch(line)) return false;
+  if (getLineMeasurementMode(line) !== "fixed_presentation") return false;
+  const requestedPresentationQty = getRequestedPresentationQty(line);
+  const requestedBaseQty = roundQty(Number(line.requestedQty ?? 0));
+  return requestedPresentationQty > 0 && requestedBaseQty > 0;
+}
+
+function getPresentationUnitLabel(line: DraftLine, quantity?: number): string {
+  const explicit = String(line.presentationLabel ?? "").trim();
+  if (explicit && !isGenericPresentationLabel(explicit, line.unitLabel)) return explicit;
+  const qty = roundQty(Number(quantity ?? getRequestedPresentationQty(line) ?? 0));
+  return qty === 1 ? "presentación" : "presentaciones";
+}
+
+function getPresentationBaseFactor(line: DraftLine): number {
+  const requestedPresentationQty = getRequestedPresentationQty(line);
+  const requestedBaseQty = roundQty(Number(line.requestedQty ?? 0));
+  if (requestedPresentationQty <= 0 || requestedBaseQty <= 0) return 0;
+  return requestedBaseQty / requestedPresentationQty;
+}
+
+function getPresentationQtyFromBase(line: DraftLine, baseQty: number): number {
+  const factor = getPresentationBaseFactor(line);
+  if (!lineUsesPresentationOperationalUnit(line) || factor <= 0) return roundQty(baseQty);
+  return roundQty(roundQty(Number(baseQty ?? 0)) / factor);
+}
+
+function getBaseQtyFromPresentation(line: DraftLine, presentationQty: number): number {
+  const factor = getPresentationBaseFactor(line);
+  if (!lineUsesPresentationOperationalUnit(line) || factor <= 0) return roundQty(presentationQty);
+  return roundQty(roundQty(Number(presentationQty ?? 0)) * factor);
+}
+
+function getEditableDispatchQty(line: DraftLine): number {
+  if (lineUsesPresentationOperationalUnit(line)) {
+    return getPresentationQtyFromBase(line, Number(line.dispatchQty ?? 0));
+  }
+  return roundQty(Number(line.dispatchQty ?? 0));
+}
+
+function getDispatchQtyDisplayLabel(line: DraftLine): string {
+  if (lineUsesPresentationOperationalUnit(line)) {
+    const presentationQty = getPresentationQtyFromBase(line, Number(line.dispatchQty ?? 0));
+    const presentationLabel = getPresentationUnitLabel(line, presentationQty);
+    const baseQty = roundQty(Number(line.dispatchQty ?? 0));
+    const factor = getPresentationBaseFactor(line);
+    const baseSuffix = factor > 0 && Math.abs(factor - 1) > 0.001
+      ? ` · Base: ${formatDisplayQty(baseQty)} ${line.unitLabel}`
+      : "";
+    return `${formatDisplayQty(presentationQty)} ${presentationLabel}${baseSuffix}`.trim();
+  }
+  return `${formatDisplayQty(line.dispatchQty)} ${line.unitLabel}`.trim();
+}
+
+function getRequestedQtyDisplayLabel(line: DraftLine): string {
+  if (lineUsesPresentationOperationalUnit(line)) {
+    const presentationQty = getRequestedPresentationQty(line);
+    const presentationLabel = getPresentationUnitLabel(line, presentationQty);
+    const requestedQty = roundQty(Number(line.requestedQty ?? 0));
+    const factor = getPresentationBaseFactor(line);
+    const baseSuffix = factor > 0 && Math.abs(factor - 1) > 0.001
+      ? ` (${formatDisplayQty(requestedQty)} ${line.unitLabel})`
+      : "";
+    return `${formatDisplayQty(presentationQty)} ${presentationLabel}${baseSuffix}`.trim();
+  }
+
+  const explicit = String(line.requestedDisplayLabel ?? "").trim();
+  if (explicit) return explicit;
+  return `${formatDisplayQty(line.requestedQty)} ${line.unitLabel}`.trim();
+}
+
+function getRequestedBaseDisplayLabel(line: DraftLine): string {
+  if (lineUsesPresentationOperationalUnit(line)) {
+    const factor = getPresentationBaseFactor(line);
+    if (factor > 0 && Math.abs(factor - 1) > 0.001) {
+      return `${formatDisplayQty(line.requestedQty)} ${line.unitLabel}`.trim();
+    }
+    return "";
+  }
+
+  const explicit = String(line.requestedBaseLabel ?? "").trim();
+  if (explicit) return explicit;
+
+  const presentationQty = getRequestedPresentationQty(line);
+  const presentationLabel = String(line.presentationLabel ?? "").trim();
+  const requestedQty = roundQty(Number(line.requestedQty ?? 0));
+
+  if (presentationQty > 0 && presentationLabel && requestedQty > 0) {
+    return `${formatDisplayQty(requestedQty)} ${line.unitLabel}`.trim();
+  }
+
+  return "";
 }
 
 function getPresentationQtyForDispatch(line: DraftLine, dispatchQty: number): number {
@@ -739,7 +838,7 @@ function RemissionPrepareReadonlySummary({
                   )}
                 </div>
                 <div className="text-sm font-medium text-[var(--ui-text)]">
-                  {line.dispatchQty} {line.unitLabel}
+                  {getDispatchQtyDisplayLabel(line)}
                 </div>
                 <div>
                   {hasShortage ? (
@@ -852,7 +951,7 @@ function RemissionPrepareWorkbenchInteractive({
 
   const startDispatchQtyEdit = (line: DraftLine) => {
     setEditingDispatchLineId(line.id);
-    const currentQty = roundQty(Number(line.dispatchQty ?? 0));
+    const currentQty = getEditableDispatchQty(line);
     setDispatchQtyDraft(currentQty === 0 ? "" : formatQtyInput(currentQty));
   };
 
@@ -861,9 +960,10 @@ function RemissionPrepareWorkbenchInteractive({
     setDispatchQtyDraft(nextValue);
 
     const parsedQty = parseOptionalQtyInput(nextValue);
-    updateLine(line.id, {
-      dispatchQty: parsedQty ?? 0,
-    });
+    const dispatchQty = lineUsesPresentationOperationalUnit(line)
+      ? getBaseQtyFromPresentation(line, parsedQty ?? 0)
+      : parsedQty ?? 0;
+    updateLine(line.id, { dispatchQty });
   };
 
   const finishDispatchQtyEdit = () => {
@@ -1119,7 +1219,7 @@ function RemissionPrepareWorkbenchInteractive({
                     value={
                       editingDispatchLineId === line.id
                         ? dispatchQtyDraft
-                        : formatQtyInput(line.dispatchQty)
+                        : formatQtyInput(getEditableDispatchQty(line))
                     }
                     disabled={inventoryPostingEnabled && lineRequiresPackageDispatch(line)}
                     onFocus={(event) => {
@@ -1134,6 +1234,10 @@ function RemissionPrepareWorkbenchInteractive({
                   {inventoryPostingEnabled && lineRequiresPackageDispatch(line) ? (
                     <div className="mt-1 text-xs text-[var(--ui-muted)]">
                       Cantidad fijada por empaques reales FOGO.
+                    </div>
+                  ) : lineUsesPresentationOperationalUnit(line) ? (
+                    <div className="mt-1 text-xs text-[var(--ui-muted)]">
+                      Edita presentaciones. {getDispatchQtyDisplayLabel(line)}
                     </div>
                   ) : null}
                   {inventoryPostingEnabled && line.locOptions.length === 0 && line.dispatchQty === 0 ? (
@@ -1201,7 +1305,7 @@ function RemissionPrepareWorkbenchInteractive({
           <div className="mx-auto max-w-lg rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-4">
             <div className="text-lg font-semibold text-[var(--ui-text)]">Usar varias ubicaciones</div>
             <div className="mt-2 text-sm text-[var(--ui-muted)]">
-              {splitTarget.productName} · Solicitado {splitTarget.requestedQty} {splitTarget.unitLabel}
+              {splitTarget.productName} · Solicitado {getLineRequestedDisplayLabel(splitTarget)}
             </div>
             <label className="mt-3 flex flex-col gap-1">
               <span className="text-xs text-[var(--ui-muted)]">Cantidad que saldrá de otra ubicación</span>

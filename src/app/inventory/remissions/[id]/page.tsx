@@ -112,6 +112,71 @@ function buildRequestedDisplay(params: {
   return baseLabel;
 }
 
+
+function normalizeLabelForComparison(value: unknown): string {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ");
+}
+
+function isGenericPresentationLabel(label: string, stockUnitLabel: string): boolean {
+  const normalized = normalizeLabelForComparison(label);
+  const stockNormalized = normalizeLabelForComparison(stockUnitLabel);
+  if (!normalized) return true;
+  if (stockNormalized && normalized === stockNormalized) return true;
+  return new Set(["un", "und", "uds", "u", "unidad", "unidades", "presentacion fija"]).has(normalized);
+}
+
+function shouldUsePresentationOperationalQty(params: {
+  measurementMode: MeasurementMode | string | null | undefined;
+  inputQty: number;
+  requestedQty: number;
+}) {
+  return (
+    normalizeMeasurementMode(params.measurementMode) === "fixed_presentation" &&
+    roundQuantity(Number(params.inputQty ?? 0)) > 0 &&
+    roundQuantity(Number(params.requestedQty ?? 0)) > 0
+  );
+}
+
+function buildOperationalPresentationLabel(params: {
+  presentationLabel: string;
+  stockUnitLabel: string;
+  quantity: number;
+}) {
+  const label = cleanLabel(params.presentationLabel);
+  if (label && !isGenericPresentationLabel(label, params.stockUnitLabel)) return label;
+  return roundQuantity(Number(params.quantity ?? 0)) === 1 ? "presentación" : "presentaciones";
+}
+
+function convertBaseQtyToPresentationQty(params: {
+  baseQty: number;
+  requestedQty: number;
+  inputQty: number;
+}) {
+  const baseQty = roundQuantity(Number(params.baseQty ?? 0));
+  const requestedQty = roundQuantity(Number(params.requestedQty ?? 0));
+  const inputQty = roundQuantity(Number(params.inputQty ?? 0));
+  if (baseQty <= 0 || requestedQty <= 0 || inputQty <= 0) return 0;
+  return roundQuantity((baseQty / requestedQty) * inputQty);
+}
+
+function buildBaseReference(params: {
+  baseQty: number;
+  requestedQty: number;
+  inputQty: number;
+  stockUnitLabel: string;
+}) {
+  const requestedQty = roundQuantity(Number(params.requestedQty ?? 0));
+  const inputQty = roundQuantity(Number(params.inputQty ?? 0));
+  const baseQty = roundQuantity(Number(params.baseQty ?? 0));
+  if (requestedQty <= 0 || inputQty <= 0 || Math.abs(requestedQty - inputQty) <= 0.001) return "";
+  return `Base: ${formatRemissionQty(baseQty)} ${params.stockUnitLabel}`;
+}
+
 function normalizeOperationalText(value: unknown): string {
   return String(value ?? "")
     .normalize("NFD")
@@ -930,16 +995,59 @@ export default async function RemissionDetailPage({
           locDetail = `ID ubicación ${locId.slice(0, 8)}…`;
         }
       }
-      const unitLabel = formatUnitLabel(
+      const stockUnitLabel = formatUnitLabel(
         item.stock_unit_code ?? item.unit ?? item.product?.stock_unit_code
       );
+      const measurementMode = getItemMeasurementMode(item);
+      const inputQty = roundQuantity(Number(item.input_qty ?? 0));
+      const requestedQty = roundQuantity(Number(item.quantity ?? 0));
+      const inputUomProfileId = cleanLabel(
+        (item as { input_uom_profile_id?: string | null }).input_uom_profile_id
+      );
+      const inputUomProfile = inputUomProfileId
+        ? inputUomProfileById.get(inputUomProfileId) ?? null
+        : null;
+      const inputUnitCode = cleanLabel(
+        (item as { input_unit_code?: string | null }).input_unit_code ?? inputUomProfile?.input_unit_code ?? ""
+      );
+      const presentationLabel = buildPresentationDisplay({
+        inputUomProfile,
+        inputUnitCode,
+        stockUnitLabel,
+      });
+      const usePresentationQty = shouldUsePresentationOperationalQty({
+        measurementMode,
+        inputQty,
+        requestedQty,
+      });
+      const displayQty = usePresentationQty
+        ? convertBaseQtyToPresentationQty({ baseQty: plannedQty, requestedQty, inputQty })
+        : plannedQty;
+      const displayUnitLabel = usePresentationQty
+        ? buildOperationalPresentationLabel({
+          presentationLabel,
+          stockUnitLabel,
+          quantity: displayQty,
+        })
+        : stockUnitLabel;
+      const baseReference = usePresentationQty
+        ? buildBaseReference({
+          baseQty: plannedQty,
+          requestedQty,
+          inputQty,
+          stockUnitLabel,
+        })
+        : "";
+      if (baseReference) {
+        locDetail = locDetail ? `${locDetail} · ${baseReference}` : baseReference;
+      }
       const category = resolveTransitCategory(item.production_area_kind);
       return {
         id: item.id,
         productName: String(item.product?.name ?? item.product_id),
-        measurementMode: getItemMeasurementMode(item),
-        quantity: plannedQty,
-        unitLabel,
+        measurementMode,
+        quantity: displayQty,
+        unitLabel: displayUnitLabel,
         locDetail,
         categoryKey: category.key,
         categoryLabel: category.label,
