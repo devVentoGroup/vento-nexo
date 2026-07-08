@@ -1,13 +1,8 @@
 "use server";
 
-import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 
 import { checkPermissionWithRoleOverride } from "@/lib/auth/role-override";
-import {
-  PRIVILEGED_ROLE_OVERRIDES,
-  ROLE_OVERRIDE_COOKIE,
-} from "@/lib/auth/role-override-config";
 import {
   buildOperationalBlockMessage,
   checkOperationalPermission,
@@ -29,7 +24,6 @@ import {
   parseNumber,
   parseProductionPackagePlan,
   readBooleanAppSetting,
-  resolveRoleScopedRemissionAreaKind,
   supportsRemission,
   supportsRequestedArea,
   toFriendlyRemissionActionError,
@@ -41,6 +35,7 @@ import {
   type ProductionPackagePlanItem,
   type RemissionListAction,
 } from "./page-helpers";
+import { resolveOperationalRemissionAreaScope } from "./operational-area-scope";
 
 const APP_ID = "nexo";
 const REMISSIONS_INVENTORY_POSTING_SETTING_KEY =
@@ -270,24 +265,6 @@ export async function createRemission(formData: FormData) {
   if (!user) {
     redirect(await buildShellLoginUrl("/inventory/remissions"));
   }
-  const { data: employee } = await supabase
-    .from("employees")
-    .select("role")
-    .eq("id", user.id)
-    .maybeSingle();
-  const actualRole = String(employee?.role ?? "");
-  const cookieStore = await cookies();
-  const roleOverride = String(
-    cookieStore.get(ROLE_OVERRIDE_COOKIE)?.value ?? "",
-  )
-    .trim()
-    .toLowerCase();
-  const canUseRoleOverride =
-    Boolean(roleOverride) &&
-    PRIVILEGED_ROLE_OVERRIDES.has(actualRole.toLowerCase());
-  const effectiveRole = (
-    canUseRoleOverride ? roleOverride : actualRole
-  ).toLowerCase();
   const inventoryPostingEnabled = await readBooleanAppSetting(
     supabase,
     REMISSIONS_INVENTORY_POSTING_SETTING_KEY,
@@ -604,11 +581,19 @@ export async function createRemission(formData: FormData) {
   const configuredByProductId = new Map(
     configuredRows.map((row) => [row.product_id, row]),
   );
-  const requestedRoleAreaKind = await resolveRoleScopedRemissionAreaKind(
+  const requestAreaScope = await resolveOperationalRemissionAreaScope({
     supabase,
-    toSiteId,
-    effectiveRole,
-  );
+    userId: user.id,
+    siteId: toSiteId,
+    canSeeAllAreas: false,
+  });
+  if (requestAreaScope.blockedReason) {
+    redirect(
+      "/inventory/remissions?error=" +
+        encodeURIComponent(requestAreaScope.blockedReason),
+    );
+  }
+  const requestedRoleAreaKind = requestAreaScope.defaultAreaKind;
   const invalidAreaItems = items.filter((item) => {
     const row = configuredByProductId.get(item.product_id);
     if (!row) return true;
@@ -621,7 +606,7 @@ export async function createRemission(formData: FormData) {
     redirect(
       "/inventory/remissions?error=" +
         encodeURIComponent(
-          "Algunos productos no corresponden al area de solicitud de tu rol o sede.",
+          "Algunos productos no corresponden al area operativa activa de la sede.",
         ),
     );
   }

@@ -291,50 +291,32 @@ function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockP
 
   return (
     <div
-      className="z-40 flex justify-center px-3 pt-2 max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:pb-[max(0.75rem,env(safe-area-inset-bottom))]"
+      className="z-40 mt-3 flex justify-end max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:px-3 max-lg:pb-[max(0.75rem,env(safe-area-inset-bottom))]"
       role="region"
       aria-label="Confirmacion de recepcion"
     >
-      <div className="w-full max-w-3xl rounded-xl border border-stone-200/90 bg-[var(--ui-bg)] p-2 shadow-sm ring-1 ring-stone-100/70 sm:p-3 lg:flex lg:items-center lg:justify-between lg:gap-6">
-        <div className="min-w-0 flex-1 space-y-1">
-          <p className="text-xs font-semibold text-stone-700">
+      <div className="flex w-full max-w-3xl flex-col gap-2 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg)] px-3 py-2 shadow-sm sm:flex-row sm:items-center sm:justify-between">
+        <div className="min-w-0">
+          <p className="text-xs font-semibold text-[var(--ui-text)]">
             {noEligible
               ? "Sin productos pendientes."
               : `${selectedProductsCount}/${eligibleProductsCount} seleccionados.`}
           </p>
           {selectedMissingActualQtyCount > 0 ? (
             <p className="text-[11px] font-semibold text-amber-700">
-              Falta cantidad real en {selectedMissingActualQtyCount} linea{selectedMissingActualQtyCount === 1 ? "" : "s"}.
+              Falta cantidad real en {selectedMissingActualQtyCount} línea{selectedMissingActualQtyCount === 1 ? "" : "s"}.
             </p>
           ) : null}
           {selectedMissingAuxCount > 0 ? (
             <p className="text-[11px] font-semibold text-amber-700">
-              Falta conteo auxiliar en {selectedMissingAuxCount} linea{selectedMissingAuxCount === 1 ? "" : "s"}.
+              Falta conteo auxiliar en {selectedMissingAuxCount} línea{selectedMissingAuxCount === 1 ? "" : "s"}.
             </p>
           ) : null}
-          {!noEligible ? (
-            <div className="flex flex-wrap gap-2 pt-1">
-              <button
-                type="button"
-                className="rounded-lg border border-stone-200 bg-white px-2 py-1 text-[11px] font-semibold text-stone-700 shadow-sm transition hover:bg-stone-50"
-                onClick={selectAllEligible}
-              >
-                Marcar todas
-              </button>
-              <button
-                type="button"
-                className="rounded-lg border border-stone-200 bg-white px-2 py-1 text-[11px] font-semibold text-stone-700 shadow-sm transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"
-                onClick={clearSelection}
-                disabled={selectedLines.length === 0}
-              >
-                Limpiar
-              </button>
-            </div>
-          ) : null}
         </div>
+
         <form
           action={applyReceiveBatchConfirm}
-          className="mt-3 flex w-full shrink-0 flex-col gap-2 sm:mt-0 lg:w-auto lg:items-end"
+          className="flex shrink-0 flex-wrap items-center justify-end gap-2"
         >
           <input type="hidden" name="request_id" value={requestId} />
           <input type="hidden" name="return_origin" value={returnOrigin} />
@@ -352,6 +334,25 @@ function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockP
               />
             </span>
           ))}
+          {!noEligible ? (
+            <>
+              <button
+                type="button"
+                className="ui-btn ui-btn--ghost h-10 px-3 text-xs font-semibold"
+                onClick={selectAllEligible}
+              >
+                Marcar todas
+              </button>
+              <button
+                type="button"
+                className="ui-btn ui-btn--ghost h-10 px-3 text-xs font-semibold disabled:cursor-not-allowed disabled:opacity-50"
+                onClick={clearSelection}
+                disabled={selectedLines.length === 0}
+              >
+                Limpiar
+              </button>
+            </>
+          ) : null}
           <button
             type="submit"
             disabled={
@@ -360,9 +361,9 @@ function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockP
               selectedMissingActualQtyCount > 0 ||
               selectedMissingAuxCount > 0
             }
-            className="h-10 w-full min-w-[180px] rounded-lg bg-gradient-to-r from-teal-600 to-emerald-600 px-4 text-sm font-bold text-white shadow-lg shadow-teal-900/25 transition hover:from-teal-500 hover:to-emerald-500 disabled:cursor-not-allowed disabled:from-stone-300 disabled:to-stone-300 disabled:text-stone-500 disabled:shadow-none lg:w-auto"
+            className="ui-btn ui-btn--brand h-10 px-4 text-sm font-semibold disabled:cursor-not-allowed disabled:opacity-60"
           >
-            Registrar recepcion
+            Registrar recepción
           </button>
         </form>
       </div>
@@ -398,7 +399,7 @@ export function ReceiveBatchLineWrapper({
             className={[
               "flex h-8 w-8 items-center justify-center rounded-full border transition",
               isChecked
-                ? "border-emerald-400 bg-gradient-to-br from-emerald-600 to-teal-600 text-white shadow-sm"
+                ? "border-[var(--ui-border)] bg-[var(--ui-bg-soft)] text-[var(--ui-text)] shadow-sm"
                 : "border-stone-300 bg-white text-stone-500",
             ].join(" ")}
             aria-hidden
@@ -593,7 +594,7 @@ export function ReceiveBatchCompactProductLine({
     <div
       className={[
         "rounded-xl border bg-white px-3 py-2 shadow-sm transition",
-        allSelected ? "border-emerald-200 ring-1 ring-emerald-100" : "border-[var(--ui-border)] opacity-75",
+        allSelected ? "border-[var(--ui-border)] ring-1 ring-[var(--ui-border)]" : "border-[var(--ui-border)] opacity-75",
       ].join(" ")}
     >
       <div className="grid grid-cols-[auto_minmax(0,1fr)_minmax(116px,160px)] items-center gap-3">
@@ -602,7 +603,7 @@ export function ReceiveBatchCompactProductLine({
             type="checkbox"
             checked={allSelected}
             onChange={(e) => onToggleProduct(e.target.checked)}
-            className="h-5 w-5 rounded border-stone-300 text-emerald-600 focus:ring-emerald-500"
+            className="h-5 w-5 rounded border-[var(--ui-border)] accent-[var(--ui-brand)]"
             aria-label={`Incluir ${productName} en recepcion`}
           />
           {anySelected && !allSelected ? (
@@ -636,7 +637,7 @@ export function ReceiveBatchCompactProductLine({
                 setPartialTotalInput(value);
                 allocatePartialTotalToLines(value);
               }}
-              className="h-10 w-20 rounded-lg border border-stone-200 bg-white px-2 text-right text-sm font-semibold tabular-nums text-stone-900 outline-none focus:border-emerald-300 disabled:cursor-not-allowed disabled:bg-stone-50 sm:w-24"
+              className="h-10 w-20 rounded-lg border border-stone-200 bg-white px-2 text-right text-sm font-semibold tabular-nums text-stone-900 outline-none focus:border-[var(--ui-border)] disabled:cursor-not-allowed disabled:bg-stone-50 sm:w-24"
               placeholder={formatQuickQty(pendingQtyTotal)}
             />
             <span className="min-w-[42px] text-left text-xs font-medium text-[var(--ui-muted)]">
@@ -657,7 +658,7 @@ export function ReceiveBatchCompactProductLine({
               disabled={!allSelected}
               value={itemIds.length > 0 ? auxCount[itemIds[0]] ?? "" : ""}
               onChange={(event) => allocateAuxCountToLines(event.target.value)}
-              className="mt-1 h-10 w-full rounded-lg border border-stone-200 bg-white px-3 text-sm outline-none focus:border-emerald-300 disabled:cursor-not-allowed disabled:bg-stone-50"
+              className="mt-1 h-10 w-full rounded-lg border border-stone-200 bg-white px-3 text-sm outline-none focus:border-[var(--ui-border)] disabled:cursor-not-allowed disabled:bg-stone-50"
               placeholder={`Ej. 12 ${auxCountUnitCode}`}
             />
           </label>

@@ -29,7 +29,6 @@ import {
   loadProductSiteRows,
   normalizeMeasurementMode,
   readBooleanAppSetting,
-  resolveRoleScopedRemissionAreaKind,
   supportsRemission,
   supportsRequestedArea,
   usesActualQuantityMode,
@@ -53,6 +52,12 @@ import {
   type SiteRow,
   type StockReferenceRow,
 } from "./page-helpers";
+import {
+  formatOperationalRemissionAreaLabel,
+  operationalRemissionAreaScopeAllowsKinds,
+  resolveOperationalRemissionAreaScope,
+  resolveRemissionAreaKindFromKinds,
+} from "./operational-area-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -68,6 +73,7 @@ const PERMISSIONS = {
   remissionsTransit: "inventory.remissions.transit",
   remissionsEditOwnPending: "inventory.remissions.edit_own_pending",
 };
+
 
 type SearchParams = {
   error?: string;
@@ -241,6 +247,15 @@ export default async function RemissionsPage({
         actualRole,
       })
     : false;
+  const receiveAreaScope = activeSiteId && viewMode === "satélite"
+    ? await resolveOperationalRemissionAreaScope({
+        supabase,
+        userId: user.id,
+        siteId: activeSiteId,
+        canSeeAllAreas: canViewAll,
+      })
+    : null;
+
   if (effectiveRole === "conductor" && canTransitPermission) {
     const params = new URLSearchParams();
     if (activeSiteId) params.set("site_id", activeSiteId);
@@ -337,8 +352,38 @@ export default async function RemissionsPage({
         : remissionsQuery.eq("to_site_id", activeSiteId);
   }
   const { data: remissions } = await remissionsQuery;
-  const remissionRows = (remissions ?? []) as RemissionRow[];
-  const remissionIds = remissionRows.map((row) => row.id).filter(Boolean);
+  let remissionRows = (remissions ?? []) as RemissionRow[];
+  let remissionIds = remissionRows.map((row) => row.id).filter(Boolean);
+  const { data: remissionAreaItemsData } = remissionIds.length
+    ? await supabase
+        .from("restock_request_items")
+        .select("request_id,production_area_kind")
+        .in("request_id", remissionIds)
+    : { data: [] as Array<{ request_id: string | null; production_area_kind: string | null }> };
+  const remissionAreaKindsByRequestId = new Map<string, string[]>();
+  for (const row of (remissionAreaItemsData ?? []) as Array<{ request_id: string | null; production_area_kind: string | null }>) {
+    const requestId = String(row.request_id ?? "").trim();
+    if (!requestId) continue;
+    const list = remissionAreaKindsByRequestId.get(requestId) ?? [];
+    list.push(String(row.production_area_kind ?? "").trim());
+    remissionAreaKindsByRequestId.set(requestId, list);
+  }
+  const remissionAreaKindByRequestId = new Map<string, string>();
+  for (const row of remissionRows) {
+    remissionAreaKindByRequestId.set(
+      row.id,
+      resolveRemissionAreaKindFromKinds(remissionAreaKindsByRequestId.get(row.id) ?? [])
+    );
+  }
+  if (viewMode === "satélite" && receiveAreaScope) {
+    remissionRows = remissionRows.filter((row) =>
+      operationalRemissionAreaScopeAllowsKinds(
+        receiveAreaScope,
+        remissionAreaKindsByRequestId.get(row.id) ?? []
+      )
+    );
+    remissionIds = remissionRows.map((row) => row.id).filter(Boolean);
+  }
   const { data: operationalSummaryData } = remissionIds.length
     ? await supabase
         .from("restock_operational_summary")
@@ -485,14 +530,15 @@ export default async function RemissionsPage({
   // Insumos por satélite: filtrar por sede DESTINO (Saudo), no por sede origen (Centro).
   // Cuando el satélite solicita, solo debe ver productos configurados para su sede.
   const productFilterSiteId = canCreate ? activeSiteId : selectedFromSiteId;
-  const requestedAreaKind =
-    canCreate && productFilterSiteId
-      ? await resolveRoleScopedRemissionAreaKind(
-          supabase,
-          productFilterSiteId,
-          effectiveRole,
-        )
-      : "";
+  const requestAreaScope = canCreate && productFilterSiteId
+    ? await resolveOperationalRemissionAreaScope({
+        supabase,
+        userId: user.id,
+        siteId: productFilterSiteId,
+        canSeeAllAreas: canViewAll,
+      })
+    : null;
+  const requestedAreaKind = requestAreaScope?.defaultAreaKind ?? "";
   const productSiteRows = productFilterSiteId
     ? await loadProductSiteRows(supabase, productFilterSiteId)
     : [];
@@ -1135,6 +1181,7 @@ export default async function RemissionsPage({
               <tr>
                 <TableHeaderCell>Fecha</TableHeaderCell>
                 <TableHeaderCell>Estado</TableHeaderCell>
+                <TableHeaderCell>Área</TableHeaderCell>
                 {viewMode !== "bodega" ? (
                   <TableHeaderCell>Origen</TableHeaderCell>
                 ) : null}
@@ -1191,6 +1238,7 @@ export default async function RemissionsPage({
                         {formatStatus(effectiveStatus).label}
                       </span>
                     </TableCell>
+                    <TableCell>{formatOperationalRemissionAreaLabel(remissionAreaKindByRequestId.get(row.id))}</TableCell>
                     {viewMode !== "bodega" ? (
                       <TableCell>
                         {siteMap.get(fromSiteId)?.name ?? fromSiteId}
@@ -1411,6 +1459,7 @@ export default async function RemissionsPage({
               <tr>
                 <TableHeaderCell>Fecha</TableHeaderCell>
                 <TableHeaderCell>Estado</TableHeaderCell>
+                <TableHeaderCell>Área</TableHeaderCell>
                 {viewMode !== "bodega" ? (
                   <TableHeaderCell>Origen</TableHeaderCell>
                 ) : null}
@@ -1467,6 +1516,7 @@ export default async function RemissionsPage({
                         {formatStatus(effectiveStatus).label}
                       </span>
                     </TableCell>
+                    <TableCell>{formatOperationalRemissionAreaLabel(remissionAreaKindByRequestId.get(row.id))}</TableCell>
                     {viewMode !== "bodega" ? (
                       <TableCell>
                         {siteMap.get(fromSiteId)?.name ?? fromSiteId}

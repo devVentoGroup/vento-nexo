@@ -3,6 +3,10 @@ import Link from "next/link";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { checkOperationalPermission } from "@/lib/auth/operational-context";
 import type { SiteOperationalCapabilities } from "@/lib/inventory/site-capabilities";
+import {
+  formatOperationalRemissionAreaLabel,
+  resolveRemissionAreaKindFromKinds,
+} from "../operational-area-scope";
 
 export const dynamic = "force-dynamic";
 
@@ -19,6 +23,7 @@ function formatDateTime(value?: string | null) {
     minute: "2-digit",
   }).format(date);
 }
+
 
 const PERMISSIONS = {
   remissionsTransit: "inventory.remissions.transit",
@@ -123,6 +128,29 @@ export default async function RemissionsTransitQueuePage() {
     to_site_id: string | null;
     notes: string | null;
   }>;
+  const requestIds = remissions.map((row) => row.id).filter(Boolean);
+  const { data: remissionAreaItemsData } = requestIds.length
+    ? await supabase
+        .from("restock_request_items")
+        .select("request_id,production_area_kind")
+        .in("request_id", requestIds)
+    : { data: [] as Array<{ request_id: string | null; production_area_kind: string | null }> };
+  const remissionAreaKindsByRequestId = new Map<string, string[]>();
+  for (const row of (remissionAreaItemsData ?? []) as Array<{ request_id: string | null; production_area_kind: string | null }>) {
+    const requestId = String(row.request_id ?? "").trim();
+    if (!requestId) continue;
+    const list = remissionAreaKindsByRequestId.get(requestId) ?? [];
+    list.push(String(row.production_area_kind ?? "").trim());
+    remissionAreaKindsByRequestId.set(requestId, list);
+  }
+  const remissionAreaKindByRequestId = new Map<string, string>();
+  for (const row of remissions) {
+    remissionAreaKindByRequestId.set(
+      row.id,
+      resolveRemissionAreaKindFromKinds(remissionAreaKindsByRequestId.get(row.id) ?? [])
+    );
+  }
+
   const preparingCount = remissions.filter((row) => row.status === "preparing").length;
   const inTransitCount = remissions.filter((row) => row.status === "in_transit").length;
   const partialCount = remissions.filter((row) => row.status === "partial").length;
@@ -189,6 +217,9 @@ export default async function RemissionsTransitQueuePage() {
                     <div className="text-xs text-[var(--ui-muted)]">
                       Destino:{" "}
                       {toSiteMap.get(String(row.to_site_id ?? "")) ?? row.to_site_id ?? "-"}
+                    </div>
+                    <div className="text-xs font-semibold text-[var(--ui-text)]">
+                      Área destino: {formatOperationalRemissionAreaLabel(remissionAreaKindByRequestId.get(row.id))}
                     </div>
                   </div>
                   <span className="ui-chip ui-chip--brand">

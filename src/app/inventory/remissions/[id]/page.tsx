@@ -6,6 +6,12 @@ import { isTemporaryOperationUnitProfile, roundQuantity, type ProductUomProfile 
 import { safeDecodeURIComponent } from "@/lib/url";
 import { loadAccessContext } from "./detail-access";
 import {
+  formatOperationalRemissionAreaLabel,
+  operationalRemissionAreaScopeAllowsKind,
+  resolveRemissionAreaKindFromKinds,
+  resolveUserOperationalRemissionAreaScope,
+} from "../operational-area-scope";
+import {
   commitPreparationDraft,
   submitTransitChecklist,
   updateItems,
@@ -131,6 +137,7 @@ function isGenericPresentationLabel(label: string, stockUnitLabel: string): bool
   if (stockNormalized && normalized === stockNormalized) return true;
   return new Set(["un", "und", "uds", "u", "unidad", "unidades", "presentacion fija"]).has(normalized);
 }
+
 
 function isUnitCode(value: unknown): boolean {
   const normalized = normalizeLabelForComparison(value);
@@ -442,6 +449,11 @@ export default async function RemissionDetailPage({
       product,
     } as RestockItemRow;
   });
+  const requestedAreaKind = resolveRemissionAreaKindFromKinds(
+    (itemRows as Array<{ production_area_kind?: string | null }>).map((item) => item.production_area_kind)
+  );
+  const requestedAreaLabel = formatOperationalRemissionAreaLabel(requestedAreaKind);
+
   const showSourceLocSelector =
     inventoryPostingEnabled &&
     access.canPrepare &&
@@ -643,6 +655,13 @@ export default async function RemissionDetailPage({
   const isReceiveDestinationFlow = canEditReceiveItems && !canEditPrepareItems;
   const isReceiveFirstPass = isReceiveDestinationFlow && currentStatus === "in_transit";
   const isReceivePartialFollowUp = isReceiveDestinationFlow && currentStatus === "partial";
+  const receiveAreaScope = isReceiveDestinationFlow && request?.to_site_id
+    ? await resolveUserOperationalRemissionAreaScope({
+        supabase,
+        userId: user.id,
+        siteId: request.to_site_id,
+      })
+    : null;
   const receiveBatchEligibleIds = isReceiveDestinationFlow
     ? itemRows
       .filter((item) => {
@@ -651,7 +670,11 @@ export default async function RemissionDetailPage({
         const shortageQty = roundQuantity(Number(item.shortage_quantity ?? 0));
         const pendingQty = roundQuantity(Math.max(shippedQty - receivedQty - shortageQty, 0));
 
-        return shippedQty > 0 && pendingQty > 0;
+        return (
+          shippedQty > 0 &&
+          pendingQty > 0 &&
+          operationalRemissionAreaScopeAllowsKind(receiveAreaScope, item.production_area_kind)
+        );
       })
       .map((item) => item.id)
     : [];
@@ -1217,6 +1240,11 @@ export default async function RemissionDetailPage({
         </div>
       ) : null}
 
+      <div className="ui-panel ui-fade-up ui-delay-1 rounded-2xl px-4 py-3">
+        <div className="ui-caption">Área solicitante / destino operativo</div>
+        <div className="mt-1 text-sm font-semibold text-[var(--ui-text)]">{requestedAreaLabel}</div>
+      </div>
+
       <RemissionSummarySection
         compactSatelliteView={compactSatelliteView}
         fromSiteName={access.fromSiteName || "-"}
@@ -1353,15 +1381,16 @@ export default async function RemissionDetailPage({
 
       <div
         className={
-          isReceiveDestinationFlow
-            ? "ui-panel ui-remission-section ui-fade-up ui-delay-3 overflow-hidden border-stone-200/80 bg-gradient-to-b from-emerald-50/40 via-[var(--ui-bg)] to-[var(--ui-bg)]"
-            : "ui-panel ui-remission-section ui-fade-up ui-delay-3"
+          "ui-panel ui-remission-section ui-fade-up ui-delay-3"
         }
       >
         {isReceiveDestinationFlow ? (
           <div className="mb-5">
-            <span className="inline-flex items-center rounded-full bg-emerald-100/90 px-3 py-1 text-xs font-bold uppercase tracking-wider text-emerald-900/85 ring-1 ring-emerald-200/60">
+            <span className="ui-chip ui-chip--brand">
               {isReceivePartialFollowUp ? "Seguimiento" : "Recepción"}
+            </span>
+            <span className="ml-2 ui-chip">
+              Área: {requestedAreaLabel}
             </span>
             <h2 className="mt-3 text-2xl font-bold tracking-tight text-stone-900 sm:text-3xl">
               {receivePanelTitle}

@@ -11,6 +11,10 @@ import {
   loadAccessContext,
 } from "./detail-access";
 import {
+  operationalRemissionAreaScopeAllowsKinds,
+  resolveUserOperationalRemissionAreaScope,
+} from "../operational-area-scope";
+import {
   asText,
   buildRemissionDetailHref,
   type RemissionOperationalSummary,
@@ -918,7 +922,7 @@ export async function updateItems(formData: FormData) {
 
   const { data: request } = await supabase
     .from("restock_requests")
-    .select("from_site_id,to_site_id,status")
+    .select("id,from_site_id,to_site_id,status")
     .eq("id", requestId)
     .single();
 
@@ -1546,7 +1550,7 @@ export async function commitPreparationDraft(formData: FormData) {
 
   const { data: request } = await supabase
     .from("restock_requests")
-    .select("from_site_id,to_site_id,status")
+    .select("id,from_site_id,to_site_id,status")
     .eq("id", requestId)
     .single();
 
@@ -2043,7 +2047,7 @@ export async function submitTransitChecklist(formData: FormData) {
 
   const { data: request } = await supabase
     .from("restock_requests")
-    .select("from_site_id,to_site_id,status")
+    .select("id,from_site_id,to_site_id,status")
     .eq("id", requestId)
     .single();
   const access = await loadAccessContext(supabase, user.id, request, activeSiteId);
@@ -2547,7 +2551,7 @@ export async function splitItem(formData: FormData) {
 
   const { data: request } = await supabase
     .from("restock_requests")
-    .select("from_site_id,to_site_id,status")
+    .select("id,from_site_id,to_site_id,status")
     .eq("id", requestId)
     .single();
 
@@ -2629,7 +2633,7 @@ export async function chooseSourceLoc(formData: FormData) {
 
   const { data: request } = await supabase
     .from("restock_requests")
-    .select("from_site_id,to_site_id,status")
+    .select("id,from_site_id,to_site_id,status")
     .eq("id", requestId)
     .single();
 
@@ -2758,7 +2762,7 @@ export async function updateStatus(formData: FormData) {
 
   const { data: request } = await supabase
     .from("restock_requests")
-    .select("from_site_id,to_site_id,status")
+    .select("id,from_site_id,to_site_id,status")
     .eq("id", requestId)
     .single();
 
@@ -3503,7 +3507,7 @@ export async function applyPrepareShortcut(formData: FormData) {
 
   const { data: request } = await supabase
     .from("restock_requests")
-    .select("from_site_id,to_site_id,status")
+    .select("id,from_site_id,to_site_id,status")
     .eq("id", requestId)
     .single();
 
@@ -3811,7 +3815,7 @@ export async function applyReceiveShortcut(formData: FormData) {
 
   const { data: request } = await supabase
     .from("restock_requests")
-    .select("from_site_id,to_site_id,status")
+    .select("id,from_site_id,to_site_id,status")
     .eq("id", requestId)
     .single();
 
@@ -4123,7 +4127,7 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
 
   const { data: request } = await supabase
     .from("restock_requests")
-    .select("from_site_id,to_site_id,status")
+    .select("id,from_site_id,to_site_id,status")
     .eq("id", requestId)
     .single();
 
@@ -4151,7 +4155,7 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
 
   const { data: selectedItemRowsData, error: selectedItemRowsError } = await supabase
     .from("restock_request_items")
-    .select("id,product_id")
+    .select("id,product_id,production_area_kind")
     .eq("request_id", requestId)
     .in("id", pairs.map((pair) => pair.itemId));
 
@@ -4165,8 +4169,36 @@ export async function applyReceiveBatchConfirm(formData: FormData) {
     );
   }
 
+  const selectedItemRows = (selectedItemRowsData ?? []) as Array<{
+    id: string;
+    product_id: string | null;
+    production_area_kind: string | null;
+  }>;
+  const receiveAreaScope = request?.to_site_id
+    ? await resolveUserOperationalRemissionAreaScope({
+        supabase,
+        userId: user.id,
+        siteId: request.to_site_id,
+      })
+    : null;
+  if (
+    receiveAreaScope &&
+    !operationalRemissionAreaScopeAllowsKinds(
+      receiveAreaScope,
+      selectedItemRows.map((row) => row.production_area_kind)
+    )
+  ) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: "Tu área operativa activa no puede recibir una o más líneas seleccionadas.",
+      })
+    );
+  }
+
   const selectedProductIdByItemId = new Map(
-    ((selectedItemRowsData ?? []) as Array<{ id: string; product_id: string | null }>).map((row) => [
+    selectedItemRows.map((row) => [
       row.id,
       String(row.product_id ?? "").trim(),
     ])

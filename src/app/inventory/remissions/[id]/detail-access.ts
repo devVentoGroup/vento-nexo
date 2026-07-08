@@ -2,7 +2,6 @@ import { redirect } from "next/navigation";
 
 import {
   canUseRoleOverride,
-  checkPermissionWithRoleOverride,
   getRoleOverrideFromCookies,
   isPermissionAllowedForRole,
 } from "@/lib/auth/role-override";
@@ -19,8 +18,13 @@ import {
   type SupabaseClient,
   buildRemissionDetailHref,
 } from "./detail-utils";
+import {
+  operationalRemissionAreaScopeAllowsKinds,
+  resolveUserOperationalRemissionAreaScope,
+} from "../operational-area-scope";
 
 const APP_ID = "nexo";
+
 
 const PERMISSIONS = {
   remissionsPrepare: "inventory.remissions.prepare",
@@ -62,7 +66,7 @@ export async function enforceOperationalGateOrRedirect(params: {
 export async function loadAccessContext(
   supabase: SupabaseClient,
   userId: string,
-  request: { from_site_id?: string | null; to_site_id?: string | null } | null,
+  request: { id?: string | null; from_site_id?: string | null; to_site_id?: string | null } | null,
   activeSiteId?: string | null
 ): Promise<AccessContext> {
   const { data: employee } = await supabase
@@ -167,6 +171,25 @@ export async function loadAccessContext(
 
   const actingOnFromSite = Boolean(selectedSiteId) && selectedSiteId === fromSiteId;
   const actingOnToSite = Boolean(selectedSiteId) && selectedSiteId === toSiteId;
+  let canReceiveRequestedArea = true;
+  const requestId = String(request?.id ?? "").trim();
+  if (requestId && toSiteId && actingOnToSite) {
+    const receiveAreaScope = await resolveUserOperationalRemissionAreaScope({
+      supabase,
+      userId,
+      siteId: toSiteId,
+    });
+    const { data: itemAreaRows } = await supabase
+      .from("restock_request_items")
+      .select("production_area_kind")
+      .eq("request_id", requestId);
+    canReceiveRequestedArea = operationalRemissionAreaScopeAllowsKinds(
+      receiveAreaScope,
+      ((itemAreaRows ?? []) as Array<{ production_area_kind: string | null }>).map(
+        (row) => row.production_area_kind
+      )
+    );
+  }
 
   return {
     role,
@@ -184,7 +207,7 @@ export async function loadAccessContext(
     canTransit:
       fromCanFulfillRemissions && canTransitPermission,
     canReceive:
-      toCanReceiveRemissions && canReceivePermission && actingOnToSite,
+      toCanReceiveRemissions && canReceivePermission && actingOnToSite && canReceiveRequestedArea,
     canCancel,
   };
 }

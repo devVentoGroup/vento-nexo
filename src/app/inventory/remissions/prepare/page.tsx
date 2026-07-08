@@ -6,8 +6,13 @@ import {
   checkOperationalPermission,
   getOperationalContext,
 } from "@/lib/auth/operational-context";
+import {
+  formatOperationalRemissionAreaLabel,
+  resolveRemissionAreaKindFromKinds,
+} from "../operational-area-scope";
 
 export const dynamic = "force-dynamic";
+
 
 type SearchParams = {
   filter?: string;
@@ -34,6 +39,7 @@ type RemissionItemRow = {
   prepared_quantity: number | null;
   shipped_quantity: number | null;
   source_location_id: string | null;
+  production_area_kind?: string | null;
 };
 
 type ProductRow = {
@@ -57,6 +63,7 @@ type RequestMetrics = {
   preparedTotal: number;
   shippedTotal: number;
   firstProductNames: string[];
+  areaKinds: string[];
 };
 
 const FILTER_LABELS: Record<PrepareFilter, string> = {
@@ -231,6 +238,7 @@ function buildMetrics(params: {
       preparedTotal: 0,
       shippedTotal: 0,
       firstProductNames: [],
+      areaKinds: [],
     });
     seenProductNamesByRequest.set(row.id, new Set());
   }
@@ -258,6 +266,7 @@ function buildMetrics(params: {
         preparedTotal: 0,
         shippedTotal: 0,
         firstProductNames: [],
+        areaKinds: [],
       };
 
     current.totalLines += 1;
@@ -279,6 +288,11 @@ function buildMetrics(params: {
 
     if (targetQty > 0 && targetQty <= availableSite && bestLocQty < targetQty) {
       current.linesWithoutCoveringLoc += 1;
+    }
+
+    const itemAreaKind = String(item.production_area_kind ?? "").trim();
+    if (itemAreaKind && !current.areaKinds.includes(itemAreaKind)) {
+      current.areaKinds.push(itemAreaKind);
     }
 
     const product = params.productMap.get(item.product_id);
@@ -405,7 +419,7 @@ export default async function RemissionsPreparePage({
   const { data: itemsData } = requestIds.length
     ? await supabase
         .from("restock_request_items")
-        .select("request_id,product_id,quantity,prepared_quantity,shipped_quantity,source_location_id")
+        .select("request_id,product_id,quantity,prepared_quantity,shipped_quantity,source_location_id,production_area_kind")
         .in("request_id", requestIds)
     : { data: [] as RemissionItemRow[] };
 
@@ -700,6 +714,9 @@ export default async function RemissionsPreparePage({
               const metrics = requestMetrics.get(row.id);
               const priority = getPriorityLabel(row, metrics);
               const destinationName = getDestinationName(siteMap, row.to_site_id);
+              const areaLabel = formatOperationalRemissionAreaLabel(
+                resolveRemissionAreaKindFromKinds(metrics?.areaKinds ?? [])
+              );
               const productPreview = formatProductPreview(metrics?.firstProductNames ?? []);
               const missingLoc = getMetricValue(metrics, "linesMissingSourceLoc");
               const partialPrep = getMetricValue(metrics, "linesPartialPrep");
@@ -720,6 +737,7 @@ export default async function RemissionsPreparePage({
                           <span className={`rounded-full border px-3 py-1 text-[11px] font-bold ${priority.className}`}>
                             {priority.label}
                           </span>
+                          <span className="ui-chip ui-chip--brand">Área: {areaLabel}</span>
                         </div>
                         <h2 className="mt-3 truncate text-xl font-semibold tracking-[-0.02em] text-[var(--ui-text)]">
                           {destinationName}
