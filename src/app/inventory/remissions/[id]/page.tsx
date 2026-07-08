@@ -130,12 +130,28 @@ function isGenericPresentationLabel(label: string, stockUnitLabel: string): bool
   return new Set(["un", "und", "uds", "u", "unidad", "unidades", "presentacion fija"]).has(normalized);
 }
 
+function isSellableUnitProduct(params: {
+  productType?: unknown;
+  inventoryKind?: unknown;
+}) {
+  const productType = normalizeLabelForComparison(params.productType);
+  const inventoryKind = normalizeLabelForComparison(params.inventoryKind);
+
+  return (
+    productType === "venta" ||
+    inventoryKind === "finished" ||
+    inventoryKind === "resale"
+  );
+}
+
 function shouldUsePresentationOperationalQty(params: {
   measurementMode: MeasurementMode | string | null | undefined;
   inputQty: number;
   requestedQty: number;
+  forceBaseUnit?: boolean;
 }) {
   return (
+    !params.forceBaseUnit &&
     normalizeMeasurementMode(params.measurementMode) === "fixed_presentation" &&
     roundQuantity(Number(params.inputQty ?? 0)) > 0 &&
     roundQuantity(Number(params.requestedQty ?? 0)) > 0
@@ -311,7 +327,7 @@ export default async function RemissionDetailPage({
   const { data: items } = await supabase
     .from("restock_request_items")
     .select(
-      "id, product_id, quantity, unit, input_qty, input_unit_code, input_uom_profile_id, stock_unit_code, source_location_id, prepared_quantity, shipped_quantity, received_quantity, shortage_quantity, notes, item_status, production_area_kind, production_package_plan, requires_package_dispatch, production_package_dispatch_applied_at, product:products(name,unit,stock_unit_code)"
+      "id, product_id, quantity, unit, input_qty, input_unit_code, input_uom_profile_id, stock_unit_code, source_location_id, prepared_quantity, shipped_quantity, received_quantity, shortage_quantity, notes, item_status, production_area_kind, production_package_plan, requires_package_dispatch, production_package_dispatch_applied_at, product:products(name,unit,stock_unit_code,product_type)"
     )
     .eq("request_id", id)
     .order("created_at", { ascending: true });
@@ -324,7 +340,7 @@ export default async function RemissionDetailPage({
     ? await supabase
       .from("product_inventory_profiles")
       .select(
-        "product_id,measurement_mode,default_tolerance_percent,aux_count_unit_code,requires_actual_receipt_qty,requires_actual_dispatch_qty,requires_count_alongside_weight"
+        "product_id,inventory_kind,measurement_mode,default_tolerance_percent,aux_count_unit_code,requires_actual_receipt_qty,requires_actual_dispatch_qty,requires_count_alongside_weight"
       )
       .in("product_id", itemProductIds)
     : { data: [] as ProductInventoryProfileRow[] };
@@ -359,15 +375,22 @@ export default async function RemissionDetailPage({
     const stockUnitCode = String(item.stock_unit_code ?? item.unit ?? item.product?.stock_unit_code ?? item.product?.unit ?? "").trim();
     const usesTemporaryOperationUnit = isTemporaryOperationUnitProfile(inputUomProfile, stockUnitCode);
     const measurementMode = normalizeMeasurementMode(profile?.measurement_mode);
+    const productType = cleanLabel(
+      (item.product as { product_type?: string | null } | null)?.product_type
+    );
+    const inventoryKind = cleanLabel((profile as { inventory_kind?: string | null } | null)?.inventory_kind);
     const product = item.product
       ? ({
         ...item.product,
+        product_type: productType || null,
         measurement_mode: measurementMode,
-      } as RestockItemRow["product"] & { measurement_mode: MeasurementMode })
+      } as RestockItemRow["product"] & { product_type?: string | null; measurement_mode: MeasurementMode })
       : item.product;
 
     return {
       ...item,
+      product_type: productType || null,
+      inventory_kind: inventoryKind || null,
       requires_package_dispatch:
         inventoryPostingEnabled && !usesTemporaryOperationUnit
           ? (item as RestockItemRow & { requires_package_dispatch?: boolean | null }).requires_package_dispatch
@@ -877,14 +900,22 @@ export default async function RemissionDetailPage({
         inputUnitCode,
         stockUnitLabel: vm.itemUnitLabel,
       });
-      const requestedDisplayLabel = buildRequestedDisplay({
-        inputQty,
-        requestedQty,
-        presentationLabel,
-        stockUnitLabel: vm.itemUnitLabel,
-      });
+      const productType = cleanLabel(
+        (item as { product_type?: string | null }).product_type ??
+        (item.product as { product_type?: string | null } | null)?.product_type
+      );
+      const inventoryKind = cleanLabel((item as { inventory_kind?: string | null }).inventory_kind);
+      const forceUnitOperationalQty = isSellableUnitProduct({ productType, inventoryKind });
+      const requestedDisplayLabel = forceUnitOperationalQty
+        ? `${formatRemissionQty(requestedQty)} ${vm.itemUnitLabel}`.trim()
+        : buildRequestedDisplay({
+          inputQty,
+          requestedQty,
+          presentationLabel,
+          stockUnitLabel: vm.itemUnitLabel,
+        });
       const requestedBaseLabel =
-        inputQty > 0 && presentationLabel
+        !forceUnitOperationalQty && inputQty > 0 && presentationLabel
           ? `${formatRemissionQty(requestedQty)} ${vm.itemUnitLabel}`.trim()
           : "";
       return {
@@ -892,6 +923,9 @@ export default async function RemissionDetailPage({
         baseItemId: item.id,
         productId: item.product_id,
         productName: item.product?.name ?? item.product_id,
+        productType,
+        inventoryKind,
+        forceUnitOperationalQty,
         measurementMode: getItemMeasurementMode(item),
         requestedQty,
         unitLabel: vm.itemUnitLabel,
@@ -1015,10 +1049,17 @@ export default async function RemissionDetailPage({
         inputUnitCode,
         stockUnitLabel,
       });
+      const productType = cleanLabel(
+        (item as { product_type?: string | null }).product_type ??
+        (item.product as { product_type?: string | null } | null)?.product_type
+      );
+      const inventoryKind = cleanLabel((item as { inventory_kind?: string | null }).inventory_kind);
+      const forceUnitOperationalQty = isSellableUnitProduct({ productType, inventoryKind });
       const usePresentationQty = shouldUsePresentationOperationalQty({
         measurementMode,
         inputQty,
         requestedQty,
+        forceBaseUnit: forceUnitOperationalQty,
       });
       const displayQty = usePresentationQty
         ? convertBaseQtyToPresentationQty({ baseQty: plannedQty, requestedQty, inputQty })

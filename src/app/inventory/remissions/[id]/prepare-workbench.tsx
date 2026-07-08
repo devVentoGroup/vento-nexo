@@ -46,6 +46,9 @@ type DraftLine = {
   baseItemId: string;
   productId?: string;
   productName: string;
+  productType?: string | null;
+  inventoryKind?: string | null;
+  forceUnitOperationalQty?: boolean;
   requestedQty: number;
   unitLabel: string;
   /** Texto operativo principal: ej. 6 Bolsa 1.100 ml (6.600 ml). */
@@ -412,8 +415,21 @@ function isGenericPresentationLabel(label: string, stockUnitLabel: string): bool
   return new Set(["un", "und", "uds", "u", "unidad", "unidades", "presentacion fija"]).has(normalized);
 }
 
+function isSellableUnitProduct(line: DraftLine): boolean {
+  const productType = normalizeLabelForComparison(line.productType);
+  const inventoryKind = normalizeLabelForComparison(line.inventoryKind);
+
+  return (
+    Boolean(line.forceUnitOperationalQty) ||
+    productType === "venta" ||
+    inventoryKind === "finished" ||
+    inventoryKind === "resale"
+  );
+}
+
 function lineUsesPresentationOperationalUnit(line: DraftLine): boolean {
   if (lineRequiresPackageDispatch(line)) return false;
+  if (isSellableUnitProduct(line)) return false;
   if (getLineMeasurementMode(line) !== "fixed_presentation") return false;
   const requestedPresentationQty = getRequestedPresentationQty(line);
   const requestedBaseQty = roundQty(Number(line.requestedQty ?? 0));

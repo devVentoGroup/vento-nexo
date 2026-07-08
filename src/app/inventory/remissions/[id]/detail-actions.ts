@@ -297,6 +297,216 @@ async function ensureOperationalTransitReady(params: {
 
   return hasDispatchableQty;
 }
+
+
+type LocationRemissionPostingFlags = {
+  inventoryRealEnabled: boolean;
+  remissionsPostingEnabled: boolean;
+};
+
+const LOCATION_INVENTORY_REAL_SETTING = "inventory_real_enabled";
+const LOCATION_REMISSIONS_POSTING_SETTING = "remissions_posting_enabled";
+const OPERATIONAL_REMISSION_MOVEMENT_TYPE = "stock_consume_position";
+const REAL_REMISSION_MOVEMENT_TYPE = "transfer_out";
+
+function buildLocationRuntimeSettingKey(locationId: string, setting: string): string {
+  return `locations.${locationId}.${setting}`;
+}
+
+function defaultLocationRemissionPostingFlags(): LocationRemissionPostingFlags {
+  return {
+    inventoryRealEnabled: false,
+    remissionsPostingEnabled: false,
+  };
+}
+
+function locationPostsRealRemissionInventory(
+  flags: LocationRemissionPostingFlags | null | undefined
+): boolean {
+  return Boolean(flags?.inventoryRealEnabled && flags.remissionsPostingEnabled);
+}
+
+async function loadLocationRemissionPostingFlags(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  locationIds: string[]
+): Promise<Map<string, LocationRemissionPostingFlags>> {
+  const safeLocationIds = Array.from(
+    new Set(locationIds.map((locationId) => String(locationId ?? "").trim()).filter(Boolean))
+  );
+  const flagsByLocationId = new Map<string, LocationRemissionPostingFlags>();
+  for (const locationId of safeLocationIds) {
+    flagsByLocationId.set(locationId, defaultLocationRemissionPostingFlags());
+  }
+  if (safeLocationIds.length === 0) return flagsByLocationId;
+
+  const settingKeys = safeLocationIds.flatMap((locationId) => [
+    buildLocationRuntimeSettingKey(locationId, LOCATION_INVENTORY_REAL_SETTING),
+    buildLocationRuntimeSettingKey(locationId, LOCATION_REMISSIONS_POSTING_SETTING),
+  ]);
+
+  const { data, error } = await supabase
+    .from("app_runtime_settings")
+    .select("setting_key,bool_value")
+    .eq("app_id", APP_ID)
+    .in("setting_key", settingKeys);
+
+  if (error) return flagsByLocationId;
+
+  for (const row of (data ?? []) as Array<{ setting_key: string | null; bool_value: boolean | null }>) {
+    const settingKey = String(row.setting_key ?? "").trim();
+    const boolValue = typeof row.bool_value === "boolean" ? row.bool_value : false;
+    const match = settingKey.match(/^locations\.([^.]*)\.(inventory_real_enabled|remissions_posting_enabled)$/);
+    if (!match) continue;
+
+    const locationId = match[1];
+    const setting = match[2];
+    const current = flagsByLocationId.get(locationId) ?? defaultLocationRemissionPostingFlags();
+
+    if (setting === LOCATION_INVENTORY_REAL_SETTING) {
+      current.inventoryRealEnabled = boolValue;
+    }
+    if (setting === LOCATION_REMISSIONS_POSTING_SETTING) {
+      current.remissionsPostingEnabled = boolValue;
+    }
+    flagsByLocationId.set(locationId, current);
+  }
+
+  return flagsByLocationId;
+}
+
+async function requestPicksUseOnlyRealRemissionLocations(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  requestId: string;
+}): Promise<boolean> {
+  const { supabase, requestId } = params;
+  if (!requestId) return false;
+
+  const { data, error } = await supabase
+    .from("restock_request_item_picks")
+    .select("source_location_id")
+    .eq("request_id", requestId);
+
+  if (error) return false;
+
+  const locationIds = Array.from(
+    new Set(
+      ((data ?? []) as Array<{ source_location_id: string | null }>)
+        .map((row) => String(row.source_location_id ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+  if (locationIds.length === 0) return false;
+
+  const flagsByLocationId = await loadLocationRemissionPostingFlags(supabase, locationIds);
+  return locationIds.every((locationId) =>
+    locationPostsRealRemissionInventory(flagsByLocationId.get(locationId))
+  );
+}
+
+type SourceLocDeduction = {
+  locationId: string;
+  productId: string;
+  qty: number;
+  unitCode: string;
+  uomProfileId?: string | null;
+  presentationQty?: number;
+  inputUnitCode?: string | null;
+  realPosting: boolean;
+};
+
+async function applySourceRemissionDeductions(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  requestId: string;
+  siteId: string;
+  userId: string;
+  deductions: SourceLocDeduction[];
+}): Promise<string | null> {
+  const { supabase, requestId, siteId, userId, deductions } = params;
+
+  for (const deduction of deductions) {
+    if (!deduction.locationId || !deduction.productId || deduction.qty <= 0) continue;
+
+    if (!deduction.realPosting) {
+      const { error: operationalMoveErr } = await supabase.from("inventory_movements").insert({
+        site_id: siteId,
+        product_id: deduction.productId,
+        movement_type: OPERATIONAL_REMISSION_MOVEMENT_TYPE,
+        quantity: -deduction.qty,
+        input_qty: deduction.presentationQty && deduction.presentationQty > 0 ? deduction.presentationQty : deduction.qty,
+        input_unit_code: deduction.inputUnitCode || deduction.unitCode,
+        stock_unit_code: deduction.unitCode,
+        input_uom_profile_id: deduction.uomProfileId || null,
+        location_id: deduction.locationId,
+        related_restock_request_id: requestId,
+        note: "Salida operativa por remisión. No descuenta inventario real.",
+        created_by: userId,
+      });
+      if (operationalMoveErr) return operationalMoveErr.message;
+      continue;
+    }
+
+    const { error: movementErr } = await supabase.from("inventory_movements").insert({
+      site_id: siteId,
+      product_id: deduction.productId,
+      movement_type: REAL_REMISSION_MOVEMENT_TYPE,
+      quantity: -deduction.qty,
+      input_qty: deduction.presentationQty && deduction.presentationQty > 0 ? deduction.presentationQty : deduction.qty,
+      input_unit_code: deduction.inputUnitCode || deduction.unitCode,
+      stock_unit_code: deduction.unitCode,
+      input_uom_profile_id: deduction.uomProfileId || null,
+      location_id: deduction.locationId,
+      related_restock_request_id: requestId,
+      note: "Salida por remisión desde LOC con inventario real activo.",
+      created_by: userId,
+    });
+    if (movementErr) return movementErr.message;
+
+    if (deduction.uomProfileId && Number(deduction.presentationQty ?? 0) > 0) {
+      const { error: presentationErr } = await supabase.rpc("consume_inventory_stock_by_uom_profile", {
+        p_location_id: deduction.locationId,
+        p_product_id: deduction.productId,
+        p_uom_profile_id: deduction.uomProfileId,
+        p_presentation_qty: deduction.presentationQty,
+        p_base_qty: deduction.qty,
+        p_location_position_id: null,
+      });
+      if (presentationErr) return presentationErr.message;
+    }
+
+    const { error: locErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
+      p_location_id: deduction.locationId,
+      p_product_id: deduction.productId,
+      p_delta: -deduction.qty,
+    });
+    if (locErr) return `No se pudo actualizar stock del área de origen: ${locErr.message}`;
+
+    const { data: siteStock } = await supabase
+      .from("inventory_stock_by_site")
+      .select("current_qty")
+      .eq("site_id", siteId)
+      .eq("product_id", deduction.productId)
+      .maybeSingle();
+
+    const currentQty = Number((siteStock as { current_qty?: number } | null)?.current_qty ?? 0);
+    const nextQty = Math.max(0, currentQty - deduction.qty);
+
+    const { error: siteErr } = await supabase
+      .from("inventory_stock_by_site")
+      .upsert(
+        {
+          site_id: siteId,
+          product_id: deduction.productId,
+          current_qty: nextQty,
+          updated_at: new Date().toISOString(),
+        },
+        { onConflict: "site_id,product_id" }
+      );
+    if (siteErr) return siteErr.message;
+  }
+
+  return null;
+}
+
 async function ensureReceiveSignature(params: {
   supabase: Awaited<ReturnType<typeof createClient>>;
   requestId: string;
@@ -881,7 +1091,7 @@ export async function updateItems(formData: FormData) {
       const itemState = itemStateById.get(itemId);
       const productId = productById.get(itemId);
       if (!productId) continue;
-      const available = stockMap.get(productId) ?? 0;
+      const available = Number(stockMap.get(productId) ?? 0);
       const prepQty = parseNumber(prepared[i] ?? "0");
       const shipQty = parseNumber(shipped[i] ?? "0");
       const requestedQty = roundQuantity(Number(itemState?.quantity ?? 0));
@@ -906,7 +1116,7 @@ export async function updateItems(formData: FormData) {
             })
           );
         }
-        const availableAtLoc = locStockMap.get(`${sourceLocId}|${productId}`) ?? 0;
+        const availableAtLoc = Number(locStockMap.get(`${sourceLocId}|${productId}`) ?? 0);
         if (maxQty > availableAtLoc) {
           redirect(
             buildRemissionDetailHref({
@@ -1721,14 +1931,14 @@ export async function commitPreparationDraft(formData: FormData) {
         ? "Sin stock en origen"
         : shortageReasonRaw;
 
-    if (!lineId || !lineItem || (inventoryPostingEnabled && !selectedLocId)) {
+    if (!lineId || !lineItem || (inventoryPostingEnabled && dispatchQty > 0 && !selectedLocId)) {
       redirect(
         buildRemissionDetailHref({
           requestId,
           from: returnOrigin,
           siteId: activeSiteId,
-          error: inventoryPostingEnabled
-            ? "Todas las líneas deben tener un área seleccionada."
+          error: inventoryPostingEnabled && dispatchQty > 0
+            ? "Todas las líneas con cantidad a despachar deben tener un área seleccionada."
             : "No se pudo identificar una línea de preparación.",
         })
       );
@@ -1870,6 +2080,9 @@ export async function submitTransitChecklist(formData: FormData) {
   const hasPreparationPicks = inventoryPostingEnabled
     ? await requestHasPreparationPicks(supabase, requestId)
     : false;
+  const preparationPicksUseOnlyRealLocations = hasPreparationPicks
+    ? await requestPicksUseOnlyRealRemissionLocations({ supabase, requestId })
+    : false;
   const canTransitNow = hasPreparationPicks
     ? true
     : inventoryPostingEnabled
@@ -1953,6 +2166,17 @@ export async function submitTransitChecklist(formData: FormData) {
   }
 
   if (inventoryPostingEnabled && hasPreparationPicks) {
+    if (!preparationPicksUseOnlyRealLocations) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error: "El plan de picks contiene LOCs operativos. Corrige la preparación para usar el flujo híbrido sin picks antes de poner en tránsito.",
+        })
+      );
+    }
+
     const { error: moveErr } = await supabase.rpc("apply_restock_shipment_from_picks", {
       p_request_id: requestId,
     });
@@ -2014,17 +2238,11 @@ export async function submitTransitChecklist(formData: FormData) {
     );
   }
 
-  const sourceLocDeductions: Array<{
-    locationId: string;
-    productId: string;
-    qty: number;
-    uomProfileId?: string | null;
-    presentationQty?: number;
-  }> = [];
+  const sourceLocDeductions: SourceLocDeduction[] = [];
 
   const { data: itemsData } = await supabase
     .from("restock_request_items")
-    .select("id,product_id,quantity,input_qty,input_uom_profile_id,prepared_quantity,shipped_quantity,source_location_id")
+    .select("id,product_id,quantity,input_qty,input_unit_code,input_uom_profile_id,prepared_quantity,shipped_quantity,source_location_id,stock_unit_code,unit")
     .eq("request_id", requestId);
 
   const itemRows = (itemsData ?? []) as Array<{
@@ -2032,10 +2250,13 @@ export async function submitTransitChecklist(formData: FormData) {
     product_id: string;
     quantity: number | null;
     input_qty: number | null;
+    input_unit_code: string | null;
     input_uom_profile_id: string | null;
     prepared_quantity: number | null;
     shipped_quantity: number | null;
     source_location_id: string | null;
+    stock_unit_code: string | null;
+    unit: string | null;
   }>;
   const transitMeasurementPolicyByProductId = await loadProductMeasurementPolicies(
     supabase,
@@ -2063,6 +2284,7 @@ export async function submitTransitChecklist(formData: FormData) {
         Number(row.current_qty ?? 0),
       ])
     );
+    const locPostingFlags = await loadLocationRemissionPostingFlags(supabase, locIds);
 
     let anyTransitQty = false;
 
@@ -2147,8 +2369,9 @@ export async function submitTransitChecklist(formData: FormData) {
         );
       }
 
+      const realPosting = locationPostsRealRemissionInventory(locPostingFlags.get(sourceLocId));
       const availableAtLoc = locStockMap.get(`${sourceLocId}|${row.product_id}`) ?? 0;
-      if (qty > availableAtLoc) {
+      if (realPosting && qty > availableAtLoc) {
         redirect(
           buildRemissionDetailHref({
             requestId,
@@ -2184,11 +2407,14 @@ export async function submitTransitChecklist(formData: FormData) {
         locationId: sourceLocId,
         productId: row.product_id,
         qty,
+        unitCode: normalizeUnitCode(row.stock_unit_code || row.unit || "un"),
+        inputUnitCode: row.input_unit_code,
         uomProfileId: row.input_uom_profile_id,
         presentationQty:
           row.input_uom_profile_id && requestedQty > 0
             ? roundQuantity((qty / requestedQty) * Number(row.input_qty ?? 0))
             : 0,
+        realPosting,
       });
     }
 
@@ -2205,20 +2431,6 @@ export async function submitTransitChecklist(formData: FormData) {
   }
 
   if (inventoryPostingEnabled) {
-    const { error: moveErr } = await supabase.rpc("apply_restock_shipment", {
-      p_request_id: requestId,
-    });
-    if (moveErr) {
-      redirect(
-        buildRemissionDetailHref({
-          requestId,
-          from: returnOrigin,
-          siteId: activeSiteId,
-          error: toFriendlyTransitStockError(moveErr.message),
-        })
-      );
-    }
-
     const packageDispatchErr = await applyProductionPackageDispatchForRequest({
       supabase,
       requestId,
@@ -2234,48 +2446,35 @@ export async function submitTransitChecklist(formData: FormData) {
         })
       );
     }
-  }
 
-  if (inventoryPostingEnabled) {
-    for (const deduction of sourceLocDeductions) {
-      if (deduction.uomProfileId && Number(deduction.presentationQty ?? 0) > 0) {
-        const { error: presentationErr } = await supabase.rpc("consume_inventory_stock_by_uom_profile", {
-          p_location_id: deduction.locationId,
-          p_product_id: deduction.productId,
-          p_uom_profile_id: deduction.uomProfileId,
-          p_presentation_qty: deduction.presentationQty,
-          p_base_qty: deduction.qty,
-          p_location_position_id: null,
-        });
+    const fromSiteIdForMovement = String(request?.from_site_id ?? "").trim();
+    if (!fromSiteIdForMovement) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error: "No se encontro sede origen para la remisión.",
+        })
+      );
+    }
 
-        if (presentationErr) {
-          redirect(
-            buildRemissionDetailHref({
-              requestId,
-              from: returnOrigin,
-              siteId: activeSiteId,
-              error: toFriendlyTransitStockError(presentationErr.message),
-            })
-          );
-        }
-      }
-
-      const { error: locErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
-        p_location_id: deduction.locationId,
-        p_product_id: deduction.productId,
-        p_delta: -deduction.qty,
-      });
-
-      if (locErr) {
-        redirect(
-          buildRemissionDetailHref({
-            requestId,
-            from: returnOrigin,
-            siteId: activeSiteId,
-            error: `No se pudo actualizar stock del área de origen: ${locErr.message}`,
-          })
-        );
-      }
+    const deductionErr = await applySourceRemissionDeductions({
+      supabase,
+      requestId,
+      siteId: fromSiteIdForMovement,
+      userId: user.id,
+      deductions: sourceLocDeductions,
+    });
+    if (deductionErr) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error: toFriendlyTransitStockError(deductionErr),
+        })
+      );
     }
   }
 
@@ -2580,6 +2779,9 @@ export async function updateStatus(formData: FormData) {
   const hasPreparationPicks = inventoryPostingEnabled && action === "transit"
     ? await requestHasPreparationPicks(supabase, requestId)
     : false;
+  const preparationPicksUseOnlyRealLocations = hasPreparationPicks
+    ? await requestPicksUseOnlyRealRemissionLocations({ supabase, requestId })
+    : false;
 
   if (action === "prepare" && !access.canPrepare) {
     redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "No puedes preparar." }));
@@ -2825,24 +3027,18 @@ export async function updateStatus(formData: FormData) {
     }
     redirect("/inventory/remissions?ok=deleted");
   }
-  const sourceLocDeductions: Array<{
-    locationId: string;
-    productId: string;
-    qty: number;
-    unitCode: string;
-    uomProfileId?: string | null;
-    presentationQty?: number;
-  }> = [];
+  const sourceLocDeductions: SourceLocDeduction[] = [];
   if (inventoryPostingEnabled && action === "transit" && !hasPreparationPicks) {
     const { data: itemsData } = await supabase
       .from("restock_request_items")
-      .select("id,product_id,quantity,input_qty,input_uom_profile_id,prepared_quantity,shipped_quantity,source_location_id,stock_unit_code,unit")
+      .select("id,product_id,quantity,input_qty,input_unit_code,input_uom_profile_id,prepared_quantity,shipped_quantity,source_location_id,stock_unit_code,unit")
       .eq("request_id", requestId);
     const itemRows = (itemsData ?? []) as Array<{
       id: string;
       product_id: string;
       quantity: number | null;
       input_qty: number | null;
+      input_unit_code: string | null;
       input_uom_profile_id: string | null;
       prepared_quantity: number | null;
       shipped_quantity: number | null;
@@ -2874,6 +3070,7 @@ export async function updateStatus(formData: FormData) {
           Number(row.current_qty ?? 0),
         ])
       );
+      const locPostingFlags = await loadLocationRemissionPostingFlags(supabase, locIds);
 
       let anyTransitQty = false;
       for (const row of itemRows) {
@@ -2940,8 +3137,9 @@ export async function updateStatus(formData: FormData) {
         if (!sourceLocId) {
           redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "Falta área de origen en uno o más items para enviar." }));
         }
+        const realPosting = locationPostsRealRemissionInventory(locPostingFlags.get(sourceLocId));
         const availableAtLoc = locStockMap.get(`${sourceLocId}|${row.product_id}`) ?? 0;
-        if (qty > availableAtLoc) {
+        if (realPosting && qty > availableAtLoc) {
           redirect(buildRemissionDetailHref({
             requestId,
             from: returnOrigin,
@@ -2965,11 +3163,13 @@ export async function updateStatus(formData: FormData) {
           productId: row.product_id,
           qty,
           unitCode: normalizeUnitCode(row.stock_unit_code || row.unit || "un"),
+          inputUnitCode: row.input_unit_code,
           uomProfileId: row.input_uom_profile_id,
           presentationQty:
             row.input_uom_profile_id && requestedQty > 0
               ? roundQuantity((qty / requestedQty) * Number(row.input_qty ?? 0))
               : 0,
+          realPosting,
         });
       }
       if (!anyTransitQty) {
@@ -3169,6 +3369,10 @@ export async function updateStatus(formData: FormData) {
 
   if (inventoryPostingEnabled && action === "transit") {
     if (hasPreparationPicks) {
+      if (!preparationPicksUseOnlyRealLocations) {
+        redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "El plan de picks contiene LOCs operativos. Corrige la preparación para usar el flujo híbrido sin picks antes de poner en tránsito." }));
+      }
+
       const { error: moveErr } = await supabase.rpc("apply_restock_shipment_from_picks", {
         p_request_id: requestId,
       });
@@ -3185,13 +3389,6 @@ export async function updateStatus(formData: FormData) {
         redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: packageDispatchErr }));
       }
     } else {
-      const { error: moveErr } = await supabase.rpc("apply_restock_shipment", {
-        p_request_id: requestId,
-      });
-      if (moveErr) {
-        redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: toFriendlyTransitStockError(moveErr.message) }));
-      }
-
       const packageDispatchErr = await applyProductionPackageDispatchForRequest({
         supabase,
         requestId,
@@ -3201,34 +3398,20 @@ export async function updateStatus(formData: FormData) {
         redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: packageDispatchErr }));
       }
 
-      const fromSiteIdForMovement = request?.from_site_id ?? "";
+      const fromSiteIdForMovement = String(request?.from_site_id ?? "").trim();
       if (!fromSiteIdForMovement) {
         redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "No se encontro sede origen para la remisión." }));
       }
 
-      for (const deduction of sourceLocDeductions) {
-        if (deduction.uomProfileId && Number(deduction.presentationQty ?? 0) > 0) {
-          const { error: presentationErr } = await supabase.rpc("consume_inventory_stock_by_uom_profile", {
-            p_location_id: deduction.locationId,
-            p_product_id: deduction.productId,
-            p_uom_profile_id: deduction.uomProfileId,
-            p_presentation_qty: deduction.presentationQty,
-            p_base_qty: deduction.qty,
-            p_location_position_id: null,
-          });
-          if (presentationErr) {
-            redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: toFriendlyTransitStockError(presentationErr.message) }));
-          }
-        }
-
-        const { error: locErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
-          p_location_id: deduction.locationId,
-          p_product_id: deduction.productId,
-          p_delta: -deduction.qty,
-        });
-        if (locErr) {
-          redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: `No se pudo actualizar stock del área de origen: ${locErr.message}` }));
-        }
+      const deductionErr = await applySourceRemissionDeductions({
+        supabase,
+        requestId,
+        siteId: fromSiteIdForMovement,
+        userId: user.id,
+        deductions: sourceLocDeductions,
+      });
+      if (deductionErr) {
+        redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: toFriendlyTransitStockError(deductionErr) }));
       }
     }
   }
