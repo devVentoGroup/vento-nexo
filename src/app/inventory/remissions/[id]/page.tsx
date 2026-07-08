@@ -206,9 +206,10 @@ export default async function RemissionDetailPage({
 
     return {
       ...item,
-      requires_package_dispatch: usesTemporaryOperationUnit
-        ? false
-        : (item as RestockItemRow & { requires_package_dispatch?: boolean | null }).requires_package_dispatch,
+      requires_package_dispatch:
+        inventoryPostingEnabled && !usesTemporaryOperationUnit
+          ? (item as RestockItemRow & { requires_package_dispatch?: boolean | null }).requires_package_dispatch
+          : false,
       measurement_mode: measurementMode,
       default_tolerance_percent: profile?.default_tolerance_percent ?? null,
       aux_count_unit_code: String(profile?.aux_count_unit_code ?? "").trim() || null,
@@ -666,9 +667,13 @@ export default async function RemissionDetailPage({
     ? itemRows.map((item) => {
       const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
       const lineIdsForProduct = lineIdsByProduct.get(item.product_id) ?? [item.id];
-      const requiresPackageDispatch = Boolean(
-        (item as RestockItemRow & { requires_package_dispatch?: boolean | null }).requires_package_dispatch
-      );
+      const requestedQty = roundQuantity(Number(item.quantity ?? 0));
+      const plannedQty = plannedDispatchQtyFromItem(item);
+      const requiresPackageDispatch =
+        inventoryPostingEnabled &&
+        Boolean(
+          (item as RestockItemRow & { requires_package_dispatch?: boolean | null }).requires_package_dispatch
+        );
       const productionPackagePlan = buildProductionPackagePlanForItem({
         item,
         productionPackageById,
@@ -700,7 +705,7 @@ export default async function RemissionDetailPage({
         productId: item.product_id,
         productName: item.product?.name ?? item.product_id,
         measurementMode: getItemMeasurementMode(item),
-        requestedQty: roundQuantity(Number(item.quantity ?? 0)),
+        requestedQty,
         unitLabel: vm.itemUnitLabel,
         inputQty: roundQuantity(Number(item.input_qty ?? 0)),
         presentationQty: roundQuantity(Number(item.input_qty ?? 0)),
@@ -712,42 +717,52 @@ export default async function RemissionDetailPage({
             ).trim() || null,
         requiresPackageDispatch,
         productionPackagePlan,
-        selectedLocId: requiresPackageDispatch
-          ? packageLocIds.length === 1
-            ? packageLocIds[0]
-            : ""
-          : String(item.source_location_id ?? ""),
-        recommendedLocId: requiresPackageDispatch
-          ? packageLocIds.length === 1
-            ? packageLocIds[0]
-            : ""
-          : vm.bestLocCandidate?.locationId ?? "",
-        locOptions: vm.locCandidates.map((loc) => {
-          const locWithExtras = loc as typeof loc & {
-            positions?: Array<{ positionId: string; label: string; qty: number }>;
-            positionOptions?: Array<{ positionId: string; label: string; qty: number }>;
-          };
-          const positions = (
-            locWithExtras.positions ??
-            locWithExtras.positionOptions ??
-            []
-          ).map((position) => ({
-            id: position.positionId,
-            label: position.label,
-            qty: position.qty,
-          }));
+        selectedLocId: inventoryPostingEnabled
+          ? requiresPackageDispatch
+            ? packageLocIds.length === 1
+              ? packageLocIds[0]
+              : ""
+            : String(item.source_location_id ?? "")
+          : "",
+        recommendedLocId: inventoryPostingEnabled
+          ? requiresPackageDispatch
+            ? packageLocIds.length === 1
+              ? packageLocIds[0]
+              : ""
+            : vm.bestLocCandidate?.locationId ?? ""
+          : "",
+        locOptions: inventoryPostingEnabled
+          ? vm.locCandidates.map((loc) => {
+            const locWithExtras = loc as typeof loc & {
+              positions?: Array<{ positionId: string; label: string; qty: number }>;
+              positionOptions?: Array<{ positionId: string; label: string; qty: number }>;
+            };
+            const positions = (
+              locWithExtras.positions ??
+              locWithExtras.positionOptions ??
+              []
+            ).map((position) => ({
+              id: position.positionId,
+              label: position.label,
+              qty: position.qty,
+            }));
 
-          return {
-            id: loc.locationId,
-            label: loc.label,
-            qty: loc.qty,
-            positions,
-            positionOptions: positions,
-          };
-        }),
-        dispatchQty: requiresPackageDispatch && packagePlanTotal > 0
-          ? packagePlanTotal
-          : plannedDispatchQtyFromItem(item),
+            return {
+              id: loc.locationId,
+              label: loc.label,
+              qty: loc.qty,
+              positions,
+              positionOptions: positions,
+            };
+          })
+          : [],
+        dispatchQty: inventoryPostingEnabled
+          ? requiresPackageDispatch && packagePlanTotal > 0
+            ? packagePlanTotal
+            : plannedQty
+          : plannedQty > 0
+            ? plannedQty
+            : requestedQty,
         shortageReason: parseShortageReasonFromItemNotes(item.notes),
         isVirtualSplit: false,
       };
@@ -1084,6 +1099,7 @@ export default async function RemissionDetailPage({
               siteId={activeSiteId}
               lines={draftPrepareLines}
               onCommit={commitPreparationDraft}
+              inventoryPostingEnabled={inventoryPostingEnabled}
               dispatchReadySummary={isReadyToDispatch && !allowPrepareCorrection}
               correctPrepareHref={
                 isReadyToDispatch ? correctPrepareWorkbenchHref : undefined

@@ -99,6 +99,7 @@ type PrepareWorkbenchProps = {
   dispatchReadySummary?: boolean;
   /** En resumen listo: enlace con ?edit_prepare=1 para volver a editar. */
   correctPrepareHref?: string;
+  inventoryPostingEnabled?: boolean;
 };
 
 type PrepareWorkbenchInteractiveProps = Omit<
@@ -156,8 +157,11 @@ function lineUsesActualQuantity(line: DraftLine): boolean {
   return getLineMeasurementMode(line) !== "fixed_presentation";
 }
 
-function getLineMeasurementLabel(line: DraftLine): string {
-  if (lineRequiresPackageDispatch(line)) return "Empaques FOGO";
+function getLineMeasurementLabel(
+  line: DraftLine,
+  inventoryPostingEnabled = true
+): string {
+  if (inventoryPostingEnabled && lineRequiresPackageDispatch(line)) return "Empaques FOGO";
   const mode = getLineMeasurementMode(line);
   if (mode === "variable_weight") return "Peso real";
   if (mode === "count_with_weight") return "Conteo + peso real";
@@ -189,6 +193,48 @@ function clampDispatchQty(line: DraftLine, value: number): number {
 
 function getOverageQty(line: DraftLine): number {
   return roundQty(Math.max(Number(line.dispatchQty ?? 0) - Number(line.requestedQty ?? 0), 0));
+}
+
+function getOperationalDispatchMaxForLine(line: DraftLine): number {
+  const requestedQty = roundQty(Number(line.requestedQty ?? 0));
+  if (getLineMeasurementMode(line) === "fixed_presentation") return requestedQty;
+  return Number.MAX_SAFE_INTEGER;
+}
+
+function clampOperationalDispatchQty(line: DraftLine, value: number): number {
+  return roundQty(clampQty(Number(value ?? 0), 0, getOperationalDispatchMaxForLine(line)));
+}
+
+function normalizeOperationalLine(line: DraftLine, fillRequestedQty: boolean): DraftLine {
+  const requestedQty = roundQty(Number(line.requestedQty ?? 0));
+  const currentDispatchQty = roundQty(Number(line.dispatchQty ?? 0));
+  const hasShortageReason = String(line.shortageReason ?? "").trim().length > 0;
+  const dispatchQty =
+    fillRequestedQty && currentDispatchQty <= 0 && !hasShortageReason
+      ? requestedQty
+      : clampOperationalDispatchQty(line, currentDispatchQty);
+
+  return {
+    ...line,
+    selectedLocId: "",
+    recommendedLocId: "",
+    locOptions: [],
+    dispatchQty,
+    requiresPackageDispatch: false,
+    productionPackagePlan: [],
+  };
+}
+
+function normalizeWorkbenchLines(
+  inputLines: DraftLine[],
+  inventoryPostingEnabled: boolean,
+  preserveManual: boolean
+): DraftLine[] {
+  if (!inventoryPostingEnabled) {
+    return inputLines.map((line) => normalizeOperationalLine(line, !preserveManual));
+  }
+
+  return applySmartAllocation(inputLines.map((line) => normalizeLine(line)), preserveManual);
 }
 
 function applySmartAllocation(inputLines: DraftLine[], preserveManual: boolean): DraftLine[] {
@@ -422,14 +468,19 @@ function buildPicksForLine(line: DraftLine): PickPayload[] {
   return [buildPick(baseQty, null)];
 }
 
-function getLineTone(line: DraftLine) {
-  if (lineRequiresPackageDispatch(line)) {
+function getLineTone(line: DraftLine, inventoryPostingEnabled = true) {
+  if (inventoryPostingEnabled && lineRequiresPackageDispatch(line)) {
     const planTotal = packagePlanTotal(line);
     if (!packagePlanForLine(line).length) return "error";
     if (packagePlanHasMissingLocation(line)) return "pending";
     if (Math.abs(planTotal - Number(line.dispatchQty ?? 0)) > 0.001) return "error";
-  } else if (!line.selectedLocId && line.dispatchQty > 0) return "pending";
-  if (line.dispatchQty < 0 || line.dispatchQty > getDispatchMaxForLine(line)) return "error";
+  } else if (inventoryPostingEnabled && !line.selectedLocId && line.dispatchQty > 0) return "pending";
+
+  const maxDispatchQty = inventoryPostingEnabled
+    ? getDispatchMaxForLine(line)
+    : getOperationalDispatchMaxForLine(line);
+
+  if (line.dispatchQty < 0 || line.dispatchQty > maxDispatchQty) return "error";
   if (line.dispatchQty < line.requestedQty && !line.shortageReason.trim()) return "warn";
   return "ok";
 }
@@ -554,9 +605,11 @@ function ProductionPackagePlanSummary({
 function RemissionPrepareReadonlySummary({
   lines,
   correctPrepareHref,
+  inventoryPostingEnabled = false,
 }: {
   lines: DraftLine[];
   correctPrepareHref?: string;
+  inventoryPostingEnabled?: boolean;
 }) {
   return (
     <>
@@ -583,13 +636,15 @@ function RemissionPrepareReadonlySummary({
         </div>
         {lines.map((line) => {
           const hasShortage = line.dispatchQty < line.requestedQty;
-          const tone = getLineTone(line);
+          const tone = getLineTone(line, inventoryPostingEnabled);
           const locEntry = line.locOptions.find((loc) => loc.id === line.selectedLocId);
-          const locText = lineRequiresPackageDispatch(line)
-            ? "Empaques reales del lote"
-            : locEntry
-              ? `${locEntry.label} · ${locEntry.qty} ${line.unitLabel}`
-              : (line.selectedLocId || "Sin ubicación").trim() || "Sin ubicación";
+          const locText = !inventoryPostingEnabled
+            ? "Sin LOC requerido"
+            : lineRequiresPackageDispatch(line)
+              ? "Empaques reales del lote"
+              : locEntry
+                ? `${locEntry.label} · ${locEntry.qty} ${line.unitLabel}`
+                : (line.selectedLocId || "Sin ubicación").trim() || "Sin ubicación";
           return (
             <div key={line.id} className="border-t border-[var(--ui-border)] first:border-t-0">
               <div className="grid gap-3 px-4 py-3 lg:grid-cols-[minmax(220px,1.2fr)_minmax(260px,1.3fr)_120px_minmax(220px,1fr)_120px] lg:items-start">
@@ -599,11 +654,11 @@ function RemissionPrepareReadonlySummary({
                     Solicitado: {line.requestedQty} {line.unitLabel}
                   </div>
                   <div className="mt-1 inline-flex rounded-full border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--ui-muted)]">
-                    {getLineMeasurementLabel(line)}
+                    {getLineMeasurementLabel(line, inventoryPostingEnabled)}
                   </div>
                 </div>
                 <div className="text-sm text-[var(--ui-text)]">
-                  {lineRequiresPackageDispatch(line) ? (
+                  {inventoryPostingEnabled && lineRequiresPackageDispatch(line) ? (
                     <ProductionPackagePlanSummary line={line} compact />
                   ) : (
                     locText
@@ -654,9 +709,10 @@ function RemissionPrepareWorkbenchInteractive({
   siteId,
   lines: initialLines,
   onCommit,
+  inventoryPostingEnabled = false,
 }: PrepareWorkbenchInteractiveProps) {
   const [lines, setLines] = useState<DraftLine[]>(() =>
-    applySmartAllocation(initialLines.map((line) => normalizeLine(line)), false)
+    normalizeWorkbenchLines(initialLines, inventoryPostingEnabled, false)
   );
   const [splitDrafts, setSplitDrafts] = useState<SplitDraft[]>([]);
   const [splitTargetId, setSplitTargetId] = useState<string>("");
@@ -668,32 +724,40 @@ function RemissionPrepareWorkbenchInteractive({
   );
 
   const blockers = useMemo(() => {
-    const missingLoc = lines.filter((line) => line.dispatchQty > 0 && !line.selectedLocId).length;
-    const invalidQty = lines.filter((line) => getLineTone(line) === "error").length;
+    const missingLoc = inventoryPostingEnabled
+      ? lines.filter((line) => line.dispatchQty > 0 && !line.selectedLocId).length
+      : 0;
+    const invalidQty = lines.filter((line) => getLineTone(line, inventoryPostingEnabled) === "error").length;
     const missingReason = lines.filter(
       (line) => line.dispatchQty < line.requestedQty && !line.shortageReason.trim()
     ).length;
     return { missingLoc, invalidQty, missingReason };
-  }, [lines]);
+  }, [inventoryPostingEnabled, lines]);
 
   const allReady =
     blockers.missingLoc === 0 && blockers.invalidQty === 0 && blockers.missingReason === 0;
 
   const progress = useMemo(() => {
     const done = lines.filter((line) => {
-      if (line.dispatchQty > 0 && !line.selectedLocId) return false;
-      if (getLineTone(line) === "error") return false;
+      if (inventoryPostingEnabled && line.dispatchQty > 0 && !line.selectedLocId) return false;
+      if (getLineTone(line, inventoryPostingEnabled) === "error") return false;
       if (line.dispatchQty < line.requestedQty && !line.shortageReason.trim()) return false;
       return true;
     }).length;
     return { done, total: lines.length };
-  }, [lines]);
+  }, [inventoryPostingEnabled, lines]);
 
   const updateLine = (lineId: string, patch: Partial<DraftLine>) => {
     setLines((prev) => {
       const patched = prev.map((line) => {
         if (line.id !== lineId) return line;
         const next = { ...line, ...patch, manualLocked: true };
+
+        if (!inventoryPostingEnabled) {
+          next.dispatchQty = clampOperationalDispatchQty(next, Number(next.dispatchQty ?? 0));
+          return normalizeOperationalLine(next, false);
+        }
+
         if (Object.prototype.hasOwnProperty.call(patch, "selectedLocId")) {
           const selectedLocId = String(patch.selectedLocId ?? "").trim();
           if (selectedLocId) {
@@ -704,7 +768,9 @@ function RemissionPrepareWorkbenchInteractive({
         next.dispatchQty = clampDispatchQty(next, Number(next.dispatchQty ?? 0));
         return next;
       });
-      return applySmartAllocation(patched, true);
+      return inventoryPostingEnabled
+        ? applySmartAllocation(patched, true)
+        : patched.map((line) => normalizeOperationalLine(line, false));
     });
   };
 
@@ -757,7 +823,7 @@ function RemissionPrepareWorkbenchInteractive({
       );
       const insertIndex = next.findIndex((line) => line.id === splitTarget.id);
       next.splice(insertIndex + 1, 0, virtualLine);
-      return applySmartAllocation(next, true);
+      return normalizeWorkbenchLines(next, inventoryPostingEnabled, true);
     });
 
     setSplitDrafts((prev) => [
@@ -773,11 +839,13 @@ function RemissionPrepareWorkbenchInteractive({
     setSplitQtyInput("");
   };
 
-  const shouldUsePickPayload = lines.every(
-    (line) =>
-      roundQty(Number(line.dispatchQty ?? 0)) > 0 &&
-      (!lineRequiresPackageDispatch(line) || !packagePlanHasMissingLocation(line))
-  );
+  const shouldUsePickPayload =
+    inventoryPostingEnabled &&
+    lines.every(
+      (line) =>
+        roundQty(Number(line.dispatchQty ?? 0)) > 0 &&
+        (!lineRequiresPackageDispatch(line) || !packagePlanHasMissingLocation(line))
+    );
   const payload = JSON.stringify({
     lines: lines.map((line) => ({
       id: line.id,
@@ -805,13 +873,15 @@ function RemissionPrepareWorkbenchInteractive({
         </div>
         {lines.map((line) => {
           const hasShortage = line.dispatchQty < line.requestedQty;
-          const tone = getLineTone(line);
+          const tone = getLineTone(line, inventoryPostingEnabled);
           const multilocHint = needsMultilocSplitHint(line);
           const multilocPrimarySuggested = multilocHint
             ? suggestedSplitPrimaryQtyForMultiloc(line)
             : 0;
           const multilocSuggested = multilocHint ? suggestedNewLineQtyForMultiloc(line) : 0;
-          const dispatchMax = getDispatchMaxForLine(line);
+          const dispatchMax = inventoryPostingEnabled
+            ? getDispatchMaxForLine(line)
+            : getOperationalDispatchMaxForLine(line);
           const overageQty = getOverageQty(line);
           return (
             <div key={line.id} className="border-t border-[var(--ui-border)] first:border-t-0">
@@ -822,14 +892,14 @@ function RemissionPrepareWorkbenchInteractive({
                     Solicitado: {line.requestedQty} {line.unitLabel}
                   </div>
                   <div className="mt-1 inline-flex rounded-full border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--ui-muted)]">
-                    {getLineMeasurementLabel(line)}
+                    {getLineMeasurementLabel(line, inventoryPostingEnabled)}
                   </div>
-                  {lineRequiresPackageDispatch(line) ? (
+                  {inventoryPostingEnabled && lineRequiresPackageDispatch(line) ? (
                     <div className="mt-2">
                       <ProductionPackagePlanSummary line={line} />
                     </div>
                   ) : null}
-                  {!lineRequiresPackageDispatch(line) && line.recommendedLocId ? (
+                  {inventoryPostingEnabled && !lineRequiresPackageDispatch(line) && line.recommendedLocId ? (
                     <div className="mt-2 text-xs text-emerald-700">
                       Ubicación sugerida:{" "}
                       <strong>
@@ -837,7 +907,7 @@ function RemissionPrepareWorkbenchInteractive({
                           line.selectedLocId) || "Sin ubicación"}
                       </strong>
                     </div>
-                  ) : !lineRequiresPackageDispatch(line) && line.locOptions.length === 0 ? (
+                  ) : inventoryPostingEnabled && !lineRequiresPackageDispatch(line) && line.locOptions.length === 0 ? (
                     <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900">
                       No hay stock disponible en ubicaciones del origen. Déjalo en 0 y registra el faltante como pendiente de producción.
                     </div>
@@ -878,7 +948,11 @@ function RemissionPrepareWorkbenchInteractive({
                 </div>
 
                 <div className="flex flex-col gap-2">
-                  {lineRequiresPackageDispatch(line) ? (
+                  {!inventoryPostingEnabled ? (
+                    <div className="ui-input flex h-10 items-center bg-[var(--ui-bg-soft)] text-xs font-semibold text-[var(--ui-muted)]">
+                      Sin LOC requerido
+                    </div>
+                  ) : lineRequiresPackageDispatch(line) ? (
                     <div className="ui-input flex h-10 items-center bg-[linear-gradient(180deg,rgba(240,249,255,0.9)_0%,rgba(255,255,255,0.92)_100%)] text-xs font-semibold text-sky-950">
                       Empaques FOGO asignados
                     </div>
@@ -898,7 +972,7 @@ function RemissionPrepareWorkbenchInteractive({
                       ))}
                     </select>
                   )}
-                  {!lineRequiresPackageDispatch(line) && multilocHint ? (
+                  {inventoryPostingEnabled && !lineRequiresPackageDispatch(line) && multilocHint ? (
                     <div className="rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs text-sky-950">
                       <p className="font-semibold leading-snug">
                         Ninguna ubicación cubre todo el pedido; entre ubicaciones sí alcanza.
@@ -916,21 +990,23 @@ function RemissionPrepareWorkbenchInteractive({
                       </button>
                     </div>
                   ) : null}
-                  <button
-                    type="button"
-                    onClick={() => openSplit(line.id, multilocHint ? multilocSuggested : undefined)}
-                    className="ui-btn ui-btn--ghost h-9 text-xs font-semibold"
-                    disabled={lineRequiresPackageDispatch(line) || !canSplitDraftLine(line)}
-                    title={
-                      canSplitDraftLine(line)
-                        ? "Divide el preparado en dos partes para escoger otra ubicación de salida."
-                        : lineUsesActualQuantity(line)
-                          ? "Los productos de cantidad real se ajustan registrando el peso/volumen exacto preparado."
-                          : "Solo aplica con más de 1 unidad solicitada."
-                    }
-                  >
-                    Usar varias ubicaciones
-                  </button>
+                  {inventoryPostingEnabled ? (
+                    <button
+                      type="button"
+                      onClick={() => openSplit(line.id, multilocHint ? multilocSuggested : undefined)}
+                      className="ui-btn ui-btn--ghost h-9 text-xs font-semibold"
+                      disabled={lineRequiresPackageDispatch(line) || !canSplitDraftLine(line)}
+                      title={
+                        canSplitDraftLine(line)
+                          ? "Divide el preparado en dos partes para escoger otra ubicación de salida."
+                          : lineUsesActualQuantity(line)
+                            ? "Los productos de cantidad real se ajustan registrando el peso/volumen exacto preparado."
+                            : "Solo aplica con más de 1 unidad solicitada."
+                      }
+                    >
+                      Usar varias ubicaciones
+                    </button>
+                  ) : null}
                 </div>
 
                 <div>
@@ -938,9 +1014,9 @@ function RemissionPrepareWorkbenchInteractive({
                     type="number"
                     min={0}
                     step="any"
-                    max={dispatchMax}
+                    max={Number.isFinite(dispatchMax) ? dispatchMax : undefined}
                     value={line.dispatchQty}
-                    disabled={lineRequiresPackageDispatch(line)}
+                    disabled={inventoryPostingEnabled && lineRequiresPackageDispatch(line)}
                     onChange={(e) =>
                       updateLine(line.id, {
                         dispatchQty: parseQty(e.target.value, 0),
@@ -948,12 +1024,12 @@ function RemissionPrepareWorkbenchInteractive({
                     }
                     className="ui-input h-10 w-full disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-600"
                   />
-                  {lineRequiresPackageDispatch(line) ? (
+                  {inventoryPostingEnabled && lineRequiresPackageDispatch(line) ? (
                     <div className="mt-1 text-xs text-[var(--ui-muted)]">
                       Cantidad fijada por empaques reales FOGO.
                     </div>
                   ) : null}
-                  {line.locOptions.length === 0 && line.dispatchQty === 0 ? (
+                  {inventoryPostingEnabled && line.locOptions.length === 0 && line.dispatchQty === 0 ? (
                     <div className="mt-1 text-xs text-[var(--ui-muted)]">
                       Sin despacho hasta que producción cargue stock a una ubicación.
                     </div>
@@ -1049,20 +1125,23 @@ function RemissionPrepareWorkbenchInteractive({
             <strong>{progress.done}/{progress.total}</strong> líneas listas
           </div>
           <div className="flex flex-wrap items-center gap-3 md:gap-4">
-            <button
-              type="button"
-              onClick={() => {
-                setLines((prev) =>
-                  applySmartAllocation(
-                    prev.map((line) => ({ ...line, manualLocked: false })),
-                    false
-                  )
-                );
-              }}
-              className="text-left text-sm font-medium text-[var(--ui-text)]/55 underline-offset-4 transition hover:text-[var(--ui-text)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ui-ring)]"
-            >
-              Recalcular ubicaciones
-            </button>
+            {inventoryPostingEnabled ? (
+              <button
+                type="button"
+                onClick={() => {
+                  setLines((prev) =>
+                    normalizeWorkbenchLines(
+                      prev.map((line) => ({ ...line, manualLocked: false })),
+                      inventoryPostingEnabled,
+                      false
+                    )
+                  );
+                }}
+                className="text-left text-sm font-medium text-[var(--ui-text)]/55 underline-offset-4 transition hover:text-[var(--ui-text)] hover:underline focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ui-ring)]"
+              >
+                Recalcular ubicaciones
+              </button>
+            ) : null}
             <form action={onCommit}>
               <input type="hidden" name="request_id" value={requestId} />
               <input type="hidden" name="return_origin" value={returnOrigin} />
@@ -1089,6 +1168,7 @@ export function RemissionPrepareWorkbench(props: PrepareWorkbenchProps) {
       <RemissionPrepareReadonlySummary
         lines={props.lines}
         correctPrepareHref={props.correctPrepareHref}
+        inventoryPostingEnabled={Boolean(props.inventoryPostingEnabled)}
       />
     );
   }
@@ -1099,6 +1179,7 @@ export function RemissionPrepareWorkbench(props: PrepareWorkbenchProps) {
       siteId={props.siteId}
       lines={props.lines}
       onCommit={props.onCommit}
+      inventoryPostingEnabled={Boolean(props.inventoryPostingEnabled)}
     />
   );
 }
