@@ -112,6 +112,54 @@ function buildRequestedDisplay(params: {
   return baseLabel;
 }
 
+function normalizeOperationalText(value: unknown): string {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function hasOriginShortageNote(value: unknown): boolean {
+  const normalized = normalizeOperationalText(value);
+  return (
+    normalized.includes("faltante origen") ||
+    normalized.includes("sin stock en origen") ||
+    normalized.includes("no disponible en origen")
+  );
+}
+
+function resolveTransitCategory(areaKind: unknown): { key: string; label: string; order: number } {
+  const value = normalizeOperationalText(areaKind);
+
+  if (value.includes("repost") || value.includes("postre") || value.includes("dessert")) {
+    return { key: "reposteria", label: "Repostería / postres", order: 10 };
+  }
+  if (value.includes("pan") || value.includes("bakery")) {
+    return { key: "panaderia", label: "Panadería", order: 20 };
+  }
+  if (value.includes("frio") || value.includes("refriger") || value.includes("congel") || value.includes("cold")) {
+    return { key: "cuartos-frios", label: "Cuartos fríos", order: 30 };
+  }
+  if (value.includes("caliente") || value.includes("cocina") || value.includes("kitchen")) {
+    return { key: "cocina-caliente", label: "Cocina caliente", order: 40 };
+  }
+  if (value.includes("bodega") || value.includes("insumo") || value.includes("almacen") || value.includes("stock")) {
+    return { key: "bodega", label: "Bodega / insumos", order: 50 };
+  }
+  if (value.includes("bar") || value.includes("barra")) {
+    return { key: "barra", label: "Barra", order: 60 };
+  }
+  if (value.includes("despacho") || value.includes("dispatch")) {
+    return { key: "despacho", label: "Despacho", order: 70 };
+  }
+  if (value.includes("general")) {
+    return { key: "general", label: "General", order: 80 };
+  }
+
+  return { key: "sin-categoria", label: "Sin categoría operativa", order: 90 };
+}
+
 export default async function RemissionDetailPage({
   params,
   searchParams,
@@ -444,7 +492,8 @@ export default async function RemissionDetailPage({
     const requestedQty = roundQuantity(Number(item.quantity ?? 0));
     const preparedQty = roundQuantity(Number(item.prepared_quantity ?? 0));
     const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
-    return requestedQty > 0 && Math.max(preparedQty, shippedQty) <= 0;
+    const effectiveQty = Math.max(preparedQty, shippedQty);
+    return requestedQty > 0 && effectiveQty <= 0 && !hasOriginShortageNote(item.notes);
   }).length;
 
   const hasActualQuantityLines = itemRows.some((item) => usesActualQuantityMode(item));
@@ -865,33 +914,41 @@ export default async function RemissionDetailPage({
 
   const transitPrepareFingerprint = buildPrepareFingerprintHash(itemRows);
 
-  const conductorTransitLines = itemRows.map((item) => {
-    const preparedQty = roundQuantity(Number(item.prepared_quantity ?? 0));
-    const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
-    const plannedQty = Math.max(preparedQty, shippedQty);
-    const locId = item.source_location_id ?? null;
-    const locRow = locId ? originLocById.get(locId) : undefined;
-    let locDetail: string | null = null;
-    if (locId) {
-      if (locRow) {
-        const label = buildLocDisplayLabel(locRow);
-        locDetail = label === "LOC" ? `ID ${locId.slice(0, 8)}…` : label;
-      } else {
-        locDetail = `ID ubicación ${locId.slice(0, 8)}…`;
+  const conductorTransitLines = itemRows
+    .map((item, index) => {
+      const preparedQty = roundQuantity(Number(item.prepared_quantity ?? 0));
+      const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
+      const plannedQty = Math.max(preparedQty, shippedQty);
+      const locId = item.source_location_id ?? null;
+      const locRow = locId ? originLocById.get(locId) : undefined;
+      let locDetail: string | null = null;
+      if (locId) {
+        if (locRow) {
+          const label = buildLocDisplayLabel(locRow);
+          locDetail = label === "LOC" ? `ID ${locId.slice(0, 8)}…` : label;
+        } else {
+          locDetail = `ID ubicación ${locId.slice(0, 8)}…`;
+        }
       }
-    }
-    const unitLabel = formatUnitLabel(
-      item.stock_unit_code ?? item.unit ?? item.product?.stock_unit_code
-    );
-    return {
-      id: item.id,
-      productName: String(item.product?.name ?? item.product_id),
-      measurementMode: getItemMeasurementMode(item),
-      quantity: plannedQty,
-      unitLabel,
-      locDetail,
-    };
-  });
+      const unitLabel = formatUnitLabel(
+        item.stock_unit_code ?? item.unit ?? item.product?.stock_unit_code
+      );
+      const category = resolveTransitCategory(item.production_area_kind);
+      return {
+        id: item.id,
+        productName: String(item.product?.name ?? item.product_id),
+        measurementMode: getItemMeasurementMode(item),
+        quantity: plannedQty,
+        unitLabel,
+        locDetail,
+        categoryKey: category.key,
+        categoryLabel: category.label,
+        categoryOrder: category.order,
+        originalIndex: index,
+      };
+    })
+    .filter((line) => roundQuantity(Number(line.quantity ?? 0)) > 0)
+    .sort((a, b) => a.categoryOrder - b.categoryOrder || a.originalIndex - b.originalIndex);
 
   const deliveryStatusLabel =
     currentStatus === "received"

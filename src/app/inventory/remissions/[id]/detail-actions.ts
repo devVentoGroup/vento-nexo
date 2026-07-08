@@ -241,6 +241,20 @@ async function requestHasPreparationPicks(
   return Number(count ?? 0) > 0;
 }
 
+function hasOriginShortageNote(value: unknown): boolean {
+  const normalized = String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+
+  return (
+    normalized.includes("faltante origen") ||
+    normalized.includes("sin stock en origen") ||
+    normalized.includes("no disponible en origen")
+  );
+}
+
 async function ensureOperationalTransitReady(params: {
   supabase: Awaited<ReturnType<typeof createClient>>;
   requestId: string;
@@ -249,7 +263,7 @@ async function ensureOperationalTransitReady(params: {
 
   const { data: itemsData, error } = await supabase
     .from("restock_request_items")
-    .select("quantity,prepared_quantity,shipped_quantity")
+    .select("quantity,prepared_quantity,shipped_quantity,notes")
     .eq("request_id", requestId);
 
   if (error) return false;
@@ -258,17 +272,30 @@ async function ensureOperationalTransitReady(params: {
     quantity: number | null;
     prepared_quantity: number | null;
     shipped_quantity: number | null;
+    notes: string | null;
   }>;
 
   if (rows.length === 0) return false;
 
-  return rows.every((row) => {
+  let hasDispatchableQty = false;
+
+  for (const row of rows) {
     const requestedQty = roundQuantity(Number(row.quantity ?? 0));
     const preparedQty = roundQuantity(Number(row.prepared_quantity ?? 0));
     const shippedQty = roundQuantity(Number(row.shipped_quantity ?? 0));
+    const effectiveQty = Math.max(preparedQty, shippedQty);
 
-    return requestedQty <= 0 || Math.max(preparedQty, shippedQty) > 0;
-  });
+    if (effectiveQty > 0) hasDispatchableQty = true;
+
+    const resolved =
+      requestedQty <= 0 ||
+      effectiveQty > 0 ||
+      hasOriginShortageNote(row.notes);
+
+    if (!resolved) return false;
+  }
+
+  return hasDispatchableQty;
 }
 async function ensureReceiveSignature(params: {
   supabase: Awaited<ReturnType<typeof createClient>>;
@@ -1688,7 +1715,11 @@ export async function commitPreparationDraft(formData: FormData) {
     const lineItem = commitLineItemById.get(lineId);
     const requestedQty = roundQuantity(Number(lineItem?.quantity ?? line.requestedQty ?? 0));
     const dispatchQty = roundQuantity(Number(line.dispatchQty ?? 0));
-    const shortageReason = String(line.shortageReason ?? "").trim();
+    const shortageReasonRaw = String(line.shortageReason ?? "").trim();
+    const shortageReason =
+      dispatchQty < requestedQty && !shortageReasonRaw && !inventoryPostingEnabled
+        ? "Sin stock en origen"
+        : shortageReasonRaw;
 
     if (!lineId || !lineItem || (inventoryPostingEnabled && !selectedLocId)) {
       redirect(

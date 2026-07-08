@@ -521,6 +521,22 @@ function buildPicksForLine(line: DraftLine): PickPayload[] {
   return [buildPick(baseQty, null)];
 }
 
+const DEFAULT_ORIGIN_SHORTAGE_REASON = "Sin stock en origen";
+
+function lineHasShortage(line: DraftLine): boolean {
+  return roundQty(Number(line.dispatchQty ?? 0)) < roundQty(Number(line.requestedQty ?? 0));
+}
+
+function getEffectiveShortageReason(
+  line: DraftLine,
+  inventoryPostingEnabled = true
+): string {
+  const explicit = String(line.shortageReason ?? "").trim();
+  if (explicit) return explicit;
+  if (!inventoryPostingEnabled && lineHasShortage(line)) return DEFAULT_ORIGIN_SHORTAGE_REASON;
+  return "";
+}
+
 function getLineTone(line: DraftLine, inventoryPostingEnabled = true) {
   if (inventoryPostingEnabled && lineRequiresPackageDispatch(line)) {
     const planTotal = packagePlanTotal(line);
@@ -534,7 +550,7 @@ function getLineTone(line: DraftLine, inventoryPostingEnabled = true) {
     : getOperationalDispatchMaxForLine(line);
 
   if (line.dispatchQty < 0 || line.dispatchQty > maxDispatchQty) return "error";
-  if (line.dispatchQty < line.requestedQty && !line.shortageReason.trim()) return "warn";
+  if (line.dispatchQty < line.requestedQty && !getEffectiveShortageReason(line, inventoryPostingEnabled)) return "warn";
   return "ok";
 }
 
@@ -729,7 +745,7 @@ function RemissionPrepareReadonlySummary({
                   {hasShortage ? (
                     <div className="rounded-md border border-amber-200 bg-amber-50 px-2 py-2 text-xs text-amber-950">
                       <span className="font-semibold">Faltante: </span>
-                      {line.shortageReason.trim() || "—"}
+                      {getEffectiveShortageReason(line, inventoryPostingEnabled) || "—"}
                     </div>
                   ) : (
                     <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-2 text-xs text-emerald-800">
@@ -789,7 +805,7 @@ function RemissionPrepareWorkbenchInteractive({
       : 0;
     const invalidQty = lines.filter((line) => getLineTone(line, inventoryPostingEnabled) === "error").length;
     const missingReason = lines.filter(
-      (line) => line.dispatchQty < line.requestedQty && !line.shortageReason.trim()
+      (line) => line.dispatchQty < line.requestedQty && !getEffectiveShortageReason(line, inventoryPostingEnabled)
     ).length;
     return { missingLoc, invalidQty, missingReason };
   }, [inventoryPostingEnabled, lines]);
@@ -801,7 +817,7 @@ function RemissionPrepareWorkbenchInteractive({
     const done = lines.filter((line) => {
       if (inventoryPostingEnabled && line.dispatchQty > 0 && !line.selectedLocId) return false;
       if (getLineTone(line, inventoryPostingEnabled) === "error") return false;
-      if (line.dispatchQty < line.requestedQty && !line.shortageReason.trim()) return false;
+      if (line.dispatchQty < line.requestedQty && !getEffectiveShortageReason(line, inventoryPostingEnabled)) return false;
       return true;
     }).length;
     return { done, total: lines.length };
@@ -934,10 +950,10 @@ function RemissionPrepareWorkbenchInteractive({
       selectedLocId: line.selectedLocId,
       dispatchQty: line.dispatchQty,
       requestedQty: line.requestedQty,
-      shortageReason: line.shortageReason.trim(),
+      shortageReason: getEffectiveShortageReason(line, inventoryPostingEnabled),
       isVirtualSplit: line.isVirtualSplit,
     })),
-    // Mientras el servidor no acepte líneas con faltante total sin pick, conservamos fallback legacy.
+    // En modo operativo se permite cantidad 0 como faltante origen; en inventario real solo se usan picks si todas las líneas salen con cantidad.
     splitDrafts: shouldUsePickPayload ? [] : splitDrafts,
     picks: shouldUsePickPayload ? lines.flatMap((line) => buildPicksForLine(line)) : [],
   });
@@ -1134,12 +1150,24 @@ function RemissionPrepareWorkbenchInteractive({
 
                 <div>
                   {hasShortage ? (
-                    <textarea
-                      value={line.shortageReason}
-                      onChange={(e) => updateLine(line.id, { shortageReason: e.target.value })}
-                      className="ui-input min-h-[60px] w-full"
-                      placeholder="Motivo obligatorio si sale menos de lo solicitado..."
-                    />
+                    <div className="space-y-2">
+                      {!inventoryPostingEnabled && !line.shortageReason.trim() ? (
+                        <div className="rounded-md border border-amber-200 bg-amber-50 px-2 py-2 text-xs text-amber-950">
+                          <span className="font-semibold">Faltante origen automático: </span>
+                          {DEFAULT_ORIGIN_SHORTAGE_REASON}.
+                        </div>
+                      ) : null}
+                      <textarea
+                        value={line.shortageReason}
+                        onChange={(e) => updateLine(line.id, { shortageReason: e.target.value })}
+                        className="ui-input min-h-[60px] w-full"
+                        placeholder={
+                          inventoryPostingEnabled
+                            ? "Motivo obligatorio si sale menos de lo solicitado..."
+                            : `Opcional. Por defecto: ${DEFAULT_ORIGIN_SHORTAGE_REASON}.`
+                        }
+                      />
+                    </div>
                   ) : (
                     <div className="rounded-md border border-emerald-200 bg-emerald-50 px-2 py-2 text-xs text-emerald-800">
                       Sin faltante
