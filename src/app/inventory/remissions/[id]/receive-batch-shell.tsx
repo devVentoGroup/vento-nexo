@@ -78,9 +78,13 @@ type ReceiveBatchShellProps = {
 function formatTraceQty(value: number | null | undefined) {
   const numericValue = Number(value ?? 0);
   if (!Number.isFinite(numericValue)) return "0";
-  return new Intl.NumberFormat("es-CO", {
-    maximumFractionDigits: 3,
-  }).format(numericValue);
+  return new Intl.NumberFormat("es-CO", { maximumFractionDigits: 3 }).format(numericValue);
+}
+
+function formatQuickQty(value: number | null | undefined) {
+  const numericValue = Number(value ?? 0);
+  if (!Number.isFinite(numericValue)) return "0";
+  return new Intl.NumberFormat("es-CO", { maximumFractionDigits: 3 }).format(numericValue);
 }
 
 function packageTraceLabel(trace: ReceiveBatchPackageTrace) {
@@ -91,20 +95,11 @@ function packageTraceLabel(trace: ReceiveBatchPackageTrace) {
   return packageId ? `Empaque ${packageId.slice(0, 8)}` : "Empaque FOGO";
 }
 
-function measurementModeLabel(mode: ReceiveBatchMeasurementMode): string {
-  if (mode === "variable_weight") return "Peso variable";
-  if (mode === "count_with_weight") return "Conteo + peso real";
-  if (mode === "bulk_volume") return "Granel / cantidad real";
-  return "Presentación fija";
-}
-
 function itemRequiresActualReceiptQty(
   policy: ReceiveBatchMeasurementPolicy | null | undefined
 ): boolean {
   if (!policy) return false;
-  if (typeof policy.requiresActualReceiptQty === "boolean") {
-    return policy.requiresActualReceiptQty;
-  }
+  if (typeof policy.requiresActualReceiptQty === "boolean") return policy.requiresActualReceiptQty;
   return policy.measurementMode !== "fixed_presentation";
 }
 
@@ -120,10 +115,7 @@ function normalizeAuxCountUnitCode(value: string | null | undefined): string {
 
 function itemRequiresAuxCount(policy: ReceiveBatchMeasurementPolicy | null | undefined): boolean {
   if (!policy) return false;
-  return (
-    Boolean(policy.requiresCountAlongsideWeight) ||
-    policy.measurementMode === "count_with_weight"
-  );
+  return Boolean(policy.requiresCountAlongsideWeight) || policy.measurementMode === "count_with_weight";
 }
 
 function buildProductMeasurementPolicy(
@@ -136,9 +128,7 @@ function buildProductMeasurementPolicy(
     .filter((policy): policy is ReceiveBatchMeasurementPolicy => Boolean(policy));
 
   const preferred =
-    policies.find((policy) => itemRequiresActualReceiptQty(policy)) ??
-    policies[0] ??
-    null;
+    policies.find((policy) => itemRequiresActualReceiptQty(policy)) ?? policies[0] ?? null;
 
   return {
     itemId: preferred?.itemId,
@@ -152,23 +142,17 @@ function buildProductMeasurementPolicy(
 }
 
 function receiveQuantityFieldLabel(policy: ReceiveBatchMeasurementPolicy): string {
-  if (policy.measurementMode === "count_with_weight") return "Peso real recibido";
-  if (policy.measurementMode === "variable_weight") return "Cantidad real recibida";
-  if (policy.measurementMode === "bulk_volume") return "Cantidad real recibida";
-  return "Recibir ahora";
+  if (policy.measurementMode === "count_with_weight") return "Peso recibido";
+  if (policy.measurementMode === "variable_weight") return "Cantidad real";
+  if (policy.measurementMode === "bulk_volume") return "Cantidad real";
+  return "Recibir";
 }
 
-function receiveQuantityHelpText(policy: ReceiveBatchMeasurementPolicy, unitLabel: string): string {
-  if (policy.measurementMode === "count_with_weight") {
-    return `Ingresa el peso real recibido en ${unitLabel}. El conteo auxiliar se registra aparte y no cambia el stock base.`;
-  }
-  if (policy.measurementMode === "variable_weight") {
-    return `Ingresa la cantidad real medida en ${unitLabel}. No se asume que el empaque enviado equivalga exactamente a lo recibido.`;
-  }
-  if (policy.measurementMode === "bulk_volume") {
-    return `Ingresa la cantidad real recibida en ${unitLabel}. El recipiente o empaque es solo referencia logística.`;
-  }
-  return "Si ingresas una cantidad menor al pendiente, el sistema registra solo lo recibido ahora y deja la diferencia pendiente para seguimiento posterior.";
+function parseInputNumber(value: string): number | null {
+  const raw = String(value ?? "").trim().replace(",", ".");
+  if (!raw) return null;
+  const parsed = Number(raw);
+  return Number.isFinite(parsed) ? parsed : null;
 }
 
 export function ReceiveBatchShell({
@@ -180,17 +164,17 @@ export function ReceiveBatchShell({
   measurementByItemId = {},
   children,
 }: ReceiveBatchShellProps) {
-  const [selected, setSelected] = useState<Set<string>>(() => new Set());
+  const eligibleItemIds = useMemo(
+    () => eligibleProductGroups.flatMap((group) => group.itemIds),
+    [eligibleProductGroups]
+  );
+  const eligibleSet = useMemo(() => new Set(eligibleItemIds), [eligibleItemIds]);
+
+  // Recepcion rapida: por defecto todo lo pendiente queda seleccionado.
+  const [selected, setSelected] = useState<Set<string>>(() => new Set(eligibleItemIds));
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [receiveQty, setReceiveQtyState] = useState<Record<string, string>>({});
   const [auxCount, setAuxCountState] = useState<Record<string, string>>({});
-
-  const eligibleItemIds = useMemo(
-    () => eligibleProductGroups.flatMap((g) => g.itemIds),
-    [eligibleProductGroups]
-  );
-
-  const eligibleSet = useMemo(() => new Set(eligibleItemIds), [eligibleItemIds]);
 
   const toggle = useCallback(
     (itemId: string, on: boolean) => {
@@ -262,7 +246,7 @@ export function ReceiveBatchShell({
 
   return (
     <ReceiveBatchContext.Provider value={ctxValue}>
-      <div className="relative max-lg:pb-36">{children}</div>
+      <div className="relative max-lg:pb-32">{children}</div>
       <ReceiveBatchDock requestId={requestId} returnOrigin={returnOrigin} siteId={siteId} />
     </ReceiveBatchContext.Provider>
   );
@@ -283,19 +267,13 @@ function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockP
     notes,
     receiveQty,
     auxCount,
-    packageTraceByItemId,
     measurementByItemId,
   } = useReceiveBatchContext();
 
   const eligibleProductsCount = productGroups.length;
-  const selectedProductsCount = productGroups.filter((g) =>
-    g.itemIds.every((id) => selected.has(id))
+  const selectedProductsCount = productGroups.filter((group) =>
+    group.itemIds.every((id) => selected.has(id))
   ).length;
-
-  const selectedPackageTraceCount = [...selected].reduce(
-    (acc, itemId) => acc + (packageTraceByItemId[itemId]?.length ?? 0),
-    0
-  );
   const selectedMissingActualQtyCount = [...selected].filter((itemId) => {
     const policy = measurementByItemId[itemId];
     return itemRequiresActualReceiptQty(policy) && !hasPositiveQuantityInput(receiveQty[itemId]);
@@ -305,35 +283,29 @@ function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockP
     return itemRequiresAuxCount(policy) && !hasPositiveQuantityInput(auxCount[itemId]);
   }).length;
   const noEligible = eligibleProductsCount === 0;
+  const selectedLines = [...selected];
 
   return (
     <div
       className="z-40 flex justify-center px-3 pt-2 max-lg:fixed max-lg:inset-x-0 max-lg:bottom-0 max-lg:pb-[max(0.75rem,env(safe-area-inset-bottom))]"
       role="region"
-      aria-label="Confirmación de recepción en bloque"
+      aria-label="Confirmacion de recepcion"
     >
       <div className="w-full max-w-3xl rounded-xl border border-stone-200/90 bg-[var(--ui-bg)] p-2 shadow-sm ring-1 ring-stone-100/70 sm:p-3 lg:flex lg:items-center lg:justify-between lg:gap-6">
         <div className="min-w-0 flex-1 space-y-1">
           <p className="text-xs font-semibold text-stone-700">
             {noEligible
               ? "Sin productos pendientes."
-              : selectedProductsCount === 0
-                ? `${eligibleProductsCount} pendiente${eligibleProductsCount === 1 ? "" : "s"}.`
-                : `${selectedProductsCount} seleccionad${selectedProductsCount === 1 ? "o" : "os"}.`}
-            {selectedPackageTraceCount > 0 ? (
-              <span className="ml-1 text-emerald-700">
-                · {selectedPackageTraceCount} empaque{selectedPackageTraceCount === 1 ? "" : "s"} FOGO
-              </span>
-            ) : null}
+              : `${selectedProductsCount}/${eligibleProductsCount} seleccionados.`}
           </p>
           {selectedMissingActualQtyCount > 0 ? (
             <p className="text-[11px] font-semibold text-amber-700">
-              Falta cantidad real recibida en {selectedMissingActualQtyCount} línea{selectedMissingActualQtyCount === 1 ? "" : "s"}.
+              Falta cantidad real en {selectedMissingActualQtyCount} linea{selectedMissingActualQtyCount === 1 ? "" : "s"}.
             </p>
           ) : null}
           {selectedMissingAuxCount > 0 ? (
             <p className="text-[11px] font-semibold text-amber-700">
-              Falta conteo auxiliar en {selectedMissingAuxCount} línea{selectedMissingAuxCount === 1 ? "" : "s"}.
+              Falta conteo auxiliar en {selectedMissingAuxCount} linea{selectedMissingAuxCount === 1 ? "" : "s"}.
             </p>
           ) : null}
           {!noEligible ? (
@@ -349,7 +321,7 @@ function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockP
                 type="button"
                 className="rounded-lg border border-stone-200 bg-white px-2 py-1 text-[11px] font-semibold text-stone-700 shadow-sm transition hover:bg-stone-50 disabled:cursor-not-allowed disabled:opacity-50"
                 onClick={clearSelection}
-                disabled={selectedProductsCount === 0}
+                disabled={selectedLines.length === 0}
               >
                 Limpiar
               </button>
@@ -363,24 +335,12 @@ function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockP
           <input type="hidden" name="request_id" value={requestId} />
           <input type="hidden" name="return_origin" value={returnOrigin} />
           <input type="hidden" name="site_id" value={siteId} />
-          {[...selected].map((id) => (
+          {selectedLines.map((id) => (
             <span key={id}>
               <input type="hidden" name="batch_receive_item_id" value={id} />
-              <input
-                type="hidden"
-                name="batch_receive_item_note"
-                value={notes[id] ?? ""}
-              />
-              <input
-                type="hidden"
-                name="batch_receive_item_receive_qty"
-                value={receiveQty[id] ?? ""}
-              />
-              <input
-                type="hidden"
-                name="batch_receive_item_aux_count"
-                value={auxCount[id] ?? ""}
-              />
+              <input type="hidden" name="batch_receive_item_note" value={notes[id] ?? ""} />
+              <input type="hidden" name="batch_receive_item_receive_qty" value={receiveQty[id] ?? ""} />
+              <input type="hidden" name="batch_receive_item_aux_count" value={auxCount[id] ?? ""} />
               <input
                 type="hidden"
                 name="batch_receive_item_aux_count_unit_code"
@@ -391,14 +351,14 @@ function ReceiveBatchDock({ requestId, returnOrigin, siteId }: ReceiveBatchDockP
           <button
             type="submit"
             disabled={
-              selectedProductsCount === 0 ||
+              selectedLines.length === 0 ||
               noEligible ||
               selectedMissingActualQtyCount > 0 ||
               selectedMissingAuxCount > 0
             }
             className="h-10 w-full min-w-[180px] rounded-lg bg-gradient-to-r from-teal-600 to-emerald-600 px-4 text-sm font-bold text-white shadow-lg shadow-teal-900/25 transition hover:from-teal-500 hover:to-emerald-500 disabled:cursor-not-allowed disabled:from-stone-300 disabled:to-stone-300 disabled:text-stone-500 disabled:shadow-none lg:w-auto"
           >
-            Confirmar llegada
+            Registrar recepcion
           </button>
         </form>
       </div>
@@ -475,71 +435,16 @@ export function ReceiveBatchCompactLine({
   shippedQty,
   remainingQty,
 }: ReceiveBatchCompactLineProps) {
-  const { selected, toggle, notes, setNote, packageTraceByItemId } = useReceiveBatchContext();
-  const isChecked = selected.has(itemId);
-  const packageTrace: ReceiveBatchPackageTrace[] = packageTraceByItemId[itemId] ?? [];
-
   return (
-    <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3 shadow-sm">
-      <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3">
-        <label className="flex cursor-pointer items-center gap-2">
-          <input
-            type="checkbox"
-            checked={isChecked}
-            onChange={(e) => toggle(itemId, e.target.checked)}
-            className="h-5 w-5 rounded border-stone-300 text-emerald-600 focus:ring-emerald-500"
-            aria-label={`Incluir ${productName} en recepción`}
-          />
-        </label>
-
-        <div className="min-w-0 text-center">
-          <p className="truncate text-sm font-semibold text-[var(--ui-text)]">
-            {productName}
-          </p>
-        </div>
-
-        <div className="text-right">
-          <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
-            Enviado / Pendiente
-          </div>
-          <div className="text-sm font-bold tabular-nums text-[var(--ui-text)]">
-            {shippedQty} · {remainingQty} {unitLabel}
-          </div>
-        </div>
-      </div>
-
-      {packageTrace.length > 0 ? (
-        <div className="mt-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-950">
-          <div className="font-semibold">Empaques FOGO recibidos</div>
-          <div className="mt-1 space-y-1">
-            {packageTrace.map((trace, index) => (
-              <div key={`${trace.packageId}-${index}`}>
-                {trace.fractional ? "Fracción" : "Completo"} · {packageTraceLabel(trace)} ·{" "}
-                {formatTraceQty(trace.dispatchQty)} {trace.unitCode}
-                {trace.locationLabel ? ` · ${trace.locationLabel}` : ""}
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : null}
-
-
-      <details className="mt-2 group">
-        <summary className="cursor-pointer list-none select-none text-sm text-[var(--ui-muted)]">
-          Nota opcional
-        </summary>
-        <div className="mt-2">
-          <textarea
-            disabled={!isChecked}
-            value={notes[itemId] ?? ""}
-            onChange={(e) => setNote(itemId, e.target.value)}
-            className="w-full resize-none rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900 shadow-sm outline-none focus:border-emerald-300 focus:ring-0 disabled:cursor-not-allowed disabled:bg-stone-50"
-            rows={2}
-            placeholder="Opcional: incidencias o comentarios…"
-          />
-        </div>
-      </details>
-    </div>
+    <ReceiveBatchCompactProductLine
+      productId={itemId}
+      itemIds={[itemId]}
+      itemPendingQtys={[remainingQty]}
+      productName={productName}
+      unitLabel={unitLabel}
+      shippedQtyTotal={shippedQty}
+      pendingQtyTotal={remainingQty}
+    />
   );
 }
 
@@ -554,6 +459,7 @@ type ReceiveBatchCompactProductLineProps = {
 };
 
 export function ReceiveBatchCompactProductLine({
+  productId: _productId,
   itemIds,
   itemPendingQtys,
   productName,
@@ -566,7 +472,6 @@ export function ReceiveBatchCompactProductLine({
     toggle,
     notes,
     setNote,
-    receiveQty,
     setReceiveQty,
     auxCount,
     setAuxCount,
@@ -576,7 +481,6 @@ export function ReceiveBatchCompactProductLine({
 
   const allSelected = itemIds.length > 0 && itemIds.every((id) => selected.has(id));
   const anySelected = itemIds.some((id) => selected.has(id));
-
   const [partialTotalInput, setPartialTotalInput] = useState<string>("");
   const productPackageTrace: ReceiveBatchPackageTrace[] = itemIds.flatMap((itemId) =>
     (packageTraceByItemId[itemId] ?? []).map((trace): ReceiveBatchPackageTrace => ({
@@ -584,16 +488,14 @@ export function ReceiveBatchCompactProductLine({
       itemId,
     }))
   );
-  const measurementPolicy = buildProductMeasurementPolicy(
-    itemIds,
-    measurementByItemId,
-    unitLabel
-  );
-  const requiresActualReceiptQty = itemRequiresActualReceiptQty(measurementPolicy);
+  const measurementPolicy = buildProductMeasurementPolicy(itemIds, measurementByItemId, unitLabel);
   const requiresCountAlongsideWeight = itemRequiresAuxCount(measurementPolicy);
   const auxCountUnitCode = normalizeAuxCountUnitCode(measurementPolicy.auxCountUnitCode);
   const quantityFieldLabel = receiveQuantityFieldLabel(measurementPolicy);
-  const quantityHelpText = receiveQuantityHelpText(measurementPolicy, unitLabel);
+  const noteValue = itemIds.length > 0 ? notes[itemIds[0]] ?? "" : "";
+  const parsedPartialQty = parseInputNumber(partialTotalInput);
+  const isPartialReceipt =
+    allSelected && parsedPartialQty !== null && parsedPartialQty < Number(pendingQtyTotal ?? 0);
 
   const onToggleProduct = (next: boolean) => {
     for (const id of itemIds) toggle(id, next);
@@ -602,23 +504,19 @@ export function ReceiveBatchCompactProductLine({
       for (const id of itemIds) {
         setReceiveQty(id, "");
         setAuxCount(id, "");
+        setNote(id, "");
       }
     }
   };
 
-  const noteValue = itemIds.length > 0 ? notes[itemIds[0]] ?? "" : "";
-
   const allocatePartialTotalToLines = (rawValue: string) => {
-    const trimmed = rawValue.trim();
-    if (!trimmed) {
+    const manualTotal = parseInputNumber(rawValue);
+    if (manualTotal === null) {
       for (const id of itemIds) setReceiveQty(id, "");
       return;
     }
 
-    const normalized = trimmed.replace(",", ".");
-    const manualTotal = Number(normalized);
-
-    if (!Number.isFinite(manualTotal) || manualTotal < 0) {
+    if (manualTotal < 0) {
       for (const id of itemIds) setReceiveQty(id, "");
       return;
     }
@@ -634,25 +532,15 @@ export function ReceiveBatchCompactProductLine({
       remaining -= alloc;
 
       if (remaining <= 0) {
-        for (let j = i + 1; j < itemIds.length; j += 1) {
-          setReceiveQty(itemIds[j], "0");
-        }
+        for (let j = i + 1; j < itemIds.length; j += 1) setReceiveQty(itemIds[j], "0");
         break;
       }
     }
   };
 
   const allocateAuxCountToLines = (rawValue: string) => {
-    const trimmed = rawValue.trim();
-    if (!trimmed) {
-      for (const id of itemIds) setAuxCount(id, "");
-      return;
-    }
-
-    const normalized = trimmed.replace(",", ".");
-    const manualTotal = Number(normalized);
-
-    if (!Number.isFinite(manualTotal) || manualTotal < 0) {
+    const manualTotal = parseInputNumber(rawValue);
+    if (manualTotal === null || manualTotal < 0) {
       for (const id of itemIds) setAuxCount(id, "");
       return;
     }
@@ -662,7 +550,10 @@ export function ReceiveBatchCompactProductLine({
       return;
     }
 
-    const totalPending = itemPendingQtys.reduce((sum, qty) => sum + Math.max(0, Number(qty ?? 0)), 0);
+    const totalPending = itemPendingQtys.reduce(
+      (sum, qty) => sum + Math.max(0, Number(qty ?? 0)),
+      0
+    );
     if (totalPending <= 0) {
       for (const id of itemIds) setAuxCount(id, "0");
       return;
@@ -673,9 +564,7 @@ export function ReceiveBatchCompactProductLine({
       const id = itemIds[i];
       const isLast = i === itemIds.length - 1;
       const weight = Math.max(0, Number(itemPendingQtys[i] ?? 0)) / totalPending;
-      const alloc = isLast
-        ? Math.max(0, manualTotal - assigned)
-        : Number((manualTotal * weight).toFixed(3));
+      const alloc = isLast ? Math.max(0, manualTotal - assigned) : Number((manualTotal * weight).toFixed(3));
 
       setAuxCount(id, String(alloc));
       assigned += alloc;
@@ -683,102 +572,66 @@ export function ReceiveBatchCompactProductLine({
   };
 
   return (
-    <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg)] p-3 shadow-sm">
-      <div className="grid grid-cols-[auto_1fr_auto] items-center gap-3">
+    <div
+      className={[
+        "rounded-xl border bg-white px-3 py-2 shadow-sm transition",
+        allSelected ? "border-emerald-200 ring-1 ring-emerald-100" : "border-[var(--ui-border)] opacity-75",
+      ].join(" ")}
+    >
+      <div className="grid grid-cols-[auto_minmax(0,1fr)_minmax(116px,160px)] items-center gap-3">
         <label className="flex cursor-pointer items-center gap-2">
           <input
             type="checkbox"
             checked={allSelected}
             onChange={(e) => onToggleProduct(e.target.checked)}
             className="h-5 w-5 rounded border-stone-300 text-emerald-600 focus:ring-emerald-500"
-            aria-label={`Incluir ${productName} en recepción`}
+            aria-label={`Incluir ${productName} en recepcion`}
           />
           {anySelected && !allSelected ? (
             <span className="text-[11px] font-semibold text-[var(--ui-muted)]">Parcial</span>
           ) : null}
         </label>
 
-        <div className="min-w-0 text-left">
-          <p className="truncate text-base font-semibold leading-snug text-[var(--ui-text)] sm:text-lg">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-semibold leading-tight text-[var(--ui-text)] sm:text-base">
             {productName}
           </p>
-          <div className="mt-1 flex flex-wrap gap-1.5">
-            <span className="rounded-full border border-slate-200 bg-white px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-slate-600">
-              {measurementModeLabel(measurementPolicy.measurementMode)}
-            </span>
-            {requiresActualReceiptQty ? (
-              <span className="rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-[0.06em] text-amber-800">
-                Requiere cantidad real
-              </span>
-            ) : null}
-          </div>
-        </div>
-
-        <div className="text-right">
-          <div className="space-y-0.5">
-            <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
-              Recibir ahora
-            </div>
-            <div className="text-sm font-bold tabular-nums text-[var(--ui-text)]">
-              {pendingQtyTotal} {unitLabel}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {productPackageTrace.length > 0 ? (
-        <div className="mt-3 rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-xs text-sky-950">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div className="font-semibold">Trazabilidad FOGO</div>
-            <div className="font-semibold text-sky-900">
-              {productPackageTrace.length} empaque{productPackageTrace.length === 1 ? "" : "s"}
-            </div>
-          </div>
-          <div className="mt-2 space-y-1">
-            {productPackageTrace.map((trace, index) => (
-              <div
-                key={`${trace.itemId ?? "item"}-${trace.packageId}-${index}`}
-                className="rounded-lg bg-white/80 px-2 py-1"
-              >
-                <span className="font-semibold">
-                  {trace.fractional ? "Fracción" : "Completo"}
-                </span>{" "}
-                · {packageTraceLabel(trace)} · {formatTraceQty(trace.dispatchQty)} {trace.unitCode}
-                {trace.locationLabel ? ` · ${trace.locationLabel}` : ""}
-              </div>
-            ))}
-          </div>
-          <p className="mt-2 text-sky-900/75">
-            La recepción entra como cantidad base; el origen físico queda trazado desde los empaques de lote.
+          <p className="mt-0.5 text-[11px] text-[var(--ui-muted)] sm:text-xs">
+            Enviado: {formatQuickQty(shippedQtyTotal)} {unitLabel} · Pendiente: {formatQuickQty(pendingQtyTotal)} {unitLabel}
           </p>
         </div>
-      ) : null}
 
-      <details className="mt-2 group">
-        <summary className="cursor-pointer list-none select-none text-sm text-[var(--ui-muted)]">
-          Nota opcional
-        </summary>
-        <div className="mt-2">
-          <textarea
-            disabled={!allSelected}
-            value={noteValue}
-            onChange={(e) => {
-              const v = e.target.value;
-              for (const id of itemIds) setNote(id, v);
-            }}
-            className="w-full resize-none rounded-xl border border-stone-200 bg-white px-3 py-2 text-sm text-stone-900 shadow-sm outline-none focus:border-emerald-300 focus:ring-0 disabled:cursor-not-allowed disabled:bg-stone-50"
-            rows={2}
-            placeholder="Opcional: incidencias o comentarios…"
-          />
-        </div>
-      </details>
+        <label className="block text-right">
+          <span className="block text-[10px] font-semibold uppercase tracking-wide text-[var(--ui-muted)]">
+            {quantityFieldLabel}
+          </span>
+          <div className="mt-1 flex items-center justify-end gap-1.5">
+            <input
+              type="number"
+              step="any"
+              min={0}
+              max={pendingQtyTotal}
+              disabled={!allSelected}
+              value={partialTotalInput}
+              onChange={(event) => {
+                const value = event.target.value;
+                setPartialTotalInput(value);
+                allocatePartialTotalToLines(value);
+              }}
+              className="h-10 w-20 rounded-lg border border-stone-200 bg-white px-2 text-right text-sm font-semibold tabular-nums text-stone-900 outline-none focus:border-emerald-300 disabled:cursor-not-allowed disabled:bg-stone-50 sm:w-24"
+              placeholder={formatQuickQty(pendingQtyTotal)}
+            />
+            <span className="min-w-[42px] text-left text-xs font-medium text-[var(--ui-muted)]">
+              {unitLabel}
+            </span>
+          </div>
+        </label>
+      </div>
 
       {requiresCountAlongsideWeight ? (
-        <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-950">
-          <label className="block font-semibold">
-            Conteo auxiliar recibido
-          </label>
-          <div className="mt-2 flex items-center gap-2">
+        <div className="mt-2 grid gap-2 sm:grid-cols-[1fr_auto] sm:items-end">
+          <label className="block">
+            <span className="text-xs font-semibold text-[var(--ui-muted)]">Conteo auxiliar</span>
             <input
               type="number"
               step="any"
@@ -786,47 +639,50 @@ export function ReceiveBatchCompactProductLine({
               disabled={!allSelected}
               value={itemIds.length > 0 ? auxCount[itemIds[0]] ?? "" : ""}
               onChange={(event) => allocateAuxCountToLines(event.target.value)}
-              className="ui-input h-10 flex-1 rounded-xl bg-white disabled:cursor-not-allowed disabled:bg-stone-50"
+              className="mt-1 h-10 w-full rounded-lg border border-stone-200 bg-white px-3 text-sm outline-none focus:border-emerald-300 disabled:cursor-not-allowed disabled:bg-stone-50"
               placeholder={`Ej. 12 ${auxCountUnitCode}`}
             />
-            <span className="shrink-0 rounded-full bg-white px-2 py-1 text-[11px] font-bold text-amber-900 ring-1 ring-amber-200">
-              {auxCountUnitCode}
-            </span>
-          </div>
-          <p className="mt-1">
-            Registra las piezas físicas recibidas. El stock contable se guarda por peso real en {unitLabel}.
-          </p>
+          </label>
+          <span className="rounded-full bg-stone-50 px-2 py-1 text-xs font-semibold text-stone-600 ring-1 ring-stone-200">
+            {auxCountUnitCode}
+          </span>
         </div>
       ) : null}
 
-      <details className="mt-2 group" open={requiresActualReceiptQty}>
-        <summary className="cursor-pointer list-none select-none text-sm text-[var(--ui-muted)]">
-          {requiresActualReceiptQty ? "Registrar cantidad real recibida" : "Registrar llegada parcial"}
-        </summary>
-        <div className="mt-2">
-          <label className="block text-xs font-semibold text-[var(--ui-muted)]">
-            {quantityFieldLabel}
+      {isPartialReceipt ? (
+        <div className="mt-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2">
+          <label className="block text-xs font-semibold text-amber-950">
+            Comentario por diferencia
           </label>
-          <input
-            type="number"
-            step="any"
-            min={0}
-            max={pendingQtyTotal}
-            disabled={!allSelected}
-            value={partialTotalInput}
-            onChange={(e) => {
-              const v = e.target.value;
-              setPartialTotalInput(v);
-              allocatePartialTotalToLines(v);
+          <textarea
+            value={noteValue}
+            onChange={(event) => {
+              const value = event.target.value;
+              for (const id of itemIds) setNote(id, value);
             }}
-            className="mt-1 ui-input h-11 w-full rounded-xl disabled:cursor-not-allowed disabled:bg-stone-50"
-            placeholder={`${pendingQtyTotal} ${unitLabel}`}
+            className="mt-1 w-full resize-none rounded-lg border border-amber-200 bg-white px-3 py-2 text-sm text-stone-900 outline-none focus:border-amber-300"
+            rows={2}
+            placeholder="Ej. llegaron menos unidades, producto incompleto, pendiente por entregar..."
           />
-          <p className="mt-1 text-[11px] leading-snug text-stone-500">
-            {quantityHelpText}
-          </p>
         </div>
-      </details>
+      ) : null}
+
+      {productPackageTrace.length > 0 ? (
+        <details className="mt-2 text-xs text-sky-950">
+          <summary className="cursor-pointer select-none font-semibold text-sky-900">
+            Ver trazabilidad FOGO
+          </summary>
+          <div className="mt-1 space-y-1 rounded-lg border border-sky-200 bg-sky-50 px-3 py-2">
+            {productPackageTrace.map((trace, index) => (
+              <div key={`${trace.itemId ?? "item"}-${trace.packageId}-${index}`}>
+                {trace.fractional ? "Fraccion" : "Completo"} · {packageTraceLabel(trace)} ·{" "}
+                {formatTraceQty(trace.dispatchQty)} {trace.unitCode}
+                {trace.locationLabel ? ` · ${trace.locationLabel}` : ""}
+              </div>
+            ))}
+          </div>
+        </details>
+      ) : null}
     </div>
   );
 }

@@ -811,10 +811,10 @@ export default async function RemissionDetailPage({
       : "Recibir remisión";
 
   const receivePanelDescription = isReceivePartialFollowUp
-    ? "Esta remisión ya tiene una recepción registrada. Ahora define lo que falta por resolver: registrar una llegada adicional o cerrar la diferencia."
+    ? "Registra una llegada adicional de lo pendiente o cierra la diferencia."
     : isReceiveFirstPass
-      ? "Registra lo que llegó hoy. Si no llegó todo, la remisión quedará abierta para seguimiento."
-      : "Marca los productos con la casilla. Nada se guarda hasta registrar recepción. Nota opcional debajo.";
+      ? "Marca lo recibido. Si llego menos, escribe la cantidad real y el comentario."
+      : "Marca los productos recibidos y confirma.";
 
   const partialResolutionBanner =
     currentStatus === "partial" && (pendingReceiptLines > 0 || shortageLines > 0);
@@ -1456,7 +1456,7 @@ export default async function RemissionDetailPage({
               </>
             ) : null}
 
-            <div className="mt-4 space-y-3 sm:space-y-4">
+            <div className="mt-4 space-y-2">
               {(() => {
                 const eligibleItems = itemRows.filter((item) => receiveBatchEligibleIdSet.has(item.id));
                 const groupsByProduct = new Map<string, typeof eligibleItems>();
@@ -1494,51 +1494,18 @@ export default async function RemissionDetailPage({
                     return roundQuantity(Math.max(shipped - received - shortage, 0));
                   });
 
-                  const receivedQtyTotal = groupItems.reduce((acc, it) => {
-                    const received = roundQuantity(Number(it.received_quantity ?? 0));
-                    return acc + received;
-                  }, 0);
-
-                  const shortageQtyTotal = groupItems.reduce((acc, it) => {
-                    const shortage = roundQuantity(Number(it.shortage_quantity ?? 0));
-                    return acc + shortage;
-                  }, 0);
 
                   return (
-                    <div key={productId} className="space-y-2">
-                      <div className="rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-4 py-3">
-                        <div className="flex flex-wrap items-start justify-between gap-3">
-                          <div>
-                            <div className="text-sm font-semibold text-[var(--ui-text)]">
-                              {productName}
-                            </div>
-                            <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                              Enviado: {shippedQtyTotal} {formatUnitLabelForQty(unitLabel, shippedQtyTotal)} · Recibido acumulado: {receivedQtyTotal} {formatUnitLabelForQty(unitLabel, receivedQtyTotal)} · Pendiente: {pendingQtyTotal} {formatUnitLabelForQty(unitLabel, pendingQtyTotal)} · Faltante registrado: {shortageQtyTotal} {formatUnitLabelForQty(unitLabel, shortageQtyTotal)}
-                            </div>
-                          </div>
-                          <div>
-                            {pendingQtyTotal > 0 ? (
-                              <span className="ui-chip ui-chip--warn">Pendiente por resolver</span>
-                            ) : shortageQtyTotal > 0 ? (
-                              <span className="ui-chip ui-chip--warn">Cerrado con faltante</span>
-                            ) : (
-                              <span className="ui-chip ui-chip--success">Conciliado</span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      <ReceiveBatchCompactProductLine
-                        key={productId}
-                        productId={productId}
-                        itemIds={itemIds}
-                        itemPendingQtys={itemPendingQtys}
-                        productName={productName}
-                        unitLabel={formatUnitLabelForQty(unitLabel, pendingQtyTotal)}
-                        shippedQtyTotal={shippedQtyTotal}
-                        pendingQtyTotal={pendingQtyTotal}
-                      />
-                    </div>
+                    <ReceiveBatchCompactProductLine
+                      key={productId}
+                      productId={productId}
+                      itemIds={itemIds}
+                      itemPendingQtys={itemPendingQtys}
+                      productName={productName}
+                      unitLabel={formatUnitLabelForQty(unitLabel, pendingQtyTotal)}
+                      shippedQtyTotal={shippedQtyTotal}
+                      pendingQtyTotal={pendingQtyTotal}
+                    />
                   );
                 });
               })()}
