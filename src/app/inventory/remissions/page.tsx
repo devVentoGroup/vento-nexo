@@ -730,7 +730,7 @@ export default async function RemissionsPage({
       : nextReceiveRow
         ? `/inventory/remissions/${nextReceiveRow.id}`
         : canCreate
-          ? buildHubHref({ showCreate: true, hash: "nueva-remision" })
+          ? buildHubHref({ showCreate: true })
           : "/inventory/remissions";
   const heroPrimaryLabel =
     viewMode === "bodega"
@@ -1309,23 +1309,24 @@ export default async function RemissionsPage({
         </div>
       </div>
 
-      {canCreateWithConfiguredCatalog && !showCreatePanel ? (
+      {canCreateWithConfiguredCatalog ? (
         <div
           className="ui-panel ui-remission-section ui-fade-up ui-delay-2"
-          id="nueva-remisión"
+          id="nueva-remision"
         >
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
               <div className="ui-h3">Nueva remisión</div>
               <div className="mt-1 ui-caption">
-                Formulario oculto para mantener esta pantalla limpia.
+                Crea una solicitud sin bajar por todo el historial. El
+                formulario se abre encima de esta pantalla.
               </div>
             </div>
             <Link
-              href={buildHubHref({ showCreate: true, hash: "nueva-remision" })}
+              href={buildHubHref({ showCreate: true })}
               className="ui-btn ui-btn--brand h-11 px-4 text-sm font-semibold"
             >
-              Abrir formulario
+              Crear solicitud
             </Link>
           </div>
         </div>
@@ -1333,43 +1334,59 @@ export default async function RemissionsPage({
 
       {canCreateWithConfiguredCatalog && showCreatePanel ? (
         <div
-          className="ui-panel ui-remission-section ui-fade-up ui-delay-2"
-          id="nueva-remisión"
+          className="fixed inset-0 z-[80] flex items-stretch justify-center bg-slate-950/50 p-0 backdrop-blur-sm sm:items-center sm:p-4"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="nueva-remision-title"
         >
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <div className="ui-h3">Nueva remisión</div>
-              <div className="mt-1 ui-caption">
-                Esta vista solo sirve para crear una solicitud nueva.
+          <Link
+            href={buildHubHref({ hash: "solicitudes-abiertas" })}
+            className="absolute inset-0 hidden sm:block"
+            aria-label="Cerrar formulario de nueva remisión"
+          />
+          <section className="relative z-10 flex h-[100dvh] w-full flex-col overflow-hidden bg-[var(--ui-bg)] shadow-2xl overscroll-contain sm:h-[90dvh] sm:max-w-6xl sm:rounded-[2rem] sm:border sm:border-[var(--ui-border)]">
+            <div className="flex shrink-0 items-start justify-between gap-3 border-b border-[var(--ui-border)] bg-[var(--ui-bg)] px-4 py-4 sm:px-6">
+              <div>
+                <div
+                  id="nueva-remision-title"
+                  className="text-lg font-semibold tracking-[-0.02em] text-[var(--ui-text)] sm:text-xl"
+                >
+                  Nueva remisión
+                </div>
+                <div className="mt-1 text-sm leading-5 text-[var(--ui-muted)]">
+                  Solicitud desde {activeSiteName}. El formulario se abre
+                  encima del historial; cierra para volver a la lista.
+                </div>
               </div>
+              <Link
+                href={buildHubHref({ hash: "solicitudes-abiertas" })}
+                className="ui-btn ui-btn--ghost h-10 shrink-0 px-3 text-sm font-semibold sm:h-11 sm:px-4"
+              >
+                Cerrar
+              </Link>
             </div>
-            <Link
-              href={buildHubHref({ hash: "solicitudes-abiertas" })}
-              className="ui-btn ui-btn--ghost h-11 px-4 text-sm font-semibold"
-            >
-              Ocultar formulario
-            </Link>
-          </div>
-          <div className="mt-4">
-            <RemissionsCreateForm
-              action={createRemission}
-              toSiteId={activeSiteId}
-              toSiteName={activeSiteName}
-              fromSiteOptions={fulfillmentSiteRows.map((site) => ({
-                id: site.id,
-                name: site.name ?? site.id,
-              }))}
-              defaultFromSiteId={selectedFromSiteId}
-              products={productRows}
-              categoryNameById={Object.fromEntries(categoryNameById)}
-              defaultUomProfiles={defaultUomProfiles}
-              areaOptions={areaOptions}
-              defaultAreaKind={selectedRemissionCategoryAreaKind}
-              originStockRows={inventoryPostingEnabled ? originStockRows : []}
-              productionPackageRows={productionPackageRows}
-              inventoryPostingEnabled={inventoryPostingEnabled}
-            />
-          </div>
+
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
+              <RemissionsCreateForm
+                action={createRemission}
+                toSiteId={activeSiteId}
+                toSiteName={activeSiteName}
+                fromSiteOptions={fulfillmentSiteRows.map((site) => ({
+                  id: site.id,
+                  name: site.name ?? site.id,
+                }))}
+                defaultFromSiteId={selectedFromSiteId}
+                products={productRows}
+                categoryNameById={Object.fromEntries(categoryNameById)}
+                defaultUomProfiles={defaultUomProfiles}
+                areaOptions={areaOptions}
+                defaultAreaKind={selectedRemissionCategoryAreaKind}
+                originStockRows={inventoryPostingEnabled ? originStockRows : []}
+                productionPackageRows={productionPackageRows}
+                inventoryPostingEnabled={inventoryPostingEnabled}
+              />
+            </div>
+          </section>
         </div>
       ) : null}
 
