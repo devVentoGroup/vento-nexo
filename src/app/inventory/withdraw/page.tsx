@@ -16,6 +16,51 @@ import {
 export const dynamic = "force-dynamic";
 
 const MOVEMENT_TYPE = "consumption";
+const OPERATIONAL_MOVEMENT_TYPE = "stock_consume_position";
+const APP_ID = "nexo";
+
+type LocationOperationalFlags = {
+  inventoryRealEnabled: boolean;
+  manualWithdrawEnabled: boolean;
+};
+
+function buildLocationSettingKey(locationId: string, key: string) {
+  return `locations.${locationId}.${key}`;
+}
+
+async function readLocationOperationalFlags(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  locationId: string
+): Promise<LocationOperationalFlags> {
+  const locId = String(locationId ?? "").trim();
+  const defaults: LocationOperationalFlags = {
+    inventoryRealEnabled: false,
+    manualWithdrawEnabled: true,
+  };
+
+  if (!locId) return defaults;
+
+  const inventoryKey = buildLocationSettingKey(locId, "inventory_real_enabled");
+  const withdrawKey = buildLocationSettingKey(locId, "manual_withdraw_enabled");
+
+  const { data } = await supabase
+    .from("app_runtime_settings")
+    .select("setting_key,bool_value")
+    .eq("app_id", APP_ID)
+    .in("setting_key", [inventoryKey, withdrawKey]);
+
+  const values = new Map(
+    ((data ?? []) as Array<{ setting_key: string | null; bool_value: boolean | null }>).map((row) => [
+      String(row.setting_key ?? ""),
+      row.bool_value,
+    ])
+  );
+
+  return {
+    inventoryRealEnabled: Boolean(values.get(inventoryKey) ?? defaults.inventoryRealEnabled),
+    manualWithdrawEnabled: Boolean(values.get(withdrawKey) ?? defaults.manualWithdrawEnabled),
+  };
+}
 
 function asText(value: FormDataEntryValue | null) {
   return typeof value === "string" ? value.trim() : "";
@@ -165,90 +210,124 @@ async function submitWithdraw(formData: FormData) {
   }
 
   const locCode = (locRow as { code?: string }).code ?? locationId;
+  const operationalFlags = await readLocationOperationalFlags(supabase, locationId);
 
-  for (const item of items) {
-    const { data: stockLoc } = await supabase
-      .from("inventory_stock_by_location")
-      .select("current_qty")
-      .eq("location_id", locationId)
-      .eq("product_id", item.product_id)
-      .maybeSingle();
-
-    const availableAtLoc = Number((stockLoc as { current_qty?: number } | null)?.current_qty ?? 0);
-    if (availableAtLoc < item.quantity) {
-      redirect(
-        "/inventory/withdraw?error=" +
-          encodeURIComponent(
-            `No alcanza stock: solicitaste ${item.input_qty} ${item.input_unit_code} (${item.quantity} ${item.stock_unit_code}), disponibles ${availableAtLoc} ${item.stock_unit_code}.`
-          )
-      );
-    }
+  if (!operationalFlags.manualWithdrawEnabled) {
+    redirect(
+      "/inventory/withdraw?error=" +
+        encodeURIComponent("El retiro manual está pausado para esta área.")
+    );
   }
 
-  for (const item of items) {
-    const note = item.note
-      ? `Retiro ${locCode}: ${item.note}`
-      : `Retiro ${locCode}`;
+  if (operationalFlags.inventoryRealEnabled) {
+    for (const item of items) {
+      const { data: stockLoc } = await supabase
+        .from("inventory_stock_by_location")
+        .select("current_qty")
+        .eq("location_id", locationId)
+        .eq("product_id", item.product_id)
+        .maybeSingle();
 
-    const { error: positionErr } = await supabase.rpc("consume_inventory_stock_from_positions", {
-      p_location_id: locationId,
-      p_product_id: item.product_id,
-      p_quantity: item.quantity,
-      p_created_by: user.id,
-      p_note: `Retiro interno ${locCode}: menor stock primero`,
-    });
-    if (positionErr) {
-      redirect("/inventory/withdraw?error=" + encodeURIComponent(positionErr.message));
+      const availableAtLoc = Number((stockLoc as { current_qty?: number } | null)?.current_qty ?? 0);
+      if (availableAtLoc < item.quantity) {
+        redirect(
+          "/inventory/withdraw?error=" +
+            encodeURIComponent(
+              `No alcanza stock: solicitaste ${item.input_qty} ${item.input_unit_code} (${item.quantity} ${item.stock_unit_code}), disponibles ${availableAtLoc} ${item.stock_unit_code}.`
+            )
+        );
+      }
     }
 
-    const { error: moveErr } = await supabase.from("inventory_movements").insert({
-      site_id: siteId,
-      product_id: item.product_id,
-      movement_type: MOVEMENT_TYPE,
-      quantity: -item.quantity,
-      input_qty: item.input_qty,
-      input_unit_code: item.input_unit_code,
-      conversion_factor_to_stock: item.conversion_factor_to_stock,
-      stock_unit_code: item.stock_unit_code,
-      note,
-      created_by: user.id,
-    });
-    if (moveErr) {
-      redirect("/inventory/withdraw?error=" + encodeURIComponent(moveErr.message));
+    for (const item of items) {
+      const note = item.note
+        ? `Retiro ${locCode}: ${item.note}`
+        : `Retiro ${locCode}`;
+
+      const { error: positionErr } = await supabase.rpc("consume_inventory_stock_from_positions", {
+        p_location_id: locationId,
+        p_product_id: item.product_id,
+        p_quantity: item.quantity,
+        p_created_by: user.id,
+        p_note: `Retiro interno ${locCode}: menor stock primero`,
+      });
+      if (positionErr) {
+        redirect("/inventory/withdraw?error=" + encodeURIComponent(positionErr.message));
+      }
+
+      const { error: moveErr } = await supabase.from("inventory_movements").insert({
+        site_id: siteId,
+        product_id: item.product_id,
+        movement_type: MOVEMENT_TYPE,
+        quantity: -item.quantity,
+        input_qty: item.input_qty,
+        input_unit_code: item.input_unit_code,
+        conversion_factor_to_stock: item.conversion_factor_to_stock,
+        stock_unit_code: item.stock_unit_code,
+        location_id: locationId,
+        note,
+        created_by: user.id,
+      });
+      if (moveErr) {
+        redirect("/inventory/withdraw?error=" + encodeURIComponent(moveErr.message));
+      }
+
+      const { error: locErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
+        p_location_id: locationId,
+        p_product_id: item.product_id,
+        p_delta: -item.quantity,
+      });
+      if (locErr) {
+        redirect("/inventory/withdraw?error=" + encodeURIComponent(locErr.message));
+      }
+
+      const { data: siteStock } = await supabase
+        .from("inventory_stock_by_site")
+        .select("current_qty")
+        .eq("site_id", siteId)
+        .eq("product_id", item.product_id)
+        .maybeSingle();
+
+      const currentQty = Number((siteStock as { current_qty?: number } | null)?.current_qty ?? 0);
+      const newQty = Math.max(0, currentQty - item.quantity);
+
+      const { error: siteErr } = await supabase
+        .from("inventory_stock_by_site")
+        .upsert(
+          {
+            site_id: siteId,
+            product_id: item.product_id,
+            current_qty: newQty,
+            updated_at: new Date().toISOString(),
+          },
+          { onConflict: "site_id,product_id" }
+        );
+      if (siteErr) {
+        redirect("/inventory/withdraw?error=" + encodeURIComponent(siteErr.message));
+      }
     }
+  } else {
+    for (const item of items) {
+      const note = item.note
+        ? `Retiro operativo ${locCode}: ${item.note}`
+        : `Retiro operativo ${locCode}`;
 
-    const { error: locErr } = await supabase.rpc("upsert_inventory_stock_by_location", {
-      p_location_id: locationId,
-      p_product_id: item.product_id,
-      p_delta: -item.quantity,
-    });
-    if (locErr) {
-      redirect("/inventory/withdraw?error=" + encodeURIComponent(locErr.message));
-    }
-
-    const { data: siteStock } = await supabase
-      .from("inventory_stock_by_site")
-      .select("current_qty")
-      .eq("site_id", siteId)
-      .eq("product_id", item.product_id)
-      .maybeSingle();
-
-    const currentQty = Number((siteStock as { current_qty?: number } | null)?.current_qty ?? 0);
-    const newQty = Math.max(0, currentQty - item.quantity);
-
-    const { error: siteErr } = await supabase
-      .from("inventory_stock_by_site")
-      .upsert(
-        {
-          site_id: siteId,
-          product_id: item.product_id,
-          current_qty: newQty,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "site_id,product_id" }
-      );
-    if (siteErr) {
-      redirect("/inventory/withdraw?error=" + encodeURIComponent(siteErr.message));
+      const { error: moveErr } = await supabase.from("inventory_movements").insert({
+        site_id: siteId,
+        product_id: item.product_id,
+        movement_type: OPERATIONAL_MOVEMENT_TYPE,
+        quantity: -item.quantity,
+        input_qty: item.input_qty,
+        input_unit_code: item.input_unit_code,
+        conversion_factor_to_stock: item.conversion_factor_to_stock,
+        stock_unit_code: item.stock_unit_code,
+        location_id: locationId,
+        note: `${note}. No descuenta inventario real.`,
+        created_by: user.id,
+      });
+      if (moveErr) {
+        redirect("/inventory/withdraw?error=" + encodeURIComponent(moveErr.message));
+      }
     }
   }
 
@@ -356,8 +435,15 @@ export default async function WithdrawPage({
     }
   }
 
-  const { data: productsWithStock } = siteId
-    ? defaultLocationId
+  const selectedLocation = locations.find((location) => location.id === defaultLocationId) ?? null;
+  const selectedLocationFlags = selectedLocation
+    ? await readLocationOperationalFlags(supabase, selectedLocation.id)
+    : ({ inventoryRealEnabled: false, manualWithdrawEnabled: true } satisfies LocationOperationalFlags);
+
+  const productRows: ProductRow[] = [];
+
+  if (siteId && selectedLocationFlags.inventoryRealEnabled) {
+    const { data: productsWithStock } = defaultLocationId
       ? await supabase
           .from("inventory_stock_by_location")
           .select("product_id,current_qty,products(id,name,unit,stock_unit_code)")
@@ -369,27 +455,55 @@ export default async function WithdrawPage({
           .select("product_id,current_qty,products(id,name,unit,stock_unit_code)")
           .eq("site_id", siteId)
           .gt("current_qty", 0)
-          .limit(400)
-    : { data: [] as { product_id: string; current_qty: number; products: ProductRow | null }[] };
+          .limit(400);
 
-  const stocked = (productsWithStock ?? []) as unknown as {
-    product_id: string;
-    current_qty: number | null;
-    products: ProductRow | null;
-  }[];
+    const stocked = (productsWithStock ?? []) as unknown as {
+      product_id: string;
+      current_qty: number | null;
+      products: ProductRow | ProductRow[] | null;
+    }[];
 
-  const productRows: ProductRow[] = [];
-  for (const row of stocked) {
-    const product = row.products;
-    if (!product) continue;
+    for (const row of stocked) {
+      const productRaw = row.products;
+      const product = Array.isArray(productRaw) ? productRaw[0] : productRaw;
+      if (!product) continue;
 
-    productRows.push({
-      id: product.id,
-      name: product.name,
-      unit: product.unit,
-      stock_unit_code: product.stock_unit_code,
-      available_qty: Number(row.current_qty ?? 0),
-    });
+      productRows.push({
+        id: product.id,
+        name: product.name,
+        unit: product.unit,
+        stock_unit_code: product.stock_unit_code,
+        available_qty: Number(row.current_qty ?? 0),
+      });
+    }
+  } else if (siteId && selectedLocationFlags.manualWithdrawEnabled) {
+    const { data: operationalProductsData } = await supabase
+      .from("product_inventory_profiles")
+      .select("product_id,products(id,name,unit,stock_unit_code)")
+      .eq("track_inventory", true)
+      .in("inventory_kind", ["ingredient", "finished", "resale", "packaging"])
+      .limit(400);
+
+    const operationalProducts = (operationalProductsData ?? []) as unknown as Array<{
+      product_id: string;
+      products: ProductRow | ProductRow[] | null;
+    }>;
+
+    const seenProductIds = new Set<string>();
+    for (const row of operationalProducts) {
+      const productRaw = row.products;
+      const product = Array.isArray(productRaw) ? productRaw[0] : productRaw;
+      if (!product || seenProductIds.has(product.id)) continue;
+      seenProductIds.add(product.id);
+
+      productRows.push({
+        id: product.id,
+        name: product.name,
+        unit: product.unit,
+        stock_unit_code: product.stock_unit_code,
+        available_qty: null,
+      });
+    }
   }
 
   productRows.sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? ""), "es"));
@@ -406,7 +520,6 @@ export default async function WithdrawPage({
         .eq("is_active", true)
     : { data: [] as ProductUomProfile[] };
   const defaultUomProfiles = (uomProfilesDataForPage ?? []) as ProductUomProfile[];
-  const selectedLocation = locations.find((location) => location.id === defaultLocationId) ?? null;
   const selectedLocationLabel = buildLocDisplayName(selectedLocation);
   const returnTo = selectedLocation ? `/inventory/locations/${encodeURIComponent(selectedLocation.id)}` : "/inventory/stock";
   const normalizedRole = String(employee?.role ?? "").toLowerCase();
@@ -429,9 +542,17 @@ export default async function WithdrawPage({
       : "general";
   const heroModeLabel = openedFromQr ? "QR móvil" : mode === "satellite" ? "Modo satélite" : mode === "center" ? "Modo Centro" : "Modo retiro";
   const heroTitle = "Retirar insumos";
+  const withdrawalModeLabel = selectedLocationFlags.inventoryRealEnabled
+    ? "Inventario real"
+    : "Modo operativo";
   const heroSubtitle = selectedLocation
-    ? `Área: ${selectedLocationLabel}. Solo se muestran insumos con stock registrado en esta ubicación.`
-    : "Selecciona un área para ver solo los insumos con stock disponible.";
+    ? selectedLocationFlags.inventoryRealEnabled
+      ? `Área: ${selectedLocationLabel}. Solo se muestran insumos con stock registrado en esta ubicación y el retiro descuenta inventario real.`
+      : `Área: ${selectedLocationLabel}. El retiro queda registrado como operativo y no descuenta inventario real.`
+    : "Selecciona un área para registrar el retiro.";
+  const productCountLabel = selectedLocationFlags.inventoryRealEnabled
+    ? `${productRows.length} insumos con stock`
+    : `${productRows.length} insumos operativos`;
 
   return (
     <div className="ui-scene w-full space-y-5">
@@ -456,7 +577,7 @@ export default async function WithdrawPage({
               </span>
             ) : null}
             <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
-              {productRows.length} insumos con stock
+              {productCountLabel}
             </span>
           </div>
 
@@ -467,14 +588,14 @@ export default async function WithdrawPage({
               <div className="mt-1 text-sm text-[var(--ui-muted)]">Origen del retiro</div>
             </article>
             <article className="rounded-2xl border border-[var(--ui-border)] bg-white/85 p-4 shadow-sm">
-              <div className="ui-caption font-semibold">Insumos disponibles</div>
+              <div className="ui-caption font-semibold">Insumos</div>
               <div className="mt-1 text-xl font-semibold text-[var(--ui-text)]">{productRows.length}</div>
-              <div className="mt-1 text-sm text-[var(--ui-muted)]">Solo stock del área</div>
+              <div className="mt-1 text-sm text-[var(--ui-muted)]">{selectedLocationFlags.inventoryRealEnabled ? "Con stock del área" : "Catálogo operativo"}</div>
             </article>
             <article className="rounded-2xl border border-[var(--ui-border)] bg-white/85 p-4 shadow-sm">
               <div className="ui-caption font-semibold">Modo</div>
-              <div className="mt-1 text-xl font-semibold text-[var(--ui-text)]">Celular</div>
-              <div className="mt-1 text-sm text-[var(--ui-muted)]">Cantidad rápida y resumen</div>
+              <div className="mt-1 text-xl font-semibold text-[var(--ui-text)]">{withdrawalModeLabel}</div>
+              <div className="mt-1 text-sm text-[var(--ui-muted)]">{selectedLocationFlags.inventoryRealEnabled ? "Descuenta stock real" : "No afecta inventario"}</div>
             </article>
           </div>
         </div>
@@ -490,18 +611,32 @@ export default async function WithdrawPage({
         <div className="ui-alert ui-alert--success">{okMsg}</div>
       ) : null}
 
-      <WithdrawForm
-        locations={locations}
-        defaultLocationId={defaultLocationId}
-        products={productRows}
-        defaultUomProfiles={defaultUomProfiles}
-        siteId={siteId}
-        openedFromQr={openedFromQr}
-        mode={mode}
-        siteLabel={activeSite?.name ?? ""}
-        returnTo={returnTo}
-        action={submitWithdraw}
-      />
+      {selectedLocation && !selectedLocationFlags.manualWithdrawEnabled ? (
+        <div className="ui-alert ui-alert--warn">
+          El retiro manual está pausado para esta área. Actívalo desde el control operativo del LOC.
+        </div>
+      ) : selectedLocation && !selectedLocationFlags.inventoryRealEnabled ? (
+        <div className="ui-alert ui-alert--neutral">
+          Modo operativo: puedes registrar el retiro, pero no se validará stock ni se descontará inventario real.
+        </div>
+      ) : null}
+
+      {selectedLocationFlags.manualWithdrawEnabled ? (
+        <WithdrawForm
+          locations={locations}
+          defaultLocationId={defaultLocationId}
+          products={productRows}
+          defaultUomProfiles={defaultUomProfiles}
+          siteId={siteId}
+          openedFromQr={openedFromQr}
+          mode={mode}
+          siteLabel={activeSite?.name ?? ""}
+          returnTo={returnTo}
+          inventoryRealEnabled={selectedLocationFlags.inventoryRealEnabled}
+          manualWithdrawEnabled={selectedLocationFlags.manualWithdrawEnabled}
+          action={submitWithdraw}
+        />
+      ) : null}
     </div>
   );
 }

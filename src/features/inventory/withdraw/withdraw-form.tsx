@@ -46,6 +46,13 @@ type Props = {
   mode?: "satellite" | "center" | "general";
   siteLabel?: string;
   returnTo?: string;
+  /**
+   * true: retiro real con validación y descuento de stock.
+   * false: retiro operativo, solo traza; no se valida stock disponible.
+   */
+  inventoryRealEnabled?: boolean;
+  /** Si false, el formulario queda bloqueado aunque la página lo renderice. */
+  manualWithdrawEnabled?: boolean;
   action: (formData: FormData) => void | Promise<void>;
 };
 
@@ -105,6 +112,8 @@ export function WithdrawForm({
   mode = "general",
   siteLabel = "",
   returnTo = "/inventory/stock",
+  inventoryRealEnabled = true,
+  manualWithdrawEnabled = true,
   action,
 }: Props) {
   const [locationId, setLocationId] = useState((defaultLocationId || locations[0]?.id) ?? "");
@@ -149,12 +158,13 @@ export function WithdrawForm({
   }, [defaultUomProfiles]);
 
   const selectedLocLabel = buildLocLabel(selectedLocation);
-  const modeHint =
-    mode === "satellite"
-      ? "Retira solo lo que sale realmente de esta área."
+  const modeHint = !inventoryRealEnabled
+    ? "Modo operativo: registra lo que sale, sin validar ni descontar inventario real."
+    : mode === "satellite"
+      ? "Retira solo lo que sale realmente de esta área y descuenta inventario real."
       : mode === "center"
         ? "Descuenta consumos reales desde esta ubicación."
-        : "Captura cantidades por insumo y confirma el resumen antes de registrar.";
+        : "Captura cantidades por insumo y confirma el resumen antes de descontar inventario.";
 
   const buildDefaultDraft = (product: ProductOption): DraftLine => {
     const stockUnitCode = getStockUnitCode(product);
@@ -227,12 +237,24 @@ export function WithdrawForm({
   }, [defaultProfileByProduct, draftsByProduct, visibleProducts]);
 
   const invalidLines = useMemo(
-    () => linesReady.filter((line) => line.availableQty > 0 && line.quantityInStock > line.availableQty + 0.000001),
-    [linesReady]
+    () =>
+      inventoryRealEnabled
+        ? linesReady.filter((line) => line.availableQty > 0 && line.quantityInStock > line.availableQty + 0.000001)
+        : [],
+    [inventoryRealEnabled, linesReady]
   );
 
-  const canSubmit = Boolean(siteId && locationId && linesReady.length > 0 && invalidLines.length === 0);
+  const canSubmit = Boolean(
+    manualWithdrawEnabled &&
+      siteId &&
+      locationId &&
+      linesReady.length > 0 &&
+      invalidLines.length === 0
+  );
   const totalAvailableProducts = visibleProducts.length;
+  const inventoryModeLabel = inventoryRealEnabled ? "Inventario real" : "Modo operativo";
+  const productCountCaption = inventoryRealEnabled ? "Insumos en área" : "Insumos operativos";
+  const reviewButtonLabel = inventoryRealEnabled ? "Revisar retiro" : "Revisar retiro operativo";
 
   const handleAreaChange = (nextLocationId: string) => {
     setLocationId(nextLocationId);
@@ -250,7 +272,9 @@ export function WithdrawForm({
 
     if (!canSubmit) {
       event.preventDefault();
-      if (invalidLines.length > 0) {
+      if (!manualWithdrawEnabled) {
+        setClientError("El retiro manual está pausado para esta área.");
+      } else if (invalidLines.length > 0) {
         setClientError("Hay cantidades mayores al stock disponible del área. Ajustalas antes de registrar.");
       } else {
         setClientError("Captura al menos un insumo con cantidad mayor a 0 antes de registrar el retiro.");
@@ -290,6 +314,20 @@ export function WithdrawForm({
     );
   }
 
+  if (!manualWithdrawEnabled) {
+    return (
+      <div className="ui-panel ui-remission-section space-y-3">
+        <div className="ui-h3">Retiro manual pausado</div>
+        <p className="ui-body-muted">
+          Esta área no permite retiros manuales en este momento. Activa el permiso desde el control operativo del LOC.
+        </p>
+        <Link href={returnTo} className="ui-btn ui-btn--ghost ui-btn--sm">
+          Volver al área
+        </Link>
+      </div>
+    );
+  }
+
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_320px]">
       <form
@@ -308,7 +346,11 @@ export function WithdrawForm({
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div>
               <div className="ui-h3">Origen</div>
-              <div className="ui-caption mt-1">Área desde donde sale el inventario.</div>
+              <div className="ui-caption mt-1">
+                {inventoryRealEnabled
+                  ? "Área desde donde sale y se descuenta el inventario."
+                  : "Área donde se registra la salida operativa."}
+              </div>
             </div>
             {!openedFromQr ? (
               <label className="flex flex-col gap-1 sm:min-w-[260px]">
@@ -330,7 +372,7 @@ export function WithdrawForm({
 
           <div className="rounded-2xl border border-[var(--ui-brand)]/20 bg-[linear-gradient(135deg,rgba(245,158,11,0.16)_0%,rgba(255,255,255,0.96)_100%)] p-4 shadow-sm sm:p-5">
             <div className="ui-caption font-semibold text-[var(--ui-brand)]">
-              {openedFromQr ? "Área abierta desde QR" : "Área activa"}
+              {openedFromQr ? "Área abierta desde QR" : "Área activa"} · {inventoryModeLabel}
             </div>
             <div className="mt-2 text-2xl font-semibold text-[var(--ui-text)] sm:text-3xl">
               {selectedLocLabel}
@@ -342,7 +384,7 @@ export function WithdrawForm({
 
           <div className="grid gap-3 sm:grid-cols-2 lg:hidden">
             <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
-              <div className="ui-caption">Insumos en área</div>
+              <div className="ui-caption">{productCountCaption}</div>
               <div className="mt-1 text-lg font-semibold text-[var(--ui-text)]">{totalAvailableProducts}</div>
             </div>
             <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
@@ -365,15 +407,19 @@ export function WithdrawForm({
 
         <section className="ui-panel ui-remission-section ui-fade-up ui-delay-2 space-y-4">
           <div>
-            <div className="ui-h3">Insumos en esta área</div>
+            <div className="ui-h3">{inventoryRealEnabled ? "Insumos en esta área" : "Catálogo operativo"}</div>
             <div className="ui-caption mt-1">
-              Solo aparecen insumos con stock disponible en el área seleccionada.
+              {inventoryRealEnabled
+                ? "Solo aparecen insumos con stock disponible en el área seleccionada."
+                : "Puedes registrar salidas operativas sin validar stock real ni descontar inventario."}
             </div>
           </div>
 
           {visibleProducts.length === 0 ? (
             <div className="rounded-2xl border border-dashed border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-5 text-sm text-[var(--ui-muted)]">
-              No hay insumos con stock registrado en esta área. No se puede registrar un retiro desde un área vacía.
+              {inventoryRealEnabled
+                ? "No hay insumos con stock registrado en esta área. No se puede registrar un retiro desde un área vacía."
+                : "No hay insumos operativos configurados para registrar retiros en este momento."}
             </div>
           ) : (
             <div className="space-y-3">
@@ -393,7 +439,7 @@ export function WithdrawForm({
                   profile: selectedProfile,
                 });
                 const isSelected = quantity > 0;
-                const exceedsStock = availableQty > 0 && quantityInStock > availableQty + 0.000001;
+                const exceedsStock = inventoryRealEnabled && availableQty > 0 && quantityInStock > availableQty + 0.000001;
                 const hasAlternateUnit =
                   defaultProfile && normalizeUnitCode(defaultProfile.input_unit_code) !== normalizeUnitCode(stockUnitCode);
 
@@ -418,9 +464,15 @@ export function WithdrawForm({
                           {buildProductLabel(product)}
                         </div>
                         <div className="mt-1 flex flex-wrap items-center gap-2 text-xs font-semibold">
-                          <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-900">
-                            Disponible: {formatQty(availableQty)} {stockUnitCode}
-                          </span>
+                          {inventoryRealEnabled ? (
+                            <span className="rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-1 text-emerald-900">
+                              Disponible: {formatQty(availableQty)} {stockUnitCode}
+                            </span>
+                          ) : (
+                            <span className="rounded-full border border-sky-200 bg-sky-50 px-2.5 py-1 text-sky-900">
+                              Sin descuento real
+                            </span>
+                          )}
                           {isSelected ? (
                             <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-amber-900">
                               En retiro
@@ -549,7 +601,11 @@ export function WithdrawForm({
             >
               <div className="space-y-1">
                 <div id="withdraw-confirm-title" className="ui-h3">Resumen del retiro</div>
-                <div className="ui-caption">Revisa antes de descontar inventario.</div>
+                <div className="ui-caption">
+                  {inventoryRealEnabled
+                    ? "Revisa antes de descontar inventario."
+                    : "Revisa antes de registrar. No descuenta inventario real."}
+                </div>
               </div>
 
               <div className="mt-4 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
@@ -563,7 +619,9 @@ export function WithdrawForm({
                     <div className="min-w-0 flex-1">
                       <div className="truncate font-semibold text-[var(--ui-text)]">{buildProductLabel(line.product)}</div>
                       <div className="text-xs text-[var(--ui-muted)]">
-                        Disponible: {formatQty(line.availableQty)} {line.stockUnitCode}
+                        {inventoryRealEnabled
+                          ? `Disponible: ${formatQty(line.availableQty)} ${line.stockUnitCode}`
+                          : "Movimiento operativo sin descuento real"}
                       </div>
                     </div>
                     <div className="whitespace-nowrap font-semibold text-[var(--ui-text)]">
@@ -611,7 +669,7 @@ export function WithdrawForm({
 
           <div className="grid gap-3">
             <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
-              <div className="ui-caption">Insumos en área</div>
+              <div className="ui-caption">{productCountCaption}</div>
               <div className="mt-1 text-lg font-semibold text-[var(--ui-text)]">{totalAvailableProducts}</div>
             </div>
             <div className="rounded-xl border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] p-3">
@@ -637,7 +695,7 @@ export function WithdrawForm({
             )}
           </div>
 
-          {invalidLines.length > 0 ? (
+          {inventoryRealEnabled && invalidLines.length > 0 ? (
             <div className="rounded-xl border border-red-200 bg-red-50 px-3 py-2 text-sm font-medium text-red-800">
               Ajusta las cantidades que superan el stock disponible.
             </div>
@@ -649,7 +707,7 @@ export function WithdrawForm({
             className={`ui-btn ui-btn--brand w-full ${!canSubmit || isSubmitting ? "opacity-70" : ""}`}
             aria-disabled={!canSubmit || isSubmitting}
           >
-            {isSubmitting ? "Registrando..." : "Revisar retiro"}
+            {isSubmitting ? "Registrando..." : reviewButtonLabel}
           </button>
         </div>
       </aside>

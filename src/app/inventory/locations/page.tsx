@@ -13,6 +13,9 @@ import { safeDecodeURIComponent } from "@/lib/url";
 
 export const dynamic = "force-dynamic";
 
+const APP_ID = "nexo";
+
+
 type SiteCode = "CP" | "SAU" | "VCF" | "VGR";
 
 type SiteOption = {
@@ -38,6 +41,45 @@ type AreaOption = {
   siteId: string;
   label: string;
   code: string;
+};
+
+type LocOperationalFlags = {
+  inventoryRealEnabled: boolean;
+  remissionsPostingEnabled: boolean;
+  productionConsumptionEnabled: boolean;
+  manualWithdrawEnabled: boolean;
+};
+
+type RuntimeSettingRow = {
+  setting_key: string | null;
+  bool_value: boolean | null;
+};
+
+const LOC_OPERATIONAL_SETTING_DEFINITIONS = [
+  {
+    key: "inventoryRealEnabled",
+    suffix: "inventory_real_enabled",
+  },
+  {
+    key: "remissionsPostingEnabled",
+    suffix: "remissions_posting_enabled",
+  },
+  {
+    key: "productionConsumptionEnabled",
+    suffix: "production_consumption_enabled",
+  },
+  {
+    key: "manualWithdrawEnabled",
+    suffix: "manual_withdraw_enabled",
+  },
+] as const;
+
+const DEFAULT_LOC_OPERATIONAL_FLAGS: LocOperationalFlags = {
+  inventoryRealEnabled: false,
+  remissionsPostingEnabled: false,
+  productionConsumptionEnabled: false,
+  // Mantiene el comportamiento actual: mientras no se configure, el retiro manual sigue visible/permitido.
+  manualWithdrawEnabled: true,
 };
 
 function siteCodeFromName(name: string): SiteCode | null {
@@ -86,6 +128,57 @@ function suggestLocationDescription(loc: Pick<LocationRow, "zone" | "aisle" | "l
   return suggested || String(loc.code ?? "").trim() || "Ubicación";
 }
 
+function buildLocOperationalFlagsMap(
+  locIds: string[],
+  settingRows: RuntimeSettingRow[],
+): Map<string, LocOperationalFlags> {
+  const flagsByLoc = new Map<string, LocOperationalFlags>();
+  const locIdSet = new Set(locIds);
+  const suffixToField = new Map(
+    LOC_OPERATIONAL_SETTING_DEFINITIONS.map((definition) => [
+      definition.suffix,
+      definition.key,
+    ]),
+  );
+
+  for (const locId of locIds) {
+    flagsByLoc.set(locId, { ...DEFAULT_LOC_OPERATIONAL_FLAGS });
+  }
+
+  for (const row of settingRows) {
+    const settingKey = String(row.setting_key ?? "").trim();
+    if (!settingKey.startsWith("locations.")) continue;
+
+    const matchedDefinition = LOC_OPERATIONAL_SETTING_DEFINITIONS.find((definition) =>
+      settingKey.endsWith(`.${definition.suffix}`),
+    );
+    if (!matchedDefinition) continue;
+
+    const locId = settingKey
+      .slice("locations.".length, -`.${matchedDefinition.suffix}`.length)
+      .trim();
+    if (!locIdSet.has(locId)) continue;
+
+    const field = suffixToField.get(matchedDefinition.suffix);
+    if (!field || typeof row.bool_value !== "boolean") continue;
+
+    const current = flagsByLoc.get(locId) ?? { ...DEFAULT_LOC_OPERATIONAL_FLAGS };
+    flagsByLoc.set(locId, {
+      ...current,
+      [field]: row.bool_value,
+    });
+  }
+
+  return flagsByLoc;
+}
+
+function getLocOperationalFlags(
+  flagsByLoc: Map<string, LocOperationalFlags>,
+  locId: string,
+): LocOperationalFlags {
+  return flagsByLoc.get(locId) ?? { ...DEFAULT_LOC_OPERATIONAL_FLAGS };
+}
+
 export default async function InventoryLocationsPage({
   searchParams,
 }: {
@@ -113,7 +206,7 @@ export default async function InventoryLocationsPage({
 
   const returnTo = "/inventory/locations";
   const { supabase, user } = await requireAppAccess({
-    appId: "nexo",
+    appId: APP_ID,
     returnTo,
     permissionCode: "inventory.locations",
   });
@@ -536,6 +629,30 @@ export default async function InventoryLocationsPage({
 
   const { data: locations, error } = await locationsQuery;
   const locationRows = (locations ?? []) as LocationRow[];
+  const locationIds = locationRows.map((loc) => loc.id).filter(Boolean);
+  const { data: locOperationalSettingsRaw } = locationIds.length
+    ? await supabase
+      .from("app_runtime_settings")
+      .select("setting_key,bool_value")
+      .eq("app_id", APP_ID)
+      .like("setting_key", "locations.%")
+    : { data: [] as RuntimeSettingRow[] };
+  const locOperationalFlagsById = buildLocOperationalFlagsMap(
+    locationIds,
+    (locOperationalSettingsRaw ?? []) as RuntimeSettingRow[],
+  );
+  const inventoryRealActiveCount = locationRows.filter((loc) =>
+    getLocOperationalFlags(locOperationalFlagsById, loc.id).inventoryRealEnabled,
+  ).length;
+  const remissionsPostingActiveCount = locationRows.filter((loc) =>
+    getLocOperationalFlags(locOperationalFlagsById, loc.id).remissionsPostingEnabled,
+  ).length;
+  const productionConsumptionActiveCount = locationRows.filter((loc) =>
+    getLocOperationalFlags(locOperationalFlagsById, loc.id).productionConsumptionEnabled,
+  ).length;
+  const manualWithdrawActiveCount = locationRows.filter((loc) =>
+    getLocOperationalFlags(locOperationalFlagsById, loc.id).manualWithdrawEnabled,
+  ).length;
   const areaLabelById = new Map(areaOptions.map((area) => [area.id, area.label]));
 
   const editingLoc = editId ? locationRows.find((l) => l.id === editId) ?? null : null;
@@ -572,6 +689,12 @@ export default async function InventoryLocationsPage({
               <span className="rounded-full border border-slate-200 bg-white/80 px-3 py-1 text-xs font-semibold text-slate-700">
                 {locationRows.length} áreas visibles
               </span>
+              <span className="rounded-full border border-emerald-200 bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-900">
+                {inventoryRealActiveCount} inventario real
+              </span>
+              <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-xs font-semibold text-sky-900">
+                {remissionsPostingActiveCount} remisiones activas
+              </span>
             </div>
             <div className="flex flex-wrap gap-2">
               {isEditingLoc ? (
@@ -596,9 +719,11 @@ export default async function InventoryLocationsPage({
               <div className="ui-remission-kpi-note">Disponibles para crear o filtrar ubicaciones</div>
             </article>
             <article className="ui-remission-kpi" data-tone="success">
-              <div className="ui-remission-kpi-label">Acción</div>
-              <div className="ui-remission-kpi-value">{isEditingLoc ? "Editar" : "Crear"}</div>
-              <div className="ui-remission-kpi-note">Una sola tarea visible segun el modo actual</div>
+              <div className="ui-remission-kpi-label">Operación real</div>
+              <div className="ui-remission-kpi-value">{inventoryRealActiveCount}</div>
+              <div className="ui-remission-kpi-note">
+                {remissionsPostingActiveCount} remisiones · {productionConsumptionActiveCount} producción · {manualWithdrawActiveCount} retiro manual
+              </div>
             </article>
           </div>
         </div>
@@ -715,6 +840,45 @@ export default async function InventoryLocationsPage({
         </div>
       ) : null}
 
+      <div className="ui-panel ui-remission-section ui-fade-up ui-delay-3 space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <div className="ui-h3">Estado operativo por LOC</div>
+            <div className="mt-1 ui-body-muted">
+              Configuración visual para activar inventario real por etapas. El detalle de cada área permite cambiar estas banderas.
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <span className="ui-chip ui-chip--success">{inventoryRealActiveCount} con inventario real</span>
+            <span className="ui-chip ui-chip--brand">{remissionsPostingActiveCount} descuentan remisiones</span>
+            <span className="ui-chip">{productionConsumptionActiveCount} producción</span>
+            <span className="ui-chip">{manualWithdrawActiveCount} retiro manual</span>
+          </div>
+        </div>
+        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+            <div className="text-xs font-bold uppercase tracking-[0.08em] text-slate-500">Modo operativo</div>
+            <div className="mt-2 text-2xl font-semibold text-slate-900">{locationRows.length - inventoryRealActiveCount}</div>
+            <div className="mt-1 text-xs text-slate-600">Áreas sin descuento real todavía</div>
+          </div>
+          <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4">
+            <div className="text-xs font-bold uppercase tracking-[0.08em] text-emerald-700">Inventario real</div>
+            <div className="mt-2 text-2xl font-semibold text-emerald-950">{inventoryRealActiveCount}</div>
+            <div className="mt-1 text-xs text-emerald-800">Candidatas a movimientos reales</div>
+          </div>
+          <div className="rounded-2xl border border-sky-200 bg-sky-50 p-4">
+            <div className="text-xs font-bold uppercase tracking-[0.08em] text-sky-700">Remisiones</div>
+            <div className="mt-2 text-2xl font-semibold text-sky-950">{remissionsPostingActiveCount}</div>
+            <div className="mt-1 text-xs text-sky-800">LOCs que podrán descontar al despachar</div>
+          </div>
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+            <div className="text-xs font-bold uppercase tracking-[0.08em] text-amber-700">Producción</div>
+            <div className="mt-2 text-2xl font-semibold text-amber-950">{productionConsumptionActiveCount}</div>
+            <div className="mt-1 text-xs text-amber-800">LOCs habilitados para consumo FOGO</div>
+          </div>
+        </div>
+      </div>
+
       <div className="ui-panel ui-remission-section ui-fade-up ui-delay-3">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
@@ -786,10 +950,11 @@ export default async function InventoryLocationsPage({
         </details>
 
         <div className="mt-4 overflow-x-auto rounded-2xl border border-[var(--ui-border)] bg-white">
-          <Table className="min-w-[900px] table-auto [&_td]:px-4 [&_td]:py-4 [&_th]:px-4 [&_th]:py-3">
+          <Table className="min-w-[1120px] table-auto [&_td]:px-4 [&_td]:py-4 [&_th]:px-4 [&_th]:py-3">
             <thead className="bg-[var(--ui-bg-soft)]">
               <tr>
                 <TableHeaderCell>Nombre</TableHeaderCell>
+                <TableHeaderCell>Modo operativo</TableHeaderCell>
                 <TableHeaderCell>Area madre</TableHeaderCell>
                 <TableHeaderCell>Codigo</TableHeaderCell>
                 <TableHeaderCell>Zona</TableHeaderCell>
@@ -799,7 +964,9 @@ export default async function InventoryLocationsPage({
               </tr>
             </thead>
             <tbody className="divide-y divide-[var(--ui-border)]">
-              {locationRows.map((loc) => (
+              {locationRows.map((loc) => {
+                const operationalFlags = getLocOperationalFlags(locOperationalFlagsById, loc.id);
+                return (
                 <tr key={loc.id} className="ui-body transition hover:bg-[var(--ui-bg-soft)]/60">
                   <TableCell>
                     <div className="min-w-0 space-y-1.5">
@@ -814,6 +981,46 @@ export default async function InventoryLocationsPage({
                           Sugerido: {suggestLocationDescription(loc)}
                         </div>
                       ) : null}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex max-w-[260px] flex-wrap gap-1.5">
+                      <span
+                        className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                          operationalFlags.inventoryRealEnabled
+                            ? "border-emerald-200 bg-emerald-50 text-emerald-900"
+                            : "border-slate-200 bg-slate-50 text-slate-700"
+                        }`}
+                      >
+                        {operationalFlags.inventoryRealEnabled ? "Inventario real" : "Modo operativo"}
+                      </span>
+                      <span
+                        className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                          operationalFlags.remissionsPostingEnabled
+                            ? "border-sky-200 bg-sky-50 text-sky-900"
+                            : "border-slate-200 bg-white text-slate-500"
+                        }`}
+                      >
+                        {operationalFlags.remissionsPostingEnabled ? "Remisiones ON" : "Remisiones OFF"}
+                      </span>
+                      <span
+                        className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                          operationalFlags.productionConsumptionEnabled
+                            ? "border-amber-200 bg-amber-50 text-amber-900"
+                            : "border-slate-200 bg-white text-slate-500"
+                        }`}
+                      >
+                        {operationalFlags.productionConsumptionEnabled ? "Producción ON" : "Producción OFF"}
+                      </span>
+                      <span
+                        className={`rounded-full border px-2.5 py-1 text-[11px] font-semibold ${
+                          operationalFlags.manualWithdrawEnabled
+                            ? "border-cyan-200 bg-cyan-50 text-cyan-900"
+                            : "border-rose-200 bg-rose-50 text-rose-900"
+                        }`}
+                      >
+                        {operationalFlags.manualWithdrawEnabled ? "Retiro permitido" : "Retiro pausado"}
+                      </span>
                     </div>
                   </TableCell>
                   <TableCell>
@@ -863,11 +1070,12 @@ export default async function InventoryLocationsPage({
                     </TableCell>
                   ) : null}
                 </tr>
-              ))}
+                );
+              })}
 
               {!error && (!locations || locations.length === 0) ? (
                 <tr>
-                  <TableCell className="ui-empty" colSpan={canEditLoc || canDeleteLoc ? 7 : 6}>
+                  <TableCell className="ui-empty" colSpan={canEditLoc || canDeleteLoc ? 8 : 7}>
                     No hay áreas para mostrar (o RLS no te permite verlas).
                   </TableCell>
                 </tr>
