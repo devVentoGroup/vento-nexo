@@ -1467,24 +1467,66 @@ export default async function RemissionDetailPage({
                 }
 
                 return [...groupsByProduct.entries()].map(([productId, groupItems]) => {
-                  const first = groupItems[0];
+                  const first = groupItems[0]!;
                   const productName = first?.product?.name ?? productId;
-                  const unitLabel = formatUnitLabel(
-                    first.stock_unit_code ?? first.unit ?? first.product?.unit ?? ""
-                  );
+                  const buildReceiveDisplay = (it: RestockItemRow, baseQty: number) => {
+                    const stockUnitLabel = formatUnitLabel(
+                      it.stock_unit_code ?? it.unit ?? it.product?.stock_unit_code ?? it.product?.unit ?? ""
+                    );
+                    const measurementMode = getItemMeasurementMode(it);
+                    const inputQty = roundQuantity(Number(it.input_qty ?? 0));
+                    const requestedQty = roundQuantity(Number(it.quantity ?? 0));
+                    const inputUomProfileId = cleanLabel(
+                      (it as { input_uom_profile_id?: string | null }).input_uom_profile_id
+                    );
+                    const inputUomProfile = inputUomProfileId
+                      ? inputUomProfileById.get(inputUomProfileId) ?? null
+                      : null;
+                    const inputUnitCode = cleanLabel(
+                      (it as { input_unit_code?: string | null }).input_unit_code ??
+                        inputUomProfile?.input_unit_code ??
+                        ""
+                    );
+                    const presentationLabel = buildPresentationDisplay({
+                      inputUomProfile,
+                      inputUnitCode,
+                      stockUnitLabel,
+                    });
+                    const productType = cleanLabel(
+                      (it as { product_type?: string | null }).product_type ??
+                        (it.product as { product_type?: string | null } | null)?.product_type
+                    );
+                    const inventoryKind = cleanLabel((it as { inventory_kind?: string | null }).inventory_kind);
+                    const forceUnitOperationalQty = isSellableUnitProduct({
+                      productType,
+                      inventoryKind,
+                      stockUnitCode: it.stock_unit_code ?? it.unit ?? it.product?.stock_unit_code ?? it.product?.unit,
+                    });
+                    const usePresentationQty = shouldUsePresentationOperationalQty({
+                      measurementMode,
+                      inputQty,
+                      requestedQty,
+                      forceBaseUnit: forceUnitOperationalQty,
+                    });
+                    const displayQty = usePresentationQty
+                      ? convertBaseQtyToPresentationQty({ baseQty, requestedQty, inputQty })
+                      : roundQuantity(Number(baseQty ?? 0));
+                    const unitLabel = usePresentationQty
+                      ? buildOperationalPresentationLabel({
+                          presentationLabel,
+                          stockUnitLabel,
+                          quantity: displayQty,
+                        })
+                      : formatUnitLabelForQty(stockUnitLabel, displayQty);
 
-                  const shippedQtyTotal = groupItems.reduce((acc, it) => {
-                    const shipped = roundQuantity(Number(it.shipped_quantity ?? 0));
-                    return acc + shipped;
-                  }, 0);
-
-                  const pendingQtyTotal = groupItems.reduce((acc, it) => {
-                    const shipped = roundQuantity(Number(it.shipped_quantity ?? 0));
-                    const received = roundQuantity(Number(it.received_quantity ?? 0));
-                    const shortage = roundQuantity(Number(it.shortage_quantity ?? 0));
-                    const pending = roundQuantity(Math.max(shipped - received - shortage, 0));
-                    return acc + pending;
-                  }, 0);
+                    return {
+                      displayQty,
+                      unitLabel,
+                      usePresentationQty,
+                      presentationLabel,
+                      stockUnitLabel,
+                    };
+                  };
 
                   const itemIds = groupItems.map((it) => it.id);
                   const itemPendingQtys = groupItems.map((it) => {
@@ -1494,6 +1536,28 @@ export default async function RemissionDetailPage({
                     return roundQuantity(Math.max(shipped - received - shortage, 0));
                   });
 
+                  const itemDisplayPendingQtys = groupItems.map((it, index) =>
+                    buildReceiveDisplay(it, itemPendingQtys[index] ?? 0).displayQty
+                  );
+
+                  const shippedQtyTotal = groupItems.reduce((acc, it) => {
+                    const shipped = roundQuantity(Number(it.shipped_quantity ?? 0));
+                    return roundQuantity(acc + buildReceiveDisplay(it, shipped).displayQty);
+                  }, 0);
+
+                  const pendingQtyTotal = itemDisplayPendingQtys.reduce(
+                    (acc, qty) => roundQuantity(acc + Number(qty ?? 0)),
+                    0
+                  );
+
+                  const firstDisplayMeta = buildReceiveDisplay(first, itemPendingQtys[0] ?? 0);
+                  const displayUnitLabel = firstDisplayMeta.usePresentationQty
+                    ? buildOperationalPresentationLabel({
+                        presentationLabel: firstDisplayMeta.presentationLabel,
+                        stockUnitLabel: firstDisplayMeta.stockUnitLabel,
+                        quantity: pendingQtyTotal,
+                      })
+                    : formatUnitLabelForQty(firstDisplayMeta.stockUnitLabel, pendingQtyTotal);
 
                   return (
                     <ReceiveBatchCompactProductLine
@@ -1501,8 +1565,9 @@ export default async function RemissionDetailPage({
                       productId={productId}
                       itemIds={itemIds}
                       itemPendingQtys={itemPendingQtys}
+                      itemDisplayPendingQtys={itemDisplayPendingQtys}
                       productName={productName}
-                      unitLabel={formatUnitLabelForQty(unitLabel, pendingQtyTotal)}
+                      unitLabel={displayUnitLabel}
                       shippedQtyTotal={shippedQtyTotal}
                       pendingQtyTotal={pendingQtyTotal}
                     />

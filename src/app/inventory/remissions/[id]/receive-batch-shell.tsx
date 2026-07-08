@@ -148,6 +148,10 @@ function receiveQuantityFieldLabel(policy: ReceiveBatchMeasurementPolicy): strin
   return "Recibir";
 }
 
+function roundReceiveQty(value: number) {
+  return Math.round((Number(value) + Number.EPSILON) * 1000) / 1000;
+}
+
 function parseInputNumber(value: string): number | null {
   const raw = String(value ?? "").trim().replace(",", ".");
   if (!raw) return null;
@@ -440,6 +444,7 @@ export function ReceiveBatchCompactLine({
       productId={itemId}
       itemIds={[itemId]}
       itemPendingQtys={[remainingQty]}
+      itemDisplayPendingQtys={[remainingQty]}
       productName={productName}
       unitLabel={unitLabel}
       shippedQtyTotal={shippedQty}
@@ -451,7 +456,10 @@ export function ReceiveBatchCompactLine({
 type ReceiveBatchCompactProductLineProps = {
   productId: string;
   itemIds: string[];
+  /** Cantidades pendientes en unidad base; estas son las que se envian al servidor. */
   itemPendingQtys: number[];
+  /** Cantidades pendientes en unidad operativa visible: presentacion fisica o unidad base segun producto. */
+  itemDisplayPendingQtys?: number[];
   productName: string;
   unitLabel: string;
   shippedQtyTotal: number;
@@ -462,6 +470,7 @@ export function ReceiveBatchCompactProductLine({
   productId: _productId,
   itemIds,
   itemPendingQtys,
+  itemDisplayPendingQtys,
   productName,
   unitLabel,
   shippedQtyTotal,
@@ -481,6 +490,10 @@ export function ReceiveBatchCompactProductLine({
 
   const allSelected = itemIds.length > 0 && itemIds.every((id) => selected.has(id));
   const anySelected = itemIds.some((id) => selected.has(id));
+  const displayPendingQtys = itemIds.map((_, index) => {
+    const displayPending = Number(itemDisplayPendingQtys?.[index] ?? itemPendingQtys[index] ?? 0);
+    return Number.isFinite(displayPending) ? displayPending : 0;
+  });
   const [partialTotalInput, setPartialTotalInput] = useState<string>("");
   const productPackageTrace: ReceiveBatchPackageTrace[] = itemIds.flatMap((itemId) =>
     (packageTraceByItemId[itemId] ?? []).map((trace): ReceiveBatchPackageTrace => ({
@@ -521,17 +534,22 @@ export function ReceiveBatchCompactProductLine({
       return;
     }
 
-    let remaining = Math.min(manualTotal, pendingQtyTotal);
+    let remainingDisplay = Math.min(manualTotal, pendingQtyTotal);
 
     for (let i = 0; i < itemIds.length; i += 1) {
       const id = itemIds[i];
-      const linePending = itemPendingQtys[i] ?? 0;
-      const alloc = Math.max(0, Math.min(linePending, remaining));
+      const lineBasePending = Number(itemPendingQtys[i] ?? 0);
+      const lineDisplayPending = Number(displayPendingQtys[i] ?? lineBasePending);
+      const displayAlloc = Math.max(0, Math.min(lineDisplayPending, remainingDisplay));
+      const baseAlloc =
+        lineDisplayPending > 0
+          ? roundReceiveQty((displayAlloc / lineDisplayPending) * lineBasePending)
+          : roundReceiveQty(displayAlloc);
 
-      setReceiveQty(id, String(alloc));
-      remaining -= alloc;
+      setReceiveQty(id, String(baseAlloc));
+      remainingDisplay -= displayAlloc;
 
-      if (remaining <= 0) {
+      if (remainingDisplay <= 0) {
         for (let j = i + 1; j < itemIds.length; j += 1) setReceiveQty(itemIds[j], "0");
         break;
       }
@@ -550,7 +568,7 @@ export function ReceiveBatchCompactProductLine({
       return;
     }
 
-    const totalPending = itemPendingQtys.reduce(
+    const totalPending = displayPendingQtys.reduce(
       (sum, qty) => sum + Math.max(0, Number(qty ?? 0)),
       0
     );
@@ -563,7 +581,7 @@ export function ReceiveBatchCompactProductLine({
     for (let i = 0; i < itemIds.length; i += 1) {
       const id = itemIds[i];
       const isLast = i === itemIds.length - 1;
-      const weight = Math.max(0, Number(itemPendingQtys[i] ?? 0)) / totalPending;
+      const weight = Math.max(0, Number(displayPendingQtys[i] ?? 0)) / totalPending;
       const alloc = isLast ? Math.max(0, manualTotal - assigned) : Number((manualTotal * weight).toFixed(3));
 
       setAuxCount(id, String(alloc));
