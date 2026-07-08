@@ -63,6 +63,55 @@ const APP_ID = "nexo";
 const REMISSIONS_INVENTORY_POSTING_SETTING_KEY =
   "remissions.inventory_posting_enabled";
 
+
+function formatRemissionQty(value: number | null | undefined) {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n)) return "-";
+  return new Intl.NumberFormat("es-CO", { maximumFractionDigits: 3 }).format(n);
+}
+
+function cleanLabel(value: string | null | undefined) {
+  return String(value ?? "").trim();
+}
+
+function buildPresentationDisplay(params: {
+  inputUomProfile: ProductUomProfile | null;
+  inputUnitCode?: string | null;
+  stockUnitLabel: string;
+}) {
+  const profileLabel = cleanLabel(params.inputUomProfile?.label);
+  if (profileLabel) return profileLabel;
+
+  const inputUnitLabel = formatUnitLabel(
+    params.inputUnitCode ?? params.inputUomProfile?.input_unit_code ?? ""
+  );
+  const qtyInStockUnit = roundQuantity(Number(params.inputUomProfile?.qty_in_stock_unit ?? 0));
+
+  if (qtyInStockUnit > 0) {
+    return `${inputUnitLabel || "Presentación"} x ${formatRemissionQty(qtyInStockUnit)} ${params.stockUnitLabel}`.trim();
+  }
+
+  return inputUnitLabel || "Presentación";
+}
+
+function buildRequestedDisplay(params: {
+  inputQty: number;
+  requestedQty: number;
+  presentationLabel: string;
+  stockUnitLabel: string;
+}) {
+  const inputQty = roundQuantity(Number(params.inputQty ?? 0));
+  const requestedQty = roundQuantity(Number(params.requestedQty ?? 0));
+  const presentationLabel = cleanLabel(params.presentationLabel);
+  const baseLabel = `${formatRemissionQty(requestedQty)} ${params.stockUnitLabel}`.trim();
+
+  if (inputQty > 0 && presentationLabel) {
+    return `${formatRemissionQty(inputQty)} ${presentationLabel}${requestedQty > 0 ? ` (${baseLabel})` : ""}`.trim();
+  }
+
+  return baseLabel;
+}
+
 export default async function RemissionDetailPage({
   params,
   searchParams,
@@ -699,6 +748,31 @@ export default async function RemissionDetailPage({
         activeLineId,
         activeLineEvent,
       });
+      const inputQty = roundQuantity(Number(item.input_qty ?? 0));
+      const draftInputUomProfileId = cleanLabel(
+        (item as { input_uom_profile_id?: string | null }).input_uom_profile_id
+      );
+      const draftInputUomProfile = draftInputUomProfileId
+        ? inputUomProfileById.get(draftInputUomProfileId) ?? null
+        : null;
+      const inputUnitCode = cleanLabel(
+        (item as { input_unit_code?: string | null }).input_unit_code ?? draftInputUomProfile?.input_unit_code ?? ""
+      );
+      const presentationLabel = buildPresentationDisplay({
+        inputUomProfile: draftInputUomProfile,
+        inputUnitCode,
+        stockUnitLabel: vm.itemUnitLabel,
+      });
+      const requestedDisplayLabel = buildRequestedDisplay({
+        inputQty,
+        requestedQty,
+        presentationLabel,
+        stockUnitLabel: vm.itemUnitLabel,
+      });
+      const requestedBaseLabel =
+        inputQty > 0 && presentationLabel
+          ? `${formatRemissionQty(requestedQty)} ${vm.itemUnitLabel}`.trim()
+          : "";
       return {
         id: item.id,
         baseItemId: item.id,
@@ -707,8 +781,11 @@ export default async function RemissionDetailPage({
         measurementMode: getItemMeasurementMode(item),
         requestedQty,
         unitLabel: vm.itemUnitLabel,
-        inputQty: roundQuantity(Number(item.input_qty ?? 0)),
-        presentationQty: roundQuantity(Number(item.input_qty ?? 0)),
+        requestedDisplayLabel,
+        requestedBaseLabel,
+        presentationLabel,
+        inputQty,
+        presentationQty: inputQty,
         inputUomProfileId:
           requiresPackageDispatch
             ? null

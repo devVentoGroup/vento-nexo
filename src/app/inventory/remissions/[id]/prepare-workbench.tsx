@@ -48,6 +48,12 @@ type DraftLine = {
   productName: string;
   requestedQty: number;
   unitLabel: string;
+  /** Texto operativo principal: ej. 6 Bolsa 1.100 ml (6.600 ml). */
+  requestedDisplayLabel?: string;
+  /** Texto base opcional cuando se quiere mostrar la conversión aparte. */
+  requestedBaseLabel?: string;
+  /** Presentación física: ej. Bolsa 1.100 ml, Paquete x 6 bolsas. */
+  presentationLabel?: string;
   measurementMode?: MeasurementMode | string | null;
   measurement_mode?: MeasurementMode | string | null;
   /**
@@ -157,6 +163,33 @@ function lineUsesActualQuantity(line: DraftLine): boolean {
   return getLineMeasurementMode(line) !== "fixed_presentation";
 }
 
+function formatDisplayQty(value: number | null | undefined): string {
+  const n = Number(value ?? 0);
+  if (!Number.isFinite(n)) return "-";
+  return new Intl.NumberFormat("es-CO", { maximumFractionDigits: 3 }).format(n);
+}
+
+function getLineRequestedDisplayLabel(line: DraftLine): string {
+  const explicit = String(line.requestedDisplayLabel ?? "").trim();
+  if (explicit) return explicit;
+  return `${formatDisplayQty(line.requestedQty)} ${line.unitLabel}`.trim();
+}
+
+function getLineRequestedBaseLabel(line: DraftLine): string {
+  const explicit = String(line.requestedBaseLabel ?? "").trim();
+  if (explicit) return explicit;
+
+  const presentationQty = getRequestedPresentationQty(line);
+  const presentationLabel = String(line.presentationLabel ?? "").trim();
+  const requestedQty = roundQty(Number(line.requestedQty ?? 0));
+
+  if (presentationQty > 0 && presentationLabel && requestedQty > 0) {
+    return `${formatDisplayQty(requestedQty)} ${line.unitLabel}`.trim();
+  }
+
+  return "";
+}
+
 function getLineMeasurementLabel(
   line: DraftLine,
   inventoryPostingEnabled = true
@@ -166,7 +199,8 @@ function getLineMeasurementLabel(
   if (mode === "variable_weight") return "Peso real";
   if (mode === "count_with_weight") return "Conteo + peso real";
   if (mode === "bulk_volume") return "Cantidad real";
-  return "Presentación fija";
+  const presentationLabel = String(line.presentationLabel ?? "").trim();
+  return presentationLabel || "Presentación";
 }
 
 function getSelectedLocAvailable(line: DraftLine): number {
@@ -670,8 +704,13 @@ function RemissionPrepareReadonlySummary({
                 <div>
                   <div className="text-sm font-semibold text-[var(--ui-text)]">{line.productName}</div>
                   <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                    Solicitado: {line.requestedQty} {line.unitLabel}
+                    Solicitado: {getLineRequestedDisplayLabel(line)}
                   </div>
+                  {getLineRequestedBaseLabel(line) ? (
+                    <div className="mt-0.5 text-[11px] text-[var(--ui-muted)]/75">
+                      Base: {getLineRequestedBaseLabel(line)}
+                    </div>
+                  ) : null}
                   <div className="mt-1 inline-flex rounded-full border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--ui-muted)]">
                     {getLineMeasurementLabel(line, inventoryPostingEnabled)}
                   </div>
@@ -931,8 +970,13 @@ function RemissionPrepareWorkbenchInteractive({
                 <div>
                   <div className="text-sm font-semibold text-[var(--ui-text)]">{line.productName}</div>
                   <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                    Solicitado: {line.requestedQty} {line.unitLabel}
+                    Solicitado: {getLineRequestedDisplayLabel(line)}
                   </div>
+                  {getLineRequestedBaseLabel(line) ? (
+                    <div className="mt-0.5 text-[11px] text-[var(--ui-muted)]/75">
+                      Base: {getLineRequestedBaseLabel(line)}
+                    </div>
+                  ) : null}
                   <div className="mt-1 inline-flex rounded-full border border-[var(--ui-border)] bg-[var(--ui-bg-soft)] px-2 py-0.5 text-[11px] font-semibold text-[var(--ui-muted)]">
                     {getLineMeasurementLabel(line, inventoryPostingEnabled)}
                   </div>
