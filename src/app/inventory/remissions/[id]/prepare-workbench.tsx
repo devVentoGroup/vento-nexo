@@ -415,15 +415,22 @@ function isGenericPresentationLabel(label: string, stockUnitLabel: string): bool
   return new Set(["un", "und", "uds", "u", "unidad", "unidades", "presentacion fija"]).has(normalized);
 }
 
+function isUnitLabel(value: unknown): boolean {
+  const normalized = normalizeLabelForComparison(value);
+  return ["un", "u", "unit", "units", "unidad", "unidades"].includes(normalized);
+}
+
 function isSellableUnitProduct(line: DraftLine): boolean {
   const productType = normalizeLabelForComparison(line.productType);
   const inventoryKind = normalizeLabelForComparison(line.inventoryKind);
 
+  // Regla operativa: reventa NO se fuerza a unidad porque puede tener presentación física.
+  if (inventoryKind === "resale") return false;
+
   return (
     Boolean(line.forceUnitOperationalQty) ||
     productType === "venta" ||
-    inventoryKind === "finished" ||
-    inventoryKind === "resale"
+    (productType === "preparacion" && inventoryKind === "finished" && isUnitLabel(line.unitLabel))
   );
 }
 

@@ -130,17 +130,25 @@ function isGenericPresentationLabel(label: string, stockUnitLabel: string): bool
   return new Set(["un", "und", "uds", "u", "unidad", "unidades", "presentacion fija"]).has(normalized);
 }
 
+function isUnitCode(value: unknown): boolean {
+  const normalized = normalizeLabelForComparison(value);
+  return ["un", "u", "unit", "units", "unidad", "unidades"].includes(normalized);
+}
+
 function isSellableUnitProduct(params: {
   productType?: unknown;
   inventoryKind?: unknown;
+  stockUnitCode?: unknown;
 }) {
   const productType = normalizeLabelForComparison(params.productType);
   const inventoryKind = normalizeLabelForComparison(params.inventoryKind);
 
+  // Regla operativa: reventa NO se fuerza a unidad porque puede tener presentación física.
+  if (inventoryKind === "resale") return false;
+
   return (
     productType === "venta" ||
-    inventoryKind === "finished" ||
-    inventoryKind === "resale"
+    (productType === "preparacion" && inventoryKind === "finished" && isUnitCode(params.stockUnitCode))
   );
 }
 
@@ -905,7 +913,7 @@ export default async function RemissionDetailPage({
         (item.product as { product_type?: string | null } | null)?.product_type
       );
       const inventoryKind = cleanLabel((item as { inventory_kind?: string | null }).inventory_kind);
-      const forceUnitOperationalQty = isSellableUnitProduct({ productType, inventoryKind });
+      const forceUnitOperationalQty = isSellableUnitProduct({ productType, inventoryKind, stockUnitCode: item.stock_unit_code ?? item.unit ?? item.product?.stock_unit_code ?? item.product?.unit });
       const requestedDisplayLabel = forceUnitOperationalQty
         ? `${formatRemissionQty(requestedQty)} ${vm.itemUnitLabel}`.trim()
         : buildRequestedDisplay({
@@ -1054,7 +1062,7 @@ export default async function RemissionDetailPage({
         (item.product as { product_type?: string | null } | null)?.product_type
       );
       const inventoryKind = cleanLabel((item as { inventory_kind?: string | null }).inventory_kind);
-      const forceUnitOperationalQty = isSellableUnitProduct({ productType, inventoryKind });
+      const forceUnitOperationalQty = isSellableUnitProduct({ productType, inventoryKind, stockUnitCode: item.stock_unit_code ?? item.unit ?? item.product?.stock_unit_code ?? item.product?.unit });
       const usePresentationQty = shouldUsePresentationOperationalQty({
         measurementMode,
         inputQty,
