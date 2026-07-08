@@ -347,6 +347,25 @@ function parseQty(value: string, fallback = 0) {
   return Number.isFinite(n) ? roundQty(n) : fallback;
 }
 
+function sanitizeQtyInput(value: string): string {
+  const normalized = value.replace(/,/g, ".").replace(/[^0-9.]/g, "");
+  const [head, ...tail] = normalized.split(".");
+  if (!tail.length) return head;
+  return `${head}.${tail.join("")}`;
+}
+
+function parseOptionalQtyInput(value: string): number | null {
+  const raw = value.trim();
+  if (!raw || raw === ".") return null;
+  const n = Number(raw);
+  return Number.isFinite(n) ? roundQty(n) : null;
+}
+
+function formatQtyInput(value: number): string {
+  if (!Number.isFinite(value)) return "";
+  return String(roundQty(value));
+}
+
 function getLineUomProfileId(line: DraftLine): string {
   return String(line.inputUomProfileId ?? line.uomProfileId ?? "").trim();
 }
@@ -717,6 +736,8 @@ function RemissionPrepareWorkbenchInteractive({
   const [splitDrafts, setSplitDrafts] = useState<SplitDraft[]>([]);
   const [splitTargetId, setSplitTargetId] = useState<string>("");
   const [splitQtyInput, setSplitQtyInput] = useState<string>("");
+  const [editingDispatchLineId, setEditingDispatchLineId] = useState<string | null>(null);
+  const [dispatchQtyDraft, setDispatchQtyDraft] = useState<string>("");
 
   const splitTarget = useMemo(
     () => lines.find((line) => line.id === splitTargetId) ?? null,
@@ -772,6 +793,27 @@ function RemissionPrepareWorkbenchInteractive({
         ? applySmartAllocation(patched, true)
         : patched.map((line) => normalizeOperationalLine(line, false));
     });
+  };
+
+  const startDispatchQtyEdit = (line: DraftLine) => {
+    setEditingDispatchLineId(line.id);
+    const currentQty = roundQty(Number(line.dispatchQty ?? 0));
+    setDispatchQtyDraft(currentQty === 0 ? "" : formatQtyInput(currentQty));
+  };
+
+  const changeDispatchQtyInput = (line: DraftLine, rawValue: string) => {
+    const nextValue = sanitizeQtyInput(rawValue);
+    setDispatchQtyDraft(nextValue);
+
+    const parsedQty = parseOptionalQtyInput(nextValue);
+    updateLine(line.id, {
+      dispatchQty: parsedQty ?? 0,
+    });
+  };
+
+  const finishDispatchQtyEdit = () => {
+    setEditingDispatchLineId(null);
+    setDispatchQtyDraft("");
   };
 
   const openSplit = (lineId: string, overrideSuggestedQty?: number) => {
@@ -1011,17 +1053,22 @@ function RemissionPrepareWorkbenchInteractive({
 
                 <div>
                   <input
-                    type="number"
-                    min={0}
-                    step="any"
-                    max={Number.isFinite(dispatchMax) ? dispatchMax : undefined}
-                    value={line.dispatchQty}
-                    disabled={inventoryPostingEnabled && lineRequiresPackageDispatch(line)}
-                    onChange={(e) =>
-                      updateLine(line.id, {
-                        dispatchQty: parseQty(e.target.value, 0),
-                      })
+                    type="text"
+                    inputMode="decimal"
+                    pattern="[0-9]*[.,]?[0-9]*"
+                    value={
+                      editingDispatchLineId === line.id
+                        ? dispatchQtyDraft
+                        : formatQtyInput(line.dispatchQty)
                     }
+                    disabled={inventoryPostingEnabled && lineRequiresPackageDispatch(line)}
+                    onFocus={(event) => {
+                      startDispatchQtyEdit(line);
+                      event.currentTarget.select();
+                    }}
+                    onChange={(event) => changeDispatchQtyInput(line, event.target.value)}
+                    onBlur={finishDispatchQtyEdit}
+                    placeholder="0"
                     className="ui-input h-10 w-full disabled:cursor-not-allowed disabled:bg-slate-100 disabled:text-slate-600"
                   />
                   {inventoryPostingEnabled && lineRequiresPackageDispatch(line) ? (
