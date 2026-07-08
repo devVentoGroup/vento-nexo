@@ -80,18 +80,20 @@ function buildPresentationDisplay(params: {
   stockUnitLabel: string;
 }) {
   const profileLabel = cleanLabel(params.inputUomProfile?.label);
-  if (profileLabel) return profileLabel;
-
   const inputUnitLabel = formatUnitLabel(
     params.inputUnitCode ?? params.inputUomProfile?.input_unit_code ?? ""
   );
   const qtyInStockUnit = roundQuantity(Number(params.inputUomProfile?.qty_in_stock_unit ?? 0));
 
-  if (qtyInStockUnit > 0) {
+  if (profileLabel && (!isGenericPresentationLabel(profileLabel, params.stockUnitLabel) || qtyInStockUnit <= 1)) {
+    return profileLabel;
+  }
+
+  if (qtyInStockUnit > 1) {
     return `${inputUnitLabel || "Presentación"} x ${formatRemissionQty(qtyInStockUnit)} ${formatUnitLabelForQty(params.stockUnitLabel, qtyInStockUnit)}`.trim();
   }
 
-  return inputUnitLabel || "Presentación";
+  return profileLabel || inputUnitLabel || "Presentación";
 }
 
 function buildRequestedDisplay(params: {
@@ -162,13 +164,27 @@ function shouldUsePresentationOperationalQty(params: {
   inputQty: number;
   requestedQty: number;
   forceBaseUnit?: boolean;
+  presentationLabel?: string | null;
+  stockUnitLabel?: string | null;
 }) {
-  return (
-    !params.forceBaseUnit &&
-    normalizeMeasurementMode(params.measurementMode) === "fixed_presentation" &&
-    roundQuantity(Number(params.inputQty ?? 0)) > 0 &&
-    roundQuantity(Number(params.requestedQty ?? 0)) > 0
-  );
+  if (params.forceBaseUnit) return false;
+  if (normalizeMeasurementMode(params.measurementMode) !== "fixed_presentation") return false;
+
+  const inputQty = roundQuantity(Number(params.inputQty ?? 0));
+  const requestedQty = roundQuantity(Number(params.requestedQty ?? 0));
+  if (inputQty <= 0 || requestedQty <= 0) return false;
+
+  const basePerPresentation = requestedQty / inputQty;
+  const label = cleanLabel(params.presentationLabel);
+  const stockUnitLabel = cleanLabel(params.stockUnitLabel);
+
+  // Si la presentación seleccionada es realmente "Unidad" y convierte 1:1,
+  // no se debe mostrar como "presentación". Es unidad base operativa.
+  if (Math.abs(basePerPresentation - 1) <= 0.001 && isGenericPresentationLabel(label, stockUnitLabel)) {
+    return false;
+  }
+
+  return true;
 }
 
 function buildOperationalPresentationLabel(params: {
@@ -178,7 +194,7 @@ function buildOperationalPresentationLabel(params: {
 }) {
   const label = cleanLabel(params.presentationLabel);
   if (label && !isGenericPresentationLabel(label, params.stockUnitLabel)) return label;
-  return roundQuantity(Number(params.quantity ?? 0)) === 1 ? "presentación" : "presentaciones";
+  return roundQuantity(Number(params.quantity ?? 0)) === 1 ? "presentación física" : "presentaciones físicas";
 }
 
 function convertBaseQtyToPresentationQty(params: {
@@ -1073,6 +1089,8 @@ export default async function RemissionDetailPage({
         inputQty,
         requestedQty,
         forceBaseUnit: forceUnitOperationalQty,
+        presentationLabel,
+        stockUnitLabel,
       });
       const displayQty = usePresentationQty
         ? convertBaseQtyToPresentationQty({ baseQty: plannedQty, requestedQty, inputQty })
@@ -1507,6 +1525,8 @@ export default async function RemissionDetailPage({
                       inputQty,
                       requestedQty,
                       forceBaseUnit: forceUnitOperationalQty,
+                      presentationLabel,
+                      stockUnitLabel,
                     });
                     const displayQty = usePresentationQty
                       ? convertBaseQtyToPresentationQty({ baseQty, requestedQty, inputQty })

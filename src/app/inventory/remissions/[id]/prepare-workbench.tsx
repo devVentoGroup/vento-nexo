@@ -443,16 +443,29 @@ function lineUsesPresentationOperationalUnit(line: DraftLine): boolean {
   if (lineRequiresPackageDispatch(line)) return false;
   if (isSellableUnitProduct(line)) return false;
   if (getLineMeasurementMode(line) !== "fixed_presentation") return false;
+
   const requestedPresentationQty = getRequestedPresentationQty(line);
   const requestedBaseQty = roundQty(Number(line.requestedQty ?? 0));
-  return requestedPresentationQty > 0 && requestedBaseQty > 0;
+  if (requestedPresentationQty <= 0 || requestedBaseQty <= 0) return false;
+
+  const factor = requestedBaseQty / requestedPresentationQty;
+  const explicit = String(line.presentationLabel ?? "").trim();
+
+  // Una presentación "Unidad" con factor 1:1 no es una presentación operativa.
+  // Ejemplo: Papel Térmico pedido como 1.000 unidades debe verse como unidades,
+  // no como 1.000 presentaciones.
+  if (Math.abs(factor - 1) <= 0.001 && isGenericPresentationLabel(explicit, line.unitLabel)) {
+    return false;
+  }
+
+  return true;
 }
 
 function getPresentationUnitLabel(line: DraftLine, quantity?: number): string {
   const explicit = String(line.presentationLabel ?? "").trim();
   if (explicit && !isGenericPresentationLabel(explicit, line.unitLabel)) return explicit;
   const qty = roundQty(Number(quantity ?? getRequestedPresentationQty(line) ?? 0));
-  return qty === 1 ? "presentación" : "presentaciones";
+  return qty === 1 ? "presentación física" : "presentaciones físicas";
 }
 
 function getPresentationBaseFactor(line: DraftLine): number {
