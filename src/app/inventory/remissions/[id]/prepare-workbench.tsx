@@ -420,6 +420,11 @@ function isUnitLabel(value: unknown): boolean {
   return ["un", "u", "unit", "units", "unidad", "unidades"].includes(normalized);
 }
 
+function formatUnitLabelForQty(unitLabel: string, quantity: number): string {
+  if (!isUnitLabel(unitLabel)) return unitLabel;
+  return roundQty(Number(quantity ?? 0)) === 1 ? "Unidad" : "Unidades";
+}
+
 function isSellableUnitProduct(line: DraftLine): boolean {
   const productType = normalizeLabelForComparison(line.productType);
   const inventoryKind = normalizeLabelForComparison(line.inventoryKind);
@@ -483,11 +488,11 @@ function getDispatchQtyDisplayLabel(line: DraftLine): string {
     const baseQty = roundQty(Number(line.dispatchQty ?? 0));
     const factor = getPresentationBaseFactor(line);
     const baseSuffix = factor > 0 && Math.abs(factor - 1) > 0.001
-      ? ` · Base: ${formatDisplayQty(baseQty)} ${line.unitLabel}`
+      ? ` · Base: ${formatDisplayQty(baseQty)} ${formatUnitLabelForQty(line.unitLabel, baseQty)}`
       : "";
     return `${formatDisplayQty(presentationQty)} ${presentationLabel}${baseSuffix}`.trim();
   }
-  return `${formatDisplayQty(line.dispatchQty)} ${line.unitLabel}`.trim();
+  return `${formatDisplayQty(line.dispatchQty)} ${formatUnitLabelForQty(line.unitLabel, line.dispatchQty)}`.trim();
 }
 
 function getRequestedQtyDisplayLabel(line: DraftLine): string {
@@ -497,21 +502,21 @@ function getRequestedQtyDisplayLabel(line: DraftLine): string {
     const requestedQty = roundQty(Number(line.requestedQty ?? 0));
     const factor = getPresentationBaseFactor(line);
     const baseSuffix = factor > 0 && Math.abs(factor - 1) > 0.001
-      ? ` (${formatDisplayQty(requestedQty)} ${line.unitLabel})`
+      ? ` (${formatDisplayQty(requestedQty)} ${formatUnitLabelForQty(line.unitLabel, requestedQty)})`
       : "";
     return `${formatDisplayQty(presentationQty)} ${presentationLabel}${baseSuffix}`.trim();
   }
 
   const explicit = String(line.requestedDisplayLabel ?? "").trim();
   if (explicit) return explicit;
-  return `${formatDisplayQty(line.requestedQty)} ${line.unitLabel}`.trim();
+  return `${formatDisplayQty(line.requestedQty)} ${formatUnitLabelForQty(line.unitLabel, line.requestedQty)}`.trim();
 }
 
 function getRequestedBaseDisplayLabel(line: DraftLine): string {
   if (lineUsesPresentationOperationalUnit(line)) {
     const factor = getPresentationBaseFactor(line);
     if (factor > 0 && Math.abs(factor - 1) > 0.001) {
-      return `${formatDisplayQty(line.requestedQty)} ${line.unitLabel}`.trim();
+      return `${formatDisplayQty(line.requestedQty)} ${formatUnitLabelForQty(line.unitLabel, line.requestedQty)}`.trim();
     }
     return "";
   }
@@ -524,7 +529,7 @@ function getRequestedBaseDisplayLabel(line: DraftLine): string {
   const requestedQty = roundQty(Number(line.requestedQty ?? 0));
 
   if (presentationQty > 0 && presentationLabel && requestedQty > 0) {
-    return `${formatDisplayQty(requestedQty)} ${line.unitLabel}`.trim();
+    return `${formatDisplayQty(requestedQty)} ${formatUnitLabelForQty(line.unitLabel, requestedQty)}`.trim();
   }
 
   return "";
@@ -769,7 +774,7 @@ function ProductionPackagePlanSummary({
   return (
     <div className="rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs text-sky-950">
       <p className="font-semibold">
-        Empaques FOGO asignados · {packagePlanTotal(line)} {line.unitLabel}
+        Empaques FOGO asignados · {packagePlanTotal(line)} {formatUnitLabelForQty(line.unitLabel, packagePlanTotal(line))}
       </p>
       <ul className={compact ? "mt-1 space-y-1" : "mt-2 space-y-1.5"}>
         {plan.map((entry) => {
@@ -778,7 +783,7 @@ function ProductionPackagePlanSummary({
           return (
             <li key={`${entry.packageId}-${entry.dispatchQty}`} className="rounded-lg bg-white/80 px-2 py-1">
               <span className="font-semibold">{entry.fractional ? "Fracción" : "Completo"}:</span>{" "}
-              {entry.label || entry.packageId.slice(0, 8)} · {entry.dispatchQty} {entry.unitCode || line.unitLabel}
+              {entry.label || entry.packageId.slice(0, 8)} · {entry.dispatchQty} {formatUnitLabelForQty(entry.unitCode || line.unitLabel, entry.dispatchQty)}
               <span className="text-sky-900/75"> · {locationText}</span>
             </li>
           );
@@ -834,7 +839,7 @@ function RemissionPrepareReadonlySummary({
             : lineRequiresPackageDispatch(line)
               ? "Empaques reales del lote"
               : locEntry
-                ? `${locEntry.label} · ${locEntry.qty} ${line.unitLabel}`
+                ? `${locEntry.label} · ${locEntry.qty} ${formatUnitLabelForQty(line.unitLabel, locEntry.qty)}`
                 : (line.selectedLocId || "Sin ubicación").trim() || "Sin ubicación";
           return (
             <div key={line.id} className="border-t border-[var(--ui-border)] first:border-t-0">
@@ -1160,7 +1165,7 @@ function RemissionPrepareWorkbenchInteractive({
                         <ul className="mt-1 space-y-1">
                           {plan.map((entry) => (
                             <li key={entry.positionId}>
-                              {entry.label}: {entry.qty} {line.unitLabel}
+                              {entry.label}: {entry.qty} {formatUnitLabelForQty(line.unitLabel, entry.qty)}
                             </li>
                           ))}
                         </ul>
@@ -1192,7 +1197,7 @@ function RemissionPrepareWorkbenchInteractive({
                       </option>
                       {line.locOptions.map((loc) => (
                         <option key={loc.id} value={loc.id}>
-                          {loc.label} · {loc.qty} {line.unitLabel}
+                          {loc.label} · {loc.qty} {formatUnitLabelForQty(line.unitLabel, loc.qty)}
                         </option>
                       ))}
                     </select>
@@ -1211,7 +1216,7 @@ function RemissionPrepareWorkbenchInteractive({
                         className="mt-2 text-left text-sm font-semibold text-sky-900 underline-offset-4 transition hover:underline"
                       >
                         Distribución sugerida: {multilocPrimarySuggested} + {multilocSuggested}{" "}
-                        {line.unitLabel}
+                        {formatUnitLabelForQty(line.unitLabel, multilocSuggested)}
                       </button>
                     </div>
                   ) : null}
@@ -1270,7 +1275,7 @@ function RemissionPrepareWorkbenchInteractive({
                   ) : null}
                   {lineUsesActualQuantity(line) && overageQty > 0 ? (
                     <div className="mt-1 text-xs font-semibold text-sky-800">
-                      Diferencia real: +{overageQty} {line.unitLabel} frente a lo solicitado.
+                      Diferencia real: +{overageQty} {formatUnitLabelForQty(line.unitLabel, overageQty)} frente a lo solicitado.
                     </div>
                   ) : null}
                 </div>

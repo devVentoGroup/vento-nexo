@@ -88,7 +88,7 @@ function buildPresentationDisplay(params: {
   const qtyInStockUnit = roundQuantity(Number(params.inputUomProfile?.qty_in_stock_unit ?? 0));
 
   if (qtyInStockUnit > 0) {
-    return `${inputUnitLabel || "Presentación"} x ${formatRemissionQty(qtyInStockUnit)} ${params.stockUnitLabel}`.trim();
+    return `${inputUnitLabel || "Presentación"} x ${formatRemissionQty(qtyInStockUnit)} ${formatUnitLabelForQty(params.stockUnitLabel, qtyInStockUnit)}`.trim();
   }
 
   return inputUnitLabel || "Presentación";
@@ -103,7 +103,7 @@ function buildRequestedDisplay(params: {
   const inputQty = roundQuantity(Number(params.inputQty ?? 0));
   const requestedQty = roundQuantity(Number(params.requestedQty ?? 0));
   const presentationLabel = cleanLabel(params.presentationLabel);
-  const baseLabel = `${formatRemissionQty(requestedQty)} ${params.stockUnitLabel}`.trim();
+  const baseLabel = `${formatRemissionQty(requestedQty)} ${formatUnitLabelForQty(params.stockUnitLabel, requestedQty)}`.trim();
 
   if (inputQty > 0 && presentationLabel) {
     return `${formatRemissionQty(inputQty)} ${presentationLabel}${requestedQty > 0 ? ` (${baseLabel})` : ""}`.trim();
@@ -133,6 +133,11 @@ function isGenericPresentationLabel(label: string, stockUnitLabel: string): bool
 function isUnitCode(value: unknown): boolean {
   const normalized = normalizeLabelForComparison(value);
   return ["un", "u", "unit", "units", "unidad", "unidades"].includes(normalized);
+}
+
+function formatUnitLabelForQty(unitLabel: string, quantity: number): string {
+  if (!isUnitCode(unitLabel)) return unitLabel;
+  return roundQuantity(Number(quantity ?? 0)) === 1 ? "Unidad" : "Unidades";
 }
 
 function isSellableUnitProduct(params: {
@@ -198,7 +203,7 @@ function buildBaseReference(params: {
   const inputQty = roundQuantity(Number(params.inputQty ?? 0));
   const baseQty = roundQuantity(Number(params.baseQty ?? 0));
   if (requestedQty <= 0 || inputQty <= 0 || Math.abs(requestedQty - inputQty) <= 0.001) return "";
-  return `Base: ${formatRemissionQty(baseQty)} ${params.stockUnitLabel}`;
+  return `Base: ${formatRemissionQty(baseQty)} ${formatUnitLabelForQty(params.stockUnitLabel, baseQty)}`;
 }
 
 function normalizeOperationalText(value: unknown): string {
@@ -1078,7 +1083,7 @@ export default async function RemissionDetailPage({
           stockUnitLabel,
           quantity: displayQty,
         })
-        : stockUnitLabel;
+        : formatUnitLabelForQty(stockUnitLabel, displayQty);
       const baseReference = usePresentationQty
         ? buildBaseReference({
           baseQty: plannedQty,
@@ -1508,7 +1513,7 @@ export default async function RemissionDetailPage({
                               {productName}
                             </div>
                             <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                              Enviado: {shippedQtyTotal} {unitLabel} · Recibido acumulado: {receivedQtyTotal} {unitLabel} · Pendiente: {pendingQtyTotal} {unitLabel} · Faltante registrado: {shortageQtyTotal} {unitLabel}
+                              Enviado: {shippedQtyTotal} {formatUnitLabelForQty(unitLabel, shippedQtyTotal)} · Recibido acumulado: {receivedQtyTotal} {formatUnitLabelForQty(unitLabel, receivedQtyTotal)} · Pendiente: {pendingQtyTotal} {formatUnitLabelForQty(unitLabel, pendingQtyTotal)} · Faltante registrado: {shortageQtyTotal} {formatUnitLabelForQty(unitLabel, shortageQtyTotal)}
                             </div>
                           </div>
                           <div>
@@ -1529,7 +1534,7 @@ export default async function RemissionDetailPage({
                         itemIds={itemIds}
                         itemPendingQtys={itemPendingQtys}
                         productName={productName}
-                        unitLabel={unitLabel}
+                        unitLabel={formatUnitLabelForQty(unitLabel, pendingQtyTotal)}
                         shippedQtyTotal={shippedQtyTotal}
                         pendingQtyTotal={pendingQtyTotal}
                       />
