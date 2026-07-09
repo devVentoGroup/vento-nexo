@@ -57,6 +57,10 @@ function optimizedCatalogImageUrl(value: string | null | undefined, width: numbe
     const ext = url.pathname.split(".").pop()?.toLowerCase() ?? "";
 
     if (markerIndex < 0 || ext === "gif" || ext === "svg") return raw;
+    const tail = url.pathname.slice(markerIndex + marker.length);
+    const bucket = tail.split("/")[0] ?? "";
+
+    if (bucket === "commercial-menu-images" || ext === "webp") return raw;
 
     url.pathname = url.pathname.replace(marker, "/storage/v1/render/image/public/");
     url.searchParams.set("width", String(width));
