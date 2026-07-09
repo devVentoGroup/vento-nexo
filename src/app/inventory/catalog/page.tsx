@@ -671,6 +671,7 @@ export default async function InventoryCatalogPage({
         presentationImageByProduct.get(product.id) ||
         String(product.image_url ?? product.catalog_image_url ?? "").trim(),
       sku: product.sku ?? "-",
+      categoryId: product.category_id ?? "",
       categoryPath,
       categoryLabel,
       inventoryLabel: isAssetCatalogTab ? "Tipo de activo" : inventoryLabel,
@@ -846,6 +847,7 @@ export default async function InventoryCatalogPage({
         effectiveCategoryId={effectiveCategoryId}
         effectiveSupplierId={effectiveSupplierId}
         showDisabled={showDisabled}
+        categoryRows={categoryRows}
         onToggleProductActive={toggleProductActiveFromListAction}
         onDeleteProduct={deleteProductFromListAction}
       />
