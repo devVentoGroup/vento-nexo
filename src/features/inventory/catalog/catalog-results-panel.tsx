@@ -91,6 +91,36 @@ function normalizeText(value: string): string {
     .replace(/[\u0300-\u036f]/g, "");
 }
 
+function isRootParentCategory(category: InventoryCategoryRow): boolean {
+  const name = String(category.name ?? "").trim();
+  if (!name) return false;
+  if (String(category.parent_id ?? "").trim()) return false;
+  return name === name.toLocaleUpperCase("es");
+}
+
+function categoryBelongsToParent(
+  categoryId: string,
+  parentId: string,
+  categoryById: Map<string, InventoryCategoryRow>,
+): boolean {
+  if (!categoryId || !parentId) return false;
+
+  let current = categoryById.get(categoryId);
+  const visited = new Set<string>();
+
+  while (current) {
+    if (current.id === parentId) return true;
+    if (visited.has(current.id)) return false;
+    visited.add(current.id);
+
+    const nextParentId = String(current.parent_id ?? "").trim();
+    if (!nextParentId) return false;
+    current = categoryById.get(nextParentId);
+  }
+
+  return false;
+}
+
 function ResizableHeader({
   children,
   width,
@@ -125,7 +155,10 @@ function ResizableHeader({
   }, [onResize]);
 
   return (
-    <th className={`relative py-2 pr-4 whitespace-nowrap ${className}`.trim()} style={{ width, minWidth: width }}>
+    <th
+      className={`sticky top-0 z-20 bg-white py-2 pr-4 whitespace-nowrap shadow-[inset_0_-1px_0_var(--ui-border)] ${className}`.trim()}
+      style={{ width, minWidth: width }}
+    >
       {children}
       <span
         aria-hidden="true"
@@ -201,27 +234,21 @@ function CategoryColumnMenu({
   );
 
   const parentOptions = useMemo(() => {
-    const parentIds = new Set<string>();
-    for (const category of categories) {
-      const id = String(category.parent_id ?? "").trim();
-      if (id) parentIds.add(id);
-    }
-    return Array.from(parentIds)
-      .map((id) => categoryById.get(id))
-      .filter((category): category is InventoryCategoryRow => Boolean(category))
+    return categories
+      .filter(isRootParentCategory)
       .sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? ""), "es"));
-  }, [categories, categoryById]);
+  }, [categories]);
 
   const visibleCategories = useMemo(() => {
     const normalizedQuery = normalizeText(query.trim());
     return categories
       .filter((category) => {
-        if (parentId && category.parent_id !== parentId) return false;
+        if (parentId && !categoryBelongsToParent(category.id, parentId, categoryById)) return false;
         if (!normalizedQuery) return true;
         return normalizeText(String(category.name ?? "")).includes(normalizedQuery);
       })
       .sort((a, b) => String(a.name ?? "").localeCompare(String(b.name ?? ""), "es"));
-  }, [categories, parentId, query]);
+  }, [categories, categoryById, parentId, query]);
 
   const selectedSet = useMemo(() => new Set(selectedIds), [selectedIds]);
   const allVisibleSelected =
@@ -250,7 +277,7 @@ function CategoryColumnMenu({
       </button>
 
       {open ? (
-        <div className="absolute left-0 top-full z-30 mt-2 w-[320px] rounded-xl border border-[var(--ui-border)] bg-white p-3 text-[13px] text-[var(--ui-text)] shadow-xl">
+        <div className="absolute left-0 top-full z-40 mt-2 w-[320px] rounded-xl border border-[var(--ui-border)] bg-white p-3 text-[13px] text-[var(--ui-text)] shadow-xl">
           <div className="grid gap-2">
             <button
               type="button"
@@ -416,7 +443,7 @@ export function CatalogResultsPanel({
     const selectedSet = new Set(selectedCategoryIds);
     const byQueryAndCategory = rows.filter((row) => {
       if (categoryParentId) {
-        const parentMatches = categoryById.get(row.categoryId)?.parent_id === categoryParentId;
+        const parentMatches = categoryBelongsToParent(row.categoryId, categoryParentId, categoryById);
         if (!parentMatches) return false;
       }
 
