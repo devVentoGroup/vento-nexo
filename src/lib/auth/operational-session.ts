@@ -1,6 +1,5 @@
 ﻿import type { createClient } from "@/lib/supabase/server";
 import { normalizePermissionCode } from "@/lib/auth/permissions";
-import { isPermissionAllowedForRole } from "@/lib/auth/role-override";
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
 
@@ -171,6 +170,37 @@ export function isAppAccessPermission(appId: string, code: string) {
   return normalizePermissionCode(appId, code) === `${appId}.access`;
 }
 
+export async function checkOperationalRolePermission({
+  supabase,
+  roleCode,
+  appId,
+  code,
+  siteId = null,
+  areaId = null,
+}: {
+  supabase: SupabaseClient;
+  roleCode: string | null;
+  appId: string;
+  code: string;
+  siteId?: string | null;
+  areaId?: string | null;
+}) {
+  const operationalRole = String(roleCode ?? "").trim();
+  if (!operationalRole) return false;
+
+  const normalizedCode = normalizePermissionCode(appId, code);
+  const { data, error } = await supabase.rpc("has_operational_role_permission", {
+    p_role_code: operationalRole,
+    p_permission_code: normalizedCode,
+    p_site_id: siteId,
+    p_area_id: areaId,
+    p_app_code: appId,
+  });
+
+  if (error) return false;
+  return Boolean(data);
+}
+
 export async function checkOperationalSessionPermission({
   supabase,
   session,
@@ -187,9 +217,12 @@ export async function checkOperationalSessionPermission({
   if (session.isSharedDevice) {
     if (!isOperationalSessionAppAllowed(session, appId)) return false;
     if (isAppAccessPermission(appId, normalizedCode)) return true;
-    if (!session.navigationRole) return false;
 
-    return isPermissionAllowedForRole(supabase, session.navigationRole, appId, normalizedCode, {
+    return checkOperationalRolePermission({
+      supabase,
+      roleCode: session.navigationRole,
+      appId,
+      code: normalizedCode,
       siteId: session.siteId,
       areaId: session.areaId,
     });
@@ -204,6 +237,7 @@ export async function checkOperationalSessionPermission({
   if (error) return false;
   return Boolean(data);
 }
+
 
 
 
