@@ -1,6 +1,7 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 
 import { requireAppAccess } from "@/lib/auth/guard";
+import { checkOperationalSessionPermission } from "@/lib/auth/operational-session";
 import {
   buildOperationalBlockMessage,
   checkOperationalPermission,
@@ -318,24 +319,31 @@ export default async function RemissionsPreparePage({
   const sp = (await searchParams) ?? {};
   const activeFilter = normalizeFilter(sp.filter);
 
-  const { supabase, user } = await requireAppAccess({
+  const { supabase, user, operationalSession } = await requireAppAccess({
     appId: "nexo",
     returnTo: "/inventory/remissions",
   });
 
-  const { data: employee } = await supabase
-    .from("employees")
-    .select("site_id")
-    .eq("id", user.id)
-    .single();
+  const isSharedDevice = operationalSession.isSharedDevice;
+  let siteId = String(operationalSession.siteId ?? "").trim();
+  let activeAreaId = operationalSession.areaId;
 
-  const { data: settings } = await supabase
-    .from("employee_settings")
-    .select("selected_site_id")
-    .eq("employee_id", user.id)
-    .maybeSingle();
+  if (!isSharedDevice) {
+    const { data: employee } = await supabase
+      .from("employees")
+      .select("site_id")
+      .eq("id", user.id)
+      .single();
 
-  const siteId = settings?.selected_site_id ?? employee?.site_id ?? "";
+    const { data: settings } = await supabase
+      .from("employee_settings")
+      .select("selected_site_id")
+      .eq("employee_id", user.id)
+      .maybeSingle();
+
+    siteId = String(settings?.selected_site_id ?? employee?.site_id ?? "").trim();
+  }
+
   if (!siteId) {
     return (
       <div className="w-full">
@@ -343,42 +351,55 @@ export default async function RemissionsPreparePage({
           Volver al hub de remisiones
         </Link>
         <div className="mt-4 ui-alert ui-alert--warn">
-          No tienes sede activa. Elige sede en Remisiones para preparar.
+          {isSharedDevice
+            ? "Este dispositivo compartido no tiene sede operativa configurada."
+            : "No tienes sede activa. Elige sede en Remisiones para preparar."}
         </div>
       </div>
     );
   }
 
-  const opContext = await getOperationalContext({
-    supabase,
-    employeeId: user.id,
-    siteId,
-    appCode: "nexo",
-  });
+  if (!isSharedDevice) {
+    const opContext = await getOperationalContext({
+      supabase,
+      employeeId: user.id,
+      siteId,
+      appCode: "nexo",
+    });
 
-  if (!opContext?.can_operate) {
-    return (
-      <div className="w-full">
-        <Link href="/inventory/remissions" className="ui-caption underline">
-          Volver al hub de remisiones
-        </Link>
-        <div className="mt-4 ui-alert ui-alert--neutral">
-          {buildOperationalBlockMessage(
-            opContext,
-            "No puedes preparar remisiones en este momento para esta sede."
-          )}
+    if (!opContext?.can_operate) {
+      return (
+        <div className="w-full">
+          <Link href="/inventory/remissions" className="ui-caption underline">
+            Volver al hub de remisiones
+          </Link>
+          <div className="mt-4 ui-alert ui-alert--neutral">
+            {buildOperationalBlockMessage(
+              opContext,
+              "No puedes preparar remisiones en este momento para esta sede."
+            )}
+          </div>
         </div>
-      </div>
-    );
+      );
+    }
+
+    activeAreaId = opContext.active_area_id;
   }
 
-  const canPreparePermission = await checkOperationalPermission({
-    supabase,
-    permissionCode: "nexo.inventory.remissions.prepare",
-    siteId,
-    areaId: opContext.active_area_id,
-    appCode: "nexo",
-  });
+  const canPreparePermission = isSharedDevice
+    ? await checkOperationalSessionPermission({
+        supabase,
+        session: operationalSession,
+        appId: "nexo",
+        code: "inventory.remissions.prepare",
+      })
+    : await checkOperationalPermission({
+        supabase,
+        permissionCode: "nexo.inventory.remissions.prepare",
+        siteId,
+        areaId: activeAreaId,
+        appCode: "nexo",
+      });
 
   if (!canPreparePermission) {
     return (
@@ -387,7 +408,9 @@ export default async function RemissionsPreparePage({
           Volver al hub de remisiones
         </Link>
         <div className="mt-4 ui-alert ui-alert--neutral">
-          Tu turno activo no tiene permiso para preparar remisiones en esta sede.
+          {isSharedDevice
+            ? "Este dispositivo compartido no tiene permiso para preparar remisiones en esta sede."
+            : "Tu turno activo no tiene permiso para preparar remisiones en esta sede."}
         </div>
       </div>
     );

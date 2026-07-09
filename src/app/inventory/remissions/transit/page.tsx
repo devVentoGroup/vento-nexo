@@ -1,6 +1,7 @@
 import Link from "next/link";
 
 import { requireAppAccess } from "@/lib/auth/guard";
+import { checkOperationalSessionPermission } from "@/lib/auth/operational-session";
 import { checkOperationalPermission } from "@/lib/auth/operational-context";
 import type { SiteOperationalCapabilities } from "@/lib/inventory/site-capabilities";
 import {
@@ -33,31 +34,35 @@ type SiteRow = { id: string; name: string | null; site_type: string | null };
 type SiteCapabilityRow = Partial<SiteOperationalCapabilities>;
 
 export default async function RemissionsTransitQueuePage() {
-  const { supabase, user } = await requireAppAccess({
+  const { supabase, user, operationalSession } = await requireAppAccess({
     appId: "nexo",
     returnTo: "/inventory/remissions",
   });
 
-  const { data: employee } = await supabase
-    .from("employees")
-    .select("site_id")
-    .eq("id", user.id)
-    .single();
+  const isSharedDevice = operationalSession.isSharedDevice;
+  let candidateSiteIds = [String(operationalSession.siteId ?? "").trim()].filter(Boolean);
 
-  const { data: employeeSiteRows } = await supabase
-    .from("employee_sites")
-    .select("site_id")
-    .eq("employee_id", user.id);
+  if (!isSharedDevice) {
+    const { data: employee } = await supabase
+      .from("employees")
+      .select("site_id")
+      .eq("id", user.id)
+      .single();
 
-  const candidateSiteIds = Array.from(
-    new Set(
-      [
-        String(employee?.site_id ?? "").trim(),
-        ...((employeeSiteRows ?? []).map((row) => String(row.site_id ?? "").trim()) as string[]),
-      ].filter(Boolean)
-    )
-  );
+    const { data: employeeSiteRows } = await supabase
+      .from("employee_sites")
+      .select("site_id")
+      .eq("employee_id", user.id);
 
+    candidateSiteIds = Array.from(
+      new Set(
+        [
+          String(employee?.site_id ?? "").trim(),
+          ...((employeeSiteRows ?? []).map((row) => String(row.site_id ?? "").trim()) as string[]),
+        ].filter(Boolean)
+      )
+    );
+  }
   const candidateSites = (((await supabase
     .from("sites")
     .select("id,name,site_type")
@@ -88,12 +93,19 @@ export default async function RemissionsTransitQueuePage() {
   const transitSiteIds = (
     await Promise.all(
       productionCenterSites.map(async (site) => {
-        const canTransit = await checkOperationalPermission({
-          supabase,
-          permissionCode: `nexo.${PERMISSIONS.remissionsTransit}`,
-          siteId: site.id,
-          appCode: "nexo",
-        });
+        const canTransit = isSharedDevice
+          ? await checkOperationalSessionPermission({
+              supabase,
+              session: operationalSession,
+              appId: "nexo",
+              code: PERMISSIONS.remissionsTransit,
+            })
+          : await checkOperationalPermission({
+              supabase,
+              permissionCode: `nexo.${PERMISSIONS.remissionsTransit}`,
+              siteId: site.id,
+              appCode: "nexo",
+            });
         return canTransit ? site.id : "";
       })
     )

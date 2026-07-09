@@ -243,6 +243,117 @@ export async function resolveOperationalRemissionAreaScope(params: {
   };
 }
 
+
+export async function resolveSharedDeviceOperationalRemissionAreaScope(params: {
+  supabase: SupabaseClient;
+  siteId: string;
+  areaId?: string | null;
+  canSeeAllAreas?: boolean;
+}): Promise<OperationalRemissionAreaScope> {
+  const { supabase, siteId, areaId = null, canSeeAllAreas = false } = params;
+  const safeSiteId = String(siteId ?? "").trim();
+  const safeAreaId = String(areaId ?? "").trim();
+  const enabledAreaKinds = await loadEnabledRemissionAreaKindsForSite(supabase, safeSiteId);
+
+  if (!safeSiteId) {
+    return {
+      filterAreaKind: BLOCKED_AREA_KIND,
+      defaultAreaKind: "",
+      enabledAreaKinds,
+      activeAreaKind: "",
+      canSeeAllAreas,
+      isGlobal: false,
+      blockedReason: "No hay sede activa para resolver el area operativa de remisiones.",
+    };
+  }
+
+  if (canSeeAllAreas) {
+    return {
+      filterAreaKind: "",
+      defaultAreaKind: "",
+      enabledAreaKinds,
+      activeAreaKind: "",
+      canSeeAllAreas: true,
+      isGlobal: false,
+      blockedReason: "",
+    };
+  }
+
+  const { data: area } = safeAreaId
+    ? await supabase
+        .from("areas")
+        .select("kind,site_id")
+        .eq("id", safeAreaId)
+        .maybeSingle()
+    : { data: null };
+
+  const activeAreaKind =
+    String(area?.site_id ?? "") === safeSiteId
+      ? normalizeOperationalAreaKind(area?.kind)
+      : "";
+
+  if (enabledAreaKinds.length === 0) {
+    if (activeAreaKind) {
+      return {
+        filterAreaKind: activeAreaKind,
+        defaultAreaKind: activeAreaKind,
+        enabledAreaKinds,
+        activeAreaKind,
+        canSeeAllAreas: false,
+        isGlobal: false,
+        blockedReason: "",
+      };
+    }
+
+    return {
+      filterAreaKind: BLOCKED_AREA_KIND,
+      defaultAreaKind: "",
+      enabledAreaKinds,
+      activeAreaKind,
+      canSeeAllAreas: false,
+      isGlobal: false,
+      blockedReason: "El dispositivo compartido no tiene area operativa activa para filtrar remisiones.",
+    };
+  }
+
+  if (enabledAreaKinds.length === 1) {
+    const onlyKind = enabledAreaKinds[0] ?? "";
+    const isGlobal = onlyKind === GLOBAL_AREA_KIND;
+    return {
+      filterAreaKind: isGlobal ? "" : onlyKind,
+      defaultAreaKind: onlyKind,
+      enabledAreaKinds,
+      activeAreaKind,
+      canSeeAllAreas: false,
+      isGlobal,
+      blockedReason: "",
+    };
+  }
+
+  if (activeAreaKind && enabledAreaKinds.includes(activeAreaKind)) {
+    return {
+      filterAreaKind: activeAreaKind,
+      defaultAreaKind: activeAreaKind,
+      enabledAreaKinds,
+      activeAreaKind,
+      canSeeAllAreas: false,
+      isGlobal: false,
+      blockedReason: "",
+    };
+  }
+
+  return {
+    filterAreaKind: BLOCKED_AREA_KIND,
+    defaultAreaKind: "",
+    enabledAreaKinds,
+    activeAreaKind,
+    canSeeAllAreas: false,
+    isGlobal: false,
+    blockedReason: activeAreaKind
+      ? `El area operativa del dispositivo (${formatOperationalRemissionAreaLabel(activeAreaKind)}) no esta habilitada para remisiones en esta sede.`
+      : "El dispositivo compartido no tiene area operativa activa para filtrar remisiones.",
+  };
+}
 export async function userCanSeeAllRemissionAreas(params: {
   supabase: SupabaseClient;
   userId: string;

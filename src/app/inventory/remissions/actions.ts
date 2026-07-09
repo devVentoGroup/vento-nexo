@@ -4,6 +4,10 @@ import { redirect } from "next/navigation";
 
 import { checkPermissionWithRoleOverride } from "@/lib/auth/role-override";
 import {
+  checkOperationalSessionPermission,
+  resolveOperationalSession,
+} from "@/lib/auth/operational-session";
+import {
   buildOperationalBlockMessage,
   checkOperationalPermission,
   getOperationalContext,
@@ -35,7 +39,10 @@ import {
   type ProductionPackagePlanItem,
   type RemissionListAction,
 } from "./page-helpers";
-import { resolveOperationalRemissionAreaScope } from "./operational-area-scope";
+import {
+  resolveOperationalRemissionAreaScope,
+  resolveSharedDeviceOperationalRemissionAreaScope,
+} from "./operational-area-scope";
 
 const APP_ID = "nexo";
 const REMISSIONS_INVENTORY_POSTING_SETTING_KEY =
@@ -265,6 +272,11 @@ export async function createRemission(formData: FormData) {
   if (!user) {
     redirect(await buildShellLoginUrl("/inventory/remissions"));
   }
+  const operationalSession = await resolveOperationalSession({
+    supabase,
+    userId: user.id,
+    appId: APP_ID,
+  });
   const inventoryPostingEnabled = await readBooleanAppSetting(
     supabase,
     REMISSIONS_INVENTORY_POSTING_SETTING_KEY,
@@ -275,6 +287,15 @@ export async function createRemission(formData: FormData) {
   const toSiteId = asText(formData.get("to_site_id"));
   const expectedDate = asText(formData.get("expected_date"));
   const notes = asText(formData.get("notes"));
+  if (
+    operationalSession.isSharedDevice &&
+    String(operationalSession.siteId ?? "").trim() !== toSiteId
+  ) {
+    redirect(
+      "/inventory/remissions?error=" +
+        encodeURIComponent("Este dispositivo compartido solo puede solicitar remisiones para su sede operativa."),
+    );
+  }
 
   const productIds = formData
     .getAll("item_product_id")
@@ -397,9 +418,6 @@ export async function createRemission(formData: FormData) {
         const stockUnitCode = normalizeUnitCode(
           product?.stock_unit_code || product?.unit || "un",
         );
-        const measurementMode = normalizeMeasurementMode(
-          product?.measurement_mode,
-        );
         const quantityInInput = roundQuantity(
           parseNumber(inputQuantities[idx] ?? quantities[idx] ?? "0"),
         );
@@ -474,31 +492,42 @@ export async function createRemission(formData: FormData) {
         encodeURIComponent("Debes definir origen y destino."),
     );
   }
-  const opContext = await getOperationalContext({
-    supabase,
-    employeeId: user.id,
-    siteId: toSiteId,
-    appCode: APP_ID,
-  });
-  if (!opContext?.can_operate) {
-    redirect(
-      "/inventory/remissions?error=" +
-        encodeURIComponent(
-          buildOperationalBlockMessage(
-            opContext,
-            "No puedes solicitar remisiones en este momento para esta sede.",
+  let activeAreaId = operationalSession.areaId;
+  if (!operationalSession.isSharedDevice) {
+    const opContext = await getOperationalContext({
+      supabase,
+      employeeId: user.id,
+      siteId: toSiteId,
+      appCode: APP_ID,
+    });
+    if (!opContext?.can_operate) {
+      redirect(
+        "/inventory/remissions?error=" +
+          encodeURIComponent(
+            buildOperationalBlockMessage(
+              opContext,
+              "No puedes solicitar remisiones en este momento para esta sede.",
+            ),
           ),
-        ),
-    );
+      );
+    }
+    activeAreaId = opContext.active_area_id;
   }
 
-  const canRequest = await checkOperationalPermission({
-    supabase,
-    permissionCode: `${APP_ID}.${PERMISSIONS.remissionsRequest}`,
-    siteId: toSiteId,
-    areaId: opContext.active_area_id,
-    appCode: APP_ID,
-  });
+  const canRequest = operationalSession.isSharedDevice
+    ? await checkOperationalSessionPermission({
+        supabase,
+        session: operationalSession,
+        appId: APP_ID,
+        code: PERMISSIONS.remissionsRequest,
+      })
+    : await checkOperationalPermission({
+        supabase,
+        permissionCode: `${APP_ID}.${PERMISSIONS.remissionsRequest}`,
+        siteId: toSiteId,
+        areaId: activeAreaId,
+        appCode: APP_ID,
+      });
   if (!canRequest) {
     redirect(
       "/inventory/remissions?error=" +
@@ -581,12 +610,19 @@ export async function createRemission(formData: FormData) {
   const configuredByProductId = new Map(
     configuredRows.map((row) => [row.product_id, row]),
   );
-  const requestAreaScope = await resolveOperationalRemissionAreaScope({
-    supabase,
-    userId: user.id,
-    siteId: toSiteId,
-    canSeeAllAreas: false,
-  });
+  const requestAreaScope = operationalSession.isSharedDevice
+    ? await resolveSharedDeviceOperationalRemissionAreaScope({
+        supabase,
+        siteId: toSiteId,
+        areaId: activeAreaId,
+        canSeeAllAreas: false,
+      })
+    : await resolveOperationalRemissionAreaScope({
+        supabase,
+        userId: user.id,
+        siteId: toSiteId,
+        canSeeAllAreas: false,
+      });
   if (requestAreaScope.blockedReason) {
     redirect(
       "/inventory/remissions?error=" +

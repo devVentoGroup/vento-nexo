@@ -9,6 +9,7 @@ import { cookies } from "next/headers";
 
 import { requireAppAccess } from "@/lib/auth/guard";
 import { checkPermissionWithRoleOverride } from "@/lib/auth/role-override";
+import { checkOperationalSessionPermission } from "@/lib/auth/operational-session";
 import {
   PRIVILEGED_ROLE_OVERRIDES,
   ROLE_OVERRIDE_COOKIE,
@@ -33,7 +34,6 @@ import {
   supportsRequestedArea,
   usesActualQuantityMode,
   usesFixedPresentationMode,
-  usesProductionPackageDispatch,
   type AreaKindPurposeRow,
   type AreaRow,
   type EmployeeNameRow,
@@ -41,10 +41,8 @@ import {
   type ProductProfileWithProduct,
   type ProductRow,
   type ProductSiteAreaRemissionCategoryRow,
-  type ProductSiteRow,
   type ProductionBatchPackageRow,
   type RemissionItemMetricsRow,
-  type RemissionListAction,
   type RemissionOperationalSummaryRow,
   type RemissionRow,
   type SiteAreaPurposeRuleRow,
@@ -56,6 +54,7 @@ import {
   formatOperationalRemissionAreaLabel,
   operationalRemissionAreaScopeAllowsKinds,
   resolveOperationalRemissionAreaScope,
+  resolveSharedDeviceOperationalRemissionAreaScope,
   resolveRemissionAreaKindFromKinds,
 } from "./operational-area-scope";
 
@@ -93,7 +92,7 @@ export default async function RemissionsPage({
   const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
   const okMsg = sp.ok ? safeDecodeURIComponent(sp.ok) : "";
 
-  const { supabase, user } = await requireAppAccess({
+  const { supabase, user, operationalSession } = await requireAppAccess({
     appId: APP_ID,
     returnTo: "/inventory/remissions",
   });
@@ -104,53 +103,73 @@ export default async function RemissionsPage({
     false,
   );
 
-  const { data: employee } = await supabase
-    .from("employees")
-    .select("site_id,role")
-    .eq("id", user.id)
-    .single();
-  const { data: settings } = await supabase
-    .from("employee_settings")
-    .select("selected_site_id")
-    .eq("employee_id", user.id)
-    .maybeSingle();
+  const isSharedDevice = operationalSession.isSharedDevice;
   const cookieStore = await cookies();
+  const { data: employee } = isSharedDevice
+    ? { data: null }
+    : await supabase
+        .from("employees")
+        .select("site_id,role")
+        .eq("id", user.id)
+        .single();
+  const { data: settings } = isSharedDevice
+    ? { data: null }
+    : await supabase
+        .from("employee_settings")
+        .select("selected_site_id")
+        .eq("employee_id", user.id)
+        .maybeSingle();
 
-  const actualRole = String(employee?.role ?? "");
-  const roleOverride = String(
-    cookieStore.get(ROLE_OVERRIDE_COOKIE)?.value ?? "",
-  )
-    .trim()
-    .toLowerCase();
+  const actualRole = String(operationalSession.role ?? employee?.role ?? "");
+  const roleOverride = isSharedDevice
+    ? ""
+    : String(cookieStore.get(ROLE_OVERRIDE_COOKIE)?.value ?? "")
+        .trim()
+        .toLowerCase();
   const canUseRoleOverride =
     Boolean(roleOverride) &&
     PRIVILEGED_ROLE_OVERRIDES.has(actualRole.toLowerCase());
   const effectiveRole = (
     canUseRoleOverride ? roleOverride : actualRole
   ).toLowerCase();
-  const canViewAll = await checkPermissionWithRoleOverride({
-    supabase,
-    appId: APP_ID,
-    code: PERMISSIONS.remissionsAllSites,
-    actualRole,
-  });
+  const canViewAll = isSharedDevice
+    ? await checkOperationalSessionPermission({
+        supabase,
+        session: operationalSession,
+        appId: APP_ID,
+        code: PERMISSIONS.remissionsAllSites,
+      })
+    : await checkPermissionWithRoleOverride({
+        supabase,
+        appId: APP_ID,
+        code: PERMISSIONS.remissionsAllSites,
+        actualRole,
+      });
 
-  const { data: sitesRows } = await supabase
-    .from("employee_sites")
-    .select("site_id,is_primary")
-    .eq("employee_id", user.id)
-    .eq("is_active", true)
-    .order("is_primary", { ascending: false })
-    .limit(50);
+  const { data: sitesRows } = isSharedDevice
+    ? { data: [] as EmployeeSiteRow[] }
+    : await supabase
+        .from("employee_sites")
+        .select("site_id,is_primary")
+        .eq("employee_id", user.id)
+        .eq("is_active", true)
+        .order("is_primary", { ascending: false })
+        .limit(50);
 
-  const employeeSiteRows = (sitesRows ?? []) as EmployeeSiteRow[];
+  const sharedDeviceSiteId = String(operationalSession.siteId ?? "").trim();
+  const employeeSiteRows = isSharedDevice
+    ? sharedDeviceSiteId
+      ? ([{ site_id: sharedDeviceSiteId, is_primary: true }] as EmployeeSiteRow[])
+      : []
+    : ((sitesRows ?? []) as EmployeeSiteRow[]);
   const defaultSiteId = employeeSiteRows[0]?.site_id ?? employee?.site_id ?? "";
-  const siteOverrideId = String(
-    cookieStore.get(SITE_OVERRIDE_COOKIE)?.value ?? "",
-  ).trim();
+  const siteOverrideId = isSharedDevice
+    ? ""
+    : String(cookieStore.get(SITE_OVERRIDE_COOKIE)?.value ?? "").trim();
   const selectedSiteId = String(settings?.selected_site_id ?? "").trim();
-  let activeSiteId =
-    sp.site_id !== undefined
+  let activeSiteId = isSharedDevice
+    ? sharedDeviceSiteId
+    : sp.site_id !== undefined
       ? String(sp.site_id).trim()
       : siteOverrideId || selectedSiteId || (canViewAll ? "" : defaultSiteId);
   if (!activeSiteId && !canViewAll) {
@@ -203,22 +222,36 @@ export default async function RemissionsPage({
     activeSiteType === "production_center";
 
   const canRequestPermission = activeSiteId
-    ? await checkPermissionWithRoleOverride({
-        supabase,
-        appId: APP_ID,
-        code: PERMISSIONS.remissionsRequest,
-        context: { siteId: activeSiteId },
-        actualRole,
-      })
+    ? isSharedDevice
+      ? await checkOperationalSessionPermission({
+          supabase,
+          session: operationalSession,
+          appId: APP_ID,
+          code: PERMISSIONS.remissionsRequest,
+        })
+      : await checkPermissionWithRoleOverride({
+          supabase,
+          appId: APP_ID,
+          code: PERMISSIONS.remissionsRequest,
+          context: { siteId: activeSiteId },
+          actualRole,
+        })
     : false;
   const canTransitPermission = activeSiteId
-    ? await checkPermissionWithRoleOverride({
-        supabase,
-        appId: APP_ID,
-        code: PERMISSIONS.remissionsTransit,
-        context: { siteId: activeSiteId },
-        actualRole,
-      })
+    ? isSharedDevice
+      ? await checkOperationalSessionPermission({
+          supabase,
+          session: operationalSession,
+          appId: APP_ID,
+          code: PERMISSIONS.remissionsTransit,
+        })
+      : await checkPermissionWithRoleOverride({
+          supabase,
+          appId: APP_ID,
+          code: PERMISSIONS.remissionsTransit,
+          context: { siteId: activeSiteId },
+          actualRole,
+        })
     : false;
 
   const viewMode = isAllSites
@@ -231,29 +264,50 @@ export default async function RemissionsPage({
       activeCapabilities?.can_request_remissions ??
       activeSiteType === "satellite",
     ) && canRequestPermission;
-  const canCancelPermission = await checkPermissionWithRoleOverride({
-    supabase,
-    appId: APP_ID,
-    code: PERMISSIONS.remissionsCancel,
-    actualRole,
-  });
-  const canManageRemissionActions = canCancelPermission;
-  const canEditOwnPendingPermission = activeSiteId
-    ? await checkPermissionWithRoleOverride({
+  const canCancelPermission = isSharedDevice
+    ? await checkOperationalSessionPermission({
+        supabase,
+        session: operationalSession,
+        appId: APP_ID,
+        code: PERMISSIONS.remissionsCancel,
+      })
+    : await checkPermissionWithRoleOverride({
         supabase,
         appId: APP_ID,
-        code: PERMISSIONS.remissionsEditOwnPending,
-        context: { siteId: activeSiteId },
+        code: PERMISSIONS.remissionsCancel,
         actualRole,
-      })
+      });
+  const canManageRemissionActions = canCancelPermission;
+  const canEditOwnPendingPermission = activeSiteId
+    ? isSharedDevice
+      ? await checkOperationalSessionPermission({
+          supabase,
+          session: operationalSession,
+          appId: APP_ID,
+          code: PERMISSIONS.remissionsEditOwnPending,
+        })
+      : await checkPermissionWithRoleOverride({
+          supabase,
+          appId: APP_ID,
+          code: PERMISSIONS.remissionsEditOwnPending,
+          context: { siteId: activeSiteId },
+          actualRole,
+        })
     : false;
   const receiveAreaScope = activeSiteId && viewMode === "satélite"
-    ? await resolveOperationalRemissionAreaScope({
-        supabase,
-        userId: user.id,
-        siteId: activeSiteId,
-        canSeeAllAreas: canViewAll,
-      })
+    ? isSharedDevice
+      ? await resolveSharedDeviceOperationalRemissionAreaScope({
+          supabase,
+          siteId: activeSiteId,
+          areaId: operationalSession.areaId,
+          canSeeAllAreas: canViewAll,
+        })
+      : await resolveOperationalRemissionAreaScope({
+          supabase,
+          userId: user.id,
+          siteId: activeSiteId,
+          canSeeAllAreas: canViewAll,
+        })
     : null;
 
   if (effectiveRole === "conductor" && canTransitPermission) {
@@ -531,12 +585,19 @@ export default async function RemissionsPage({
   // Cuando el satélite solicita, solo debe ver productos configurados para su sede.
   const productFilterSiteId = canCreate ? activeSiteId : selectedFromSiteId;
   const requestAreaScope = canCreate && productFilterSiteId
-    ? await resolveOperationalRemissionAreaScope({
-        supabase,
-        userId: user.id,
-        siteId: productFilterSiteId,
-        canSeeAllAreas: canViewAll,
-      })
+    ? isSharedDevice
+      ? await resolveSharedDeviceOperationalRemissionAreaScope({
+          supabase,
+          siteId: productFilterSiteId,
+          areaId: operationalSession.areaId,
+          canSeeAllAreas: canViewAll,
+        })
+      : await resolveOperationalRemissionAreaScope({
+          supabase,
+          userId: user.id,
+          siteId: productFilterSiteId,
+          canSeeAllAreas: canViewAll,
+        })
     : null;
   const requestedAreaKind = requestAreaScope?.defaultAreaKind ?? "";
   const productSiteRows = productFilterSiteId
@@ -1063,7 +1124,9 @@ export default async function RemissionsPage({
           <div className="mt-4 ui-alert ui-alert--warn">
             {canViewAll
               ? "Vista global activa. Selecciona una sede para operar remisiones."
-              : "No hay sede activa. Asigna una sede al empleado para operar remisiones."}
+              : isSharedDevice
+                ? "Este dispositivo compartido no tiene sede operativa configurada."
+                : "No hay sede activa. Asigna una sede al empleado para operar remisiones."}
           </div>
         ) : null}
 
