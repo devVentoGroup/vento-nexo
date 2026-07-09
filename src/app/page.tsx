@@ -2,6 +2,7 @@
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 
 import { requireAppAccess } from "@/lib/auth/guard";
+import { checkOperationalSessionPermission } from "@/lib/auth/operational-session";
 import { checkOperationalPermission } from "@/lib/auth/operational-context";
 import {
   canUseRoleOverride,
@@ -320,61 +321,74 @@ export default async function Home({
 }) {
   const sp = (await searchParams) ?? {};
 
-  const { supabase, user } = await requireAppAccess({
+  const { supabase, user, operationalSession } = await requireAppAccess({
     appId: APP_ID,
     returnTo: "/",
   });
 
-  const { data: employee } = await supabase
-    .from("employees")
-    .select("role,site_id,full_name,alias")
-    .eq("id", user.id)
-    .single();
-
-  const role = String(employee?.role ?? "");
-  const overrideRole = await getRoleOverrideFromCookies();
-  const canOverrideRole = canUseRoleOverride(role, overrideRole);
-  const effectiveRole = canOverrideRole ? String(overrideRole) : role;
-  let roleLabel = effectiveRole || "sin rol";
+  const role = String(operationalSession.role ?? "");
+  const overrideRole = operationalSession.isSharedDevice
+    ? null
+    : await getRoleOverrideFromCookies();
+  const canOverrideRole = !operationalSession.isSharedDevice && canUseRoleOverride(role, overrideRole);
+  const effectiveRole = canOverrideRole ? String(overrideRole) : String(operationalSession.navigationRole ?? role);
+  let roleLabel = operationalSession.isSharedDevice ? "Dispositivo compartido" : effectiveRole || "sin rol";
   if (effectiveRole) {
     const { data: roleRow } = await supabase
       .from("roles")
       .select("name")
       .eq("code", effectiveRole)
       .single();
-    roleLabel = roleRow?.name ?? effectiveRole;
+    roleLabel = operationalSession.isSharedDevice
+      ? `Dispositivo compartido · ${roleRow?.name ?? effectiveRole}`
+      : roleRow?.name ?? effectiveRole;
   }
-  const displayName = String(employee?.alias ?? employee?.full_name ?? user.email ?? "Usuario");
+  const displayName = operationalSession.displayName || user.email || "Usuario";
   const normalizedRole = effectiveRole.toLowerCase();
-  const isManagementRole = ["propietario", "gerente_general", "admin", "manager", "gerente"].includes(
+  const isManagementRole = !operationalSession.isSharedDevice && ["propietario", "gerente_general", "admin", "manager", "gerente"].includes(
     normalizedRole
   );
 
-  const { data: employeeSites } = await supabase
-    .from("employee_sites")
-    .select("site_id,is_primary")
-    .eq("employee_id", user.id)
-    .eq("is_active", true)
-    .order("is_primary", { ascending: false })
-    .limit(50);
+  let employeeSiteRows: EmployeeSiteRow[] = [];
+  let siteRows: SiteRow[] = [];
 
-  const employeeSiteRows = (employeeSites ?? []) as EmployeeSiteRow[];
-  const defaultSiteId = employeeSiteRows[0]?.site_id ?? employee?.site_id ?? "";
-  const activeSiteId = String(sp.site_id ?? defaultSiteId).trim();
-
-  const siteIds = employeeSiteRows
-    .map((row) => row.site_id)
-    .filter((id): id is string => Boolean(id));
-
-  const { data: sites } = siteIds.length
-    ? await supabase
+  if (operationalSession.isSharedDevice) {
+    const activeDeviceSiteId = String(operationalSession.siteId ?? "").trim();
+    if (activeDeviceSiteId) {
+      const { data: siteData } = await supabase
         .from("sites")
         .select("id,name,site_type")
-        .in("id", siteIds)
-        .order("name", { ascending: true })
-    : { data: [] as SiteRow[] };
+        .eq("id", activeDeviceSiteId)
+        .limit(1);
+      siteRows = (siteData ?? []) as SiteRow[];
+    }
+  } else {
+    const { data: employeeSites } = await supabase
+      .from("employee_sites")
+      .select("site_id,is_primary")
+      .eq("employee_id", user.id)
+      .eq("is_active", true)
+      .order("is_primary", { ascending: false })
+      .limit(50);
 
-  const siteRows = (sites ?? []) as SiteRow[];
+    employeeSiteRows = (employeeSites ?? []) as EmployeeSiteRow[];
+    const siteIds = employeeSiteRows
+      .map((row) => row.site_id)
+      .filter((id): id is string => Boolean(id));
+
+    const { data: sites } = siteIds.length
+      ? await supabase
+          .from("sites")
+          .select("id,name,site_type")
+          .in("id", siteIds)
+          .order("name", { ascending: true })
+      : { data: [] as SiteRow[] };
+
+    siteRows = (sites ?? []) as SiteRow[];
+  }
+
+  const defaultSiteId = operationalSession.siteId ?? employeeSiteRows[0]?.site_id ?? "";
+  const activeSiteId = String(sp.site_id ?? defaultSiteId).trim();
   const siteMap = new Map(siteRows.map((site) => [site.id, site]));
   const activeSite = activeSiteId ? siteMap.get(activeSiteId) : undefined;
   const activeSiteName = activeSite?.name ?? activeSiteId ?? "Sin sede";
@@ -395,6 +409,33 @@ export default async function Home({
   let canStockPermission = false;
   let canLocationsPermission = false;
 
+  const checkSessionPermission = async (code: string, options: { operational?: boolean } = {}) => {
+    if (operationalSession.isSharedDevice) {
+      return checkOperationalSessionPermission({
+        supabase,
+        session: operationalSession,
+        appId: APP_ID,
+        code,
+      });
+    }
+
+    if (options.operational) {
+      return checkOperationalPermission({
+        supabase,
+        permissionCode: code.startsWith(`${APP_ID}.`) ? code : `${APP_ID}.${code}`,
+        siteId: activeSiteId || null,
+        appCode: APP_ID,
+      });
+    }
+
+    return checkPermissionWithRoleOverride({
+      supabase,
+      appId: APP_ID,
+      code,
+      context: { siteId: activeSiteId || null, areaId: operationalSession.areaId },
+      actualRole: role,
+    });
+  };
   if (activeSiteId) {
     [
       canViewRemissions,
@@ -410,87 +451,18 @@ export default async function Home({
       canStockPermission,
       canLocationsPermission,
     ] = await Promise.all([
-      checkPermissionWithRoleOverride({
-        supabase,
-        appId: APP_ID,
-        code: PERMISSIONS.remissions,
-        context: { siteId: activeSiteId },
-        actualRole: role,
-      }),
-      checkOperationalPermission({
-        supabase,
-        permissionCode: `${APP_ID}.${PERMISSIONS.remissionsRequest}`,
-        siteId: activeSiteId,
-        appCode: APP_ID,
-      }),
-      checkOperationalPermission({
-        supabase,
-        permissionCode: `${APP_ID}.${PERMISSIONS.remissionsPrepare}`,
-        siteId: activeSiteId,
-        appCode: APP_ID,
-      }),
-      checkOperationalPermission({
-        supabase,
-        permissionCode: `${APP_ID}.${PERMISSIONS.remissionsReceive}`,
-        siteId: activeSiteId,
-        appCode: APP_ID,
-      }),
-      checkPermissionWithRoleOverride({
-        supabase,
-        appId: APP_ID,
-        code: PERMISSIONS.entriesEmergency,
-        context: { siteId: activeSiteId },
-        actualRole: role,
-      }),
-      checkPermissionWithRoleOverride({
-        supabase,
-        appId: APP_ID,
-        code: PERMISSIONS.counts,
-        context: { siteId: activeSiteId },
-        actualRole: role,
-      }),
-      checkPermissionWithRoleOverride({
-        supabase,
-        appId: APP_ID,
-        code: PERMISSIONS.transfers,
-        context: { siteId: activeSiteId },
-        actualRole: role,
-      }),
-      checkPermissionWithRoleOverride({
-        supabase,
-        appId: APP_ID,
-        code: PERMISSIONS.withdraw,
-        context: { siteId: activeSiteId },
-        actualRole: role,
-      }),
-      checkPermissionWithRoleOverride({
-        supabase,
-        appId: APP_ID,
-        code: PERMISSIONS.adjustments,
-        context: { siteId: activeSiteId },
-        actualRole: role,
-      }),
-      checkPermissionWithRoleOverride({
-        supabase,
-        appId: APP_ID,
-        code: PERMISSIONS.movements,
-        context: { siteId: activeSiteId },
-        actualRole: role,
-      }),
-      checkPermissionWithRoleOverride({
-        supabase,
-        appId: APP_ID,
-        code: PERMISSIONS.stock,
-        context: { siteId: activeSiteId },
-        actualRole: role,
-      }),
-      checkPermissionWithRoleOverride({
-        supabase,
-        appId: APP_ID,
-        code: PERMISSIONS.locations,
-        context: { siteId: activeSiteId },
-        actualRole: role,
-      }),
+      checkSessionPermission(PERMISSIONS.remissions),
+      checkSessionPermission(PERMISSIONS.remissionsRequest, { operational: true }),
+      checkSessionPermission(PERMISSIONS.remissionsPrepare, { operational: true }),
+      checkSessionPermission(PERMISSIONS.remissionsReceive, { operational: true }),
+      checkSessionPermission(PERMISSIONS.entriesEmergency),
+      checkSessionPermission(PERMISSIONS.counts),
+      checkSessionPermission(PERMISSIONS.transfers),
+      checkSessionPermission(PERMISSIONS.withdraw),
+      checkSessionPermission(PERMISSIONS.adjustments),
+      checkSessionPermission(PERMISSIONS.movements),
+      checkSessionPermission(PERMISSIONS.stock),
+      checkSessionPermission(PERMISSIONS.locations),
     ]);
   }
 
@@ -1089,6 +1061,10 @@ export default async function Home({
     </div>
   );
 }
+
+
+
+
 
 
 
