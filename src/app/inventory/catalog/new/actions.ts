@@ -193,6 +193,113 @@ function safeDecode(value: string | null | undefined) {
   }
 }
 
+type OrigoReviewContext = {
+  requestId: string;
+  returnTo: string;
+  sourceEntryId: string;
+};
+
+function normalizeOrigoReturnTo(value: string): string {
+  const fallback = "/product-master-review";
+  const decoded = safeDecode(value).trim();
+  if (!decoded) return fallback;
+  if (decoded.startsWith("/") && !decoded.startsWith("//")) return decoded;
+
+  try {
+    const url = new URL(decoded);
+    const isAllowedHost =
+      url.hostname === "localhost" ||
+      url.hostname.endsWith(".ventogroup.co") ||
+      url.hostname === "ventogroup.co";
+    if ((url.protocol === "https:" || url.protocol === "http:") && isAllowedHost) {
+      return url.toString();
+    }
+  } catch {
+    return fallback;
+  }
+
+  return fallback;
+}
+
+function readOrigoReviewContext(formData: FormData): OrigoReviewContext | null {
+  const source = asText(formData.get("_origo_review_source"));
+  const requestId = asText(formData.get("_origo_review_request_id"));
+  if (source !== "origo_receipt_review" || !requestId) return null;
+
+  return {
+    requestId,
+    returnTo: normalizeOrigoReturnTo(asText(formData.get("_origo_review_return_to"))),
+    sourceEntryId: asText(formData.get("_origo_review_source_entry_id")),
+  };
+}
+
+function buildOrigoReviewRedirectUrl(params: {
+  context: OrigoReviewContext;
+  ok?: string;
+  error?: string;
+  productId?: string;
+}): string {
+  const isAbsolute = /^https?:\/\//i.test(params.context.returnTo);
+  const url = new URL(params.context.returnTo, "https://origo.local");
+
+  if (params.ok) url.searchParams.set("ok", params.ok);
+  if (params.error) url.searchParams.set("error", params.error);
+  url.searchParams.set("review_request_id", params.context.requestId);
+  if (params.productId) url.searchParams.set("product_id", params.productId);
+  if (params.context.sourceEntryId) url.searchParams.set("finalize_entry_id", params.context.sourceEntryId);
+
+  return isAbsolute ? url.toString() : `${url.pathname}${url.search}`;
+}
+
+async function approveOrigoReviewProductRequest(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  userId: string;
+  context: OrigoReviewContext;
+  productId: string;
+  productName: string;
+}) {
+  const { data: request, error: requestError } = await params.supabase
+    .from("product_master_review_requests")
+    .select("id,request_kind,status,source_app,source_flow")
+    .eq("id", params.context.requestId)
+    .maybeSingle();
+
+  if (requestError) {
+    redirect(buildOrigoReviewRedirectUrl({ context: params.context, error: requestError.message }));
+  }
+
+  const requestRow = request as {
+    id?: string;
+    request_kind?: string | null;
+    source_app?: string | null;
+    source_flow?: string | null;
+  } | null;
+
+  if (!requestRow?.id || requestRow.request_kind !== "new_product") {
+    redirect(
+      buildOrigoReviewRedirectUrl({
+        context: params.context,
+        error: "La solicitud de ORIGO no existe o no corresponde a un nuevo insumo.",
+      })
+    );
+  }
+
+  const { error: updateError } = await params.supabase
+    .from("product_master_review_requests")
+    .update({
+      status: "approved",
+      approved_product_id: params.productId,
+      reviewed_by: params.userId,
+      reviewed_at: new Date().toISOString(),
+      review_notes: `Producto creado y vinculado desde NEXO: ${params.productName}`,
+    })
+    .eq("id", params.context.requestId);
+
+  if (updateError) {
+    redirect(buildOrigoReviewRedirectUrl({ context: params.context, error: updateError.message }));
+  }
+}
+
 function heroKpis(typeKey: ProductTypeKey) {
   if (typeKey === "asset") {
     return {
@@ -246,8 +353,9 @@ async function createProduct(formData: FormData) {
   }
 
   const typeKey = asText(formData.get("_type_key")) as ProductTypeKey;
+  const origoReviewContext = readOrigoReviewContext(formData);
   const createRequestKeyRaw = asText(formData.get("_create_request_key"));
-  const createRequestKey = createRequestKeyRaw || null;
+  const createRequestKey = createRequestKeyRaw || (origoReviewContext ? `origo_receipt_review:${origoReviewContext.requestId}` : null);
   const modeQuery = "";
   const config = TYPE_CONFIG[typeKey] ?? TYPE_CONFIG.insumo;
   const afterCreate = normalizeAfterCreateAction(asText(formData.get("_after_create")));
@@ -462,6 +570,24 @@ async function createProduct(formData: FormData) {
   const productId = createdProductId;
 
   if (dedupedByRequestKey) {
+    if (origoReviewContext) {
+      await approveOrigoReviewProductRequest({
+        supabase,
+        userId: user.id,
+        context: origoReviewContext,
+        productId,
+        productName: name,
+      });
+      revalidatePath("/inventory/catalog");
+      redirect(
+        buildOrigoReviewRedirectUrl({
+          context: origoReviewContext,
+          ok: "product_created_from_nexo",
+          productId,
+        })
+      );
+    }
+
     revalidatePath("/inventory/catalog");
     if (afterCreate === "create_another") {
       redirect(appendQueryParam(createAnotherHref, "ok", "created"));
@@ -1183,6 +1309,24 @@ async function createProduct(formData: FormData) {
         );
       }
     }
+  }
+
+  if (origoReviewContext) {
+    await approveOrigoReviewProductRequest({
+      supabase,
+      userId: user.id,
+      context: origoReviewContext,
+      productId,
+      productName: name,
+    });
+    revalidatePath("/inventory/catalog");
+    redirect(
+      buildOrigoReviewRedirectUrl({
+        context: origoReviewContext,
+        ok: "product_created_from_nexo",
+        productId,
+      })
+    );
   }
 
   revalidatePath("/inventory/catalog");

@@ -252,11 +252,23 @@ export default async function NewProductPage({
     category_scope?: string;
     category_site_id?: string;
     category_domain?: string;
+    source?: string;
+    review_request_id?: string;
+    source_entry_id?: string;
+    return_to?: string;
+    suggested_name?: string;
+    supplier_id?: string;
+    stock_unit_code?: string;
   }>;
 }) {
   const sp = (await searchParams) ?? {};
   const typeKey = (sp.type ?? "insumo") as ProductTypeKey;
-  const createRequestKey = crypto.randomUUID();
+  const origoReviewRequestId = String(sp.review_request_id ?? "").trim();
+  const isOrigoReviewFlow = String(sp.source ?? "").trim() === "origo_receipt_review" && Boolean(origoReviewRequestId);
+  const origoSourceEntryId = String(sp.source_entry_id ?? "").trim();
+  const origoReturnTo = safeDecode(sp.return_to) || "/product-master-review";
+  const suggestedName = safeDecode(sp.suggested_name).trim();
+  const createRequestKey = isOrigoReviewFlow ? `origo_receipt_review:${origoReviewRequestId}` : crypto.randomUUID();
   const config = TYPE_CONFIG[typeKey] ?? TYPE_CONFIG.insumo;
   const kpis = heroKpis(typeKey);
   const errorMsg = safeDecode(sp.error);
@@ -536,6 +548,14 @@ export default async function NewProductPage({
           {createdMsg}
         </div>
       ) : null}
+      {isOrigoReviewFlow ? (
+        <div className="rounded-2xl border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-950 shadow-sm">
+          <div className="font-semibold">Creación desde aprobación ORIGO</div>
+          <p className="mt-1 text-xs leading-5">
+            Este insumo quedará vinculado a la solicitud de recepción. Al guardarlo, NEXO volverá a ORIGO para aprobar la solicitud y continuar el cierre de la recepción pendiente.
+          </p>
+        </div>
+      ) : null}
 
       <RequiredFieldsGuardForm
         action={createProductAndView}
@@ -546,6 +566,14 @@ export default async function NewProductPage({
         <input type="hidden" name="_mode" value="" />
         <CreateRequestKeyField initialValue={createRequestKey} />
         <input type="hidden" name="_after_create" value="create_another" />
+        {isOrigoReviewFlow ? (
+          <>
+            <input type="hidden" name="_origo_review_source" value="origo_receipt_review" />
+            <input type="hidden" name="_origo_review_request_id" value={origoReviewRequestId} />
+            <input type="hidden" name="_origo_review_source_entry_id" value={origoSourceEntryId} />
+            <input type="hidden" name="_origo_review_return_to" value={origoReturnTo} />
+          </>
+        ) : null}
 
         <CatalogSection
           title={isAssetItem ? "Identidad del modelo patrimonial" : "Datos básicos"}
@@ -566,6 +594,7 @@ export default async function NewProductPage({
                     ? "Ej. Espresso, croissant, cappuccino"
                     : "Ej. Harina 000"
             }
+            nameDefaultValue={suggestedName || null}
             categories={categoryRows}
             selectedCategoryId=""
             siteNamesById={siteNamesById}
@@ -587,6 +616,7 @@ export default async function NewProductPage({
               mode: "create",
               initialProductType: config.productType,
               initialInventoryKind: config.inventoryKind,
+              initialName: suggestedName || null,
             }}
             lockedTypeField={{
               label: isAssetItem ? "Tipo de maestro" : "Tipo",
@@ -816,37 +846,42 @@ export default async function NewProductPage({
         <div className="pointer-events-none fixed inset-x-0 bottom-4 z-50 px-4 sm:bottom-6 sm:px-6">
           <div className="pointer-events-auto mx-auto flex max-w-6xl flex-col gap-3 rounded-2xl border border-[var(--ui-border)] bg-white/95 p-3 shadow-xl shadow-black/10 backdrop-blur md:flex-row md:items-center md:justify-between">
             <div className="min-w-0">
-              <p className="text-sm font-semibold text-[var(--ui-text)]">Carga en bloque</p>
+              <p className="text-sm font-semibold text-[var(--ui-text)]">
+                {isOrigoReviewFlow ? "Crear y vincular con ORIGO" : "Carga en bloque"}
+              </p>
               <p className="mt-1 text-xs text-[var(--ui-muted)]">
-                La acción principal guarda este registro y deja listo el formulario para crear el siguiente.
+                {isOrigoReviewFlow
+                  ? "La acción principal guarda el insumo, aprueba la solicitud en ORIGO y vuelve a la bandeja de revisión."
+                  : "La acción principal guarda este registro y deja listo el formulario para crear el siguiente."}
               </p>
             </div>
 
             <div className="grid gap-2 sm:grid-cols-2 lg:flex lg:items-center lg:justify-end">
-              <Link href={catalogHref} className="ui-btn ui-btn--ghost justify-center">
-                Volver a {catalogLabel}
-              </Link>
-              <button
-                type="submit"
-                formAction={createProductAndView}
-                className="ui-btn ui-btn--ghost justify-center"
-              >
-                Crear y ver ficha
-              </button>
-              <button
-                type="submit"
-                formAction={createProductAndReturnToCatalog}
-                className="ui-btn ui-btn--ghost justify-center"
-              >
-                Crear y volver
-              </button>
-              <button
-                type="submit"
-                formAction={createProductAndCreateAnother}
-                className="ui-btn ui-btn--brand justify-center"
-              >
-                {createSubmitLabel} y seguir
-              </button>
+              {isOrigoReviewFlow ? (
+                <>
+                  <Link href={origoReturnTo} className="ui-btn ui-btn--ghost justify-center">
+                    Volver a ORIGO
+                  </Link>
+                  <button type="submit" formAction={createProductAndView} className="ui-btn ui-btn--brand justify-center">
+                    Crear insumo y volver a ORIGO
+                  </button>
+                </>
+              ) : (
+                <>
+                  <Link href={catalogHref} className="ui-btn ui-btn--ghost justify-center">
+                    Volver a {catalogLabel}
+                  </Link>
+                  <button type="submit" formAction={createProductAndView} className="ui-btn ui-btn--ghost justify-center">
+                    Crear y ver ficha
+                  </button>
+                  <button type="submit" formAction={createProductAndReturnToCatalog} className="ui-btn ui-btn--ghost justify-center">
+                    Crear y volver
+                  </button>
+                  <button type="submit" formAction={createProductAndCreateAnother} className="ui-btn ui-btn--brand justify-center">
+                    {createSubmitLabel} y seguir
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
