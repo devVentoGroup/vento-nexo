@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -41,13 +41,6 @@ function isProducedPackagedProduct(product: ProductOption | null | undefined): b
   const productType = String(product?.product_type ?? "").trim().toLowerCase();
   const inventoryKind = String(product?.inventory_kind ?? "").trim().toLowerCase();
   return productType === "preparacion" || (productType === "venta" && inventoryKind !== "resale");
-}
-
-function sumProductionPackagePlan(row: RemissionDraftRow): number {
-  return (row.productionPackagePlan ?? []).reduce(
-    (sum, entry) => sum + Number(entry.dispatchQty ?? 0),
-    0
-  );
 }
 
 function measurementModeLabel(value: unknown): string {
@@ -109,6 +102,7 @@ type Props = {
   initialRows?: RemissionDraftRow[];
   submitLabel?: string;
   formMode?: "create" | "edit";
+  requiresSharedDeviceActorSignature?: boolean;
 };
 
 type SiteMode = "simple" | "zonified";
@@ -132,6 +126,7 @@ export function RemissionsCreateForm({
   initialRows,
   submitLabel = "Crear remisión",
   formMode = "create",
+  requiresSharedDeviceActorSignature = false,
 }: Props) {
   const initialRowsSource = useMemo(() => initialRows ?? [], [initialRows]);
   const initialRowsKey = useMemo(() => JSON.stringify(initialRowsSource), [initialRowsSource]);
@@ -551,6 +546,27 @@ export function RemissionsCreateForm({
         </div>
       </section>
 
+
+      {requiresSharedDeviceActorSignature ? (
+        <section className="rounded-[28px] border border-amber-200 bg-amber-50/70 p-5 shadow-[0_18px_48px_rgba(15,23,42,0.08)]">
+          <div className="ui-h3">Firma del trabajador</div>
+          <p className="mt-1 text-sm text-amber-900">
+            Ingresa el PIN del trabajador que solicita esta remisión desde la terminal compartida.
+          </p>
+          <label className="mt-4 block text-sm font-semibold text-[var(--ui-text)]" htmlFor="shared_actor_pin">
+            PIN trabajador
+          </label>
+          <input
+            id="shared_actor_pin"
+            name="shared_actor_pin"
+            type="password"
+            inputMode="numeric"
+            autoComplete="off"
+            className="ui-input mt-2 max-w-xs"
+            required
+          />
+        </section>
+      ) : null}
       <section className="rounded-[28px] border border-[rgba(200,210,220,0.95)] bg-[linear-gradient(180deg,rgba(255,255,255,0.98)_0%,rgba(244,248,252,0.98)_100%)] p-5 shadow-[0_18px_48px_rgba(15,23,42,0.08)]">
         <div className="ui-h3">Productos</div>
 

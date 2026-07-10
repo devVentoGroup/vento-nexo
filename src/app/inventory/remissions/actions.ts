@@ -13,6 +13,10 @@ import {
   getOperationalContext,
 } from "@/lib/auth/operational-context";
 import { buildShellLoginUrl } from "@/lib/auth/sso";
+import {
+  attachSharedDeviceActionSignatureTarget,
+  requireSharedDeviceActorSignature,
+} from "@/lib/auth/shared-device-signature";
 import { createClient } from "@/lib/supabase/server";
 import {
   convertByProductProfile,
@@ -287,6 +291,7 @@ export async function createRemission(formData: FormData) {
   const toSiteId = asText(formData.get("to_site_id"));
   const expectedDate = asText(formData.get("expected_date"));
   const notes = asText(formData.get("notes"));
+  const sharedActorPin = asText(formData.get("shared_actor_pin"));
   if (
     operationalSession.isSharedDevice &&
     String(operationalSession.siteId ?? "").trim() !== toSiteId
@@ -647,11 +652,39 @@ export async function createRemission(formData: FormData) {
     );
   }
 
+  let createdByEmployeeId = user.id;
+  let sharedDeviceSignatureId: string | null = null;
+
+  const signatureResult = await requireSharedDeviceActorSignature({
+    supabase,
+    session: operationalSession,
+    actorPin: sharedActorPin,
+    appId: APP_ID,
+    actionCode: PERMISSIONS.remissionsRequest,
+    targetTable: "restock_requests",
+    metadata: {
+      from_site_id: fromSiteId,
+      to_site_id: toSiteId,
+      item_count: items.length,
+    },
+  });
+
+  if (!signatureResult.ok) {
+    redirect(
+      "/inventory/remissions?error=" +
+        encodeURIComponent(signatureResult.message),
+    );
+  }
+
+  if (signatureResult.required) {
+    createdByEmployeeId = signatureResult.actorEmployeeId;
+    sharedDeviceSignatureId = signatureResult.signatureId;
+  }
   const { data: request, error: requestErr } = await supabase
     .from("restock_requests")
     .insert({
       status: "pending",
-      created_by: user.id,
+      created_by: createdByEmployeeId,
       from_site_id: fromSiteId,
       to_site_id: toSiteId,
       requested_by_site_id: toSiteId,
@@ -671,6 +704,23 @@ export async function createRemission(formData: FormData) {
           requestErr?.message ?? "No se pudo crear la remisión.",
         ),
     );
+  }
+
+
+  const attachSignatureResult = await attachSharedDeviceActionSignatureTarget({
+    supabase,
+    signatureId: sharedDeviceSignatureId,
+    targetTable: "restock_requests",
+    targetId: request.id,
+    metadata: { attached_after_insert: true },
+  });
+
+  if (!attachSignatureResult.ok) {
+    console.error("shared device signature target attach failed", {
+      request_id: request.id,
+      signature_id: sharedDeviceSignatureId,
+      message: attachSignatureResult.message,
+    });
   }
 
   const payload = items.map((item) => ({

@@ -1495,6 +1495,7 @@ export default async function RemissionsPage({
                 originStockRows={inventoryPostingEnabled ? originStockRows : []}
                 productionPackageRows={productionPackageRows}
                 inventoryPostingEnabled={inventoryPostingEnabled}
+                requiresSharedDeviceActorSignature={isSharedDevice}
               />
             </div>
           </section>
