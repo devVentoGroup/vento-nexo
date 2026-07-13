@@ -5,7 +5,7 @@ import type { ComponentProps } from "react";
 
 // The extension is explicit so this wrapper can coexist with the original
 // implementation while extensionless imports resolve to this safety layer.
-// @ts-expect-error Next.js resolves the TSX source at build time.
+// @ts-ignore Next.js resolves the TSX source at build time.
 import { SearchableSingleSelect as BaseSearchableSingleSelect } from "./SearchableSingleSelect.tsx";
 
 type Props = ComponentProps<typeof BaseSearchableSingleSelect>;
