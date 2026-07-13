@@ -1,3 +1,7 @@
+import {
+  canUseRoleOverride,
+  getRoleOverrideFromCookies,
+} from "@/lib/auth/role-override";
 import type { createClient } from "@/lib/supabase/server";
 
 type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
@@ -27,6 +31,71 @@ export type OperationalContextRow = {
   blocked_reasons: string[] | null;
 };
 
+function normalizeRole(value: unknown): string {
+  return String(value ?? "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .trim()
+    .toLowerCase();
+}
+
+function getSimulatedAreaKind(role: unknown): string {
+  const normalizedRole = normalizeRole(role);
+  if (normalizedRole === "cocinero") return "cocina";
+  if (normalizedRole === "barista") return "bar";
+  if (normalizedRole === "cajero") return "mostrador";
+  return "";
+}
+
+async function applyNexoRoleOverrideArea(params: {
+  supabase: SupabaseClient;
+  employeeId: string;
+  siteId: string | null;
+  appCode: string;
+  context: OperationalContextRow;
+}): Promise<OperationalContextRow> {
+  const { supabase, employeeId, siteId, appCode, context } = params;
+  if (normalizeRole(appCode) !== "nexo") return context;
+
+  const overrideRole = await getRoleOverrideFromCookies();
+  if (!overrideRole) return context;
+
+  const { data: employee } = await supabase
+    .from("employees")
+    .select("role")
+    .eq("id", employeeId)
+    .maybeSingle();
+
+  const actualRole = String(employee?.role ?? "");
+  if (!canUseRoleOverride(actualRole, overrideRole)) return context;
+
+  const simulatedAreaKind = getSimulatedAreaKind(overrideRole);
+  if (!simulatedAreaKind) return context;
+
+  const resolvedSiteId = String(
+    siteId ?? context.active_site_id ?? context.selected_site_id ?? "",
+  ).trim();
+  if (!resolvedSiteId) return context;
+
+  const { data: area } = await supabase
+    .from("areas")
+    .select("id,kind")
+    .eq("site_id", resolvedSiteId)
+    .eq("kind", simulatedAreaKind)
+    .eq("is_active", true)
+    .limit(1)
+    .maybeSingle();
+
+  if (!area?.id) return context;
+
+  return {
+    ...context,
+    active_area_id: String(area.id),
+    active_area_kind: String(area.kind ?? simulatedAreaKind),
+    active_operational_role: String(overrideRole),
+  };
+}
+
 export async function getOperationalContext(params: {
   supabase: SupabaseClient;
   employeeId: string;
@@ -42,7 +111,14 @@ export async function getOperationalContext(params: {
   if (error || !data) return null;
   const first = Array.isArray(data) ? data[0] : data;
   if (!first) return null;
-  return first as OperationalContextRow;
+
+  return applyNexoRoleOverrideArea({
+    supabase,
+    employeeId,
+    siteId,
+    appCode,
+    context: first as OperationalContextRow,
+  });
 }
 
 export async function checkOperationalPermission(params: {
@@ -131,7 +207,7 @@ function hasReason(row: OperationalContextRow | null, reason: string): boolean {
 
 export function buildOperationalBlockMessage(
   row: OperationalContextRow | null,
-  fallback = "No puedes operar en este momento."
+  fallback = "No puedes operar en este momento.",
 ): string {
   if (!row) {
     return "No se pudo validar tu contexto operativo. Intenta de nuevo en unos segundos.";
