@@ -45,7 +45,14 @@ export default async function LocationCatalogPage({ params, searchParams }: { pa
   const sp = (await searchParams) ?? {};
   const q = String(sp.q ?? "").trim();
   const { supabase } = await requireAppAccess({ appId: "nexo", returnTo: href(id), permissionCode: "inventory.stock" });
-  const { data: location } = await supabase.from("inventory_locations").select("id,site_id,code,description,sites(name)").eq("id", id).maybeSingle();
+  const { data: location, error: locationError } = await supabase
+    .from("inventory_locations")
+    .select("id,site_id,code,description,sites!inventory_locations_site_id_fkey(name)")
+    .eq("id", id)
+    .maybeSingle();
+  if (locationError) {
+    throw new Error(`No se pudo cargar el LOC: ${locationError.message}`);
+  }
   if (!location) notFound();
 
   const { data: catalog } = await supabase.from("inventory_location_product_catalog").select("product_id,products(id,name,sku)").eq("location_id", id).eq("is_active", true);
