@@ -1,6 +1,6 @@
 import Link from "next/link";
 
-import { CountInitialForm } from "@/features/inventory/count-initial/count-initial-form";
+import { CountLocationForm } from "@/features/inventory/count-initial/count-location-form";
 import { requireAppAccess } from "@/lib/auth/guard";
 import { normalizeUnitCode } from "@/lib/inventory/uom";
 import { createClient } from "@/lib/supabase/server";
@@ -227,11 +227,13 @@ export default async function InventoryCountInitialPage({ searchParams }: { sear
     return { id: position.id, label: path.join(" / "), selectedLabel: path.join(" / ") };
   });
 
+  const locationLabel = selectedLoc.description ?? selectedLoc.code ?? locationId;
+
   return (
     <div className="ui-scene w-full space-y-6">
       <section className="ui-remission-hero">
         <Link href={`/inventory/count-initial?site_id=${encodeURIComponent(siteId)}`} className="ui-caption underline">Cambiar ubicación</Link>
-        <h1 className="ui-h1 mt-2">{selectedLoc.description ?? selectedLoc.code}</h1>
+        <h1 className="ui-h1 mt-2">{locationLabel}</h1>
         <p className="ui-body-muted mt-2">{selectedSite.name} · Conteo ciego por ubicación física.</p>
         <div className="mt-4 flex flex-wrap gap-2">
           <span className="rounded-full border px-3 py-1 text-xs font-semibold">{selectedLoc.code ?? selectedLoc.zone}</span>
@@ -244,7 +246,7 @@ export default async function InventoryCountInitialPage({ searchParams }: { sear
         <div className="ui-alert ui-alert--warn">Esta ubicación todavía no tiene productos registrados. Debe configurarse antes de realizar el conteo.</div>
       ) : null}
       {products.length > 0 ? (
-        <CountInitialForm
+        <CountLocationForm
           products={products.map((product) => ({
             id: product.id,
             name: product.name,
@@ -269,9 +271,9 @@ export default async function InventoryCountInitialPage({ searchParams }: { sear
           }))}
           siteId={siteId}
           siteName={selectedSite.name ?? siteId}
-          countScopeLabel={`Ubicación: ${selectedLoc.code ?? selectedLoc.description ?? locationId}`}
-          zoneOrLocNote={`loc_id:${locationId}`}
-          internalPositions={internalPositions}
+          locationId={locationId}
+          locationLabel={locationLabel}
+          positions={internalPositions}
         />
       ) : null}
     </div>
