@@ -60,15 +60,12 @@ function inventoryProfile(product: ProductRow) {
 }
 
 function shouldShowProfile(profile: ProductUomProfileRow, stockUnitCode: string) {
-  if ((profile.source ?? "manual") !== "manual") return false;
-  if ((profile.usage_context ?? "general") !== "general") return false;
+  const inputQty = Number(profile.qty_in_input_unit ?? 0);
+  const stockQty = Number(profile.qty_in_stock_unit ?? 0);
+  if (!profile.is_active || inputQty <= 0 || stockQty <= 0) return false;
   const inputUnit = normalizeUnitCode(profile.input_unit_code ?? "");
   const stockUnit = normalizeUnitCode(stockUnitCode);
-  return !(
-    inputUnit === stockUnit &&
-    Number(profile.qty_in_input_unit ?? 0) === 1 &&
-    Number(profile.qty_in_stock_unit ?? 0) === 1
-  );
+  return !(inputUnit === stockUnit && inputQty === 1 && stockQty === 1);
 }
 
 async function loadProducts(supabase: SupabaseClient, productIds: string[]) {
@@ -129,10 +126,22 @@ export default async function InventoryCountInitialPage({ searchParams }: { sear
   const { data: sites } = canUseAllSites
     ? await supabase.from("sites").select("id,name").eq("is_active", true).order("name")
     : siteIds.length
-      ? await supabase.from("sites").select("id,name").in("id", siteIds).order("name")
+      ? await supabase.from("sites").select("id,name").in("id", siteIds).eq("is_active", true).order("name")
       : { data: [] as SiteRow[] };
 
-  const siteRows = (sites ?? []) as SiteRow[];
+  const candidateSites = (sites ?? []) as SiteRow[];
+  const candidateSiteIds = candidateSites.map((site) => site.id);
+  const { data: inventoryCapabilities } = candidateSiteIds.length
+    ? await supabase
+        .from("site_operational_capabilities")
+        .select("site_id")
+        .in("site_id", candidateSiteIds)
+        .eq("can_hold_inventory", true)
+    : { data: [] as Array<{ site_id: string }> };
+  const inventorySiteIds = new Set(
+    (inventoryCapabilities ?? []).map((row) => String(row.site_id)).filter(Boolean)
+  );
+  const siteRows = candidateSites.filter((site) => inventorySiteIds.has(site.id));
   const siteId = String(sp.site_id ?? "").trim();
   const locationId = String(sp.location_id ?? "").trim();
   const selectedSite = siteRows.find((site) => site.id === siteId) ?? null;
@@ -196,11 +205,14 @@ export default async function InventoryCountInitialPage({ searchParams }: { sear
     );
   }
 
-  const { data: locationStock } = await supabase
-    .from("inventory_stock_by_location")
-    .select("product_id")
-    .eq("location_id", locationId);
-  const productIds = Array.from(new Set((locationStock ?? []).map((row) => String(row.product_id)).filter(Boolean)));
+  const [{ data: locationStock }, { data: expectedCatalog }] = await Promise.all([
+    supabase.from("inventory_stock_by_location").select("product_id").eq("location_id", locationId),
+    supabase.from("inventory_location_product_catalog").select("product_id").eq("location_id", locationId).eq("is_active", true),
+  ]);
+  const productIds = Array.from(new Set([
+    ...(locationStock ?? []).map((row) => String(row.product_id)),
+    ...(expectedCatalog ?? []).map((row) => String(row.product_id)),
+  ].filter(Boolean)));
   const { rows: products, error: productError } = productIds.length
     ? await loadProducts(supabase, productIds)
     : { rows: [] as ProductRow[], error: null };
@@ -228,22 +240,32 @@ export default async function InventoryCountInitialPage({ searchParams }: { sear
   });
 
   const locationLabel = selectedLoc.description ?? selectedLoc.code ?? locationId;
+  const catalogHref = `/inventory/settings/locations/${encodeURIComponent(locationId)}/catalog`;
 
   return (
     <div className="ui-scene w-full space-y-6">
       <section className="ui-remission-hero">
-        <Link href={`/inventory/count-initial?site_id=${encodeURIComponent(siteId)}`} className="ui-caption underline">Cambiar ubicación</Link>
-        <h1 className="ui-h1 mt-2">{locationLabel}</h1>
-        <p className="ui-body-muted mt-2">{selectedSite.name} · Conteo ciego por ubicación física.</p>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <Link href={`/inventory/count-initial?site_id=${encodeURIComponent(siteId)}`} className="ui-caption underline">Cambiar ubicación</Link>
+            <h1 className="ui-h1 mt-2">{locationLabel}</h1>
+            <p className="ui-body-muted mt-2">{selectedSite.name} · Conteo ciego por ubicación física.</p>
+          </div>
+          <Link href={catalogHref} className="ui-btn ui-btn--ghost">Configurar productos del LOC</Link>
+        </div>
         <div className="mt-4 flex flex-wrap gap-2">
           <span className="rounded-full border px-3 py-1 text-xs font-semibold">{selectedLoc.code ?? selectedLoc.zone}</span>
           <span className="rounded-full border px-3 py-1 text-xs font-semibold">{products.length} productos</span>
+          <span className="rounded-full border px-3 py-1 text-xs font-semibold">{(expectedCatalog ?? []).length} esperados</span>
         </div>
       </section>
 
       {productError ? <div className="ui-alert ui-alert--error">Error al cargar productos: {productError.message}</div> : null}
       {!productError && products.length === 0 ? (
-        <div className="ui-alert ui-alert--warn">Esta ubicación todavía no tiene productos registrados. Debe configurarse antes de realizar el conteo.</div>
+        <div className="ui-alert ui-alert--warn flex flex-wrap items-center justify-between gap-3">
+          <span>Este LOC todavía no tiene productos esperados ni historial de stock.</span>
+          <Link href={catalogHref} className="ui-btn ui-btn--brand ui-btn--sm">Configurar catálogo inicial</Link>
+        </div>
       ) : null}
       {products.length > 0 ? (
         <CountLocationForm
