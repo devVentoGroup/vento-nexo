@@ -129,10 +129,22 @@ export default async function InventoryCountInitialPage({ searchParams }: { sear
   const { data: sites } = canUseAllSites
     ? await supabase.from("sites").select("id,name").eq("is_active", true).order("name")
     : siteIds.length
-      ? await supabase.from("sites").select("id,name").in("id", siteIds).order("name")
+      ? await supabase.from("sites").select("id,name").in("id", siteIds).eq("is_active", true).order("name")
       : { data: [] as SiteRow[] };
 
-  const siteRows = (sites ?? []) as SiteRow[];
+  const candidateSites = (sites ?? []) as SiteRow[];
+  const candidateSiteIds = candidateSites.map((site) => site.id);
+  const { data: inventoryCapabilities } = candidateSiteIds.length
+    ? await supabase
+        .from("site_operational_capabilities")
+        .select("site_id")
+        .in("site_id", candidateSiteIds)
+        .eq("can_hold_inventory", true)
+    : { data: [] as Array<{ site_id: string }> };
+  const inventorySiteIds = new Set(
+    (inventoryCapabilities ?? []).map((row) => String(row.site_id)).filter(Boolean)
+  );
+  const siteRows = candidateSites.filter((site) => inventorySiteIds.has(site.id));
   const siteId = String(sp.site_id ?? "").trim();
   const locationId = String(sp.location_id ?? "").trim();
   const selectedSite = siteRows.find((site) => site.id === siteId) ?? null;
