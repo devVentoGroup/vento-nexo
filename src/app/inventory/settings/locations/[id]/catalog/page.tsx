@@ -3,7 +3,6 @@ import { notFound, redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 
 import { requireAppAccess } from "@/lib/auth/guard";
-import { createClient } from "@/lib/supabase/server";
 
 export const dynamic = "force-dynamic";
 const href = (id: string, q = "") => `/inventory/settings/locations/${id}/catalog${q}`;
