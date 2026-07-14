@@ -9,7 +9,8 @@
     "start": "next start",
     "lint": "eslint",
     "audit:i18n": "node scripts/audit-i18n.mjs",
-    "sync:navigation": "node scripts/sync-navigation.mjs"
+    "sync:navigation": "node scripts/sync-navigation.mjs",
+    "images:optimize-catalog": "node --env-file=.env.local scripts/optimize-catalog-images.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.8.0",
@@ -19,7 +20,8 @@
     "exceljs": "^4.4.0",
     "next": "^16.2.3",
     "react": "19.2.3",
-    "react-dom": "19.2.3"
+    "react-dom": "19.2.3",
+    "sharp": "0.34.5"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

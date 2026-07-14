@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useMemo, useRef, useState, type FormEvent } from "react";
 
@@ -59,31 +59,6 @@ type UnitOption = {
   profileId: string;
 };
 
-function optimizedCatalogImageUrl(value: string | null | undefined, width: number, quality = 62) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "";
-
-  try {
-    const url = new URL(raw);
-    const marker = "/storage/v1/object/public/";
-    const markerIndex = url.pathname.indexOf(marker);
-    const ext = url.pathname.split(".").pop()?.toLowerCase() ?? "";
-
-    if (markerIndex < 0 || ext === "gif" || ext === "svg") return raw;
-    const tail = url.pathname.slice(markerIndex + marker.length);
-    const bucket = tail.split("/")[0] ?? "";
-
-    if (bucket === "commercial-menu-images" || ext === "webp") return raw;
-
-    url.pathname = url.pathname.replace(marker, "/storage/v1/render/image/public/");
-    url.searchParams.set("width", String(width));
-    url.searchParams.set("quality", String(quality));
-    url.searchParams.set("resize", "cover");
-    return url.toString();
-  } catch {
-    return raw;
-  }
-}
 
 function formatQty(value: number) {
   if (!Number.isFinite(value)) return "0";
@@ -414,18 +389,13 @@ export function KioskWithdrawForm({
                           {part.imageUrl ? (
                             // eslint-disable-next-line @next/next/no-img-element
                             <img
-                              src={optimizedCatalogImageUrl(part.imageUrl, 128, 60)}
+                              src={part.imageUrl}
                               alt=""
                               className="h-full w-full object-cover"
                               loading="eager"
                               decoding="async"
                               fetchPriority="high"
-                              onError={(event) => {
-                                const fallback = String(part.imageUrl ?? "").trim();
-                                if (fallback && event.currentTarget.src !== fallback) {
-                                  event.currentTarget.src = fallback;
-                                }
-                              }}
+
                             />
                           ) : (
                             <span className="px-1 text-center text-[10px] font-bold text-slate-400">

@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import Link from "next/link";
 import { useSearchParams } from "next/navigation";
@@ -46,31 +46,6 @@ const KIOSK_INITIAL_LIMIT = 36;
 const BOARD_PAGE_SIZE = 36;
 const EAGER_IMAGE_COUNT = 12;
 
-function optimizedCatalogImageUrl(value: string | null | undefined, width: number, quality = 62) {
-  const raw = String(value ?? "").trim();
-  if (!raw) return "";
-
-  try {
-    const url = new URL(raw);
-    const marker = "/storage/v1/object/public/";
-    const markerIndex = url.pathname.indexOf(marker);
-    const ext = url.pathname.split(".").pop()?.toLowerCase() ?? "";
-
-    if (markerIndex < 0 || ext === "gif" || ext === "svg") return raw;
-    const tail = url.pathname.slice(markerIndex + marker.length);
-    const bucket = tail.split("/")[0] ?? "";
-
-    if (bucket === "commercial-menu-images" || ext === "webp") return raw;
-
-    url.pathname = url.pathname.replace(marker, "/storage/v1/render/image/public/");
-    url.searchParams.set("width", String(width));
-    url.searchParams.set("quality", String(quality));
-    url.searchParams.set("resize", "contain");
-    return url.toString();
-  } catch {
-    return raw;
-  }
-}
 
 function formatQty(value: number | null | undefined) {
   const n = Number(value ?? 0);
@@ -116,18 +91,13 @@ function StockAmount({ item, size = "lg" }: { item: KioskBoardStockItem; size?: 
               {part.imageUrl ? (
                 // eslint-disable-next-line @next/next/no-img-element
                 <img
-                  src={optimizedCatalogImageUrl(part.imageUrl, 64, 58)}
+                  src={part.imageUrl}
                   alt=""
                   className="h-6 w-6 rounded-full object-cover"
                   loading="lazy"
                   decoding="async"
                   fetchPriority="low"
-                  onError={(event) => {
-                    const fallback = String(part.imageUrl ?? "").trim();
-                    if (fallback && event.currentTarget.src !== fallback) {
-                      event.currentTarget.src = fallback;
-                    }
-                  }}
+
                 />
               ) : null}
               {formatQty(part.qty)} {part.label}
@@ -157,8 +127,7 @@ function ProductImage({
   priority?: boolean;
 }) {
   const sizeClass = compact ? "h-16 w-16 rounded-2xl" : "aspect-[4/3] w-full";
-  const width = compact ? 160 : 420;
-  const src = optimizedCatalogImageUrl(item.imageUrl, width);
+  const src = String(item.imageUrl ?? "").trim();
   return (
     <div className={`${sizeClass} overflow-hidden bg-white`}>
       {src ? (
@@ -170,12 +139,7 @@ function ProductImage({
           loading={priority ? "eager" : "lazy"}
           decoding="async"
           fetchPriority={priority ? "high" : "low"}
-          onError={(event) => {
-            const fallback = String(item.imageUrl ?? "").trim();
-            if (fallback && event.currentTarget.src !== fallback) {
-              event.currentTarget.src = fallback;
-            }
-          }}
+
         />
       ) : (
         <div className="flex h-full w-full items-center justify-center text-xs font-semibold text-[var(--ui-muted)]">

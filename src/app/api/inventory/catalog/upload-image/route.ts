@@ -2,38 +2,15 @@
 import { NextResponse } from "next/server";
 
 import { createClient } from "@/lib/supabase/server";
+import {
+  CATALOG_IMAGE_CACHE_SECONDS,
+  optimizeCatalogImage,
+} from "@/lib/inventory/catalog-image-optimization";
 
 const BUCKET = "nexo-catalog-images";
 const MAX_SIZE = 5 * 1024 * 1024; // 5 MB
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif"];
 
-function getExt(mime: string): string {
-  if (mime === "image/jpeg" || mime === "image/jpg") return "jpg";
-  if (mime === "image/png") return "png";
-  if (mime === "image/webp") return "webp";
-  if (mime === "image/gif") return "gif";
-  return "jpg";
-}
-
-function getMimeFromExt(ext: string): string {
-  const value = ext.trim().toLowerCase().replace(/^\./, "");
-  if (value === "jpg" || value === "jpeg") return "image/jpeg";
-  if (value === "png") return "image/png";
-  if (value === "webp") return "image/webp";
-  if (value === "gif") return "image/gif";
-  return "image/jpeg";
-}
-
-function getExtFromPath(path: string): string {
-  const clean = path.split("?")[0] ?? "";
-  const segment = clean.split("/").pop() ?? "";
-  const ext = segment.includes(".") ? segment.split(".").pop() ?? "" : "";
-  const normalized = ext.trim().toLowerCase();
-  if (["jpg", "jpeg", "png", "webp", "gif"].includes(normalized)) {
-    return normalized === "jpeg" ? "jpg" : normalized;
-  }
-  return "jpg";
-}
 
 function sanitizePathToken(value: string, fallback: string): string {
   const sanitized = value
@@ -60,14 +37,12 @@ function normalizeKindFolder(kind: string): string {
 function buildObjectPath(params: {
   productId: string;
   kind: string;
-  ext: string;
 }) {
   const productId = sanitizePathToken(params.productId, "shared");
   const kindFolder = normalizeKindFolder(params.kind);
-  const ext = params.ext.trim().toLowerCase().replace(/^\./, "") || "jpg";
   const nonce = randomUUID().slice(0, 8);
 
-  return `products/${productId}/${kindFolder}/${Date.now()}-${nonce}.${ext}`;
+  return `products/${productId}/${kindFolder}/${Date.now()}-${nonce}.webp`;
 }
 
 function extractBucketObjectPath(value: string): string | null {
@@ -240,29 +215,28 @@ export async function POST(req: Request) {
       );
     }
 
-    const sourceExt = getExtFromPath(sourcePath);
-    const mime = sourceBlob.type && ALLOWED_TYPES.includes(sourceBlob.type.toLowerCase())
-      ? sourceBlob.type.toLowerCase()
-      : getMimeFromExt(sourceExt);
+    const targetPath = buildObjectPath({
+      productId,
+      kind,
+    });
 
-    if (!ALLOWED_TYPES.includes(mime)) {
+    let optimized: Buffer;
+    try {
+      optimized = await optimizeCatalogImage(Buffer.from(await sourceBlob.arrayBuffer()));
+    } catch {
       return NextResponse.json(
-        { error: "Solo se permiten imágenes (JPEG, PNG, WebP, GIF)." },
+        { error: "La imagen existente no se pudo optimizar." },
         { status: 400 }
       );
     }
 
-    const targetPath = buildObjectPath({
-      productId,
-      kind,
-      ext: getExt(mime),
-    });
-
-    const buffer = Buffer.from(await sourceBlob.arrayBuffer());
-
     const { error: uploadErr } = await supabase.storage
       .from(BUCKET)
-      .upload(targetPath, buffer, { contentType: mime, upsert: false });
+      .upload(targetPath, optimized, {
+        contentType: "image/webp",
+        cacheControl: String(CATALOG_IMAGE_CACHE_SECONDS),
+        upsert: false,
+      });
 
     if (uploadErr) {
       return storageUploadErrorResponse(String(uploadErr.message ?? ""));
@@ -287,6 +261,8 @@ export async function POST(req: Request) {
       url: urlData.publicUrl,
       sourceUrl: copyFromUrl,
       copied: true,
+      bytes: optimized.byteLength,
+      format: "webp",
     });
   }
 
@@ -307,14 +283,25 @@ export async function POST(req: Request) {
   const path = buildObjectPath({
     productId,
     kind,
-    ext: getExt(mime),
   });
 
-  const buffer = Buffer.from(await file.arrayBuffer());
+  let optimized: Buffer;
+  try {
+    optimized = await optimizeCatalogImage(Buffer.from(await file.arrayBuffer()));
+  } catch {
+    return NextResponse.json(
+      { error: "El archivo no contiene una imagen válida." },
+      { status: 400 }
+    );
+  }
 
   const { error: uploadErr } = await supabase.storage
     .from(BUCKET)
-    .upload(path, buffer, { contentType: mime, upsert: false });
+    .upload(path, optimized, {
+      contentType: "image/webp",
+      cacheControl: String(CATALOG_IMAGE_CACHE_SECONDS),
+      upsert: false,
+    });
 
   if (uploadErr) {
     return storageUploadErrorResponse(String(uploadErr.message ?? ""));
@@ -338,5 +325,7 @@ export async function POST(req: Request) {
   return NextResponse.json({
     url: urlData.publicUrl,
     copied: false,
+    bytes: optimized.byteLength,
+    format: "webp",
   });
 }
