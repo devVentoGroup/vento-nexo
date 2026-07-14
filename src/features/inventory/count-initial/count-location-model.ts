@@ -1,6 +1,5 @@
 import {
   convertByProductProfile,
-  normalizeProductUomUsageContext,
   normalizeUnitCode,
   type ProductUomProfile,
 } from "@/lib/inventory/uom";
@@ -74,21 +73,21 @@ export function createCountEntry(productId: string): CountLocationEntry {
     typeof crypto !== "undefined" && "randomUUID" in crypto
       ? crypto.randomUUID()
       : `${Date.now()}:${Math.random().toString(36).slice(2)}`;
-
-  return {
-    id: `${productId}:${suffix}`,
-    rawQuantity: "",
-    unitValue: "",
-    positionId: "",
-  };
+  return { id: `${productId}:${suffix}`, rawQuantity: "", unitValue: "", positionId: "" };
 }
 
 function isPhysicalProfile(profile: ProductUomProfile) {
-  if (!profile.is_active || profile.source !== "manual") return false;
-  if (normalizeProductUomUsageContext(profile.usage_context) !== "general") return false;
+  if (!profile.is_active) return false;
+  if (!['general', 'purchase', 'remission'].includes(String(profile.usage_context ?? 'general'))) return false;
   const inputQty = Number(profile.qty_in_input_unit);
   const stockQty = Number(profile.qty_in_stock_unit);
   return Number.isFinite(inputQty) && inputQty > 0 && Number.isFinite(stockQty) && stockQty > 0;
+}
+
+function profilePriority(profile: ProductUomProfile) {
+  const source = profile.source === "manual" ? 0 : profile.source === "supplier_primary" ? 1 : 2;
+  const context = profile.usage_context === "general" ? 0 : profile.usage_context === "remission" ? 1 : 2;
+  return source * 100 + Number(!profile.is_default) * 10 + context;
 }
 
 function formatFactor(value: number) {
@@ -97,7 +96,6 @@ function formatFactor(value: number) {
 
 export function getCountUnitOptions(product: CountLocationProduct): CountUnitOption[] {
   const stockUnitCode = normalizeUnitCode(product.stockUnitCode ?? product.unit ?? "un") || "un";
-  const measurementMode = normalizeMeasurementMode(product.measurementMode);
   const base: CountUnitOption = {
     value: `stock:${stockUnitCode}`,
     inputUnitCode: stockUnitCode,
@@ -105,20 +103,20 @@ export function getCountUnitOptions(product: CountLocationProduct): CountUnitOpt
     conversionLabel: `Unidad base: ${stockUnitCode}`,
     profile: null,
   };
-
-  if (measurementMode !== "fixed_presentation") return [base];
+  if (normalizeMeasurementMode(product.measurementMode) !== "fixed_presentation") return [base];
 
   const seen = new Set<string>();
   const profiles = (product.profiles ?? [])
     .filter(isPhysicalProfile)
-    .sort((a, b) => Number(Boolean(b.is_default)) - Number(Boolean(a.is_default)))
+    .sort((a, b) => profilePriority(a) - profilePriority(b))
     .flatMap((profile) => {
       const inputUnitCode = normalizeUnitCode(profile.input_unit_code);
-      if (!inputUnitCode || seen.has(profile.id)) return [];
-      seen.add(profile.id);
       const inputQty = Number(profile.qty_in_input_unit);
       const stockQty = Number(profile.qty_in_stock_unit);
       const factor = stockQty / inputQty;
+      const dedupeKey = `${inputUnitCode}:${factor.toFixed(8)}`;
+      if (!inputUnitCode || seen.has(dedupeKey)) return [];
+      seen.add(dedupeKey);
       const label = String(profile.label || inputUnitCode).trim();
       return [{
         value: `profile:${profile.id}`,
@@ -151,7 +149,6 @@ export function buildCountLine(
     stockUnitCode,
     profile: selectedUnit.profile,
   });
-
   return {
     product_id: product.id,
     quantity: converted.quantityInStock,
