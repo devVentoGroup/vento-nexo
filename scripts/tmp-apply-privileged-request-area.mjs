@@ -1,3 +1,4 @@
+// Triggered after the temporary workflow became available on preview.
 import fs from "node:fs";
 
 function patch(path, replacements) {
