@@ -32,7 +32,22 @@ jobs:
           node --check /tmp/apply-request-policies.mjs
 
       - name: Apply integration
-        run: node /tmp/apply-request-policies.mjs
+        id: apply
+        continue-on-error: true
+        run: node /tmp/apply-request-policies.mjs > /tmp/apply-request-policies.log 2>&1
+
+      - name: Upload application diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: request-policy-application-log
+          path: /tmp/apply-request-policies.log
+
+      - name: Stop after application failure
+        if: steps.apply.outcome == 'failure'
+        run: |
+          cat /tmp/apply-request-policies.log
+          exit 1
 
       - name: Install dependencies
         run: npm ci
