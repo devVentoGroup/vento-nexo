@@ -72,9 +72,10 @@ export function getRequestPolicyDisplayLabel(
 export function getRequestPolicyInputUnitCode(
   policy: ProductRequestPolicyOption,
 ): string {
-  return policy.policyKind === "base_unit" || policy.policyKind === "actual_quantity"
-    ? policy.requestUnitCode
-    : policy.baseUnitCode;
+  // input_qty stores the quantity the user actually entered. Its unit must
+  // therefore always be the request unit (paquete, caja, kg, etc.), while
+  // quantity/stock_unit_code remain canonical base inventory quantities.
+  return policy.requestUnitCode;
 }
 
 export function getRequestPolicyHtmlMin(

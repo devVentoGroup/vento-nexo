@@ -1,16 +1,27 @@
 import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 
-const cookieDomain =
+import { isLocalHostname } from "@/lib/auth/request-host";
+
+const configuredCookieDomain =
   process.env.NEXT_PUBLIC_COOKIE_DOMAIN || process.env.COOKIE_DOMAIN;
 
-function withCookieDomain(options?: Record<string, unknown>) {
+function withCookieDomain(
+  options: Record<string, unknown> | undefined,
+  cookieDomain: string | undefined,
+) {
   if (!cookieDomain) return options;
   return { ...(options ?? {}), domain: cookieDomain };
 }
 
 export async function createClient() {
   const cookieStore = await cookies();
+  const requestHeaders = await headers();
+  const requestHost =
+    requestHeaders.get("x-forwarded-host") ?? requestHeaders.get("host") ?? "";
+  const cookieDomain = isLocalHostname(requestHost)
+    ? undefined
+    : configuredCookieDomain;
 
   const url =
     process.env.NEXT_PUBLIC_SUPABASE_URL ||
@@ -36,7 +47,11 @@ export async function createClient() {
       setAll(cookiesToSet) {
         try {
           cookiesToSet.forEach(({ name, value, options }) => {
-            cookieStore.set(name, value, withCookieDomain(options));
+            cookieStore.set(
+              name,
+              value,
+              withCookieDomain(options as Record<string, unknown>, cookieDomain),
+            );
           });
         } catch {
           // En Server Components Next puede bloquear set cookies; lo resolvemos con middleware.

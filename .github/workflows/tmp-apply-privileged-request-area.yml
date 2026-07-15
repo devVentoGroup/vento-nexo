@@ -1,0 +1,102 @@
+name: tmp-apply-privileged-request-area
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [preview]
+    types: [opened, synchronize, reopened]
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: preview
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Apply patch
+        run: |
+          set +e
+          {
+            node -e 'const fs=require("fs");const p="scripts/tmp-apply-privileged-request-area.mjs";let s=fs.readFileSync(p,"utf8");s=s.replace("    if (!source.includes(before)) throw new Error(`${path}: missing ${name}`);","    if (!source.includes(before)) { if ([\"load employee role\",\"manager area validation\"].includes(name)) continue; throw new Error(`${path}: missing ${name}`); }");s=s.replaceAll("${APP_ID}","\\${APP_ID}").replaceAll("${PERMISSIONS.remissionsRequest}","\\${PERMISSIONS.remissionsRequest}");fs.writeFileSync(p,s);'
+            node scripts/tmp-apply-privileged-request-area.mjs
+            node - <<'NODE'
+          const fs = require("fs");
+          const p = "src/app/inventory/remissions/actions.ts";
+          let source = fs.readFileSync(p, "utf8");
+          const createMarker = "export async function createRemission(formData: FormData)";
+          const start = source.indexOf(createMarker);
+          if (start < 0) throw new Error("createRemission marker missing");
+          const head = source.slice(0, start);
+          let tail = source.slice(start);
+          const inventoryPattern = /  const inventoryPostingEnabled = await readBooleanAppSetting\(\s*supabase,\s*REMISSIONS_INVENTORY_POSTING_SETTING_KEY,\s*false,\s*\);/;
+          const inventoryMatch = tail.match(inventoryPattern);
+          if (!inventoryMatch) throw new Error("createRemission inventory block missing");
+          const inventoryBlock = inventoryMatch[0];
+          const roleBlock = `${inventoryBlock}
+          const { data: requestingEmployee } = operationalSession.isSharedDevice
+            ? { data: null }
+            : await supabase
+                .from("employees")
+                .select("role")
+                .eq("id", user.id)
+                .maybeSingle();
+          const requestingRole = String(
+            operationalSession.role ?? requestingEmployee?.role ?? "",
+          )
+            .trim()
+            .toLowerCase();
+          const canChooseRequestArea =
+            !operationalSession.isSharedDevice &&
+            ["propietario", "gerente_general"].includes(requestingRole);`;
+          tail = tail.replace(inventoryPattern, roleBlock);
+          const scopeMarker = "  const requestAreaScope = operationalSession.isSharedDevice";
+          const scopeStart = tail.indexOf(scopeMarker);
+          if (scopeStart < 0) throw new Error("requestAreaScope marker missing");
+          const tailBeforeScope = tail.slice(0, scopeStart);
+          let scopeTail = tail.slice(scopeStart);
+          const scopePattern = /(resolveOperationalRemissionAreaScope\(\{[\s\S]*?siteId: toSiteId,[\s\S]*?canSeeAllAreas:) false,(\s*\}\);\s*if \(requestAreaScope\.blockedReason\))/;
+          if (!scopePattern.test(scopeTail)) throw new Error("requestAreaScope canSeeAllAreas target missing");
+          scopeTail = scopeTail.replace(scopePattern, "$1 canChooseRequestArea,$2");
+          fs.writeFileSync(p, head + tailBeforeScope + scopeTail);
+          NODE
+          } > /tmp/patch.log 2>&1
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            tail -n 20 /tmp/patch.log > scripts/tmp-privileged-area-patch-error.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add scripts/tmp-privileged-area-patch-error.txt
+            git commit -m "Record privileged area patch error" || true
+            git push origin preview || true
+            exit "$status"
+          fi
+      - name: Install
+        run: npm ci
+      - name: Build
+        run: |
+          set +e
+          npm run build > /tmp/build.log 2>&1
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            tail -n 50 /tmp/build.log > scripts/tmp-privileged-area-build-error.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add scripts/tmp-privileged-area-build-error.txt
+            git commit -m "Record privileged area build error" || true
+            git push origin preview || true
+            exit "$status"
+          fi
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm scripts/tmp-apply-privileged-request-area.mjs .github/workflows/tmp-apply-privileged-request-area.yml
+          if [ -f scripts/tmp-privileged-area-patch-error.txt ]; then git rm scripts/tmp-privileged-area-patch-error.txt; fi
+          if [ -f scripts/tmp-privileged-area-build-error.txt ]; then git rm scripts/tmp-privileged-area-build-error.txt; fi
+          git add src/app/inventory/remissions/page.tsx src/app/inventory/remissions/actions.ts
+          git commit -m "Allow privileged request area selection"
+          git push origin preview

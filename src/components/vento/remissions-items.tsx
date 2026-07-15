@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useEffect, useMemo, useState } from "react";
 
@@ -75,6 +75,7 @@ type Row = {
   quantity: string;
   inputUnitCode: string;
   inputUomProfileId: string;
+  requestPolicyId?: string;
   areaKind: string;
   productionPackagePlan?: ProductionPackagePlanItem[];
   acceptPackageFraction?: boolean;
@@ -88,6 +89,7 @@ const EMPTY_ROW: RemissionDraftRow = {
   quantity: "",
   inputUnitCode: "",
   inputUomProfileId: "",
+  requestPolicyId: "",
   areaKind: "",
   productionPackagePlan: [],
   acceptPackageFraction: false,
@@ -190,10 +192,11 @@ function usesProductionPackageDispatch(
   profile: ProductUomProfile | null | undefined,
   stockUnitCode: string,
 ): boolean {
-  return (
-    isProducedPackagedProduct(product) &&
-    !isTemporaryOperationUnitProfile(profile, stockUnitCode)
-  );
+  // La política de solicitud no reserva ni despacha paquetes FOGO.
+  void product;
+  void profile;
+  void stockUnitCode;
+  return false;
 }
 
 function usesFixedPresentation(product: Option | null | undefined): boolean {
@@ -470,12 +473,34 @@ export function RemissionsItems({
   }, [defaultUomProfiles]);
   const defaultRequestPolicyByProduct = useMemo(
     () =>
-      new Map(
-        defaultRequestPolicies.map((policy) => [policy.productId, policy] as const),
-      ),
+      (() => {
+        const policies = new Map<string, ProductRequestPolicyOption>();
+        for (const policy of defaultRequestPolicies) {
+          if (!policies.has(policy.productId)) policies.set(policy.productId, policy);
+        }
+        return policies;
+      })(),
     [defaultRequestPolicies],
   );
 
+  const requestPoliciesByProduct = useMemo(() => {
+    const policies = new Map<string, ProductRequestPolicyOption[]>();
+    for (const policy of defaultRequestPolicies) {
+      const current = policies.get(policy.productId) ?? [];
+      current.push(policy);
+      policies.set(policy.productId, current);
+    }
+    return policies;
+  }, [defaultRequestPolicies]);
+
+  const getRequestPolicy = (productId: string, policyId?: string) => {
+    const policies = requestPoliciesByProduct.get(productId) ?? [];
+    return (
+      policies.find((policy) => policy.id === policyId) ??
+      defaultRequestPolicyByProduct.get(productId) ??
+      null
+    );
+  };
   const packagesByProductAndSite = useMemo(() => {
     const map = new Map<string, ProductionPackageOption[]>();
 
@@ -526,7 +551,7 @@ export function RemissionsItems({
         ? (defaultProfileByProduct.get(productId) ?? null)
         : null;
       const requestPolicy = productId
-        ? (defaultRequestPolicyByProduct.get(productId) ?? null)
+        ? (getRequestPolicy(productId, row.requestPolicyId))
         : null;
       const productUsesPackages =
         !requestPolicy &&
@@ -577,7 +602,7 @@ export function RemissionsItems({
       const product = productsById.get(row.productId) ?? null;
       const stockUnitCode = getStockUnitCode(product);
       const quantityValue = Number(row.quantity);
-      const requestPolicy = defaultRequestPolicyByProduct.get(row.productId) ?? null;
+      const requestPolicy = getRequestPolicy(row.productId, row.requestPolicyId);
       const packagePlan = requestPolicy
         ? { items: [] as ProductionPackagePlanItem[] }
         : buildPackagePlan({
@@ -713,7 +738,7 @@ export function RemissionsItems({
 
       const stockUnitCode = getStockUnitCode(product);
       const profile = defaultProfileByProduct.get(productId) ?? null;
-      const requestPolicy = defaultRequestPolicyByProduct.get(productId) ?? null;
+      const requestPolicy = getRequestPolicy(productId, existing?.requestPolicyId);
       if (!requestPolicy) return prev;
       const productUsesPackages = false;
       const productUsesFixedPresentation = false;
@@ -726,6 +751,7 @@ export function RemissionsItems({
         quantity: normalizedQuantity,
         inputUnitCode: getRequestPolicyInputUnitCode(requestPolicy),
         inputUomProfileId: requestPolicy.physicalUomProfileId ?? "",
+        requestPolicyId: requestPolicy.id,
         areaKind: existing?.areaKind || defaultAreaKind,
         acceptPackageFraction: false,
       };
@@ -749,7 +775,7 @@ export function RemissionsItems({
       ? (defaultProfileByProduct.get(row.productId) ?? null)
       : null;
     const requestPolicy = row.productId
-      ? (defaultRequestPolicyByProduct.get(row.productId) ?? null)
+      ? (getRequestPolicy(row.productId, row.requestPolicyId))
       : null;
     const productUsesPackages =
       !requestPolicy &&
@@ -947,7 +973,7 @@ value={row?.quantity ?? ""}
               ? (defaultProfileByProduct.get(row.productId) ?? null)
               : null;
             const requestPolicy = row.productId
-              ? (defaultRequestPolicyByProduct.get(row.productId) ?? null)
+              ? (getRequestPolicy(row.productId, row.requestPolicyId))
               : null;
             const productUsesPackages =
               !requestPolicy &&
@@ -1082,7 +1108,7 @@ value={row?.quantity ?? ""}
                           const nextProfile =
                             defaultProfileByProduct.get(nextProductId) ?? null;
                           const nextRequestPolicy =
-                            defaultRequestPolicyByProduct.get(nextProductId) ?? null;
+                            getRequestPolicy(nextProductId);
                           const nextUsesPackages =
                             !nextRequestPolicy &&
                             usesProductionPackageDispatch(
@@ -1135,6 +1161,36 @@ acceptPackageFraction: false,
                         className="min-w-0"
                       />
                     </label>
+
+                    {(requestPoliciesByProduct.get(row.productId) ?? []).length > 1 ? (
+                      <label className="flex flex-col gap-1 md:col-span-4">
+                        <span className="ui-label">Forma de solicitud</span>
+                        <select
+                          className="ui-input h-10"
+                          value={requestPolicy?.id ?? ""}
+                          onChange={(event) => {
+                            const nextPolicy = getRequestPolicy(row.productId, event.target.value);
+                            if (!nextPolicy) return;
+                            setRows((prev) => prev.map((current) =>
+                              current.id === row.id
+                                ? {
+                                    ...current,
+                                    requestPolicyId: nextPolicy.id,
+                                    inputUnitCode: getRequestPolicyInputUnitCode(nextPolicy),
+                                    inputUomProfileId: nextPolicy.physicalUomProfileId ?? "",
+                                  }
+                                : current,
+                            ));
+                          }}
+                        >
+                          {(requestPoliciesByProduct.get(row.productId) ?? []).map((policy) => (
+                            <option key={policy.id} value={policy.id}>
+                              {getRequestPolicyDisplayLabel(policy)} · 1 = {formatQuantity(policy.baseQtyPerRequestUnit)} {policy.baseUnitCode}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                    ) : null}
 
                     <label className="flex flex-col gap-1 md:col-span-4">
                       <span className="ui-label">
