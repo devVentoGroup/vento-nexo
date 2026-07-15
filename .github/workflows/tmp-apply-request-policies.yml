@@ -1,11 +1,11 @@
 name: Temporary request policies integration
 
 on:
-  push:
+  pull_request:
     branches:
       - preview
     paths:
-      - .github/workflows/tmp-apply-request-policies.yml
+      - scripts/.tmp-trigger-request-policies
 
 permissions:
   contents: write
