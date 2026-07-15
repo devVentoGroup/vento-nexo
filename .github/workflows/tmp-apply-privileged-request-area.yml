@@ -19,9 +19,11 @@ jobs:
           cache: npm
       - name: Apply patch
         run: |
-          node -e 'const fs=require("fs");const p="scripts/tmp-apply-privileged-request-area.mjs";let s=fs.readFileSync(p,"utf8");s=s.replace("    if (!source.includes(before)) throw new Error(`${path}: missing ${name}`);","    if (!source.includes(before)) { if ([\"load employee role\",\"manager area validation\"].includes(name)) continue; throw new Error(`${path}: missing ${name}`); }");s=s.replaceAll("${APP_ID}","\\${APP_ID}").replaceAll("${PERMISSIONS.remissionsRequest}","\\${PERMISSIONS.remissionsRequest}");fs.writeFileSync(p,s);'
-          node scripts/tmp-apply-privileged-request-area.mjs
-          node - <<'NODE'
+          set +e
+          {
+            node -e 'const fs=require("fs");const p="scripts/tmp-apply-privileged-request-area.mjs";let s=fs.readFileSync(p,"utf8");s=s.replace("    if (!source.includes(before)) throw new Error(`${path}: missing ${name}`);","    if (!source.includes(before)) { if ([\"load employee role\",\"manager area validation\"].includes(name)) continue; throw new Error(`${path}: missing ${name}`); }");s=s.replaceAll("${APP_ID}","\\${APP_ID}").replaceAll("${PERMISSIONS.remissionsRequest}","\\${PERMISSIONS.remissionsRequest}");fs.writeFileSync(p,s);'
+            node scripts/tmp-apply-privileged-request-area.mjs
+            node - <<'NODE'
           const fs = require("fs");
           const p = "src/app/inventory/remissions/actions.ts";
           let source = fs.readFileSync(p, "utf8");
@@ -60,12 +62,20 @@ jobs:
           let scopeTail = tail.slice(scopeStart);
           const scopeTarget = "        canSeeAllAreas: false,\n      });\n  if (requestAreaScope.blockedReason)";
           if (!scopeTail.includes(scopeTarget)) throw new Error("requestAreaScope canSeeAllAreas target missing");
-          scopeTail = scopeTail.replace(
-            scopeTarget,
-            "        canSeeAllAreas: canChooseRequestArea,\n      });\n  if (requestAreaScope.blockedReason)",
-          );
+          scopeTail = scopeTail.replace(scopeTarget,"        canSeeAllAreas: canChooseRequestArea,\n      });\n  if (requestAreaScope.blockedReason)");
           fs.writeFileSync(p, head + tailBeforeScope + scopeTail);
           NODE
+          } > /tmp/patch.log 2>&1
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            tail -n 20 /tmp/patch.log > scripts/tmp-privileged-area-patch-error.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add scripts/tmp-privileged-area-patch-error.txt
+            git commit -m "Record privileged area patch error" || true
+            git push origin preview || true
+            exit "$status"
+          fi
       - name: Install
         run: npm ci
       - name: Build
