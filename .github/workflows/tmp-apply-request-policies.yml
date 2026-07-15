@@ -1,0 +1,49 @@
+name: Temporary request policies integration
+
+on:
+  push:
+    branches:
+      - preview
+    paths:
+      - .github/workflows/tmp-apply-request-policies.yml
+
+permissions:
+  contents: write
+
+jobs:
+  apply-and-validate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout preview
+        uses: actions/checkout@v4
+        with:
+          ref: preview
+          fetch-depth: 0
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Decode integration script
+        run: |
+          base64 --decode scripts/.tmp-apply-request-policies.mjs.gz.b64 | gzip --decompress > /tmp/apply-request-policies.mjs
+          node --check /tmp/apply-request-policies.mjs
+
+      - name: Apply integration
+        run: node /tmp/apply-request-policies.mjs
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      - name: Commit validated changes
+        run: |
+          git config user.name "OpenAI"
+          git config user.email "openai@users.noreply.github.com"
+          git add src/app/inventory/remissions/page.tsx src/app/inventory/remissions/actions.ts src/components/vento/remissions-create-form.tsx src/components/vento/remissions-items.tsx src/lib/inventory/request-policy.ts
+          git commit -m "Use request policies in remission modal"
+          git push origin preview
