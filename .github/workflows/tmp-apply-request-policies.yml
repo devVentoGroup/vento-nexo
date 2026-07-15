@@ -98,6 +98,31 @@ jobs:
             write(rel, current.slice(0, lineStart) + `${lines.join('\n')}\n` + current.slice(end));
           }'''
           source = source[:table_call_position] + anchored_replacement + source[table_call_end:]
+
+          constraint_label = "  'table policy constraints',\n);"
+          constraint_label_position = source.index(constraint_label)
+          constraint_call_position = source.rfind('replaceOnce(', 0, constraint_label_position)
+          constraint_call_end = source.index('\n);', constraint_label_position) + 3
+          constraint_replacement = r'''{
+            const rel = 'src/components/vento/remissions-items.tsx';
+            const current = read(rel);
+            const tableSection = current.indexOf('group.products.map((product) => {');
+            const inputStart = current.indexOf('type="number"', tableSection);
+            const minStart = current.indexOf('min="0"', inputStart);
+            const valueStart = current.indexOf('value={row?.quantity ?? ""}', minStart);
+            if (tableSection < 0 || inputStart < 0 || minStart < 0 || valueStart < 0) {
+              throw new Error(`${rel}: no se encontró el campo de requisición de la tabla`);
+            }
+            const lineStart = current.lastIndexOf('\n', minStart) + 1;
+            const indent = current.slice(lineStart, minStart);
+            const lines = [
+              `${indent}min={getRequestPolicyHtmlMin(requestPolicy)}`,
+              `${indent}step={getRequestPolicyHtmlStep(requestPolicy)}`,
+              `${indent}disabled={!requestPolicy}`,
+            ];
+            write(rel, current.slice(0, lineStart) + `${lines.join('\n')}\n` + current.slice(valueStart));
+          }'''
+          source = source[:constraint_call_position] + constraint_replacement + source[constraint_call_end:]
           path.write_text(source)
           PY
           node --check /tmp/apply-request-policies.mjs
