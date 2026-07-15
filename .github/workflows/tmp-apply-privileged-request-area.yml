@@ -1,0 +1,30 @@
+name: tmp-apply-privileged-request-area
+on:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: preview
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - name: Apply patch
+        run: node scripts/tmp-apply-privileged-request-area.mjs
+      - name: Install
+        run: npm ci
+      - name: Build
+        run: npm run build
+      - name: Commit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm scripts/tmp-apply-privileged-request-area.mjs .github/workflows/tmp-apply-privileged-request-area.yml
+          git add src/app/inventory/remissions/page.tsx src/app/inventory/remissions/actions.ts
+          git commit -m "Allow privileged request area selection"
+          git push origin preview
