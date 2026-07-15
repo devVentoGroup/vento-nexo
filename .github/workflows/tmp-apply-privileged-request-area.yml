@@ -32,12 +32,10 @@ jobs:
           if (start < 0) throw new Error("createRemission marker missing");
           const head = source.slice(0, start);
           let tail = source.slice(start);
-          const inventoryBlock = `  const inventoryPostingEnabled = await readBooleanAppSetting(
-            supabase,
-            REMISSIONS_INVENTORY_POSTING_SETTING_KEY,
-            false,
-          );`;
-          if (!tail.includes(inventoryBlock)) throw new Error("createRemission inventory block missing");
+          const inventoryPattern = /  const inventoryPostingEnabled = await readBooleanAppSetting\(\s*supabase,\s*REMISSIONS_INVENTORY_POSTING_SETTING_KEY,\s*false,\s*\);/;
+          const inventoryMatch = tail.match(inventoryPattern);
+          if (!inventoryMatch) throw new Error("createRemission inventory block missing");
+          const inventoryBlock = inventoryMatch[0];
           const roleBlock = `${inventoryBlock}
           const { data: requestingEmployee } = operationalSession.isSharedDevice
             ? { data: null }
@@ -54,15 +52,15 @@ jobs:
           const canChooseRequestArea =
             !operationalSession.isSharedDevice &&
             ["propietario", "gerente_general"].includes(requestingRole);`;
-          tail = tail.replace(inventoryBlock, roleBlock);
+          tail = tail.replace(inventoryPattern, roleBlock);
           const scopeMarker = "  const requestAreaScope = operationalSession.isSharedDevice";
           const scopeStart = tail.indexOf(scopeMarker);
           if (scopeStart < 0) throw new Error("requestAreaScope marker missing");
           const tailBeforeScope = tail.slice(0, scopeStart);
           let scopeTail = tail.slice(scopeStart);
-          const scopeTarget = "        canSeeAllAreas: false,\n      });\n  if (requestAreaScope.blockedReason)";
-          if (!scopeTail.includes(scopeTarget)) throw new Error("requestAreaScope canSeeAllAreas target missing");
-          scopeTail = scopeTail.replace(scopeTarget,"        canSeeAllAreas: canChooseRequestArea,\n      });\n  if (requestAreaScope.blockedReason)");
+          const scopePattern = /(resolveOperationalRemissionAreaScope\(\{[\s\S]*?siteId: toSiteId,[\s\S]*?canSeeAllAreas:) false,(\s*\}\);\s*if \(requestAreaScope\.blockedReason\))/;
+          if (!scopePattern.test(scopeTail)) throw new Error("requestAreaScope canSeeAllAreas target missing");
+          scopeTail = scopeTail.replace(scopePattern, "$1 canChooseRequestArea,$2");
           fs.writeFileSync(p, head + tailBeforeScope + scopeTail);
           NODE
           } > /tmp/patch.log 2>&1
