@@ -17,7 +17,7 @@ https://nextjs.org/telemetry
 ▲ Next.js 16.2.10 (Turbopack)
 
   Creating an optimized production build ...
-✓ Compiled successfully in 10.9s
+✓ Compiled successfully in 11.9s
   Running TypeScript ...
 Failed to type check.
 
