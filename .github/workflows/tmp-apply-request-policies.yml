@@ -52,10 +52,52 @@ jobs:
           }
           '''
           source = source.replace(helper_anchor, helper_anchor + helper, 1)
+
           label = "  'items normalized profile id',\n);"
           label_position = source.index(label)
           call_position = source.rfind('replaceOnce(', 0, label_position)
           source = source[:call_position] + 'replaceFirst(' + source[call_position + len('replaceOnce('):]
+
+          table_label = "  'table policy label',\n);"
+          table_label_position = source.index(table_label)
+          table_call_position = source.rfind('replaceOnce(', 0, table_label_position)
+          table_call_end = source.index('\n);', table_label_position) + 3
+          anchored_replacement = r'''{
+            const rel = 'src/components/vento/remissions-items.tsx';
+            const current = read(rel);
+            const tableSection = current.indexOf('group.products.map((product) => {');
+            const start = current.indexOf('const productProfile =', tableSection);
+            const end = current.indexOf('const hasQuantity = Boolean(row?.quantity);', start);
+            if (tableSection < 0 || start < 0 || end < 0) {
+              throw new Error(`${rel}: no se encontró el bloque visual de unidad`);
+            }
+            const lineStart = current.lastIndexOf('\n', start) + 1;
+            const indent = current.slice(lineStart, start);
+            const lines = [
+              `${indent}const productProfile =`,
+              `${indent}  defaultProfileByProduct.get(product.id) ?? null;`,
+              `${indent}const requestPolicy =`,
+              `${indent}  defaultRequestPolicyByProduct.get(product.id) ?? null;`,
+              `${indent}const stockUnitCode = getStockUnitCode(product);`,
+              `${indent}const productUsesPackages =`,
+              `${indent}  !requestPolicy &&`,
+              `${indent}  usesProductionPackageDispatch(`,
+              `${indent}    product,`,
+              `${indent}    productProfile,`,
+              `${indent}    stockUnitCode,`,
+              `${indent}  );`,
+              `${indent}const unitLabel = requestPolicy`,
+              `${indent}  ? getRequestPolicyDisplayLabel(requestPolicy)`,
+              `${indent}  : productUsesPackages`,
+              `${indent}    ? stockUnitCode`,
+              `${indent}    : getRemissionPresentationLabel(`,
+              `${indent}        productProfile,`,
+              `${indent}        stockUnitCode,`,
+              `${indent}      );`,
+            ];
+            write(rel, current.slice(0, lineStart) + `${lines.join('\n')}\n` + current.slice(end));
+          }'''
+          source = source[:table_call_position] + anchored_replacement + source[table_call_end:]
           path.write_text(source)
           PY
           node --check /tmp/apply-request-policies.mjs
