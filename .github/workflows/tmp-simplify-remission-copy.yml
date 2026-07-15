@@ -1,9 +1,9 @@
 name: tmp-simplify-remission-copy
 
 on:
-  pull_request:
+  push:
     branches:
-      - preview
+      - agent/request-policy-model-preview
 
 permissions:
   contents: write
