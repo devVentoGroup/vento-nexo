@@ -7,6 +7,11 @@ import {
   normalizeUnitCode,
   type ProductUomProfile,
 } from "@/lib/inventory/uom";
+import {
+  getRequestPolicyDisplayLabel,
+  getRequestPolicyInputUnitCode,
+  type ProductRequestPolicyOption,
+} from "@/lib/inventory/request-policy";
 
 import {
   RemissionsItems,
@@ -92,6 +97,7 @@ type Props = {
   products: ProductOption[];
   categoryNameById?: Record<string, string>;
   defaultUomProfiles?: ProductUomProfile[];
+  defaultRequestPolicies?: ProductRequestPolicyOption[];
   productionPackageRows?: ProductionPackageOption[];
   areaOptions: AreaOption[];
   defaultAreaKind?: string;
@@ -116,6 +122,7 @@ export function RemissionsCreateForm({
   products,
   categoryNameById = {},
   defaultUomProfiles = [],
+  defaultRequestPolicies = [],
   productionPackageRows = [],
   areaOptions,
   defaultAreaKind: defaultAreaKindProp = "",
@@ -173,6 +180,13 @@ export function RemissionsCreateForm({
     () => new Map(defaultUomProfiles.map((profile) => [profile.id, profile])),
     [defaultUomProfiles]
   );
+  const requestPolicyByProductId = useMemo(
+    () =>
+      new Map(
+        defaultRequestPolicies.map((policy) => [policy.productId, policy] as const),
+      ),
+    [defaultRequestPolicies],
+  );
   const originStockIndex = useMemo(() => {
     const next: Record<
       string,
@@ -219,6 +233,7 @@ export function RemissionsCreateForm({
       (acc, row) => {
         const product = productMap.get(row.productId);
         const qty = Number(row.quantity);
+        const requestPolicy = requestPolicyByProductId.get(row.productId) ?? null;
         const hasContent = Boolean(
           row.productId ||
           row.quantity.trim() ||
@@ -228,6 +243,7 @@ export function RemissionsCreateForm({
         const valid = Boolean(
           row.productId &&
           product?.name &&
+          requestPolicy?.id &&
           Number.isFinite(qty) &&
           qty > 0
         );
@@ -242,6 +258,65 @@ export function RemissionsCreateForm({
         }
 
         if (valid) {
+          if (requestPolicy) {
+            const measurementMode = normalizeMeasurementMode(product?.measurement_mode);
+            const displayUnit = getRequestPolicyDisplayLabel(requestPolicy);
+            const inputUnitCode = getRequestPolicyInputUnitCode(requestPolicy);
+            const quantityInStock = Number(
+              ((Number.isFinite(qty) ? qty : 0) * requestPolicy.baseQtyPerRequestUnit).toFixed(6),
+            );
+            const stockUnitDisplay = requestPolicy.baseUnitCode || "un";
+            const referenceMeta = inventoryPostingEnabled
+              ? selectedOriginStockByProduct[row.productId] ?? null
+              : null;
+            const availableReference = Number(referenceMeta?.currentQty ?? 0);
+            const hasReferenceShortage =
+              inventoryPostingEnabled && quantityInStock > availableReference;
+
+            if (inventoryPostingEnabled) {
+              if (hasReferenceShortage) acc.referenceShortageRows += 1;
+              else acc.referenceCoveredRows += 1;
+            }
+
+            const conversionSummary =
+              Math.abs(requestPolicy.baseQtyPerRequestUnit - 1) > 0.000001
+                ? (Number.isFinite(qty) ? qty : 0) +
+                  " " +
+                  displayUnit +
+                  " = " +
+                  quantityInStock.toLocaleString("es-CO", { maximumFractionDigits: 3 }) +
+                  " " +
+                  stockUnitDisplay
+                : "";
+
+            acc.items.push({
+              id: row.id,
+              name: product?.name ?? "",
+              quantity: Number.isFinite(qty) ? qty : 0,
+              unit: displayUnit,
+              inputUnitCode,
+              areaKind: row.areaKind,
+              stockQuantity: quantityInStock,
+              stockUnit: stockUnitDisplay,
+              availableReference,
+              referenceUpdatedAt: referenceMeta?.updatedAt ?? null,
+              hasReferenceShortage,
+              hasPresentationProfile: true,
+              requiresPresentationProfile: false,
+              requiresPackagePlan: false,
+              packagePlanCount: 0,
+              packagePlanTotal: 0,
+              packagePlanMatches: true,
+              hasPackageFraction: false,
+              acceptPackageFraction: false,
+              measurementMode,
+              measurementModeLabel: displayUnit,
+              conversionSummary,
+              valid,
+            });
+            return acc;
+          }
+
           const measurementMode = normalizeMeasurementMode(product?.measurement_mode);
           const isProducedPackaged = isProducedPackagedProduct(product);
           const isFixedPresentation = usesFixedPresentationMode(measurementMode) && !isProducedPackaged;
@@ -369,6 +444,7 @@ export function RemissionsCreateForm({
     draftRows,
     inventoryPostingEnabled,
     products,
+    requestPolicyByProductId,
     selectedOriginStockByProduct,
     siteMode,
     uomProfileById,
@@ -579,6 +655,7 @@ export function RemissionsCreateForm({
             defaultAreaKind={defaultAreaKind}
             lockAreaKind={Boolean(defaultAreaKindProp)}
             defaultUomProfiles={defaultUomProfiles}
+            defaultRequestPolicies={defaultRequestPolicies}
             productionPackageRows={productionPackageRows}
             selectedFromSiteId={fromSiteId}
             onRowsChange={setDraftRows}

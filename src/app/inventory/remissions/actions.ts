@@ -25,6 +25,12 @@ import {
   type ProductUomProfile,
 } from "@/lib/inventory/uom";
 import {
+  getRequestPolicyInputUnitCode,
+  mapProductRequestPolicyRow,
+  validateRequestedPolicyQuantity,
+  type ProductRequestPolicyRow,
+} from "@/lib/inventory/request-policy";
+import {
   asText,
   getListActionsForRemission,
   loadProductSiteRows,
@@ -317,6 +323,12 @@ export async function createRemission(formData: FormData) {
   const inputQuantities = formData
     .getAll("item_quantity_in_input")
     .map((v) => String(v).trim());
+  const requestPolicyIds = formData
+    .getAll("item_request_policy_id")
+    .map((v) => String(v).trim());
+  const requestedPolicyQuantities = formData
+    .getAll("item_requested_policy_qty")
+    .map((v) => String(v).trim());
   const areaKinds = formData
     .getAll("item_area_kind")
     .map((v) => String(v).trim());
@@ -385,6 +397,24 @@ export async function createRemission(formData: FormData) {
     ].map((product) => [product.id, product]),
   );
 
+  const selectedRequestPolicyIds = Array.from(
+    new Set(requestPolicyIds.filter(Boolean)),
+  );
+  const { data: requestPolicyData } = selectedRequestPolicyIds.length
+    ? await supabase
+        .from("product_request_policies")
+        .select(
+          "id,product_id,label,request_unit_code,base_unit_code,base_qty_per_request_unit,constraint_mode,minimum_request_qty,request_step_qty,allow_fraction,policy_kind,physical_uom_profile_id,is_active",
+        )
+        .in("id", selectedRequestPolicyIds)
+    : { data: [] as ProductRequestPolicyRow[] };
+  const requestPolicyById = new Map(
+    ((requestPolicyData ?? []) as ProductRequestPolicyRow[])
+      .map(mapProductRequestPolicyRow)
+      .filter((row): row is NonNullable<typeof row> => row !== null)
+      .map((policy) => [policy.id, policy] as const),
+  );
+
   const requestedUomProfileIds = Array.from(
     new Set(inputUomProfileIds.filter(Boolean)),
   );
@@ -415,11 +445,51 @@ export async function createRemission(formData: FormData) {
     production_area_kind: string | null;
     production_package_plan: ProductionPackagePlanItem[];
     requires_package_dispatch: boolean;
+    request_policy_id: string | null;
+    requested_policy_qty: number | null;
   }> = [];
   try {
     items = productIds
       .map((productId, idx) => {
         const product = productMap.get(productId);
+        const requestPolicyId = requestPolicyIds[idx] || "";
+        const requestedPolicyQty = roundQuantity(
+          parseNumber(
+            requestedPolicyQuantities[idx] ??
+              inputQuantities[idx] ??
+              quantities[idx] ??
+              "0",
+          ),
+        );
+        const requestPolicy = requestPolicyId
+          ? (requestPolicyById.get(requestPolicyId) ?? null)
+          : null;
+        if (requestPolicyId) {
+          if (!requestPolicy || requestPolicy.productId !== productId) {
+            throw new Error(
+              "La unidad seleccionada no está disponible para este producto.",
+            );
+          }
+          validateRequestedPolicyQuantity(requestPolicy, requestedPolicyQty);
+          return {
+            product_id: productId,
+            quantity: roundQuantity(
+              requestedPolicyQty * requestPolicy.baseQtyPerRequestUnit,
+            ),
+            input_qty: requestedPolicyQty,
+            unit: requestPolicy.baseUnitCode,
+            input_unit_code: getRequestPolicyInputUnitCode(requestPolicy),
+            input_uom_profile_id: requestPolicy.physicalUomProfileId,
+            conversion_factor_to_stock: requestPolicy.baseQtyPerRequestUnit,
+            stock_unit_code: requestPolicy.baseUnitCode,
+            production_area_kind: areaKinds[idx] || null,
+            production_package_plan: [],
+            requires_package_dispatch: false,
+            request_policy_id: requestPolicy.id,
+            requested_policy_qty: requestedPolicyQty,
+          };
+        }
+
         const stockUnitCode = normalizeUnitCode(
           product?.stock_unit_code || product?.unit || "un",
         );
@@ -477,6 +547,8 @@ export async function createRemission(formData: FormData) {
           production_area_kind: areaKinds[idx] || null,
           production_package_plan: productionPackagePlan,
           requires_package_dispatch: productUsesPackages,
+          request_policy_id: null,
+          requested_policy_qty: null,
         };
       })
       .filter((item) => item.product_id && item.quantity > 0);
@@ -736,6 +808,8 @@ export async function createRemission(formData: FormData) {
     production_area_kind: item.production_area_kind,
     production_package_plan: item.production_package_plan,
     requires_package_dispatch: item.requires_package_dispatch,
+    request_policy_id: item.request_policy_id,
+    requested_policy_qty: item.requested_policy_qty,
   }));
 
   const { error: itemsErr } = await supabase

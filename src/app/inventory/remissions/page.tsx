@@ -16,6 +16,10 @@ import {
 } from "@/lib/auth/role-override-config";
 import { getSiteCapabilitiesMap } from "@/lib/inventory/site-capabilities";
 import { RemissionsCreateForm } from "@/components/vento/remissions-create-form";
+import {
+  mapProductRequestPolicyRow,
+  type ProductRequestPolicyRow,
+} from "@/lib/inventory/request-policy";
 import { safeDecodeURIComponent } from "@/lib/url";
 import { normalizeUnitCode, type ProductUomProfile } from "@/lib/inventory/uom";
 import { createRemission, runRemissionListAction } from "./actions";
@@ -670,6 +674,28 @@ export default async function RemissionsPage({
     }
   }
   const productIds = productRows.map((row) => row.id);
+  const { data: defaultRequestPolicyData, error: defaultRequestPolicyError } =
+    productIds.length > 0
+      ? await supabase
+          .from("product_request_policies")
+          .select(
+            "id,product_id,label,request_unit_code,base_unit_code,base_qty_per_request_unit,constraint_mode,minimum_request_qty,request_step_qty,allow_fraction,policy_kind,physical_uom_profile_id,is_active",
+          )
+          .in("product_id", productIds)
+          .eq("is_active", true)
+          .eq("is_default", true)
+          .order("created_at", { ascending: true })
+      : { data: [] as ProductRequestPolicyRow[], error: null };
+  if (defaultRequestPolicyError) {
+    console.error("No se pudieron cargar las unidades predeterminadas de remisión", {
+      message: defaultRequestPolicyError.message,
+    });
+  }
+  const defaultRequestPolicies = (
+    (defaultRequestPolicyData ?? []) as ProductRequestPolicyRow[]
+  )
+    .map(mapProductRequestPolicyRow)
+    .filter((row): row is NonNullable<typeof row> => row !== null);
   const categoryAreaOptions = areaOptions.filter(
     (option) => option.value !== "general",
   );
@@ -1490,6 +1516,7 @@ export default async function RemissionsPage({
                 products={productRows}
                 categoryNameById={Object.fromEntries(categoryNameById)}
                 defaultUomProfiles={defaultUomProfiles}
+                defaultRequestPolicies={defaultRequestPolicies}
                 areaOptions={areaOptions}
                 defaultAreaKind={selectedRemissionCategoryAreaKind}
                 originStockRows={inventoryPostingEnabled ? originStockRows : []}

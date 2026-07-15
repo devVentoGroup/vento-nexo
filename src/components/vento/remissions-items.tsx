@@ -11,6 +11,13 @@ import {
   selectRemissionRequestUomProfile,
   type ProductUomProfile,
 } from "@/lib/inventory/uom";
+import {
+  getRequestPolicyDisplayLabel,
+  getRequestPolicyHtmlMin,
+  getRequestPolicyHtmlStep,
+  getRequestPolicyInputUnitCode,
+  type ProductRequestPolicyOption,
+} from "@/lib/inventory/request-policy";
 
 type MeasurementMode =
   | "fixed_presentation"
@@ -94,6 +101,7 @@ type Props = {
   defaultAreaKind?: string;
   lockAreaKind?: boolean;
   defaultUomProfiles?: ProductUomProfile[];
+  defaultRequestPolicies?: ProductRequestPolicyOption[];
   productionPackageRows?: ProductionPackageOption[];
   selectedFromSiteId?: string;
   onRowsChange?: (rows: RemissionDraftRow[]) => void;
@@ -433,6 +441,7 @@ export function RemissionsItems({
   defaultAreaKind = "",
   lockAreaKind = false,
   defaultUomProfiles = [],
+  defaultRequestPolicies = [],
   productionPackageRows = [],
   selectedFromSiteId = "",
   onRowsChange,
@@ -459,6 +468,13 @@ export function RemissionsItems({
     }
     return selected;
   }, [defaultUomProfiles]);
+  const defaultRequestPolicyByProduct = useMemo(
+    () =>
+      new Map(
+        defaultRequestPolicies.map((policy) => [policy.productId, policy] as const),
+      ),
+    [defaultRequestPolicies],
+  );
 
   const packagesByProductAndSite = useMemo(() => {
     const map = new Map<string, ProductionPackageOption[]>();
@@ -509,27 +525,33 @@ export function RemissionsItems({
       const profile = productId
         ? (defaultProfileByProduct.get(productId) ?? null)
         : null;
-      const productUsesPackages = usesProductionPackageDispatch(
-        product,
-        profile,
-        stockUnitCode,
-      );
+      const requestPolicy = productId
+        ? (defaultRequestPolicyByProduct.get(productId) ?? null)
+        : null;
+      const productUsesPackages =
+        !requestPolicy &&
+        usesProductionPackageDispatch(product, profile, stockUnitCode);
       const productUsesFixedPresentation =
-        usesFixedPresentation(product) ||
-        isTemporaryOperationUnitProfile(profile, stockUnitCode);
-      const inputUnitCode = productUsesPackages
-        ? stockUnitCode || "un"
-        : productUsesFixedPresentation
-          ? getRemissionInputUnitCode(profile, stockUnitCode)
-          : stockUnitCode || "un";
+        !requestPolicy &&
+        (usesFixedPresentation(product) ||
+          isTemporaryOperationUnitProfile(profile, stockUnitCode));
+      const inputUnitCode = requestPolicy
+        ? getRequestPolicyInputUnitCode(requestPolicy)
+        : productUsesPackages
+          ? stockUnitCode || "un"
+          : productUsesFixedPresentation
+            ? getRemissionInputUnitCode(profile, stockUnitCode)
+            : stockUnitCode || "un";
       return {
         id: Number.isFinite(row.id) ? row.id : index,
         productId,
         quantity: String(row.quantity ?? "").trim(),
         inputUnitCode,
-        inputUomProfileId: productUsesFixedPresentation
-          ? (profile?.id ?? "")
-          : "",
+        inputUomProfileId: requestPolicy
+          ? (requestPolicy.physicalUomProfileId ?? "")
+          : productUsesFixedPresentation
+            ? (profile?.id ?? "")
+            : "",
         areaKind: String(row.areaKind ?? "").trim() || defaultAreaKind,
         productionPackagePlan: row.productionPackagePlan ?? [],
         acceptPackageFraction: Boolean(row.acceptPackageFraction),
@@ -538,6 +560,7 @@ export function RemissionsItems({
   }, [
     defaultAreaKind,
     defaultProfileByProduct,
+    defaultRequestPolicyByProduct,
     initialRowsSource,
     productsById,
   ]);
@@ -554,19 +577,22 @@ export function RemissionsItems({
       const product = productsById.get(row.productId) ?? null;
       const stockUnitCode = getStockUnitCode(product);
       const quantityValue = Number(row.quantity);
-      const packagePlan = buildPackagePlan({
-        product,
-        packages: getAvailablePackages(row.productId),
-        requestedQty: Number.isFinite(quantityValue) ? quantityValue : 0,
-        stockUnitCode,
-      });
+      const requestPolicy = defaultRequestPolicyByProduct.get(row.productId) ?? null;
+      const packagePlan = requestPolicy
+        ? { items: [] as ProductionPackagePlanItem[] }
+        : buildPackagePlan({
+            product,
+            packages: getAvailablePackages(row.productId),
+            requestedQty: Number.isFinite(quantityValue) ? quantityValue : 0,
+            stockUnitCode,
+          });
 
       return {
         ...row,
         productionPackagePlan: packagePlan.items,
       };
     });
-  }, [packagesByProductAndSite, productsById, rows, selectedFromSiteId]);
+  }, [defaultRequestPolicyByProduct, packagesByProductAndSite, productsById, rows, selectedFromSiteId]);
 
   useEffect(() => {
     onRowsChange?.(rowsWithDerivedPackagePlans);
@@ -687,14 +713,10 @@ export function RemissionsItems({
 
       const stockUnitCode = getStockUnitCode(product);
       const profile = defaultProfileByProduct.get(productId) ?? null;
-      const productUsesPackages = usesProductionPackageDispatch(
-        product,
-        profile,
-        stockUnitCode,
-      );
-      const productUsesFixedPresentation =
-        usesFixedPresentation(product) ||
-        isTemporaryOperationUnitProfile(profile, stockUnitCode);
+      const requestPolicy = defaultRequestPolicyByProduct.get(productId) ?? null;
+      if (!requestPolicy) return prev;
+      const productUsesPackages = false;
+      const productUsesFixedPresentation = false;
       const nextRow: Row = {
         ...(existing ?? {
           ...EMPTY_ROW,
@@ -702,14 +724,8 @@ export function RemissionsItems({
         }),
         productId,
         quantity: normalizedQuantity,
-        inputUnitCode: productUsesPackages
-          ? stockUnitCode || "un"
-          : productUsesFixedPresentation
-            ? getRemissionInputUnitCode(profile, stockUnitCode)
-            : stockUnitCode || "un",
-        inputUomProfileId: productUsesFixedPresentation
-          ? (profile?.id ?? "")
-          : "",
+        inputUnitCode: getRequestPolicyInputUnitCode(requestPolicy),
+        inputUomProfileId: requestPolicy.physicalUomProfileId ?? "",
         areaKind: existing?.areaKind || defaultAreaKind,
         acceptPackageFraction: false,
       };
@@ -732,27 +748,43 @@ export function RemissionsItems({
     const defaultProfile = row.productId
       ? (defaultProfileByProduct.get(row.productId) ?? null)
       : null;
-    const productUsesPackages = usesProductionPackageDispatch(
-      product,
-      defaultProfile,
-      stockUnitCode,
-    );
+    const requestPolicy = row.productId
+      ? (defaultRequestPolicyByProduct.get(row.productId) ?? null)
+      : null;
+    const productUsesPackages =
+      !requestPolicy &&
+      usesProductionPackageDispatch(product, defaultProfile, stockUnitCode);
     const productUsesFixedPresentation =
-      usesFixedPresentation(product) ||
-      isTemporaryOperationUnitProfile(defaultProfile, stockUnitCode);
-    const effectiveInputUnitCode = productUsesPackages
-      ? stockUnitCode || "un"
+      !requestPolicy &&
+      (usesFixedPresentation(product) ||
+        isTemporaryOperationUnitProfile(defaultProfile, stockUnitCode));
+    const effectiveInputUnitCode = requestPolicy
+      ? getRequestPolicyInputUnitCode(requestPolicy)
+      : productUsesPackages
+        ? stockUnitCode || "un"
+        : productUsesFixedPresentation
+          ? getRemissionInputUnitCode(defaultProfile, stockUnitCode)
+          : stockUnitCode || "un";
+    const effectiveInputUomProfileId = requestPolicy
+      ? (requestPolicy.physicalUomProfileId ?? "")
       : productUsesFixedPresentation
-        ? getRemissionInputUnitCode(defaultProfile, stockUnitCode)
-        : stockUnitCode || "un";
-    const effectiveInputUomProfileId = productUsesFixedPresentation
-      ? (defaultProfile?.id ?? "")
-      : "";
+        ? (defaultProfile?.id ?? "")
+        : "";
 
     return (
       <div key={`hidden-${row.id}`}>
         <input type="hidden" name="item_product_id" value={row.productId} />
         <input type="hidden" name="item_quantity" value={row.quantity} />
+        <input
+          type="hidden"
+          name="item_request_policy_id"
+          value={requestPolicy?.id ?? ""}
+        />
+        <input
+          type="hidden"
+          name="item_requested_policy_qty"
+          value={row.quantity}
+        />
         <input
           type="hidden"
           name="item_input_unit_code"
@@ -834,19 +866,25 @@ export function RemissionsItems({
                       const row = rowByProductId.get(product.id);
                       const productProfile =
                         defaultProfileByProduct.get(product.id) ?? null;
+                      const requestPolicy =
+                        defaultRequestPolicyByProduct.get(product.id) ?? null;
                       const stockUnitCode = getStockUnitCode(product);
-                      const productUsesPackages = usesProductionPackageDispatch(
-                        product,
-                        productProfile,
-                        stockUnitCode,
-                      );
-                      const unitLabel = productUsesPackages
-                        ? stockUnitCode
-                        : getRemissionPresentationLabel(
+                      const productUsesPackages =
+                        !requestPolicy &&
+                        usesProductionPackageDispatch(
+                          product,
                           productProfile,
                           stockUnitCode,
                         );
-                      const hasQuantity = Boolean(row?.quantity);
+                      const unitLabel = requestPolicy
+                        ? getRequestPolicyDisplayLabel(requestPolicy)
+                        : productUsesPackages
+                          ? stockUnitCode
+                          : getRemissionPresentationLabel(
+                              productProfile,
+                              stockUnitCode,
+                            );
+const hasQuantity = Boolean(row?.quantity);
 
                       return (
                         <div
@@ -863,9 +901,10 @@ export function RemissionsItems({
                           <input
                             type="number"
                             inputMode="decimal"
-                            min="0"
-                            step="any"
-                            value={row?.quantity ?? ""}
+                            min={getRequestPolicyHtmlMin(requestPolicy)}
+                            step={getRequestPolicyHtmlStep(requestPolicy)}
+                            disabled={!requestPolicy}
+value={row?.quantity ?? ""}
                             onChange={(event) =>
                               setTableQuantity(product, event.target.value)
                             }
@@ -907,37 +946,54 @@ export function RemissionsItems({
             const defaultProfile = row.productId
               ? (defaultProfileByProduct.get(row.productId) ?? null)
               : null;
-            const productUsesPackages = usesProductionPackageDispatch(
-              product,
-              defaultProfile,
-              stockUnitCode,
-            );
+            const requestPolicy = row.productId
+              ? (defaultRequestPolicyByProduct.get(row.productId) ?? null)
+              : null;
+            const productUsesPackages =
+              !requestPolicy &&
+              usesProductionPackageDispatch(product, defaultProfile, stockUnitCode);
             const productUsesFixedPresentation =
-              usesFixedPresentation(product) ||
-              isTemporaryOperationUnitProfile(defaultProfile, stockUnitCode);
-            const effectiveInputUnitCode = productUsesPackages
-              ? stockUnitCode || "un"
+              !requestPolicy &&
+              (usesFixedPresentation(product) ||
+                isTemporaryOperationUnitProfile(defaultProfile, stockUnitCode));
+            const effectiveInputUnitCode = requestPolicy
+              ? getRequestPolicyInputUnitCode(requestPolicy)
+              : productUsesPackages
+                ? stockUnitCode || "un"
+                : productUsesFixedPresentation
+                  ? getRemissionInputUnitCode(defaultProfile, stockUnitCode)
+                  : stockUnitCode || "un";
+            const effectiveInputUomProfileId = requestPolicy
+              ? (requestPolicy.physicalUomProfileId ?? "")
               : productUsesFixedPresentation
-                ? getRemissionInputUnitCode(defaultProfile, stockUnitCode)
-                : stockUnitCode || "un";
-            const effectiveInputUomProfileId = productUsesFixedPresentation
-              ? (defaultProfile?.id ?? "")
-              : "";
-            const remissionPresentationLabel = productUsesPackages
-              ? "Empaques reales FOGO"
-              : productUsesFixedPresentation
-                ? getRemissionPresentationLabel(defaultProfile, stockUnitCode)
-                : getActualQuantityDisplayLabel(product, stockUnitCode);
+                ? (defaultProfile?.id ?? "")
+                : "";
+            const remissionPresentationLabel = requestPolicy
+              ? getRequestPolicyDisplayLabel(requestPolicy)
+              : productUsesPackages
+                ? "Empaques reales FOGO"
+                : productUsesFixedPresentation
+                  ? getRemissionPresentationLabel(defaultProfile, stockUnitCode)
+                  : getActualQuantityDisplayLabel(product, stockUnitCode);
             const quantityValue = Number(row.quantity);
             const availablePackages = getAvailablePackages(row.productId);
-            const packagePlan = buildPackagePlan({
-              product,
-              packages: availablePackages,
-              requestedQty: Number.isFinite(quantityValue) ? quantityValue : 0,
-              stockUnitCode,
-            });
+            const packagePlan = requestPolicy
+              ? {
+                  items: [] as ProductionPackagePlanItem[],
+                  total: 0,
+                  covered: true,
+                  hasFractional: false,
+                  shortage: 0,
+                }
+              : buildPackagePlan({
+                  product,
+                  packages: availablePackages,
+                  requestedQty: Number.isFinite(quantityValue) ? quantityValue : 0,
+                  stockUnitCode,
+                });
             const rowReady = Boolean(
               row.productId &&
+              requestPolicy?.id &&
               Number.isFinite(quantityValue) &&
               quantityValue > 0 &&
               effectiveInputUnitCode,
@@ -970,9 +1026,13 @@ export function RemissionsItems({
                     const requestedInStock =
                       rowReady ||
                         (Number.isFinite(quantityValue) && quantityValue > 0)
-                        ? productUsesPackages
-                          ? roundQuantity(quantityValue)
-                          : convertByProductProfile({
+                        ? requestPolicy
+                          ? roundQuantity(
+                              quantityValue * requestPolicy.baseQtyPerRequestUnit,
+                            )
+                          : productUsesPackages
+                            ? roundQuantity(quantityValue)
+                            : convertByProductProfile({
                             quantityInInput: Number.isFinite(quantityValue)
                               ? quantityValue
                               : 0,
@@ -1021,36 +1081,44 @@ export function RemissionsItems({
                             getStockUnitCode(nextProduct);
                           const nextProfile =
                             defaultProfileByProduct.get(nextProductId) ?? null;
+                          const nextRequestPolicy =
+                            defaultRequestPolicyByProduct.get(nextProductId) ?? null;
                           const nextUsesPackages =
+                            !nextRequestPolicy &&
                             usesProductionPackageDispatch(
                               nextProduct,
                               nextProfile,
                               nextStockUnitCode,
                             );
                           const nextUsesFixedPresentation =
-                            usesFixedPresentation(nextProduct) ||
-                            isTemporaryOperationUnitProfile(
-                              nextProfile,
-                              nextStockUnitCode,
-                            );
-                          setRows((prev) =>
+                            !nextRequestPolicy &&
+                            (usesFixedPresentation(nextProduct) ||
+                              isTemporaryOperationUnitProfile(
+                                nextProfile,
+                                nextStockUnitCode,
+                              ));
+setRows((prev) =>
                             prev.map((current) =>
                               current.id === row.id
                                 ? {
                                   ...current,
                                   productId: nextProductId,
-                                  inputUnitCode: nextUsesPackages
-                                    ? nextStockUnitCode || "un"
+                                  inputUnitCode: nextRequestPolicy
+                                    ? getRequestPolicyInputUnitCode(nextRequestPolicy)
+                                    : nextUsesPackages
+                                      ? nextStockUnitCode || "un"
+                                      : nextUsesFixedPresentation
+                                        ? getRemissionInputUnitCode(
+                                            nextProfile,
+                                            nextStockUnitCode,
+                                          )
+                                        : nextStockUnitCode || "un",
+                                  inputUomProfileId: nextRequestPolicy
+                                    ? (nextRequestPolicy.physicalUomProfileId ?? "")
                                     : nextUsesFixedPresentation
-                                      ? getRemissionInputUnitCode(
-                                        nextProfile,
-                                        nextStockUnitCode,
-                                      )
-                                      : nextStockUnitCode || "un",
-                                  inputUomProfileId: nextUsesFixedPresentation
-                                    ? (nextProfile?.id ?? "")
-                                    : "",
-                                  acceptPackageFraction: false,
+                                      ? (nextProfile?.id ?? "")
+                                      : "",
+acceptPackageFraction: false,
                                 }
                                 : current,
                             ),
@@ -1086,9 +1154,10 @@ export function RemissionsItems({
                       <input
                         type="number"
                         inputMode="decimal"
-                        min="0"
-                        step="any"
-                        name="item_quantity"
+                        min={getRequestPolicyHtmlMin(requestPolicy)}
+                        step={getRequestPolicyHtmlStep(requestPolicy)}
+                        disabled={Boolean(row.productId && !requestPolicy)}
+name="item_quantity"
                         placeholder="0"
                         className="ui-input h-10"
                         value={row.quantity}
@@ -1108,6 +1177,16 @@ export function RemissionsItems({
                       />
                     </label>
 
+                    <input
+                      type="hidden"
+                      name="item_request_policy_id"
+                      value={requestPolicy?.id ?? ""}
+                    />
+                    <input
+                      type="hidden"
+                      name="item_requested_policy_qty"
+                      value={row.quantity}
+                    />
                     <input
                       type="hidden"
                       name="item_input_unit_code"
