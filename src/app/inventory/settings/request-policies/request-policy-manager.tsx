@@ -109,21 +109,22 @@ export function RequestPolicyManager({products}:Props) {
   },[products,query,type,category,baseUnit,status,presentationFilter,supplierFilter]);
 
   function clearFilters(){setQuery("");setType("");setCategory("");setBaseUnit("");setStatus("");setPresentationFilter("");setSupplierFilter("");}
+  const compactControl="h-9 rounded-lg border border-slate-200 bg-white px-3 text-[13px] text-slate-700 outline-none transition focus:border-amber-400 focus:ring-2 focus:ring-amber-100";
 
   return <div className="space-y-4">
-    <div className="sticky top-0 z-20 rounded-2xl border border-slate-200 bg-white/95 p-4 shadow-sm backdrop-blur">
-      <div className="grid gap-3 xl:grid-cols-4">
-        <input value={query} onChange={e=>setQuery(e.target.value)} className="ui-input xl:col-span-2" placeholder="Buscar producto, SKU, categoría o unidad..."/>
-        <select value={zone} onChange={e=>setZone(e.target.value as Zone)} className="ui-input"><option value="request">Solicitudes y remisiones</option><option value="presentations">Presentaciones físicas</option><option value="suppliers">Proveedores y compra</option></select>
-        <button type="button" onClick={clearFilters} className="ui-btn ui-btn--ghost">Limpiar filtros</button>
-        <select value={type} onChange={e=>setType(e.target.value)} className="ui-input"><option value="">Todos los tipos</option>{options.types.map(v=><option key={v} value={v}>{v}</option>)}</select>
-        <select value={category} onChange={e=>setCategory(e.target.value)} className="ui-input"><option value="">Todas las categorías</option>{options.categories.map(v=><option key={v} value={v}>{v}</option>)}</select>
-        <select value={baseUnit} onChange={e=>setBaseUnit(e.target.value)} className="ui-input"><option value="">Todas las unidades base</option>{options.units.map(v=><option key={v} value={v}>{v}</option>)}</select>
-        <select value={status} onChange={e=>setStatus(e.target.value)} className="ui-input"><option value="">Todos los estados</option><option value="configured">Configurados</option><option value="pending">Pendientes</option></select>
-        <select value={presentationFilter} onChange={e=>setPresentationFilter(e.target.value)} className="ui-input"><option value="">Con o sin presentaciones</option><option value="with">Con presentaciones</option><option value="without">Sin presentaciones</option></select>
-        <select value={supplierFilter} onChange={e=>setSupplierFilter(e.target.value)} className="ui-input"><option value="">Con o sin proveedores</option><option value="with">Con proveedores</option><option value="without">Sin proveedores</option></select>
+    <div className="sticky top-0 z-20 rounded-xl border border-slate-200 bg-white/95 px-3 py-2.5 shadow-sm backdrop-blur">
+      <div className="flex flex-wrap items-center gap-2">
+        <input value={query} onChange={e=>setQuery(e.target.value)} className={`${compactControl} min-w-[240px] flex-[2_1_360px]`} placeholder="Buscar producto, SKU, categoría o unidad..."/>
+        <select value={zone} onChange={e=>setZone(e.target.value as Zone)} className={`${compactControl} min-w-[190px] flex-1`}><option value="request">Solicitudes y remisiones</option><option value="presentations">Presentaciones físicas</option><option value="suppliers">Proveedores y compra</option></select>
+        <select value={type} onChange={e=>setType(e.target.value)} className={`${compactControl} min-w-[130px]`}><option value="">Tipo</option>{options.types.map(v=><option key={v} value={v}>{v}</option>)}</select>
+        <select value={category} onChange={e=>setCategory(e.target.value)} className={`${compactControl} min-w-[165px] max-w-[230px]`}><option value="">Categoría</option>{options.categories.map(v=><option key={v} value={v}>{v}</option>)}</select>
+        <select value={baseUnit} onChange={e=>setBaseUnit(e.target.value)} className={`${compactControl} min-w-[115px]`}><option value="">Unidad base</option>{options.units.map(v=><option key={v} value={v}>{v}</option>)}</select>
+        <select value={status} onChange={e=>setStatus(e.target.value)} className={`${compactControl} min-w-[120px]`}><option value="">Estado</option><option value="configured">Configurados</option><option value="pending">Pendientes</option></select>
+        <select value={presentationFilter} onChange={e=>setPresentationFilter(e.target.value)} className={`${compactControl} min-w-[145px]`}><option value="">Presentaciones</option><option value="with">Con presentaciones</option><option value="without">Sin presentaciones</option></select>
+        <select value={supplierFilter} onChange={e=>setSupplierFilter(e.target.value)} className={`${compactControl} min-w-[130px]`}><option value="">Proveedores</option><option value="with">Con proveedores</option><option value="without">Sin proveedores</option></select>
+        <button type="button" onClick={clearFilters} className="h-9 rounded-lg px-2.5 text-xs font-medium text-slate-500 hover:bg-slate-100 hover:text-slate-800">Limpiar</button>
+        <span className="ml-auto whitespace-nowrap text-[11px] text-slate-400">{filtered.length}/{products.length}</span>
       </div>
-      <div className="mt-2 text-xs text-slate-500">{filtered.length} de {products.length} productos</div>
     </div>
     <div className="grid gap-3">{filtered.map(p=><ProductRow key={p.id} product={p} zone={zone}/>)}</div>
   </div>;
