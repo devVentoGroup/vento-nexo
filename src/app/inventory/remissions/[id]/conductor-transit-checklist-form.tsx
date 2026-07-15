@@ -7,6 +7,8 @@ export type ConductorTransitLine = {
   productName: string;
   quantity: number;
   unitLabel: string;
+  /** Intención histórica: ej. 2 Bolsa de 2,5 kg. */
+  requestedIntent?: string;
   /** Texto legible de ubicación; UUID solo si no hay metadatos */
   locDetail: string | null;
 };
@@ -153,6 +155,11 @@ export function ConductorTransitChecklistForm({
                     </span>
                   ) : null}
                 </div>
+                {line.requestedIntent ? (
+                  <p className="mt-1 text-sm font-medium text-amber-800 sm:text-base">
+                    Solicitado: {line.requestedIntent}
+                  </p>
+                ) : null}
                 {!isLineChecked ? (
                   <p className="mt-1 text-sm text-stone-500 sm:text-base">
                     Toca el círculo para marcar como revisado

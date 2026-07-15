@@ -1,8 +1,9 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
-import { saveRequestConfiguration } from "./actions";
+import { deactivateRequestPolicy, saveRequestConfiguration } from "./actions";
 import { saveMeasurementConfiguration } from "./measurement-actions";
 
 export type ManagerPresentation = {
@@ -33,6 +34,17 @@ export type ManagerMeasurement = {
   requiresCountAlongsideWeight: boolean;
 };
 
+export type ManagerActivePolicy = {
+  id: string;
+  label: string;
+  requestUnitCode: string;
+  baseQtyPerRequestUnit: number;
+  baseUnitCode: string;
+  policyKind: string;
+  versionNumber: number;
+  isDefault: boolean;
+  usageCount: number;
+};
 export type ManagerProduct = {
   id: string;
   name: string;
@@ -40,6 +52,7 @@ export type ManagerProduct = {
   categoryName: string;
   productType: string;
   baseUnitCode: string;
+  activePolicies: ManagerActivePolicy[];
   policy: {
     id: string | null;
     label: string;
@@ -116,6 +129,7 @@ function policyExplanation(kind: string): string {
 }
 
 function ProductRow({ product, zone }: { product: ManagerProduct; zone: Zone }) {
+  const router = useRouter();
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(() => makeDraft(product));
   const [measurement, setMeasurement] = useState(product.measurement);
@@ -159,6 +173,15 @@ function ProductRow({ product, zone }: { product: ManagerProduct; zone: Zone }) 
       requiresActualDispatchQty: true,
       requiresActualReceiptQty: true,
       requiresCountAlongsideWeight: true,
+    });
+  }
+
+  function deactivate(policyId: string) {
+    setStatus("");
+    startTransition(async () => {
+      const result = await deactivateRequestPolicy({ productId: product.id, policyId });
+      setStatus(result.message);
+      if (result.ok) router.refresh();
     });
   }
 
@@ -241,6 +264,11 @@ function ProductRow({ product, zone }: { product: ManagerProduct; zone: Zone }) 
               ? `${measurement.auxCountUnitCode || "sin conteo"} · tolerancia ${measurement.tolerancePercent}%`
               : `1 ${draft.requestUnitCode || "-"} = ${draft.baseQtyPerRequestUnit || 0} ${product.baseUnitCode}`}
           </div>
+          {zone === "request" && product.activePolicies.length > 1 ? (
+            <div className="mt-1 text-[11px] font-medium text-sky-700">
+              {product.activePolicies.length} unidades de solicitud activas
+            </div>
+          ) : null}
         </div>
         <div className="text-right">
           <div
@@ -274,6 +302,36 @@ function ProductRow({ product, zone }: { product: ManagerProduct; zone: Zone }) 
 
           {zone === "request" ? (
             <div className="space-y-4">
+              <div className="rounded-xl border border-sky-200 bg-sky-50/60 p-3">
+                <div className="text-xs font-semibold uppercase tracking-wide text-sky-900">
+                  Unidades disponibles al solicitar
+                </div>
+                <div className="mt-2 space-y-2">
+                  {product.activePolicies.map((policy) => (
+                    <div key={policy.id} className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-sky-100 bg-white px-3 py-2">
+                      <div>
+                        <div className="text-sm font-semibold text-slate-900">
+                          {policy.label}{policy.isDefault ? " · Predeterminada" : ""}
+                        </div>
+                        <div className="text-xs text-slate-600">
+                          1 {policy.requestUnitCode} = {policy.baseQtyPerRequestUnit} {policy.baseUnitCode}
+                          {` · ${policyKindLabel(policy.policyKind)} · v${policy.versionNumber}`}
+                          {policy.usageCount ? ` · ${policy.usageCount} usos` : ""}
+                        </div>
+                      </div>
+                      {product.activePolicies.length > 1 ? (
+                        <button type="button" disabled={pending} onClick={(event) => { event.stopPropagation(); deactivate(policy.id); }} className="ui-btn ui-btn--ghost ui-btn--sm text-rose-700">
+                          Desactivar
+                        </button>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-sky-900">
+                  El formulario inferior edita la política predeterminada. Las políticas desactivadas dejan de aparecer en remisiones y conservan el significado de las solicitudes históricas.
+                </p>
+              </div>
+
               <div className="grid gap-3 md:grid-cols-6">
                 <label className="md:col-span-2">
                   <span className="ui-label">Nombre visible</span>
@@ -700,6 +758,7 @@ export function RequestPolicyManager({ products }: Props) {
           product.categoryName,
           product.policy.label,
           product.policy.requestUnitCode,
+          ...product.activePolicies.flatMap((policy) => [policy.label, policy.requestUnitCode]),
           product.measurement.measurementMode,
           product.measurement.auxCountUnitCode,
         ]

@@ -43,6 +43,7 @@ type PolicyRow = {
   allow_fraction: boolean;
   policy_kind: string;
   version_number: number | null;
+  is_default: boolean;
 };
 
 type PresentationRow = {
@@ -132,10 +133,11 @@ export default async function RequestPoliciesPage() {
     supabase
       .from("product_request_policies")
       .select(
-        "id,product_id,label,request_unit_code,base_unit_code,base_qty_per_request_unit,minimum_request_qty,request_step_qty,allow_fraction,policy_kind,version_number",
+        "id,product_id,label,request_unit_code,base_unit_code,base_qty_per_request_unit,minimum_request_qty,request_step_qty,allow_fraction,policy_kind,version_number,is_default",
       )
       .eq("is_active", true)
-      .eq("is_default", true),
+      .order("is_default", { ascending: false })
+      .order("created_at", { ascending: true }),
     supabase
       .from("product_uom_profiles")
       .select("id,product_id,label,input_unit_code,qty_in_stock_unit,image_url,catalog_image_url")
@@ -174,7 +176,10 @@ export default async function RequestPoliciesPage() {
   const auditRows = (auditData ?? []) as AuditRow[];
 
   const profileByProduct = new Map(profiles.map((row) => [row.product_id, row]));
-  const policyByProduct = new Map(policies.map((row) => [row.product_id, row]));
+  const policiesByProduct = new Map<string, PolicyRow[]>();
+  for (const row of policies) {
+    policiesByProduct.set(row.product_id, [...(policiesByProduct.get(row.product_id) ?? []), row]);
+  }
   const auditByPolicy = new Map(
     auditRows.filter((row) => row.policy_id).map((row) => [String(row.policy_id), row]),
   );
@@ -212,7 +217,8 @@ export default async function RequestPoliciesPage() {
 
   const rows: ManagerProduct[] = products.map((product) => {
     const profile = profileByProduct.get(product.id) ?? null;
-    const policy = policyByProduct.get(product.id) ?? null;
+    const activePolicies = policiesByProduct.get(product.id) ?? [];
+    const policy = activePolicies.find((candidate) => candidate.is_default) ?? activePolicies[0] ?? null;
     const audit = policy ? auditByPolicy.get(policy.id) ?? null : null;
     const productPresentations = presentationsByProduct.get(product.id) ?? [];
     const policyLinks = policy ? linksByPolicy.get(policy.id) ?? [] : [];
@@ -237,6 +243,17 @@ export default async function RequestPoliciesPage() {
       baseUnitCode: String(
         product.stock_unit_code || product.unit || policy?.base_unit_code || "un",
       ).trim(),
+      activePolicies: activePolicies.map((candidate) => ({
+        id: candidate.id,
+        label: candidate.label,
+        requestUnitCode: candidate.request_unit_code,
+        baseQtyPerRequestUnit: Number(candidate.base_qty_per_request_unit),
+        baseUnitCode: candidate.base_unit_code,
+        policyKind: candidate.policy_kind,
+        versionNumber: Number(candidate.version_number ?? 1),
+        isDefault: candidate.is_default,
+        usageCount: Number(auditByPolicy.get(candidate.id)?.usage_count ?? 0),
+      })),
       policy: {
         id: policy?.id ?? null,
         label: String(policy?.label ?? "").trim(),

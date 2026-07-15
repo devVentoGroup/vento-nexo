@@ -476,7 +476,8 @@ export function RemissionsItems({
       (() => {
         const policies = new Map<string, ProductRequestPolicyOption>();
         for (const policy of defaultRequestPolicies) {
-          if (!policies.has(policy.productId)) policies.set(policy.productId, policy);
+          const current = policies.get(policy.productId);
+          if (!current || policy.isDefault) policies.set(policy.productId, policy);
         }
         return policies;
       })(),

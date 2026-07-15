@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import { Table, TableHeaderCell, TableCell } from "@/components/vento/standard/table";
 
 import { requireAppAccess } from "@/lib/auth/guard";
@@ -680,6 +680,17 @@ export default async function Home({
       tone: "secondary",
       visible: canManageLocations,
       icon: "map",
+    },
+    {
+      id: "inventory-settings",
+      section: "configure",
+      title: "Centro de configuración",
+      description: "Un solo lugar para productos, sedes, LOCs, solicitudes y remisiones.",
+      href: "/inventory/settings",
+      cta: "Configurar",
+      tone: "primary",
+      visible: canViewStock,
+      icon: "boxes",
     },
     {
       id: "supply-routes",

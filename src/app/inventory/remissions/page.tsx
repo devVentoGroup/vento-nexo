@@ -679,7 +679,7 @@ export default async function RemissionsPage({
       ? await supabase
           .from("product_request_policies")
           .select(
-            "id,product_id,label,request_unit_code,base_unit_code,base_qty_per_request_unit,constraint_mode,minimum_request_qty,request_step_qty,allow_fraction,policy_kind,physical_uom_profile_id,is_active",
+            "id,product_id,label,request_unit_code,base_unit_code,base_qty_per_request_unit,constraint_mode,minimum_request_qty,request_step_qty,allow_fraction,policy_kind,physical_uom_profile_id,is_default,is_active",
           )
           .in("product_id", productIds)
           .eq("is_active", true)
@@ -1133,6 +1133,15 @@ export default async function RemissionsPage({
                   ? "Inventario conectado"
                   : "Inventario desconectado"}
               </span>
+
+              {viewMode === "bodega" || canTransitPermission || canManageRemissionActions ? (
+                <Link
+                  href={`/inventory/remissions/fulfillment${activeSiteId ? `?site_id=${encodeURIComponent(activeSiteId)}` : ""}`}
+                  className="ui-btn ui-btn--brand h-11 px-4 text-sm font-semibold"
+                >
+                  Cumplimiento y cargas
+                </Link>
+              ) : null}
 
               {canManageRemissionActions ? (
                 <Link

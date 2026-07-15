@@ -11,6 +11,7 @@ export type ProductRequestPolicyOption = {
   allowFraction: boolean;
   policyKind: string;
   physicalUomProfileId: string | null;
+  isDefault: boolean;
 };
 
 export type ProductRequestPolicyRow = {
@@ -26,6 +27,7 @@ export type ProductRequestPolicyRow = {
   allow_fraction: boolean | null;
   policy_kind: string | null;
   physical_uom_profile_id: string | null;
+  is_default?: boolean | null;
   is_active?: boolean | null;
 };
 
@@ -60,6 +62,7 @@ export function mapProductRequestPolicyRow(
     allowFraction: Boolean(row.allow_fraction),
     policyKind: String(row.policy_kind ?? "base_unit").trim().toLowerCase(),
     physicalUomProfileId: String(row.physical_uom_profile_id ?? "").trim() || null,
+    isDefault: Boolean(row.is_default),
   };
 }
 

@@ -958,16 +958,22 @@ export default async function RemissionDetailPage({
       );
       const inventoryKind = cleanLabel((item as { inventory_kind?: string | null }).inventory_kind);
       const forceUnitOperationalQty = isSellableUnitProduct({ productType, inventoryKind, stockUnitCode: item.stock_unit_code ?? item.unit ?? item.product?.stock_unit_code ?? item.product?.unit });
-      const requestedDisplayLabel = forceUnitOperationalQty
+      const requestPolicyLabel = cleanLabel(item.request_policy_label);
+      const requestedPolicyQty = roundQuantity(Number(item.requested_policy_qty ?? 0));
+      const requestPolicyDisplay = requestPolicyLabel && requestedPolicyQty > 0
+        ? `${formatRemissionQty(requestedPolicyQty)} ${requestPolicyLabel}`.trim()
+        : "";
+      const requestedDisplayLabel = requestPolicyDisplay || (forceUnitOperationalQty
         ? `${formatRemissionQty(requestedQty)} ${vm.itemUnitLabel}`.trim()
         : buildRequestedDisplay({
           inputQty,
           requestedQty,
           presentationLabel,
           stockUnitLabel: vm.itemUnitLabel,
-        });
-      const requestedBaseLabel =
-        !forceUnitOperationalQty && inputQty > 0 && presentationLabel
+        }));
+      const requestedBaseLabel = requestPolicyDisplay
+        ? `${formatRemissionQty(requestedQty)} ${vm.itemUnitLabel}`.trim()
+        : !forceUnitOperationalQty && inputQty > 0 && presentationLabel
           ? `${formatRemissionQty(requestedQty)} ${vm.itemUnitLabel}`.trim()
           : "";
       return {
@@ -1136,10 +1142,16 @@ export default async function RemissionDetailPage({
       if (baseReference) {
         locDetail = locDetail ? `${locDetail} · ${baseReference}` : baseReference;
       }
+      const requestPolicyLabel = cleanLabel(item.request_policy_label);
+      const requestedPolicyQty = roundQuantity(Number(item.requested_policy_qty ?? 0));
+      const requestedIntent = requestPolicyLabel && requestedPolicyQty > 0
+        ? `${formatRemissionQty(requestedPolicyQty)} ${requestPolicyLabel}`.trim()
+        : "";
       const category = resolveTransitCategory(item.production_area_kind);
       return {
         id: item.id,
         productName: String(item.product?.name ?? item.product_id),
+        requestedIntent,
         measurementMode,
         quantity: displayQty,
         unitLabel: displayUnitLabel,

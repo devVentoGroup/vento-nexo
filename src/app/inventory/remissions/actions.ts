@@ -812,15 +812,70 @@ export async function createRemission(formData: FormData) {
     requested_policy_qty: item.requested_policy_qty,
   }));
 
-  const { error: itemsErr } = await supabase
+  const { data: insertedItems, error: itemsErr } = await supabase
     .from("restock_request_items")
-    .insert(payload);
-  if (itemsErr) {
+    .insert(payload)
+    .select("id,product_id,quantity,production_area_kind");
+  if (itemsErr || !insertedItems?.length) {
     redirect(
       "/inventory/remissions?error=" +
         encodeURIComponent(
-          itemsErr.message ?? "No se pudieron crear los items.",
+          itemsErr?.message ?? "No se pudieron crear los items.",
         ),
+    );
+  }
+
+  const insertedProductIds = Array.from(
+    new Set(insertedItems.map((item) => String(item.product_id)).filter(Boolean)),
+  );
+  const { data: fulfillmentRoutes, error: routesError } = insertedProductIds.length
+    ? await supabase
+      .from("product_fulfillment_routes")
+      .select("id,product_id,requesting_area_kind,preparing_area_kind,preferred_source_location_id,preferred_destination_location_id")
+      .eq("from_site_id", fromSiteId)
+      .eq("to_site_id", toSiteId)
+      .eq("is_active", true)
+      .in("product_id", insertedProductIds)
+    : { data: [], error: null };
+  if (routesError) {
+    redirect(
+      "/inventory/remissions?error=" +
+        encodeURIComponent(`La solicitud se creó, pero no fue posible resolver sus rutas: ${routesError.message}`),
+    );
+  }
+
+  const fulfillmentRows = insertedItems.map((item) => {
+    const requestedAreaKind = String(item.production_area_kind ?? "").trim() || null;
+    const route = (fulfillmentRoutes ?? []).find(
+      (candidate) =>
+        candidate.product_id === item.product_id &&
+        (candidate.requesting_area_kind === requestedAreaKind || candidate.requesting_area_kind === null),
+    );
+    return {
+      request_item_id: item.id,
+      product_id: item.product_id,
+      route_id: route?.id ?? null,
+      from_site_id: fromSiteId,
+      to_site_id: toSiteId,
+      requesting_area_kind: requestedAreaKind,
+      preparing_area_kind: route?.preparing_area_kind ?? null,
+      source_location_id: route?.preferred_source_location_id ?? null,
+      destination_location_id: route?.preferred_destination_location_id ?? null,
+      status: route ? "pending" : "blocked",
+      requested_base_qty: Number(item.quantity ?? 0),
+      shortage_reason: route ? null : "Producto sin ruta de abastecimiento.",
+      notes: route ? null : "Configura una ruta de fulfillment antes de preparar esta necesidad.",
+      created_by: createdByEmployeeId,
+      updated_by: createdByEmployeeId,
+    };
+  });
+  const { error: fulfillmentError } = await supabase
+    .from("restock_item_fulfillments")
+    .insert(fulfillmentRows);
+  if (fulfillmentError) {
+    redirect(
+      "/inventory/remissions?error=" +
+        encodeURIComponent(`La solicitud se creó, pero no fue posible generar sus tareas: ${fulfillmentError.message}`),
     );
   }
 

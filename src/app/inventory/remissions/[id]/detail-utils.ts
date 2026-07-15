@@ -210,6 +210,7 @@ const DATE_TIME_FORMATTER = new Intl.DateTimeFormat("es-CO", {
   year: "numeric",
   hour: "2-digit",
   minute: "2-digit",
+  hourCycle: "h23",
 });
 
 const DATE_FORMATTER = new Intl.DateTimeFormat("es-CO", {

@@ -383,3 +383,90 @@ export async function saveRequestConfiguration(input: SaveInput): Promise<SaveRe
       : `Configuración guardada.${suffix}`,
   };
 }
+
+export async function deactivateRequestPolicy(input: {
+  productId: string;
+  policyId: string;
+}): Promise<{ ok: boolean; message: string }> {
+  const supabase = await createClient();
+  const { data: userData } = await supabase.auth.getUser();
+  const user = userData.user;
+  if (!user) return { ok: false, message: "Tu sesión no está activa." };
+
+  const [{ data: employee }, canEdit] = await Promise.all([
+    supabase.from("employees").select("role").eq("id", user.id).maybeSingle(),
+    checkPermission(supabase, APP_ID, "catalog.products"),
+  ]);
+  const role = text(employee?.role).toLowerCase();
+  if (!canEdit && !["propietario", "gerente_general"].includes(role)) {
+    return { ok: false, message: "No tienes permisos para editar el catálogo." };
+  }
+
+  const productId = text(input.productId);
+  const policyId = text(input.policyId);
+  if (!productId || !policyId) return { ok: false, message: "Falta la política por desactivar." };
+
+  const { data: activePolicies, error: policiesError } = await supabase
+    .from("product_request_policies")
+    .select("id,is_default")
+    .eq("product_id", productId)
+    .eq("is_active", true)
+    .order("is_default", { ascending: false });
+  if (policiesError) return { ok: false, message: policiesError.message };
+
+  const current = (activePolicies ?? []).find((policy) => policy.id === policyId);
+  if (!current) return { ok: false, message: "La política ya no está activa o no pertenece a este producto." };
+  const replacement = (activePolicies ?? []).find((policy) => policy.id !== policyId);
+  if (!replacement) {
+    return {
+      ok: false,
+      message: "No puedes desactivar la única política activa. Crea primero otra unidad de solicitud.",
+    };
+  }
+
+  const now = new Date().toISOString();
+  if (current.is_default) {
+    const { error: clearDefaultError } = await supabase
+      .from("product_request_policies")
+      .update({ is_default: false, updated_at: now })
+      .eq("id", policyId)
+      .eq("product_id", productId);
+    if (clearDefaultError) return { ok: false, message: clearDefaultError.message };
+
+    const { error: setReplacementError } = await supabase
+      .from("product_request_policies")
+      .update({ is_default: true, updated_at: now })
+      .eq("id", replacement.id)
+      .eq("product_id", productId);
+    if (setReplacementError) {
+      await supabase
+        .from("product_request_policies")
+        .update({ is_default: true, updated_at: new Date().toISOString() })
+        .eq("id", policyId)
+        .eq("product_id", productId);
+      return { ok: false, message: setReplacementError.message };
+    }
+  }
+
+  const { error: deactivateError } = await supabase
+    .from("product_request_policies")
+    .update({
+      is_active: false,
+      is_default: false,
+      change_reason: "Desactivada desde configuración operativa de NEXO.",
+      updated_at: now,
+    })
+    .eq("id", policyId)
+    .eq("product_id", productId);
+  if (deactivateError) return { ok: false, message: deactivateError.message };
+
+  revalidatePath(PATH);
+  revalidatePath("/inventory/remissions");
+  revalidatePath(`/inventory/catalog/${encodeURIComponent(productId)}`);
+  return {
+    ok: true,
+    message: current.is_default
+      ? "Política desactivada. Se asignó otra política activa como predeterminada."
+      : "Política desactivada. Las solicitudes históricas conservan su snapshot.",
+  };
+}
