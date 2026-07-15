@@ -178,11 +178,14 @@ export default async function RequestPoliciesPage() {
   const auditByPolicy = new Map(
     auditRows.filter((row) => row.policy_id).map((row) => [String(row.policy_id), row]),
   );
-  const missingPolicyIssues = new Map(
-    auditRows
-      .filter((row) => !row.policy_id)
-      .map((row) => [row.product_id, row.issues ?? []]),
-  );
+  const issuesByProduct = new Map<string, string[]>();
+  for (const row of auditRows) {
+    const merged = new Set([
+      ...(issuesByProduct.get(row.product_id) ?? []),
+      ...(row.issues ?? []),
+    ]);
+    issuesByProduct.set(row.product_id, Array.from(merged));
+  }
 
   const presentationsByProduct = new Map<string, PresentationRow[]>();
   const linksByPolicy = new Map<string, LinkRow[]>();
@@ -245,7 +248,7 @@ export default async function RequestPoliciesPage() {
         policyKind: String(policy?.policy_kind ?? "base_unit"),
         versionNumber: Number(policy?.version_number ?? 1),
         usageCount: Number(audit?.usage_count ?? 0),
-        auditIssues: audit?.issues ?? missingPolicyIssues.get(product.id) ?? [],
+        auditIssues: issuesByProduct.get(product.id) ?? [],
         presentationIds,
         preferredPresentationId:
           policyLinks.find((link) => link.is_preferred)?.uom_profile_id ??
