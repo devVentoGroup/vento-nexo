@@ -683,7 +683,7 @@ export default async function RemissionsPage({
           )
           .in("product_id", productIds)
           .eq("is_active", true)
-          .eq("is_default", true)
+          .order("is_default", { ascending: false })
           .order("created_at", { ascending: true })
       : { data: [] as ProductRequestPolicyRow[], error: null };
   if (defaultRequestPolicyError) {

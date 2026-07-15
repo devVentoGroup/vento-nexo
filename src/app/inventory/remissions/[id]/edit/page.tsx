@@ -1,4 +1,4 @@
-﻿import Link from "next/link";
+import Link from "next/link";
 import { redirect } from "next/navigation";
 
 import { RemissionsCreateForm } from "@/components/vento/remissions-create-form";
@@ -117,7 +117,7 @@ function supportsRequestedArea(row: ProductSiteRow, requestedAreaKind: string): 
   if (!areaKind) return true;
 
   const configuredKinds = normalizeProductSiteAreaKinds(row);
-  return configuredKinds.includes(areaKind) || configuredKinds.includes("general");
+  return configuredKinds.includes(areaKind);
 }
 
 async function loadProductSiteRows(
@@ -642,12 +642,25 @@ export default async function EditOwnPendingRemissionPage({
     }, new Map<string, { value: string; label: string }>())
   ).map(([, value]) => value);
 
+  const { data: requestAreaItems } = await supabase
+    .from("restock_request_items")
+    .select("production_area_kind")
+    .eq("request_id", id);
+  const requestedAreaKind = Array.from(
+    new Set(
+      (requestAreaItems ?? [])
+        .map((item) => String(item.production_area_kind ?? "").trim())
+        .filter(Boolean),
+    ),
+  )[0] ?? "";
   const productSiteRows = targetSiteId
     ? await loadProductSiteRows(supabase, targetSiteId)
     : [];
 
   const productSiteIds = productSiteRows
-    .filter((row) => supportsRemission(row))
+    .filter((row) =>
+      supportsRemission(row) && supportsRequestedArea(row, requestedAreaKind),
+    )
     .map((row) => row.product_id);
 
   let productRows: ProductRow[] = [];
@@ -678,13 +691,22 @@ export default async function EditOwnPendingRemissionPage({
   }
 
   const productIds = productRows.map((row) => row.id);
+  const { data: areaRemissionCategoryRows } =
+    targetSiteId && requestedAreaKind && productIds.length > 0
+      ? await supabase
+          .from("product_site_area_remission_categories")
+          .select("product_id,remission_category_id")
+          .eq("site_id", targetSiteId)
+          .eq("area_kind", requestedAreaKind)
+          .in("product_id", productIds)
+      : { data: [] as Array<{ product_id: string | null; remission_category_id: string | null }> };
   const remissionCategoryIdByProductId = new Map(
-    productSiteRows
+    (areaRemissionCategoryRows ?? [])
       .map((row) => [
         String(row.product_id ?? "").trim(),
         String(row.remission_category_id ?? "").trim(),
       ] as const)
-      .filter(([productId, categoryId]) => Boolean(productId && categoryId))
+      .filter(([productId, categoryId]) => Boolean(productId && categoryId)),
   );
   const remissionCategoryIds = Array.from(new Set(remissionCategoryIdByProductId.values()));
   const { data: remissionCategoryData } = remissionCategoryIds.length

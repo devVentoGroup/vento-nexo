@@ -59,7 +59,11 @@ export function usesProductionPackageDispatch(
   profile: ProductUomProfile | null | undefined,
   stockUnitCode: string,
 ): boolean {
-  return isProducedPackagedProduct(product) && !isTemporaryOperationUnitProfile(profile, stockUnitCode);
+  // La política de solicitud no reserva ni despacha paquetes FOGO.
+  void product;
+  void profile;
+  void stockUnitCode;
+  return false;
 }
 
 export function parseProductionPackagePlan(raw: string): ProductionPackagePlanItem[] {
