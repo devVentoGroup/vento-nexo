@@ -29,6 +29,35 @@ jobs:
       - name: Decode integration script
         run: |
           base64 --decode scripts/.tmp-apply-request-policies.mjs.gz.b64 | gzip --decompress > /tmp/apply-request-policies.mjs
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('/tmp/apply-request-policies.mjs')
+          source = path.read_text()
+          helper_anchor = '''function replaceOnce(rel, before, after, label) {
+            const source = read(rel);
+            const count = source.split(before).length - 1;
+            if (count !== 1) {
+              throw new Error(`${rel}: expected exactly one match for ${label}, found ${count}`);
+            }
+            write(rel, source.replace(before, after));
+          }
+          '''
+          helper = '''
+          function replaceFirst(rel, before, after, label) {
+            const source = read(rel);
+            if (!source.includes(before)) {
+              throw new Error(`${rel}: expected at least one match for ${label}`);
+            }
+            write(rel, source.replace(before, after));
+          }
+          '''
+          source = source.replace(helper_anchor, helper_anchor + helper, 1)
+          label = "  'items normalized profile id',\n);"
+          label_position = source.index(label)
+          call_position = source.rfind('replaceOnce(', 0, label_position)
+          source = source[:call_position] + 'replaceFirst(' + source[call_position + len('replaceOnce('):]
+          path.write_text(source)
+          PY
           node --check /tmp/apply-request-policies.mjs
 
       - name: Apply integration
