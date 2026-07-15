@@ -53,16 +53,20 @@ jobs:
           '''
           source = source.replace(helper_anchor, helper_anchor + helper, 1)
 
+          def replace_call(label, replacement):
+              global source
+              marker = f"  '{label}',\n);"
+              marker_position = source.index(marker)
+              call_position = source.rfind('replaceOnce(', 0, marker_position)
+              call_end = source.index('\n);', marker_position) + 3
+              source = source[:call_position] + replacement + source[call_end:]
+
           label = "  'items normalized profile id',\n);"
           label_position = source.index(label)
           call_position = source.rfind('replaceOnce(', 0, label_position)
           source = source[:call_position] + 'replaceFirst(' + source[call_position + len('replaceOnce('):]
 
-          table_label = "  'table policy label',\n);"
-          table_label_position = source.index(table_label)
-          table_call_position = source.rfind('replaceOnce(', 0, table_label_position)
-          table_call_end = source.index('\n);', table_label_position) + 3
-          anchored_replacement = r'''{
+          replace_call('table policy label', r'''{
             const rel = 'src/components/vento/remissions-items.tsx';
             const current = read(rel);
             const tableSection = current.indexOf('group.products.map((product) => {');
@@ -96,14 +100,9 @@ jobs:
               `${indent}      );`,
             ];
             write(rel, current.slice(0, lineStart) + `${lines.join('\n')}\n` + current.slice(end));
-          }'''
-          source = source[:table_call_position] + anchored_replacement + source[table_call_end:]
+          }''')
 
-          constraint_label = "  'table policy constraints',\n);"
-          constraint_label_position = source.index(constraint_label)
-          constraint_call_position = source.rfind('replaceOnce(', 0, constraint_label_position)
-          constraint_call_end = source.index('\n);', constraint_label_position) + 3
-          constraint_replacement = r'''{
+          replace_call('table policy constraints', r'''{
             const rel = 'src/components/vento/remissions-items.tsx';
             const current = read(rel);
             const tableSection = current.indexOf('group.products.map((product) => {');
@@ -121,8 +120,93 @@ jobs:
               `${indent}disabled={!requestPolicy}`,
             ];
             write(rel, current.slice(0, lineStart) + `${lines.join('\n')}\n` + current.slice(valueStart));
-          }'''
-          source = source[:constraint_call_position] + constraint_replacement + source[constraint_call_end:]
+          }''')
+
+          replace_call('cards next policy', r'''{
+            const rel = 'src/components/vento/remissions-items.tsx';
+            const current = read(rel);
+            const cardSection = current.indexOf('onValueChange={(nextProductId) => {');
+            const start = current.indexOf('const nextProfile =', cardSection);
+            const end = current.indexOf('setRows((prev) =>', start);
+            if (cardSection < 0 || start < 0 || end < 0) {
+              throw new Error(`${rel}: no se encontró la selección de producto en tarjetas`);
+            }
+            const lineStart = current.lastIndexOf('\n', start) + 1;
+            const indent = current.slice(lineStart, start);
+            const lines = [
+              `${indent}const nextProfile =`,
+              `${indent}  defaultProfileByProduct.get(nextProductId) ?? null;`,
+              `${indent}const nextRequestPolicy =`,
+              `${indent}  defaultRequestPolicyByProduct.get(nextProductId) ?? null;`,
+              `${indent}const nextUsesPackages =`,
+              `${indent}  !nextRequestPolicy &&`,
+              `${indent}  usesProductionPackageDispatch(`,
+              `${indent}    nextProduct,`,
+              `${indent}    nextProfile,`,
+              `${indent}    nextStockUnitCode,`,
+              `${indent}  );`,
+              `${indent}const nextUsesFixedPresentation =`,
+              `${indent}  !nextRequestPolicy &&`,
+              `${indent}  (usesFixedPresentation(nextProduct) ||`,
+              `${indent}    isTemporaryOperationUnitProfile(`,
+              `${indent}      nextProfile,`,
+              `${indent}      nextStockUnitCode,`,
+              `${indent}    ));`,
+            ];
+            write(rel, current.slice(0, lineStart) + `${lines.join('\n')}\n` + current.slice(end));
+          }''')
+
+          replace_call('cards next policy values', r'''{
+            const rel = 'src/components/vento/remissions-items.tsx';
+            const current = read(rel);
+            const cardSection = current.indexOf('onValueChange={(nextProductId) => {');
+            const start = current.indexOf('inputUnitCode: nextUsesPackages', cardSection);
+            const end = current.indexOf('acceptPackageFraction: false,', start);
+            if (cardSection < 0 || start < 0 || end < 0) {
+              throw new Error(`${rel}: no se encontraron los valores de unidad en tarjetas`);
+            }
+            const lineStart = current.lastIndexOf('\n', start) + 1;
+            const indent = current.slice(lineStart, start);
+            const lines = [
+              `${indent}inputUnitCode: nextRequestPolicy`,
+              `${indent}  ? getRequestPolicyInputUnitCode(nextRequestPolicy)`,
+              `${indent}  : nextUsesPackages`,
+              `${indent}    ? nextStockUnitCode || "un"`,
+              `${indent}    : nextUsesFixedPresentation`,
+              `${indent}      ? getRemissionInputUnitCode(`,
+              `${indent}          nextProfile,`,
+              `${indent}          nextStockUnitCode,`,
+              `${indent}        )`,
+              `${indent}      : nextStockUnitCode || "un",`,
+              `${indent}inputUomProfileId: nextRequestPolicy`,
+              `${indent}  ? (nextRequestPolicy.physicalUomProfileId ?? "")`,
+              `${indent}  : nextUsesFixedPresentation`,
+              `${indent}    ? (nextProfile?.id ?? "")`,
+              `${indent}    : "",`,
+            ];
+            write(rel, current.slice(0, lineStart) + `${lines.join('\n')}\n` + current.slice(end));
+          }''')
+
+          replace_call('cards policy constraints', r'''{
+            const rel = 'src/components/vento/remissions-items.tsx';
+            const current = read(rel);
+            const cardSection = current.indexOf('{entryMode === "cards"');
+            const inputStart = current.indexOf('type="number"', cardSection);
+            const minStart = current.indexOf('min="0"', inputStart);
+            const nameStart = current.indexOf('name="item_quantity"', minStart);
+            if (cardSection < 0 || inputStart < 0 || minStart < 0 || nameStart < 0) {
+              throw new Error(`${rel}: no se encontró el campo de cantidad en tarjetas`);
+            }
+            const lineStart = current.lastIndexOf('\n', minStart) + 1;
+            const indent = current.slice(lineStart, minStart);
+            const lines = [
+              `${indent}min={getRequestPolicyHtmlMin(requestPolicy)}`,
+              `${indent}step={getRequestPolicyHtmlStep(requestPolicy)}`,
+              `${indent}disabled={Boolean(row.productId && !requestPolicy)}`,
+            ];
+            write(rel, current.slice(0, lineStart) + `${lines.join('\n')}\n` + current.slice(nameStart));
+          }''')
+
           path.write_text(source)
           PY
           node --check /tmp/apply-request-policies.mjs
