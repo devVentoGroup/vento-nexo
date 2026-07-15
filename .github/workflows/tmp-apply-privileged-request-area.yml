@@ -1,10 +1,9 @@
 name: tmp-apply-privileged-request-area
 on:
-  push:
+  workflow_dispatch:
+  pull_request:
     branches: [preview]
-    paths:
-      - scripts/tmp-apply-privileged-request-area.mjs
-      - .github/workflows/tmp-apply-privileged-request-area.yml
+    types: [opened, synchronize, reopened]
 permissions:
   contents: write
 jobs:
