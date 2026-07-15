@@ -20,7 +20,7 @@ jobs:
       - name: Apply patch
         run: |
           set +e
-          node -e 'const fs=require("fs");const p="scripts/tmp-apply-privileged-request-area.mjs";fs.writeFileSync(p,fs.readFileSync(p,"utf8").replaceAll("${APP_ID}","\\${APP_ID}"));'
+          node -e 'const fs=require("fs");const p="scripts/tmp-apply-privileged-request-area.mjs";let s=fs.readFileSync(p,"utf8");s=s.replaceAll("${APP_ID}","\\${APP_ID}").replaceAll("${PERMISSIONS.remissionsRequest}","\\${PERMISSIONS.remissionsRequest}");fs.writeFileSync(p,s);'
           node scripts/tmp-apply-privileged-request-area.mjs > /tmp/patch.log 2>&1
           status=$?
           if [ "$status" -ne 0 ]; then
