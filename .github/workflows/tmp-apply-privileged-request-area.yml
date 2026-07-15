@@ -18,7 +18,19 @@ jobs:
           node-version: 20
           cache: npm
       - name: Apply patch
-        run: node scripts/tmp-apply-privileged-request-area.mjs
+        run: |
+          set +e
+          node scripts/tmp-apply-privileged-request-area.mjs > /tmp/patch.log 2>&1
+          status=$?
+          if [ "$status" -ne 0 ]; then
+            tail -n 10 /tmp/patch.log > scripts/tmp-privileged-area-patch-error.txt
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add scripts/tmp-privileged-area-patch-error.txt
+            git commit -m "Record privileged area patch error"
+            git push origin preview
+            exit "$status"
+          fi
       - name: Install
         run: npm ci
       - name: Build
@@ -28,6 +40,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git rm scripts/tmp-apply-privileged-request-area.mjs .github/workflows/tmp-apply-privileged-request-area.yml
+          if [ -f scripts/tmp-privileged-area-patch-error.txt ]; then git rm scripts/tmp-privileged-area-patch-error.txt; fi
           git add src/app/inventory/remissions/page.tsx src/app/inventory/remissions/actions.ts
           git commit -m "Allow privileged request area selection"
           git push origin preview
