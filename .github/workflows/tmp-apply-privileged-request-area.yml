@@ -19,9 +19,53 @@ jobs:
           cache: npm
       - name: Apply patch
         run: |
-          node -e 'const fs=require("fs");const p="scripts/tmp-apply-privileged-request-area.mjs";let s=fs.readFileSync(p,"utf8");s=s.replace("    if (!source.includes(before)) throw new Error(`${path}: missing ${name}`);","    if (!source.includes(before)) { if (name === \"manager area validation\") continue; throw new Error(`${path}: missing ${name}`); }");s=s.replaceAll("${APP_ID}","\\${APP_ID}").replaceAll("${PERMISSIONS.remissionsRequest}","\\${PERMISSIONS.remissionsRequest}");fs.writeFileSync(p,s);'
+          node -e 'const fs=require("fs");const p="scripts/tmp-apply-privileged-request-area.mjs";let s=fs.readFileSync(p,"utf8");s=s.replace("    if (!source.includes(before)) throw new Error(`${path}: missing ${name}`);","    if (!source.includes(before)) { if ([\"load employee role\",\"manager area validation\"].includes(name)) continue; throw new Error(`${path}: missing ${name}`); }");s=s.replaceAll("${APP_ID}","\\${APP_ID}").replaceAll("${PERMISSIONS.remissionsRequest}","\\${PERMISSIONS.remissionsRequest}");fs.writeFileSync(p,s);'
           node scripts/tmp-apply-privileged-request-area.mjs
-          node -e 'const fs=require("fs");const p="src/app/inventory/remissions/actions.ts";let s=fs.readFileSync(p,"utf8");const marker="  const requestAreaScope = operationalSession.isSharedDevice";const start=s.indexOf(marker);if(start<0)throw new Error("requestAreaScope marker missing");const before=s.slice(0,start);let tail=s.slice(start);const target="        canSeeAllAreas: false,\n      });\n  if (requestAreaScope.blockedReason)";if(!tail.includes(target))throw new Error("requestAreaScope canSeeAllAreas target missing");tail=tail.replace(target,"        canSeeAllAreas: canChooseRequestArea,\n      });\n  if (requestAreaScope.blockedReason)");fs.writeFileSync(p,before+tail);'
+          node - <<'NODE'
+          const fs = require("fs");
+          const p = "src/app/inventory/remissions/actions.ts";
+          let source = fs.readFileSync(p, "utf8");
+          const createMarker = "export async function createRemission(formData: FormData)";
+          const start = source.indexOf(createMarker);
+          if (start < 0) throw new Error("createRemission marker missing");
+          const head = source.slice(0, start);
+          let tail = source.slice(start);
+          const inventoryBlock = `  const inventoryPostingEnabled = await readBooleanAppSetting(
+            supabase,
+            REMISSIONS_INVENTORY_POSTING_SETTING_KEY,
+            false,
+          );`;
+          if (!tail.includes(inventoryBlock)) throw new Error("createRemission inventory block missing");
+          const roleBlock = `${inventoryBlock}
+          const { data: requestingEmployee } = operationalSession.isSharedDevice
+            ? { data: null }
+            : await supabase
+                .from("employees")
+                .select("role")
+                .eq("id", user.id)
+                .maybeSingle();
+          const requestingRole = String(
+            operationalSession.role ?? requestingEmployee?.role ?? "",
+          )
+            .trim()
+            .toLowerCase();
+          const canChooseRequestArea =
+            !operationalSession.isSharedDevice &&
+            ["propietario", "gerente_general"].includes(requestingRole);`;
+          tail = tail.replace(inventoryBlock, roleBlock);
+          const scopeMarker = "  const requestAreaScope = operationalSession.isSharedDevice";
+          const scopeStart = tail.indexOf(scopeMarker);
+          if (scopeStart < 0) throw new Error("requestAreaScope marker missing");
+          const tailBeforeScope = tail.slice(0, scopeStart);
+          let scopeTail = tail.slice(scopeStart);
+          const scopeTarget = "        canSeeAllAreas: false,\n      });\n  if (requestAreaScope.blockedReason)";
+          if (!scopeTail.includes(scopeTarget)) throw new Error("requestAreaScope canSeeAllAreas target missing");
+          scopeTail = scopeTail.replace(
+            scopeTarget,
+            "        canSeeAllAreas: canChooseRequestArea,\n      });\n  if (requestAreaScope.blockedReason)",
+          );
+          fs.writeFileSync(p, head + tailBeforeScope + scopeTail);
+          NODE
       - name: Install
         run: npm ci
       - name: Build
