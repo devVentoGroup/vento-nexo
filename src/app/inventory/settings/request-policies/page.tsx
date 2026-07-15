@@ -151,7 +151,7 @@ export default async function RequestPoliciesPage() {
       )
       .order("is_primary", { ascending: false }),
     supabase
-      .from("product_request_policy_audit")
+      .from("product_request_policy_audit_summary")
       .select("product_id,policy_id,usage_count,issues"),
   ]);
 
