@@ -363,7 +363,7 @@ export default async function RemissionDetailPage({
   const { data: items } = await supabase
     .from("restock_request_items")
     .select(
-      "id, product_id, quantity, unit, input_qty, input_unit_code, input_uom_profile_id, stock_unit_code, source_location_id, prepared_quantity, shipped_quantity, received_quantity, shortage_quantity, notes, item_status, production_area_kind, production_package_plan, requires_package_dispatch, production_package_dispatch_applied_at, product:products(name,unit,stock_unit_code,product_type)"
+      "id, product_id, quantity, unit, input_qty, input_unit_code, input_uom_profile_id, request_policy_id, request_policy_label, requested_policy_qty, request_unit_code, base_qty_per_request_unit, stock_unit_code, source_location_id, prepared_quantity, shipped_quantity, received_quantity, shortage_quantity, notes, item_status, production_area_kind, production_package_plan, requires_package_dispatch, production_package_dispatch_applied_at, product:products(name,unit,stock_unit_code,product_type)"
     )
     .eq("request_id", id)
     .order("created_at", { ascending: true });

@@ -159,6 +159,12 @@ export function buildRemissionLineVm(params: BuildRemissionLineVmParams) {
   const itemUnitLabel = formatUnitLabel(
     item.stock_unit_code ?? item.unit ?? item.product?.unit ?? ""
   );
+  const requestPolicyLabel = String(item.request_policy_label ?? "").trim();
+  const requestedPolicyQty = roundQuantity(Number(item.requested_policy_qty ?? 0));
+  const requestPolicySummary =
+    requestPolicyLabel && requestedPolicyQty > 0
+      ? `${requestedPolicyQty} ${requestPolicyLabel} · equivale a ${requestedQty} ${itemUnitLabel}`
+      : "";
   const missingSourceLoc =
     canEditPrepareItems && showSourceLocSelector && plannedQty > 0 && !item.source_location_id;
   const overSiteStock = canEditPrepareItems && plannedQty > availableSite;
@@ -420,6 +426,7 @@ export function buildRemissionLineVm(params: BuildRemissionLineVmParams) {
     isActiveLine,
     activeLineMessage,
     quantityBadgeText,
+    requestPolicySummary,
   };
 }
 

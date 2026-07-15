@@ -763,6 +763,34 @@ export function RemissionsItems({
     });
   };
 
+  const setTableRequestPolicy = (product: Option, nextPolicyId: string) => {
+    const productId = String(product.id ?? "").trim();
+    const requestPolicy = getRequestPolicy(productId, nextPolicyId);
+    if (!productId || !requestPolicy) return;
+
+    setRows((prev) => {
+      const existing = prev.find((row) => row.productId === productId);
+      const nextRow: Row = {
+        ...(existing ?? {
+          ...EMPTY_ROW,
+          id: prev.length ? Math.max(...prev.map((row) => row.id)) + 1 : 0,
+        }),
+        productId,
+        quantity: existing?.quantity ?? "",
+        inputUnitCode: getRequestPolicyInputUnitCode(requestPolicy),
+        inputUomProfileId: requestPolicy.physicalUomProfileId ?? "",
+        requestPolicyId: requestPolicy.id,
+        areaKind: existing?.areaKind || defaultAreaKind,
+        acceptPackageFraction: false,
+      };
+
+      if (existing) {
+        return prev.map((row) => (row.id === existing.id ? nextRow : row));
+      }
+      return [...prev.filter((row) => row.productId || row.quantity), nextRow];
+    });
+  };
+
   const selectedTableRows = rowsWithDerivedPackagePlans.filter((row) => {
     const quantity = Number(row.quantity);
     return row.productId && Number.isFinite(quantity) && quantity > 0;
@@ -877,9 +905,9 @@ export function RemissionsItems({
           {selectedTableRows.map(hiddenInputsForRow)}
           <div className="overflow-x-auto">
             <div className="min-w-[520px]">
-              <div className="grid grid-cols-[minmax(260px,1fr)_96px_132px] border-b border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
+              <div className="grid grid-cols-[minmax(260px,1fr)_160px_132px] border-b border-[var(--ui-border)] bg-[var(--ui-surface-2)] px-3 py-2 text-xs font-bold uppercase tracking-[0.08em] text-[var(--ui-muted)]">
                 <div>Producto</div>
-                <div className="text-center">Unidad</div>
+                <div className="text-center">Solicitud</div>
                 <div className="text-right">Requisición</div>
               </div>
               <div className="max-h-[68vh] overflow-auto">
@@ -893,7 +921,11 @@ export function RemissionsItems({
                       const productProfile =
                         defaultProfileByProduct.get(product.id) ?? null;
                       const requestPolicy =
-                        defaultRequestPolicyByProduct.get(product.id) ?? null;
+                        getRequestPolicy(product.id, row?.requestPolicyId) ??
+                        defaultRequestPolicyByProduct.get(product.id) ??
+                        null;
+                      const requestPolicies =
+                        requestPoliciesByProduct.get(product.id) ?? [];
                       const stockUnitCode = getStockUnitCode(product);
                       const productUsesPackages =
                         !requestPolicy &&
@@ -915,14 +947,44 @@ const hasQuantity = Boolean(row?.quantity);
                       return (
                         <div
                           key={product.id}
-                          className={`grid grid-cols-[minmax(260px,1fr)_96px_132px] items-center border-b border-[rgba(200,210,220,0.65)] px-3 py-1.5 text-sm ${hasQuantity ? "bg-yellow-50" : "bg-white"
+                          className={`grid grid-cols-[minmax(260px,1fr)_160px_132px] items-center border-b border-[rgba(200,210,220,0.65)] px-3 py-1.5 text-sm ${hasQuantity ? "bg-yellow-50" : "bg-white"
                             }`}
                         >
-                          <div className="min-w-0 truncate font-medium text-[var(--ui-text)]">
-                            {product.name ?? product.id}
+                          <div className="min-w-0">
+                            <div className="truncate font-medium text-[var(--ui-text)]">
+                              {product.name ?? product.id}
+                            </div>
+                            {hasQuantity && requestPolicy ? (
+                              <div className="mt-0.5 truncate text-xs font-medium text-[var(--ui-muted)]">
+                                {formatQuantity(Number(row?.quantity ?? 0))} {getRequestPolicyDisplayLabel(requestPolicy)}
+                                {" · equivale a "}
+                                {formatQuantity(
+                                  Number(row?.quantity ?? 0) *
+                                    requestPolicy.baseQtyPerRequestUnit,
+                                )}{" "}
+                                {requestPolicy.baseUnitCode}
+                              </div>
+                            ) : null}
                           </div>
-                          <div className="text-center text-xs font-semibold uppercase text-[var(--ui-muted)]">
-                            {unitLabel}
+                          <div className="min-w-0 text-center text-xs font-semibold uppercase text-[var(--ui-muted)]">
+                            {requestPolicies.length > 1 ? (
+                              <select
+                                className="h-9 w-full rounded-lg border border-[var(--ui-border)] bg-white px-2 text-xs font-semibold normal-case text-[var(--ui-text)] outline-none focus:border-[var(--ui-brand-500)]"
+                                value={requestPolicy?.id ?? requestPolicies[0]?.id ?? ""}
+                                onChange={(event) =>
+                                  setTableRequestPolicy(product, event.target.value)
+                                }
+                                aria-label={`Forma de solicitud para ${product.name ?? "producto"}`}
+                              >
+                                {requestPolicies.map((policy) => (
+                                  <option key={policy.id} value={policy.id}>
+                                    {getRequestPolicyDisplayLabel(policy)}
+                                  </option>
+                                ))}
+                              </select>
+                            ) : (
+                              unitLabel
+                            )}
                           </div>
                           <input
                             type="number"

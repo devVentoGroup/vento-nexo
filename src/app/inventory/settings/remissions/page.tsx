@@ -366,6 +366,9 @@ export default async function RemissionsSettingsPage({
           <Link href="/inventory/settings/remissions/products" className="ui-btn ui-btn--brand">
             Productos por sede
           </Link>
+          <Link href="/inventory/settings/request-policies" className="ui-btn ui-btn--ghost">
+            Políticas de solicitud
+          </Link>
           <Link href="/inventory/remissions" className="ui-btn ui-btn--ghost">
             Ir a remisiones
           </Link>

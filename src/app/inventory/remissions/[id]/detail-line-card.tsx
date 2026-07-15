@@ -167,6 +167,11 @@ export function RemissionLineCard({
               >
                 {vm.quantityBadgeText}
               </span>
+              {vm.requestPolicySummary ? (
+                <span className="text-xs font-medium text-[var(--ui-muted)]">
+                  Solicitado: {vm.requestPolicySummary}
+                </span>
+              ) : null}
               {usesActualQuantity ? (
                 <span
                   className={
@@ -207,6 +212,11 @@ export function RemissionLineCard({
               <span className="rounded-full border border-amber-200 bg-amber-50 px-3.5 py-1.5 text-[15px] font-semibold text-amber-950 shadow-sm">
                 {vm.quantityBadgeText}
               </span>
+              {vm.requestPolicySummary ? (
+                <span className="text-xs font-medium text-[var(--ui-muted)]">
+                  Solicitado: {vm.requestPolicySummary}
+                </span>
+              ) : null}
               {usesActualQuantity ? (
                 <span className="rounded-full border border-sky-200 bg-sky-50 px-3 py-1 text-[13px] font-semibold text-sky-800 shadow-sm">
                   {measurementChipLabel}

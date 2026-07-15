@@ -43,6 +43,11 @@ export type RestockItemRow = {
   unit: string | null;
   input_qty: number | null;
   input_unit_code: string | null;
+  request_policy_id?: string | null;
+  request_policy_label?: string | null;
+  requested_policy_qty?: number | null;
+  request_unit_code?: string | null;
+  base_qty_per_request_unit?: number | null;
   stock_unit_code: string | null;
   source_location_id: string | null;
   prepared_quantity: number | null;
