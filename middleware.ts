@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServerClient } from "@supabase/ssr";
 
+import { isLocalHostname } from "@/lib/auth/request-host";
+
 const DEBUG_AUTH = process.env.NEXT_PUBLIC_DEBUG_AUTH === "1";
-const COOKIE_DOMAIN =
+const CONFIGURED_COOKIE_DOMAIN =
   process.env.NEXT_PUBLIC_COOKIE_DOMAIN || process.env.COOKIE_DOMAIN;
 const BODEGA_KIOSK_EMAIL = "bodega@ventogroup.co";
 const BODEGA_KIOSK_LOCATION_CODE = "LOC-CP-BOD-MAIN";
@@ -13,9 +15,17 @@ function buildLoginRedirect(request: NextRequest) {
   return withNoStoreHeaders(NextResponse.redirect(target));
 }
 
-function withCookieDomain(options?: Record<string, unknown>) {
-  if (!COOKIE_DOMAIN) return options;
-  return { ...(options ?? {}), domain: COOKIE_DOMAIN };
+function requestCookieDomain(request: NextRequest) {
+  const host = request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? "";
+  return isLocalHostname(host) ? undefined : CONFIGURED_COOKIE_DOMAIN;
+}
+
+function withCookieDomain(
+  options: Record<string, unknown> | undefined,
+  cookieDomain: string | undefined,
+) {
+  if (!cookieDomain) return options;
+  return { ...(options ?? {}), domain: cookieDomain };
 }
 
 function hasSupabaseCookies(request: NextRequest) {
@@ -23,9 +33,14 @@ function hasSupabaseCookies(request: NextRequest) {
 }
 
 function clearSupabaseCookies(request: NextRequest, response: NextResponse) {
+  const cookieDomain = requestCookieDomain(request);
   for (const cookie of request.cookies.getAll()) {
     if (cookie.name.startsWith("sb-")) {
-      response.cookies.set(cookie.name, "", withCookieDomain({ path: "/", maxAge: 0 }));
+      response.cookies.set(
+        cookie.name,
+        "",
+        withCookieDomain({ path: "/", maxAge: 0 }, cookieDomain),
+      );
     }
   }
 }
@@ -102,6 +117,7 @@ export async function middleware(request: NextRequest) {
   }
 
   const response = withNoStoreHeaders(NextResponse.next());
+  const cookieDomain = requestCookieDomain(request);
 
   const url =
     process.env.NEXT_PUBLIC_SUPABASE_URL || process.env.SUPABASE_URL || "";
@@ -122,7 +138,11 @@ export async function middleware(request: NextRequest) {
       },
       setAll(cookies) {
         cookies.forEach(({ name, value, options }) => {
-          response.cookies.set(name, value, withCookieDomain(options));
+          response.cookies.set(
+            name,
+            value,
+            withCookieDomain(options as Record<string, unknown>, cookieDomain),
+          );
         });
       },
     },
