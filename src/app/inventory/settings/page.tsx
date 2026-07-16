@@ -49,7 +49,7 @@ const groups: Group[] = [
       { title: "Productos por sede", description: "Disponibilidad, inventario, remisión, venta y mínimos por sede.", href: "/inventory/settings/products", cta: "Abrir configurador maestro" },
       { title: "Políticas de solicitud", description: "Unidad visible, equivalencia, mínimo y paso para solicitudes futuras.", href: "/inventory/settings/products", cta: "Abrir configurador maestro" },
       { title: "Rutas entre sedes", description: "Qué sede abastece a cuál. Es el origen general de una solicitud.", href: "/inventory/settings/supply-routes", cta: "Configurar rutas" },
-      { title: "Rutas operativas por producto", description: "Área de producción y LOCs de insumos y terminado.", href: "/inventory/settings/products", cta: "Abrir configurador maestro" },
+      { title: "Rutas operativas por producto", description: "Define por producto desde qué sede y LOC se prepara, y a qué sede y LOC se entrega cada remisión.", href: "/inventory/settings/fulfillment-routes", cta: "Configurar rutas" },
       { title: "Reglas de remisiones", description: "Modos operativos, inventario real y excepciones por sede.", href: "/inventory/settings/remissions", cta: "Configurar remisiones" },
       { title: "Cumplimiento y cargas", description: "Preparar cantidades listas y agruparlas en envíos físicos.", href: "/inventory/remissions/fulfillment", cta: "Abrir operación", state: "Operación, no configuración" },
     ],
