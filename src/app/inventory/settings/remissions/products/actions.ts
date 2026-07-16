@@ -415,7 +415,7 @@ export async function saveBulkProductConfiguration(formData: FormData) {
     const routeProductIds = Array.from(new Set(routeDrafts.map((draft) => draft.productId)));
     const { data: existingRoutes, error: existingRoutesError } = await supabase
       .from("product_fulfillment_routes")
-      .select("id,product_id,requesting_area_kind,is_active")
+      .select("id,product_id,requesting_area_kind,is_active,updated_at")
       .eq("from_site_id", originSiteId)
       .eq("to_site_id", destinationSiteId)
       .in("product_id", routeProductIds);
@@ -425,39 +425,73 @@ export async function saveBulkProductConfiguration(formData: FormData) {
       redirect(buildRedirect(returnParams));
     }
 
-    const existingRouteByProductId = new Map(
-      ((existingRoutes ?? []) as Array<{
-        id: string;
-        product_id: string;
-        requesting_area_kind: string | null;
-        is_active: boolean | null;
-      }>)
-        .filter(
-          (route) => normalizeAreaKind(route.requesting_area_kind) === selectedAreaKind
-        )
-        .map((route) => [String(route.product_id ?? "").trim(), route] as const)
-        .filter(([productId]) => Boolean(productId))
-    );
+    type ExistingFulfillmentRoute = {
+      id: string;
+      product_id: string;
+      requesting_area_kind: string | null;
+      is_active: boolean | null;
+      updated_at: string | null;
+    };
+
+    const existingRoutesByProductId = new Map<string, ExistingFulfillmentRoute[]>();
+    for (const route of (existingRoutes ?? []) as ExistingFulfillmentRoute[]) {
+      if (normalizeAreaKind(route.requesting_area_kind) !== selectedAreaKind) continue;
+      const productId = String(route.product_id ?? "").trim();
+      if (!productId) continue;
+      const current = existingRoutesByProductId.get(productId) ?? [];
+      current.push(route);
+      existingRoutesByProductId.set(productId, current);
+    }
+
+    const routeTimestamp = (route: ExistingFulfillmentRoute) => {
+      const timestamp = Date.parse(String(route.updated_at ?? ""));
+      return Number.isFinite(timestamp) ? timestamp : 0;
+    };
 
     for (const draft of routeDrafts) {
-      const existingRoute = existingRouteByProductId.get(draft.productId) ?? null;
+      const matchingRoutes = existingRoutesByProductId.get(draft.productId) ?? [];
+      const orderedRoutes = [...matchingRoutes].sort((left, right) => {
+        const activeDifference = Number(right.is_active !== false) - Number(left.is_active !== false);
+        if (activeDifference !== 0) return activeDifference;
+        return routeTimestamp(right) - routeTimestamp(left);
+      });
+      const canonicalRoute = orderedRoutes[0] ?? null;
+      const activeRouteIds = matchingRoutes
+        .filter((route) => route.is_active !== false)
+        .map((route) => route.id);
 
       if (!draft.enabled) {
-        if (existingRoute?.id && existingRoute.is_active !== false) {
+        if (activeRouteIds.length > 0) {
           const { error } = await supabase
             .from("product_fulfillment_routes")
             .update({ is_active: false, updated_by: userId })
-            .eq("id", existingRoute.id);
+            .in("id", activeRouteIds);
           if (error) {
             returnParams.set("error", error.message);
             redirect(buildRedirect(returnParams));
           }
-          savedRouteCount += 1;
+          savedRouteCount += activeRouteIds.length;
         }
         continue;
       }
 
-      if (existingRoute?.id) {
+      // La ruta lógica es única por producto + origen + destino + área solicitante.
+      // Antes de actualizarla, desactiva cualquier duplicado activo del mismo alcance.
+      const duplicateActiveRouteIds = activeRouteIds.filter(
+        (routeId) => routeId !== canonicalRoute?.id
+      );
+      if (duplicateActiveRouteIds.length > 0) {
+        const { error } = await supabase
+          .from("product_fulfillment_routes")
+          .update({ is_active: false, updated_by: userId })
+          .in("id", duplicateActiveRouteIds);
+        if (error) {
+          returnParams.set("error", error.message);
+          redirect(buildRedirect(returnParams));
+        }
+      }
+
+      if (canonicalRoute?.id) {
         const { error } = await supabase
           .from("product_fulfillment_routes")
           .update({
@@ -468,7 +502,7 @@ export async function saveBulkProductConfiguration(formData: FormData) {
             is_active: true,
             updated_by: userId,
           })
-          .eq("id", existingRoute.id);
+          .eq("id", canonicalRoute.id);
         if (error) {
           returnParams.set("error", error.message);
           redirect(buildRedirect(returnParams));
