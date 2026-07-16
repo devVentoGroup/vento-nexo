@@ -47,7 +47,7 @@ const groups: Group[] = [
     description: "Configura cómo se pide un producto, quién lo prepara y cómo se mueve entre sedes.",
     cards: [
       { title: "Productos por sede", description: "Qué productos y categorías participan en remisiones de cada sede.", href: "/inventory/settings/remissions/products", cta: "Configurar productos" },
-      { title: "Políticas de solicitud", description: "Unidad visible, equivalencia, mínimo y paso para solicitudes futuras.", href: "/inventory/settings/products", cta: "Abrir configurador maestro" },
+      { title: "Políticas de solicitud", description: "Unidad visible, equivalencia, mínimo y paso para solicitudes futuras.", href: "/inventory/settings/request-policies", cta: "Configurar políticas" },
       { title: "Rutas entre sedes", description: "Qué sede abastece a cuál. Es el origen general de una solicitud.", href: "/inventory/settings/supply-routes", cta: "Configurar rutas" },
       { title: "Rutas operativas por producto", description: "Define por producto desde qué sede y LOC se prepara, y a qué sede y LOC se entrega cada remisión.", href: "/inventory/settings/fulfillment-routes", cta: "Configurar rutas" },
       { title: "Reglas de remisiones", description: "Modos operativos, inventario real y excepciones por sede.", href: "/inventory/settings/remissions", cta: "Configurar remisiones" },
