@@ -27,7 +27,6 @@ import {
   loadAllActiveProducts,
   loadAllActiveRemissionUomProfiles,
   loadAllProductSiteSettings,
-  locationLabel,
   measurementModeLabel,
   normalizeAreaKind,
   normalizeCatalogToken,
@@ -45,7 +44,6 @@ import {
   type LocationRow,
   type ProductRow,
   type ProductSiteAreaRemissionCategoryRow,
-  type ProductSiteProductionRouteRow,
   type ProductSiteSettingRow,
   type RemissionCategoryRow,
   type SiteRow,
@@ -63,28 +61,23 @@ type OriginAreaRow = {
   name: string | null;
 };
 
-function normalizeLooseToken(value: unknown) {
-  return String(value ?? "")
-    .trim()
-    .toLowerCase()
-    .normalize("NFD")
-    .replace(/[\u0300-\u036f]/g, "");
-}
+type ProductFulfillmentRouteRow = {
+  id: string;
+  product_id: string;
+  requesting_area_kind: string | null;
+  preparing_area_kind: string | null;
+  preferred_source_location_id: string | null;
+  supply_mode: string | null;
+  is_active: boolean | null;
+};
 
-function isProductionAreaKind(kind: unknown) {
-  const normalized = normalizeLooseToken(kind);
-  if (!normalized) return false;
-  return !["bodega", "almacen", "almacenamiento", "storage"].includes(normalized);
-}
-
-function isProductionLocation(location: LocationRow) {
-  const normalizedType = normalizeLooseToken(
-    (location as LocationRow & { location_type?: string | null }).location_type
+function sourceLocLabel(location: LocationRow) {
+  return (
+    String(location.description ?? "").trim() ||
+    String(location.code ?? "").trim() ||
+    "LOC sin nombre"
   );
-  if (!normalizedType) return true;
-  return ["production", "produccion", "prod"].includes(normalizedType);
 }
-
 
 export default async function RemissionProductsPage({
   searchParams,
@@ -130,13 +123,16 @@ export default async function RemissionProductsPage({
   const siteIds = sites.map((site) => site.id);
   const { data: capabilityRows } = siteIds.length
     ? await supabase
-      .from("site_operational_capabilities")
-      .select("site_id,can_request_remissions,can_fulfill_remissions,can_receive_remissions,can_sell,can_produce,can_hold_inventory,is_commercial_business,show_in_product_setup")
-      .in("site_id", siteIds)
+        .from("site_operational_capabilities")
+        .select(
+          "site_id,can_request_remissions,can_fulfill_remissions,can_receive_remissions,can_sell,can_produce,can_hold_inventory,is_commercial_business,show_in_product_setup",
+        )
+        .in("site_id", siteIds)
     : { data: [] as SiteOperationalCapabilities[] };
+
   const capabilitiesBySite = getSiteCapabilitiesMap(
     siteIds,
-    (capabilityRows ?? []) as SiteOperationalCapabilities[]
+    (capabilityRows ?? []) as SiteOperationalCapabilities[],
   );
   const destinationSites = sites.filter((site) => {
     const capabilities = capabilitiesBySite.get(site.id);
@@ -154,6 +150,7 @@ export default async function RemissionProductsPage({
     ? (sp.bulk_profile as BulkProfile)
     : "input_from_origin";
   const requestedAreaKind = normalizeAreaKind(String(sp.area_kind ?? ""));
+  const initialQuery = String(sp.q ?? "").trim();
 
   const [
     settingsData,
@@ -170,42 +167,42 @@ export default async function RemissionProductsPage({
     loadAllActiveRemissionUomProfiles(supabase),
     originSiteId
       ? supabase
-        .from("inventory_locations")
-        .select("id,site_id,is_active,code,zone,aisle,level,description,area_id")
-        .eq("site_id", originSiteId)
-        .eq("is_active", true)
-        .order("code", { ascending: true })
+          .from("inventory_locations")
+          .select("id,site_id,is_active,code,description,area_id")
+          .eq("site_id", originSiteId)
+          .eq("is_active", true)
+          .order("code", { ascending: true })
       : { data: [] as LocationRow[] },
     originSiteId
       ? supabase
-        .from("areas")
-        .select("id,kind,name")
-        .eq("site_id", originSiteId)
-        .eq("is_active", true)
-        .order("name", { ascending: true })
+          .from("areas")
+          .select("id,kind,name")
+          .eq("site_id", originSiteId)
+          .eq("is_active", true)
+          .order("name", { ascending: true })
       : { data: [] as OriginAreaRow[] },
     destinationSiteId
       ? supabase
-        .from("site_area_purpose_rules")
-        .select("site_id,area_kind,is_enabled")
-        .eq("site_id", destinationSiteId)
-        .eq("purpose", "remission")
-        .eq("is_enabled", true)
+          .from("site_area_purpose_rules")
+          .select("site_id,area_kind,is_enabled")
+          .eq("site_id", destinationSiteId)
+          .eq("purpose", "remission")
+          .eq("is_enabled", true)
       : { data: [] as AreaRuleRow[] },
     destinationSiteId
       ? supabase
-        .from("remission_product_categories")
-        .select("id,site_id,area_kind,name,sort_order,is_active")
-        .eq("site_id", destinationSiteId)
-        .eq("is_active", true)
-        .order("sort_order", { ascending: true })
-        .order("name", { ascending: true })
+          .from("remission_product_categories")
+          .select("id,site_id,area_kind,name,sort_order,is_active")
+          .eq("site_id", destinationSiteId)
+          .eq("is_active", true)
+          .order("sort_order", { ascending: true })
+          .order("name", { ascending: true })
       : { data: [] as RemissionCategoryRow[] },
     destinationSiteId
       ? supabase
-        .from("product_site_area_remission_categories")
-        .select("product_id,site_id,area_kind,remission_category_id")
-        .eq("site_id", destinationSiteId)
+          .from("product_site_area_remission_categories")
+          .select("product_id,site_id,area_kind,remission_category_id")
+          .eq("site_id", destinationSiteId)
       : { data: [] as ProductSiteAreaRemissionCategoryRow[] },
   ]);
 
@@ -213,49 +210,49 @@ export default async function RemissionProductsPage({
     ((settingsData ?? []) as ProductSiteSettingRow[]).map((row) => [
       String(row.product_id ?? ""),
       row,
-    ])
+    ]),
   );
   const remissionProfileProductIds = new Set(
     ((profilesData ?? []) as UomProfileRow[])
       .filter((profile) => Number(profile.qty_in_stock_unit ?? 0) > 0)
       .map((profile) => String(profile.product_id ?? "").trim())
-      .filter(Boolean)
+      .filter(Boolean),
   );
+
   const originLocations = ((locationsData ?? []) as LocationRow[]).filter(
-    (location) => location.is_active !== false
+    (location) => location.is_active !== false,
   );
-  const productionOriginLocations = originLocations.filter((location) => {
-    const areaId = String((location as LocationRow & { area_id?: string | null }).area_id ?? "").trim();
-    return Boolean(areaId) && isProductionLocation(location);
-  });
+  const locationsWithArea = originLocations.filter((location) =>
+    Boolean(String((location as LocationRow & { area_id?: string | null }).area_id ?? "").trim()),
+  );
+  const areaIdsWithLoc = new Set(
+    locationsWithArea
+      .map((location) =>
+        String((location as LocationRow & { area_id?: string | null }).area_id ?? "").trim(),
+      )
+      .filter(Boolean),
+  );
+
   const requesterAreaOptions = Array.from(
     new Set(
       ((areaRulesData ?? []) as AreaRuleRow[])
         .map((row) => normalizeAreaKind(row.area_kind))
-        .filter(Boolean)
-    )
+        .filter(Boolean),
+    ),
   ).map((value) => ({ value, label: areaKindLabel(value) }));
   const selectedAreaKind =
     requestedAreaKind && requesterAreaOptions.some((option) => option.value === requestedAreaKind)
       ? requestedAreaKind
       : requesterAreaOptions[0]?.value ?? "";
   const selectedAreaLabel = areaKindLabel(selectedAreaKind);
-  const productionAreaIds = new Set(
-    productionOriginLocations
-      .map((location) =>
-        String((location as LocationRow & { area_id?: string | null }).area_id ?? "").trim()
-      )
-      .filter(Boolean)
-  );
+
   const originAreaOptions = Array.from(
     new Map(
       ((originAreasData ?? []) as OriginAreaRow[])
         .map((area) => {
           const value = normalizeAreaKind(area.kind);
           const areaId = String(area.id ?? "").trim();
-          if (!value || !areaId) return null;
-          if (!isProductionAreaKind(value)) return null;
-          if (!productionAreaIds.has(areaId)) return null;
+          if (!value || !areaId || !areaIdsWithLoc.has(areaId)) return null;
 
           return [
             value,
@@ -266,22 +263,30 @@ export default async function RemissionProductsPage({
             },
           ] as const;
         })
-        .filter((entry): entry is readonly [string, { value: string; id: string; label: string }] => Boolean(entry))
-    ).values()
+        .filter(
+          (
+            entry,
+          ): entry is readonly [string, { value: string; id: string; label: string }] =>
+            Boolean(entry),
+        ),
+    ).values(),
   );
-  const remissionCategories = ((remissionCategoriesData ?? []) as RemissionCategoryRow[])
-    .filter((category) => {
+
+  const remissionCategories = ((remissionCategoriesData ?? []) as RemissionCategoryRow[]).filter(
+    (category) => {
       const categoryAreaKind = normalizeAreaKind(category.area_kind);
       return !selectedAreaKind || !categoryAreaKind || categoryAreaKind === selectedAreaKind;
-    });
-  const selectedAreaCategoryRows = ((areaCategoryData ?? []) as ProductSiteAreaRemissionCategoryRow[])
-    .filter((row) => normalizeAreaKind(row.area_kind) === selectedAreaKind);
+    },
+  );
+  const selectedAreaCategoryRows = (
+    (areaCategoryData ?? []) as ProductSiteAreaRemissionCategoryRow[]
+  ).filter((row) => normalizeAreaKind(row.area_kind) === selectedAreaKind);
 
   const areaCategoryByProduct = new Map(
     selectedAreaCategoryRows.map((row) => [
       String(row.product_id ?? ""),
       String(row.remission_category_id ?? ""),
-    ])
+    ]),
   );
 
   const categoryProductCountById = new Map<string, Set<string>>();
@@ -295,7 +300,7 @@ export default async function RemissionProductsPage({
   for (const row of selectedAreaCategoryRows) {
     addCategoryProduct(
       String(row.remission_category_id ?? ""),
-      String(row.product_id ?? "")
+      String(row.product_id ?? ""),
     );
   }
 
@@ -307,7 +312,6 @@ export default async function RemissionProductsPage({
   }
 
   const allowedTypeOptions = profileTypeOptions(bulkProfile);
-
   const productCandidates = ((productsData ?? []) as ProductRow[])
     .map((product) => {
       const setting = settingsByProduct.get(product.id);
@@ -321,34 +325,43 @@ export default async function RemissionProductsPage({
       });
       return { product, setting, diagnostics };
     })
-    .filter(({ product, setting }) => profileAllowsProduct({ product, setting, profile: bulkProfile }));
+    .filter(({ product, setting }) =>
+      profileAllowsProduct({ product, setting, profile: bulkProfile }),
+    );
 
   const productCandidateIds = productCandidates.map(({ product }) => product.id).filter(Boolean);
-  const { data: originRoutesData } =
-    originSiteId && productCandidateIds.length > 0
+  const { data: fulfillmentRoutesData } =
+    originSiteId && destinationSiteId && productCandidateIds.length > 0
       ? await supabase
-        .from("product_site_production_routes")
-        .select("id,product_id,site_id,area_kind,input_location_id,output_mode,output_location_id,output_position_id,is_default,is_active")
-        .eq("site_id", originSiteId)
-        .eq("is_default", true)
-        .eq("is_active", true)
-        .in("product_id", productCandidateIds)
-      : { data: [] as ProductSiteProductionRouteRow[] };
+          .from("product_fulfillment_routes")
+          .select(
+            "id,product_id,requesting_area_kind,preparing_area_kind,preferred_source_location_id,supply_mode,is_active",
+          )
+          .eq("from_site_id", originSiteId)
+          .eq("to_site_id", destinationSiteId)
+          .in("product_id", productCandidateIds)
+      : { data: [] as ProductFulfillmentRouteRow[] };
 
-  const originRouteByProduct = new Map(
-    ((originRoutesData ?? []) as ProductSiteProductionRouteRow[])
-      .filter((row) => String(row.product_id ?? "").trim())
-      .map((row) => [String(row.product_id ?? "").trim(), row])
-  );
+  const routesByProduct = new Map<string, ProductFulfillmentRouteRow[]>();
+  for (const route of (fulfillmentRoutesData ?? []) as ProductFulfillmentRouteRow[]) {
+    const productId = String(route.product_id ?? "").trim();
+    if (!productId) continue;
+    const current = routesByProduct.get(productId) ?? [];
+    current.push(route);
+    routesByProduct.set(productId, current);
+  }
 
-  const productRows: RemissionProductsClientRow[] = productCandidates
-    .map(({ product, setting, diagnostics }) => {
+  const productRows: RemissionProductsClientRow[] = productCandidates.map(
+    ({ product, setting, diagnostics }) => {
       const measurementMode = productMeasurementMode(product);
       const productType = normalizeProductType(product.product_type);
-      const originRoute = originRouteByProduct.get(product.id) ?? null;
-      const originRouteIsForRemission =
-        originRoute?.output_mode === "inventory_stock" &&
-        Boolean(originRoute.output_location_id);
+      const productRoutes = routesByProduct.get(product.id) ?? [];
+      const exactRoute =
+        productRoutes.find(
+          (route) =>
+            route.is_active !== false &&
+            normalizeAreaKind(route.requesting_area_kind) === selectedAreaKind,
+        ) ?? null;
 
       return {
         product: {
@@ -359,7 +372,8 @@ export default async function RemissionProductsPage({
           productTypeLabel: productTypeLabel(product.product_type),
           measurementMode,
           measurementLabel: measurementModeLabel(measurementMode),
-          stockUnitLabel: normalizeUnitCode(product.stock_unit_code || product.unit || "") || "Sin unidad",
+          stockUnitLabel:
+            normalizeUnitCode(product.stock_unit_code || product.unit || "") || "Sin unidad",
           searchText: normalizeCatalogToken(`${product.name ?? ""} ${product.sku ?? ""}`),
         },
         setting: {
@@ -369,18 +383,19 @@ export default async function RemissionProductsPage({
           areaKinds: settingAreaKinds(setting),
           isRemissionEnabledForSelectedArea: isSettingEnabledForArea(setting, selectedAreaKind),
           salesEnabled: setting?.sales_enabled ?? false,
-          originRoute: originRoute
+          originRoute: exactRoute
             ? {
-              enabled: originRouteIsForRemission,
-              areaKind: normalizeAreaKind(originRoute.area_kind),
-              inputLocationId: String(originRoute.input_location_id ?? ""),
-              outputLocationId: String(originRoute.output_location_id ?? ""),
-            }
+                enabled: true,
+                areaKind: normalizeAreaKind(exactRoute.preparing_area_kind),
+                sourceLocationId: String(exactRoute.preferred_source_location_id ?? ""),
+                supplyMode: String(exactRoute.supply_mode ?? "stock"),
+              }
             : null,
         },
         diagnostics,
       };
-    });
+    },
+  );
 
   const okMsg = sp.ok ? safeDecodeURIComponent(sp.ok) : "";
   const errorMsg = sp.error ? safeDecodeURIComponent(sp.error) : "";
@@ -391,21 +406,33 @@ export default async function RemissionProductsPage({
         <div>
           <h1 className="ui-h1">Productos de remisión por sede</h1>
           <p className="mt-2 ui-body-muted">
-            Configura muchos productos remitibles para una sede sin abrir cada ficha.
+            Configura la relación de remisión y define qué área y LOC del origen atienden cada producto.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
           <Link href="/inventory/settings/remissions" className="ui-btn ui-btn--ghost">
             Configuración
           </Link>
+          <Link
+            href="/inventory/settings/fulfillment-routes"
+            className="ui-btn ui-btn--ghost"
+          >
+            Revisar rutas
+          </Link>
           <Link href="/inventory/settings/supply-routes" className="ui-btn ui-btn--ghost">
-            Rutas
+            Rutas entre sedes
           </Link>
         </div>
       </div>
 
       {errorMsg ? <div className="mt-6 ui-alert ui-alert--error">Error: {errorMsg}</div> : null}
       {okMsg ? <div className="mt-6 ui-alert ui-alert--success">{okMsg}</div> : null}
+
+      <div className="mt-6 ui-alert ui-alert--neutral">
+        La configuración guarda únicamente el <strong>área responsable</strong> y el
+        <strong> LOC de salida</strong>. Estanterías, niveles, posiciones internas y LPN se
+        resuelven únicamente durante la preparación y el despacho.
+      </div>
 
       <div className="mt-6 ui-panel">
         <form method="get" className="grid gap-3 lg:grid-cols-9">
@@ -446,8 +473,12 @@ export default async function RemissionProductsPage({
             <select name="bulk_profile" defaultValue={bulkProfile} className="ui-input">
               <option value="input_from_origin">{profileLabel("input_from_origin")}</option>
               <option value="sellable_from_origin">{profileLabel("sellable_from_origin")}</option>
-              <option value="preparation_from_origin">{profileLabel("preparation_from_origin")}</option>
-              <option value="available_not_remission">{profileLabel("available_not_remission")}</option>
+              <option value="preparation_from_origin">
+                {profileLabel("preparation_from_origin")}
+              </option>
+              <option value="available_not_remission">
+                {profileLabel("available_not_remission")}
+              </option>
               <option value="disable_remission">{profileLabel("disable_remission")}</option>
             </select>
           </label>
@@ -459,7 +490,8 @@ export default async function RemissionProductsPage({
 
       {!destinationSites.length || !originSites.length ? (
         <div className="mt-6 ui-alert ui-alert--warn">
-          Faltan capacidades operativas: debe existir una sede que solicite/reciba y una sede que despache remisiones.
+          Faltan capacidades operativas: debe existir una sede que solicite/reciba y una sede
+          que despache remisiones.
         </div>
       ) : null}
 
@@ -477,7 +509,8 @@ export default async function RemissionProductsPage({
 
       {originSiteId && originAreaOptions.length === 0 ? (
         <div className="mt-6 ui-alert ui-alert--warn">
-          El origen seleccionado no tiene áreas operativas activas. La configuración masiva de ruta de producción queda deshabilitada.
+          El origen no tiene áreas operativas con LOC activo. No se puede asignar quién atiende
+          la solicitud.
         </div>
       ) : null}
 
@@ -509,13 +542,12 @@ export default async function RemissionProductsPage({
           name: category.name ?? "Sin nombre",
         }))}
         allowedTypeOptions={allowedTypeOptions}
-        originLocationOptions={productionOriginLocations.map((location) => ({
+        originLocationOptions={locationsWithArea.map((location) => ({
           id: location.id,
-          areaId: String((location as LocationRow & { area_id?: string | null }).area_id ?? ""),
-          label:
-            String(location.description ?? "").trim() ||
-            String(location.zone ?? "").trim() ||
-            locationLabel(location),
+          areaId: String(
+            (location as LocationRow & { area_id?: string | null }).area_id ?? "",
+          ),
+          label: sourceLocLabel(location),
         }))}
         originAreaOptions={originAreaOptions}
         canManage={canManage}
@@ -526,6 +558,7 @@ export default async function RemissionProductsPage({
         selectedAreaLabel={selectedAreaLabel}
         profileLabel={profileLabel(bulkProfile)}
         profileHelp={profileHelp(bulkProfile)}
+        initialQuery={initialQuery}
         saveAction={saveBulkProductConfiguration}
       />
     </div>

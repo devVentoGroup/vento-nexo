@@ -28,8 +28,8 @@ type ProductDiagnostics = {
 type OriginRouteState = {
   enabled?: boolean;
   areaKind?: string;
-  inputLocationId?: string;
-  outputLocationId?: string;
+  sourceLocationId?: string;
+  supplyMode?: string;
 };
 
 export type RemissionProductsClientRow = {
@@ -93,14 +93,15 @@ type Props = {
   selectedAreaLabel: string;
   profileLabel: string;
   profileHelp: string;
+  initialQuery?: string;
   saveAction: ServerAction;
 };
 
 type RowRouteConfig = {
   enabled: boolean;
   areaKind: string;
-  inputLocationId: string;
-  outputLocationId: string;
+  sourceLocationId: string;
+  supplyMode: string;
 };
 
 function normalizeSearch(value: string) {
@@ -127,12 +128,11 @@ function canSellProductType(productType: string) {
   return ["venta", "reventa", "preparacion"].includes(normalized);
 }
 
-function canConfigureProductionRoute(productType: string) {
-  const normalized = normalizeProductType(productType);
-  return ["venta", "preparacion"].includes(normalized);
-}
-
-function firstLocationForArea(areaValue: string, areas: AreaOption[], locations: LocationOption[]) {
+function firstLocationForArea(
+  areaValue: string,
+  areas: AreaOption[],
+  locations: LocationOption[],
+) {
   const area = areas.find((item) => item.value === areaValue) ?? areas[0] ?? null;
   if (!area) return "";
   return locations.find((location) => location.areaId === area.id)?.id ?? "";
@@ -151,6 +151,17 @@ function resolveRouteLocationId(
   return areaLocations[0]?.id ?? "";
 }
 
+function defaultSupplyModeForProfile(profile: BulkProfile) {
+  return profile === "preparation_from_origin" ? "production" : "stock";
+}
+
+function supplyModeLabel(value: string) {
+  if (value === "production") return "Producción";
+  if (value === "transfer") return "Transferencia";
+  if (value === "supplier") return "Proveedor";
+  if (value === "manual") return "Manual";
+  return "Stock";
+}
 
 const stickyHeaderCellClass =
   "sticky top-0 z-20 border-b border-[var(--ui-border)] bg-[var(--ui-surface)] px-3 py-2 text-left text-xs font-semibold text-[var(--ui-muted)] shadow-sm";
@@ -169,6 +180,7 @@ export function RemissionProductsClientTable({
   selectedAreaLabel,
   profileLabel,
   profileHelp,
+  initialQuery = "",
   saveAction,
 }: Props) {
   const defaultOriginAreaKind = originAreaOptions[0]?.value ?? "";
@@ -177,15 +189,17 @@ export function RemissionProductsClientTable({
     originLocationOptions.find((location) => location.areaId === defaultOriginAreaId)?.id ??
     originLocationOptions[0]?.id ??
     "";
-  const disablesRemission = bulkProfile === "available_not_remission" || bulkProfile === "disable_remission";
+  const defaultSupplyMode = defaultSupplyModeForProfile(bulkProfile);
+  const disablesRemission =
+    bulkProfile === "available_not_remission" || bulkProfile === "disable_remission";
   const originRouteInputsAvailable =
     !disablesRemission &&
     originAreaOptions.length > 0 &&
     originAreaOptions.some((area) =>
-      originLocationOptions.some((location) => location.areaId === area.id)
+      originLocationOptions.some((location) => location.areaId === area.id),
     );
 
-  const [query, setQuery] = useState("");
+  const [query, setQuery] = useState(initialQuery);
   const [typeFilter, setTypeFilter] = useState("");
   const [measurementFilter, setMeasurementFilter] = useState("");
   const [categoryFilter, setCategoryFilter] = useState("");
@@ -199,39 +213,34 @@ export function RemissionProductsClientTable({
           row.setting.salesEnabled ??
           (bulkProfile === "sellable_from_origin" && ["venta", "reventa"].includes(productType));
         return [row.product.id, canSellProductType(productType) ? Boolean(defaultSales) : false];
-      })
-    )
+      }),
+    ),
   );
   const [routeByProduct, setRouteByProduct] = useState<Record<string, RowRouteConfig>>(() =>
     Object.fromEntries(
-      rows.map((row) => [
-        row.product.id,
-        {
-          enabled: Boolean(row.setting.originRoute?.enabled),
-          areaKind: row.setting.originRoute?.areaKind || defaultOriginAreaKind,
-          inputLocationId:
-            resolveRouteLocationId(
-              row.setting.originRoute?.inputLocationId || "",
-              row.setting.originRoute?.areaKind || defaultOriginAreaKind,
-              originAreaOptions,
-              originLocationOptions,
-            ) || defaultOriginLocationId,
-          outputLocationId:
-            resolveRouteLocationId(
-              row.setting.originRoute?.outputLocationId || "",
-              row.setting.originRoute?.areaKind || defaultOriginAreaKind,
-              originAreaOptions,
-              originLocationOptions,
-            ) || defaultOriginLocationId,
-        },
-      ])
-    )
+      rows.map((row) => {
+        const areaKind = row.setting.originRoute?.areaKind || defaultOriginAreaKind;
+        return [
+          row.product.id,
+          {
+            enabled: Boolean(row.setting.originRoute?.enabled),
+            areaKind,
+            sourceLocationId:
+              resolveRouteLocationId(
+                row.setting.originRoute?.sourceLocationId || "",
+                areaKind,
+                originAreaOptions,
+                originLocationOptions,
+              ) || defaultOriginLocationId,
+            supplyMode: row.setting.originRoute?.supplyMode || defaultSupplyMode,
+          },
+        ];
+      }),
+    ),
   );
   const [routeTouchedByProduct, setRouteTouchedByProduct] = useState<Record<string, boolean>>({});
   const [categoryByProduct, setCategoryByProduct] = useState<Record<string, string>>(() =>
-    Object.fromEntries(
-      rows.map((row) => [row.product.id, row.setting.remissionCategoryId])
-    )
+    Object.fromEntries(rows.map((row) => [row.product.id, row.setting.remissionCategoryId])),
   );
 
   const visibleRows = useMemo(() => {
@@ -275,15 +284,13 @@ export function RemissionProductsClientTable({
     selectableVisibleRows.length > 0 &&
     selectableVisibleRows.every((row) => selectedByProduct[row.product.id] === true);
   const routeIsIncomplete = selectedRows.some((row) => {
-    if (!canConfigureProductionRoute(row.product.productType)) return false;
+    if (!routeTouchedByProduct[row.product.id]) return false;
     const route = routeByProduct[row.product.id];
     if (!route?.enabled) return false;
-    return !originRouteInputsAvailable || !route.areaKind || !route.inputLocationId || !route.outputLocationId;
+    return !originRouteInputsAvailable || !route.areaKind || !route.sourceLocationId;
   });
   const canSave =
-    canManage &&
-    !routeIsIncomplete &&
-    (selectedCount > 0 || changedCategoryCount > 0);
+    canManage && !routeIsIncomplete && (selectedCount > 0 || changedCategoryCount > 0);
   const pendingCount = selectedCount + changedCategoryCount;
 
   function markProductSelected(productId: string) {
@@ -298,8 +305,8 @@ export function RemissionProductsClientTable({
       const currentRoute = current[productId] ?? {
         enabled: false,
         areaKind: defaultOriginAreaKind,
-        inputLocationId: defaultOriginLocationId,
-        outputLocationId: defaultOriginLocationId,
+        sourceLocationId: defaultOriginLocationId,
+        supplyMode: defaultSupplyMode,
       };
       return {
         ...current,
@@ -322,26 +329,21 @@ export function RemissionProductsClientTable({
       <input type="hidden" name="origin_site_id" value={originSiteId} />
       <input type="hidden" name="bulk_profile" value={bulkProfile} />
       <input type="hidden" name="area_kind" value={selectedAreaKind} />
+
       {selectedProductIds.map((productId) => {
         const row = rows.find((item) => item.product.id === productId);
         const productType = row?.product.productType ?? "";
         const canSell = row ? canSellProductType(productType) && !disablesRemission : false;
-        const canRoute = row ? canConfigureProductionRoute(productType) && !disablesRemission : false;
+        const canRoute = Boolean(row) && !disablesRemission;
         const route = routeByProduct[productId] ?? {
           enabled: false,
           areaKind: defaultOriginAreaKind,
-          inputLocationId: defaultOriginLocationId,
-          outputLocationId: defaultOriginLocationId,
+          sourceLocationId: defaultOriginLocationId,
+          supplyMode: defaultSupplyMode,
         };
         const resolvedAreaKind = route.areaKind || defaultOriginAreaKind;
-        const resolvedInputLocationId = resolveRouteLocationId(
-          route.inputLocationId,
-          resolvedAreaKind,
-          originAreaOptions,
-          originLocationOptions,
-        );
-        const resolvedOutputLocationId = resolveRouteLocationId(
-          route.outputLocationId,
+        const resolvedSourceLocationId = resolveRouteLocationId(
+          route.sourceLocationId,
           resolvedAreaKind,
           originAreaOptions,
           originLocationOptions,
@@ -357,20 +359,29 @@ export function RemissionProductsClientTable({
             />
             <input
               type="hidden"
-              name={`configure_origin_route_${productId}`}
-              value={canRoute && route.enabled ? "true" : "false"}
-            />
-            <input
-              type="hidden"
               name={`origin_route_touched_${productId}`}
               value={routeTouchedByProduct[productId] ? "true" : "false"}
             />
+            <input
+              type="hidden"
+              name={`origin_route_enabled_${productId}`}
+              value={canRoute && route.enabled ? "true" : "false"}
+            />
             <input type="hidden" name={`origin_area_kind_${productId}`} value={resolvedAreaKind} />
-            <input type="hidden" name={`origin_input_location_id_${productId}`} value={resolvedInputLocationId} />
-            <input type="hidden" name={`origin_output_location_id_${productId}`} value={resolvedOutputLocationId} />
+            <input
+              type="hidden"
+              name={`origin_source_location_id_${productId}`}
+              value={resolvedSourceLocationId}
+            />
+            <input
+              type="hidden"
+              name={`origin_supply_mode_${productId}`}
+              value={route.supplyMode || defaultSupplyMode}
+            />
           </div>
         );
       })}
+
       {changedCategoryRows.map((row) => (
         <div key={row.product.id} hidden>
           <input type="hidden" name="category_product_id" value={row.product.id} />
@@ -393,28 +404,33 @@ export function RemissionProductsClientTable({
             <span className={blockedCount > 0 ? "ui-chip ui-chip--warn" : "ui-chip"}>
               {blockedCount} no aplicables
             </span>
-            {selectedCount > 0 ? <span className="ui-chip ui-chip--info">{selectedCount} seleccionados</span> : null}
+            {selectedCount > 0 ? (
+              <span className="ui-chip ui-chip--info">{selectedCount} seleccionados</span>
+            ) : null}
             {changedCategoryCount > 0 ? (
-              <span className="ui-chip ui-chip--warn">{changedCategoryCount} categorías pendientes</span>
+              <span className="ui-chip ui-chip--warn">
+                {changedCategoryCount} categorías pendientes
+              </span>
             ) : null}
           </div>
           <p className="mt-2 max-w-4xl text-sm leading-relaxed text-[var(--ui-muted)]">
             {profileHelp} Activos, equipos y modelos patrimoniales se excluyen.
           </p>
+          <p className="mt-2 max-w-4xl text-xs leading-relaxed text-[var(--ui-muted)]">
+            “Atiende en origen” define únicamente el área responsable y el LOC. Las posiciones
+            internas se consultan y descuentan al preparar el despacho.
+          </p>
         </div>
 
-        <button
-          type="submit"
-          className="ui-btn ui-btn--brand"
-          disabled={!canSave}
-        >
+        <button type="submit" className="ui-btn ui-btn--brand" disabled={!canSave}>
           {pendingCount > 0 ? `Guardar cambios (${pendingCount})` : "Guardar cambios"}
         </button>
       </div>
 
       {routeIsIncomplete ? (
         <div className="mt-4 ui-alert ui-alert--warn">
-          Hay productos seleccionados con ruta de producción incompleta. Completa área productora, LOC de consumo y LOC de terminado, o desmarca producción CP en esa fila.
+          Hay productos con ruta operativa incompleta. Selecciona área responsable y LOC de
+          salida, o desactiva la ruta en esa fila.
         </div>
       ) : null}
 
@@ -508,17 +524,17 @@ export function RemissionProductsClientTable({
       </div>
 
       <div className="mt-4 max-h-[640px] min-h-[320px] overflow-y-auto overflow-x-auto rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface)]">
-        <Table className="min-w-[1320px] w-full table-fixed">
+        <Table className="min-w-[1260px] w-full table-fixed">
           <colgroup>
             <col className="w-[44px]" />
+            <col className="w-[21%]" />
+            <col className="w-[8%]" />
+            <col className="w-[10%]" />
+            <col className="w-[16%]" />
+            <col className="w-[8%]" />
             <col className="w-[22%]" />
-            <col className="w-[8%]" />
-            <col className="w-[10%]" />
-            <col className="w-[17%]" />
-            <col className="w-[8%]" />
-            <col className="w-[17%]" />
             <col className="w-[6%]" />
-            <col className="w-[10%]" />
+            <col className="w-[9%]" />
             <col className="w-[12%]" />
           </colgroup>
           <TableHead>
@@ -546,7 +562,7 @@ export function RemissionProductsClientTable({
               <TableHeaderCell className={stickyHeaderCellClass}>Medición</TableHeaderCell>
               <TableHeaderCell className={stickyHeaderCellClass}>Categoría</TableHeaderCell>
               <TableHeaderCell className={stickyHeaderCellClass}>Venta</TableHeaderCell>
-              <TableHeaderCell className={stickyHeaderCellClass}>Producción CP</TableHeaderCell>
+              <TableHeaderCell className={stickyHeaderCellClass}>Atiende en origen</TableHeaderCell>
               <TableHeaderCell className={stickyHeaderCellClass}>Base</TableHeaderCell>
               <TableHeaderCell className={stickyHeaderCellClass}>Estado</TableHeaderCell>
               <TableHeaderCell className={stickyHeaderCellClass}>Diagnóstico</TableHeaderCell>
@@ -554,15 +570,16 @@ export function RemissionProductsClientTable({
           </TableHead>
           <TableBody>
             {visibleRows.map(({ product, setting, diagnostics }) => {
-              const categoryChanged = (categoryByProduct[product.id] ?? "") !== setting.remissionCategoryId;
+              const categoryChanged =
+                (categoryByProduct[product.id] ?? "") !== setting.remissionCategoryId;
               const selected = selectedByProduct[product.id] === true;
               const canSell = canSellProductType(product.productType) && !disablesRemission;
-              const canRoute = canConfigureProductionRoute(product.productType) && !disablesRemission;
+              const canRoute = !disablesRemission;
               const route = routeByProduct[product.id] ?? {
                 enabled: false,
                 areaKind: defaultOriginAreaKind,
-                inputLocationId: defaultOriginLocationId,
-                outputLocationId: defaultOriginLocationId,
+                sourceLocationId: defaultOriginLocationId,
+                supplyMode: defaultSupplyMode,
               };
               const routeEnabled = canRoute && route.enabled;
               const rowBlocked = !diagnostics.canApply || !canManage;
@@ -571,18 +588,16 @@ export function RemissionProductsClientTable({
                 originAreaOptions[0] ??
                 null;
               const availableRouteLocations = selectedOriginArea
-                ? originLocationOptions.filter((location) => location.areaId === selectedOriginArea.id)
+                ? originLocationOptions.filter(
+                    (location) => location.areaId === selectedOriginArea.id,
+                  )
                 : [];
-              const resolvedInputLocationId = availableRouteLocations.some(
-                (location) => location.id === route.inputLocationId
+              const resolvedSourceLocationId = availableRouteLocations.some(
+                (location) => location.id === route.sourceLocationId,
               )
-                ? route.inputLocationId
+                ? route.sourceLocationId
                 : availableRouteLocations[0]?.id ?? "";
-              const resolvedOutputLocationId = availableRouteLocations.some(
-                (location) => location.id === route.outputLocationId
-              )
-                ? route.outputLocationId
-                : availableRouteLocations[0]?.id ?? "";
+
               return (
                 <TableRow key={product.id} className="border-t border-zinc-200/70 align-top">
                   <TableCell className="px-3 py-3 align-top">
@@ -609,9 +624,15 @@ export function RemissionProductsClientTable({
                     {selected || categoryChanged || routeEnabled || (canSell && salesByProduct[product.id]) ? (
                       <div className="mt-2 flex flex-wrap gap-1">
                         {selected ? <span className="ui-chip ui-chip--info">Seleccionado</span> : null}
-                        {categoryChanged ? <span className="ui-chip ui-chip--warn">Categoría pendiente</span> : null}
-                        {canSell && salesByProduct[product.id] ? <span className="ui-chip">Vende</span> : null}
-                        {routeEnabled ? <span className="ui-chip">Ruta CP</span> : null}
+                        {categoryChanged ? (
+                          <span className="ui-chip ui-chip--warn">Categoría pendiente</span>
+                        ) : null}
+                        {canSell && salesByProduct[product.id] ? (
+                          <span className="ui-chip">Vende</span>
+                        ) : null}
+                        {routeEnabled ? (
+                          <span className="ui-chip ui-chip--success">Ruta operativa</span>
+                        ) : null}
                       </div>
                     ) : null}
                   </TableCell>
@@ -678,45 +699,49 @@ export function RemissionProductsClientTable({
                               updateRoute(product.id, {
                                 enabled: nextEnabled,
                                 areaKind: nextAreaKind,
-                                inputLocationId: nextEnabled
+                                sourceLocationId: nextEnabled
                                   ? resolveRouteLocationId(
-                                      route.inputLocationId,
+                                      route.sourceLocationId,
                                       nextAreaKind,
                                       originAreaOptions,
                                       originLocationOptions,
                                     ) || nextLocationId
-                                  : route.inputLocationId,
-                                outputLocationId: nextEnabled
-                                  ? resolveRouteLocationId(
-                                      route.outputLocationId,
-                                      nextAreaKind,
-                                      originAreaOptions,
-                                      originLocationOptions,
-                                    ) || nextLocationId
-                                  : route.outputLocationId,
+                                  : route.sourceLocationId,
+                                supplyMode: route.supplyMode || defaultSupplyMode,
                               });
                             }}
                             disabled={rowBlocked || !originRouteInputsAvailable}
                           />
-                          <span>Ruta CP</span>
+                          <span>Configurar</span>
                         </label>
+
                         {routeEnabled ? (
                           <div className="space-y-2 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-muted)] p-2">
+                            <div className="flex flex-wrap gap-1">
+                              <span className="ui-chip">{supplyModeLabel(route.supplyMode)}</span>
+                              <span className="ui-chip">Sin posición interna fija</span>
+                            </div>
                             <label className="flex flex-col gap-1">
-                              <span className="text-[11px] font-semibold text-[var(--ui-muted)]">Área</span>
+                              <span className="text-[11px] font-semibold text-[var(--ui-muted)]">
+                                Área responsable
+                              </span>
                               <select
                                 value={selectedOriginArea?.value ?? ""}
                                 onChange={(event) => {
                                   const nextAreaKind = event.target.value;
-                                  const nextArea = originAreaOptions.find((area) => area.value === nextAreaKind) ?? null;
+                                  const nextArea =
+                                    originAreaOptions.find(
+                                      (area) => area.value === nextAreaKind,
+                                    ) ?? null;
                                   const nextLocationId = nextArea
-                                    ? originLocationOptions.find((location) => location.areaId === nextArea.id)?.id ?? ""
+                                    ? originLocationOptions.find(
+                                        (location) => location.areaId === nextArea.id,
+                                      )?.id ?? ""
                                     : "";
 
                                   updateRoute(product.id, {
                                     areaKind: nextAreaKind,
-                                    inputLocationId: nextLocationId,
-                                    outputLocationId: nextLocationId,
+                                    sourceLocationId: nextLocationId,
                                   });
                                 }}
                                 className="ui-input h-9 text-sm"
@@ -730,10 +755,16 @@ export function RemissionProductsClientTable({
                               </select>
                             </label>
                             <label className="flex flex-col gap-1">
-                              <span className="text-[11px] font-semibold text-[var(--ui-muted)]">Consume</span>
+                              <span className="text-[11px] font-semibold text-[var(--ui-muted)]">
+                                LOC de salida
+                              </span>
                               <select
-                                value={resolvedInputLocationId}
-                                onChange={(event) => updateRoute(product.id, { inputLocationId: event.target.value })}
+                                value={resolvedSourceLocationId}
+                                onChange={(event) =>
+                                  updateRoute(product.id, {
+                                    sourceLocationId: event.target.value,
+                                  })
+                                }
                                 className="ui-input h-9 text-sm"
                                 disabled={rowBlocked || availableRouteLocations.length === 0}
                               >
@@ -744,31 +775,20 @@ export function RemissionProductsClientTable({
                                 ))}
                               </select>
                             </label>
-                            <label className="flex flex-col gap-1">
-                              <span className="text-[11px] font-semibold text-[var(--ui-muted)]">Terminado</span>
-                              <select
-                                value={resolvedOutputLocationId}
-                                onChange={(event) => updateRoute(product.id, { outputLocationId: event.target.value })}
-                                className="ui-input h-9 text-sm"
-                                disabled={rowBlocked || availableRouteLocations.length === 0}
-                              >
-                                {availableRouteLocations.map((location) => (
-                                  <option key={location.id} value={location.id}>
-                                    {location.label}
-                                  </option>
-                                ))}
-                              </select>
-                            </label>
+                            <div className="text-[11px] leading-relaxed text-[var(--ui-muted)]">
+                              La estantería, nivel o posición se seleccionará al preparar el despacho.
+                            </div>
                             {availableRouteLocations.length === 0 ? (
                               <div className="text-xs text-amber-700">
-                                El área seleccionada no tiene LOC de producción activo.
+                                El área seleccionada no tiene LOC activo.
                               </div>
                             ) : null}
                           </div>
                         ) : null}
+
                         {!originRouteInputsAvailable ? (
                           <div className="text-xs text-amber-700">
-                            Faltan LOCs o áreas del origen.
+                            Faltan áreas con LOC activo en el origen.
                           </div>
                         ) : null}
                       </div>
@@ -781,6 +801,9 @@ export function RemissionProductsClientTable({
                     <span className={statusChipClass(diagnostics.status)}>{diagnostics.label}</span>
                     {setting.remissionEnabled ? (
                       <div className="mt-2 text-xs text-[var(--ui-muted)]">Remisión activa</div>
+                    ) : null}
+                    {routeEnabled ? (
+                      <div className="mt-1 text-xs text-[var(--ui-muted)]">Ruta completa</div>
                     ) : null}
                   </TableCell>
                   <TableCell className="px-3 py-3 align-top">
