@@ -150,7 +150,7 @@ export default async function FulfillmentRoutesPage({
     String(employee?.role ?? "").toLowerCase(),
   );
 
-  const [sitesResult, locationsResult, productsResult, areaKindsResult, areaRulesResult, purposeSettingsResult, routesResult, productSettingsResult] =
+  const [sitesResult, locationsResult, productsResult, areaKindsResult, areaRulesResult, purposeSettingsResult, allProductSettingsResult, productionRoutesResult, routesResult, productSettingsResult] =
     await Promise.all([
       supabase.from("sites").select("id,name").eq("is_active", true).order("name"),
       supabase.from("inventory_locations").select("id,site_id,code,description").eq("is_active", true).order("code"),
@@ -158,6 +158,8 @@ export default async function FulfillmentRoutesPage({
       supabase.from("area_kinds").select("code,name").eq("use_for_remission", true).order("name"),
       supabase.from("site_area_purpose_rules").select("site_id,area_kind").eq("purpose", "remission").eq("is_enabled", true),
       supabase.from("site_purpose_settings").select("site_id,mode").eq("purpose", "remission"),
+      supabase.from("product_site_settings").select("product_id,site_id,is_active,inventory_enabled,remission_enabled,local_production_enabled,production_location_id,default_area_kind,area_kinds").eq("is_active", true),
+      supabase.from("product_site_production_routes").select("product_id,site_id,area_kind,input_location_id,output_location_id,is_active,is_default").eq("is_active", true),
       supabase
         .from("product_fulfillment_routes")
         .select("id,product_id,from_site_id,to_site_id,requesting_area_kind,preparing_area_kind,preferred_source_location_id,preferred_destination_location_id,supply_mode,dispatch_policy,estimated_lead_minutes,is_active")
@@ -171,7 +173,7 @@ export default async function FulfillmentRoutesPage({
           .eq("is_active", true)
         : Promise.resolve({ data: [], error: null }),
     ]);
-  const error = [sitesResult.error, locationsResult.error, productsResult.error, areaKindsResult.error, areaRulesResult.error, purposeSettingsResult.error, routesResult.error, productSettingsResult.error]
+  const error = [sitesResult.error, locationsResult.error, productsResult.error, areaKindsResult.error, areaRulesResult.error, purposeSettingsResult.error, allProductSettingsResult.error, productionRoutesResult.error, routesResult.error, productSettingsResult.error]
     .find(Boolean);
   if (error) throw new Error(`No se pudo cargar las rutas operativas: ${error.message}`);
 
@@ -180,6 +182,17 @@ export default async function FulfillmentRoutesPage({
   const products = (productsResult.data ?? []) as Product[];
   const areaKinds = (areaKindsResult.data ?? []) as AreaKind[];
   const routes = (routesResult.data ?? []) as Route[];
+  const allProductSiteSettings = ((allProductSettingsResult.data ?? []) as Array<any>).map((setting) => ({
+    productId: String(setting.product_id ?? ""), siteId: String(setting.site_id ?? ""), isActive: setting.is_active !== false,
+    inventoryEnabled: setting.inventory_enabled !== false, remissionEnabled: setting.remission_enabled === true,
+    localProductionEnabled: setting.local_production_enabled === true, productionLocationId: setting.production_location_id ?? null,
+    defaultAreaKind: setting.default_area_kind ?? null, areaKinds: Array.isArray(setting.area_kinds) ? setting.area_kinds : [],
+  }));
+  const productionRoutes = ((productionRoutesResult.data ?? []) as Array<any>).map((route) => ({
+    productId: String(route.product_id ?? ""), siteId: String(route.site_id ?? ""), areaKind: String(route.area_kind ?? ""),
+    inputLocationId: String(route.input_location_id ?? ""), outputLocationId: route.output_location_id ?? null,
+    isActive: route.is_active !== false, isDefault: route.is_default === true,
+  }));
   const areaByCode = new Map(areaKinds.map((area) => [area.code, area]));
   const globalRemissionAreas = areaKinds;
   const areaRulesBySite = new Map<string, string[]>();
@@ -253,8 +266,7 @@ export default async function FulfillmentRoutesPage({
         <div className="ui-h3">Nueva ruta operativa</div>
         <p className="mt-1 ui-caption">Una ruta define una responsabilidad de preparación; no mueve inventario ni genera un envío por sí sola.</p>
         <form action={createRoute} className="mt-5 grid gap-4 lg:grid-cols-2">
-          <label className="flex flex-col gap-1 lg:col-span-2"><span className="ui-label">Producto</span><select name="product_id" className="ui-input" required defaultValue={prefill.productId}><option value="">Seleccionar producto</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name ?? product.sku ?? "Sin nombre"}{product.sku ? ` · ${product.sku}` : ""}</option>)}</select></label>
-          <FulfillmentRouteSelectors sites={sites} locations={locations} areasBySite={remissionAreasBySite} defaults={prefill} />
+          <FulfillmentRouteSelectors sites={sites} products={products} locations={locations} areasBySite={remissionAreasBySite} productSiteSettings={allProductSiteSettings} productionRoutes={productionRoutes} defaults={prefill} />
           <label className="flex flex-col gap-1"><span className="ui-label">Cómo se abastece</span><select name="supply_mode" className="ui-input" defaultValue={prefill.supplyMode}><option value="stock">Stock disponible</option><option value="production">Producción</option><option value="supplier">Proveedor</option><option value="transfer">Transferencia</option><option value="manual">Manual</option></select></label>
           <label className="flex flex-col gap-1"><span className="ui-label">Cuándo se despacha</span><select name="dispatch_policy" className="ui-input" defaultValue="next_available"><option value="next_available">Cuando esté disponible</option><option value="scheduled_run">En salida programada</option><option value="manual">Manual</option></select></label>
           <label className="flex flex-col gap-1"><span className="ui-label">Tiempo estimado (minutos)</span><input name="estimated_lead_minutes" type="number" min="0" className="ui-input" placeholder="Opcional" /></label>
