@@ -186,8 +186,11 @@ export async function saveRequestConfiguration(input: SaveInput): Promise<SaveRe
   const physicalProfileId = policyKind === "physical_presentation" ? compatibleIds[0] : null;
   const now = new Date().toISOString();
 
+  let requestedPolicy: ExistingPolicy | null = null;
   let currentPolicy: ExistingPolicy | null = null;
+  let duplicatePolicyToDeactivate: ExistingPolicy | null = null;
   const requestedPolicyId = text(input.policyId);
+
   if (requestedPolicyId) {
     const { data, error } = await supabase
       .from("product_request_policies")
@@ -198,22 +201,36 @@ export async function saveRequestConfiguration(input: SaveInput): Promise<SaveRe
       .eq("product_id", productId)
       .maybeSingle();
     if (error) return { ok: false, message: error.message };
-    currentPolicy = (data as ExistingPolicy | null) ?? null;
+    requestedPolicy = (data as ExistingPolicy | null) ?? null;
   }
 
-  if (!currentPolicy) {
-    const { data, error } = await supabase
-      .from("product_request_policies")
-      .select(
-        "id,product_id,label,request_unit_code,base_unit_code,base_qty_per_request_unit,constraint_mode,minimum_request_qty,request_step_qty,allow_fraction,policy_kind,physical_uom_profile_id,is_default,version_number",
-      )
-      .eq("product_id", productId)
-      .eq("is_active", true)
-      .ilike("label", label)
-      .limit(1)
-      .maybeSingle();
-    if (error) return { ok: false, message: error.message };
-    currentPolicy = (data as ExistingPolicy | null) ?? null;
+  let labelMatchQuery = supabase
+    .from("product_request_policies")
+    .select(
+      "id,product_id,label,request_unit_code,base_unit_code,base_qty_per_request_unit,constraint_mode,minimum_request_qty,request_step_qty,allow_fraction,policy_kind,physical_uom_profile_id,is_default,version_number",
+    )
+    .eq("product_id", productId)
+    .eq("is_active", true)
+    .ilike("label", label)
+    .limit(1);
+
+  if (requestedPolicyId) {
+    labelMatchQuery = labelMatchQuery.neq("id", requestedPolicyId);
+  }
+
+  const { data: labelMatchData, error: labelMatchError } =
+    await labelMatchQuery.maybeSingle();
+  if (labelMatchError) return { ok: false, message: labelMatchError.message };
+
+  const labelMatch = (labelMatchData as ExistingPolicy | null) ?? null;
+
+  if (labelMatch) {
+    currentPolicy = labelMatch;
+    if (requestedPolicy && requestedPolicy.id !== labelMatch.id) {
+      duplicatePolicyToDeactivate = requestedPolicy;
+    }
+  } else {
+    currentPolicy = requestedPolicy;
   }
 
   const semanticPayload = {
@@ -351,6 +368,30 @@ export async function saveRequestConfiguration(input: SaveInput): Promise<SaveRe
     if (error) return { ok: false, message: error.message };
   }
 
+  if (duplicatePolicyToDeactivate) {
+    const { error: consolidateError } = await supabase
+      .from("product_request_policies")
+      .update({
+        is_active: false,
+        is_default: false,
+        change_reason:
+          text(input.changeReason) ||
+          `Consolidada con la política activa "${label}" para evitar nombres duplicados.`,
+        updated_at: now,
+      })
+      .eq("id", duplicatePolicyToDeactivate.id)
+      .eq("product_id", productId);
+
+    if (consolidateError) {
+      return {
+        ok: false,
+        message:
+          "La configuración se guardó, pero no fue posible desactivar la política duplicada: " +
+          consolidateError.message,
+      };
+    }
+  }
+
   const { error: resetError } = await supabase
     .from("product_request_policies")
     .update({ is_default: false, updated_at: now })
@@ -370,8 +411,11 @@ export async function saveRequestConfiguration(input: SaveInput): Promise<SaveRe
   revalidatePath("/inventory/remissions");
   revalidatePath(`/inventory/catalog/${encodeURIComponent(productId)}`);
 
-  const suffix = ignoredPresentationCount
+  const ignoredSuffix = ignoredPresentationCount
     ? ` Se desvincularon ${ignoredPresentationCount} presentaciones incompatibles.`
+    : "";
+  const consolidationSuffix = duplicatePolicyToDeactivate
+    ? " Se consolidó la política duplicada sin alterar solicitudes históricas."
     : "";
   return {
     ok: true,
@@ -379,8 +423,8 @@ export async function saveRequestConfiguration(input: SaveInput): Promise<SaveRe
     ignoredPresentationCount,
     createdVersion,
     message: createdVersion
-      ? `Se creó una nueva versión sin alterar solicitudes históricas.${suffix}`
-      : `Configuración guardada.${suffix}`,
+      ? `Se creó una nueva versión sin alterar solicitudes históricas.${consolidationSuffix}${ignoredSuffix}`
+      : `Configuración guardada.${consolidationSuffix}${ignoredSuffix}`,
   };
 }
 
