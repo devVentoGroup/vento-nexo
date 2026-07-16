@@ -97,10 +97,23 @@ function sortPositionsForPicking(a: StockPositionCandidate, b: StockPositionCand
 export async function loadOriginStockContext(params: {
   supabase: SupabaseClient;
   fromSiteId: string;
+  /**
+   * LOCs operativos permitidos por las rutas de la remisión.
+   * Cuando se envía este arreglo, el stock candidato queda limitado a esos LOCs.
+   * Las posiciones internas se consultan únicamente dentro de esos LOCs y nunca
+   * forman parte de la configuración permanente de la ruta.
+   */
+  allowedLocationIds?: string[] | null;
 }) {
   const { supabase, fromSiteId } = params;
+  const hasLocationScope = Array.isArray(params.allowedLocationIds);
+  const allowedLocationIdSet = new Set(
+    (params.allowedLocationIds ?? [])
+      .map((locationId) => String(locationId ?? "").trim())
+      .filter(Boolean)
+  );
 
-  const { data: stockBySiteData } = fromSiteId
+  const { data: stockBySiteData } = fromSiteId && !hasLocationScope
     ? await supabase
         .from("inventory_stock_by_site")
         .select("product_id,current_qty")
@@ -125,27 +138,38 @@ export async function loadOriginStockContext(params: {
     : { data: [] as LocRow[] };
 
   const originLocRows = (locsFromSite ?? []) as LocRow[];
-  const locIdsFromSite = originLocRows.map((row) => row.id);
+  const stockLocRows = hasLocationScope
+    ? originLocRows.filter((row) => allowedLocationIdSet.has(String(row.id ?? "").trim()))
+    : originLocRows;
+  const stockLocationIds = stockLocRows.map((row) => row.id);
 
   const { data: stockByLocData } =
-    fromSiteId && locIdsFromSite.length > 0
+    fromSiteId && stockLocationIds.length > 0
       ? await supabase
           .from("inventory_stock_by_location")
           .select(
             "location_id,product_id,current_qty,location:inventory_locations(code,zone,aisle,level,description)"
           )
-          .in("location_id", locIdsFromSite)
+          .in("location_id", stockLocationIds)
           .gt("current_qty", 0)
       : { data: [] as StockByLocRow[] };
 
   const stockByLocRows = (stockByLocData ?? []) as StockByLocRow[];
 
+  if (hasLocationScope) {
+    stockBySiteMap.clear();
+    for (const row of stockByLocRows) {
+      const current = Number(stockBySiteMap.get(row.product_id) ?? 0);
+      stockBySiteMap.set(row.product_id, roundQty(current + Number(row.current_qty ?? 0)));
+    }
+  }
+
   const { data: positionsData } =
-    locIdsFromSite.length > 0
+    stockLocationIds.length > 0
       ? await supabase
           .from("inventory_location_positions")
           .select("id,location_id,parent_position_id,code,name,kind,sort_order")
-          .in("location_id", locIdsFromSite)
+          .in("location_id", stockLocationIds)
           .eq("is_active", true)
           .order("sort_order", { ascending: true })
           .order("code", { ascending: true })
@@ -173,13 +197,13 @@ export async function loadOriginStockContext(params: {
   const stockByPositionRows = (stockByPositionData ?? []) as StockByPositionRow[];
 
   const { data: uomProfileStockData } =
-    locIdsFromSite.length > 0 && productIdsWithLocStock.length > 0
+    stockLocationIds.length > 0 && productIdsWithLocStock.length > 0
       ? await supabase
           .from("inventory_stock_by_uom_profile")
           .select(
             "location_id,location_position_id,product_id,uom_profile_id,presentation_qty,base_qty"
           )
-          .in("location_id", locIdsFromSite)
+          .in("location_id", stockLocationIds)
           .in("product_id", productIdsWithLocStock)
           .gt("base_qty", 0)
       : { data: [] as StockByUomProfileRow[] };

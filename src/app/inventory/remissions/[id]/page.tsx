@@ -29,7 +29,7 @@ import {
 } from "./receive-batch-shell";
 import { RemissionHeroSection, RemissionSummarySection } from "./detail-sections";
 import { buildRemissionLineVm } from "./detail-line-vm";
-import { loadOriginStockContext } from "./detail-stock";
+import { loadOriginStockContext, type StockLocCandidate } from "./detail-stock";
 import { RemissionTopActions } from "./detail-top-actions";
 import {
   type LocRow,
@@ -69,6 +69,13 @@ const APP_ID = "nexo";
 const REMISSIONS_INVENTORY_POSTING_SETTING_KEY =
   "remissions.inventory_posting_enabled";
 
+type ItemFulfillmentRouteRow = {
+  request_item_id: string;
+  product_id: string | null;
+  preparing_area_kind: string | null;
+  source_location_id: string | null;
+  status: string | null;
+};
 
 function formatRemissionQty(value: number | null | undefined) {
   const n = Number(value ?? 0);
@@ -454,6 +461,40 @@ export default async function RemissionDetailPage({
   );
   const requestedAreaLabel = formatOperationalRemissionAreaLabel(requestedAreaKind);
 
+  const requestItemIds = itemRows.map((item) => String(item.id ?? "").trim()).filter(Boolean);
+  const { data: itemFulfillmentRowsData, error: itemFulfillmentRowsError } =
+    requestItemIds.length > 0
+      ? await supabase
+        .from("restock_item_fulfillments")
+        .select("request_item_id,product_id,preparing_area_kind,source_location_id,status")
+        .eq("request_id", id)
+        .in("request_item_id", requestItemIds)
+      : { data: [] as ItemFulfillmentRouteRow[], error: null };
+
+  if (itemFulfillmentRowsError) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId: id,
+        from: cameFromPrepareQueue ? "prepare" : "",
+        error: `No se pudo cargar el LOC operativo de la remisión: ${itemFulfillmentRowsError.message}`,
+        siteId: activeSiteId,
+      })
+    );
+  }
+
+  const fulfillmentByItemId = new Map(
+    ((itemFulfillmentRowsData ?? []) as ItemFulfillmentRouteRow[])
+      .map((row) => [String(row.request_item_id ?? "").trim(), row] as const)
+      .filter(([itemId]) => Boolean(itemId))
+  );
+  const configuredSourceLocationIds = Array.from(
+    new Set(
+      Array.from(fulfillmentByItemId.values())
+        .map((row) => String(row.source_location_id ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+
   const showSourceLocSelector =
     inventoryPostingEnabled &&
     access.canPrepare &&
@@ -482,6 +523,7 @@ export default async function RemissionDetailPage({
     ? await loadOriginStockContext({
       supabase,
       fromSiteId,
+      allowedLocationIds: configuredSourceLocationIds,
     })
     : ({
       stockBySiteMap: new Map<string, number>(),
@@ -494,12 +536,57 @@ export default async function RemissionDetailPage({
     } as Awaited<ReturnType<typeof loadOriginStockContext>>);
 
   const {
-    stockBySiteMap,
     stockByLocValueMap,
     stockByLocCandidates,
     originLocRows,
     originLocById,
   } = originStockContext;
+
+  function fulfillmentForItem(item: RestockItemRow) {
+    return fulfillmentByItemId.get(String(item.id ?? "").trim()) ?? null;
+  }
+
+  function configuredSourceLocationIdForItem(item: RestockItemRow) {
+    return String(fulfillmentForItem(item)?.source_location_id ?? "").trim();
+  }
+
+  function configuredPreparingAreaForItem(item: RestockItemRow) {
+    return String(fulfillmentForItem(item)?.preparing_area_kind ?? "").trim();
+  }
+
+  function routedLocCandidatesForItem(item: RestockItemRow): StockLocCandidate[] {
+    const configuredLocationId = configuredSourceLocationIdForItem(item);
+    if (!configuredLocationId) return [];
+
+    const candidate = (stockByLocCandidates.get(item.product_id) ?? []).find(
+      (entry) => entry.locationId === configuredLocationId
+    );
+    if (candidate) return [candidate];
+
+    const loc = originLocById.get(configuredLocationId);
+    if (!loc) return [];
+
+    return [
+      {
+        locationId: configuredLocationId,
+        code: String(loc.code ?? configuredLocationId.slice(0, 8)),
+        label: buildLocFriendlyLabel(loc),
+        qty: Number(stockByLocValueMap.get(`${configuredLocationId}|${item.product_id}`) ?? 0),
+        positions: [],
+        positionOptions: [],
+        uomProfileStocks: [],
+      },
+    ];
+  }
+
+  function routedAvailableQtyForItem(item: RestockItemRow) {
+    return roundQuantity(
+      routedLocCandidatesForItem(item).reduce(
+        (sum, candidate) => sum + Number(candidate.qty ?? 0),
+        0
+      )
+    );
+  }
 
   const productionPackageIds = Array.from(
     new Set(
@@ -600,15 +687,15 @@ export default async function RemissionDetailPage({
     const shippedQty = roundQuantity(Number(item.shipped_quantity ?? 0));
     const plannedQty = Math.max(preparedQty, shippedQty);
     const targetQty = plannedQty > 0 ? plannedQty : requestedQty;
-    const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
-    const bestLocQty = stockByLocCandidates.get(item.product_id)?.[0]?.qty ?? 0;
+    const configuredLocationId = configuredSourceLocationIdForItem(item);
+    const availableAtConfiguredLoc = routedAvailableQtyForItem(item);
 
     return (
       inventoryPostingEnabled &&
       canEditPrepareItems &&
       targetQty > 0 &&
-      targetQty <= availableSite &&
-      bestLocQty < targetQty
+      Boolean(configuredLocationId) &&
+      availableAtConfiguredLoc < targetQty
     );
   }).length;
   const operationalPreparedLines = itemRows.filter((item) => {
@@ -903,7 +990,16 @@ export default async function RemissionDetailPage({
   ];
   const draftPrepareLines = canEditPrepareItems
     ? itemRows.map((item) => {
-      const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
+      const routedLocCandidates = routedLocCandidatesForItem(item);
+      const availableSite = routedAvailableQtyForItem(item);
+      const configuredSourceLocationId = configuredSourceLocationIdForItem(item);
+      const configuredSourceLocation = configuredSourceLocationId
+        ? originLocById.get(configuredSourceLocationId) ?? null
+        : null;
+      const configuredSourceLocationLabel = configuredSourceLocation
+        ? buildLocFriendlyLabel(configuredSourceLocation)
+        : "";
+      const preparingAreaKind = configuredPreparingAreaForItem(item);
       const lineIdsForProduct = lineIdsByProduct.get(item.product_id) ?? [item.id];
       const requestedQty = roundQuantity(Number(item.quantity ?? 0));
       const plannedQty = plannedDispatchQtyFromItem(item);
@@ -931,7 +1027,7 @@ export default async function RemissionDetailPage({
         showSourceLocSelector,
         availableSite,
         lineIdsForProduct,
-        locCandidates: stockByLocCandidates.get(item.product_id) ?? [],
+        locCandidates: routedLocCandidates,
         originLocById,
         stockByLocValueMap,
         activeLineId,
@@ -1000,19 +1096,20 @@ export default async function RemissionDetailPage({
             ).trim() || null,
         requiresPackageDispatch,
         productionPackagePlan,
+        routeLocId: inventoryPostingEnabled ? configuredSourceLocationId : "",
+        routeLocLabel: inventoryPostingEnabled ? configuredSourceLocationLabel : "",
+        preparingAreaLabel: preparingAreaKind
+          ? formatOperationalRemissionAreaLabel(preparingAreaKind)
+          : "",
         selectedLocId: inventoryPostingEnabled
           ? requiresPackageDispatch
             ? packageLocIds.length === 1
               ? packageLocIds[0]
-              : ""
-            : String(item.source_location_id ?? "")
+              : configuredSourceLocationId
+            : configuredSourceLocationId
           : "",
         recommendedLocId: inventoryPostingEnabled
-          ? requiresPackageDispatch
-            ? packageLocIds.length === 1
-              ? packageLocIds[0]
-              : ""
-            : vm.bestLocCandidate?.locationId ?? ""
+          ? configuredSourceLocationId
           : "",
         locOptions: inventoryPostingEnabled
           ? vm.locCandidates.map((loc) => {
@@ -1645,7 +1742,7 @@ export default async function RemissionDetailPage({
 
             <div className="space-y-3">
               {itemRows.map((item) => {
-                const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
+                const availableSite = routedAvailableQtyForItem(item);
                 const lineIdsForProduct = lineIdsByProduct.get(item.product_id) ?? [item.id];
                 const vm = buildRemissionLineVm({
                   item,
@@ -1655,7 +1752,7 @@ export default async function RemissionDetailPage({
                   showSourceLocSelector,
                   availableSite,
                   lineIdsForProduct,
-                  locCandidates: stockByLocCandidates.get(item.product_id) ?? [],
+                  locCandidates: routedLocCandidatesForItem(item),
                   originLocById,
                   stockByLocValueMap,
                   activeLineId,
@@ -1682,7 +1779,7 @@ export default async function RemissionDetailPage({
         {!canEditPrepareItems && (canEditPrepareItems || canEditReceiveItems) ? (
           <div className="hidden" aria-hidden="true">
             {itemRows.map((item) => {
-              const availableSite = stockBySiteMap.get(item.product_id) ?? 0;
+              const availableSite = routedAvailableQtyForItem(item);
               const lineIdsForProduct = lineIdsByProduct.get(item.product_id) ?? [item.id];
               const vm = buildRemissionLineVm({
                 item,
@@ -1692,7 +1789,7 @@ export default async function RemissionDetailPage({
                 showSourceLocSelector,
                 availableSite,
                 lineIdsForProduct,
-                locCandidates: stockByLocCandidates.get(item.product_id) ?? [],
+                locCandidates: routedLocCandidatesForItem(item),
                 originLocById,
                 stockByLocValueMap,
                 activeLineId,
@@ -1718,4 +1815,3 @@ export default async function RemissionDetailPage({
     </div>
   );
 }
-

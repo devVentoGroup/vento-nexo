@@ -67,6 +67,10 @@ type DraftLine = {
   presentationQty?: number;
   inputUomProfileId?: string | null;
   uomProfileId?: string | null;
+  /** LOC operativo definido por la ruta. No es una posición interna. */
+  routeLocId?: string;
+  routeLocLabel?: string;
+  preparingAreaLabel?: string;
   selectedLocId: string;
   recommendedLocId: string;
   locOptions: LocOption[];
@@ -192,8 +196,13 @@ function getLineMeasurementLabel(
   return getPresentationUnitLabel(line);
 }
 
+function getConfiguredRouteLocId(line: DraftLine): string {
+  return String(line.routeLocId ?? "").trim();
+}
+
 function getSelectedLocAvailable(line: DraftLine): number {
-  const loc = line.locOptions.find((entry) => entry.id === line.selectedLocId);
+  const selectedLocId = getConfiguredRouteLocId(line) || line.selectedLocId;
+  const loc = line.locOptions.find((entry) => entry.id === selectedLocId);
   return roundQty(Number(loc?.qty ?? 0));
 }
 
@@ -203,7 +212,7 @@ function getDispatchMaxForLine(line: DraftLine): number {
   if (!lineUsesActualQuantity(line)) return requestedQty;
 
   const selectedAvailable = getSelectedLocAvailable(line);
-  if (line.selectedLocId && selectedAvailable > 0) return selectedAvailable;
+  if (getConfiguredRouteLocId(line) || line.selectedLocId) return selectedAvailable;
 
   const maxLocQty = maxLocQtyForLine(line);
   return maxLocQty > 0 ? maxLocQty : requestedQty;
@@ -266,7 +275,7 @@ function applySmartAllocation(inputLines: DraftLine[], preserveManual: boolean):
 
   for (const line of lines) {
     if (lineRequiresPackageDispatch(line)) continue;
-    const key = `${line.productName}__${line.unitLabel}`;
+    const key = `${line.productName}__${line.unitLabel}__${getConfiguredRouteLocId(line)}`;
     if (!byProduct.has(key)) byProduct.set(key, []);
     byProduct.get(key)!.push(line);
   }
@@ -343,7 +352,9 @@ function normalizeLine(line: DraftLine): DraftLine {
     };
   }
 
-  const selectedLocId = line.selectedLocId || line.recommendedLocId || "";
+  const configuredRouteLocId = getConfiguredRouteLocId(line);
+  const selectedLocId =
+    configuredRouteLocId || line.selectedLocId || line.recommendedLocId || "";
   let dispatchQty = roundQty(Number(line.dispatchQty ?? 0));
 
   if (!selectedLocId) {
@@ -707,6 +718,9 @@ function getLineToneLabel(tone: "pending" | "warn" | "error" | "ok") {
  */
 function canSplitDraftLine(line: DraftLine): boolean {
   if (lineRequiresPackageDispatch(line)) return false;
+  // La ruta fija el LOC. La distribución entre posiciones internas se hace
+  // automáticamente dentro de ese LOC; no se divide entre LOCs distintos.
+  if (getConfiguredRouteLocId(line)) return false;
   if (line.isVirtualSplit) return false;
   if (lineUsesActualQuantity(line)) return false;
   return roundQty(line.requestedQty) > 1;
@@ -975,7 +989,9 @@ function RemissionPrepareWorkbenchInteractive({
         }
 
         if (Object.prototype.hasOwnProperty.call(patch, "selectedLocId")) {
-          const selectedLocId = String(patch.selectedLocId ?? "").trim();
+          const selectedLocId =
+            getConfiguredRouteLocId(next) || String(patch.selectedLocId ?? "").trim();
+          next.selectedLocId = selectedLocId;
           if (selectedLocId) {
             next.dispatchQty = suggestedQtyForLoc(next, selectedLocId);
             if (next.dispatchQty >= next.requestedQty) next.shortageReason = "";
@@ -1047,7 +1063,7 @@ function RemissionPrepareWorkbenchInteractive({
       id: newLineId,
       requestedQty: splitQty,
       dispatchQty: 0,
-      selectedLocId: "",
+      selectedLocId: getConfiguredRouteLocId(splitTarget),
       shortageReason: "",
       isVirtualSplit: true,
       manualLocked: false,
@@ -1077,11 +1093,15 @@ function RemissionPrepareWorkbenchInteractive({
     setSplitQtyInput("");
   };
 
+  const positiveDispatchLines = lines.filter(
+    (line) => roundQty(Number(line.dispatchQty ?? 0)) > 0
+  );
   const shouldUsePickPayload =
     inventoryPostingEnabled &&
-    lines.every(
+    positiveDispatchLines.length > 0 &&
+    positiveDispatchLines.every(
       (line) =>
-        roundQty(Number(line.dispatchQty ?? 0)) > 0 &&
+        Boolean(getConfiguredRouteLocId(line) || line.selectedLocId) &&
         (!lineRequiresPackageDispatch(line) || !packagePlanHasMissingLocation(line))
     );
   const payload = JSON.stringify({
@@ -1142,17 +1162,25 @@ function RemissionPrepareWorkbenchInteractive({
                       <ProductionPackagePlanSummary line={line} />
                     </div>
                   ) : null}
-                  {inventoryPostingEnabled && !lineRequiresPackageDispatch(line) && line.recommendedLocId ? (
-                    <div className="mt-2 text-xs text-emerald-700">
-                      Ubicación sugerida:{" "}
-                      <strong>
-                        {(line.locOptions.find((loc) => loc.id === line.selectedLocId)?.label ??
-                          line.selectedLocId) || "Sin ubicación"}
-                      </strong>
+                  {inventoryPostingEnabled && !lineRequiresPackageDispatch(line) && getConfiguredRouteLocId(line) ? (
+                    <div className="mt-2 rounded-md border border-emerald-200 bg-emerald-50 px-2.5 py-2 text-xs text-emerald-900">
+                      <span className="font-semibold">LOC de salida configurado:</span>{" "}
+                      {line.routeLocLabel ||
+                        line.locOptions.find((loc) => loc.id === getConfiguredRouteLocId(line))?.label ||
+                        getConfiguredRouteLocId(line)}
+                      {line.preparingAreaLabel ? ` · atiende ${line.preparingAreaLabel}` : ""}
                     </div>
-                  ) : inventoryPostingEnabled && !lineRequiresPackageDispatch(line) && line.locOptions.length === 0 ? (
-                    <div className="rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900">
-                      No hay stock disponible en ubicaciones del origen. Déjalo en 0 y registra el faltante como pendiente de producción.
+                  ) : inventoryPostingEnabled && !lineRequiresPackageDispatch(line) ? (
+                    <div className="rounded-md border border-rose-200 bg-rose-50 px-2.5 py-2 text-xs text-rose-900">
+                      Esta línea no tiene área responsable y LOC de salida configurados.
+                    </div>
+                  ) : null}
+                  {inventoryPostingEnabled &&
+                  !lineRequiresPackageDispatch(line) &&
+                  getConfiguredRouteLocId(line) &&
+                  line.locOptions.every((loc) => Number(loc.qty ?? 0) <= 0) ? (
+                    <div className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs text-amber-900">
+                      El LOC configurado no tiene stock disponible. Déjalo en 0 y registra el faltante.
                     </div>
                   ) : null}
                   {lineUsesActualQuantity(line) ? (
@@ -1183,7 +1211,7 @@ function RemissionPrepareWorkbenchInteractive({
                           ))}
                         </ul>
                         <p className="mt-1 text-sky-900/75">
-                          Prioriza posiciones con menor stock para liberar niveles primero.
+                          Estas posiciones se resolvieron con el inventario actual del LOC al preparar el despacho.
                         </p>
                       </div>
                     );
@@ -1199,29 +1227,30 @@ function RemissionPrepareWorkbenchInteractive({
                     <div className="ui-input flex h-10 items-center bg-[linear-gradient(180deg,rgba(240,249,255,0.9)_0%,rgba(255,255,255,0.92)_100%)] text-xs font-semibold text-sky-950">
                       Empaques FOGO asignados
                     </div>
+                  ) : getConfiguredRouteLocId(line) ? (
+                    <div className="ui-input flex min-h-10 items-center justify-between gap-3 bg-[var(--ui-bg-soft)] text-sm">
+                      <span className="min-w-0 truncate font-semibold text-[var(--ui-text)]">
+                        {line.routeLocLabel ||
+                          line.locOptions.find((loc) => loc.id === getConfiguredRouteLocId(line))?.label ||
+                          getConfiguredRouteLocId(line)}
+                      </span>
+                      <span className="shrink-0 text-xs text-[var(--ui-muted)]">
+                        {formatDisplayQty(getSelectedLocAvailable(line))}{" "}
+                        {formatUnitLabelForQty(line.unitLabel, getSelectedLocAvailable(line))}
+                      </span>
+                    </div>
                   ) : (
-                    <select
-                      value={line.selectedLocId}
-                      onChange={(e) => updateLine(line.id, { selectedLocId: e.target.value })}
-                      className="ui-input h-10"
-                    >
-                      <option value="">
-                        {line.locOptions.length > 0 ? "Selecciona ubicación" : "Sin stock en ubicaciones"}
-                      </option>
-                      {line.locOptions.map((loc) => (
-                        <option key={loc.id} value={loc.id}>
-                          {loc.label} · {loc.qty} {formatUnitLabelForQty(line.unitLabel, loc.qty)}
-                        </option>
-                      ))}
-                    </select>
+                    <div className="ui-input flex h-10 items-center bg-rose-50 text-xs font-semibold text-rose-900">
+                      Sin LOC configurado
+                    </div>
                   )}
                   {inventoryPostingEnabled && !lineRequiresPackageDispatch(line) && multilocHint ? (
                     <div className="rounded-md border border-sky-200 bg-sky-50 px-2.5 py-2 text-xs text-sky-950">
                       <p className="font-semibold leading-snug">
-                        Ninguna ubicación cubre todo el pedido; entre ubicaciones sí alcanza.
+                        Ningún LOC cubre todo el pedido; entre LOCs sí alcanza.
                       </p>
                       <p className="mt-1 leading-snug text-sky-900/80">
-                        Usa varias ubicaciones para cubrir el pedido sin registrar faltante.
+                        Usa varios LOCs únicamente en remisiones históricas sin una ruta fija.
                       </p>
                       <button
                         type="button"
@@ -1241,13 +1270,13 @@ function RemissionPrepareWorkbenchInteractive({
                       disabled={lineRequiresPackageDispatch(line) || !canSplitDraftLine(line)}
                       title={
                         canSplitDraftLine(line)
-                          ? "Divide el preparado en dos partes para escoger otra ubicación de salida."
+                          ? "Divide el preparado en dos partes para escoger otro LOC de salida."
                           : lineUsesActualQuantity(line)
                             ? "Los productos de cantidad real se ajustan registrando el peso/volumen exacto preparado."
                             : "Solo aplica con más de 1 unidad solicitada."
                       }
                     >
-                      Usar varias ubicaciones
+                      Usar varios LOCs
                     </button>
                   ) : null}
                 </div>

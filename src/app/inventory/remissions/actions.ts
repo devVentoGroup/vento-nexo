@@ -846,11 +846,21 @@ export async function createRemission(formData: FormData) {
 
   const fulfillmentRows = insertedItems.map((item) => {
     const requestedAreaKind = String(item.production_area_kind ?? "").trim() || null;
-    const route = (fulfillmentRoutes ?? []).find(
-      (candidate) =>
-        candidate.product_id === item.product_id &&
-        (candidate.requesting_area_kind === requestedAreaKind || candidate.requesting_area_kind === null),
+    const productRoutes = (fulfillmentRoutes ?? []).filter(
+      (candidate) => candidate.product_id === item.product_id,
     );
+    const route =
+      productRoutes.find(
+        (candidate) => candidate.requesting_area_kind === requestedAreaKind,
+      ) ??
+      productRoutes.find((candidate) => candidate.requesting_area_kind === null) ??
+      null;
+
+    const preparingAreaKind = String(route?.preparing_area_kind ?? "").trim() || null;
+    const sourceLocationId =
+      String(route?.preferred_source_location_id ?? "").trim() || null;
+    const routeReady = Boolean(route && preparingAreaKind && sourceLocationId);
+
     return {
       request_item_id: item.id,
       product_id: item.product_id,
@@ -858,13 +868,21 @@ export async function createRemission(formData: FormData) {
       from_site_id: fromSiteId,
       to_site_id: toSiteId,
       requesting_area_kind: requestedAreaKind,
-      preparing_area_kind: route?.preparing_area_kind ?? null,
-      source_location_id: route?.preferred_source_location_id ?? null,
-      destination_location_id: route?.preferred_destination_location_id ?? null,
-      status: route ? "pending" : "blocked",
+      preparing_area_kind: preparingAreaKind,
+      // Este valor es el LOC operativo configurado. No representa estantería,
+      // nivel, posición interna ni LPN.
+      source_location_id: sourceLocationId,
+      destination_location_id: null,
+      status: routeReady ? "pending" : "blocked",
       requested_base_qty: Number(item.quantity ?? 0),
-      shortage_reason: route ? null : "Producto sin ruta de abastecimiento.",
-      notes: route ? null : "Configura una ruta de fulfillment antes de preparar esta necesidad.",
+      shortage_reason: routeReady
+        ? null
+        : route
+          ? "Ruta incompleta: falta área responsable o LOC de salida."
+          : "Producto sin ruta de abastecimiento.",
+      notes: routeReady
+        ? "La ubicación interna se resolverá al preparar y despachar."
+        : "Configura el área responsable y el LOC de salida antes de preparar esta necesidad.",
       created_by: createdByEmployeeId,
       updated_by: createdByEmployeeId,
     };

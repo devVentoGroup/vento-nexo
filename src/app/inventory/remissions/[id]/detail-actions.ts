@@ -982,6 +982,25 @@ export async function updateItems(formData: FormData) {
       }>
     ).map((row) => [row.id, row])
   );
+  const updateItemFulfillmentSourceResult =
+    inventoryPostingEnabled && allowPrepared
+      ? await loadFulfillmentSourceRouteByItemId({
+        supabase,
+        requestId,
+        itemIds,
+      })
+      : { byItemId: new Map<string, FulfillmentSourceRouteRow>(), error: null };
+  if (updateItemFulfillmentSourceResult.error) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: updateItemFulfillmentSourceResult.error,
+      })
+    );
+  }
+  const updateItemFulfillmentSourceByItemId =
+    updateItemFulfillmentSourceResult.byItemId;
   const itemMeasurementPolicyByProductId = await loadProductMeasurementPolicies(
     supabase,
     Array.from(itemStateById.values()).map((row) => row.product_id)
@@ -1073,7 +1092,17 @@ export async function updateItems(formData: FormData) {
       Array.from(itemStateById.values()).map((row) => [row.id, row.product_id])
     );
 
-    const selectedLocIds = Array.from(new Set(sourceLocationIds.filter(Boolean)));
+    const selectedLocIds = Array.from(
+      new Set(
+        itemIds
+          .map((itemId) =>
+            String(
+              updateItemFulfillmentSourceByItemId.get(itemId)?.source_location_id ?? ""
+            ).trim()
+          )
+          .filter(Boolean)
+      )
+    );
     const selectedProductIds = Array.from(new Set(productById.values()));
     const { data: locStockRows } =
       allowSourceLocation && selectedLocIds.length > 0 && selectedProductIds.length > 0
@@ -1110,13 +1139,31 @@ export async function updateItems(formData: FormData) {
         );
       }
       if (allowSourceLocation && maxQty > 0) {
-        const sourceLocId = sourceLocationIds[i] || "";
-        if (!sourceLocId) {
+        const fulfillmentSource =
+          updateItemFulfillmentSourceByItemId.get(itemId) ?? null;
+        const sourceLocId = String(
+          fulfillmentSource?.source_location_id ?? ""
+        ).trim();
+        const submittedSourceLocId = sourceLocationIds[i] || "";
+        if (
+          !fulfillmentSource ||
+          fulfillmentSource.status === "blocked" ||
+          !sourceLocId
+        ) {
           redirect(
             buildRemissionDetailHref({
               requestId,
               from: returnOrigin,
-              error: "Selecciona área de origen para todos los items preparados/enviados.",
+              error: "La línea no tiene área responsable y LOC de salida configurados.",
+            })
+          );
+        }
+        if (submittedSourceLocId && submittedSourceLocId !== sourceLocId) {
+          redirect(
+            buildRemissionDetailHref({
+              requestId,
+              from: returnOrigin,
+              error: "La línea intenta salir de un LOC distinto al configurado.",
             })
           );
         }
@@ -1184,7 +1231,9 @@ export async function updateItems(formData: FormData) {
       updates.prepared_quantity = parseNumber(prepared[i] ?? "0");
       updates.shipped_quantity = parseNumber(shipped[i] ?? "0");
       updates.source_location_id = inventoryPostingEnabled
-        ? sourceLocationIds[i] || null
+        ? String(
+          updateItemFulfillmentSourceByItemId.get(itemId)?.source_location_id ?? ""
+        ).trim() || null
         : null;
     }
     if (allowReceived) {
@@ -1504,6 +1553,241 @@ function payloadNumber(value: unknown): number {
   return roundQuantity(parseNumber(String(value ?? "0")));
 }
 
+type FulfillmentSourceRouteRow = {
+  request_item_id: string;
+  source_location_id: string | null;
+  preparing_area_kind: string | null;
+  status: string | null;
+};
+
+async function loadFulfillmentSourceRouteByItemId(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  requestId: string;
+  itemIds: string[];
+}): Promise<{
+  byItemId: Map<string, FulfillmentSourceRouteRow>;
+  error: string | null;
+}> {
+  const { supabase, requestId } = params;
+  const itemIds = Array.from(
+    new Set(params.itemIds.map((itemId) => String(itemId ?? "").trim()).filter(Boolean))
+  );
+  if (!requestId || itemIds.length === 0) {
+    return { byItemId: new Map(), error: null };
+  }
+
+  const { data, error } = await supabase
+    .from("restock_item_fulfillments")
+    .select("request_item_id,source_location_id,preparing_area_kind,status")
+    .eq("request_id", requestId)
+    .in("request_item_id", itemIds);
+
+  if (error) return { byItemId: new Map(), error: error.message };
+
+  const byItemId = new Map(
+    ((data ?? []) as FulfillmentSourceRouteRow[])
+      .map((row) => [String(row.request_item_id ?? "").trim(), row] as const)
+      .filter(([itemId]) => Boolean(itemId))
+  );
+  return { byItemId, error: null };
+}
+
+type PreparationPickForValidation = {
+  item_id: string;
+  product_id: string;
+  source_location_id: string;
+  source_location_position_id: string | null;
+  base_qty: number;
+};
+
+async function validatePreparationPicksAgainstCurrentStock(params: {
+  supabase: Awaited<ReturnType<typeof createClient>>;
+  fromSiteId: string;
+  picks: PreparationPickForValidation[];
+}): Promise<string | null> {
+  const { supabase, fromSiteId, picks } = params;
+  if (picks.length === 0) return null;
+
+  const locationIds = Array.from(
+    new Set(picks.map((pick) => String(pick.source_location_id ?? "").trim()).filter(Boolean))
+  );
+  const productIds = Array.from(
+    new Set(picks.map((pick) => String(pick.product_id ?? "").trim()).filter(Boolean))
+  );
+  const requestedPositionIds = Array.from(
+    new Set(
+      picks
+        .map((pick) => String(pick.source_location_position_id ?? "").trim())
+        .filter(Boolean)
+    )
+  );
+
+  const { data: locationRows, error: locationError } = await supabase
+    .from("inventory_locations")
+    .select("id,site_id,is_active")
+    .in("id", locationIds);
+  if (locationError) return locationError.message;
+
+  const locationById = new Map(
+    ((locationRows ?? []) as Array<{
+      id: string;
+      site_id: string | null;
+      is_active: boolean | null;
+    }>).map((row) => [row.id, row])
+  );
+
+  for (const locationId of locationIds) {
+    const location = locationById.get(locationId);
+    if (!location || location.is_active === false || location.site_id !== fromSiteId) {
+      return "Uno de los picks usa un LOC que no pertenece a la sede origen o está inactivo.";
+    }
+  }
+
+  const { data: allPositionRows, error: positionRowsError } = locationIds.length
+    ? await supabase
+      .from("inventory_location_positions")
+      .select("id,location_id,is_active")
+      .in("location_id", locationIds)
+      .eq("is_active", true)
+    : { data: [], error: null };
+  if (positionRowsError) return positionRowsError.message;
+
+  const positionById = new Map(
+    ((allPositionRows ?? []) as Array<{
+      id: string;
+      location_id: string;
+      is_active: boolean | null;
+    }>).map((row) => [row.id, row])
+  );
+
+  for (const pick of picks) {
+    const positionId = String(pick.source_location_position_id ?? "").trim();
+    if (!positionId) continue;
+    const position = positionById.get(positionId);
+    if (
+      !position ||
+      position.is_active === false ||
+      position.location_id !== pick.source_location_id
+    ) {
+      return "Una ubicación interna del plan ya no pertenece al LOC configurado o está inactiva.";
+    }
+  }
+
+  if (requestedPositionIds.some((positionId) => !positionById.has(positionId))) {
+    return "Una ubicación interna del plan ya no está disponible.";
+  }
+
+  const { data: locStockRows, error: locStockError } =
+    locationIds.length > 0 && productIds.length > 0
+      ? await supabase
+        .from("inventory_stock_by_location")
+        .select("location_id,product_id,current_qty")
+        .in("location_id", locationIds)
+        .in("product_id", productIds)
+      : { data: [], error: null };
+  if (locStockError) return locStockError.message;
+
+  const allPositionIds = Array.from(positionById.keys());
+  const { data: positionStockRows, error: positionStockError } =
+    allPositionIds.length > 0 && productIds.length > 0
+      ? await supabase
+        .from("inventory_stock_by_position")
+        .select("position_id,product_id,current_qty")
+        .in("position_id", allPositionIds)
+        .in("product_id", productIds)
+      : { data: [], error: null };
+  if (positionStockError) return positionStockError.message;
+
+  const locStockByKey = new Map(
+    ((locStockRows ?? []) as Array<{
+      location_id: string;
+      product_id: string;
+      current_qty: number | null;
+    }>).map((row) => [
+      `${row.location_id}|${row.product_id}`,
+      roundQuantity(Number(row.current_qty ?? 0)),
+    ])
+  );
+  const positionStockByKey = new Map(
+    ((positionStockRows ?? []) as Array<{
+      position_id: string;
+      product_id: string;
+      current_qty: number | null;
+    }>).map((row) => [
+      `${row.position_id}|${row.product_id}`,
+      roundQuantity(Number(row.current_qty ?? 0)),
+    ])
+  );
+
+  const requiredByLocProduct = new Map<string, number>();
+  const requiredByPositionProduct = new Map<string, number>();
+  const unpositionedRequiredByLocProduct = new Map<string, number>();
+
+  for (const pick of picks) {
+    const qty = roundQuantity(Number(pick.base_qty ?? 0));
+    const locProductKey = `${pick.source_location_id}|${pick.product_id}`;
+    requiredByLocProduct.set(
+      locProductKey,
+      roundQuantity(Number(requiredByLocProduct.get(locProductKey) ?? 0) + qty)
+    );
+
+    const positionId = String(pick.source_location_position_id ?? "").trim();
+    if (positionId) {
+      const positionProductKey = `${positionId}|${pick.product_id}`;
+      requiredByPositionProduct.set(
+        positionProductKey,
+        roundQuantity(Number(requiredByPositionProduct.get(positionProductKey) ?? 0) + qty)
+      );
+    } else {
+      unpositionedRequiredByLocProduct.set(
+        locProductKey,
+        roundQuantity(
+          Number(unpositionedRequiredByLocProduct.get(locProductKey) ?? 0) + qty
+        )
+      );
+    }
+  }
+
+  for (const [key, requiredQty] of requiredByLocProduct.entries()) {
+    const availableQty = Number(locStockByKey.get(key) ?? 0);
+    if (requiredQty > availableQty + 0.001) {
+      return `El inventario actual del LOC cambió. Se intentan retirar ${requiredQty}, pero solo hay ${availableQty}. Recarga la preparación.`;
+    }
+  }
+
+  for (const [key, requiredQty] of requiredByPositionProduct.entries()) {
+    const availableQty = Number(positionStockByKey.get(key) ?? 0);
+    if (requiredQty > availableQty + 0.001) {
+      return `El inventario de una ubicación interna cambió. Se intentan retirar ${requiredQty}, pero solo hay ${availableQty}. Recarga la preparación.`;
+    }
+  }
+
+  const positionedQtyByLocProduct = new Map<string, number>();
+  for (const [positionProductKey, availableQty] of positionStockByKey.entries()) {
+    const separatorIndex = positionProductKey.indexOf("|");
+    const positionId = positionProductKey.slice(0, separatorIndex);
+    const productId = positionProductKey.slice(separatorIndex + 1);
+    const locationId = positionById.get(positionId)?.location_id;
+    if (!locationId) continue;
+    const locProductKey = `${locationId}|${productId}`;
+    positionedQtyByLocProduct.set(
+      locProductKey,
+      roundQuantity(Number(positionedQtyByLocProduct.get(locProductKey) ?? 0) + availableQty)
+    );
+  }
+
+  for (const [key, requiredQty] of unpositionedRequiredByLocProduct.entries()) {
+    const locQty = Number(locStockByKey.get(key) ?? 0);
+    const positionedQty = Number(positionedQtyByLocProduct.get(key) ?? 0);
+    const unpositionedAvailable = roundQuantity(Math.max(locQty - positionedQty, 0));
+    if (requiredQty > unpositionedAvailable + 0.001) {
+      return `La cantidad sin posición interna cambió. Se intentan retirar ${requiredQty}, pero solo hay ${unpositionedAvailable} sin posicionar dentro del LOC. Recarga la preparación.`;
+    }
+  }
+
+  return null;
+}
+
 export async function commitPreparationDraft(formData: FormData) {
   const supabase = await createClient();
   const { data: userRes } = await supabase.auth.getUser();
@@ -1600,6 +1884,25 @@ export async function commitPreparationDraft(formData: FormData) {
       quantity: number | null;
     }>;
     const itemById = new Map(itemRows.map((row) => [row.id, row]));
+    const fulfillmentSourceResult = await loadFulfillmentSourceRouteByItemId({
+      supabase,
+      requestId,
+      itemIds: itemRows.map((row) => row.id),
+    });
+    if (fulfillmentSourceResult.error) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error: fulfillmentSourceResult.error,
+        })
+      );
+    }
+    const fulfillmentSourceByItemId = fulfillmentSourceResult.byItemId;
+    const lineByBaseItemId = new Map(
+      lines.map((line) => [String(line.baseItemId ?? line.id ?? "").trim(), line] as const)
+    );
     const pickMeasurementPolicyByProductId = await loadProductMeasurementPolicies(
       supabase,
       itemRows.map((row) => row.product_id)
@@ -1663,7 +1966,36 @@ export async function commitPreparationDraft(formData: FormData) {
             requestId,
             from: returnOrigin,
             siteId: activeSiteId,
-            error: "Cada pick debe tener una ubicación de salida.",
+            error: "Cada pick debe tener un LOC de salida.",
+          })
+        );
+      }
+
+      const fulfillmentSource = fulfillmentSourceByItemId.get(itemId) ?? null;
+      const configuredSourceLocationId = String(
+        fulfillmentSource?.source_location_id ?? ""
+      ).trim();
+      if (
+        !fulfillmentSource ||
+        fulfillmentSource.status === "blocked" ||
+        !configuredSourceLocationId
+      ) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            siteId: activeSiteId,
+            error: "La línea no tiene un área responsable y LOC de salida configurados.",
+          })
+        );
+      }
+      if (sourceLocationId !== configuredSourceLocationId) {
+        redirect(
+          buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            siteId: activeSiteId,
+            error: "El pick intenta salir de un LOC distinto al configurado en la ruta.",
           })
         );
       }
@@ -1741,14 +2073,21 @@ export async function commitPreparationDraft(formData: FormData) {
     for (const item of itemRows) {
       const requestedQty = roundQuantity(Number(item.quantity ?? 0));
       const pickedQty = roundQuantity(Number(pickedQtyByItem.get(item.id) ?? 0));
+      const submittedLine = lineByBaseItemId.get(item.id) ?? null;
+      const submittedShortageReason = String(
+        submittedLine?.shortageReason ?? ""
+      ).trim();
+      if (submittedShortageReason && !shortageReasonByItem.has(item.id)) {
+        shortageReasonByItem.set(item.id, submittedShortageReason);
+      }
 
-      if (requestedQty > 0 && pickedQty <= 0) {
+      if (requestedQty > 0 && pickedQty <= 0 && !submittedShortageReason) {
         redirect(
           buildRemissionDetailHref({
             requestId,
             from: returnOrigin,
             siteId: activeSiteId,
-            error: "Todas las líneas solicitadas deben tener al menos un pick de salida.",
+            error: "Las líneas sin salida deben registrar el motivo del faltante.",
           })
         );
       }
@@ -1779,6 +2118,22 @@ export async function commitPreparationDraft(formData: FormData) {
           })
         );
       }
+    }
+
+    const pickValidationError = await validatePreparationPicksAgainstCurrentStock({
+      supabase,
+      fromSiteId: String(request?.from_site_id ?? "").trim(),
+      picks: nextPickRows,
+    });
+    if (pickValidationError) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error: pickValidationError,
+        })
+      );
     }
 
     const { error: deletePicksError } = await supabase
@@ -1817,7 +2172,11 @@ export async function commitPreparationDraft(formData: FormData) {
       const requestedQty = roundQuantity(Number(item.quantity ?? 0));
       const shortageReason = shortageReasonByItem.get(item.id) ?? "";
       const itemLocs = Array.from(locsByItem.get(item.id) ?? []);
-      const sourceLocationId = itemLocs.length === 1 ? itemLocs[0] : null;
+      const configuredSourceLocationId = String(
+        fulfillmentSourceByItemId.get(item.id)?.source_location_id ?? ""
+      ).trim();
+      const sourceLocationId =
+        itemLocs.length === 1 ? itemLocs[0] : configuredSourceLocationId || null;
       const noteSuffix = pickedQty < requestedQty && shortageReason ? `FALTANTE ORIGEN: ${shortageReason}` : null;
 
       const { error: updateItemError } = await supabase
@@ -1916,6 +2275,23 @@ export async function commitPreparationDraft(formData: FormData) {
       quantity: number | null;
     }>).map((row) => [row.id, row])
   );
+  const commitLineFulfillmentSourceResult = await loadFulfillmentSourceRouteByItemId({
+    supabase,
+    requestId,
+    itemIds: resolvedLineIds,
+  });
+  if (commitLineFulfillmentSourceResult.error) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        siteId: activeSiteId,
+        error: commitLineFulfillmentSourceResult.error,
+      })
+    );
+  }
+  const commitLineFulfillmentSourceByItemId =
+    commitLineFulfillmentSourceResult.byItemId;
   const commitLineMeasurementPolicyByProductId = await loadProductMeasurementPolicies(
     supabase,
     Array.from(commitLineItemById.values()).map((row) => row.product_id)
@@ -1925,7 +2301,12 @@ export async function commitPreparationDraft(formData: FormData) {
     const lineId = line.isVirtualSplit
       ? virtualToRealId.get(line.id) ?? ""
       : String(line.id ?? "").trim();
-    const selectedLocId = String(line.selectedLocId ?? "").trim();
+    const submittedLocId = String(line.selectedLocId ?? "").trim();
+    const configuredSource = commitLineFulfillmentSourceByItemId.get(lineId) ?? null;
+    const configuredSourceLocationId = String(
+      configuredSource?.source_location_id ?? ""
+    ).trim();
+    const selectedLocId = configuredSourceLocationId || submittedLocId;
     const lineItem = commitLineItemById.get(lineId);
     const requestedQty = roundQuantity(Number(lineItem?.quantity ?? line.requestedQty ?? 0));
     const dispatchQty = roundQuantity(Number(line.dispatchQty ?? 0));
@@ -1935,15 +2316,40 @@ export async function commitPreparationDraft(formData: FormData) {
         ? "Sin stock en origen"
         : shortageReasonRaw;
 
-    if (!lineId || !lineItem || (inventoryPostingEnabled && dispatchQty > 0 && !selectedLocId)) {
+    if (
+      !lineId ||
+      !lineItem ||
+      (
+        inventoryPostingEnabled &&
+        (
+          !configuredSource ||
+          configuredSource.status === "blocked" ||
+          !configuredSourceLocationId
+        )
+      )
+    ) {
       redirect(
         buildRemissionDetailHref({
           requestId,
           from: returnOrigin,
           siteId: activeSiteId,
-          error: inventoryPostingEnabled && dispatchQty > 0
-            ? "Todas las líneas con cantidad a despachar deben tener un área seleccionada."
+          error: inventoryPostingEnabled
+            ? "Todas las líneas deben tener un área responsable y LOC de salida configurados."
             : "No se pudo identificar una línea de preparación.",
+        })
+      );
+    }
+    if (
+      inventoryPostingEnabled &&
+      submittedLocId &&
+      submittedLocId !== configuredSourceLocationId
+    ) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          siteId: activeSiteId,
+          error: "Una línea intenta salir de un LOC distinto al configurado en su ruta.",
         })
       );
     }
@@ -3050,6 +3456,22 @@ export async function updateStatus(formData: FormData) {
       stock_unit_code: string | null;
       unit: string | null;
     }>;
+    const transitFulfillmentSourceResult = await loadFulfillmentSourceRouteByItemId({
+      supabase,
+      requestId,
+      itemIds: itemRows.map((row) => row.id),
+    });
+    if (transitFulfillmentSourceResult.error) {
+      redirect(
+        buildRemissionDetailHref({
+          requestId,
+          from: returnOrigin,
+          error: transitFulfillmentSourceResult.error,
+        })
+      );
+    }
+    const transitFulfillmentSourceByItemId =
+      transitFulfillmentSourceResult.byItemId;
     const statusTransitMeasurementPolicyByProductId = await loadProductMeasurementPolicies(
       supabase,
       itemRows.map((row) => row.product_id)
@@ -3057,7 +3479,15 @@ export async function updateStatus(formData: FormData) {
 
     if (access.fromCanFulfillRemissions) {
       const locIds = Array.from(
-        new Set(itemRows.map((row) => row.source_location_id).filter(Boolean) as string[])
+        new Set(
+          itemRows
+            .map((row) =>
+              String(
+                transitFulfillmentSourceByItemId.get(row.id)?.source_location_id ?? ""
+              ).trim()
+            )
+            .filter(Boolean)
+        )
       );
       const productIds = Array.from(new Set(itemRows.map((row) => row.product_id).filter(Boolean)));
       const { data: locStockRows } =
@@ -3137,9 +3567,31 @@ export async function updateStatus(formData: FormData) {
         }
         if (qty <= 0) continue;
         anyTransitQty = true;
-        const sourceLocId = row.source_location_id ?? "";
-        if (!sourceLocId) {
-          redirect(buildRemissionDetailHref({ requestId, from: returnOrigin, error: "Falta área de origen en uno o más items para enviar." }));
+        const fulfillmentSource =
+          transitFulfillmentSourceByItemId.get(row.id) ?? null;
+        const sourceLocId = String(
+          fulfillmentSource?.source_location_id ?? ""
+        ).trim();
+        if (
+          !fulfillmentSource ||
+          fulfillmentSource.status === "blocked" ||
+          !sourceLocId
+        ) {
+          redirect(buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: "Falta área responsable o LOC de salida en uno o más items.",
+          }));
+        }
+        if (
+          row.source_location_id &&
+          row.source_location_id !== sourceLocId
+        ) {
+          redirect(buildRemissionDetailHref({
+            requestId,
+            from: returnOrigin,
+            error: "Una línea preparada apunta a un LOC distinto al configurado en la ruta.",
+          }));
         }
         const realPosting = locationPostsRealRemissionInventory(locPostingFlags.get(sourceLocId));
         const availableAtLoc = locStockMap.get(`${sourceLocId}|${row.product_id}`) ?? 0;
@@ -3549,7 +4001,27 @@ export async function applyPrepareShortcut(formData: FormData) {
   let nextPrepared = roundQuantity(Number(itemRow.prepared_quantity ?? 0));
   let nextShipped = roundQuantity(Number(itemRow.shipped_quantity ?? 0));
   const requestedQty = roundQuantity(Number(itemRow.quantity ?? 0));
-  const sourceLocId = String(itemRow.source_location_id ?? "").trim();
+  const shortcutFulfillmentSourceResult = await loadFulfillmentSourceRouteByItemId({
+    supabase,
+    requestId,
+    itemIds: [itemId],
+  });
+  if (shortcutFulfillmentSourceResult.error) {
+    redirect(
+      buildRemissionDetailHref({
+        requestId,
+        from: returnOrigin,
+        error: shortcutFulfillmentSourceResult.error,
+      })
+    );
+  }
+  const shortcutFulfillmentSource =
+    shortcutFulfillmentSourceResult.byItemId.get(itemId) ?? null;
+  const sourceLocId = String(
+    shortcutFulfillmentSource?.source_location_id ??
+      itemRow.source_location_id ??
+      ""
+  ).trim();
   const manualPrepareRaw = asText(formData.get("prepare_qty"));
 
   let availableAtLoc = Number.MAX_SAFE_INTEGER;
@@ -3755,6 +4227,7 @@ export async function applyPrepareShortcut(formData: FormData) {
   const { error } = await supabase
     .from("restock_request_items")
     .update({
+      source_location_id: inventoryPostingEnabled ? sourceLocId || null : null,
       prepared_quantity: nextPrepared,
       shipped_quantity: nextShipped,
     })
