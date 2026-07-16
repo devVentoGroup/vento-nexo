@@ -133,7 +133,6 @@ const SALE_CATEGORY_PRIORITY = [
   "Cocteles y alcohol",
   "Productos empacados y retail",
   "Otros de venta",
-  "Sin categoría",
 ];
 
 const saleCategoryPriorityMap = new Map(
@@ -534,9 +533,20 @@ export function RemissionsItems({
     );
   };
 
+  const categorizedProducts = useMemo(
+    () =>
+      products.filter((product) => {
+        const categoryId = String(product.category_id ?? "").trim();
+        const categoryName = String(categoryNameById[categoryId] ?? "").trim();
+        return Boolean(categoryId && categoryName);
+      }),
+    [categoryNameById, products],
+  );
+
   const productsById = useMemo(
-    () => new Map(products.map((product) => [product.id, product])),
-    [products],
+    () =>
+      new Map(categorizedProducts.map((product) => [product.id, product])),
+    [categorizedProducts],
   );
 
   const initialRowsSource = useMemo(() => initialRows ?? [], [initialRows]);
@@ -642,10 +652,10 @@ export function RemissionsItems({
   };
 
   const productOptions = useMemo(() => {
-    const options = products.map((item) => {
-      const groupLabel =
-        categoryNameById[String(item.category_id ?? "").trim()] ??
-        "Sin categoría";
+    const options = categorizedProducts.map((item) => {
+      const groupLabel = String(
+        categoryNameById[String(item.category_id ?? "").trim()] ?? "",
+      ).trim();
       return {
         value: item.id,
         label: item.name ?? item.id,
@@ -674,14 +684,15 @@ export function RemissionsItems({
     });
 
     return options;
-  }, [products, categoryNameById]);
+  }, [categorizedProducts, categoryNameById]);
 
   const tableProductsByCategory = useMemo(() => {
     const groups = new Map<string, Option[]>();
-    for (const product of products) {
-      const groupLabel =
-        categoryNameById[String(product.category_id ?? "").trim()] ??
-        "Sin categoría";
+    for (const product of categorizedProducts) {
+      const groupLabel = String(
+        categoryNameById[String(product.category_id ?? "").trim()] ?? "",
+      ).trim();
+      if (!groupLabel) continue;
       const current = groups.get(groupLabel) ?? [];
       current.push(product);
       groups.set(groupLabel, current);
@@ -708,7 +719,7 @@ export function RemissionsItems({
         }),
       ),
     }));
-  }, [categoryNameById, products]);
+  }, [categorizedProducts, categoryNameById]);
 
   const rowByProductId = useMemo(() => {
     const map = new Map<string, Row>();
@@ -912,6 +923,11 @@ export function RemissionsItems({
                 <div className="text-right">Requisición</div>
               </div>
               <div className="max-h-[68vh] overflow-auto">
+                {tableProductsByCategory.length === 0 ? (
+                  <div className="p-6 text-center text-sm text-[var(--ui-muted)]">
+                    No hay productos con categoría configurada para esta área.
+                  </div>
+                ) : null}
                 {tableProductsByCategory.map((group) => (
                   <div key={group.groupLabel}>
                     <div className="sticky top-0 z-10 border-y border-[rgba(212,164,58,0.28)] bg-[rgb(255,239,184)] px-3 py-1.5 text-center text-xs font-bold uppercase text-slate-900">

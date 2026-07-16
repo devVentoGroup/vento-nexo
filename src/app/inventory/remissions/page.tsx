@@ -84,6 +84,7 @@ type SearchParams = {
   warning?: string;
   site_id?: string;
   from_site_id?: string;
+  area_kind?: string;
   new?: string;
 };
 
@@ -379,6 +380,7 @@ export default async function RemissionsPage({
     fulfillmentSiteRows.some((site) => site.id === requestedFromSiteId)
       ? requestedFromSiteId
       : (fulfillmentSiteRows[0]?.id ?? "");
+  const requestedAreaKindParam = String(sp.area_kind ?? "").trim();
   const requestedCreateParam = String(sp.new ?? "")
     .trim()
     .toLowerCase();
@@ -390,6 +392,7 @@ export default async function RemissionsPage({
     const params = new URLSearchParams();
     if (activeSiteId) params.set("site_id", activeSiteId);
     if (selectedFromSiteId) params.set("from_site_id", selectedFromSiteId);
+    if (requestedAreaKindParam) params.set("area_kind", requestedAreaKindParam);
     if (opts?.showCreate) params.set("new", "1");
     const qs = params.toString();
     const hash = opts?.hash ? `#${opts.hash}` : "";
@@ -571,20 +574,11 @@ export default async function RemissionsPage({
     }, new Map<string, { value: string; label: string }>()),
   ).map(([, value]) => value);
 
-  const areaOptions = (() => {
-    const base = [...areaOptionsMap];
-    if (!base.some((option) => option.value === "general")) {
-      base.unshift({ value: "general", label: "Todos" });
-    } else {
-      const general = base.find((option) => option.value === "general");
-      if (general) general.label = "Todos";
-    }
-    return base.sort((a, b) => {
-      if (a.value === "general") return -1;
-      if (b.value === "general") return 1;
-      return a.label.localeCompare(b.label, "es", { sensitivity: "base" });
-    });
-  })();
+  const areaOptions = areaOptionsMap
+    .filter((option) => option.value !== "general")
+    .sort((a, b) =>
+      a.label.localeCompare(b.label, "es", { sensitivity: "base" }),
+    );
   // Insumos por satélite: filtrar por sede DESTINO (Saudo), no por sede origen (Centro).
   // Cuando el satélite solicita, solo debe ver productos configurados para su sede.
   const productFilterSiteId = canCreate ? activeSiteId : selectedFromSiteId;
@@ -603,17 +597,44 @@ export default async function RemissionsPage({
           canSeeAllAreas: canViewAll,
         })
     : null;
-  const requestedAreaKind = requestAreaScope?.defaultAreaKind ?? "";
+  const contextAreaKind = String(
+    requestAreaScope?.defaultAreaKind ?? "",
+  ).trim();
+  const selectableAreaKinds = new Set(areaOptions.map((option) => option.value));
+  const selectedRemissionCategoryAreaKind = canViewAll
+    ? selectableAreaKinds.has(requestedAreaKindParam)
+      ? requestedAreaKindParam
+      : areaOptions.length === 1
+        ? (areaOptions[0]?.value ?? "")
+        : ""
+    : selectableAreaKinds.has(contextAreaKind)
+      ? contextAreaKind
+      : "";
+  const areaScopeBlockedReason = String(
+    requestAreaScope?.blockedReason ?? "",
+  ).trim();
+  const hasResolvedRequestArea = Boolean(
+    selectedRemissionCategoryAreaKind &&
+      selectableAreaKinds.has(selectedRemissionCategoryAreaKind) &&
+      (!areaScopeBlockedReason || canViewAll),
+  );
+
   const productSiteRows = productFilterSiteId
     ? await loadProductSiteRows(supabase, productFilterSiteId)
     : [];
   const hasActiveSiteProductConfig = productSiteRows.length > 0;
-  const productSiteIds = productSiteRows
-    .filter(
-      (row) =>
-        supportsRemission(row) && supportsRequestedArea(row, requestedAreaKind),
-    )
-    .map((row) => row.product_id);
+  const productSiteIds = hasResolvedRequestArea
+    ? productSiteRows
+        .filter(
+          (row) =>
+            supportsRemission(row) &&
+            supportsRequestedArea(
+              row,
+              selectedRemissionCategoryAreaKind,
+            ),
+        )
+        .map((row) => row.product_id)
+    : [];
   const hasAudienceProducts = productSiteIds.length > 0;
 
   let productRows: ProductRow[] = [];
@@ -653,25 +674,6 @@ export default async function RemissionsPage({
       })
       .filter((row): row is ProductRow => row !== null);
 
-    if (productRows.length === 0) {
-      const { data: fallbackProducts } = await supabase
-        .from("products")
-        .select("id,name,unit,stock_unit_code,product_type,category_id")
-        .eq("is_active", true)
-        .in("id", productSiteIds)
-        .order("name", { ascending: true })
-        .limit(400);
-      productRows = ((fallbackProducts ?? []) as unknown as ProductRow[]).map(
-        (row) => ({
-          ...row,
-          inventory_kind: null,
-          measurement_mode: "fixed_presentation",
-          default_tolerance_percent: null,
-          requires_actual_dispatch_qty: false,
-          requires_count_alongside_weight: false,
-        }),
-      );
-    }
   }
   const productIds = productRows.map((row) => row.id);
   const { data: defaultRequestPolicyData, error: defaultRequestPolicyError } =
@@ -696,15 +698,6 @@ export default async function RemissionsPage({
   )
     .map(mapProductRequestPolicyRow)
     .filter((row): row is NonNullable<typeof row> => row !== null);
-  const categoryAreaOptions = areaOptions.filter(
-    (option) => option.value !== "general",
-  );
-  const selectedRemissionCategoryAreaKind =
-    requestedAreaKind ||
-    (categoryAreaOptions.length === 1
-      ? (categoryAreaOptions[0]?.value ?? "")
-      : "");
-
   const { data: areaRemissionCategoryRows } =
     productFilterSiteId &&
     selectedRemissionCategoryAreaKind &&
@@ -728,26 +721,13 @@ export default async function RemissionsPage({
       )
       .filter(([productId, categoryId]) => Boolean(productId && categoryId)),
   );
-  const legacyRemissionCategoryIdByProductId = new Map(
-    productSiteRows
-      .map(
-        (row) =>
-          [
-            String(row.product_id ?? "").trim(),
-            String(row.remission_category_id ?? "").trim(),
-          ] as const,
-      )
-      .filter(([productId, categoryId]) => Boolean(productId && categoryId)),
-  );
   const remissionCategoryIdByProductId = new Map(
     productIds
       .map(
         (productId) =>
           [
             productId,
-            areaRemissionCategoryIdByProductId.get(productId) ||
-              legacyRemissionCategoryIdByProductId.get(productId) ||
-              "",
+            areaRemissionCategoryIdByProductId.get(productId) ?? "",
           ] as const,
       )
       .filter(([, categoryId]) => Boolean(categoryId)),
@@ -768,10 +748,14 @@ export default async function RemissionsPage({
         id: string;
         name: string | null;
       }>
-    ).map((row) => [
-      row.id,
-      String(row.name ?? "").trim() || "Sin categoría de remisión",
-    ]),
+    )
+      .map(
+        (row) =>
+          [row.id, String(row.name ?? "").trim()] as const,
+      )
+      .filter(([categoryId, categoryName]) =>
+        Boolean(categoryId && categoryName),
+      ),
   );
   productRows = productRows
     .map<ProductRow | null>((row) => {
@@ -807,8 +791,13 @@ export default async function RemissionsPage({
         .eq("is_active", true)
     : { data: [] as ProductUomProfile[] };
   const defaultUomProfiles = (uomProfilesData ?? []) as ProductUomProfile[];
+  const catalogProductIds = productRows.map((row) => row.id);
   const canCreateWithConfiguredCatalog =
-    canCreate && hasActiveSiteProductConfig && hasAudienceProducts;
+    canCreate &&
+    hasResolvedRequestArea &&
+    hasActiveSiteProductConfig &&
+    hasAudienceProducts &&
+    productRows.length > 0;
   const pendingCount = remissionRows.filter((row) =>
     ["pending", "preparing"].includes(String(row.status ?? "")),
   ).length;
@@ -862,9 +851,9 @@ export default async function RemissionsPage({
           : "/inventory/remissions/prepare"
       : nextReceiveRow
         ? `/inventory/remissions/${nextReceiveRow.id}`
-        : canCreate
+        : canCreateWithConfiguredCatalog
           ? buildHubHref({ showCreate: true })
-          : "/inventory/remissions";
+          : buildHubHref({ hash: "area-remision" });
   const heroPrimaryLabel =
     viewMode === "bodega"
       ? canTransitPermission
@@ -874,9 +863,11 @@ export default async function RemissionsPage({
           : "Abrir cola"
       : nextReceiveRow
         ? "Recibir ahora"
-        : canCreate
+        : canCreateWithConfiguredCatalog
           ? "Nueva solicitud"
-          : "Ver remisiones";
+          : canCreate
+            ? "Seleccionar área"
+            : "Ver remisiones";
   const compactOperatorView = viewMode !== "all";
   const detailHrefForRow = (rowId: string) =>
     activeSiteId
@@ -893,12 +884,12 @@ export default async function RemissionsPage({
     inventoryPostingEnabled &&
     canCreateWithConfiguredCatalog &&
     fulfillmentSiteIdsForStock.length > 0 &&
-    productIds.length > 0
+    catalogProductIds.length > 0
       ? await supabase
           .from("inventory_stock_by_site")
           .select("site_id,product_id,current_qty,updated_at")
           .in("site_id", fulfillmentSiteIdsForStock)
-          .in("product_id", productIds)
+          .in("product_id", catalogProductIds)
       : { data: [] as StockReferenceRow[] };
   const originStockRows = (
     (stockReferenceData ?? []) as StockReferenceRow[]
@@ -1155,6 +1146,58 @@ export default async function RemissionsPage({
           </div>
         </div>
 
+        {canCreate && canViewAll && areaOptions.length > 0 ? (
+          <div
+            id="area-remision"
+            className="mt-4 rounded-2xl border border-[var(--ui-border)] bg-white p-4"
+          >
+            <div className="text-sm font-semibold text-[var(--ui-text)]">
+              Área para la solicitud
+            </div>
+            <div className="mt-1 text-sm text-[var(--ui-muted)]">
+              El catálogo se carga exclusivamente para el área seleccionada.
+            </div>
+            <form method="get" className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
+              {activeSiteId ? (
+                <input type="hidden" name="site_id" value={activeSiteId} />
+              ) : null}
+              {selectedFromSiteId ? (
+                <input
+                  type="hidden"
+                  name="from_site_id"
+                  value={selectedFromSiteId}
+                />
+              ) : null}
+              <select
+                name="area_kind"
+                defaultValue={selectedRemissionCategoryAreaKind}
+                className="ui-input"
+                required
+              >
+                <option value="">Selecciona un área</option>
+                {areaOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+              <button className="ui-btn ui-btn--brand">Cargar catálogo</button>
+            </form>
+          </div>
+        ) : null}
+
+        {canCreate && !canViewAll && areaScopeBlockedReason ? (
+          <div className="mt-4 ui-alert ui-alert--error">
+            {areaScopeBlockedReason} No se cargó ningún catálogo general.
+          </div>
+        ) : null}
+
+        {canCreate && canViewAll && !selectedRemissionCategoryAreaKind ? (
+          <div className="mt-4 ui-alert ui-alert--warn">
+            Selecciona un área para cargar su lista de productos.
+          </div>
+        ) : null}
+
         {!activeSiteId ? (
           <div className="mt-4 ui-alert ui-alert--warn">
             {canViewAll
@@ -1233,11 +1276,13 @@ export default async function RemissionsPage({
         hasAudienceProducts &&
         productRows.length === 0 ? (
           <div className="mt-4 ui-alert ui-alert--warn">
-            No hay insumos configurados para {activeSiteName}. Añade la sede en{" "}
-            <Link href="/inventory/catalog" className="font-semibold underline">
-              Catálogo
-            </Link>
-            → ficha del producto → Sedes.
+            No hay productos con categoría de remisión activa para el área{" "}
+            <strong>
+              {formatOperationalRemissionAreaLabel(
+                selectedRemissionCategoryAreaKind,
+              )}
+            </strong>
+            . Los productos sin categoría explícita no se muestran.
           </div>
         ) : null}
       </div>
