@@ -1052,7 +1052,7 @@ export default async function ProductCatalogDetailPage({
                 />
                 <div className="ui-panel-soft mt-4 flex flex-wrap items-center justify-between gap-3 p-4 text-sm text-[var(--ui-muted)]">
                   <div><strong className="text-[var(--ui-text)]">¿Este producto se mueve entre sedes?</strong><br />Usa su producción, LOC de salida y áreas ya configuradas para crear la ruta operativa.</div>
-                  <Link href={`/inventory/settings/fulfillment-routes?product_id=${encodeURIComponent(productRow.id)}`} className="ui-btn ui-btn--ghost ui-btn--sm">Configurar ruta operativa</Link>
+                  <Link href="/inventory/settings/products" className="ui-btn ui-btn--ghost ui-btn--sm">Abrir configurador maestro</Link>
                 </div>
               </>
             ) : null}

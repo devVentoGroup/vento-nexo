@@ -363,11 +363,11 @@ export default async function RemissionsSettingsPage({
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Link href="/inventory/settings/remissions/products" className="ui-btn ui-btn--brand">
-            Productos por sede
+          <Link href="/inventory/settings/products" className="ui-btn ui-btn--brand">
+            Configurador maestro
           </Link>
-          <Link href="/inventory/settings/request-policies" className="ui-btn ui-btn--ghost">
-            Políticas de solicitud
+          <Link href="/inventory/settings/products" className="ui-btn ui-btn--ghost">
+            Solicitudes y rutas
           </Link>
           <Link href="/inventory/remissions" className="ui-btn ui-btn--ghost">
             Ir a remisiones
