@@ -155,12 +155,8 @@ function defaultSupplyModeForProfile(profile: BulkProfile) {
   return profile === "preparation_from_origin" ? "production" : "stock";
 }
 
-function supplyModeLabel(value: string) {
-  if (value === "production") return "Producción";
-  if (value === "transfer") return "Transferencia";
-  if (value === "supplier") return "Proveedor";
-  if (value === "manual") return "Manual";
-  return "Stock";
+function normalizeSupplyMode(value: string) {
+  return value === "production" ? "production" : "stock";
 }
 
 const stickyHeaderCellClass =
@@ -219,20 +215,29 @@ export function RemissionProductsClientTable({
   const [routeByProduct, setRouteByProduct] = useState<Record<string, RowRouteConfig>>(() =>
     Object.fromEntries(
       rows.map((row) => {
-        const areaKind = row.setting.originRoute?.areaKind || defaultOriginAreaKind;
+        const routeEnabled = Boolean(row.setting.originRoute?.enabled);
+        const areaKind = routeEnabled ? row.setting.originRoute?.areaKind || "" : "";
+        const sourceLocationId = routeEnabled
+          ? String(row.setting.originRoute?.sourceLocationId ?? "").trim()
+          : "";
+        const area = originAreaOptions.find((item) => item.value === areaKind) ?? null;
+        const sourceLocationIsValid = Boolean(
+          area &&
+            sourceLocationId &&
+            originLocationOptions.some(
+              (location) => location.id === sourceLocationId && location.areaId === area.id,
+            ),
+        );
+
         return [
           row.product.id,
           {
-            enabled: Boolean(row.setting.originRoute?.enabled),
+            enabled: routeEnabled,
             areaKind,
-            sourceLocationId:
-              resolveRouteLocationId(
-                row.setting.originRoute?.sourceLocationId || "",
-                areaKind,
-                originAreaOptions,
-                originLocationOptions,
-              ) || defaultOriginLocationId,
-            supplyMode: row.setting.originRoute?.supplyMode || defaultSupplyMode,
+            sourceLocationId: sourceLocationIsValid ? sourceLocationId : "",
+            supplyMode: normalizeSupplyMode(
+              row.setting.originRoute?.supplyMode || defaultSupplyMode,
+            ),
           },
         ];
       }),
@@ -287,7 +292,12 @@ export function RemissionProductsClientTable({
     if (!routeTouchedByProduct[row.product.id]) return false;
     const route = routeByProduct[row.product.id];
     if (!route?.enabled) return false;
-    return !originRouteInputsAvailable || !route.areaKind || !route.sourceLocationId;
+    return (
+      !originRouteInputsAvailable ||
+      !route.areaKind ||
+      !route.sourceLocationId ||
+      !["stock", "production"].includes(route.supplyMode)
+    );
   });
   const canSave =
     canManage && !routeIsIncomplete && (selectedCount > 0 || changedCategoryCount > 0);
@@ -376,7 +386,7 @@ export function RemissionProductsClientTable({
             <input
               type="hidden"
               name={`origin_supply_mode_${productId}`}
-              value={route.supplyMode || defaultSupplyMode}
+              value={normalizeSupplyMode(route.supplyMode || defaultSupplyMode)}
             />
           </div>
         );
@@ -577,16 +587,14 @@ export function RemissionProductsClientTable({
               const canRoute = !disablesRemission;
               const route = routeByProduct[product.id] ?? {
                 enabled: false,
-                areaKind: defaultOriginAreaKind,
-                sourceLocationId: defaultOriginLocationId,
+                areaKind: "",
+                sourceLocationId: "",
                 supplyMode: defaultSupplyMode,
               };
               const routeEnabled = canRoute && route.enabled;
               const rowBlocked = !diagnostics.canApply || !canManage;
               const selectedOriginArea =
-                originAreaOptions.find((area) => area.value === route.areaKind) ??
-                originAreaOptions[0] ??
-                null;
+                originAreaOptions.find((area) => area.value === route.areaKind) ?? null;
               const availableRouteLocations = selectedOriginArea
                 ? originLocationOptions.filter(
                     (location) => location.areaId === selectedOriginArea.id,
@@ -596,7 +604,13 @@ export function RemissionProductsClientTable({
                 (location) => location.id === route.sourceLocationId,
               )
                 ? route.sourceLocationId
-                : availableRouteLocations[0]?.id ?? "";
+                : "";
+              const routeComplete = Boolean(
+                routeEnabled &&
+                  selectedOriginArea &&
+                  resolvedSourceLocationId &&
+                  ["stock", "production"].includes(route.supplyMode),
+              );
 
               return (
                 <TableRow key={product.id} className="border-t border-zinc-200/70 align-top">
@@ -631,7 +645,15 @@ export function RemissionProductsClientTable({
                           <span className="ui-chip">Vende</span>
                         ) : null}
                         {routeEnabled ? (
-                          <span className="ui-chip ui-chip--success">Ruta operativa</span>
+                          <span
+                            className={
+                              routeComplete
+                                ? "ui-chip ui-chip--success"
+                                : "ui-chip ui-chip--warn"
+                            }
+                          >
+                            {routeComplete ? "Ruta completa" : "Ruta incompleta"}
+                          </span>
                         ) : null}
                       </div>
                     ) : null}
@@ -717,13 +739,48 @@ export function RemissionProductsClientTable({
 
                         {routeEnabled ? (
                           <div className="space-y-2 rounded-xl border border-[var(--ui-border)] bg-[var(--ui-surface-muted)] p-2">
+                            <fieldset className="space-y-1">
+                              <legend className="text-[11px] font-semibold text-[var(--ui-muted)]">
+                                ¿Cómo se atiende?
+                              </legend>
+                              <div className="grid gap-2 sm:grid-cols-2">
+                                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-2 py-2 text-xs">
+                                  <input
+                                    type="radio"
+                                    name={`supply-mode-ui-${product.id}`}
+                                    checked={route.supplyMode === "stock"}
+                                    onChange={() =>
+                                      updateRoute(product.id, { supplyMode: "stock" })
+                                    }
+                                    disabled={rowBlocked}
+                                  />
+                                  <span>Desde stock</span>
+                                </label>
+                                <label className="flex cursor-pointer items-center gap-2 rounded-lg border border-[var(--ui-border)] bg-[var(--ui-surface)] px-2 py-2 text-xs">
+                                  <input
+                                    type="radio"
+                                    name={`supply-mode-ui-${product.id}`}
+                                    checked={route.supplyMode === "production"}
+                                    onChange={() =>
+                                      updateRoute(product.id, { supplyMode: "production" })
+                                    }
+                                    disabled={rowBlocked}
+                                  />
+                                  <span>Debe producirse</span>
+                                </label>
+                              </div>
+                            </fieldset>
                             <div className="flex flex-wrap gap-1">
-                              <span className="ui-chip">{supplyModeLabel(route.supplyMode)}</span>
+                              <span className="ui-chip">
+                                {route.supplyMode === "production" ? "Producción" : "Stock"}
+                              </span>
                               <span className="ui-chip">Sin posición interna fija</span>
                             </div>
                             <label className="flex flex-col gap-1">
                               <span className="text-[11px] font-semibold text-[var(--ui-muted)]">
-                                Área responsable
+                                {route.supplyMode === "production"
+                                  ? "Área productora"
+                                  : "Área responsable"}
                               </span>
                               <select
                                 value={selectedOriginArea?.value ?? ""}
@@ -747,6 +804,7 @@ export function RemissionProductsClientTable({
                                 className="ui-input h-9 text-sm"
                                 disabled={rowBlocked}
                               >
+                                <option value="">Selecciona un área...</option>
                                 {originAreaOptions.map((area) => (
                                   <option key={area.id} value={area.value}>
                                     {area.label}
@@ -756,7 +814,9 @@ export function RemissionProductsClientTable({
                             </label>
                             <label className="flex flex-col gap-1">
                               <span className="text-[11px] font-semibold text-[var(--ui-muted)]">
-                                LOC de salida
+                                {route.supplyMode === "production"
+                                  ? "LOC donde queda listo"
+                                  : "LOC de stock / salida"}
                               </span>
                               <select
                                 value={resolvedSourceLocationId}
@@ -768,6 +828,7 @@ export function RemissionProductsClientTable({
                                 className="ui-input h-9 text-sm"
                                 disabled={rowBlocked || availableRouteLocations.length === 0}
                               >
+                                <option value="">Selecciona un LOC...</option>
                                 {availableRouteLocations.map((location) => (
                                   <option key={location.id} value={location.id}>
                                     {location.label}
@@ -776,7 +837,9 @@ export function RemissionProductsClientTable({
                               </select>
                             </label>
                             <div className="text-[11px] leading-relaxed text-[var(--ui-muted)]">
-                              La estantería, nivel o posición se seleccionará al preparar el despacho.
+                              {route.supplyMode === "production"
+                                ? "Este producto generará una necesidad de producción. La conexión con FOGO se implementará en el siguiente bloque."
+                                : "El producto se alistará desde inventario. La estantería, nivel o posición se resolverá al preparar el despacho."}
                             </div>
                             {availableRouteLocations.length === 0 ? (
                               <div className="text-xs text-amber-700">
@@ -803,7 +866,13 @@ export function RemissionProductsClientTable({
                       <div className="mt-2 text-xs text-[var(--ui-muted)]">Remisión activa</div>
                     ) : null}
                     {routeEnabled ? (
-                      <div className="mt-1 text-xs text-[var(--ui-muted)]">Ruta completa</div>
+                      <div
+                        className={`mt-1 text-xs ${
+                          routeComplete ? "text-emerald-700" : "text-amber-700"
+                        }`}
+                      >
+                        {routeComplete ? "Ruta completa" : "Ruta incompleta"}
+                      </div>
                     ) : null}
                   </TableCell>
                   <TableCell className="px-3 py-3 align-top">

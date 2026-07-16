@@ -309,7 +309,7 @@ export async function saveBulkProductConfiguration(formData: FormData) {
     const validProductIdSet = new Set(
       settingRows.map((row) => String(row.product_id ?? "")).filter(Boolean)
     );
-    const allowedSupplyModes = new Set(["stock", "production", "supplier", "transfer", "manual"]);
+    const allowedSupplyModes = new Set(["stock", "production"]);
     const defaultSupplyMode = bulkProfile === "preparation_from_origin" ? "production" : "stock";
 
     routeDrafts = productIds
@@ -356,7 +356,7 @@ export async function saveBulkProductConfiguration(formData: FormData) {
     if (incompleteRoute) {
       returnParams.set(
         "error",
-        "Completa el área responsable y el LOC de salida en las rutas operativas activas."
+        "Completa el área responsable o productora y el LOC asociado en las rutas operativas activas."
       );
       redirect(buildRedirect(returnParams));
     }

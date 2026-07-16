@@ -406,7 +406,7 @@ export default async function RemissionProductsPage({
         <div>
           <h1 className="ui-h1">Productos de remisión por sede</h1>
           <p className="mt-2 ui-body-muted">
-            Configura la relación de remisión y define qué área y LOC del origen atienden cada producto.
+            Configura si cada producto se atiende desde stock o debe producirse, y define el área y LOC responsables en el origen.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
@@ -429,9 +429,9 @@ export default async function RemissionProductsPage({
       {okMsg ? <div className="mt-6 ui-alert ui-alert--success">{okMsg}</div> : null}
 
       <div className="mt-6 ui-alert ui-alert--neutral">
-        La configuración guarda únicamente el <strong>área responsable</strong> y el
-        <strong> LOC de salida</strong>. Estanterías, niveles, posiciones internas y LPN se
-        resuelven únicamente durante la preparación y el despacho.
+        Para <strong>stock</strong>, el LOC indica dónde se alista el producto. Para
+        <strong> producción</strong>, indica dónde quedará listo para despacho. Estanterías,
+        niveles, posiciones internas y LPN se resuelven después.
       </div>
 
       <div className="mt-6 ui-panel">
