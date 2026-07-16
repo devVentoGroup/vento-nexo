@@ -4,65 +4,326 @@ import { useMemo, useState } from "react";
 
 type Site = { id: string; name: string | null };
 type Product = { id: string; name: string | null; sku: string | null };
-type Location = { id: string; site_id: string; code: string | null; description: string | null };
-type Area = { code: string; name: string | null };
-type ProductSiteSetting = { productId: string; siteId: string; isActive: boolean; inventoryEnabled: boolean; remissionEnabled: boolean; localProductionEnabled: boolean; productionLocationId: string | null; defaultAreaKind: string | null; areaKinds: string[] };
-type ProductionRoute = { productId: string; siteId: string; areaKind: string; inputLocationId: string; outputLocationId: string | null; isActive: boolean; isDefault: boolean };
- type ActiveRoute = { productId: string; fromSiteId: string; toSiteId: string; requestingAreaKind: string | null; isActive: boolean };
+type Location = {
+  id: string;
+  site_id: string;
+  area_id: string | null;
+  code: string | null;
+  description: string | null;
+};
+type Area = { id: string; site_id: string; kind: string; name: string | null };
+type ProductSiteSetting = {
+  productId: string;
+  siteId: string;
+  isActive: boolean;
+  inventoryEnabled: boolean;
+  remissionEnabled: boolean;
+  localProductionEnabled: boolean;
+  productionLocationId: string | null;
+  defaultAreaKind: string | null;
+  areaKinds: string[];
+};
+type SupplyRoute = {
+  requestingSiteId: string;
+  fulfillmentSiteId: string;
+  isActive: boolean;
+};
+type ProductionRoute = {
+  productId: string;
+  siteId: string;
+  areaKind: string;
+  inputLocationId: string;
+  outputLocationId: string | null;
+  isActive: boolean;
+  isDefault: boolean;
+};
+type ActiveRoute = {
+  productId: string;
+  fromSiteId: string;
+  toSiteId: string;
+  requestingAreaKind: string | null;
+  isActive: boolean;
+};
 
 type Props = {
   sites: Site[];
   products: Product[];
   locations: Location[];
-  areasBySite: Record<string, Area[]>;
+  areas: Area[];
   productSiteSettings: ProductSiteSetting[];
+  supplyRoutes: SupplyRoute[];
   productionRoutes: ProductionRoute[];
   activeRoutes: ActiveRoute[];
-  defaults: { productId: string; fromSiteId: string; toSiteId: string; sourceLocationId: string; requestingAreaKind: string; preparingAreaKind: string };
+  defaults: {
+    productId: string;
+    fromSiteId: string;
+    toSiteId: string;
+    sourceLocationId: string;
+    requestingAreaKind: string;
+    preparingAreaKind: string;
+  };
 };
 
-const locationLabel = (location: Location) => location.description ?? location.code ?? "LOC sin nombre";
+type RelationOption = {
+  key: string;
+  fromSiteId: string;
+  toSiteId: string;
+  requestingAreaKind: string;
+  label: string;
+};
 
-export function FulfillmentRouteSelectors({ sites, products, locations, areasBySite, productSiteSettings, productionRoutes, activeRoutes, defaults }: Props) {
+const locationLabel = (location: Location) =>
+  location.description ?? location.code ?? "LOC sin nombre";
+
+export function FulfillmentRouteSelectors({
+  sites,
+  products,
+  locations,
+  areas,
+  productSiteSettings,
+  supplyRoutes,
+  productionRoutes,
+  activeRoutes,
+  defaults,
+}: Props) {
   const [productId, setProductId] = useState(defaults.productId);
-  const [fromSiteId, setFromSiteId] = useState(defaults.fromSiteId);
-  const [toSiteId, setToSiteId] = useState(defaults.toSiteId);
-  const [sourceLocationId, setSourceLocationId] = useState(defaults.sourceLocationId);
-  const [destinationLocationId, setDestinationLocationId] = useState("");
-  const [requestingAreaKind, setRequestingAreaKind] = useState(defaults.requestingAreaKind);
+  const [relationKey, setRelationKey] = useState("");
   const [preparingAreaKind, setPreparingAreaKind] = useState(defaults.preparingAreaKind);
+  const [sourceLocationId, setSourceLocationId] = useState(defaults.sourceLocationId);
 
-  const settings = useMemo(() => productSiteSettings.filter((setting) => setting.productId === productId && setting.isActive), [productId, productSiteSettings]);
-  const sourceRoutes = useMemo(() => productionRoutes.filter((route) => route.productId === productId && route.isActive), [productId, productionRoutes]);
-  const sourceSiteIds = new Set([...settings.filter((setting) => setting.inventoryEnabled || setting.localProductionEnabled).map((setting) => setting.siteId), ...sourceRoutes.map((route) => route.siteId)]);
-  const destinationSettings = settings.filter((setting) => setting.remissionEnabled);
-  const sourceLocations = locations.filter((location) => location.site_id === fromSiteId);
-  const destinationLocations = locations.filter((location) => location.site_id === toSiteId);
-  const selectedSourceRoute = sourceRoutes.find((route) => route.siteId === fromSiteId && route.areaKind === preparingAreaKind) ?? sourceRoutes.find((route) => route.siteId === fromSiteId && route.isDefault) ?? sourceRoutes.find((route) => route.siteId === fromSiteId);
-  const sourceAreas = Array.from(new Set(sourceRoutes.filter((route) => route.siteId === fromSiteId).map((route) => route.areaKind))).map((code) => (areasBySite[fromSiteId] ?? []).find((area) => area.code === code) ?? { code, name: code });
-  const destinationSetting = destinationSettings.find((setting) => setting.siteId === toSiteId);
-  const destinationAreas = (destinationSetting?.areaKinds.length ? destinationSetting.areaKinds.map((code) => (areasBySite[toSiteId] ?? []).find((area) => area.code === code) ?? { code, name: code }) : areasBySite[toSiteId] ?? []);  const routesForDestination = activeRoutes.filter((route) => route.isActive && route.productId === productId && route.fromSiteId === fromSiteId && route.toSiteId === toSiteId);
-  const isDestinationCovered = (setting: ProductSiteSetting) => {
-    const existing = activeRoutes.filter((route) => route.isActive && route.productId === productId && route.fromSiteId === fromSiteId && route.toSiteId === setting.siteId);
-    if (existing.some((route) => !route.requestingAreaKind)) return true;
-    const areas = setting.areaKinds.length ? setting.areaKinds : (areasBySite[setting.siteId] ?? []).map((area) => area.code);
-    return areas.length > 0 && areas.every((area) => existing.some((route) => route.requestingAreaKind === area));
+  const relationOptions = useMemo<RelationOption[]>(() => {
+    if (!productId) return [];
+
+    const settings = productSiteSettings.filter(
+      (setting) => setting.productId === productId && setting.isActive,
+    );
+    const destinations = settings.filter((setting) => setting.remissionEnabled);
+    const sourceSettings = settings.filter(
+      (setting) => setting.inventoryEnabled || setting.localProductionEnabled,
+    );
+
+    const options: RelationOption[] = [];
+    for (const destination of destinations) {
+      const configuredSourceIds = supplyRoutes
+        .filter(
+          (route) =>
+            route.isActive && route.requestingSiteId === destination.siteId,
+        )
+        .map((route) => route.fulfillmentSiteId);
+      const sourceIds = configuredSourceIds.length
+        ? configuredSourceIds
+        : sourceSettings.map((setting) => setting.siteId);
+      const requestingAreas = destination.areaKinds.length
+        ? destination.areaKinds
+        : destination.defaultAreaKind
+          ? [destination.defaultAreaKind]
+          : [];
+
+      for (const fromSiteId of Array.from(new Set(sourceIds))) {
+        if (!fromSiteId || fromSiteId === destination.siteId) continue;
+        for (const requestingAreaKind of requestingAreas) {
+          const covered = activeRoutes.some(
+            (route) =>
+              route.isActive &&
+              route.productId === productId &&
+              route.fromSiteId === fromSiteId &&
+              route.toSiteId === destination.siteId &&
+              (route.requestingAreaKind === requestingAreaKind ||
+                route.requestingAreaKind === null),
+          );
+          if (covered) continue;
+
+          const fromName = sites.find((site) => site.id === fromSiteId)?.name ?? "Origen";
+          const toName = sites.find((site) => site.id === destination.siteId)?.name ?? "Destino";
+          options.push({
+            key: `${fromSiteId}|${destination.siteId}|${requestingAreaKind}`,
+            fromSiteId,
+            toSiteId: destination.siteId,
+            requestingAreaKind,
+            label: `${toName} · ${requestingAreaKind} ← ${fromName}`,
+          });
+        }
+      }
+    }
+
+    return options;
+  }, [activeRoutes, productId, productSiteSettings, sites, supplyRoutes]);
+
+  const selectedRelation =
+    relationOptions.find((relation) => relation.key === relationKey) ??
+    relationOptions.find(
+      (relation) =>
+        relation.fromSiteId === defaults.fromSiteId &&
+        relation.toSiteId === defaults.toSiteId &&
+        relation.requestingAreaKind === defaults.requestingAreaKind,
+    ) ??
+    relationOptions[0] ??
+    null;
+
+  const effectiveRelationKey = selectedRelation?.key ?? "";
+  const originSiteId = selectedRelation?.fromSiteId ?? "";
+
+  const sourceAreas = useMemo(() => {
+    if (!originSiteId) return [];
+    const routeAreaKinds = new Set(
+      productionRoutes
+        .filter(
+          (route) =>
+            route.productId === productId &&
+            route.siteId === originSiteId &&
+            route.isActive,
+        )
+        .map((route) => route.areaKind),
+    );
+
+    const siteAreas = areas.filter((area) => area.site_id === originSiteId);
+    if (routeAreaKinds.size === 0) return siteAreas;
+    return siteAreas.filter((area) => routeAreaKinds.has(area.kind));
+  }, [areas, originSiteId, productId, productionRoutes]);
+
+  const selectedArea =
+    sourceAreas.find((area) => area.kind === preparingAreaKind) ??
+    sourceAreas[0] ??
+    null;
+  const effectivePreparingAreaKind = selectedArea?.kind ?? "";
+
+  const sourceLocations = locations.filter(
+    (location) =>
+      location.site_id === originSiteId &&
+      Boolean(selectedArea?.id) &&
+      location.area_id === selectedArea?.id,
+  );
+  const effectiveSourceLocationId = sourceLocations.some(
+    (location) => location.id === sourceLocationId,
+  )
+    ? sourceLocationId
+    : sourceLocations[0]?.id ?? "";
+
+  const resetProduct = (nextProductId: string) => {
+    setProductId(nextProductId);
+    setRelationKey("");
+    setPreparingAreaKind("");
+    setSourceLocationId("");
   };
-  const availableDestinationSettings = destinationSettings.filter((setting) => setting.siteId !== fromSiteId && !isDestinationCovered(setting));
-  const availableDestinationAreas = destinationAreas.filter((area) => !routesForDestination.some((route) => route.requestingAreaKind === area.code));
-  const canUseAnyDestinationArea = routesForDestination.length === 0;
 
-  const resetRoute = () => {
-    setFromSiteId(""); setToSiteId(""); setSourceLocationId(""); setDestinationLocationId(""); setRequestingAreaKind(""); setPreparingAreaKind("");
-  };
+  return (
+    <>
+      <label className="flex flex-col gap-1 lg:col-span-2">
+        <span className="ui-label">Producto remitible</span>
+        <select
+          name="product_id"
+          className="ui-input"
+          required
+          value={productId}
+          onChange={(event) => resetProduct(event.target.value)}
+        >
+          <option value="">Seleccionar producto configurado para remisiones</option>
+          {products
+            .filter((product) =>
+              productSiteSettings.some(
+                (setting) =>
+                  setting.productId === product.id &&
+                  setting.isActive &&
+                  setting.remissionEnabled,
+              ),
+            )
+            .map((product) => (
+              <option key={product.id} value={product.id}>
+                {product.name ?? product.sku ?? "Sin nombre"}
+                {product.sku ? ` · ${product.sku}` : ""}
+              </option>
+            ))}
+        </select>
+      </label>
 
-  return <>
-    <label className="flex flex-col gap-1 lg:col-span-2"><span className="ui-label">Producto remitible</span><select name="product_id" className="ui-input" required value={productId} onChange={(event) => { setProductId(event.target.value); resetRoute(); }}><option value="">Seleccionar producto configurado para remisiones</option>{products.filter((product) => productSiteSettings.some((setting) => setting.productId === product.id && setting.isActive && setting.remissionEnabled)).map((product) => <option key={product.id} value={product.id}>{product.name ?? product.sku ?? "Sin nombre"}{product.sku ? ` · ${product.sku}` : ""}</option>)}</select></label>
-    <label className="flex flex-col gap-1"><span className="ui-label">Sede origen (prepara)</span><select name="from_site_id" className="ui-input" required value={fromSiteId} disabled={!productId} onChange={(event) => { const siteId = event.target.value; setFromSiteId(siteId); setToSiteId(""); setDestinationLocationId(""); setRequestingAreaKind(""); const route = sourceRoutes.find((item) => item.siteId === siteId && item.isDefault) ?? sourceRoutes.find((item) => item.siteId === siteId); setPreparingAreaKind(route?.areaKind ?? ""); setSourceLocationId(route?.outputLocationId ?? route?.inputLocationId ?? settings.find((item) => item.siteId === siteId)?.productionLocationId ?? ""); }}><option value="">{productId ? "Seleccionar sede de origen" : "Primero selecciona producto"}</option>{sites.filter((site) => sourceSiteIds.has(site.id)).map((site) => <option key={site.id} value={site.id}>{site.name ?? "Sede sin nombre"}</option>)}</select></label>
-    <label className="flex flex-col gap-1"><span className="ui-label">Sede destino (recibe)</span><select name="to_site_id" className="ui-input" required value={toSiteId} disabled={!productId} onChange={(event) => { setToSiteId(event.target.value); setDestinationLocationId(""); setRequestingAreaKind(""); }}><option value="">{productId ? "Seleccionar sede de destino" : "Primero selecciona producto"}</option>{availableDestinationSettings.map((setting) => <option key={setting.siteId} value={setting.siteId}>{sites.find((site) => site.id === setting.siteId)?.name ?? "Sede sin nombre"}</option>)}</select></label>
-    <label className="flex flex-col gap-1"><span className="ui-label">LOC de salida</span><select name="preferred_source_location_id" className="ui-input" value={sourceLocationId} disabled={!fromSiteId} onChange={(event) => setSourceLocationId(event.target.value)}><option value="">{fromSiteId ? "Sin LOC preferido" : "Primero selecciona sede origen"}</option>{sourceLocations.map((location) => <option key={location.id} value={location.id}>{locationLabel(location)}</option>)}</select></label>
-    <label className="flex flex-col gap-1"><span className="ui-label">LOC de llegada</span><select name="preferred_destination_location_id" className="ui-input" value={destinationLocationId} disabled={!toSiteId} onChange={(event) => setDestinationLocationId(event.target.value)}><option value="">{toSiteId ? "Sin LOC preferido" : "Primero selecciona sede destino"}</option>{destinationLocations.map((location) => <option key={location.id} value={location.id}>{locationLabel(location)}</option>)}</select></label>
-    <label className="flex flex-col gap-1"><span className="ui-label">Área que solicita</span><select name="requesting_area_kind" className="ui-input" value={requestingAreaKind} disabled={!toSiteId} onChange={(event) => setRequestingAreaKind(event.target.value)}>{canUseAnyDestinationArea ? <option value="">{toSiteId ? "Cualquier área configurada" : "Primero selecciona sede destino"}</option> : null}{availableDestinationAreas.map((area) => <option key={area.code} value={area.code}>{area.name ?? area.code}</option>)}</select></label>
-    <label className="flex flex-col gap-1"><span className="ui-label">Área que prepara</span><select name="preparing_area_kind" className="ui-input" value={preparingAreaKind} disabled={!fromSiteId || !sourceAreas.length} onChange={(event) => { const area = event.target.value; setPreparingAreaKind(area); const route = sourceRoutes.find((item) => item.siteId === fromSiteId && item.areaKind === area); if (route) setSourceLocationId(route.outputLocationId ?? route.inputLocationId); }}><option value="">{sourceAreas.length ? "Seleccionar área de producción" : "Este producto no tiene ruta de producción aquí"}</option>{sourceAreas.map((area) => <option key={area.code} value={area.code}>{area.name ?? area.code}</option>)}</select></label>
-  </>;
+      <label className="flex flex-col gap-1 lg:col-span-2">
+        <span className="ui-label">Relación de remisión ya configurada</span>
+        <select
+          className="ui-input"
+          required
+          value={effectiveRelationKey}
+          disabled={!productId || relationOptions.length === 0}
+          onChange={(event) => {
+            setRelationKey(event.target.value);
+            setPreparingAreaKind("");
+            setSourceLocationId("");
+          }}
+        >
+          <option value="">
+            {!productId
+              ? "Primero selecciona producto"
+              : relationOptions.length
+                ? "Seleccionar relación"
+                : "No hay relaciones pendientes"}
+          </option>
+          {relationOptions.map((relation) => (
+            <option key={relation.key} value={relation.key}>
+              {relation.label}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <input type="hidden" name="from_site_id" value={originSiteId} />
+      <input type="hidden" name="to_site_id" value={selectedRelation?.toSiteId ?? ""} />
+      <input
+        type="hidden"
+        name="requesting_area_kind"
+        value={selectedRelation?.requestingAreaKind ?? ""}
+      />
+      <input type="hidden" name="preferred_destination_location_id" value="" />
+
+      <label className="flex flex-col gap-1">
+        <span className="ui-label">Área responsable en origen</span>
+        <select
+          name="preparing_area_kind"
+          className="ui-input"
+          required
+          value={effectivePreparingAreaKind}
+          disabled={!originSiteId || sourceAreas.length === 0}
+          onChange={(event) => {
+            setPreparingAreaKind(event.target.value);
+            setSourceLocationId("");
+          }}
+        >
+          <option value="">
+            {sourceAreas.length
+              ? "Seleccionar área responsable"
+              : "El origen no tiene áreas configuradas"}
+          </option>
+          {sourceAreas.map((area) => (
+            <option key={area.id} value={area.kind}>
+              {area.name ?? area.kind}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="flex flex-col gap-1">
+        <span className="ui-label">LOC de salida</span>
+        <select
+          name="preferred_source_location_id"
+          className="ui-input"
+          required
+          value={effectiveSourceLocationId}
+          disabled={!selectedArea || sourceLocations.length === 0}
+          onChange={(event) => setSourceLocationId(event.target.value)}
+        >
+          <option value="">
+            {sourceLocations.length
+              ? "Seleccionar LOC"
+              : "El área no tiene LOC activo"}
+          </option>
+          {sourceLocations.map((location) => (
+            <option key={location.id} value={location.id}>
+              {locationLabel(location)}
+            </option>
+          ))}
+        </select>
+        <span className="ui-caption">
+          Solo se define el LOC. Estantería, nivel, posición o LPN se resuelven al preparar y despachar.
+        </span>
+      </label>
+    </>
+  );
 }
