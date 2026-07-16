@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 
 import { requireAppAccess } from "@/lib/auth/guard";
 import { createClient } from "@/lib/supabase/server";
+import { FulfillmentRouteSelectors } from "@/features/inventory/fulfillment/fulfillment-route-selectors";
 
 export const dynamic = "force-dynamic";
 
@@ -149,12 +150,14 @@ export default async function FulfillmentRoutesPage({
     String(employee?.role ?? "").toLowerCase(),
   );
 
-  const [sitesResult, locationsResult, productsResult, areaKindsResult, routesResult, productSettingsResult] =
+  const [sitesResult, locationsResult, productsResult, areaKindsResult, areaRulesResult, purposeSettingsResult, routesResult, productSettingsResult] =
     await Promise.all([
       supabase.from("sites").select("id,name").eq("is_active", true).order("name"),
       supabase.from("inventory_locations").select("id,site_id,code,description").eq("is_active", true).order("code"),
       supabase.from("products").select("id,name,sku").eq("is_active", true).order("name").limit(600),
       supabase.from("area_kinds").select("code,name").eq("use_for_remission", true).order("name"),
+      supabase.from("site_area_purpose_rules").select("site_id,area_kind").eq("purpose", "remission").eq("is_enabled", true),
+      supabase.from("site_purpose_settings").select("site_id,mode").eq("purpose", "remission"),
       supabase
         .from("product_fulfillment_routes")
         .select("id,product_id,from_site_id,to_site_id,requesting_area_kind,preparing_area_kind,preferred_source_location_id,preferred_destination_location_id,supply_mode,dispatch_policy,estimated_lead_minutes,is_active")
@@ -168,7 +171,7 @@ export default async function FulfillmentRoutesPage({
           .eq("is_active", true)
         : Promise.resolve({ data: [], error: null }),
     ]);
-  const error = [sitesResult.error, locationsResult.error, productsResult.error, areaKindsResult.error, routesResult.error, productSettingsResult.error]
+  const error = [sitesResult.error, locationsResult.error, productsResult.error, areaKindsResult.error, areaRulesResult.error, purposeSettingsResult.error, routesResult.error, productSettingsResult.error]
     .find(Boolean);
   if (error) throw new Error(`No se pudo cargar las rutas operativas: ${error.message}`);
 
@@ -177,6 +180,22 @@ export default async function FulfillmentRoutesPage({
   const products = (productsResult.data ?? []) as Product[];
   const areaKinds = (areaKindsResult.data ?? []) as AreaKind[];
   const routes = (routesResult.data ?? []) as Route[];
+  const areaByCode = new Map(areaKinds.map((area) => [area.code, area]));
+  const globalRemissionAreas = areaKinds;
+  const areaRulesBySite = new Map<string, string[]>();
+  for (const rule of (areaRulesResult.data ?? []) as Array<{ site_id: string; area_kind: string }>) {
+    const current = areaRulesBySite.get(rule.site_id) ?? [];
+    current.push(rule.area_kind);
+    areaRulesBySite.set(rule.site_id, current);
+  }
+  const purposeModeBySite = new Map(
+    ((purposeSettingsResult.data ?? []) as Array<{ site_id: string; mode: "inherit_global" | "custom" | "disabled" }>).map((setting) => [setting.site_id, setting.mode]),
+  );
+  const remissionAreasBySite = Object.fromEntries(sites.map((site) => {
+    const mode = purposeModeBySite.get(site.id) ?? "inherit_global";
+    const codes = mode === "disabled" ? [] : mode === "custom" ? (areaRulesBySite.get(site.id) ?? []) : globalRemissionAreas.map((area) => area.code);
+    return [site.id, codes.map((code) => areaByCode.get(code)).filter((area): area is AreaKind => Boolean(area))];
+  }));
   const siteName = new Map(sites.map((site) => [site.id, site.name ?? "Sede sin nombre"]));
   const productName = new Map(products.map((product) => [product.id, product.name ?? product.sku ?? "Producto"]));
   const locationName = new Map(locations.map((location) => [
@@ -235,12 +254,7 @@ export default async function FulfillmentRoutesPage({
         <p className="mt-1 ui-caption">Una ruta define una responsabilidad de preparación; no mueve inventario ni genera un envío por sí sola.</p>
         <form action={createRoute} className="mt-5 grid gap-4 lg:grid-cols-2">
           <label className="flex flex-col gap-1 lg:col-span-2"><span className="ui-label">Producto</span><select name="product_id" className="ui-input" required defaultValue={prefill.productId}><option value="">Seleccionar producto</option>{products.map((product) => <option key={product.id} value={product.id}>{product.name ?? product.sku ?? "Sin nombre"}{product.sku ? ` · ${product.sku}` : ""}</option>)}</select></label>
-          <label className="flex flex-col gap-1"><span className="ui-label">Sede origen (prepara)</span><select name="from_site_id" className="ui-input" required defaultValue={prefill.fromSiteId}><option value="">Seleccionar sede</option>{sites.map((site) => <option key={site.id} value={site.id}>{site.name ?? "Sede sin nombre"}</option>)}</select></label>
-          <label className="flex flex-col gap-1"><span className="ui-label">Sede destino (recibe)</span><select name="to_site_id" className="ui-input" required defaultValue={prefill.toSiteId}><option value="">Seleccionar sede</option>{sites.map((site) => <option key={site.id} value={site.id}>{site.name ?? "Sede sin nombre"}</option>)}</select></label>
-          <label className="flex flex-col gap-1"><span className="ui-label">LOC de salida</span><select name="preferred_source_location_id" className="ui-input" defaultValue={prefill.sourceLocationId}><option value="">Sin LOC preferido</option>{locations.map((location) => <option key={location.id} value={location.id}>{locationName.get(location.id)}</option>)}</select></label>
-          <label className="flex flex-col gap-1"><span className="ui-label">LOC de llegada</span><select name="preferred_destination_location_id" className="ui-input"><option value="">Sin LOC preferido</option>{locations.map((location) => <option key={location.id} value={location.id}>{locationName.get(location.id)}</option>)}</select></label>
-          <label className="flex flex-col gap-1"><span className="ui-label">Área que solicita</span><select name="requesting_area_kind" className="ui-input" defaultValue={prefill.requestingAreaKind}><option value="">Cualquier área</option>{areaKinds.map((area) => <option key={area.code} value={area.code}>{area.name ?? area.code}</option>)}</select></label>
-          <label className="flex flex-col gap-1"><span className="ui-label">Área que prepara</span><select name="preparing_area_kind" className="ui-input" defaultValue={prefill.preparingAreaKind}><option value="">No definida</option>{areaKinds.map((area) => <option key={area.code} value={area.code}>{area.name ?? area.code}</option>)}</select></label>
+          <FulfillmentRouteSelectors sites={sites} locations={locations} areasBySite={remissionAreasBySite} defaults={prefill} />
           <label className="flex flex-col gap-1"><span className="ui-label">Cómo se abastece</span><select name="supply_mode" className="ui-input" defaultValue={prefill.supplyMode}><option value="stock">Stock disponible</option><option value="production">Producción</option><option value="supplier">Proveedor</option><option value="transfer">Transferencia</option><option value="manual">Manual</option></select></label>
           <label className="flex flex-col gap-1"><span className="ui-label">Cuándo se despacha</span><select name="dispatch_policy" className="ui-input" defaultValue="next_available"><option value="next_available">Cuando esté disponible</option><option value="scheduled_run">En salida programada</option><option value="manual">Manual</option></select></label>
           <label className="flex flex-col gap-1"><span className="ui-label">Tiempo estimado (minutos)</span><input name="estimated_lead_minutes" type="number" min="0" className="ui-input" placeholder="Opcional" /></label>
