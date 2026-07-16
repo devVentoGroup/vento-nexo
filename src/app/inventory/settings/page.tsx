@@ -24,7 +24,8 @@ const groups: Group[] = [
     title: "Productos, categorías y unidades",
     description: "Define qué es cada producto y en qué unidad se controla antes de usarlo en sedes, LOCs o remisiones.",
     cards: [
-      { title: "Productos maestros", description: "Crear productos, editar su ficha y configurar disponibilidad por sede.", href: "/inventory/catalog", cta: "Abrir productos" },
+      { title: "Configurador maestro de productos", description: "Busca y filtra productos; revisa identidad, compra, inventario, operación y remisiones desde una sola mesa.", href: "/inventory/settings/products", cta: "Configurar productos" },
+      { title: "Productos maestros", description: "Crear productos y abrir su ficha detallada cuando necesites un caso específico.", href: "/inventory/catalog", cta: "Abrir catálogo" },
       { title: "Categorías", description: "Orden visual y tipo operativo de las categorías del inventario.", href: "/inventory/settings/categories", cta: "Configurar categorías" },
       { title: "Unidades y equivalencias", description: "Unidades base, aliases y conversiones permitidas.", href: "/inventory/settings/units", cta: "Configurar unidades" },
     ],
@@ -36,7 +37,8 @@ const groups: Group[] = [
     cards: [
       { title: "Sedes", description: "Capacidades de cada sede y acceso a su operación.", href: "/inventory/settings/sites", cta: "Configurar sedes" },
       { title: "Operación por sede", description: "Áreas, LOCs, posiciones internas y rutas de producción de una sede.", href: "/inventory/settings/sites", cta: "Elegir sede", state: "Abre una sede y entra a Operaciones" },
-      { title: "LOCs y conteos", description: "Ubicaciones físicas, catálogo esperado y reglas para contar inventario.", href: "/inventory/locations", cta: "Configurar LOCs" },
+      { title: "Áreas y ubicaciones", description: "Áreas físicas, LOCs, posiciones internas y catálogo esperado para inventario.", href: "/inventory/locations", cta: "Configurar áreas y LOCs" },
+      { title: "Zonas", description: "Agrupación operativa de ubicaciones para conteo, consulta y trabajo diario.", href: "/inventory/locations/zone", cta: "Configurar zonas" },
     ],
   },
   {
@@ -57,6 +59,7 @@ const groups: Group[] = [
     title: "Precios y verificación",
     description: "Configura el valor interno y luego consulta el resultado operativo.",
     cards: [
+      { title: "Centros de costo", description: "Responsables y centros internos usados para valorar la operación.", href: "/inventory/cost-center", cta: "Configurar centros" },
       { title: "Precios internos", description: "Listas y reglas para valoración de transferencias internas.", href: "/inventory/settings/internal-prices", cta: "Configurar precios" },
       { title: "Stock por sede", description: "Consulta existencias después de configurar catálogo, LOCs y movimientos.", href: "/inventory/stock", cta: "Ver stock", state: "Consulta, no configuración" },
     ],
