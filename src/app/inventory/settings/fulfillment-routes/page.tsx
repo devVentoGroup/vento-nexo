@@ -67,6 +67,18 @@ async function createRoute(formData: FormData) {
     }
   }
 
+  const { data: existingRoutes, error: existingRoutesError } = await supabase
+    .from("product_fulfillment_routes")
+    .select("id,requesting_area_kind")
+    .eq("product_id", productId)
+    .eq("from_site_id", fromSiteId)
+    .eq("to_site_id", toSiteId)
+    .eq("is_active", true);
+  if (existingRoutesError) redirect(back({ error: existingRoutesError.message }));
+  if ((existingRoutes ?? []).some((route) => !route.requesting_area_kind || route.requesting_area_kind === requestingAreaKind)) {
+    redirect(back({ error: "Ya existe una ruta activa para este producto, origen, destino y área solicitante." }));
+  }
+
   const { error } = await supabase.from("product_fulfillment_routes").insert({
     product_id: productId,
     from_site_id: fromSiteId,
@@ -266,7 +278,7 @@ export default async function FulfillmentRoutesPage({
         <div className="ui-h3">Nueva ruta operativa</div>
         <p className="mt-1 ui-caption">Una ruta define una responsabilidad de preparación; no mueve inventario ni genera un envío por sí sola.</p>
         <form action={createRoute} className="mt-5 grid gap-4 lg:grid-cols-2">
-          <FulfillmentRouteSelectors sites={sites} products={products} locations={locations} areasBySite={remissionAreasBySite} productSiteSettings={allProductSiteSettings} productionRoutes={productionRoutes} defaults={prefill} />
+          <FulfillmentRouteSelectors sites={sites} products={products} locations={locations} areasBySite={remissionAreasBySite} productSiteSettings={allProductSiteSettings} productionRoutes={productionRoutes} activeRoutes={routes.map((route) => ({ productId: route.product_id, fromSiteId: route.from_site_id, toSiteId: route.to_site_id, requestingAreaKind: route.requesting_area_kind, isActive: route.is_active }))} defaults={prefill} />
           <label className="flex flex-col gap-1"><span className="ui-label">Cómo se abastece</span><select name="supply_mode" className="ui-input" defaultValue={prefill.supplyMode}><option value="stock">Stock disponible</option><option value="production">Producción</option><option value="supplier">Proveedor</option><option value="transfer">Transferencia</option><option value="manual">Manual</option></select></label>
           <label className="flex flex-col gap-1"><span className="ui-label">Cuándo se despacha</span><select name="dispatch_policy" className="ui-input" defaultValue="next_available"><option value="next_available">Cuando esté disponible</option><option value="scheduled_run">En salida programada</option><option value="manual">Manual</option></select></label>
           <label className="flex flex-col gap-1"><span className="ui-label">Tiempo estimado (minutos)</span><input name="estimated_lead_minutes" type="number" min="0" className="ui-input" placeholder="Opcional" /></label>
