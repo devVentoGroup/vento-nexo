@@ -1026,60 +1026,31 @@ export default async function RemissionsPage({
       ) : null}
 
       <div className="ui-panel ui-panel--halo ui-remission-section ui-fade-up ui-delay-1">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <div className="ui-h3">Sede activa</div>
-            <div className="mt-1 ui-caption">
-              Vista:{" "}
-              {viewMode === "all"
-                ? "Todas las sedes"
-                : viewMode === "bodega"
-                  ? "Bodega (Centro)"
-                  : "Sede satélite"}
+        {canViewAll ? (
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div className="min-w-[190px]">
+              <div className="ui-h3">Contexto de remisión</div>
+              <div className="mt-1 ui-caption">
+                {activeSiteId ? activeSiteName : "Consulta de todas las sedes"}
+                {canCreate
+                  ? selectedRemissionCategoryAreaKind
+                    ? ` · ${areaOptions.find((option) => option.value === selectedRemissionCategoryAreaKind)?.label ?? selectedRemissionCategoryAreaKind}`
+                    : " · selecciona un área"
+                  : ""}
+              </div>
             </div>
-          </div>
-          {compactOperatorView ? (
-            <details className="rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3">
-              <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
-                Cambiar sede
-              </summary>
-              <form
-                method="get"
-                className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center"
-              >
-                <select
-                  name="site_id"
-                  defaultValue={activeSiteId}
-                  className="ui-input"
-                >
-                  {canViewAll ? (
-                    <option value="">Todas las sedes</option>
-                  ) : null}
-                  {employeeSiteRows.map((row) => {
-                    const siteId = row.site_id ?? "";
-                    if (!siteId) return null;
-                    const site = siteMap.get(siteId);
-                    const label = site?.name ? `${site.name}` : siteId;
-                    const suffix = row.is_primary ? " (principal)" : "";
-                    return (
-                      <option key={siteId} value={siteId}>
-                        {label}
-                        {suffix}
-                      </option>
-                    );
-                  })}
-                </select>
-                <button className="ui-btn ui-btn--ghost">Usar sede</button>
-              </form>
-            </details>
-          ) : (
-            <form method="get" className="flex items-center gap-3">
+
+            <form
+              method="get"
+              className="flex min-w-0 flex-1 flex-wrap items-end justify-end gap-2"
+            >
               <select
                 name="site_id"
                 defaultValue={activeSiteId}
-                className="ui-input"
+                className="ui-input h-10 min-w-[190px] flex-1 sm:max-w-[270px]"
+                aria-label="Sede para remisiones"
               >
-                {canViewAll ? <option value="">Todas las sedes</option> : null}
+                <option value="">Todas las sedes (consulta)</option>
                 {employeeSiteRows.map((row) => {
                   const siteId = row.site_id ?? "";
                   if (!siteId) return null;
@@ -1094,10 +1065,80 @@ export default async function RemissionsPage({
                   );
                 })}
               </select>
-              <button className="ui-btn ui-btn--ghost">Cambiar</button>
+
+              {canCreate && areaOptions.length > 0 ? (
+                <select
+                  name="area_kind"
+                  defaultValue={selectedRemissionCategoryAreaKind}
+                  className="ui-input h-10 min-w-[180px] flex-1 sm:max-w-[240px]"
+                  aria-label="Área para la solicitud"
+                  required
+                >
+                  <option value="">Selecciona un área</option>
+                  {areaOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+              ) : null}
+
+              {selectedFromSiteId ? (
+                <input
+                  type="hidden"
+                  name="from_site_id"
+                  value={selectedFromSiteId}
+                />
+              ) : null}
+
+              <button className="ui-btn ui-btn--ghost h-10 px-4 text-sm font-semibold">
+                Aplicar
+              </button>
             </form>
-          )}
-        </div>
+          </div>
+        ) : (
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <div className="ui-h3">Sede activa</div>
+              <div className="mt-1 ui-caption">
+                Vista:{" "}
+                {viewMode === "bodega" ? "Bodega (Centro)" : "Sede satélite"}
+              </div>
+            </div>
+            {compactOperatorView ? (
+              <details className="rounded-2xl border border-[var(--ui-border)] bg-white px-4 py-3">
+                <summary className="cursor-pointer text-sm font-semibold text-[var(--ui-text)]">
+                  Cambiar sede
+                </summary>
+                <form
+                  method="get"
+                  className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center"
+                >
+                  <select
+                    name="site_id"
+                    defaultValue={activeSiteId}
+                    className="ui-input"
+                  >
+                    {employeeSiteRows.map((row) => {
+                      const siteId = row.site_id ?? "";
+                      if (!siteId) return null;
+                      const site = siteMap.get(siteId);
+                      const label = site?.name ? `${site.name}` : siteId;
+                      const suffix = row.is_primary ? " (principal)" : "";
+                      return (
+                        <option key={siteId} value={siteId}>
+                          {label}
+                          {suffix}
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <button className="ui-btn ui-btn--ghost">Usar sede</button>
+                </form>
+              </details>
+            ) : null}
+          </div>
+        )}
 
         <div className="mt-4 rounded-2xl border border-[var(--ui-border)] bg-[var(--ui-surface)] p-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -1146,55 +1187,9 @@ export default async function RemissionsPage({
           </div>
         </div>
 
-        {canCreate && canViewAll && areaOptions.length > 0 ? (
-          <div
-            id="area-remision"
-            className="mt-4 rounded-2xl border border-[var(--ui-border)] bg-white p-4"
-          >
-            <div className="text-sm font-semibold text-[var(--ui-text)]">
-              Área para la solicitud
-            </div>
-            <div className="mt-1 text-sm text-[var(--ui-muted)]">
-              El catálogo se carga exclusivamente para el área seleccionada.
-            </div>
-            <form method="get" className="mt-3 flex flex-col gap-3 sm:flex-row sm:items-center">
-              {activeSiteId ? (
-                <input type="hidden" name="site_id" value={activeSiteId} />
-              ) : null}
-              {selectedFromSiteId ? (
-                <input
-                  type="hidden"
-                  name="from_site_id"
-                  value={selectedFromSiteId}
-                />
-              ) : null}
-              <select
-                name="area_kind"
-                defaultValue={selectedRemissionCategoryAreaKind}
-                className="ui-input"
-                required
-              >
-                <option value="">Selecciona un área</option>
-                {areaOptions.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </select>
-              <button className="ui-btn ui-btn--brand">Cargar catálogo</button>
-            </form>
-          </div>
-        ) : null}
-
         {canCreate && !canViewAll && areaScopeBlockedReason ? (
           <div className="mt-4 ui-alert ui-alert--error">
             {areaScopeBlockedReason} No se cargó ningún catálogo general.
-          </div>
-        ) : null}
-
-        {canCreate && canViewAll && !selectedRemissionCategoryAreaKind ? (
-          <div className="mt-4 ui-alert ui-alert--warn">
-            Selecciona un área para cargar su lista de productos.
           </div>
         ) : null}
 
