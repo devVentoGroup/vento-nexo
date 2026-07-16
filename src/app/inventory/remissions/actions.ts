@@ -831,7 +831,7 @@ export async function createRemission(formData: FormData) {
   const { data: fulfillmentRoutes, error: routesError } = insertedProductIds.length
     ? await supabase
       .from("product_fulfillment_routes")
-      .select("id,product_id,requesting_area_kind,preparing_area_kind,preferred_source_location_id,preferred_destination_location_id")
+      .select("id,product_id,requesting_area_kind,preparing_area_kind,preferred_source_location_id,preferred_destination_location_id,supply_mode,production_execution_mode,ready_location_id")
       .eq("from_site_id", fromSiteId)
       .eq("to_site_id", toSiteId)
       .eq("is_active", true)
@@ -859,7 +859,23 @@ export async function createRemission(formData: FormData) {
     const preparingAreaKind = String(route?.preparing_area_kind ?? "").trim() || null;
     const sourceLocationId =
       String(route?.preferred_source_location_id ?? "").trim() || null;
-    const routeReady = Boolean(route && preparingAreaKind && sourceLocationId);
+    const supplyMode = String(route?.supply_mode ?? "").trim() || null;
+    const productionExecutionMode =
+      supplyMode === "production"
+        ? String(route?.production_execution_mode ?? "").trim() || null
+        : null;
+    const readyLocationId =
+      supplyMode === "production"
+        ? String(route?.ready_location_id ?? "").trim() || null
+        : null;
+    const routeReady = Boolean(
+      route &&
+        preparingAreaKind &&
+        supplyMode &&
+        (supplyMode === "production"
+          ? productionExecutionMode && readyLocationId
+          : sourceLocationId),
+    );
 
     return {
       request_item_id: item.id,
@@ -869,8 +885,13 @@ export async function createRemission(formData: FormData) {
       to_site_id: toSiteId,
       requesting_area_kind: requestedAreaKind,
       preparing_area_kind: preparingAreaKind,
-      // Este valor es el LOC operativo configurado. No representa estantería,
-      // nivel, posición interna ni LPN.
+      supply_mode: supplyMode,
+      production_execution_mode: productionExecutionMode,
+      // Este valor es el LOC operativo donde Producción deja el terminado listo.
+      // No representa estantería, nivel, posición interna ni LPN.
+      ready_location_id: readyLocationId,
+      // Este valor conserva el LOC operativo de salida configurado para rutas de stock.
+      // La ubicación interna se resuelve al preparar y despachar.
       source_location_id: sourceLocationId,
       destination_location_id: null,
       status: routeReady ? "pending" : "blocked",
@@ -878,11 +899,15 @@ export async function createRemission(formData: FormData) {
       shortage_reason: routeReady
         ? null
         : route
-          ? "Ruta incompleta: falta área responsable o LOC de salida."
+          ? supplyMode === "production"
+            ? "Ruta de producción incompleta: falta área productora, modo de ejecución o LOC de producto listo."
+            : "Ruta incompleta: falta área responsable, modo de abastecimiento o LOC de salida."
           : "Producto sin ruta de abastecimiento.",
       notes: routeReady
-        ? "La ubicación interna se resolverá al preparar y despachar."
-        : "Configura el área responsable y el LOC de salida antes de preparar esta necesidad.",
+        ? supplyMode === "production"
+          ? "La tarea conserva el modo de producción y el LOC donde quedará listo el terminado."
+          : "La ubicación interna se resolverá al preparar y despachar."
+        : "Completa la ruta operativa antes de preparar esta necesidad.",
       created_by: createdByEmployeeId,
       updated_by: createdByEmployeeId,
     };
