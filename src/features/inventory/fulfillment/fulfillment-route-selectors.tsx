@@ -77,9 +77,9 @@ export function FulfillmentRouteSelectors({ sites, products, areas, defaults }: 
         <span className="ui-label">Estado</span>
         <select name="status" className="ui-input" defaultValue={defaults.status}>
           <option value="">Todos</option>
-          <option value="active">Activas</option>
-          <option value="inactive">Inactivas</option>
+          <option value="complete">Completas</option>
           <option value="incomplete">Incompletas</option>
+          <option value="inactive">Inactivas</option>
         </select>
       </label>
 

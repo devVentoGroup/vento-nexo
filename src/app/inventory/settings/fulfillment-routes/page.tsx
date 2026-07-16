@@ -13,7 +13,22 @@ const text = (value: FormDataEntryValue | null) =>
   typeof value === "string" ? value.trim() : "";
 
 function back(params: Record<string, string>) {
-  return `${PAGE}?${new URLSearchParams(params).toString()}`;
+  const search = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value) search.set(key, value);
+  }
+  const query = search.toString();
+  return `${PAGE}${query ? `?${query}` : ""}`;
+}
+
+function auditReturnParams(formData: FormData) {
+  return {
+    product_id: text(formData.get("return_product_id")),
+    from_site_id: text(formData.get("return_from_site_id")),
+    to_site_id: text(formData.get("return_to_site_id")),
+    area_kind: text(formData.get("return_area_kind")),
+    status: text(formData.get("return_status")),
+  };
 }
 
 async function toggleRoute(formData: FormData) {
@@ -21,22 +36,45 @@ async function toggleRoute(formData: FormData) {
 
   const id = text(formData.get("id"));
   const isActive = text(formData.get("is_active")) === "true";
+  const returnParams = auditReturnParams(formData);
   const { supabase, user } = await requireAppAccess({
     appId: "nexo",
     returnTo: PAGE,
     permissionCode: "inventory.stock",
   });
-  if (!id) redirect(back({ error: "Ruta inválida." }));
+  if (!id) redirect(back({ ...returnParams, error: "Ruta inválida." }));
+
+  const { data: currentRoute, error: currentRouteError } = await supabase
+    .from("product_fulfillment_routes")
+    .select("preparing_area_kind,preferred_source_location_id")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (currentRouteError) {
+    redirect(back({ ...returnParams, error: currentRouteError.message }));
+  }
+
+  if (
+    !isActive &&
+    (!currentRoute?.preparing_area_kind || !currentRoute?.preferred_source_location_id)
+  ) {
+    redirect(
+      back({
+        ...returnParams,
+        error: "La ruta está incompleta. Corrígela antes de activarla.",
+      }),
+    );
+  }
 
   const { error } = await supabase
     .from("product_fulfillment_routes")
     .update({ is_active: !isActive, updated_by: user.id })
     .eq("id", id);
-  if (error) redirect(back({ error: error.message }));
+  if (error) redirect(back({ ...returnParams, error: error.message }));
 
   revalidatePath(PAGE);
   revalidatePath("/inventory/settings/remissions/products");
-  redirect(back({ ok: "toggled" }));
+  redirect(back({ ...returnParams, ok: "toggled" }));
 }
 
 type Site = { id: string; name: string | null };
@@ -71,8 +109,26 @@ function supplyModeLabel(value: string) {
   return "Stock";
 }
 
-function routeIsIncomplete(route: Route) {
-  return !route.preparing_area_kind || !route.preferred_source_location_id;
+type AuditStatus = "complete" | "incomplete" | "inactive";
+
+function routeMissingFields(route: Route) {
+  const missing: string[] = [];
+  if (!route.preparing_area_kind) missing.push("área responsable");
+  if (!route.preferred_source_location_id) {
+    missing.push(route.supply_mode === "production" ? "punto donde queda listo" : "LOC de salida");
+  }
+  return missing;
+}
+
+function routeAuditStatus(route: Route): AuditStatus {
+  if (!route.is_active) return "inactive";
+  return routeMissingFields(route).length > 0 ? "incomplete" : "complete";
+}
+
+function dispatchPolicyLabel(value: string) {
+  if (value === "scheduled_run") return "Salida programada";
+  if (value === "manual") return "Despacho manual";
+  return "Próxima salida disponible";
 }
 
 export default async function FulfillmentRoutesPage({
@@ -152,16 +208,29 @@ export default async function FulfillmentRoutesPage({
   const areaKinds = (areaKindsResult.data ?? []) as AreaKind[];
   const routes = (routesResult.data ?? []) as Route[];
 
-  const filteredRoutes = routes.filter((route) => {
+  const scopedRoutes = routes.filter((route) => {
     if (productFilter && route.product_id !== productFilter) return false;
     if (fromSiteFilter && route.from_site_id !== fromSiteFilter) return false;
     if (toSiteFilter && route.to_site_id !== toSiteFilter) return false;
     if (areaFilter && route.requesting_area_kind !== areaFilter) return false;
-    if (statusFilter === "active" && !route.is_active) return false;
-    if (statusFilter === "inactive" && route.is_active) return false;
-    if (statusFilter === "incomplete" && !routeIsIncomplete(route)) return false;
     return true;
   });
+
+  const filteredRoutes = scopedRoutes.filter((route) => {
+    if (!statusFilter) return true;
+    if (statusFilter === "active") return routeAuditStatus(route) !== "inactive";
+    return routeAuditStatus(route) === statusFilter;
+  });
+
+  const completeCount = scopedRoutes.filter(
+    (route) => routeAuditStatus(route) === "complete",
+  ).length;
+  const incompleteCount = scopedRoutes.filter(
+    (route) => routeAuditStatus(route) === "incomplete",
+  ).length;
+  const inactiveCount = scopedRoutes.filter(
+    (route) => routeAuditStatus(route) === "inactive",
+  ).length;
 
   const siteName = new Map(sites.map((site) => [site.id, site.name ?? "Sede sin nombre"]));
   const productById = new Map(products.map((product) => [product.id, product]));
@@ -185,10 +254,10 @@ export default async function FulfillmentRoutesPage({
         </Link>
         <div className="mt-2 flex flex-wrap items-start justify-between gap-4">
           <div>
-            <h1 className="ui-h1">Rutas operativas por producto</h1>
+            <h1 className="ui-h1">Auditoría de rutas operativas</h1>
             <p className="mt-2 max-w-3xl ui-body-muted">
-              Revisa qué área y LOC del origen atienden cada producto. Las rutas se crean desde
-              Productos de remisión por sede; esta pantalla no duplica esa configuración.
+              Revisa qué rutas están completas, incompletas o inactivas. La configuración se
+              modifica únicamente desde Productos de remisión por sede.
             </p>
           </div>
           <Link
@@ -207,6 +276,24 @@ export default async function FulfillmentRoutesPage({
         El LOC es parte de la ruta. La estantería, nivel, posición interna o LPN no se guarda
         aquí: se resuelve al preparar y despachar según el inventario real.
       </div>
+
+      <section className="grid gap-3 sm:grid-cols-3">
+        <div className="ui-panel">
+          <div className="ui-label">Completas</div>
+          <div className="mt-2 text-3xl font-semibold text-emerald-700">{completeCount}</div>
+          <div className="mt-1 ui-caption">Activas y listas para usarse</div>
+        </div>
+        <div className="ui-panel">
+          <div className="ui-label">Incompletas</div>
+          <div className="mt-2 text-3xl font-semibold text-amber-700">{incompleteCount}</div>
+          <div className="mt-1 ui-caption">Activas, pero requieren corrección</div>
+        </div>
+        <div className="ui-panel">
+          <div className="ui-label">Inactivas</div>
+          <div className="mt-2 text-3xl font-semibold text-[var(--ui-muted)]">{inactiveCount}</div>
+          <div className="mt-1 ui-caption">No generan nuevas tareas</div>
+        </div>
+      </section>
 
       <section className="ui-panel ui-remission-section">
         <div className="ui-h3">Filtros de revisión</div>
@@ -235,9 +322,9 @@ export default async function FulfillmentRoutesPage({
       <section className="ui-panel ui-remission-section">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="ui-h3">Rutas configuradas ({filteredRoutes.length})</div>
+            <div className="ui-h3">Resultado de auditoría ({filteredRoutes.length})</div>
             <p className="mt-1 ui-caption">
-              Para cambiar área o LOC, abre el producto en la configuración por sede.
+              Esta vista no edita rutas. Para corregir una, abre el producto correspondiente.
             </p>
           </div>
           <Link
@@ -263,7 +350,8 @@ export default async function FulfillmentRoutesPage({
             <tbody>
               {filteredRoutes.map((route) => {
                 const product = productById.get(route.product_id) ?? null;
-                const incomplete = routeIsIncomplete(route);
+                const auditStatus = routeAuditStatus(route);
+                const missingFields = routeMissingFields(route);
                 const configureParams = new URLSearchParams({
                   destination_site_id: route.to_site_id,
                   origin_site_id: route.from_site_id,
@@ -304,30 +392,38 @@ export default async function FulfillmentRoutesPage({
                           : "Área responsable no definida"}
                         {" · "}
                         {locationName.get(route.preferred_source_location_id ?? "") ??
-                          "LOC no definido"}
+                          (route.supply_mode === "production"
+                            ? "Punto donde queda listo no definido"
+                            : "LOC de salida no definido")}
                       </div>
                       <div className="mt-1 text-xs text-[var(--ui-muted)]">
-                        Posición interna: se resuelve al despachar
+                        {route.supply_mode === "production"
+                          ? "La producción entrega aquí lo terminado."
+                          : "La posición interna se resuelve al preparar."}
                       </div>
                     </td>
                     <td className="px-3 py-3">
                       <div>{supplyModeLabel(route.supply_mode)}</div>
                       <div className="ui-caption">
-                        {route.dispatch_policy}
+                        {dispatchPolicyLabel(route.dispatch_policy)}
                         {route.estimated_lead_minutes !== null
                           ? ` · ${route.estimated_lead_minutes} min`
                           : ""}
                       </div>
                     </td>
                     <td className="px-3 py-3">
-                      <div className="flex flex-wrap gap-1">
-                        <span className={route.is_active ? "ui-chip ui-chip--success" : "ui-chip"}>
-                          {route.is_active ? "Activa" : "Inactiva"}
-                        </span>
-                        {incomplete ? (
+                      {auditStatus === "complete" ? (
+                        <span className="ui-chip ui-chip--success">Completa</span>
+                      ) : auditStatus === "incomplete" ? (
+                        <div>
                           <span className="ui-chip ui-chip--warn">Incompleta</span>
-                        ) : null}
-                      </div>
+                          <div className="mt-2 text-xs text-amber-800">
+                            Falta: {missingFields.join(" y ")}.
+                          </div>
+                        </div>
+                      ) : (
+                        <span className="ui-chip">Inactiva</span>
+                      )}
                     </td>
                     <td className="px-3 py-3">
                       <div className="flex flex-wrap gap-2">
@@ -335,7 +431,7 @@ export default async function FulfillmentRoutesPage({
                           href={`/inventory/settings/remissions/products?${configureParams.toString()}`}
                           className="ui-btn ui-btn--ghost ui-btn--sm"
                         >
-                          Configurar
+                          {auditStatus === "incomplete" ? "Corregir" : "Configurar"}
                         </Link>
                         {canManage ? (
                           <form action={toggleRoute}>
@@ -345,6 +441,11 @@ export default async function FulfillmentRoutesPage({
                               name="is_active"
                               value={String(route.is_active)}
                             />
+                            <input type="hidden" name="return_product_id" value={productFilter} />
+                            <input type="hidden" name="return_from_site_id" value={fromSiteFilter} />
+                            <input type="hidden" name="return_to_site_id" value={toSiteFilter} />
+                            <input type="hidden" name="return_area_kind" value={areaFilter} />
+                            <input type="hidden" name="return_status" value={statusFilter} />
                             <button className="ui-btn ui-btn--ghost ui-btn--sm">
                               {route.is_active ? "Desactivar" : "Activar"}
                             </button>
