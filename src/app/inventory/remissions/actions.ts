@@ -857,9 +857,15 @@ export async function createRemission(formData: FormData) {
       null;
 
     const preparingAreaKind = String(route?.preparing_area_kind ?? "").trim() || null;
+    const rawSupplyMode = String(route?.supply_mode ?? "").trim().toLowerCase();
+    const supplyMode =
+      rawSupplyMode === "stock" || rawSupplyMode === "production"
+        ? rawSupplyMode
+        : null;
     const sourceLocationId =
-      String(route?.preferred_source_location_id ?? "").trim() || null;
-    const supplyMode = String(route?.supply_mode ?? "").trim() || null;
+      supplyMode === "stock"
+        ? String(route?.preferred_source_location_id ?? "").trim() || null
+        : null;
     const productionExecutionMode =
       supplyMode === "production"
         ? String(route?.production_execution_mode ?? "").trim() || null
@@ -868,6 +874,8 @@ export async function createRemission(formData: FormData) {
       supplyMode === "production"
         ? String(route?.ready_location_id ?? "").trim() || null
         : null;
+    const destinationLocationId =
+      String(route?.preferred_destination_location_id ?? "").trim() || null;
     const routeReady = Boolean(
       route &&
         preparingAreaKind &&
@@ -893,15 +901,17 @@ export async function createRemission(formData: FormData) {
       // Este valor conserva el LOC operativo de salida configurado para rutas de stock.
       // La ubicación interna se resuelve al preparar y despachar.
       source_location_id: sourceLocationId,
-      destination_location_id: null,
+      destination_location_id: destinationLocationId,
       status: routeReady ? "pending" : "blocked",
       requested_base_qty: Number(item.quantity ?? 0),
       shortage_reason: routeReady
         ? null
         : route
-          ? supplyMode === "production"
-            ? "Ruta de producción incompleta: falta área productora, modo de ejecución o LOC de producto listo."
-            : "Ruta incompleta: falta área responsable, modo de abastecimiento o LOC de salida."
+          ? !supplyMode
+            ? "Ruta incompleta: el modo de abastecimiento no es válido."
+            : supplyMode === "production"
+              ? "Ruta de producción incompleta: falta área productora, modo de ejecución o LOC de producto listo."
+              : "Ruta de stock incompleta: falta área responsable o LOC de salida."
           : "Producto sin ruta de abastecimiento.",
       notes: routeReady
         ? supplyMode === "production"
