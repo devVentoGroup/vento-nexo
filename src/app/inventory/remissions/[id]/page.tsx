@@ -467,7 +467,6 @@ export default async function RemissionDetailPage({
       ? await supabase
         .from("restock_item_fulfillments")
         .select("request_item_id,product_id,preparing_area_kind,source_location_id,status")
-        .eq("request_id", id)
         .in("request_item_id", requestItemIds)
       : { data: [] as ItemFulfillmentRouteRow[], error: null };
 
