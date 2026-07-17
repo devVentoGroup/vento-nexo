@@ -74,6 +74,109 @@ function commonReturnParams(params: {
   return returnParams;
 }
 
+type SupabaseClient = Awaited<ReturnType<typeof createClient>>;
+
+type FulfillmentRouteSnapshot = {
+  id: string;
+  product_id: string;
+  from_site_id: string;
+  to_site_id: string;
+  requesting_area_kind: string | null;
+  preparing_area_kind: string | null;
+  preferred_source_location_id: string | null;
+  preferred_destination_location_id: string | null;
+  supply_mode: string;
+  production_execution_mode: string | null;
+  ready_location_id: string | null;
+  is_active: boolean;
+};
+
+function fulfillmentRouteBlockReason(route: FulfillmentRouteSnapshot): string | null {
+  if (!route.is_active) return "La ruta operativa está inactiva.";
+
+  const missing: string[] = [];
+  if (!normalizeAreaKind(route.preparing_area_kind)) missing.push("área responsable");
+
+  if (route.supply_mode === "production") {
+    if (!route.production_execution_mode) missing.push("modo de ejecución de producción");
+    if (!route.ready_location_id) missing.push("LOC de producto listo");
+  } else if (!route.preferred_source_location_id) {
+    missing.push("LOC de salida");
+  }
+
+  return missing.length > 0 ? `Ruta incompleta: falta ${missing.join(", ")}.` : null;
+}
+
+async function recalculateBlockedTasksForRoute(params: {
+  supabase: SupabaseClient;
+  route: FulfillmentRouteSnapshot;
+  userId: string;
+}): Promise<{ count: number; error: string | null }> {
+  const { supabase, route, userId } = params;
+  const requestingAreaKind = normalizeAreaKind(route.requesting_area_kind) || null;
+  const preparingAreaKind = normalizeAreaKind(route.preparing_area_kind) || null;
+  const isProduction = route.supply_mode === "production";
+  const blockReason = fulfillmentRouteBlockReason(route);
+
+  let candidateQuery = supabase
+    .from("restock_item_fulfillments")
+    .select("id,route_id,shortage_reason")
+    .eq("product_id", route.product_id)
+    .eq("from_site_id", route.from_site_id)
+    .eq("to_site_id", route.to_site_id)
+    .eq("status", "blocked")
+    .eq("reserved_base_qty", 0)
+    .eq("ready_base_qty", 0)
+    .eq("allocated_base_qty", 0)
+    .eq("released_base_qty", 0)
+    .eq("cancelled_base_qty", 0);
+
+  candidateQuery = requestingAreaKind
+    ? candidateQuery.eq("requesting_area_kind", requestingAreaKind)
+    : candidateQuery.is("requesting_area_kind", null);
+
+  const { data: candidates, error: candidatesError } = await candidateQuery;
+  if (candidatesError) return { count: 0, error: candidatesError.message };
+
+  const taskIds = (candidates ?? [])
+    .filter((task) => {
+      const reason = String(task.shortage_reason ?? "").toLowerCase();
+      return !task.route_id || reason.includes("ruta") || reason.includes("abastecimiento");
+    })
+    .map((task) => String(task.id ?? "").trim())
+    .filter(Boolean);
+
+  if (taskIds.length === 0) return { count: 0, error: null };
+
+  const { data, error } = await supabase
+    .from("restock_item_fulfillments")
+    .update({
+      route_id: route.id,
+      preparing_area_kind: preparingAreaKind,
+      source_location_id: isProduction ? null : route.preferred_source_location_id,
+      destination_location_id: route.preferred_destination_location_id,
+      supply_mode: route.supply_mode,
+      production_execution_mode: isProduction ? route.production_execution_mode : null,
+      ready_location_id: isProduction ? route.ready_location_id : null,
+      status: blockReason ? "blocked" : "pending",
+      shortage_reason: blockReason,
+      notes: blockReason
+        ? "La tarea se recalculó después de actualizar su ruta, pero la configuración sigue incompleta."
+        : isProduction
+          ? "Ruta corregida. La tarea conserva el modo de producción y el LOC donde quedará listo el terminado."
+          : "Ruta corregida. La ubicación interna se resolverá al preparar y despachar.",
+      updated_by: userId,
+    })
+    .in("id", taskIds)
+    .eq("status", "blocked")
+    .select("id");
+
+  return {
+    count: data?.length ?? 0,
+    error: error?.message ?? null,
+  };
+}
+
 export async function saveBulkProductConfiguration(formData: FormData) {
   "use server";
 
@@ -411,11 +514,12 @@ export async function saveBulkProductConfiguration(formData: FormData) {
   }
 
   let savedRouteCount = 0;
+  let recalculatedTaskCount = 0;
   if (routeDrafts.length > 0) {
     const routeProductIds = Array.from(new Set(routeDrafts.map((draft) => draft.productId)));
     const { data: existingRoutes, error: existingRoutesError } = await supabase
       .from("product_fulfillment_routes")
-      .select("id,product_id,requesting_area_kind,is_active,updated_at")
+      .select("id,product_id,requesting_area_kind,is_active,updated_at,production_execution_mode")
       .eq("from_site_id", originSiteId)
       .eq("to_site_id", destinationSiteId)
       .in("product_id", routeProductIds);
@@ -431,6 +535,7 @@ export async function saveBulkProductConfiguration(formData: FormData) {
       requesting_area_kind: string | null;
       is_active: boolean | null;
       updated_at: string | null;
+      production_execution_mode: string | null;
     };
 
     const existingRoutesByProductId = new Map<string, ExistingFulfillmentRoute[]>();
@@ -491,46 +596,77 @@ export async function saveBulkProductConfiguration(formData: FormData) {
         }
       }
 
+      const isProductionRoute = draft.supplyMode === "production";
+      const productionExecutionMode = isProductionRoute
+        ? canonicalRoute?.production_execution_mode === "recipe"
+          ? "recipe"
+          : "simple"
+        : null;
+      const routePatch = {
+        preparing_area_kind: draft.areaKind,
+        preferred_source_location_id: isProductionRoute ? null : draft.sourceLocationId,
+        preferred_destination_location_id: null,
+        supply_mode: draft.supplyMode,
+        production_execution_mode: productionExecutionMode,
+        ready_location_id: isProductionRoute ? draft.sourceLocationId : null,
+        is_active: true,
+        updated_by: userId,
+      };
+
+      let savedRoute: FulfillmentRouteSnapshot | null = null;
       if (canonicalRoute?.id) {
-        const { error } = await supabase
+        const { data, error } = await supabase
           .from("product_fulfillment_routes")
-          .update({
-            preparing_area_kind: draft.areaKind,
-            preferred_source_location_id: draft.sourceLocationId,
-            preferred_destination_location_id: null,
-            supply_mode: draft.supplyMode,
-            is_active: true,
-            updated_by: userId,
-          })
-          .eq("id", canonicalRoute.id);
-        if (error) {
-          returnParams.set("error", error.message);
+          .update(routePatch)
+          .eq("id", canonicalRoute.id)
+          .select(
+            "id,product_id,from_site_id,to_site_id,requesting_area_kind,preparing_area_kind,preferred_source_location_id,preferred_destination_location_id,supply_mode,production_execution_mode,ready_location_id,is_active"
+          )
+          .single();
+        if (error || !data) {
+          returnParams.set("error", error?.message ?? "No fue posible actualizar la ruta operativa.");
           redirect(buildRedirect(returnParams));
         }
+        savedRoute = data as FulfillmentRouteSnapshot;
       } else {
-        const { error } = await supabase.from("product_fulfillment_routes").insert({
-          product_id: draft.productId,
-          from_site_id: originSiteId,
-          to_site_id: destinationSiteId,
-          requesting_area_kind: selectedAreaKind,
-          preparing_area_kind: draft.areaKind,
-          preferred_source_location_id: draft.sourceLocationId,
-          preferred_destination_location_id: null,
-          supply_mode: draft.supplyMode,
-          dispatch_policy: "next_available",
-          estimated_lead_minutes: null,
-          allow_substitution: false,
-          notes: null,
-          is_active: true,
-          created_by: userId,
-          updated_by: userId,
-        });
-        if (error) {
-          returnParams.set("error", error.message);
+        const { data, error } = await supabase
+          .from("product_fulfillment_routes")
+          .insert({
+            product_id: draft.productId,
+            from_site_id: originSiteId,
+            to_site_id: destinationSiteId,
+            requesting_area_kind: selectedAreaKind,
+            ...routePatch,
+            dispatch_policy: "next_available",
+            estimated_lead_minutes: null,
+            allow_substitution: false,
+            notes: null,
+            created_by: userId,
+          })
+          .select(
+            "id,product_id,from_site_id,to_site_id,requesting_area_kind,preparing_area_kind,preferred_source_location_id,preferred_destination_location_id,supply_mode,production_execution_mode,ready_location_id,is_active"
+          )
+          .single();
+        if (error || !data) {
+          returnParams.set("error", error?.message ?? "No fue posible crear la ruta operativa.");
           redirect(buildRedirect(returnParams));
         }
+        savedRoute = data as FulfillmentRouteSnapshot;
       }
 
+      const recalculation = await recalculateBlockedTasksForRoute({
+        supabase,
+        route: savedRoute,
+        userId,
+      });
+      if (recalculation.error) {
+        returnParams.set(
+          "error",
+          `La ruta se guardó, pero no fue posible recalcular sus tareas bloqueadas: ${recalculation.error}`
+        );
+        redirect(buildRedirect(returnParams));
+      }
+      recalculatedTaskCount += recalculation.count;
       savedRouteCount += 1;
     }
   }
@@ -540,11 +676,13 @@ export async function saveBulkProductConfiguration(formData: FormData) {
   revalidatePath("/inventory/settings/fulfillment-routes");
   revalidatePath("/inventory/catalog");
   revalidatePath("/inventory/remissions");
+  revalidatePath("/inventory/remissions/fulfillment");
 
   const summary = [
     settingRows.length > 0 ? `${settingRows.length} producto(s)` : "",
     savedCategoryCount > 0 ? `${savedCategoryCount} categoría(s)` : "",
     savedRouteCount > 0 ? `${savedRouteCount} ruta(s) operativa(s)` : "",
+    recalculatedTaskCount > 0 ? `${recalculatedTaskCount} tarea(s) desbloqueada(s)` : "",
   ].filter(Boolean);
 
   returnParams.set("ok", `Guardado: ${summary.join(", ")}.`);

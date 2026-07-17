@@ -31,6 +31,106 @@ function auditReturnParams(formData: FormData) {
   };
 }
 
+type SupabaseClient = Awaited<ReturnType<typeof requireAppAccess>>["supabase"];
+
+type FulfillmentRouteSnapshot = {
+  id: string;
+  product_id: string;
+  from_site_id: string;
+  to_site_id: string;
+  requesting_area_kind: string | null;
+  preparing_area_kind: string | null;
+  preferred_source_location_id: string | null;
+  preferred_destination_location_id: string | null;
+  supply_mode: string;
+  production_execution_mode: string | null;
+  ready_location_id: string | null;
+  is_active: boolean;
+};
+
+function routeBlockReason(route: FulfillmentRouteSnapshot): string | null {
+  if (!route.is_active) return "La ruta operativa está inactiva.";
+
+  const missing: string[] = [];
+  if (!route.preparing_area_kind) missing.push("área responsable");
+
+  if (route.supply_mode === "production") {
+    if (!route.production_execution_mode) missing.push("modo de ejecución de producción");
+    if (!route.ready_location_id) missing.push("LOC de producto listo");
+  } else if (!route.preferred_source_location_id) {
+    missing.push("LOC de salida");
+  }
+
+  return missing.length > 0 ? `Ruta incompleta: falta ${missing.join(", ")}.` : null;
+}
+
+async function recalculateBlockedTasksForRoute(params: {
+  supabase: SupabaseClient;
+  route: FulfillmentRouteSnapshot;
+  userId: string;
+}): Promise<{ count: number; error: string | null }> {
+  const { supabase, route, userId } = params;
+  const requestingAreaKind = String(route.requesting_area_kind ?? "").trim() || null;
+  const preparingAreaKind = String(route.preparing_area_kind ?? "").trim() || null;
+  const isProduction = route.supply_mode === "production";
+  const blockReason = routeBlockReason(route);
+
+  let candidateQuery = supabase
+    .from("restock_item_fulfillments")
+    .select("id,route_id,shortage_reason")
+    .eq("product_id", route.product_id)
+    .eq("from_site_id", route.from_site_id)
+    .eq("to_site_id", route.to_site_id)
+    .eq("status", "blocked")
+    .eq("reserved_base_qty", 0)
+    .eq("ready_base_qty", 0)
+    .eq("allocated_base_qty", 0)
+    .eq("released_base_qty", 0)
+    .eq("cancelled_base_qty", 0);
+
+  candidateQuery = requestingAreaKind
+    ? candidateQuery.eq("requesting_area_kind", requestingAreaKind)
+    : candidateQuery.is("requesting_area_kind", null);
+
+  const { data: candidates, error: candidatesError } = await candidateQuery;
+  if (candidatesError) return { count: 0, error: candidatesError.message };
+
+  const taskIds = (candidates ?? [])
+    .filter((task) => {
+      const reason = String(task.shortage_reason ?? "").toLowerCase();
+      return !task.route_id || reason.includes("ruta") || reason.includes("abastecimiento");
+    })
+    .map((task) => String(task.id ?? "").trim())
+    .filter(Boolean);
+
+  if (taskIds.length === 0) return { count: 0, error: null };
+
+  const { data, error } = await supabase
+    .from("restock_item_fulfillments")
+    .update({
+      route_id: route.id,
+      preparing_area_kind: preparingAreaKind,
+      source_location_id: isProduction ? null : route.preferred_source_location_id,
+      destination_location_id: route.preferred_destination_location_id,
+      supply_mode: route.supply_mode,
+      production_execution_mode: isProduction ? route.production_execution_mode : null,
+      ready_location_id: isProduction ? route.ready_location_id : null,
+      status: blockReason ? "blocked" : "pending",
+      shortage_reason: blockReason,
+      notes: blockReason
+        ? "La tarea se recalculó después de activar su ruta, pero la configuración sigue incompleta."
+        : isProduction
+          ? "Ruta activada. La tarea conserva el modo de producción y el LOC donde quedará listo el terminado."
+          : "Ruta activada. La ubicación interna se resolverá al preparar y despachar.",
+      updated_by: userId,
+    })
+    .in("id", taskIds)
+    .eq("status", "blocked")
+    .select("id");
+
+  return { count: data?.length ?? 0, error: error?.message ?? null };
+}
+
 async function toggleRoute(formData: FormData) {
   "use server";
 
@@ -44,37 +144,72 @@ async function toggleRoute(formData: FormData) {
   });
   if (!id) redirect(back({ ...returnParams, error: "Ruta inválida." }));
 
-  const { data: currentRoute, error: currentRouteError } = await supabase
+  const { data: currentRouteData, error: currentRouteError } = await supabase
     .from("product_fulfillment_routes")
-    .select("preparing_area_kind,preferred_source_location_id")
+    .select(
+      "id,product_id,from_site_id,to_site_id,requesting_area_kind,preparing_area_kind,preferred_source_location_id,preferred_destination_location_id,supply_mode,production_execution_mode,ready_location_id,is_active"
+    )
     .eq("id", id)
     .maybeSingle();
 
-  if (currentRouteError) {
-    redirect(back({ ...returnParams, error: currentRouteError.message }));
-  }
-
-  if (
-    !isActive &&
-    (!currentRoute?.preparing_area_kind || !currentRoute?.preferred_source_location_id)
-  ) {
+  if (currentRouteError || !currentRouteData) {
     redirect(
       back({
         ...returnParams,
-        error: "La ruta está incompleta. Corrígela antes de activarla.",
+        error: currentRouteError?.message ?? "La ruta ya no existe.",
       }),
     );
   }
 
-  const { error } = await supabase
+  const currentRoute = currentRouteData as FulfillmentRouteSnapshot;
+  const nextActive = !isActive;
+  if (nextActive) {
+    const activationError = routeBlockReason({ ...currentRoute, is_active: true });
+    if (activationError) {
+      redirect(back({ ...returnParams, error: activationError }));
+    }
+  }
+
+  const { data: savedRouteData, error } = await supabase
     .from("product_fulfillment_routes")
-    .update({ is_active: !isActive, updated_by: user.id })
-    .eq("id", id);
-  if (error) redirect(back({ ...returnParams, error: error.message }));
+    .update({ is_active: nextActive, updated_by: user.id })
+    .eq("id", id)
+    .select(
+      "id,product_id,from_site_id,to_site_id,requesting_area_kind,preparing_area_kind,preferred_source_location_id,preferred_destination_location_id,supply_mode,production_execution_mode,ready_location_id,is_active"
+    )
+    .single();
+  if (error || !savedRouteData) {
+    redirect(back({ ...returnParams, error: error?.message ?? "No se pudo actualizar la ruta." }));
+  }
+
+  let recalculatedCount = 0;
+  if (nextActive) {
+    const recalculation = await recalculateBlockedTasksForRoute({
+      supabase,
+      route: savedRouteData as FulfillmentRouteSnapshot,
+      userId: user.id,
+    });
+    if (recalculation.error) {
+      redirect(
+        back({
+          ...returnParams,
+          error: `La ruta se activó, pero no fue posible recalcular sus tareas bloqueadas: ${recalculation.error}`,
+        }),
+      );
+    }
+    recalculatedCount = recalculation.count;
+  }
 
   revalidatePath(PAGE);
   revalidatePath("/inventory/settings/remissions/products");
-  redirect(back({ ...returnParams, ok: "toggled" }));
+  revalidatePath("/inventory/remissions/fulfillment");
+  redirect(
+    back({
+      ...returnParams,
+      ok: nextActive ? "activated" : "deactivated",
+      recalculated: String(recalculatedCount),
+    }),
+  );
 }
 
 type Site = { id: string; name: string | null };
@@ -96,6 +231,8 @@ type Route = {
   preferred_source_location_id: string | null;
   preferred_destination_location_id: string | null;
   supply_mode: string;
+  production_execution_mode: string | null;
+  ready_location_id: string | null;
   dispatch_policy: string;
   estimated_lead_minutes: number | null;
   is_active: boolean;
@@ -114,8 +251,11 @@ type AuditStatus = "complete" | "incomplete" | "inactive";
 function routeMissingFields(route: Route) {
   const missing: string[] = [];
   if (!route.preparing_area_kind) missing.push("área responsable");
-  if (!route.preferred_source_location_id) {
-    missing.push(route.supply_mode === "production" ? "punto donde queda listo" : "LOC de salida");
+  if (route.supply_mode === "production") {
+    if (!route.production_execution_mode) missing.push("modo de ejecución");
+    if (!route.ready_location_id) missing.push("punto donde queda listo");
+  } else if (!route.preferred_source_location_id) {
+    missing.push("LOC de salida");
   }
   return missing;
 }
@@ -142,6 +282,7 @@ export default async function FulfillmentRoutesPage({
     to_site_id?: string;
     area_kind?: string;
     status?: string;
+    recalculated?: string;
   }>;
 }) {
   const sp = (await searchParams) ?? {};
@@ -187,7 +328,7 @@ export default async function FulfillmentRoutesPage({
       supabase
         .from("product_fulfillment_routes")
         .select(
-          "id,product_id,from_site_id,to_site_id,requesting_area_kind,preparing_area_kind,preferred_source_location_id,preferred_destination_location_id,supply_mode,dispatch_policy,estimated_lead_minutes,is_active",
+          "id,product_id,from_site_id,to_site_id,requesting_area_kind,preparing_area_kind,preferred_source_location_id,preferred_destination_location_id,supply_mode,production_execution_mode,ready_location_id,dispatch_policy,estimated_lead_minutes,is_active",
         )
         .order("is_active", { ascending: false })
         .order("updated_at", { ascending: false }),
@@ -243,7 +384,15 @@ export default async function FulfillmentRoutesPage({
     ]),
   );
   const areaName = new Map(areaKinds.map((area) => [area.code, area.name ?? area.code]));
-  const success = sp.ok === "toggled" ? "Estado de la ruta actualizado." : null;
+  const recalculatedCount = Math.max(0, Number(sp.recalculated ?? 0) || 0);
+  const success =
+    sp.ok === "activated"
+      ? recalculatedCount > 0
+        ? `Ruta activada. Se recalcularon ${recalculatedCount} tarea(s) bloqueada(s).`
+        : "Ruta activada. No había tareas bloqueadas por recalcular."
+      : sp.ok === "deactivated"
+        ? "Ruta desactivada."
+        : null;
   const errorMessage = sp.error ? safeDecodeURIComponent(sp.error) : "";
 
   return (
@@ -352,6 +501,10 @@ export default async function FulfillmentRoutesPage({
                 const product = productById.get(route.product_id) ?? null;
                 const auditStatus = routeAuditStatus(route);
                 const missingFields = routeMissingFields(route);
+                const operationalLocationId =
+                  route.supply_mode === "production"
+                    ? route.ready_location_id
+                    : route.preferred_source_location_id;
                 const configureParams = new URLSearchParams({
                   destination_site_id: route.to_site_id,
                   origin_site_id: route.from_site_id,
@@ -391,7 +544,7 @@ export default async function FulfillmentRoutesPage({
                             route.preparing_area_kind
                           : "Área responsable no definida"}
                         {" · "}
-                        {locationName.get(route.preferred_source_location_id ?? "") ??
+                        {locationName.get(operationalLocationId ?? "") ??
                           (route.supply_mode === "production"
                             ? "Punto donde queda listo no definido"
                             : "LOC de salida no definido")}
