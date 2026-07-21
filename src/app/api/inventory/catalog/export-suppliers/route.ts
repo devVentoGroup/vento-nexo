@@ -8,7 +8,6 @@ export const runtime = "nodejs";
 const COLORS = {
   black: "FF1B1A1F",
   magenta: "FFE2006A",
-  rose: "FFB76E79",
   white: "FFFFFFFF",
   soft: "FFF6F1F5",
   line: "FFE7DEE5",
@@ -18,9 +17,7 @@ const COLORS = {
   total: "FFE2F0D9",
 };
 
-type InventoryProfile = {
-  inventory_kind: string | null;
-};
+type InventoryProfile = { inventory_kind: string | null };
 
 type ProductRow = {
   id: string;
@@ -50,17 +47,38 @@ type PresentationRow = {
   qty_in_stock_unit: number | null;
   is_default: boolean | null;
   is_active: boolean | null;
+  source: string | null;
+  usage_context: string | null;
 };
+
+type CountRow = {
+  product: ProductRow;
+  type: string;
+  category: string;
+  presentationId: string;
+  presentation: string;
+  equivalence: number;
+  baseUnit: string;
+};
+
+function safeNumber(value: unknown, fallback = 0): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? parsed : fallback;
+}
+
+function normalize(value: unknown): string {
+  return String(value ?? "").trim().toLowerCase();
+}
 
 function inventoryKind(product: ProductRow): string {
   const profile = Array.isArray(product.product_inventory_profiles)
     ? product.product_inventory_profiles[0] ?? null
     : product.product_inventory_profiles ?? null;
-  return String(profile?.inventory_kind ?? "").trim().toLowerCase();
+  return normalize(profile?.inventory_kind);
 }
 
 function itemType(product: ProductRow): string {
-  const type = String(product.product_type ?? "").trim().toLowerCase();
+  const type = normalize(product.product_type);
   if (type === "insumo") return "Insumo";
   if (type === "preparacion") return "Preparación";
   if (type === "venta" && inventoryKind(product) === "resale") return "Producto de reventa";
@@ -69,7 +87,7 @@ function itemType(product: ProductRow): string {
 
 function isIncluded(product: ProductRow): boolean {
   if (product.is_active === false) return false;
-  const type = String(product.product_type ?? "").trim().toLowerCase();
+  const type = normalize(product.product_type);
   if (type === "insumo") return inventoryKind(product) !== "asset";
   if (type === "preparacion") return true;
   return type === "venta" && inventoryKind(product) === "resale";
@@ -88,6 +106,57 @@ function categoryPath(categoryId: string | null, categories: Map<string, Categor
   }
 
   return names.join(" / ") || "Sin categoría";
+}
+
+function presentationEquivalence(presentation: PresentationRow): number | null {
+  const inputQty = safeNumber(presentation.qty_in_input_unit);
+  const stockQty = safeNumber(presentation.qty_in_stock_unit);
+  if (inputQty <= 0 || stockQty <= 0) return null;
+  return stockQty / inputQty;
+}
+
+function presentationPriority(presentation: PresentationRow): number {
+  // 1. Política/default del producto.
+  if (presentation.is_default === true) return 0;
+
+  // 2. Presentación creada manualmente.
+  if (normalize(presentation.source) === "manual") return 10;
+
+  // 3. Presentaciones operativas derivadas.
+  const context = normalize(presentation.usage_context);
+  if (context === "general" || !context) return 20;
+  if (context === "purchase") return 30;
+  if (context === "remission") return 40;
+  return 50;
+}
+
+function selectUniquePresentations(rows: PresentationRow[]): PresentationRow[] {
+  const sorted = [...rows].sort((a, b) => {
+    const priorityDifference = presentationPriority(a) - presentationPriority(b);
+    if (priorityDifference !== 0) return priorityDifference;
+    return String(a.label ?? "").localeCompare(String(b.label ?? ""), "es", {
+      sensitivity: "base",
+    });
+  });
+
+  const selectedByEquivalence = new Map<string, PresentationRow>();
+  for (const row of sorted) {
+    const equivalence = presentationEquivalence(row);
+    if (equivalence == null) continue;
+
+    // Evita duplicados por pequeñas diferencias de punto flotante.
+    const key = equivalence.toFixed(6);
+    if (!selectedByEquivalence.has(key)) selectedByEquivalence.set(key, row);
+  }
+
+  return [...selectedByEquivalence.values()].sort((a, b) => {
+    const aValue = presentationEquivalence(a) ?? 0;
+    const bValue = presentationEquivalence(b) ?? 0;
+    if (aValue !== bValue) return aValue - bValue;
+    return String(a.label ?? "").localeCompare(String(b.label ?? ""), "es", {
+      sensitivity: "base",
+    });
+  });
 }
 
 function styleTitle(sheet: ExcelJS.Worksheet, lastColumn: number, subtitle: string) {
@@ -123,8 +192,7 @@ function styleHeader(row: ExcelJS.Row) {
 
 function styleBody(sheet: ExcelJS.Worksheet, firstRow: number, lastRow: number, lastColumn: number) {
   for (let rowNumber = firstRow; rowNumber <= lastRow; rowNumber += 1) {
-    const row = sheet.getRow(rowNumber);
-    row.eachCell({ includeEmpty: true }, (cell, columnNumber) => {
+    sheet.getRow(rowNumber).eachCell({ includeEmpty: true }, (cell, columnNumber) => {
       if (columnNumber > lastColumn) return;
       cell.alignment = { vertical: "middle", wrapText: true };
       cell.border = {
@@ -135,11 +203,6 @@ function styleBody(sheet: ExcelJS.Worksheet, firstRow: number, lastRow: number, 
       };
     });
   }
-}
-
-function safeNumber(value: unknown, fallback = 0): number {
-  const number = Number(value);
-  return Number.isFinite(number) ? number : fallback;
 }
 
 export async function GET() {
@@ -168,60 +231,96 @@ export async function GET() {
     .eq("id", userData.user.id)
     .maybeSingle();
 
-  const role = String((employee as { role?: string | null } | null)?.role ?? "").toLowerCase();
+  const role = normalize((employee as { role?: string | null } | null)?.role);
   if (!["propietario", "gerente_general", "bodeguero"].includes(role)) {
     return NextResponse.json({ error: "No tienes permiso para exportar el catálogo." }, { status: 403 });
   }
 
-  const [{ data: productsData, error: productsError }, { data: categoriesData }, { data: presentationsData }] =
-    await Promise.all([
-      supabase
-        .from("products")
-        .select(
-          "id,name,sku,category_id,product_type,unit,stock_unit_code,cost,is_active,product_inventory_profiles(inventory_kind)"
-        )
-        .eq("is_active", true)
-        .order("name", { ascending: true })
-        .limit(5000),
-      supabase
-        .from("product_categories")
-        .select("id,name,parent_id")
-        .order("name", { ascending: true })
-        .limit(5000),
-      supabase
-        .from("product_uom_profiles")
-        .select(
-          "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active"
-        )
-        .eq("is_active", true)
-        .limit(20000),
-    ]);
+  const [productsResult, categoriesResult, presentationsResult] = await Promise.all([
+    supabase
+      .from("products")
+      .select(
+        "id,name,sku,category_id,product_type,unit,stock_unit_code,cost,is_active,product_inventory_profiles(inventory_kind)"
+      )
+      .eq("is_active", true)
+      .order("name", { ascending: true })
+      .limit(5000),
+    supabase
+      .from("product_categories")
+      .select("id,name,parent_id")
+      .order("name", { ascending: true })
+      .limit(5000),
+    supabase
+      .from("product_uom_profiles")
+      .select(
+        "id,product_id,label,input_unit_code,qty_in_input_unit,qty_in_stock_unit,is_default,is_active,source,usage_context"
+      )
+      .eq("is_active", true)
+      .limit(20000),
+  ]);
 
-  if (productsError) {
+  if (productsResult.error) {
     return NextResponse.json(
-      { error: "No se pudo cargar el catálogo.", detail: productsError.message },
+      { error: "No se pudo cargar el catálogo.", detail: productsResult.error.message },
       { status: 400 }
     );
   }
 
-  const products = ((productsData ?? []) as unknown as ProductRow[]).filter(isIncluded);
+  if (presentationsResult.error) {
+    return NextResponse.json(
+      { error: "No se pudieron cargar las presentaciones.", detail: presentationsResult.error.message },
+      { status: 400 }
+    );
+  }
+
+  const products = ((productsResult.data ?? []) as unknown as ProductRow[]).filter(isIncluded);
   const categories = new Map(
-    ((categoriesData ?? []) as CategoryRow[]).map((category) => [category.id, category])
+    ((categoriesResult.data ?? []) as CategoryRow[]).map((category) => [category.id, category])
   );
   const presentationsByProduct = new Map<string, PresentationRow[]>();
 
-  for (const presentation of (presentationsData ?? []) as PresentationRow[]) {
+  for (const presentation of (presentationsResult.data ?? []) as PresentationRow[]) {
     if (!presentation.product_id || presentation.is_active === false) continue;
     const rows = presentationsByProduct.get(presentation.product_id) ?? [];
     rows.push(presentation);
     presentationsByProduct.set(presentation.product_id, rows);
   }
 
-  for (const rows of presentationsByProduct.values()) {
-    rows.sort((a, b) => {
-      if (a.is_default === b.is_default) return String(a.label ?? "").localeCompare(String(b.label ?? ""), "es");
-      return a.is_default ? -1 : 1;
-    });
+  const countRows: CountRow[] = [];
+  for (const product of products) {
+    const baseUnit = String(product.stock_unit_code || product.unit || "un");
+    const category = categoryPath(product.category_id, categories);
+    const type = itemType(product);
+    const uniquePresentations = selectUniquePresentations(
+      presentationsByProduct.get(product.id) ?? []
+    );
+
+    if (uniquePresentations.length === 0) {
+      countRows.push({
+        product,
+        type,
+        category,
+        presentationId: "base",
+        presentation: `Unidad base (${baseUnit})`,
+        equivalence: 1,
+        baseUnit,
+      });
+      continue;
+    }
+
+    for (const presentation of uniquePresentations) {
+      const equivalence = presentationEquivalence(presentation);
+      if (equivalence == null) continue;
+      countRows.push({
+        product,
+        type,
+        category,
+        presentationId: presentation.id,
+        presentation: String(presentation.label || presentation.input_unit_code || "Presentación"),
+        equivalence,
+        baseUnit,
+      });
+    }
   }
 
   const workbook = new ExcelJS.Workbook();
@@ -233,76 +332,15 @@ export async function GET() {
     views: [{ state: "frozen", ySplit: 4, showGridLines: false }],
   });
   catalogSheet.columns = [
-    { width: 21 },
-    { width: 30 },
-    { width: 34 },
-    { width: 17 },
-    { width: 27 },
-    { width: 18 },
-    { width: 18 },
-    { width: 18 },
-    { width: 16 },
+    { width: 21 }, { width: 30 }, { width: 34 }, { width: 17 }, { width: 27 },
+    { width: 18 }, { width: 18 }, { width: 18 }, { width: 16 },
   ];
   styleTitle(catalogSheet, 9, "Catálogo operativo de insumos, preparaciones y productos de reventa");
   catalogSheet.getRow(4).values = [
-    "Tipo",
-    "Categoría",
-    "Producto",
-    "SKU",
-    "Presentación",
-    "Equivalencia",
-    "Unidad base",
-    "Costo unitario base",
-    "Estado",
+    "Tipo", "Categoría", "Producto", "SKU", "Presentación", "Equivalencia",
+    "Unidad base", "Costo unitario base", "Estado",
   ];
   styleHeader(catalogSheet.getRow(4));
-
-  const countRows: Array<{
-    product: ProductRow;
-    type: string;
-    category: string;
-    presentationId: string;
-    presentation: string;
-    equivalence: number;
-    inputUnit: string;
-    baseUnit: string;
-  }> = [];
-
-  for (const product of products) {
-    const rows = presentationsByProduct.get(product.id) ?? [];
-    const baseUnit = String(product.stock_unit_code || product.unit || "un");
-    const category = categoryPath(product.category_id, categories);
-    const type = itemType(product);
-
-    if (rows.length === 0) {
-      countRows.push({
-        product,
-        type,
-        category,
-        presentationId: "base",
-        presentation: `Unidad base (${baseUnit})`,
-        equivalence: 1,
-        inputUnit: baseUnit,
-        baseUnit,
-      });
-      continue;
-    }
-
-    for (const presentation of rows) {
-      const inputQty = safeNumber(presentation.qty_in_input_unit, 1) || 1;
-      const stockQty = safeNumber(presentation.qty_in_stock_unit, 1);
-      countRows.push({
-        product,
-        type,
-        category,
-        presentationId: presentation.id,
-        presentation: String(presentation.label || presentation.input_unit_code || "Presentación"),
-        equivalence: stockQty / inputQty,
-        inputUnit: String(presentation.input_unit_code || "presentación"),
-        baseUnit,
-      });
-    }
-  }
 
   for (const row of countRows) {
     catalogSheet.addRow([
@@ -326,37 +364,18 @@ export async function GET() {
     views: [{ state: "frozen", ySplit: 5, xSplit: 3, showGridLines: false }],
   });
   countSheet.columns = [
-    { width: 21 },
-    { width: 30 },
-    { width: 34 },
-    { width: 17 },
-    { width: 27 },
-    { width: 14 },
-    { width: 14 },
-    { width: 18 },
-    { width: 16 },
-    { width: 16 },
-    { width: 18 },
-    { width: 30 },
+    { width: 21 }, { width: 30 }, { width: 34 }, { width: 17 }, { width: 27 },
+    { width: 14 }, { width: 14 }, { width: 18 }, { width: 16 }, { width: 16 },
+    { width: 18 }, { width: 30 },
   ];
   styleTitle(countSheet, 12, "Formato simple de conteo físico · Escriba únicamente en las columnas amarillas");
   countSheet.mergeCells("A3:L3");
   countSheet.getCell("A3").value = "Fecha del conteo: ____________________    Responsable: ____________________";
   countSheet.getCell("A3").font = { bold: true, color: { argb: COLORS.black } };
-  countSheet.getCell("A3").alignment = { vertical: "middle" };
   countSheet.getRow(5).values = [
-    "Tipo",
-    "Categoría",
-    "Producto",
-    "SKU",
-    "Presentación",
-    "Equivalencia base",
-    "Cantidad de presentaciones",
-    "Cantidad suelta base",
-    "Total contado base",
-    "Costo unitario base",
-    "Valor contado",
-    "Observación",
+    "Tipo", "Categoría", "Producto", "SKU", "Presentación", "Equivalencia base",
+    "Cantidad de presentaciones", "Cantidad suelta base", "Total contado base",
+    "Costo unitario base", "Valor contado", "Observación",
   ];
   styleHeader(countSheet.getRow(5));
 
@@ -381,57 +400,47 @@ export async function GET() {
   const countLastRow = Math.max(5, countSheet.rowCount);
   styleBody(countSheet, 6, countLastRow, 12);
   [7, 8, 12].forEach((columnNumber) => {
-    const column = countSheet.getColumn(columnNumber);
-    column.eachCell({ includeEmpty: true }, (cell, rowNumber) => {
-      if (rowNumber < 6) return;
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLORS.input } };
+    countSheet.getColumn(columnNumber).eachCell({ includeEmpty: true }, (cell, rowNumber) => {
+      if (rowNumber >= 6) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLORS.input } };
+      }
     });
   });
   [9, 11].forEach((columnNumber) => {
-    const column = countSheet.getColumn(columnNumber);
-    column.eachCell({ includeEmpty: true }, (cell, rowNumber) => {
-      if (rowNumber < 6) return;
-      cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLORS.formula } };
+    countSheet.getColumn(columnNumber).eachCell({ includeEmpty: true }, (cell, rowNumber) => {
+      if (rowNumber >= 6) {
+        cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: COLORS.formula } };
+      }
     });
   });
-  countSheet.getColumn(6).numFmt = "#,##0.####";
-  countSheet.getColumn(7).numFmt = "#,##0.####";
-  countSheet.getColumn(8).numFmt = "#,##0.####";
-  countSheet.getColumn(9).numFmt = "#,##0.####";
+  [6, 7, 8, 9].forEach((columnNumber) => {
+    countSheet.getColumn(columnNumber).numFmt = "#,##0.####";
+  });
   countSheet.getColumn(10).numFmt = '"$" #,##0.00';
   countSheet.getColumn(11).numFmt = '"$" #,##0.00';
   countSheet.autoFilter = { from: "A5", to: `L${countLastRow}` };
-  countSheet.dataValidations.add(`G6:H${countLastRow}`, {
-    type: "decimal",
-    operator: "greaterThanOrEqual",
-    allowBlank: true,
-    showErrorMessage: true,
-    errorTitle: "Cantidad no válida",
-    error: "Ingrese una cantidad numérica mayor o igual a cero.",
-    formulae: [0],
-  });
+  if (countLastRow >= 6) {
+    countSheet.dataValidations.add(`G6:H${countLastRow}`, {
+      type: "decimal",
+      operator: "greaterThanOrEqual",
+      allowBlank: true,
+      showErrorMessage: true,
+      errorTitle: "Cantidad no válida",
+      error: "Ingrese una cantidad numérica mayor o igual a cero.",
+      formulae: [0],
+    });
+  }
 
   const summarySheet = workbook.addWorksheet("Resumen", {
     views: [{ state: "frozen", ySplit: 4, showGridLines: false }],
   });
   summarySheet.columns = [
-    { width: 21 },
-    { width: 30 },
-    { width: 34 },
-    { width: 17 },
-    { width: 18 },
-    { width: 18 },
-    { width: 20 },
+    { width: 21 }, { width: 30 }, { width: 34 }, { width: 17 },
+    { width: 18 }, { width: 18 }, { width: 20 },
   ];
   styleTitle(summarySheet, 7, "Resumen automático por producto");
   summarySheet.getRow(4).values = [
-    "Tipo",
-    "Categoría",
-    "Producto",
-    "SKU",
-    "Unidad base",
-    "Total contado",
-    "Valor total",
+    "Tipo", "Categoría", "Producto", "SKU", "Unidad base", "Total contado", "Valor total",
   ];
   styleHeader(summarySheet.getRow(4));
 
